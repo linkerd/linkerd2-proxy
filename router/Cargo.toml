@@ -1,0 +1,13 @@
+[package]
+name = "linkerd2-proxy-router"
+version = "0.1.0"
+authors = [
+    "Oliver Gould <ver@buoyant.io>",
+    "Carl Lerche <me@carllerche.com>",
+]
+publish = false
+
+[dependencies]
+futures = "0.1"
+indexmap = "1.0.0"
+tower-service = { git = "https://github.com/tower-rs/tower" }
