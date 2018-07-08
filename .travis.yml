@@ -5,34 +5,28 @@ sudo: false
 language: rust
 cache: cargo
 
-stages:
-  # On PRs and branches, quickly run tests in debug mode.
-  - name: test
-    if: branch != master OR type = pull_request
-
-  # On master, package an artifact and run tests in release mode before
-  # publishing the artifact to build.l5d.io/linkerd2-proxy.
-  #
-  # build.l5d.io/linkerd2-proxy/latest.txt is updated to reference the latest
-  # uploade binary.
-  - name: package
-    if: type != pull_request
-    #if: branch = master AND type != pull_request
-
-# Verbose is enabled so that the build doesn't timeout.
 jobs:
   include:
-    - stage: test
-      script: CARGO_VERBOSE=1 make test
+    # On PRs and branches, quickly run tests in debug mode.
+    - if: type = pull_request  # OR branch != master
+      script: make test
       rust: stable
-    - script: CARGO_VERBOSE=1 make test-benches
-      # An arbitrary, ~recent, known-stable nightly is used to ensure benches
-      # can be run.
-      rust: nightly-2018-05-26
 
-    - stage: package
+    - if: type = pull_request  # OR branch != master
+      script: make test-benches
+      # An arbitrary, ~recent, known-good nightly is used to ensure benches can
+      # be run.
+      rust: nightly-2018-06-29
+
+    # On master, package an artifact and run tests in release mode before
+    # publishing the artifact to build.l5d.io/linkerd2-proxy.
+    #
+    # build.l5d.io/linkerd2-proxy/latest.txt is updated to reference the latest
+    # uploade binary.
+    - if: type != pull_request  # AND branch = master
+      # Verbose is enabled so that the build doesn't timeout.
+      install: export CARGO_RELEASE=1 CARGO_VERBOSE=1
       script:
-        - export CARGO_RELEASE=1 CARGO_VERBOSE=1
         - make clean-package package
         - make test
       rust: stable
