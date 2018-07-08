@@ -6,34 +6,45 @@ language: rust
 cache: cargo
 rust:
   - stable
-  - nightly-2018-05-26  # Arbitrary ~recent known-good nightly
+  # Arbitrary ~recent known-good nightly. Runs benchmarks
+  - nightly-2018-05-26
 
 stages:
   - build
   - test
+  - publish
 
 jobs:
   include:
+    # Build the proxy in release mode so that tests are run against the same
+    # binaries that will be used in production.
+    #
+    # Verbose is enabled so that the build doesn't timeout.
+    #
+    # The first build command produces a target/release/linkerd2-proxy that may
+    # be published later. The second build command compiles tests and does NOT overwrite
     - stage: build
       install: cargo fetch --locked
-      # Verbose is enabled so that the build doesn't timeout.
       script:
-        - cargo build --release --frozen --no-default-features --verbose
-        - cargo build --release --frozen --no-default-features --verbose --tests
+        - cargo build --frozen --release --verbose
+        - cargo build --frozen --release --verbose --tests --no-default-features
 
     - stage: test
       if: rust = stable
-      script: cargo test --release --frozen --no-default-features
+      script:
+        - cargo test --frozen --release --no-default-features
 
-    - if: rust != stable
-      script: cargo test --benches --frozen --no-default-features
-
-notifications:
-  email:
-    on_success: never
+    # Benches can only be run on nightly.
+    - stage: test
+      if: rust = nightly-2018-05-26
+      script: cargo test --frozen --release --no-default-features --benches
 
 # Don't test pushes to branches, since they are redundant with the
 # pull_request build for each branch.
 branches:
   only:
     - master
+
+notifications:
+  email:
+    on_success: never
