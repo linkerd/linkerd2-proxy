@@ -37,7 +37,7 @@ matrix:
     - rust: nightly-2018-05-26
       script: cargo test --frozen --release --no-default-features --benches
 
-    - tage: publish
+    - stage: publish
       rust: stable
       script: shasum -a 256 target/release/linked2-proxy
 
