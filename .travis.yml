@@ -13,6 +13,7 @@ stages:
 jobs:
   include:
 
+    # It wo
     # Verbose is enabled so that the build doesn't timeout.
     - rust: stable
       stage: test
@@ -21,8 +22,8 @@ jobs:
         - cargo build --frozen --no-default-features --tests --verbose
         - cargo test  --frozen --no-default-features
 
-    - stage: publish
-      cache: cargo
+    - rust: stable
+      stage: publish
       script:
         - cargo build --frozen --release --verbose
         - ls -l target/release/linkerd2-proxy && shasum -a 256 target/release/linkerd2-proxy
