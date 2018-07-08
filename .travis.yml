@@ -40,7 +40,7 @@ matrix:
 
     - if: branch = master
       stage: publish
-      ruts: stable
+      rust: stable
       script: shasum -a 256 target/release/linked2-proxy
 
 notifications:
