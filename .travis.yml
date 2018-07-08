@@ -1,0 +1,34 @@
+---
+dist: trusty
+sudo: false
+
+# We do not test pushes to branches, since they are redundant with the
+# pull_request build for each branch.
+branches:
+  only:
+    - master
+
+stages:
+  - name: build
+
+jobs:
+  include:
+    - stage: build
+      language: rust
+      rust: stable
+      cache: cargo
+      script:
+        cargo test --release --locked --no-default-features
+        cargo build --release --locked
+
+    - language: rust
+      # Run proxy benchmarks in development mode. Requires nightly.
+      # Failures are not fatal.
+      rust: nightly-2018-05-26
+      cache: cargo
+      script:
+        - cargo test --benches --locked --no-default-features
+
+notifications:
+  email:
+    on_success: never
