@@ -8,13 +8,8 @@ cache: cargo
 stages:
   - build
   - test
-  - name: bench
-  - name: publish
-
-rust:
-  - stable
-  # Arbitrary ~recent known-good nightly. Runs benchmarks
-  - nightly-2018-05-26
+  - bench
+  - publish
 
 matrix:
   include:
@@ -26,20 +21,26 @@ matrix:
     # The first build command produces a target/release/linkerd2-proxy that may
     # be published later. The second build command compiles tests and does NOT overwrite
     - stage: build
+      rust:
+        - stable
+        # Arbitrary ~recent known-good nightly. Runs benchmarks
+        - nightly-2018-05-26
       install: cargo fetch --locked
       script:
         - cargo build --frozen --release --verbose
         - cargo build --frozen --release --verbose --tests --no-default-features
 
     - stage: test
+      rust: stable
       script: cargo test --frozen --release --no-default-features
 
     - stage: bench
       rust: nightly-2018-05-26
-      script: cargo bench --frozen --release --no-default-features
+      script: cargo test --frozen --release --no-default-features --benches
 
-    - if: branch = master AND rust = stable
+    - if: branch = master
       stage: publish
+      ruts: stable
       script: shasum -a 256 target/release/linked2-proxy
 
 notifications:
