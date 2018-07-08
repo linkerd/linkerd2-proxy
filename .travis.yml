@@ -10,8 +10,14 @@ stages:
   - name: publish
     #if: branch = master AND type != pull_request
 
-matrix:
+jobs:
   include:
+    - rust: nightly-2018-05-26
+      script:
+        - cargo fetch --locked
+        - cargo build --frozen --no-default-features --benches --verbose
+        - cargo test  --frozen --no-default-features --benches
+
     # Build the proxy in release mode so that tests are run against the same
     # binaries that will be used in production.
     #
@@ -21,21 +27,15 @@ matrix:
     # be published later. The second build command compiles tests and does NOT overwrite
     - stage: test
       rust: stable
-      install: cargo fetch --locked
       script:
+        - cargo fetch --locked
         - cargo build --frozen --release --verbose
+        - ls -l target/release/linkerd2-proxy && shasum -a 256 target/release/linkerd2-proxy
         - cargo build --frozen --release --no-default-features --tests --verbose
         - cargo test  --frozen --release --no-default-features
-
-    - rust: nightly-2018-05-26
-      install: cargo fetch --locked
-      script:
-        - cargo build --frozen --no-default-features --benches --verbose
-        - cargo test  --frozen --no-default-features --benches
-
     - stage: publish
-      rust: stable
-      script: shasum -a 256 target/release/linkerd2-proxy
+      script:
+        - ls -l target/release/linkerd2-proxy && shasum -a 256 target/release/linkerd2-proxy
 
 notifications:
   email:
