@@ -26,7 +26,9 @@ jobs:
     # to the build.
     - rust: stable
       stage: publish
-      script: CARGO_RELEASE=1 CARGO_VERBOSE=1 make package
+      script:
+        - CARGO_RELEASE=1 CARGO_VERBOSE=1 make package
+        - (cd target/release/package && (ls *.tar.gz >latest))
       deploy:
         on:
           repo: linkerd/linkerd2-proxy
@@ -39,6 +41,7 @@ jobs:
         skip_cleanup: true
         acl: public-read
         local-dir: target/release/package
+        upload-dir: linkerd2-proxy
 
     # An arbitrary, ~recent, known-stable nightly is used to ensure benches can
     # be run.
