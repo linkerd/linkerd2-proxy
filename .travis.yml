@@ -4,6 +4,7 @@ sudo: false
 
 language: rust
 cache: cargo
+
 rust:
   - stable
   # Arbitrary ~recent known-good nightly. Runs benchmarks
@@ -11,12 +12,12 @@ rust:
 
 stages:
   - build
-  - name: test
-    if: rust = stable
-  - name: benches
-    if: rust =~ /^nightly/
-  - name: publish
-    if: rust = stable # AND branch = master
+  - if: rust = stable
+    name: test
+  - if: rust =~ /^nightly/
+    name: benches
+  - if: rust = stable # AND branch = master
+    name: publish
 
 jobs:
   include:
@@ -40,7 +41,6 @@ jobs:
       script: cargo test --frozen --release --no-default-features --benches
 
     - stage: publish
-      if: rust = nightly-2018-05-26
       script: shasum -a 256 target/release/linked2-proxy
 
 
