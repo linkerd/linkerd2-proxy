@@ -9,27 +9,26 @@ branches:
     - master
 
 stages:
-  - name: test
+  - fetch
+  - build
+  - test
 
 jobs:
   include:
-    - stage: test
+    - stage: fetch
       language: rust
       rust: stable
       cache: cargo
-      install:
-        - cargo fetch --locked
-      script:
-        - cargo build --release --frozen --no-default-features
-        - cargo test --release --frozen --no-default-features
+      script: cargo fetch --locked --no-default-features
 
-    - language: rust
-      # Run proxy benchmarks in development mode. Requires nightly.
-      # Failures are not fatal.
-      rust: nightly-2018-05-26
-      cache: cargo
-      script:
-        - cargo test --benches --locked --no-default-features
+    - stage: build
+      script: cargo build --release --frozen --no-default-features --verbose
+
+    - stage: test
+      script: cargo test --release --frozen --no-default-features
+
+    - rust: nightly-2018-05-26
+      script: cargo test --benches --frozen --no-default-features
 
 notifications:
   email:
