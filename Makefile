@@ -9,10 +9,6 @@ ifdef CARGO_RELEASE
 	TARGET = target/release
 endif
 
-ifdef CARGO_VERBOSE
-	VERBOSE = --verbose
-endif
-
 TARGET_BIN = $(TARGET)/linkerd2-proxy
 PKG_ROOT = $(TARGET)/package
 PKG_NAME = linkerd2-proxy-$(GIT_REV)
@@ -20,28 +16,41 @@ PKG_BASE = $(PKG_ROOT)/$(PKG_NAME)
 PKG = $(PKG_NAME).tar.gz
 
 CARGO = cargo
+ifdef CARGO_VERBOSE
+	CARGO = cargo --verbose
+endif
+
+CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
+
+TEST_FLAGS =
+ifdef TEST_FLAKEY
+	TEST_FLAGS = --no-default-features
+endif
+CARGO_TEST = $(CARGO) test --frozen $(RELEASE) $(TEST_FLAGS)
 
 .PHONY: fetch
 fetch: Cargo.lock
-	$(CARGO) fetch --locked $(VERBOSE)
+	$(CARGO) fetch --locked
+
+.PHONY: build
+build: $(TARGET_BIN)
 
 .PHONY: test
 test: fetch
-	$(CARGO) test --frozen --no-default-features $(RELEASE) $(VERBOSE)
+	$(CARGO_TEST)
 
-.PHONY: test-flakey
-test-flakey: fetch
-	$(CARGO) test --frozen $(RELEASE) $(VERBOSE)
-
-.PHONY: test-flakey
+.PHONY: test-benches
 test-benches: fetch
-	$(CARGO) test --frozen --benches --no-default-features $(RELEASE) $(VERBOSE)
-
-$(TARGET_BIN): fetch
-	$(CARGO) build -p linkerd2-proxy $(RELEASE) $(VERBOSE)
+	$(CARGO_TEST) --benches
 
 .PHONY: package
 package: $(PKG_ROOT)/$(PKG)
+
+.PHONY: all
+all: build test
+
+$(TARGET_BIN): fetch
+	$(CARGO_BUILD)
 
 $(PKG_ROOT)/$(PKG): $(TARGET_BIN)
 	mkdir -p $(PKG_BASE)/bin

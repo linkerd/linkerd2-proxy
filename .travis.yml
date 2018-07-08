@@ -30,7 +30,7 @@ jobs:
       deploy:
         on:
           repo: linkerd/linkerd2-proxy
-          #branch: master
+          branch: ver/ci
         provider: gcs
         access_key_id: GOOGFSRIR3LDO4FFBFCAZOCN
         secret_access_key:
