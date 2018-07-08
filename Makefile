@@ -37,11 +37,10 @@ $(PKG_ROOT)/$(PKG): $(TARGET_BIN)
 	cp LICENSE $(PKG_BASE)
 	cp $(TARGET_BIN) $(PKG_BASE)/bin
 	cd $(PKG_ROOT) && \
-		tar -czvf $(PKG) $(PKG_NAME)
+		tar -czvf $(PKG) $(PKG_NAME) && \
+		($(SHASUM) $(PKG) >$(PKG_NAME).txt) && \
+		cp $(PKG_NAME).txt latest.txt
 	rm -rf $(PKG_BASE)
-	cd $(PKG_ROOT) && \
-		($(SHASUM) $(PKG) >$(PACKAGE_VERSION).txt) && \
-		cp $(PACKAGE_VERSION).txt latest.txt
 
 .PHONY: fetch
 fetch: Cargo.lock
