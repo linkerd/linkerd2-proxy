@@ -28,10 +28,8 @@ jobs:
       stage: publish
       script:
         - export CARGO_RELEASE=1 CARGO_VERBOSE=1
-        - rm -rf target/release/package
-        - make package
+        - make clean-package package
         - make test
-        - echo "linkerd2-proxy-$(git rev-parse --short HEAD).tar.gz" >target/release/package/latest.txt
       deploy:
         on:
           repo: linkerd/linkerd2-proxy

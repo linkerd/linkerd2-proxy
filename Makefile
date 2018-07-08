@@ -1,19 +1,20 @@
-GIT_REV = $(shell git rev-parse --short HEAD)
-
-RELEASE =
 TARGET = target/debug
-VERBOSE =
-
 ifdef CARGO_RELEASE
 	RELEASE = --release
 	TARGET = target/release
 endif
 
+ifndef PACKAGE_VERSION
+	PACKAGE_VERSION = $(shell git rev-parse --short HEAD)
+endif
+
 TARGET_BIN = $(TARGET)/linkerd2-proxy
 PKG_ROOT = $(TARGET)/package
-PKG_NAME = linkerd2-proxy-$(GIT_REV)
+PKG_NAME = linkerd2-proxy-$(PACKAGE_VERSION)
 PKG_BASE = $(PKG_ROOT)/$(PKG_NAME)
 PKG = $(PKG_NAME).tar.gz
+
+SHASUM = shasum -a 256
 
 CARGO = cargo
 ifdef CARGO_VERBOSE
@@ -46,6 +47,10 @@ test-benches: fetch
 .PHONY: package
 package: $(PKG_ROOT)/$(PKG)
 
+.PHONY: clean-package
+clean-package:
+	rm -rf $(PKG_ROOT)
+
 .PHONY: all
 all: build test
 
@@ -58,3 +63,4 @@ $(PKG_ROOT)/$(PKG): $(TARGET_BIN)
 	cp $(TARGET_BIN) $(PKG_BASE)/bin
 	cd $(PKG_ROOT) && tar -czvf $(PKG) $(PKG_NAME)
 	rm -rf $(PKG_BASE)
+	cd $(PKG_ROOT) && ($(SHASUM) $(PKG) >latest.txt)
