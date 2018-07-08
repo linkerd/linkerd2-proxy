@@ -1,0 +1,53 @@
+---
+dist: trusty
+sudo: false
+
+language: rust
+cache: cargo
+
+branches:
+  only:
+    - master
+
+jobs:
+  include:
+    # On PRs and branches, quickly run tests in debug mode.
+    - if: type = pull_request
+      script: make test
+      rust: stable
+
+    - if: type = pull_request
+      script: make test-benches
+      # An arbitrary, ~recent, known-good nightly is used to ensure benches can
+      # be run.
+      rust: nightly-2018-06-29
+
+    # On master, package an artifact and run tests in release mode before
+    # publishing the artifact to build.l5d.io/linkerd2-proxy.
+    #
+    # build.l5d.io/linkerd2-proxy/latest.txt is updated to reference the latest
+    # uploaded binary.
+    - if: type != pull_request
+      # Verbose is enabled so that the build doesn't timeout.
+      install: export CARGO_RELEASE=1 CARGO_VERBOSE=1
+      script:
+        - make clean-package package
+        - make test
+      rust: stable
+      deploy:
+        on:
+          repo: linkerd/linkerd2-proxy
+          branch: master
+        skip_cleanup: true
+        local-dir: target/release/package
+        bucket: build.l5d.io
+        upload-dir: linkerd2-proxy
+        acl: public-read
+        provider: gcs
+        access_key_id: GOOGFSRIR3LDO4FFBFCAZOCN
+        secret_access_key:
+          secure: bd5YkL1KY0xllwN/1S1gmrtBkJcPFFwVfP79q69ghHfLupSWUPCPs2fnNi7w+N1AqzWbyIKDZlakxNaq+/q/+jrZfpCHqrM/ufrJ9lwgKRdECbVLIChPb6/wBOrFMfBD3IaRlXAEea12VLJzQ4ZOvL4pM+isKAJFC4Zm1uVTOr4f3w08vixShutU61Lmg1fIPTnBMW9CGobQSQB63OW2lOtqtZ+rVseLGB2ZY4HnfCV++XbsYYVpfSMs/8I95yUnIW8rxag9tNlt5qdNjMYB1GjRqz4I/td6PL0H8bAmIgOkdv5261R10IXua0tVbcB3/w8dlKoDOMu0xAeBqar0/8qPGLKepW2BGEoVI9a5GsXuC0IRR89a+OHBU1HZeL7y8s9oNp1T0LUkpE7V46ryaGpsEDQhHd7W77+lZ9CDMJ0agQnKJ7dlX4hrLObJaZnneMPhu1YtEU4xV53RbynFPbPTCwXzAbK+vVTCo/YbmHHIvvPGdw7hrlHDgCai7cRrk+kNPpAb8xYBobDOtCjK14PvD/CQdAGoivjsBLqg2xmB2sD06HdmDWYOTsm+6H3D/EgPXbeFoB8xiYof43S2gz+R1MqioFKYR31YlcyMkopFe7mYpAeDDXoVal3zsYi9XdbP0J7jm6/UF0yQSsDWP7GWHoIE5jaRDSb66HQW7MY=
+
+notifications:
+  email:
+    on_success: never
