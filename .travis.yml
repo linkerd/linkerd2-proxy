@@ -13,28 +13,39 @@ stages:
 jobs:
   include:
 
-    # It wo
     # Verbose is enabled so that the build doesn't timeout.
+    - script: export CARGO_VERBOSE=1
+
     - rust: stable
       stage: test
-      script:
-        - cargo fetch --locked
-        - cargo build --frozen --no-default-features --tests --verbose
-        - cargo test  --frozen --no-default-features
+      script: make test
 
+    # If the tests passed, build a release binary.
+    #
+    # Tests are not currently run in release mode because it adds 10+ minutes
+    # to the build.
     - rust: stable
       stage: publish
-      script:
-        - cargo build --frozen --release --verbose
-        - ls -l target/release/linkerd2-proxy && shasum -a 256 target/release/linkerd2-proxy
+      script: CARGO_RELEASE=1 make package
+      deploy:
+        on:
+          repo: linkerd/linkerd2-proxy
+          branch: master
+        provider: gcs
+        access_key_id: GOOGFSRIR3LDO4FFBFCAZOCN
+        secret_access_key:
+          secure: bd5YkL1KY0xllwN/1S1gmrtBkJcPFFwVfP79q69ghHfLupSWUPCPs2fnNi7w+N1AqzWbyIKDZlakxNaq+/q/+jrZfpCHqrM/ufrJ9lwgKRdECbVLIChPb6/wBOrFMfBD3IaRlXAEea12VLJzQ4ZOvL4pM+isKAJFC4Zm1uVTOr4f3w08vixShutU61Lmg1fIPTnBMW9CGobQSQB63OW2lOtqtZ+rVseLGB2ZY4HnfCV++XbsYYVpfSMs/8I95yUnIW8rxag9tNlt5qdNjMYB1GjRqz4I/td6PL0H8bAmIgOkdv5261R10IXua0tVbcB3/w8dlKoDOMu0xAeBqar0/8qPGLKepW2BGEoVI9a5GsXuC0IRR89a+OHBU1HZeL7y8s9oNp1T0LUkpE7V46ryaGpsEDQhHd7W77+lZ9CDMJ0agQnKJ7dlX4hrLObJaZnneMPhu1YtEU4xV53RbynFPbPTCwXzAbK+vVTCo/YbmHHIvvPGdw7hrlHDgCai7cRrk+kNPpAb8xYBobDOtCjK14PvD/CQdAGoivjsBLqg2xmB2sD06HdmDWYOTsm+6H3D/EgPXbeFoB8xiYof43S2gz+R1MqioFKYR31YlcyMkopFe7mYpAeDDXoVal3zsYi9XdbP0J7jm6/UF0yQSsDWP7GWHoIE5jaRDSb66HQW7MY=
+        bucket: build.l5d.io
+        skip_cleanup: true
+        acl: public-read
+        local-directory: target/release/package
 
+    # An arbitrary, ~recent, known-stable nightly is used to ensure benches can
+    # be run.
     - rust: nightly-2018-05-26
       cache: cargo
       stage: test
-      script:
-        - cargo fetch --locked
-        - cargo build --frozen --no-default-features --benches --verbose
-        - cargo test  --frozen --no-default-features --benches
+      script: make test-benches
 
 notifications:
   email:
@@ -44,3 +55,4 @@ notifications:
 branches:
   only:
     - master
+
