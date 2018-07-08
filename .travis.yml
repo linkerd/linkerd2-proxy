@@ -5,11 +5,6 @@ sudo: false
 language: rust
 cache: cargo
 
-rust:
-  - stable
-  # Arbitrary ~recent known-good nightly. Runs benchmarks
-  - nightly-2018-05-26
-
 stages:
   - build
   - test
@@ -17,6 +12,11 @@ stages:
     if: rust =~ ^nightly
   - name: publish
     if: branch = master AND rust =~ ^nightly
+
+rust:
+  - stable
+  # Arbitrary ~recent known-good nightly. Runs benchmarks
+  - nightly-2018-05-26
 
 jobs:
   include:
