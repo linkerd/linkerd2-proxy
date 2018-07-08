@@ -6,10 +6,9 @@ language: rust
 cache: cargo
 
 stages:
-  - build
   - test
   - name: publish
-    if: branch = master
+    if: branch = master AND type != pull_request
 
 matrix:
   include:
@@ -20,26 +19,23 @@ matrix:
     #
     # The first build command produces a target/release/linkerd2-proxy that may
     # be published later. The second build command compiles tests and does NOT overwrite
-    - stage: build
+    - stage: test
       rust: stable
       install: cargo fetch --locked
       script:
         - cargo build --frozen --release --verbose
-        - cargo build --frozen --release --verbose --tests --no-default-features
+        - cargo build --frozen --release --no-default-features --tests --verbose
+        - cargo test  --frozen --release --no-default-features
 
     - rust: nightly-2018-05-26
-      script: cargo build --frozen --verbose --tests --no-default-features
-
-    - stage: test
-      rust: stable
-      script: cargo test --frozen --release --no-default-features
-
-    - rust: nightly-2018-05-26
-      script: cargo test --frozen --release --no-default-features --benches
+      install: cargo fetch --locked
+      script:
+        - cargo build --frozen --no-default-features --benches --verbose
+        - cargo test  --frozen --no-default-features --benches
 
     - stage: publish
       rust: stable
-      script: shasum -a 256 target/release/linked2-proxy
+      script: shasum -a 256 target/release/linkerd2-proxy
 
 notifications:
   email:
