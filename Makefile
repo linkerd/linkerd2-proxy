@@ -24,7 +24,7 @@ endif
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
 
 TEST_FLAGS =
-ifdef TEST_FLAKEY
+ifndef TEST_FLAKEY
 	TEST_FLAGS = --no-default-features
 endif
 CARGO_TEST = $(CARGO) test --frozen $(RELEASE) $(TEST_FLAGS)
