@@ -16,7 +16,11 @@ rust:
   # Arbitrary ~recent known-good nightly. Runs benchmarks
   - nightly-2018-05-26
 
-jobs:
+matrix:
+  exclude:
+    - rust: stable
+      stage: bench
+
   include:
     # Build the proxy in release mode so that tests are run against the same
     # binaries that will be used in production.
@@ -35,7 +39,6 @@ jobs:
       script: cargo test --frozen --release --no-default-features
 
     - if: rust =~ ^nightly
-      stage: bench
       script: cargo bench --frozen --release --no-default-features
 
     - if: branch = master AND rust =~ ^nightly
