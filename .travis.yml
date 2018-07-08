@@ -6,8 +6,10 @@ language: rust
 cache: cargo
 
 stages:
-  - test
+  - name: test
+    if: type = pull_request
   - name: publish
+    if: type != pull+request
     #if: branch = master AND type != pull_request
 
 jobs:
@@ -34,7 +36,7 @@ jobs:
         secret_access_key:
           secure: bd5YkL1KY0xllwN/1S1gmrtBkJcPFFwVfP79q69ghHfLupSWUPCPs2fnNi7w+N1AqzWbyIKDZlakxNaq+/q/+jrZfpCHqrM/ufrJ9lwgKRdECbVLIChPb6/wBOrFMfBD3IaRlXAEea12VLJzQ4ZOvL4pM+isKAJFC4Zm1uVTOr4f3w08vixShutU61Lmg1fIPTnBMW9CGobQSQB63OW2lOtqtZ+rVseLGB2ZY4HnfCV++XbsYYVpfSMs/8I95yUnIW8rxag9tNlt5qdNjMYB1GjRqz4I/td6PL0H8bAmIgOkdv5261R10IXua0tVbcB3/w8dlKoDOMu0xAeBqar0/8qPGLKepW2BGEoVI9a5GsXuC0IRR89a+OHBU1HZeL7y8s9oNp1T0LUkpE7V46ryaGpsEDQhHd7W77+lZ9CDMJ0agQnKJ7dlX4hrLObJaZnneMPhu1YtEU4xV53RbynFPbPTCwXzAbK+vVTCo/YbmHHIvvPGdw7hrlHDgCai7cRrk+kNPpAb8xYBobDOtCjK14PvD/CQdAGoivjsBLqg2xmB2sD06HdmDWYOTsm+6H3D/EgPXbeFoB8xiYof43S2gz+R1MqioFKYR31YlcyMkopFe7mYpAeDDXoVal3zsYi9XdbP0J7jm6/UF0yQSsDWP7GWHoIE5jaRDSb66HQW7MY=
         bucket: build.l5d.io
-        skip_cleanup: true
+        #skip_cleanup: true
         acl: public-read
         local-directory: target/release/package
 
@@ -50,7 +52,7 @@ notifications:
     on_success: never
 
 # Only build pull requests and master.
-branches:
-  only:
-    - master
+# branches:
+#   only:
+#     - master
 
