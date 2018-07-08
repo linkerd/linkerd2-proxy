@@ -29,6 +29,20 @@ ifndef TEST_FLAKEY
 endif
 CARGO_TEST = $(CARGO) test --frozen $(RELEASE) $(TEST_FLAGS)
 
+$(TARGET_BIN): fetch
+	$(CARGO_BUILD)
+
+$(PKG_ROOT)/$(PKG): $(TARGET_BIN)
+	mkdir -p $(PKG_BASE)/bin
+	cp LICENSE $(PKG_BASE)
+	cp $(TARGET_BIN) $(PKG_BASE)/bin
+	cd $(PKG_ROOT) && \
+		tar -czvf $(PKG) $(PKG_NAME)
+	rm -rf $(PKG_BASE)
+	cd $(PKG_ROOT) && \
+		($(SHASUM) $(PKG) >$(PACKAGE_VERSION).txt) && \
+		cp $(PACKAGE_VERSION).txt latest.txt
+
 .PHONY: fetch
 fetch: Cargo.lock
 	$(CARGO) fetch --locked
@@ -53,14 +67,3 @@ clean-package:
 
 .PHONY: all
 all: build test
-
-$(TARGET_BIN): fetch
-	$(CARGO_BUILD)
-
-$(PKG_ROOT)/$(PKG): $(TARGET_BIN)
-	mkdir -p $(PKG_BASE)/bin
-	cp LICENSE $(PKG_BASE)
-	cp $(TARGET_BIN) $(PKG_BASE)/bin
-	cd $(PKG_ROOT) && tar -czvf $(PKG) $(PKG_NAME)
-	rm -rf $(PKG_BASE)
-	cd $(PKG_ROOT) && ($(SHASUM) $(PKG) >latest.txt)
