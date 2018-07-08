@@ -8,7 +8,7 @@ cache: cargo
 stages:
   - test
   - name: publish
-    if: branch = master AND type != pull_request
+    #if: branch = master AND type != pull_request
 
 matrix:
   include:
@@ -40,3 +40,8 @@ matrix:
 notifications:
   email:
     on_success: never
+
+# Only build pull requests and master.
+branches:
+  only:
+    - master
