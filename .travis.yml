@@ -9,7 +9,7 @@ stages:
   - name: test
     if: type = pull_request
   - name: publish
-    if: type != pull+request
+    if: type != pull_request
     #if: branch = master AND type != pull_request
 
 jobs:
