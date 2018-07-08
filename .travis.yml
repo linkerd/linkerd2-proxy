@@ -9,17 +9,16 @@ branches:
     - master
 
 stages:
-  - name: build
+  - name: test
 
 jobs:
   include:
-    - stage: build
+    - stage: test
       language: rust
       rust: stable
       cache: cargo
       script:
-        cargo test --release --locked --no-default-features
-        cargo build --release --locked
+        - cargo test --release --locked --no-default-features
 
     - language: rust
       # Run proxy benchmarks in development mode. Requires nightly.
