@@ -9,9 +9,7 @@ stages:
   - build
   - test
   - name: bench
-    if: rust =~ ^nightly
   - name: publish
-    if: branch = master AND rust =~ ^nightly
 
 rust:
   - stable
@@ -36,10 +34,12 @@ jobs:
     - stage: test
       script: cargo test --frozen --release --no-default-features
 
-    - stage: bench
+    - if: rust =~ ^nightly
+      stage: bench
       script: cargo bench --frozen --release --no-default-features
 
-    - stage: publish
+    - if: branch = master AND rust =~ ^nightly
+      stage: publish
       script: shasum -a 256 target/release/linked2-proxy
 
 notifications:
