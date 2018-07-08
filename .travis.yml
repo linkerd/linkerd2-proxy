@@ -19,7 +19,7 @@ jobs:
       language: rust
       rust: stable
       cache: cargo
-      script: cargo fetch --locked --no-default-features
+      script: cargo fetch --locked
 
     - stage: build
       language: rust
