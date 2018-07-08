@@ -17,8 +17,11 @@ jobs:
       language: rust
       rust: stable
       cache: cargo
+      install:
+        - cargo fetch --locked
       script:
-        - cargo test --release --locked --no-default-features
+        - cargo build --release --frozen --no-default-features
+        - cargo test --release --frozen --no-default-features
 
     - language: rust
       # Run proxy benchmarks in development mode. Requires nightly.
