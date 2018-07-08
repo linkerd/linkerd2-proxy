@@ -12,11 +12,11 @@ stages:
 
 jobs:
   include:
-    - rust: nightly-2018-05-26
-      script:
-        - cargo fetch --locked
-        - cargo build --frozen --no-default-features --benches --verbose
-        - cargo test  --frozen --no-default-features --benches
+    # - rust: nightly-2018-05-26
+    #   script:
+    #     - cargo fetch --locked
+    #     - cargo build --frozen --no-default-features --benches --verbose
+    #     - cargo test  --frozen --no-default-features --benches
 
     # Build the proxy in release mode so that tests are run against the same
     # binaries that will be used in production.
@@ -26,12 +26,12 @@ jobs:
     # The first build command produces a target/release/linkerd2-proxy that may
     # be published later. The second build command compiles tests and does NOT overwrite
     - stage: test
-      rust: stable
       script:
         - cargo fetch --locked
         - cargo build --frozen --release --verbose
         - ls -l target/release/linkerd2-proxy && shasum -a 256 target/release/linkerd2-proxy
         - cargo build --frozen --release --no-default-features --tests --verbose
+        - ls -l target/release/linkerd2-proxy && shasum -a 256 target/release/linkerd2-proxy
         - cargo test  --frozen --release --no-default-features
     - stage: publish
       script:
