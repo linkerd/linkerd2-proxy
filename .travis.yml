@@ -2,42 +2,38 @@
 dist: trusty
 sudo: false
 
-# We do not test pushes to branches, since they are redundant with the
-# pull_request build for each branch.
-branches:
-  only:
-    - master
+language: rust
+cache: cargo
+rust:
+  - stable
+  - nightly-2018-05-26  # Arbitrary ~recent known-good nightly
 
 stages:
-  - fetch
   - build
   - test
 
 jobs:
   include:
-    - stage: fetch
-      language: rust
-      rust: stable
-      cache: cargo
-      script: cargo fetch --locked
-
     - stage: build
-      language: rust
-      rust: stable
-      cache: cargo
-      script: cargo build --release --frozen --no-default-features --verbose
+      install: cargo fetch --locked
+      # Verbose is enabled so that the build doesn't timeout.
+      script:
+        - cargo build --release --frozen --no-default-features --verbose
+        - cargo build --release --frozen --no-default-features --verbose --tests
 
     - stage: test
-      language: rust
-      rust: stable
-      cache: cargo
+      if: rust = stable
       script: cargo test --release --frozen --no-default-features
 
-    - rust: nightly-2018-05-26
-      language: rust
-      cache: cargo
+    - if: rust != stable
       script: cargo test --benches --frozen --no-default-features
 
 notifications:
   email:
     on_success: never
+
+# Don't test pushes to branches, since they are redundant with the
+# pull_request build for each branch.
+branches:
+  only:
+    - master
