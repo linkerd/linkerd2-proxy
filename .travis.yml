@@ -11,8 +11,12 @@ rust:
 
 stages:
   - build
-  - test
-  - publish
+  - name: test
+    if: rust = stable
+  - name: benches
+    if: rust =~ /^nightly/
+  - name: publish
+    if: rust = stable # AND branch = master
 
 jobs:
   include:
@@ -30,14 +34,15 @@ jobs:
         - cargo build --frozen --release --verbose --tests --no-default-features
 
     - stage: test
-      if: rust = stable
-      script:
-        - cargo test --frozen --release --no-default-features
+      script: cargo test --frozen --release --no-default-features
 
-    # Benches can only be run on nightly.
-    - stage: test
-      if: rust = nightly-2018-05-26
+    - stage: benches
       script: cargo test --frozen --release --no-default-features --benches
+
+    - stage: publish
+      if: rust = nightly-2018-05-26
+      script: shasum -a 256 target/release/linked2-proxy
+
 
 # Don't test pushes to branches, since they are redundant with the
 # pull_request build for each branch.
