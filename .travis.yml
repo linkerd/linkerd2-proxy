@@ -27,8 +27,11 @@ jobs:
     - rust: stable
       stage: publish
       script:
-        - CARGO_RELEASE=1 CARGO_VERBOSE=1 make package
-        - (cd target/release/package && (ls *.tar.gz >latest))
+        - export CARGO_RELEASE=1 CARGO_VERBOSE=1
+        - rm -rf target/release/package
+        - make package
+        - make test
+        - echo "linkerd2-proxy-$(git rev-parse --short HEAD).tar.gz" >target/release/package/latest.txt
       deploy:
         on:
           repo: linkerd/linkerd2-proxy
