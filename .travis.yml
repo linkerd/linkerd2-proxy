@@ -14,11 +14,9 @@ jobs:
   include:
 
     # Verbose is enabled so that the build doesn't timeout.
-    - script: export CARGO_VERBOSE=1
-
     - rust: stable
       stage: test
-      script: make test
+      script: CARGO_VERBOSE=1 make test
 
     # If the tests passed, build a release binary.
     #
@@ -26,7 +24,7 @@ jobs:
     # to the build.
     - rust: stable
       stage: publish
-      script: CARGO_RELEASE=1 make package
+      script: CARGO_RELEASE=1 CARGO_VERBOSE=1 make package
       deploy:
         on:
           repo: linkerd/linkerd2-proxy
@@ -45,7 +43,7 @@ jobs:
     - rust: nightly-2018-05-26
       cache: cargo
       stage: test
-      script: make test-benches
+      script: CARGO_VERBOSE=1 make test-benches
 
 notifications:
   email:
