@@ -1,0 +1,10 @@
+.travis.yml
+.git
+**/.idea
+**/cmake-*
+**/CMakeLists.txt
+*.iml
+**/Dockerfile*
+Dockerfile*
+**/target
+target
