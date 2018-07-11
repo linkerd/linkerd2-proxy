@@ -40,6 +40,9 @@ following targets:
 * `make package` -- Builds a tarball at
   `target/release/linkerd2-proxy-${PACKAGE_VERSION}.tar.gz`. If
   `PACKAGE_VERSION` is not set in the environment, the local git SHA is used.
+* `make docker` -- Builds a Docker container image that can be used for testing.
+   If the `DOCKER_TAG` environment variable is set, the image is given this
+   name. Otherwise, the image is not named.
 
 ### Cargo
 
