@@ -14,16 +14,17 @@ This proxy's features include:
 * Transparent, zero-config proxying for HTTP, HTTP/2, and arbitrary TCP protocols.
 * Automatic [Prometheus][prom] metrics export for HTTP and TCP traffic;
 * Transparent, zero-config WebSocket proxying;
-* Opportunistic TLS;
-* [P2C + Peak-EWMA][loadbalancing] HTTP load balancing; and
+* Automatic, latency-aware, layer-7 [load balancing][loadbalancing];
+* Automatic layer-4 load balancing for non-HTTP traffic;
+* Automatic TLS (experimental);
 * An on-demand diagnostic `tap` API.
 
 This proxy is primarily intended to run on Linux in containerized
 environments like [Kubernetes][k8s], though it may also work on other
-Unix-like systems (like MacOS).
+Unix-like systems (like macOS).
 
-The proxy supports service discovery via the [`Destination` gRPC
-service][linkerd2-proxy-api] and DNS.
+The proxy supports service discovery via DNS and the [linkerd2
+`Destination` gRPC API][linkerd2-proxy-api].
 
 The Linkerd project is hosted by the Cloud Native Computing Foundation
 ([CNCF][cncf]).
