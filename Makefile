@@ -29,6 +29,12 @@ ifndef TEST_FLAKEY
 endif
 CARGO_TEST = $(CARGO) test --frozen $(RELEASE) $(TEST_FLAGS)
 
+DOCKER = docker
+DOCKER_BUILD = docker build
+ifdef DOCKER_TAG
+	DOCKER_BUILD = docker build -t $(DOCKER_TAG)
+endif
+
 $(TARGET_BIN): fetch
 	$(CARGO_BUILD)
 
@@ -63,6 +69,10 @@ package: $(PKG_ROOT)/$(PKG)
 .PHONY: clean-package
 clean-package:
 	rm -rf $(PKG_ROOT)
+
+.PHONY: docker
+docker: Dockerfile Cargo.lock
+	$(DOCKER_BUILD) .
 
 .PHONY: all
 all: build test
