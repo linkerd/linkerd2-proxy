@@ -16,7 +16,7 @@ This proxy's features include:
 * Transparent, zero-config WebSocket proxying;
 * Opportunistic TLS;
 * [P2C + Peak-EWMA][loadbalancing] HTTP load balancing; and
-* an on-demand diagnostic `tap` API.
+* An on-demand diagnostic `tap` API.
 
 This proxy is primarily intended to run on Linux in containerized
 environments like [Kubernetes][k8s], though it may also work on other
