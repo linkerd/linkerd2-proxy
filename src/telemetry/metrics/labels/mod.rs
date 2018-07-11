@@ -9,6 +9,7 @@ use std::{
 use http;
 
 use ctx;
+use conditional::Conditional;
 use telemetry::event;
 use transport::tls;
 
@@ -423,7 +424,11 @@ impl fmt::Display for TransportCloseLabels {
 
 impl fmt::Display for TlsStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "tls=\"{}\"", self.0)
+        match self.0 {
+            Conditional::None(tls::ReasonForNoTls::NoIdentity(why)) =>
+                write!(f, "tls=\"no_identity\",no_identity=\"{}\"", why),
+            status => write!(f, "tls=\"{}\"", status),
+        }
     }
 }
 
@@ -484,6 +489,27 @@ impl fmt::Display for TlsConfigLabels {
                 f.pad("status=\"invalid_end_entity_cert\""),
             TlsConfigLabels::InvalidTrustAnchors =>
                 f.pad("status=\"invalid_trust_anchors\""),
+        }
+    }
+}
+
+impl fmt::Display for tls::ReasonForNoIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            tls::ReasonForNoIdentity::NotHttp => f.pad("not_http"),
+            tls::ReasonForNoIdentity::NoAuthorityInHttpRequest =>
+                f.pad("no_authority_in_http_request"),
+            tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery =>
+                f.pad("not_provided_by_service_discovery"),
+            tls::ReasonForNoIdentity::Loopback => f.pad("loopback"),
+            tls::ReasonForNoIdentity::NotConfigured => f.pad("not_configured"),
+            // Note: the following reasons will never show up in metrics labels
+            // currently, since we don't gather metrics from the tap and metrics
+            // servers.
+            tls::ReasonForNoIdentity::NotImplementedForTap =>
+                f.pad("not_implemented_for_tap"),
+            tls::ReasonForNoIdentity::NotImplementedForMetrics =>
+                f.pad("not_implemented_for_metrics"),
         }
     }
 }
