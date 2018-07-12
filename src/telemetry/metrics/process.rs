@@ -77,7 +77,7 @@ mod imp {
     impl Sensor {
         pub fn new() -> io::Result<Sensor> {
             let page_size = match unsafe { libc::sysconf(libc::_SC_PAGESIZE) } {
-                e if e < 0 => {
+                e if e <= 0 => {
                     let error = io::Error::last_os_error();
                     error!("error getting page size: {:?}", error);
                     return Err(error);
@@ -85,7 +85,7 @@ mod imp {
                 page_size => page_size as u64,
             };
             let clock_ticks_per_sec = match unsafe { libc::sysconf(libc::_SC_CLK_TCK) } {
-                e if e < 0 => {
+                e if e <= 0 => {
                     let error = io::Error::last_os_error();
                     error!("error getting clock ticks per second: {:?}", error);
                     return Err(error);
