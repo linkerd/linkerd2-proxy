@@ -136,13 +136,13 @@ fn metrics_endpoint_outbound_request_count() {
 
     // prior to seeing any requests, request count should be empty.
     assert!(!metrics.get("/metrics")
-        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\"}"));
+        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}"));
 
     info!("client.get(/)");
     assert_eq!(client.get("/"), "hello");
 
     // after seeing a request, the request count should be 1.
-    assert_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\"} 1");
+    assert_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
 
 }
 
@@ -163,11 +163,21 @@ mod response_classification {
     ];
 
 
-    fn expected_metric(status: &http::StatusCode, direction: &str, tls: &str) -> String {
+    fn expected_metric(
+        status: &http::StatusCode,
+        direction: &str,
+        tls: &str,
+        no_tls_reason: Option<&str>
+    ) -> String {
         format!(
-            "response_total{{authority=\"tele.test.svc.cluster.local\",direction=\"{}\",tls=\"{}\",classification=\"{}\",status_code=\"{}\"}} 1",
+            "response_total{{authority=\"tele.test.svc.cluster.local\",direction=\"{}\",tls=\"{}\",{}classification=\"{}\",status_code=\"{}\"}} 1",
             direction,
             tls,
+            if let Some(reason) = no_tls_reason {
+                format!("no_tls_reason=\"{}\",", reason)
+            } else {
+                String::new()
+            },
             if status.is_server_error() { "failure" } else { "success" },
             status.as_u16(),
         )
@@ -221,7 +231,10 @@ mod response_classification {
             for status in &STATUSES[0..i] {
                 // assert that the current status code is incremented, *and* that
                 // all previous requests are *not* incremented.
-                assert_contains!(metrics.get("/metrics"), &expected_metric(status, "inbound", "disabled"))
+                assert_contains!(
+                    metrics.get("/metrics"),
+                    &expected_metric(status, "inbound", "disabled", None)
+                )
             }
         }
     }
@@ -243,7 +256,15 @@ mod response_classification {
             for status in &STATUSES[0..i] {
                 // assert that the current status code is incremented, *and* that
                 // all previous requests are *not* incremented.
-                assert_contains!(metrics.get("/metrics"), &expected_metric(status, "outbound", "no_identity"))
+                assert_contains!(
+                    metrics.get("/metrics"),
+                    &expected_metric(
+                        status,
+                        "outbound",
+                        "no_identity",
+                        Some("not_provided_by_service_discovery")
+                    )
+                )
             }
         }
     }
@@ -349,10 +370,10 @@ fn metrics_endpoint_outbound_response_latency() {
     // assert the >=1000ms bucket is incremented by our request with 500ms
     // extra latency.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\",le=\"1000\"} 1");
+        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\",le=\"1000\"} 1");
     // the histogram's count should be 1.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
     // TODO: we're not going to make any assertions about the
     // response_latency_ms_sum stat, since its granularity depends on the actual
     // observed latencies, which may vary a bit. we could make more reliable
@@ -364,41 +385,41 @@ fn metrics_endpoint_outbound_response_latency() {
 
     // request with 40ms extra latency should fall into the 50ms bucket.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\",le=\"50\"} 1");
+        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\",le=\"50\"} 1");
     // 1000ms bucket should be incremented as well, since it counts *all*
     // bservations less than or equal to 1000ms, even if they also increment
     // other buckets.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\",le=\"1000\"} 2");
+        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\",le=\"1000\"} 2");
     // the histogram's total count should be 2.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 2");
+        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 2");
 
     info!("client.get(/hi)");
     assert_eq!(client.get("/hi"), "good morning");
 
     // request with 40ms extra latency should fall into the 50ms bucket.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\",le=\"50\"} 2");
+        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\",le=\"50\"} 2");
     // 1000ms bucket should be incremented as well.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\",le=\"1000\"} 3");
+        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\",le=\"1000\"} 3");
     // the histogram's total count should be 3.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 3");
+        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 3");
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey"), "hello");
 
     // 50ms bucket should be un-changed by the request with 500ms latency.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\",le=\"50\"} 2");
+        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\",le=\"50\"} 2");
     // 1000ms bucket should be incremented.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\",le=\"1000\"} 4");
+        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\",le=\"1000\"} 4");
     // the histogram's total count should be 4.
     assert_contains!(metrics.get("/metrics"),
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 4");
+        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 4");
 }
 
 // Tests for destination labels provided by control plane service discovery.
@@ -500,11 +521,11 @@ mod outbound_dst_labels {
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\"} 1");
+            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
     }
 
     // Ignore this test on CI, as it may fail due to the reduced concurrency
@@ -532,11 +553,11 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the first request should be labeled with `dst_addr_label="foo"`
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\"} 1");
+            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
 
         {
             let mut alabels = HashMap::new();
@@ -550,18 +571,18 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the second request should increment stats labeled with `dst_addr_label="bar"`
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\"} 1");
+            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         // stats recorded from the first request should still be present.
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\"} 1");
+            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
     }
 
     // Ignore this test on CI, as it may fail due to the reduced concurrency
@@ -587,11 +608,11 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the first request should be labeled with `dst_addr_label="foo"`
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\"} 1");
+            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
 
         {
             let alabels = HashMap::new();
@@ -604,18 +625,18 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the second request should increment stats labeled with `dst_addr_label="bar"`
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\"} 1");
+            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         // stats recorded from the first request should still be present.
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\"} 1");
+            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",classification=\"success\",status_code=\"200\"} 1");
     }
 }
 
@@ -713,7 +734,7 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
         assert_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\"} 1");
+            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
 
         // create a new client to force a new connection
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
@@ -722,7 +743,7 @@ mod transport {
         assert_eq!(client.get("/"), "hello");
         // server connection should be pooled
         assert_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\"} 1");
+            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
     }
 
     #[test]
@@ -766,7 +787,7 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
         assert_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\"} 1");
+            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
 
         // create a new client to force a new connection
         let client2 = client::new(proxy.outbound, "tele.test.svc.cluster.local");
@@ -775,7 +796,7 @@ mod transport {
         assert_eq!(client2.get("/"), "hello");
         // server connection should be pooled
         assert_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\"} 1");
+            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
     }
 
     #[test]
@@ -790,7 +811,7 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
         assert_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\"} 1");
+            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"} 1");
     }
 
     #[test]
@@ -842,7 +863,7 @@ mod transport {
         assert_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"src\",tls=\"disabled\",classification=\"success\"} 1");
         assert_contains!(out,
-            "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",classification=\"success\"} 1");
+            "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"success\"} 1");
 
         let tcp_client = client.connect();
 
@@ -852,14 +873,14 @@ mod transport {
         assert_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"src\",tls=\"disabled\",classification=\"success\"} 1");
         assert_contains!(out,
-            "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",classification=\"success\"} 1");
+            "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"success\"} 1");
 
         drop(tcp_client);
         let out = metrics.get("/metrics");
         assert_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"src\",tls=\"disabled\",classification=\"success\"} 2");
         assert_contains!(out,
-            "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",classification=\"success\"} 2");
+            "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"success\"} 2");
     }
 
     #[test]
@@ -873,7 +894,7 @@ mod transport {
             TcpFixture::BYE_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_write_bytes_total{{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\"}} {}",
+            "tcp_write_bytes_total{{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
             TcpFixture::HELLO_MSG.len()
         );
 
@@ -899,7 +920,7 @@ mod transport {
             TcpFixture::HELLO_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_read_bytes_total{{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\"}} {}",
+            "tcp_read_bytes_total{{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
             TcpFixture::BYE_MSG.len()
         );
 
@@ -925,7 +946,7 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
         assert_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\"} 1");
+            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"} 1");
     }
 
     #[test]
@@ -976,7 +997,7 @@ mod transport {
         assert_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\",classification=\"success\"} 1");
         assert_contains!(out,
-            "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",classification=\"success\"} 1");
+            "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"success\"} 1");
 
         let tcp_client = client.connect();
 
@@ -986,14 +1007,14 @@ mod transport {
         assert_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\",classification=\"success\"} 1");
         assert_contains!(out,
-            "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",classification=\"success\"} 1");
+            "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"success\"} 1");
 
         drop(tcp_client);
         let out = metrics.get("/metrics");
         assert_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\",classification=\"success\"} 2");
         assert_contains!(out,
-            "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",classification=\"success\"} 2");
+            "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"success\"} 2");
     }
 
     #[test]
@@ -1007,7 +1028,7 @@ mod transport {
             TcpFixture::BYE_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_write_bytes_total{{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\"}} {}",
+            "tcp_write_bytes_total{{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
             TcpFixture::HELLO_MSG.len()
         );
 
@@ -1033,7 +1054,7 @@ mod transport {
             TcpFixture::HELLO_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_read_bytes_total{{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\"}} {}",
+            "tcp_read_bytes_total{{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
             TcpFixture::BYE_MSG.len()
         );
 
