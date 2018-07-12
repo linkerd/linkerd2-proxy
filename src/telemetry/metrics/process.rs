@@ -70,7 +70,8 @@ mod imp {
 
     #[derive(Debug)]
     pub struct Sensor {
-        page_size: usize,
+        page_size: u64,
+        clock_ticks_per_sec: u64,
     }
 
     impl Sensor {
@@ -81,10 +82,19 @@ mod imp {
                     error!("error getting page size: {:?}", error);
                     return Err(error);
                 },
-                page_size => page_size as usize,
+                page_size => page_size as u64,
+            };
+            let clock_ticks_per_sec = match unsafe { libc::sysconf(libc::_SC_CLK_TCK) } {
+                e if e < 0 => {
+                    let error = io::Error::last_os_error();
+                    error!("error getting clock ticks per second: {:?}", error);
+                    return Err(error);
+                },
+                ticks => ticks as u64,
             };
             Ok(Sensor {
                 page_size,
+                clock_ticks_per_sec,
             })
         }
 
@@ -92,9 +102,10 @@ mod imp {
             // XXX potentially blocking call
             let stat = pid::stat_self()?;
 
-            let cpu_seconds_total = Counter::from((stat.utime + stat.stime) as u64);
+            let clock_ticks = stat.utime as u64 + stat.stime as u64;
+            let cpu_seconds_total = Counter::from(clock_ticks / self.clock_ticks_per_sec);
             let virtual_memory_bytes = Gauge::from(stat.vsize as u64);
-            let resident_memory_bytes = Gauge::from((stat.rss * self.page_size) as u64);
+            let resident_memory_bytes = Gauge::from(stat.rss as u64 * self.page_size);
 
             let metrics = ProcessMetrics {
                 cpu_seconds_total,
