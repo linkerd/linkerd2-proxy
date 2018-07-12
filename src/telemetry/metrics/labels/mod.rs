@@ -503,9 +503,6 @@ impl fmt::Display for tls::ReasonForNoIdentity {
                 f.pad("not_provided_by_service_discovery"),
             tls::ReasonForNoIdentity::Loopback => f.pad("loopback"),
             tls::ReasonForNoIdentity::NotConfigured => f.pad("not_configured"),
-            // Note: the following reasons will never show up in metrics labels
-            // currently, since we don't gather metrics from the tap and metrics
-            // servers.
             tls::ReasonForNoIdentity::NotImplementedForTap =>
                 f.pad("not_implemented_for_tap"),
             tls::ReasonForNoIdentity::NotImplementedForMetrics =>
