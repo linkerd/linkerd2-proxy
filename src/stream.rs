@@ -4,9 +4,6 @@ use futures::{Poll, Stream};
 ///
 /// Combines two different `Stream`s yielding the same item and error
 /// types into a single type.
-///
-// TODO: This is probably useful outside of Conduit as well. Perhaps it
-//       deserves to be in a library...
 #[derive(Clone, Debug)]
 pub enum Either<A, B> {
     A(A),

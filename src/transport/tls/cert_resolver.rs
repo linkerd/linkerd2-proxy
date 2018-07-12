@@ -88,7 +88,7 @@ impl rustls::ResolvesClientCert for CertResolver {
     fn resolve(&self, _acceptable_issuers: &[&[u8]], sigschemes: &[rustls::SignatureScheme])
         -> Option<rustls::sign::CertifiedKey>
     {
-        // Conduit's server side doesn't send the list of acceptable issuers so
+        // The proxy's server-side doesn't send the list of acceptable issuers so
         // don't bother looking at `_acceptable_issuers`.
         self.resolve_(sigschemes)
     }

@@ -510,7 +510,7 @@ mod outbound_dst_labels {
     // Ignore this test on CI, as it may fail due to the reduced concurrency
     // on CI containers causing the proxy to see both label updates from
     // the mock controller before the first request has finished.
-    // See https://github.com/runconduit/conduit/issues/751
+    // See https://github.com/linkerd/linkerd2/issues/751
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_addr_labels() {
@@ -567,7 +567,7 @@ mod outbound_dst_labels {
     // Ignore this test on CI, as it may fail due to the reduced concurrency
     // on CI containers causing the proxy to see both label updates from
     // the mock controller before the first request has finished.
-    // See https://github.com/runconduit/conduit/issues/751
+    // See https://github.com/linkerd/linkerd2/issues/751
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_set_labels() {
@@ -621,7 +621,7 @@ mod outbound_dst_labels {
 
 #[test]
 fn metrics_have_no_double_commas() {
-    // Test for regressions to runconduit/conduit#600.
+    // Test for regressions to linkerd/linkerd2#600.
     let _ = env_logger::try_init();
 
     info!("running test server");
@@ -824,7 +824,7 @@ mod transport {
             "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",classification=\"success\"} 2");
     }
 
-    // https://github.com/runconduit/conduit/issues/831
+    // https://github.com/linkerd/linkerd2/issues/831
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_duration() {
@@ -1106,7 +1106,7 @@ mod transport {
     }
 }
 
-// https://github.com/runconduit/conduit/issues/613
+// https://github.com/linkerd/linkerd2/issues/613
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn metrics_compression() {

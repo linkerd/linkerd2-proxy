@@ -63,8 +63,8 @@ impl fmt::Display for ResolveOneCtx {
 
 impl Resolver {
 
-    /// Construct a new `Resolver` from the system configuration and Conduit's
-    /// environment variables.
+    /// Construct a new `Resolver` from the system configuration and the
+    /// proxy's environment variables.
     ///
     /// # Returns
     ///

@@ -3,7 +3,7 @@
 //! # A note on label formatting
 //!
 //! Prometheus labels are represented as a comma-separated list of values
-//! Since the Conduit proxy labels its metrics with a fixed set of labels
+//! Since the proxy labels its metrics with a fixed set of labels
 //! which we know in advance, we represent these labels using a number of
 //! `struct`s, all of which implement `fmt::Display`. Some of the label
 //! `struct`s contain other structs which represent a subset of the labels
