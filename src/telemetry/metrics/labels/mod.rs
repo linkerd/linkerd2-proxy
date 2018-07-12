@@ -426,7 +426,7 @@ impl fmt::Display for TlsStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             Conditional::None(tls::ReasonForNoTls::NoIdentity(why)) =>
-                write!(f, "tls=\"no_identity\",no_identity=\"{}\"", why),
+                write!(f, "tls=\"no_identity\",tls_error_reason=\"{}\"", why),
             status => write!(f, "tls=\"{}\"", status),
         }
     }
