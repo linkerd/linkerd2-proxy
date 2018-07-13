@@ -510,7 +510,7 @@ mod outbound_dst_labels {
     // Ignore this test on CI, as it may fail due to the reduced concurrency
     // on CI containers causing the proxy to see both label updates from
     // the mock controller before the first request has finished.
-    // See https://github.com/linkerd/linkerd2/issues/751
+    // See linkerd/linkerd2#751
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_addr_labels() {
@@ -567,7 +567,7 @@ mod outbound_dst_labels {
     // Ignore this test on CI, as it may fail due to the reduced concurrency
     // on CI containers causing the proxy to see both label updates from
     // the mock controller before the first request has finished.
-    // See https://github.com/linkerd/linkerd2/issues/751
+    // See linkerd/linkerd2#751
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_set_labels() {
@@ -824,7 +824,7 @@ mod transport {
             "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",classification=\"success\"} 2");
     }
 
-    // https://github.com/linkerd/linkerd2/issues/831
+    // linkerd/linkerd2#831
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_duration() {
@@ -1106,7 +1106,7 @@ mod transport {
     }
 }
 
-// https://github.com/linkerd/linkerd2/issues/613
+// linkerd/linkerd2#613
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn metrics_compression() {

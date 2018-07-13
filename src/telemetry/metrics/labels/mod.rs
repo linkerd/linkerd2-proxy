@@ -54,7 +54,7 @@ pub struct RequestLabels {
     direction: Direction,
 
     // Additional labels identifying the destination service of an outbound
-    // request, provided by the control plane's service discovery.
+    // request, provided by service discovery.
     outbound_labels: Option<DstLabels>,
 
     /// The value of the `:authority` (HTTP/2) or `Host` (HTTP/1.1) header of
