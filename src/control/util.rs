@@ -21,13 +21,30 @@ pub(super) struct Backoff<S> {
     wait_dur: Duration,
 }
 
-impl<S> Backoff<S> {
+impl<S> Backoff<S>
+where
+    S: Service,
+{
     pub(super) fn new(inner: S, wait_dur: Duration) -> Self {
         Backoff {
             inner,
             timer: Delay::new(Instant::now() + wait_dur),
             waiting: false,
             wait_dur,
+        }
+    }
+
+    fn poll_timer(&mut self) -> Poll<(), S::Error> {
+        debug_assert!(self.waiting, "poll_timer expects to be waiting");
+
+        match self.timer.poll().expect("timer shouldn't error") {
+            Async::Ready(()) => {
+                self.waiting = false;
+                Ok(Async::Ready(()))
+            }
+            Async::NotReady => {
+                Ok(Async::NotReady)
+            }
         }
     }
 }
@@ -44,11 +61,7 @@ where
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         if self.waiting {
-            if self.timer.poll().unwrap().is_not_ready() {
-                return Ok(Async::NotReady);
-            }
-
-            self.waiting = false;
+            try_ready!(self.poll_timer());
         }
 
         match self.inner.poll_ready() {
@@ -56,7 +69,7 @@ where
                 trace!("backoff: controller error, waiting {:?}", self.wait_dur);
                 self.waiting = true;
                 self.timer.reset(Instant::now() + self.wait_dur);
-                Ok(Async::NotReady)
+                self.poll_timer()
             }
             ok => ok,
         }

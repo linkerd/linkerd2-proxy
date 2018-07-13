@@ -255,6 +255,7 @@ where
             config.namespaces.clone(),
             control_host_and_port,
             controller_tls,
+            config.control_backoff_delay,
         );
 
         let (drain_tx, drain_rx) = drain::channel();

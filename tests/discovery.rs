@@ -153,6 +153,47 @@ macro_rules! generate_tests {
             assert_eq!(client.get("/"), "hello");
             assert_eq!(client.get("/bye"), "bye");
         }
+
+        #[test]
+        fn outbound_error_reconnects_after_backoff() {
+            let _ = env_logger::try_init();
+
+            let srv = $make_server()
+                .route("/", "hello")
+                .run();
+
+            // Used to delay `listen` in the server, to force connection refused errors.
+            let (tx, rx) = oneshot::channel();
+
+            let ctrl = controller::new();
+
+            let dst_tx = ctrl.destination_tx("disco.test.svc.cluster.local");
+            dst_tx.send_addr(srv.addr);
+            // but don't drop, to not trigger stream closing reconnects
+
+            let mut env = config::TestEnv::new();
+
+            // set the backoff timeout to 100 ms.
+            env.put(config::ENV_CONTROL_BACKOFF_DELAY, "100ms".to_owned());
+
+            let proxy = proxy::new()
+                .controller(ctrl.delay_listen(rx.map_err(|_| ())))
+                // don't set srv as outbound(), so that SO_ORIGINAL_DST isn't
+                // used as a backup
+                .run_with_test_env(env);
+
+            // Allow the control client to notice a connection error
+            ::std::thread::sleep(Duration::from_millis(500));
+
+            // Allow our controller to start accepting connections,
+            // and then wait a little bit so the client tries again.
+            drop(tx);
+            ::std::thread::sleep(Duration::from_millis(500));
+
+            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+
+            assert_eq!(client.get("/"), "hello");
+        }
     }
 }
 

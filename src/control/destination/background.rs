@@ -91,6 +91,7 @@ struct DestinationSet<T: HttpService<ResponseBody = RecvBody>> {
 
 /// The state needed to bind a new controller client stack.
 struct BindClient {
+    backoff_delay: Duration,
     identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
     host_and_port: HostAndPort,
     dns_resolver: dns::Resolver,
@@ -103,7 +104,8 @@ pub(super) fn task(
     dns_resolver: dns::Resolver,
     namespaces: Namespaces,
     host_and_port: Option<HostAndPort>,
-    controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>
+    controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
+    control_backoff_delay: Duration,
 ) -> impl Future<Item = (), Error = ()>
 {
     // Build up the Controller Client Stack
@@ -124,6 +126,7 @@ pub(super) fn task(
             identity,
             &dns_resolver,
             host_and_port,
+            control_backoff_delay,
         );
         WatchService::new(watch, bind_client)
     });
@@ -600,9 +603,11 @@ impl BindClient {
         identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
         dns_resolver: &dns::Resolver,
         host_and_port: HostAndPort,
+        backoff_delay: Duration,
     ) -> Self {
         let log_ctx = ::logging::admin().client("control", host_and_port.clone());
         Self {
+            backoff_delay,
             identity,
             dns_resolver: dns_resolver.clone(),
             host_and_port,
@@ -642,7 +647,7 @@ impl Rebind<tls::ConditionalClientConfig> for BindClient {
 
         let reconnect = Reconnect::new(h2_client);
         let log_errors = LogErrors::new(reconnect);
-        let backoff = Backoff::new(log_errors, Duration::from_secs(5));
+        let backoff = Backoff::new(log_errors, self.backoff_delay);
         // TODO: Use AddOrigin in tower-http
         AddOrigin::new(scheme, authority, backoff)
     }

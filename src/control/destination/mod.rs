@@ -26,6 +26,7 @@
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 use tls;
 
 use futures::{
@@ -145,6 +146,7 @@ pub fn new(
     namespaces: Namespaces,
     host_and_port: Option<HostAndPort>,
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
+    control_backoff_delay: Duration,
 ) -> (Resolver, impl Future<Item = (), Error = ()>) {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
@@ -154,6 +156,7 @@ pub fn new(
         namespaces,
         host_and_port,
         controller_tls,
+        control_backoff_delay,
     );
     (disco, bg)
 }

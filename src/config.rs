@@ -69,6 +69,10 @@ pub struct Config {
     /// experimental & testing purposes.
     pub control_host_and_port: Option<HostAndPort>,
 
+    /// Time to wait when encountering errors talking to control plane before
+    /// a new connection.
+    pub control_backoff_delay: Duration,
+
     /// Event queue capacity.
     pub event_buffer_capacity: usize,
 
@@ -195,6 +199,7 @@ pub const ENV_POD_NAMESPACE: &str = "LINKERD2_PROXY_POD_NAMESPACE";
 pub const VAR_POD_NAMESPACE: &str = "$LINKERD2_PROXY_POD_NAMESPACE";
 
 pub const ENV_CONTROL_URL: &str = "LINKERD2_PROXY_CONTROL_URL";
+pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
 
 /// Configures a minimum value for the TTL of DNS lookups.
@@ -216,6 +221,7 @@ const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_PRIVATE_CONNECT_TIMEOUT: Duration = Duration::from_millis(20);
 const DEFAULT_PUBLIC_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const DEFAULT_BIND_TIMEOUT: Duration = Duration::from_secs(10); // same as in Linkerd
+const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(5);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 /// It's assumed that a typical proxy can serve inbound traffic for up to 100 pod-local
@@ -293,6 +299,9 @@ impl<'a> TryFrom<&'a Strings> for Config {
         // There is no default controller URL because a default would make it
         // too easy to connect to the wrong controller, which would be dangerous.
         let control_host_and_port = parse(strings, ENV_CONTROL_URL, parse_url);
+
+        let control_backoff_delay = parse(strings, ENV_CONTROL_BACKOFF_DELAY, parse_duration)?
+            .unwrap_or(DEFAULT_CONTROL_BACKOFF_DELAY);
 
         let namespaces = Namespaces {
             pod: pod_namespace?,
@@ -409,6 +418,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
                 .unwrap_or(DEFAULT_RESOLV_CONF.into())
                 .into(),
             control_host_and_port,
+            control_backoff_delay,
 
             event_buffer_capacity: event_buffer_capacity?.unwrap_or(DEFAULT_EVENT_BUFFER_CAPACITY),
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
