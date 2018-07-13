@@ -9,7 +9,7 @@ use tokio::executor::current_thread::TaskExecutor;
 use super::event::Event;
 use super::metrics;
 use super::tap::Taps;
-use connection;
+use transport::BoundPort;
 use ctx;
 use task;
 use conditional::Conditional;
@@ -94,7 +94,7 @@ impl Control {
         }
     }
 
-    pub fn serve_metrics(&self, bound_port: connection::BoundPort)
+    pub fn serve_metrics(&self, bound_port: BoundPort)
         -> impl Future<Item = (), Error = io::Error>
     {
         use hyper;

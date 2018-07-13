@@ -1,3 +1,5 @@
+/// Tokio-level (not Tower-level) proxy-specific networking.
+
 use bytes::{Buf, BytesMut};
 use futures::{*, future::Either};
 use std;

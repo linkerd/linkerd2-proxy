@@ -6,7 +6,7 @@ use std::time::Instant;
 use tokio_connect;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use connection::{self, Peek};
+use transport::{Connection, Peek};
 use ctx;
 use telemetry::event;
 
@@ -193,7 +193,7 @@ impl<T: AsyncRead + AsyncWrite + Peek> Peek for Transport<T> {
 
 impl<C> Connect<C>
 where
-    C: tokio_connect::Connect<Connected = connection::Connection>,
+    C: tokio_connect::Connect<Connected = Connection>,
 {
     /// Returns a `Connect` to `addr` and `handle`.
     pub(super) fn new(
@@ -211,7 +211,7 @@ where
 
 impl<C> tokio_connect::Connect for Connect<C>
 where
-    C: tokio_connect::Connect<Connected = connection::Connection>,
+    C: tokio_connect::Connect<Connected = Connection>,
 {
     type Connected = Transport<C::Connected>;
     type Error = C::Error;
@@ -230,7 +230,7 @@ where
 
 impl<C> Future for Connecting<C>
 where
-    C: tokio_connect::Connect<Connected = connection::Connection>,
+    C: tokio_connect::Connect<Connected = Connection>,
 {
     type Item = Transport<C::Connected>;
     type Error = C::Error;

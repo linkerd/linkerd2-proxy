@@ -73,7 +73,6 @@ use linkerd2_proxy_router::{Recognize, Router, Error as RouteError};
 pub mod app;
 mod bind;
 pub mod config;
-mod connection;
 pub mod conditional;
 pub mod control;
 pub mod convert;
@@ -96,11 +95,11 @@ mod watch_service; // TODO: move to tower
 
 use bind::Bind;
 use conditional::Conditional;
-use connection::BoundPort;
 use inbound::Inbound;
 use map_err::MapErr;
 use task::MainRuntime;
 use transparency::{HttpBody, Server};
+use transport::{BoundPort, Connection};
 pub use transport::{AddrInfo, GetOriginalDst, SoOriginalDst, tls};
 use outbound::Outbound;
 pub use watch_service::WatchService;
@@ -514,7 +513,7 @@ where
     >
         + Send + 'static,
     tower_h2::server::Connection<
-        connection::Connection,
+        Connection,
         N,
         ::logging::ServerExecutor,
         B,
