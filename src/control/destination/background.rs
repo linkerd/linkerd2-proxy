@@ -11,7 +11,7 @@ use bytes::Bytes;
 use futures::{
     future,
     sync::mpsc,
-    Async, Future, Poll, Stream,
+    Async, Future, Stream,
 };
 use h2;
 use http;
@@ -135,7 +135,9 @@ pub(super) fn task(
     );
 
     future::poll_fn(move || {
-        disco.poll_rpc(&mut client)
+        disco.poll_rpc(&mut client);
+
+        Ok(Async::NotReady)
     })
 }
 
@@ -161,25 +163,22 @@ where
         }
     }
 
-   fn poll_rpc(&mut self, client: &mut Option<T>) -> Poll<(), ()> {
+   fn poll_rpc(&mut self, client: &mut Option<T>) {
         // This loop is make sure any streams that were found disconnected
         // in `poll_destinations` while the `rpc` service is ready should
         // be reconnected now, otherwise the task would just sleep...
         loop {
-            if let Async::Ready(()) = self.poll_resolve_requests(client) {
-                // request_rx has closed, meaning the main thread is terminating.
-                return Ok(Async::Ready(()));
-            }
+            self.poll_resolve_requests(client);
             self.retain_active_destinations();
             self.poll_destinations();
 
             if self.reconnects.is_empty() || !self.rpc_ready {
-                return Ok(Async::NotReady);
+                break;
             }
         }
     }
 
-    fn poll_resolve_requests(&mut self, client: &mut Option<T>) -> Async<()> {
+    fn poll_resolve_requests(&mut self, client: &mut Option<T>) {
         loop {
             if let Some(client) = client {
                 // if rpc service isn't ready, not much we can do...
@@ -189,12 +188,12 @@ where
                     },
                     Ok(Async::NotReady) => {
                         self.rpc_ready = false;
-                        return Async::NotReady;
+                        break;
                     },
                     Err(err) => {
                         warn!("Destination.Get poll_ready error: {:?}", err);
                         self.rpc_ready = false;
-                        return Async::NotReady;
+                        break;
                     },
                 }
 
@@ -256,10 +255,10 @@ where
                     }
                 },
                 Ok(Async::Ready(None)) => {
-                    trace!("Discover tx is dropped, shutdown");
-                    return Async::Ready(());
+                    trace!("Discover tx is dropped, shutdown?");
+                    return;
                 },
-                Ok(Async::NotReady) => return Async::NotReady,
+                Ok(Async::NotReady) => break,
                 Err(_) => unreachable!("unbounded receiver doesn't error"),
             }
         }

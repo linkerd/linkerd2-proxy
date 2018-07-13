@@ -333,15 +333,18 @@ where
 
                     let metrics_server = telemetry.serve_metrics(metrics_listener);
 
-                    rt.spawn(::logging::admin().bg("resolver").future(resolver_bg));
-                    rt.spawn(::logging::admin().bg("telemetry").future(telemetry));
-                    // tap is already wrapped in a logging Future.
-                    rt.spawn(tap);
-                    // metrics_server is already wrapped in a logging Future.
-                    rt.spawn(metrics_server);
-                    rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
+                    let fut = ::logging::admin().bg("resolver").future(resolver_bg)
+                        .join5(
+                            ::logging::admin().bg("telemetry").future(telemetry),
+                            tap.map_err(|_| {}),
+                            metrics_server.map_err(|_| {}),
+                            ::logging::admin().bg("dns-resolver").future(dns_bg),
+                        )
+                        // There's no `Future::join6` combinator...
+                        .join(::logging::admin().bg("tls-config").future(tls_cfg_bg))
+                        .map(|_| {});
 
-                    rt.spawn(::logging::admin().bg("tls-config").future(tls_cfg_bg));
+                    rt.spawn(Box::new(fut));
 
                     let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
                     rt.block_on(shutdown).expect("admin");
@@ -501,7 +504,7 @@ where
 fn serve_tap<N, B>(
     bound_port: BoundPort,
     new_service: N,
-) -> impl Future<Item = (), Error = ()> + 'static
+) -> impl Future<Item = (), Error = io::Error> + 'static
 where
     B: tower_h2::Body + Send + 'static,
     <B::Data as bytes::IntoBuf>::Buf: Send,
@@ -543,7 +546,6 @@ where
                 future::result(r)
             },
         )
-            .map_err(|err| error!("tap listen error: {}", err))
     };
 
     log.future(fut)
