@@ -11,7 +11,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tower_service::NewService;
 use tower_h2;
 
-use connection::{Connection, Peek};
+use transport::{Connection, Peek};
 use ctx::Proxy as ProxyCtx;
 use ctx::transport::{Server as ServerCtx};
 use drain;

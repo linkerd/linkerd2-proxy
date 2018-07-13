@@ -7,10 +7,9 @@ use std::str::FromStr;
 
 use http;
 
-use connection;
 use convert::TryFrom;
 use dns;
-use transport::tls;
+use transport::{connection, tls};
 
 #[derive(Debug, Clone)]
 pub struct Connect {

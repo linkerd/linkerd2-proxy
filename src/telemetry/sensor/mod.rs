@@ -10,7 +10,7 @@ use tower_h2::{client, Body};
 
 use ctx;
 use telemetry::event;
-use transport::tls;
+use transport::{Connection, tls};
 
 pub mod http;
 mod transport;
@@ -74,7 +74,7 @@ impl Sensors {
 
     pub fn connect<C>(&self, connect: C, ctx: &Arc<ctx::transport::Client>) -> Connect<C>
     where
-        C: tokio_connect::Connect<Connected = ::connection::Connection>,
+        C: tokio_connect::Connect<Connected = Connection>,
     {
         Connect::new(connect, &self.0, ctx)
     }
