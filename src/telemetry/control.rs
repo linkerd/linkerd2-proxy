@@ -1,4 +1,3 @@
-use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -95,7 +94,7 @@ impl Control {
     }
 
     pub fn serve_metrics(&self, bound_port: BoundPort)
-        -> impl Future<Item = (), Error = io::Error>
+        -> impl Future<Item = (), Error = ()>
     {
         use hyper;
 
@@ -123,6 +122,7 @@ impl Control {
 
                     future::result(r)
                 })
+                .map_err(|err| error!("metrics listener error: {}", err))
         };
 
         log.future(fut)
