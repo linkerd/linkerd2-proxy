@@ -76,7 +76,7 @@ minutes to review our [code of conduct][coc].
 
 ## License
 
-Conduit is copyright 2018 the linkerd2-proxy authors. All rights reserved.
+linkerd2-proxy is copyright 2018 the linkerd2-proxy authors. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 these files except in compliance with the License. You may obtain a copy of the

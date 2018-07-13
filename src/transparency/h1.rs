@@ -62,10 +62,10 @@ fn set_authority(uri: &mut http::Uri, auth: Authority) {
 
     // If this was an origin-form target (path only),
     // then we can't *only* set the authority, as that's
-    // an illegal target (such as `conduit.io/docs`).
+    // an illegal target (such as `example.com/docs`).
     //
     // But don't set a scheme if this was authority-form (CONNECT),
-    // since that would change it's meaning (like `https://conduit.io`).
+    // since that would change its meaning (like `https://example.com`).
     if parts.path_and_query.is_some() {
         parts.scheme = Some(Scheme::HTTP);
     }
@@ -147,12 +147,12 @@ pub fn is_upgrade<B>(res: &http::Response<B>) -> bool {
 
 /// Returns if the request target is in `absolute-form`.
 ///
-/// This is `absolute-form`: `https://conduit.io/docs`
+/// This is `absolute-form`: `https://example.com/docs`
 ///
 /// This is not:
 ///
 /// - `/docs`
-/// - `conduit.io`
+/// - `example.com`
 pub fn is_absolute_form(uri: &Uri) -> bool {
     // It's sufficient just to check for a scheme, since in HTTP1,
     // it's required in absolute-form, and `http::Uri` doesn't
@@ -172,7 +172,7 @@ pub fn is_absolute_form(uri: &Uri) -> bool {
 
 /// Returns if the request target is in `origin-form`.
 ///
-/// This is `origin-form`: `conduit.io`
+/// This is `origin-form`: `example.com`
 fn is_origin_form(uri: &Uri) -> bool {
     uri.scheme_part().is_none() &&
         uri.path_and_query().is_none()
@@ -182,7 +182,7 @@ fn is_origin_form(uri: &Uri) -> bool {
 ///
 /// Just because a request parses doesn't mean it's correct. For examples:
 ///
-/// - `GET conduit.io`
+/// - `GET example.com`
 /// - `CONNECT /just-a-path
 pub fn is_bad_request<B>(req: &http::Request<B>) -> bool {
     if req.method() == &http::Method::CONNECT {
