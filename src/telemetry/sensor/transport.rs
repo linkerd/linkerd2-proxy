@@ -242,7 +242,7 @@ where
             &self.ctx.proxy,
             &self.ctx.remote,
             self.ctx.metadata.clone(),
-            io.tls_status,
+            io.tls_status(),
         );
         let ctx = Arc::new(ctx.into());
         let trans = Transport::open(io, Instant::now(), &self.handle, ctx);

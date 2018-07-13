@@ -23,8 +23,7 @@ pub struct BoundPort {
 }
 
 /// Initiates a client connection to the given address.
-pub fn connect(addr: &SocketAddr,
-               tls: tls::ConditionalConnectionConfig<tls::ClientConfig>)
+pub(super) fn connect(addr: &SocketAddr, tls: tls::ConditionalConnectionConfig<tls::ClientConfig>)
     -> Connecting
 {
     let state = ConnectingState::Plaintext {
@@ -81,7 +80,7 @@ pub struct Connection {
     peek_buf: BytesMut,
 
     /// Whether or not the connection is secured with TLS.
-    pub tls_status: TlsStatus,
+    tls_status: TlsStatus,
 }
 
 /// A trait describing that a type can peek bytes.
