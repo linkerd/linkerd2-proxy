@@ -846,6 +846,36 @@ mod transport {
 
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
+    fn outbound_tcp_connect_err() {
+        let _ = env_logger::try_init();
+        let srv = tcp::server()
+            .accept_fut(move |sock| {
+                sock.shutdown(::std::net::Shutdown::Both).unwrap();
+                future::ok(())
+            })
+            .run();
+        let proxy = proxy::new()
+            .outbound(srv)
+            .run();
+
+        let client = client::tcp(proxy.outbound);
+        let metrics = client::http1(proxy.metrics, "localhost");
+
+        let tcp_client = client.connect();
+
+        tcp_client.write(TcpFixture::HELLO_MSG);
+        assert_eq!(tcp_client.read(), &[]);
+        // Connection to the server should be a failure with the EXFULL error
+        // code.
+        assert_contains!(metrics.get("/metrics"),
+            "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"failure\",errno=\"EXFULL\"} 1");
+        // Connection to the client should have closed cleanly.
+        assert_contains!(metrics.get("/metrics"),
+            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"disabled\",classification=\"success\"} 1");
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_accept() {
         let _ = env_logger::try_init();
         let TcpFixture { client, metrics, proxy: _proxy } =
