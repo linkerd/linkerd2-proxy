@@ -86,11 +86,13 @@ impl<T: AsyncRead + AsyncWrite> Transport<T> {
                         tx_bytes,
                     }) = self.1.take()
                     {
+                        let errno = e.raw_os_error();
                         handle.send(move || {
                             let duration = opened_at.elapsed();
                             let ev = event::TransportClose {
                                 duration,
                                 clean: false,
+                                errno,
                                 rx_bytes,
                                 tx_bytes,
                             };
@@ -119,6 +121,7 @@ impl<T> Drop for Transport<T> {
                 let duration = opened_at.elapsed();
                 let ev = event::TransportClose {
                     clean: true,
+                    errno: None,
                     duration,
                     rx_bytes,
                     tx_bytes,

@@ -363,6 +363,7 @@ mod tests {
 
         let end = TransportCloseLabels::new(&client_transport, &event::TransportClose {
             clean: true,
+            errno: None,
             duration: Duration::from_millis(15),
             rx_bytes: 40,
             tx_bytes: 0,

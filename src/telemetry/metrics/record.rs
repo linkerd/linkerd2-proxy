@@ -199,6 +199,7 @@ mod test {
              Arc::new(ctx::transport::Ctx::Client(client.clone()));
         let transport_close = event::TransportClose {
             clean: true,
+            errno: None,
             duration: Duration::from_secs(30_000),
             rx_bytes: 4321,
             tx_bytes: 4321,

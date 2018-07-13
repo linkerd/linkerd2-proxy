@@ -105,6 +105,11 @@ pub struct TransportCloseLabels {
 
     /// Was the transport closed successfully?
     classification: Classification,
+
+    /// If `classification` == `Failure`, this may be set with the
+    /// OS error number describing the error, if there was one.
+    /// Otherwise, it should be `None`.
+    errno: Option<Errno>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -402,9 +407,17 @@ impl TransportCloseLabels {
     pub fn new(ctx: &ctx::transport::Ctx,
                close: &event::TransportClose)
                -> Self {
+        let classification = Classification::transport_close(close);
+        let errno = close.errno.map(|code| {
+            // If the error code is set, this should be classified
+            // as a failure!
+            debug_assert!(classification == Classification::Failure);
+            Errno::from(code)
+        });
         TransportCloseLabels {
             transport: TransportLabels::new(ctx),
-            classification: Classification::transport_close(close),
+            classification,
+            errno,
         }
     }
 
@@ -416,7 +429,11 @@ impl TransportCloseLabels {
 
 impl fmt::Display for TransportCloseLabels {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{},{}", self.transport, self.classification)
+        write!(f, "{},{}", self.transport, self.classification)?;
+        if let Some(errno) = self.errno {
+            write!(f, ",errno=\"{}\"", errno)?;
+        }
+        Ok(())
     }
 }
 
