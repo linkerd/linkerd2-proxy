@@ -21,13 +21,30 @@ pub(super) struct Backoff<S> {
     wait_dur: Duration,
 }
 
-impl<S> Backoff<S> {
+impl<S> Backoff<S>
+where
+    S: Service,
+{
     pub(super) fn new(inner: S, wait_dur: Duration) -> Self {
         Backoff {
             inner,
             timer: Delay::new(Instant::now() + wait_dur),
             waiting: false,
             wait_dur,
+        }
+    }
+
+    fn poll_timer(&mut self) -> Poll<(), S::Error> {
+        debug_assert!(self.waiting, "poll_timer expects to be waiting");
+
+        match self.timer.poll().expect("timer shouldn't error") {
+            Async::Ready(()) => {
+                self.waiting = false;
+                Ok(Async::Ready(()))
+            }
+            Async::NotReady => {
+                Ok(Async::NotReady)
+            }
         }
     }
 }
@@ -44,11 +61,7 @@ where
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         if self.waiting {
-            if self.timer.poll().unwrap().is_not_ready() {
-                return Ok(Async::NotReady);
-            }
-
-            self.waiting = false;
+            try_ready!(self.poll_timer());
         }
 
         match self.inner.poll_ready() {
@@ -56,7 +69,7 @@ where
                 trace!("backoff: controller error, waiting {:?}", self.wait_dur);
                 self.waiting = true;
                 self.timer.reset(Instant::now() + self.wait_dur);
-                Ok(Async::NotReady)
+                self.poll_timer()
             }
             ok => ok,
         }
@@ -183,3 +196,60 @@ impl<'a> fmt::Display for HumanError<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::future;
+    use tokio::runtime::current_thread::Runtime;
+
+    struct MockService {
+        polls: usize,
+        succeed_after: usize,
+    }
+
+    impl Service for MockService {
+        type Request = ();
+        type Response = ();
+        type Error = ();
+        type Future = future::FutureResult<(), ()>;
+
+        fn poll_ready(&mut self) -> Poll<(), ()> {
+            self.polls += 1;
+            if self.polls > self.succeed_after {
+                Ok(().into())
+            } else {
+                Err(())
+            }
+        }
+
+        fn call(&mut self, _req: ()) -> Self::Future {
+            if self.polls > self.succeed_after {
+                future::ok(())
+            } else {
+                future::err(())
+            }
+        }
+    }
+
+    fn succeed_after(cnt: usize) -> MockService {
+        MockService {
+            polls: 0,
+            succeed_after: cnt,
+        }
+    }
+
+
+    #[test]
+    fn backoff() {
+        let mock = succeed_after(2);
+        let mut backoff = Backoff::new(mock, Duration::from_millis(5));
+        let mut rt = Runtime::new().unwrap();
+
+        // The simple existance of this test checks that `Backoff` doesn't
+        // hang after seeing an error in `inner.poll_ready()`, but registers
+        // to poll again.
+        rt.block_on(future::poll_fn(|| backoff.poll_ready())).unwrap();
+    }
+}
+

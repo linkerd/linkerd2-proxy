@@ -62,8 +62,15 @@ impl Controller {
         self
     }
 
+    pub fn delay_listen<F>(self, f: F) -> Listening
+    where
+        F: Future<Item=(), Error=()> + Send + 'static,
+    {
+        run(self, Some(Box::new(f.then(|_| Ok(())))))
+    }
+
     pub fn run(self) -> Listening {
-        run(self)
+        run(self, None)
     }
 }
 
@@ -108,12 +115,24 @@ impl pb::server::Destination for Controller {
     }
 }
 
-fn run(controller: Controller) -> Listening {
+fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Send>>) -> Listening {
     let (tx, rx) = shutdown_signal();
-    let (addr_tx, addr_rx) = oneshot::channel();
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    let listener = net2::TcpBuilder::new_v4().expect("Tcp::new_v4");
+    listener.bind(addr).expect("Tcp::bind");
+    let addr = listener.local_addr().expect("Tcp::local_addr");
+
+    let (listening_tx, listening_rx) = oneshot::channel();
+    let mut listening_tx = Some(listening_tx);
+
     ::std::thread::Builder::new()
         .name("support controller".into())
         .spawn(move || {
+            if let Some(delay) = delay {
+                let _ = listening_tx.take().unwrap().send(());
+                delay.wait().expect("support server delay wait");
+            }
             let new = pb::server::DestinationServer::new(controller);
             let mut runtime = runtime::current_thread::Runtime::new()
                 .expect("support controller runtime");
@@ -122,10 +141,15 @@ fn run(controller: Controller) -> Listening {
                 LazyExecutor,
             );
 
-            let addr = ([127, 0, 0, 1], 0).into();
-            let bind = TcpListener::bind(&addr).expect("bind");
+            let listener = listener.listen(1024).expect("Tcp::listen");
+            let bind = TcpListener::from_std(
+                listener,
+                &reactor::Handle::current()
+            ).expect("from_std");
 
-            let _ = addr_tx.send(bind.local_addr().expect("addr"));
+            if let Some(listening_tx) = listening_tx {
+                let _ = listening_tx.send(());
+            }
 
             let serve = bind.incoming()
                 .fold(h2, |h2, sock| {
@@ -152,7 +176,8 @@ fn run(controller: Controller) -> Listening {
             runtime.block_on(rx).expect("support controller run");
         }).unwrap();
 
-    let addr = addr_rx.wait().expect("addr");
+    listening_rx.wait().expect("listening_rx");
+
     Listening {
         addr,
         shutdown: tx,
