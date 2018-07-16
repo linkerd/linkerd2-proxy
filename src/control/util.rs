@@ -196,3 +196,60 @@ impl<'a> fmt::Display for HumanError<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::future;
+    use tokio::runtime::current_thread::Runtime;
+
+    struct MockService {
+        polls: usize,
+        succeed_after: usize,
+    }
+
+    impl Service for MockService {
+        type Request = ();
+        type Response = ();
+        type Error = ();
+        type Future = future::FutureResult<(), ()>;
+
+        fn poll_ready(&mut self) -> Poll<(), ()> {
+            self.polls += 1;
+            if self.polls > self.succeed_after {
+                Ok(().into())
+            } else {
+                Err(())
+            }
+        }
+
+        fn call(&mut self, _req: ()) -> Self::Future {
+            if self.polls > self.succeed_after {
+                future::ok(())
+            } else {
+                future::err(())
+            }
+        }
+    }
+
+    fn succeed_after(cnt: usize) -> MockService {
+        MockService {
+            polls: 0,
+            succeed_after: cnt,
+        }
+    }
+
+
+    #[test]
+    fn backoff() {
+        let mock = succeed_after(2);
+        let mut backoff = Backoff::new(mock, Duration::from_millis(5));
+        let mut rt = Runtime::new().unwrap();
+
+        // The simple existance of this test checks that `Backoff` doesn't
+        // hang after seeing an error in `inner.poll_ready()`, but registers
+        // to poll again.
+        rt.block_on(future::poll_fn(|| backoff.poll_ready())).unwrap();
+    }
+}
+
