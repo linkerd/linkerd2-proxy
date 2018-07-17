@@ -91,6 +91,7 @@ impl<C, E, B> Client<C, E, B>
 where
     C: Connect + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
+    <C::Future as Future>::Error: ::std::error::Error + Send + Sync,
     C::Connected: Send,
     E: Executor + Clone,
     E: future::Executor<Box<Future<Item = (), Error = ()> + Send + 'static>> + Send + Sync + 'static,
@@ -130,6 +131,7 @@ impl<C, E, B> NewService for Client<C, E, B>
 where
     C: Connect + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
+    <C::Future as Future>::Error: ::std::error::Error + Send + Sync,
     C::Connected: Send,
     E: Executor + Clone,
     E: future::Executor<Box<Future<Item = (), Error = ()> + Send + 'static>> + Send + Sync + 'static,
@@ -192,6 +194,7 @@ where
     C: Connect + Send + Sync + 'static,
     C::Connected: Send,
     C::Future: Send + 'static,
+    <C::Future as Future>::Error: ::std::error::Error + Send + Sync,
     E: Executor + Clone,
     E: future::Executor<Box<Future<Item = (), Error = ()> + Send + 'static>> + Send + Sync + 'static,
     B: tower_h2::Body + Send + 'static,
@@ -263,7 +266,13 @@ impl Future for ClientServiceFuture {
                     },
                     Ok(Async::NotReady) => Ok(Async::NotReady),
                     Err(e) => {
-                        debug!("http/1 client error: {}", e);
+                        match e.cause2() {
+                            Some(cause) => debug!(
+                                "http/1 client error: {}; cause: {}; ",
+                                e, cause
+                            ),
+                            None => debug!("http/1 client error: {}", e),
+                        };
                         Err(h2::Reason::INTERNAL_ERROR.into())
                     }
                 }
