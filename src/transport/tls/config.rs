@@ -457,7 +457,7 @@ mod test_util {
     }
 
     pub static FOO_NS1: Strings = Strings {
-        identity: "foo.deployment.ns1.conduit-managed.conduit.svc.cluster.local",
+        identity: "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local",
         trust_anchors: "ca1.pem",
         end_entity_cert: "foo-ns1-ca1.crt",
         private_key: "foo-ns1-ca1.p8",
