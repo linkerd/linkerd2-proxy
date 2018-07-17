@@ -112,7 +112,7 @@ pub(super) fn task(
     let mut client = host_and_port.map(|host_and_port| {
         let (identity, watch) = match controller_tls {
             Conditional::Some(cfg) =>
-                (Conditional::Some(cfg.identity), cfg.config),
+                (Conditional::Some(cfg.server_identity), cfg.config),
             Conditional::None(reason) => {
                 // If there's no connection config, then construct a new
                 // `Watch` that never updates to construct the `WatchService`.
@@ -625,7 +625,7 @@ impl Rebind<tls::ConditionalClientConfig> for BindClient {
         let conn_cfg = match (&self.identity, client_cfg) {
             (Conditional::Some(ref id), Conditional::Some(ref cfg)) =>
                 Conditional::Some(tls::ConnectionConfig {
-                    identity: id.clone(),
+                    server_identity: id.clone(),
                     config: cfg.clone(),
                 }),
             (Conditional::None(ref reason), _) |

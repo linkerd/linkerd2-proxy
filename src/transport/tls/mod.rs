@@ -36,3 +36,6 @@ pub use self::{
     identity::Identity,
     rustls::TLSError as Error,
 };
+
+#[cfg(test)]
+pub use self::config::test_util as config_test_util;

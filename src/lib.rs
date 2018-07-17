@@ -155,7 +155,7 @@ where
             let tls = config.tls_settings.as_ref().and_then(|settings| {
                 tls_config_watch.server.as_ref().map(|tls_server_config| {
                     tls::ConnectionConfig {
-                        identity: settings.pod_identity.clone(),
+                        server_identity: settings.pod_identity.clone(),
                         config: tls_server_config.clone(),
                     }
                 })
@@ -259,7 +259,7 @@ where
         let controller_tls = config.tls_settings.as_ref().and_then(|settings| {
             settings.controller_identity.as_ref().map(|controller_identity| {
                 tls::ConnectionConfig {
-                    identity: controller_identity.clone(),
+                    server_identity: controller_identity.clone(),
                     config: tls_client_config.clone(),
                 }
             })

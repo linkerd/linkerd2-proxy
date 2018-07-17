@@ -241,7 +241,7 @@ where
         let tls = ep.tls_identity().and_then(|identity| {
             tls_client_config.as_ref().map(|config| {
                 tls::ConnectionConfig {
-                    identity: identity.clone(),
+                    server_identity: identity.clone(),
                     config: config.clone(),
                 }
             })
