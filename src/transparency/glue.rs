@@ -1,6 +1,9 @@
-use std::fmt;
-use std::io;
-use std::sync::Arc;
+use std::{
+    error::Error,
+    fmt,
+    io,
+    sync::Arc,
+};
 
 use bytes::{Bytes, IntoBuf};
 use futures::{future, Async, Future, Poll};
@@ -241,7 +244,7 @@ where
         Request=http::Request<HttpBody>,
         Response=http::Response<B>,
     >,
-    S::Error: fmt::Debug,
+    S::Error: Error + Send + Sync + 'static,
     B: tower_h2::Body + Default + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
     E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
@@ -303,15 +306,15 @@ where
 impl<F, B> Future for HyperServerSvcFuture<F>
 where
     F: Future<Item=http::Response<B>>,
-    F::Error: fmt::Debug,
+    F::Error: Error + fmt::Debug + Send + Sync + 'static,
 {
     type Item = http::Response<BodyPayload<B>>;
     type Error = h2::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let mut res = try_ready!(self.inner.poll().map_err(|e| {
-            debug!("h2 error: {:?}", e);
-            h2::Error::from(io::Error::from(io::ErrorKind::Other))
+            debug!("h2 error: {}", e);
+            h2::Error::from(io::Error::new(io::ErrorKind::Other, e))
         }));
 
         if h1::is_upgrade(&res) {
@@ -409,6 +412,7 @@ impl<C> hyper_connect::Connect for HyperConnect<C>
 where
     C: Connect + Send + Sync,
     C::Future: Send + 'static,
+    <C::Future as Future>::Error: Error + Send + Sync,
     C::Connected: Send + 'static,
 {
     type Transport = C::Connected;
@@ -425,15 +429,15 @@ where
 
 impl<F> Future for HyperConnectFuture<F>
 where
-    F: Future,
+    F: Future + 'static,
+    F::Error: Error + Send + Sync,
 {
     type Item = (F::Item, hyper_connect::Connected);
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let transport = try_ready!(
-            self.inner.poll()
-                .map_err(|_| io::Error::from(io::ErrorKind::Other))
+            self.inner.poll().map_err(|e| io::Error::new(io::ErrorKind::Other, e))
         );
         let connected = hyper_connect::Connected::new()
             .proxy(self.absolute_form);
