@@ -70,21 +70,28 @@ mod imp {
 
     #[derive(Debug)]
     pub struct Sensor {
-        page_size: usize,
+        page_size: u64,
+        clock_ticks_per_sec: u64,
+    }
+
+    fn sysconf(num: libc::c_int, name: &'static str) -> Result<u64, io::Error> {
+        match unsafe { libc::sysconf(num) } {
+            e if e <= 0 => {
+                let error = io::Error::last_os_error();
+                error!("error getting {}: {:?}", name, error);
+                Err(error)
+            },
+            val => Ok(val as u64),
+        }
     }
 
     impl Sensor {
         pub fn new() -> io::Result<Sensor> {
-            let page_size = match unsafe { libc::sysconf(libc::_SC_PAGESIZE) } {
-                e if e < 0 => {
-                    let error = io::Error::last_os_error();
-                    error!("error getting page size: {:?}", error);
-                    return Err(error);
-                },
-                page_size => page_size as usize,
-            };
+            let page_size = sysconf(libc::_SC_PAGESIZE, "page size")?;
+            let clock_ticks_per_sec = sysconf(libc::_SC_CLK_TCK, "clock ticks per second")?;
             Ok(Sensor {
                 page_size,
+                clock_ticks_per_sec,
             })
         }
 
@@ -92,9 +99,10 @@ mod imp {
             // XXX potentially blocking call
             let stat = pid::stat_self()?;
 
-            let cpu_seconds_total = Counter::from((stat.utime + stat.stime) as u64);
+            let clock_ticks = stat.utime as u64 + stat.stime as u64;
+            let cpu_seconds_total = Counter::from(clock_ticks / self.clock_ticks_per_sec);
             let virtual_memory_bytes = Gauge::from(stat.vsize as u64);
-            let resident_memory_bytes = Gauge::from((stat.rss * self.page_size) as u64);
+            let resident_memory_bytes = Gauge::from(stat.rss as u64 * self.page_size);
 
             let metrics = ProcessMetrics {
                 cpu_seconds_total,
