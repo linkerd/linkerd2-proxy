@@ -6,11 +6,12 @@ use http::{Request, Response};
 use tokio_connect;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tower_service::NewService;
-use tower_h2::{client, Body};
+use tower_h2::Body;
 
 use ctx;
 use telemetry::event;
 use transport::{Connection, tls};
+use transparency::ClientError;
 
 pub mod http;
 mod transport;
@@ -90,7 +91,7 @@ impl Sensors {
         N: NewService<
             Request = Request<http::RequestBody<A>>,
             Response = Response<B>,
-            Error = client::Error
+            Error = ClientError
         >
             + 'static,
     {

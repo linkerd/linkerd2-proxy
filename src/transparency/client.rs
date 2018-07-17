@@ -14,8 +14,16 @@ use telemetry::sensor::http::RequestBody;
 use super::glue::{BodyPayload, HttpBody, HyperConnect};
 use super::upgrade::{HttpConnect, Http11Upgrade};
 
+use std::{self, fmt};
+
 type HyperClient<C, B> =
     hyper::Client<HyperConnect<C>, BodyPayload<RequestBody<B>>>;
+
+#[derive(Debug)]
+pub enum Error {
+    Http1(hyper::Error),
+    Http2(tower_h2::client::Error),
+}
 
 /// A `NewService` that can speak either HTTP/1 or HTTP/2.
 pub struct Client<C, E, B>
@@ -140,7 +148,7 @@ where
 {
     type Request = bind::HttpRequest<B>;
     type Response = http::Response<HttpBody>;
-    type Error = tower_h2::client::Error;
+    type Error = Error;
     type InitError = tower_h2::client::ConnectError<C::Error>;
     type Service = ClientService<C, E, B>;
     type Future = ClientNewServiceFuture<C, E, B>;
@@ -202,13 +210,13 @@ where
 {
     type Request = bind::HttpRequest<B>;
     type Response = http::Response<HttpBody>;
-    type Error = tower_h2::client::Error;
+    type Error = Error;
     type Future = ClientServiceFuture;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match self.inner {
             ClientServiceInner::Http1(_) => Ok(Async::Ready(())),
-            ClientServiceInner::Http2(ref mut h2) => h2.poll_ready(),
+            ClientServiceInner::Http2(ref mut h2) => h2.poll_ready().map_err(Error::from),
         }
     }
 
@@ -248,7 +256,7 @@ pub enum ClientServiceFuture {
 
 impl Future for ClientServiceFuture {
     type Item = http::Response<HttpBody>;
-    type Error = tower_h2::client::Error;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self {
@@ -273,7 +281,7 @@ impl Future for ClientServiceFuture {
                             ),
                             None => debug!("http/1 client error: {}", e),
                         };
-                        Err(h2::Reason::INTERNAL_ERROR.into())
+                        Err(e.into())
                     }
                 }
             },
@@ -286,3 +294,43 @@ impl Future for ClientServiceFuture {
     }
 }
 
+impl From<tower_h2::client::Error> for Error {
+    fn from(e: tower_h2::client::Error) -> Self {
+        Error::Http2(e)
+    }
+}
+
+impl From<hyper::Error> for Error {
+    fn from(e: hyper::Error) -> Self {
+        Error::Http1(e)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::Http1(ref e) => fmt::Display::fmt(e, f),
+            Error::Http2(ref e) => fmt::Display::fmt(e, f),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn cause(&self) -> Option<&std::error::Error> {
+        match self {
+            Error::Http1(e) => e.cause(),
+            Error::Http2(e) => e.cause(),
+        }
+    }
+}
+
+impl Error {
+    pub fn reason(&self) -> Option<h2::Reason> {
+        match self {
+            // TODO: it would be good to provide better error
+            // details in metrics for HTTP/1...
+            Error::Http1(_) => Some(h2::Reason::INTERNAL_ERROR),
+            Error::Http2(e) => e.reason(),
+        }
+    }
+}

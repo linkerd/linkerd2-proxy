@@ -7,10 +7,11 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Instant;
 use tower_service::{NewService, Service};
-use tower_h2::{client, Body};
+use tower_h2::Body;
 
 use ctx;
 use telemetry::event::{self, Event};
+use transparency::ClientError;
 
 const GRPC_STATUS: &str = "grpc-status";
 
@@ -118,7 +119,7 @@ where
     N: NewService<
         Request = http::Request<RequestBody<A>>,
         Response = http::Response<B>,
-        Error = client::Error,
+        Error = ClientError,
     >
         + 'static,
 {
@@ -143,7 +144,7 @@ where
     N: NewService<
         Request = http::Request<RequestBody<A>>,
         Response = http::Response<B>,
-        Error = client::Error,
+        Error = ClientError,
     >
         + 'static,
 {
@@ -200,7 +201,7 @@ where
     S: Service<
         Request = http::Request<RequestBody<A>>,
         Response = http::Response<B>,
-        Error = client::Error,
+        Error = ClientError,
     >
         + 'static,
 {
@@ -281,7 +282,7 @@ where
 
 impl<F, B> Future for Respond<F, B>
 where
-    F: Future<Item = http::Response<B>, Error=client::Error>,
+    F: Future<Item = http::Response<B>, Error=ClientError>,
     B: Body + 'static,
 {
     type Item = http::Response<ResponseBody<B>>;
