@@ -119,15 +119,8 @@ impl rustls::ResolvesServerCert for CertResolver {
             return None;
         };
 
-        let cert = if let Some(ref certified_key) = self.certified_key {
-            &certified_key.cert
-        } else {
-            debug!("no certificate yet");
-            return None;
-        };
-
         // Verify that our certificate is valid for the given SNI name.
-        if let Err(err) = parse_end_entity_cert(cert)
+        if let Err(err) = parse_end_entity_cert(&self.certified_key.as_ref()?.cert)
             .and_then(|cert| cert.verify_is_valid_for_dns_name(server_name)) {
             debug!("our certificate is not valid for the SNI name -> no certificate: {:?}", err);
             return None;
