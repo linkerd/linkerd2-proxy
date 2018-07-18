@@ -313,7 +313,7 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let mut res = try_ready!(self.inner.poll().map_err(|e| {
-            debug!("h2 error: {}", e);
+            debug!("HTTP/1 error: {}", e);
             h2::Error::from(io::Error::new(io::ErrorKind::Other, e))
         }));
 
