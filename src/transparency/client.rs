@@ -261,29 +261,20 @@ impl Future for ClientServiceFuture {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self {
             ClientServiceFuture::Http1 { future, upgrade, is_http_connect } => {
-                match future.poll() {
-                    Ok(Async::Ready(res)) => {
-                        let mut res = res.map(move |b| HttpBody::Http1 {
-                            body: Some(b),
-                            upgrade: upgrade.take(),
-                        });
-                        if *is_http_connect {
-                            res.extensions_mut().insert(HttpConnect);
-                        }
-                        Ok(Async::Ready(res))
-                    },
-                    Ok(Async::NotReady) => Ok(Async::NotReady),
-                    Err(e) => {
-                        match e.cause2() {
-                            Some(cause) => debug!(
-                                "http/1 client error: {}; cause: {}; ",
-                                e, cause
-                            ),
-                            None => debug!("http/1 client error: {}", e),
-                        };
-                        Err(e.into())
-                    }
+                let poll = future.poll()
+                    .map_err(|e| {
+                        debug!("http/1 client error: {}", e);
+                        Error::from(e)
+                    });
+                let mut res = try_ready!(poll)
+                    .map(move |b| HttpBody::Http1 {
+                        body: Some(b),
+                        upgrade: upgrade.take(),
+                    });
+                if *is_http_connect {
+                    res.extensions_mut().insert(HttpConnect);
                 }
+                Ok(Async::Ready(res))
             },
             ClientServiceFuture::Http2(f) => {
                 let res = try_ready!(f.poll());
