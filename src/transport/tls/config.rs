@@ -19,7 +19,7 @@ use conditional::Conditional;
 use telemetry::sensor;
 
 use futures::{future, stream, Future, Stream};
-use futures_watch::Watch;
+use futures_watch::{Store, Watch};
 use ring::signature;
 
 /// Not-yet-validated settings that are used for both TLS clients and TLS
@@ -283,59 +283,78 @@ impl CommonConfig {
 // A Future that, when polled, checks for config updates and publishes them.
 pub type PublishConfigs = Box<Future<Item = (), Error = ()> + Send>;
 
-/// Returns Client and Server config watches, and a task to drive updates.
+/// Watches for client and server TLS configuration.
 ///
-/// The returned task Future is expected to never complete.
-///
-/// If there are no TLS settings, then empty watches are returned. In this case, the
-/// Future is never notified.
-///
-/// If all references are dropped to _either_ the client or server config watches, all
-/// updates will cease for both config watches.
-pub fn watch_for_config_changes(
-    settings: Conditional<&CommonSettings, ReasonForNoTls>,
-    sensor: sensor::TlsConfig,
-) -> (ClientConfigWatch, ServerConfigWatch, PublishConfigs)
-{
-    let settings = if let Conditional::Some(settings) = settings {
-        settings.clone()
-    } else {
-        let (client_watch, _) = Watch::new(Conditional::None(ReasonForNoTls::Disabled));
-        let (server_watch, _) = Watch::new(Conditional::None(ReasonForNoTls::Disabled));
-        let no_future = future::empty();
-        return (client_watch, server_watch, Box::new(no_future));
-    };
+/// If all references are dropped to _either_ the `client` or `server` watches,
+/// all updates will cease for both config watches.
+pub struct ConfigWatch {
+    pub client: ClientConfigWatch,
+    pub server: ServerConfigWatch,
+    client_store: Store<Conditional<ClientConfig, ReasonForNoTls>>,
+    server_store: Store<Conditional<ServerConfig, ReasonForNoTls>>,
+    settings: Conditional<CommonSettings, ReasonForNoTls>,
+}
 
-    let changes = settings.stream_changes(Duration::from_secs(1), sensor);
-    let (client_watch, client_store) = Watch::new(Conditional::None(ReasonForNoTls::NoConfig));
-    let (server_watch, server_store) = Watch::new(Conditional::None(ReasonForNoTls::NoConfig));
+impl ConfigWatch {
+    pub fn new(settings: Conditional<CommonSettings, ReasonForNoTls>) -> Self {
+        let reason = match settings {
+            Conditional::Some(_) => ReasonForNoTls::NoConfig,
+            Conditional::None(reason) => reason,
+        };
+        let (client, client_store) = Watch::new(Conditional::None(reason));
+        let (server, server_store) = Watch::new(Conditional::None(reason));
+        ConfigWatch {
+            client,
+            server,
+            client_store,
+            server_store,
+            settings,
+        }
+    }
 
-    // `Store::store` will return an error iff all watchers have been dropped,
-    // so we'll use `fold` to cancel the forwarding future. Eventually, we can
-    // also use the fold to continue tracking previous states if we need to do
-    // that.
-    let f = changes
-        .fold(
-            (client_store, server_store),
-            |(mut client_store, mut server_store), ref config| {
-                client_store
-                    .store(Conditional::Some(ClientConfig::from(config)))
-                    .map_err(|_| trace!("all client config watchers dropped"))?;
-                server_store
-                    .store(Conditional::Some(ServerConfig::from(config)))
-                    .map_err(|_| trace!("all server config watchers dropped"))?;
-                Ok((client_store, server_store))
-            })
-        .then(|_| {
-            error!("forwarding to tls config watches finished.");
-            Err(())
-        });
+    /// Returns Client and Server config watches, and a task to drive updates.
+    ///
+    /// The returned task Future is expected to never complete. If TLS is
+    /// disabled then an empty future is returned.
+    pub fn start(self, sensor: sensor::TlsConfig) -> PublishConfigs {
+        let settings = match self.settings {
+            Conditional::Some(settings) => settings,
+            Conditional::None(_) => {
+                return Box::new(future::empty())
+            },
+        };
 
-    // This function and `ServerConfig::no_tls` return `Box<Future<...>>`
-    // rather than `impl Future<...>` so that they can have the _same_ return
-    // types (impl Traits are not the same type unless the original
-    // non-anonymized type was the same).
-    (client_watch, server_watch, Box::new(f))
+        let (client_store, server_store) = (self.client_store, self.server_store);
+
+        let changes = settings.stream_changes(Duration::from_secs(1), sensor);
+
+        // `Store::store` will return an error iff all watchers have been dropped,
+        // so we'll use `fold` to cancel the forwarding future. Eventually, we can
+        // also use the fold to continue tracking previous states if we need to do
+        // that.
+        let f = changes
+            .fold(
+                (client_store, server_store),
+                |(mut client_store, mut server_store), ref config| {
+                    client_store
+                        .store(Conditional::Some(ClientConfig::from(config)))
+                        .map_err(|_| trace!("all client config watchers dropped"))?;
+                    server_store
+                        .store(Conditional::Some(ServerConfig::from(config)))
+                        .map_err(|_| trace!("all server config watchers dropped"))?;
+                    Ok((client_store, server_store))
+                })
+            .then(|_| {
+                error!("forwarding to tls config watches finished.");
+                Err(())
+            });
+
+        // This function and `ServerConfig::no_tls` return `Box<Future<...>>`
+        // rather than `impl Future<...>` so that they can have the _same_ return
+        // types (impl Traits are not the same type unless the original
+        // non-anonymized type was the same).
+        Box::new(f)
+    }
 }
 
 impl ClientConfig {

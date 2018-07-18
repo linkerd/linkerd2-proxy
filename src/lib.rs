@@ -228,11 +228,13 @@ where
             &taps,
         );
 
-        let (tls_client_config, tls_server_config, tls_cfg_bg) =
-            tls::watch_for_config_changes(
-                config.tls_settings.as_ref(),
-                sensors.tls_config(),
-            );
+        let (tls_client_config, tls_server_config, tls_cfg_bg) = {
+            let tls_config_watch = tls::ConfigWatch::new(config.tls_settings.clone());
+            let tls_client_config = tls_config_watch.client.clone();
+            let tls_server_config = tls_config_watch.server.clone();
+            let tls_cfg_bg = tls_config_watch.start(sensors.tls_config());
+            (tls_client_config, tls_server_config, tls_cfg_bg)
+        };
 
         let controller_tls = config.tls_settings.as_ref().and_then(|settings| {
             settings.controller_identity.as_ref().map(|controller_identity| {
