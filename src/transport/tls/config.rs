@@ -278,6 +278,13 @@ impl CommonConfig {
         })
     }
 
+    fn empty() -> Self {
+        Self {
+            root_cert_store: rustls::RootCertStore::empty(),
+            cert_resolver: Arc::new(CertResolver::empty()),
+        }
+    }
+
 }
 
 // A Future that, when polled, checks for config updates and publishes them.
@@ -307,8 +314,12 @@ pub fn watch_for_config_changes(
     };
 
     let changes = settings.stream_changes(Duration::from_secs(1), sensor);
-    let (client_watch, client_store) = Watch::new(Conditional::None(ReasonForNoTls::NoConfig));
-    let (server_watch, server_store) = Watch::new(Conditional::None(ReasonForNoTls::NoConfig));
+    let no_config_yet = CommonConfig::empty();
+    let (client_watch, client_store) =
+        // TODO: Should this also have the empty cert resolver instead?
+        Watch::new(Conditional::None(ReasonForNoTls::NoConfig));
+    let (server_watch, server_store) =
+        Watch::new(Conditional::Some(ServerConfig::from(&no_config_yet)));
 
     // `Store::store` will return an error iff all watchers have been dropped,
     // so we'll use `fold` to cancel the forwarding future. Eventually, we can
