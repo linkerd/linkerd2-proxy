@@ -312,7 +312,7 @@ impl ConfigWatch {
         }
     }
 
-    /// Returns Client and Server config watches, and a task to drive updates.
+    /// Returns a task to drive updates.
     ///
     /// The returned task Future is expected to never complete. If TLS is
     /// disabled then an empty future is returned.
