@@ -274,8 +274,8 @@ where
                 config.inbound_router_capacity,
                 config.inbound_router_max_idle_age,
             );
-            let tls_settings: tls::ConditionalConnectionConfig<tls::ServerConfigWatch> =
-                config.tls_settings.as_ref().and_then(|settings| {
+            let tls_settings = config.tls_settings.as_ref()
+                .and_then(|settings| {
                     tls_server_config.map(|config| {
                         tls::ConnectionConfig {
                             identity: settings.pod_identity.clone(),
