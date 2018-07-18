@@ -20,6 +20,7 @@ use transport::{AddrInfo, BoxedIo, GetOriginalDst, tls};
 pub struct BoundPort {
     inner: std::net::TcpListener,
     local_addr: SocketAddr,
+    tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>,
 }
 
 /// Initiates a client connection to the given address.
@@ -114,12 +115,15 @@ pub struct PeekFuture<T> {
 // ===== impl BoundPort =====
 
 impl BoundPort {
-    pub fn new(addr: Addr) -> Result<Self, io::Error> {
+    pub fn new(addr: Addr, tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>)
+        -> Result<Self, io::Error>
+    {
         let inner = std::net::TcpListener::bind(SocketAddr::from(addr))?;
         let local_addr = inner.local_addr()?;
         Ok(BoundPort {
             inner,
             local_addr,
+            tls,
         })
     }
 
@@ -134,7 +138,6 @@ impl BoundPort {
     // TLS when needed.
     pub fn listen_and_fold<T, F, Fut>(
         self,
-        tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>,
         initial: T,
         f: F)
         -> impl Future<Item = (), Error = io::Error> + Send + 'static
@@ -144,13 +147,15 @@ impl BoundPort {
         Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
         <Fut as IntoFuture>::Future: Send,
     {
+        let inner = self.inner;
+        let tls = self.tls;
         future::lazy(move || {
             // Create the TCP listener lazily, so that it's not bound to a
             // reactor until the future is run. This will avoid
             // `Handle::current()` creating a mew thread for the global
             // background reactor if `listen_and_fold` is called before we've
             // initialized the runtime.
-            TcpListener::from_std(self.inner, &Handle::current())
+            TcpListener::from_std(inner, &Handle::current())
         }).and_then(|listener|
             listener.incoming()
                 .and_then(move |socket| {
