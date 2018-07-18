@@ -77,7 +77,7 @@ impl std::fmt::Debug for ClientConfig {
 pub struct ServerConfig(pub(super) Arc<rustls::ServerConfig>);
 
 pub type ClientConfigWatch = Watch<Conditional<ClientConfig, ReasonForNoTls>>;
-pub type ServerConfigWatch = Watch<Conditional<ServerConfig, ReasonForNoTls>>;
+pub type ServerConfigWatch = Watch<ServerConfig>;
 
 /// The configuration in effect for a client (`ClientConfig`) or server
 /// (`ServerConfig`) TLS connection.
@@ -302,13 +302,13 @@ pub type PublishConfigs = Box<Future<Item = (), Error = ()> + Send>;
 pub fn watch_for_config_changes(
     settings: Conditional<&CommonSettings, ReasonForNoTls>,
     sensor: sensor::TlsConfig,
-) -> (ClientConfigWatch, ServerConfigWatch, PublishConfigs)
+) -> (ClientConfigWatch, Conditional<ServerConfigWatch, ReasonForNoTls>, PublishConfigs)
 {
     let settings = if let Conditional::Some(settings) = settings {
         settings.clone()
     } else {
         let (client_watch, _) = Watch::new(Conditional::None(ReasonForNoTls::Disabled));
-        let (server_watch, _) = Watch::new(Conditional::None(ReasonForNoTls::Disabled));
+        let server_watch = Conditional::None(ReasonForNoTls::Disabled);
         let no_future = future::empty();
         return (client_watch, server_watch, Box::new(no_future));
     };
@@ -318,8 +318,7 @@ pub fn watch_for_config_changes(
     let (client_watch, client_store) =
         // TODO: Should this also have the empty cert resolver instead?
         Watch::new(Conditional::None(ReasonForNoTls::NoConfig));
-    let (server_watch, server_store) =
-        Watch::new(Conditional::Some(ServerConfig::from(&no_config_yet)));
+    let (server_watch, server_store) = Watch::new(ServerConfig::from(&no_config_yet));
 
     // `Store::store` will return an error iff all watchers have been dropped,
     // so we'll use `fold` to cancel the forwarding future. Eventually, we can
@@ -333,7 +332,7 @@ pub fn watch_for_config_changes(
                     .store(Conditional::Some(ClientConfig::from(config)))
                     .map_err(|_| trace!("all client config watchers dropped"))?;
                 server_store
-                    .store(Conditional::Some(ServerConfig::from(config)))
+                    .store(ServerConfig::from(config))
                     .map_err(|_| trace!("all server config watchers dropped"))?;
                 Ok((client_store, server_store))
             })
@@ -346,7 +345,7 @@ pub fn watch_for_config_changes(
     // rather than `impl Future<...>` so that they can have the _same_ return
     // types (impl Traits are not the same type unless the original
     // non-anonymized type was the same).
-    (client_watch, server_watch, Box::new(f))
+    (client_watch, Conditional::Some(server_watch), Box::new(f))
 }
 
 impl ClientConfig {
