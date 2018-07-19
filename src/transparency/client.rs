@@ -19,6 +19,13 @@ use std::{self, fmt};
 type HyperClient<C, B> =
     hyper::Client<HyperConnect<C>, BodyPayload<RequestBody<B>>>;
 
+/// A wrapper around the error types produced by the HTTP/1 and HTTP/2 clients.
+///
+/// Note that the names of the variants of this type (`Error::Http1` and
+/// `Error::Http2`) aren't intended to imply that the error was a protocol
+/// error; instead, they refer simply to which client the error occurred in.
+/// Values of either variant may ultimately be caused by IO errors or other
+/// types of error which could effect either protocol client.
 #[derive(Debug)]
 pub enum Error {
     Http1(hyper::Error),
