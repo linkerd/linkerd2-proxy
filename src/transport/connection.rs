@@ -166,22 +166,16 @@ impl BoundPort {
                     // do it here.
                     set_nodelay_or_warn(&socket);
 
-                    let tls = match &tls {
-                        Conditional::Some(tls) => match &*tls.config.borrow() {
-                            Conditional::Some(config) =>
-                                Conditional::Some(tls::ConnectionConfig {
-                                    identity: tls.identity.clone(),
-                                    config: config.clone(),
-                                }),
-                            Conditional::None(r) => Conditional::None(*r),
+                    let conn = match &tls {
+                        Conditional::Some(tls) => {
+                            let tls = tls::ConnectionConfig {
+                                identity: tls.identity.clone(),
+                                config: tls.config.borrow().clone(),
+                            };
+                            Either::A(ConditionallyUpgradeServerToTls::new(socket, tls))
                         },
-                        Conditional::None(r) => Conditional::None(*r),
-                    };
-                    let conn = match tls {
-                        Conditional::Some(tls) =>
-                            Either::A(ConditionallyUpgradeServerToTls::new(socket, tls)),
                         Conditional::None(why_no_tls) =>
-                            Either::B(future::ok(Connection::plain(socket, why_no_tls))),
+                            Either::B(future::ok(Connection::plain(socket, *why_no_tls))),
                     };
                     conn.map(move |conn| (conn, remote_addr))
                 })

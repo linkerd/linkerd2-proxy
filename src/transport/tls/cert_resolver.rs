@@ -17,7 +17,7 @@ use ring::{self, rand, signature};
 /// Authentication is symmetric with respect to the client/server roles, so the
 /// same certificate and private key is used for both roles.
 pub struct CertResolver {
-    certified_key: rustls::sign::CertifiedKey,
+    certified_key: Option<rustls::sign::CertifiedKey>,
 }
 
 impl fmt::Debug for CertResolver {
@@ -58,9 +58,20 @@ impl CertResolver {
 
         let signer = Signer { private_key: Arc::new(private_key) };
         let signing_key = SigningKey { signer };
-        let certified_key = rustls::sign::CertifiedKey::new(
-            cert_chain, Arc::new(Box::new(signing_key)));
+        let certified_key = Some(rustls::sign::CertifiedKey::new(
+            cert_chain, Arc::new(Box::new(signing_key))));
         Ok(Self { certified_key })
+    }
+
+    /// Returns a new `CertResolver` which indicates that we don't yet have
+    /// a certificate.
+    ///
+    /// This is used in order to fail handshakes when the TLS configuration
+    /// hasn't been loaded yet. The returned `CertResolver` implements
+    /// `rustls::ResolvesClientCert` and `rustls::ResolvesServerCert`, but
+    /// will always returns `None`.
+    pub fn empty() -> Self {
+        Self { certified_key: None, }
     }
 
     fn resolve_(&self, sigschemes: &[rustls::SignatureScheme]) -> Option<rustls::sign::CertifiedKey>
@@ -70,7 +81,7 @@ impl CertResolver {
             return None;
         }
 
-        Some(self.certified_key.clone())
+        self.certified_key.as_ref().cloned()
     }
 
 }
@@ -94,7 +105,7 @@ impl rustls::ResolvesClientCert for CertResolver {
     }
 
     fn has_certs(&self) -> bool {
-        true
+        self.certified_key.is_some()
     }
 }
 
@@ -109,7 +120,7 @@ impl rustls::ResolvesServerCert for CertResolver {
         };
 
         // Verify that our certificate is valid for the given SNI name.
-        if let Err(err) = parse_end_entity_cert(&self.certified_key.cert)
+        if let Err(err) = parse_end_entity_cert(&self.certified_key.as_ref()?.cert)
             .and_then(|cert| cert.verify_is_valid_for_dns_name(server_name)) {
             debug!("our certificate is not valid for the SNI name -> no certificate: {:?}", err);
             return None;

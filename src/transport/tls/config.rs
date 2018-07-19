@@ -77,7 +77,7 @@ impl std::fmt::Debug for ClientConfig {
 pub struct ServerConfig(pub(super) Arc<rustls::ServerConfig>);
 
 pub type ClientConfigWatch = Watch<Conditional<ClientConfig, ReasonForNoTls>>;
-pub type ServerConfigWatch = Watch<Conditional<ServerConfig, ReasonForNoTls>>;
+pub type ServerConfigWatch = Watch<ServerConfig>;
 
 /// The configuration in effect for a client (`ClientConfig`) or server
 /// (`ServerConfig`) TLS connection.
@@ -278,6 +278,13 @@ impl CommonConfig {
         })
     }
 
+    fn empty() -> Self {
+        Self {
+            root_cert_store: rustls::RootCertStore::empty(),
+            cert_resolver: Arc::new(CertResolver::empty()),
+        }
+    }
+
 }
 
 // A Future that, when polled, checks for config updates and publishes them.
@@ -289,20 +296,26 @@ pub type PublishConfigs = Box<Future<Item = (), Error = ()> + Send>;
 /// all updates will cease for both config watches.
 pub struct ConfigWatch {
     pub client: ClientConfigWatch,
-    pub server: ServerConfigWatch,
+    pub server: Conditional<ServerConfigWatch, ReasonForNoTls>,
     client_store: Store<Conditional<ClientConfig, ReasonForNoTls>>,
-    server_store: Store<Conditional<ServerConfig, ReasonForNoTls>>,
+    server_store: Store<ServerConfig>,
     settings: Conditional<CommonSettings, ReasonForNoTls>,
 }
 
 impl ConfigWatch {
     pub fn new(settings: Conditional<CommonSettings, ReasonForNoTls>) -> Self {
-        let reason = match settings {
-            Conditional::Some(_) => ReasonForNoTls::NoConfig,
-            Conditional::None(reason) => reason,
+        let (server_watch, server_store) = {
+            let empty = CommonConfig::empty();
+            Watch::new(ServerConfig::from(&empty))
         };
-        let (client, client_store) = Watch::new(Conditional::None(reason));
-        let (server, server_store) = Watch::new(Conditional::None(reason));
+
+        let (client_reason, server) = match settings {
+            Conditional::Some(_) => (ReasonForNoTls::NoConfig, Conditional::Some(server_watch)),
+            Conditional::None(reason) => (reason, Conditional::None(reason)),
+        };
+
+        let (client, client_store) = Watch::new(Conditional::None(client_reason));
+
         ConfigWatch {
             client,
             server,
@@ -340,7 +353,7 @@ impl ConfigWatch {
                         .store(Conditional::Some(ClientConfig::from(config)))
                         .map_err(|_| trace!("all client config watchers dropped"))?;
                     server_store
-                        .store(Conditional::Some(ServerConfig::from(config)))
+                        .store(ServerConfig::from(config))
                         .map_err(|_| trace!("all server config watchers dropped"))?;
                     Ok((client_store, server_store))
                 })
