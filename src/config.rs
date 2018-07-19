@@ -193,6 +193,7 @@ pub const ENV_TLS_CERT: &str = "LINKERD2_PROXY_TLS_CERT";
 pub const ENV_TLS_PRIVATE_KEY: &str = "LINKERD2_PROXY_TLS_PRIVATE_KEY";
 pub const ENV_TLS_POD_IDENTITY: &str = "LINKERD2_PROXY_TLS_POD_IDENTITY";
 pub const ENV_TLS_CONTROLLER_IDENTITY: &str = "LINKERD2_PROXY_TLS_CONTROLLER_IDENTITY";
+pub const ENV_TLS_CONFIG_FALLBACK_TTL: &str = "LINKERD2_PROXY_TLS_CONFIG_FALLBACK_TTL";
 
 pub const ENV_CONTROLLER_NAMESPACE: &str = "LINKERD2_PROXY_CONTROLLER_NAMESPACE";
 pub const ENV_POD_NAMESPACE: &str = "LINKERD2_PROXY_POD_NAMESPACE";
@@ -240,6 +241,12 @@ const DEFAULT_PORTS_DISABLE_PROTOCOL_DETECTION: &[u16] = &[
     3306, // MySQL
 ];
 
+// How long an old TLS config is valid for after falling back on an error.
+//
+// If/when we make the controller CA's validity duration shorter, this
+// should probably track that.
+const DEFAULT_TLS_CONFIG_FALLBACK_TTL: Duration = Duration::from_secs(900); // 15 minutes
+
 // ===== impl Config =====
 
 impl Config {
@@ -281,6 +288,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let tls_private_key = parse(strings, ENV_TLS_PRIVATE_KEY, parse_path);
         let tls_pod_identity_template = strings.get(ENV_TLS_POD_IDENTITY);
         let tls_controller_identity = strings.get(ENV_TLS_CONTROLLER_IDENTITY);
+        let tls_config_fallback_ttl = parse(strings, ENV_TLS_CONFIG_FALLBACK_TTL, parse_duration);
         let bind_timeout = parse(strings, ENV_BIND_TIMEOUT, parse_duration);
         let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
         let event_buffer_capacity = parse(strings, ENV_EVENT_BUFFER_CAPACITY, parse_number);
@@ -349,8 +357,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
                     private_key,
                     pod_identity,
                     controller_identity,
-                    // TODO: make configurable
-                    fallback_ttl: Duration::from_secs(900),
+                    fallback_ttl: tls_config_fallback_ttl?
+                        .unwrap_or_else(|| DEFAULT_TLS_CONFIG_FALLBACK_TTL),
                 }))
             },
             (None, None, None, _) => Ok(Conditional::None(tls::ReasonForNoTls::Disabled)),
