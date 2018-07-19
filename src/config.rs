@@ -349,6 +349,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
                     private_key,
                     pod_identity,
                     controller_identity,
+                    // TODO: make configurable
+                    fallback_ttl: Duration::from_secs(900),
                 }))
             },
             (None, None, None, _) => Ok(Conditional::None(tls::ReasonForNoTls::Disabled)),
@@ -499,7 +501,7 @@ fn parse_number<T>(s: &str) -> Result<T, ParseError> where T: FromStr {
     s.parse().map_err(|_| ParseError::NotANumber)
 }
 
-fn parse_duration(s: &str) -> Result<Duration, ParseError> {
+pub fn parse_duration(s: &str) -> Result<Duration, ParseError> {
     use regex::Regex;
 
     let re = Regex::new(r"^\s*(\d+)(ms|s|m|h|d)?\s*$")

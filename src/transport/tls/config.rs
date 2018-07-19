@@ -21,6 +21,7 @@ use telemetry::sensor;
 use futures::{future, stream, Future, Stream};
 use futures_watch::Watch;
 use ring::signature;
+use tokio_timer::{clock, Delay};
 
 /// Not-yet-validated settings that are used for both TLS clients and TLS
 /// servers.
@@ -51,6 +52,10 @@ pub struct CommonSettings {
 
     /// The identity of the controller, if given.
     pub controller_identity: Conditional<Identity, ReasonForNoIdentity>,
+
+    /// How long to continue using a stale configuration after an error
+    /// occurred while trying to reload a change.
+    pub fallback_ttl: Duration,
 }
 
 /// Validated configuration common between TLS clients and TLS servers.
@@ -177,6 +182,7 @@ impl CommonSettings {
         mut sensor: sensor::TlsConfig,
     ) -> impl Stream<Item = CommonConfig, Error = ()>
     {
+        let fallback_ttl = self.fallback_ttl;
         let paths = self.paths().iter()
             .map(|&p| p.clone())
             .collect::<Vec<_>>();
@@ -184,18 +190,30 @@ impl CommonSettings {
         // the files, so that we'll try to load them now if they exist.
         stream::once(Ok(()))
             .chain(::fs_watch::stream_changes(paths, interval))
-            .filter_map(move |_| {
-                match CommonConfig::load_from_disk(&self) {
-                    Err(e) => {
-                        warn!("error reloading TLS config: {:?}, falling back", e);
-                        sensor.failed(e);
-                        None
-                    },
-                    Ok(cfg) => {
-                        sensor.reloaded();
-                        Some(cfg)
-                    }
-                }
+            .and_then(move |_| match CommonConfig::load_from_disk(&self) {
+                Err(e) => {
+                    warn!("error reloading TLS config: {:?}, falling back", e);
+                    sensor.failed(e);
+                    future::err(())
+                },
+                Ok(cfg) => {
+                    sensor.reloaded();
+                    future::ok(cfg)
+                },
+            })
+            .or_else(move |()| {
+
+                // Wait for the duration over which the old config is still
+                // valid, and then update the stream with an empty config.
+                Delay::new(clock::now() + fallback_ttl)
+                    .or_else(|e| {
+                        warn!("timer error: {}, invalidating TLS config now!", e);
+                        future::ok(())
+                    })
+                    .and_then(|_| {
+                        debug!("fallback TTL elapsed, invalidating TLS config");
+                        future::ok(CommonConfig::empty())
+                    })
             })
     }
 
@@ -464,6 +482,7 @@ mod test_util {
         pub trust_anchors: &'static str,
         pub end_entity_cert: &'static str,
         pub private_key: &'static str,
+        pub fallback_ttl: &'static str,
     }
 
     pub static FOO_NS1: Strings = Strings {
@@ -471,6 +490,7 @@ mod test_util {
         trust_anchors: "ca1.pem",
         end_entity_cert: "foo-ns1-ca1.crt",
         private_key: "foo-ns1-ca1.p8",
+        fallback_ttl: "900s",
     };
 
     impl Strings {
@@ -482,6 +502,7 @@ mod test_util {
                 trust_anchors: dir.join(self.trust_anchors),
                 end_entity_cert: dir.join(self.end_entity_cert),
                 private_key: dir.join(self.private_key),
+                fallback_ttl: ::config::parse_duration(self.fallback_ttl).unwrap(),
             }
         }
     }
