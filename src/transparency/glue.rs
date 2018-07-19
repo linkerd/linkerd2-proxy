@@ -1,6 +1,8 @@
-use std::fmt;
-use std::io;
-use std::sync::Arc;
+use std::{
+    error::Error,
+    fmt,
+    sync::Arc,
+};
 
 use bytes::{Bytes, IntoBuf};
 use futures::{future, Async, Future, Poll};
@@ -241,14 +243,14 @@ where
         Request=http::Request<HttpBody>,
         Response=http::Response<B>,
     >,
-    S::Error: fmt::Debug,
+    S::Error: Error + Send + Sync + 'static,
     B: tower_h2::Body + Default + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
     E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
 {
     type ReqBody = hyper::Body;
     type ResBody = BodyPayload<B>;
-    type Error = h2::Error;
+    type Error = S::Error;
     type Future = Either<
         HyperServerSvcFuture<S::Future>,
         future::FutureResult<http::Response<Self::ResBody>, Self::Error>,
@@ -303,15 +305,15 @@ where
 impl<F, B> Future for HyperServerSvcFuture<F>
 where
     F: Future<Item=http::Response<B>>,
-    F::Error: fmt::Debug,
+    F::Error: Error + fmt::Debug + Send + Sync + 'static,
 {
     type Item = http::Response<BodyPayload<B>>;
-    type Error = h2::Error;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let mut res = try_ready!(self.inner.poll().map_err(|e| {
-            debug!("h2 error: {:?}", e);
-            h2::Error::from(io::Error::from(io::ErrorKind::Other))
+            debug!("HTTP/1 error: {}", e);
+            e
         }));
 
         if h1::is_upgrade(&res) {
@@ -409,10 +411,11 @@ impl<C> hyper_connect::Connect for HyperConnect<C>
 where
     C: Connect + Send + Sync,
     C::Future: Send + 'static,
+    <C::Future as Future>::Error: Error + Send + Sync + 'static,
     C::Connected: Send + 'static,
 {
     type Transport = C::Connected;
-    type Error = io::Error;
+    type Error = <C::Future as Future>::Error;
     type Future = HyperConnectFuture<C::Future>;
 
     fn connect(&self, _dst: hyper_connect::Destination) -> Self::Future {
@@ -425,16 +428,14 @@ where
 
 impl<F> Future for HyperConnectFuture<F>
 where
-    F: Future,
+    F: Future + 'static,
+    F::Error: Error + Send + Sync,
 {
     type Item = (F::Item, hyper_connect::Connected);
-    type Error = io::Error;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let transport = try_ready!(
-            self.inner.poll()
-                .map_err(|_| io::Error::from(io::ErrorKind::Other))
-        );
+        let transport = try_ready!(self.inner.poll());
         let connected = hyper_connect::Connected::new()
             .proxy(self.absolute_form);
         Ok(Async::Ready((transport, connected)))

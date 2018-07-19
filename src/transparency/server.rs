@@ -1,7 +1,10 @@
-use std::fmt;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    error::Error,
+    fmt,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use futures::{future::Either, Future};
 use http;
@@ -57,12 +60,11 @@ where
     > + Clone + Send + 'static,
     S::Future: 'static,
     <S as NewService>::Service: Send,
-    S::Error: fmt::Debug,
     <<S as NewService>::Service as ::tower_service::Service>::Future: Send,
     S::InitError: fmt::Debug,
     S::Future: Send + 'static,
     B: tower_h2::Body + 'static,
-    S::Error: Send + fmt::Debug,
+    S::Error: Error + Send + Sync + 'static,
     S::InitError: Send + fmt::Debug,
     B: tower_h2::Body + Send + Default + 'static,
     B::Data: Send,

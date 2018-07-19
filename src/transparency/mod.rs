@@ -6,6 +6,6 @@ mod protocol;
 mod server;
 mod tcp;
 
-pub use self::client::Client;
+pub use self::client::{Client, Error as ClientError};
 pub use self::glue::HttpBody;
 pub use self::server::Server;
