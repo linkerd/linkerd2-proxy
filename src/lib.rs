@@ -119,6 +119,7 @@ pub use watch_service::WatchService;
 
 pub struct Main<G> {
     config: config::Config,
+    tls_config_watch: tls::ConfigWatch,
 
     control_listener: BoundPort,
     inbound_listener: BoundPort,
@@ -142,20 +143,43 @@ where
     where
         R: Into<MainRuntime>,
     {
+        let tls_config_watch = tls::ConfigWatch::new(config.tls_settings.clone());
 
-        let control_listener = BoundPort::new(config.control_listener.addr)
+        // TODO: Serve over TLS.
+        let control_listener = BoundPort::new(
+            config.control_listener.addr,
+            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForTap.into()))
             .expect("controller listener bind");
-        let inbound_listener = BoundPort::new(config.public_listener.addr)
-            .expect("public listener bind");
-        let outbound_listener = BoundPort::new(config.private_listener.addr)
+
+        let inbound_listener = {
+            let tls = config.tls_settings.as_ref().and_then(|settings| {
+                tls_config_watch.server.as_ref().map(|tls_server_config| {
+                    tls::ConnectionConfig {
+                        identity: settings.pod_identity.clone(),
+                        config: tls_server_config.clone(),
+                    }
+                })
+            });
+            BoundPort::new(config.public_listener.addr, tls)
+                .expect("public listener bind")
+        };
+
+        let outbound_listener = BoundPort::new(
+            config.private_listener.addr,
+            Conditional::None(tls::ReasonForNoTls::InternalTraffic))
             .expect("private listener bind");
 
         let runtime = runtime.into();
 
-        let metrics_listener = BoundPort::new(config.metrics_listener.addr)
+        // TODO: Serve over TLS.
+        let metrics_listener = BoundPort::new(
+            config.metrics_listener.addr,
+            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForMetrics.into()))
             .expect("metrics listener bind");
+
         Main {
             config,
+            tls_config_watch,
             control_listener,
             inbound_listener,
             outbound_listener,
@@ -190,6 +214,7 @@ where
 
         let Main {
             config,
+            tls_config_watch,
             control_listener,
             inbound_listener,
             outbound_listener,
@@ -228,13 +253,8 @@ where
             &taps,
         );
 
-        let (tls_client_config, tls_server_config, tls_cfg_bg) = {
-            let tls_config_watch = tls::ConfigWatch::new(config.tls_settings.clone());
-            let tls_client_config = tls_config_watch.client.clone();
-            let tls_server_config = tls_config_watch.server.clone();
-            let tls_cfg_bg = tls_config_watch.start(sensors.tls_config());
-            (tls_client_config, tls_server_config, tls_cfg_bg)
-        };
+        let tls_client_config = tls_config_watch.client.clone();
+        let tls_cfg_bg = tls_config_watch.start(sensors.tls_config());
 
         let controller_tls = config.tls_settings.as_ref().and_then(|settings| {
             settings.controller_identity.as_ref().map(|controller_identity| {
@@ -276,18 +296,8 @@ where
                 config.inbound_router_capacity,
                 config.inbound_router_max_idle_age,
             );
-            let tls_settings = config.tls_settings.as_ref()
-                .and_then(|settings| {
-                    tls_server_config.map(|config| {
-                        tls::ConnectionConfig {
-                            identity: settings.pod_identity.clone(),
-                            config,
-                        }
-                    })
-                });
             serve(
                 inbound_listener,
-                tls_settings,
                 router,
                 config.private_connect_timeout,
                 config.inbound_ports_disable_protocol_detection,
@@ -311,7 +321,6 @@ where
             );
             serve(
                 outbound_listener,
-                Conditional::None(tls::ReasonForNoTls::InternalTraffic),
                 router,
                 config.public_connect_timeout,
                 config.outbound_ports_disable_protocol_detection,
@@ -375,7 +384,6 @@ where
 
 fn serve<R, B, E, F, G>(
     bound_port: BoundPort,
-    tls_config: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>,
     router: Router<R>,
     tcp_connect_timeout: Duration,
     disable_protocol_detection_ports: IndexSet<u16>,
@@ -452,7 +460,6 @@ where
 
     let accept = {
         let fut = bound_port.listen_and_fold(
-            tls_config,
             (),
             move |(), (connection, remote_addr)| {
                 let s = server.serve(connection, remote_addr);
@@ -535,7 +542,6 @@ where
         let log = log.clone();
         // TODO: serve over TLS.
         bound_port.listen_and_fold(
-            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForTap.into()),
             server,
             move |server, (session, remote)| {
                 let log = log.clone().with_remote(remote);
