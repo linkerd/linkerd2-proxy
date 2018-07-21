@@ -28,7 +28,7 @@ pub struct MakeControl {
 /// `Control` exposes a `Stream` that summarizes events accumulated over the past
 /// `flush_interval`.
 ///
-/// As `Control` is polled, events are proceesed for the purposes of metrics export _as
+/// As `Control` is polled, events are processed for the purposes of metrics export _as
 /// well as_ for Tap, which supports subscribing to a stream of events that match
 /// criteria.
 ///

@@ -17,7 +17,7 @@ pub use self::sensor::Sensors;
 
 /// Creates proxy-specific runtime telemetry.
 ///
-/// [`Sensors`] hide the details of how telemetry is recorded, but expose proxy utilties
+/// [`Sensors`] hide the details of how telemetry is recorded, but expose proxy utilities
 /// that support telemetry.
 ///
 /// [`Control`] drives processing of all telemetry events for tapping as well as metrics

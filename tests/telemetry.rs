@@ -311,7 +311,7 @@ fn metrics_endpoint_inbound_response_latency() {
     assert_contains!(metrics.get("/metrics"),
         "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",classification=\"success\",status_code=\"200\",le=\"50\"} 1");
     // 1000ms bucket should be incremented as well, since it counts *all*
-    // bservations less than or equal to 1000ms, even if they also increment
+    // observations less than or equal to 1000ms, even if they also increment
     // other buckets.
     assert_contains!(metrics.get("/metrics"),
         "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",classification=\"success\",status_code=\"200\",le=\"1000\"} 2");
