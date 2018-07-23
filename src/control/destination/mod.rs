@@ -61,10 +61,14 @@ pub struct Resolver {
     request_tx: mpsc::UnboundedSender<ResolveRequest>,
 
     /// Used for counting the number of currently active `Responder`s.
+    ///
+    /// Each `Responder` created by this `Resolver` will hold a `Weak`
+    /// reference back to this `Arc`, so we can determine how many of
+    /// them still exist by counting the number of `Weak`s.
     active_resolutions: Arc<()>,
 
     /// An upper bound on the number of currently active resolutions.
-    capacity: usize,
+    max_resolutions: usize,
 }
 
 /// Requests that resolution updaes for `authority` be sent on `responder`.
@@ -83,8 +87,12 @@ struct Responder {
     /// Indicates whether the corresponding `Resolution` is still active.
     active: Weak<()>,
 
-    /// Indicates to the parent `Resolver` that this `Respondedr` is still
+    /// Indicates to the parent `Resolver` that this `Responder` is still
     /// active.
+    ///
+    /// The `Resolver` owns the `Arc` that this weak ref points to, and
+    /// can use `Arc::weak_count` to determine how many of its `Responder`s
+    /// still exist.
     _active_resolutions: Weak<()>,
 }
 
@@ -114,9 +122,11 @@ pub struct Metadata {
     tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
 }
 
+/// Indicates that the maximum number of concurrently active resolutions
+/// has been reached.
 #[derive(Clone, Debug)]
-pub struct CapacityExhausted {
-    capacity: usize,
+pub struct TooManyResolutions {
+    max: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -165,13 +175,13 @@ pub fn new(
     host_and_port: Option<HostAndPort>,
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
     control_backoff_delay: Duration,
-    capacity: usize,
+    max_resolutions: usize,
 ) -> (Resolver, impl Future<Item = (), Error = ()>) {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver {
         request_tx,
         active_resolutions: Arc::new(()),
-        capacity,
+        max_resolutions,
     };
     let bg = background::task(
         rx,
@@ -194,16 +204,16 @@ impl Resolver {
 
     /// Start watching for address changes for a certain authority.
     pub fn resolve<B>(&self, authority: &DnsNameAndPort, bind: B)
-        -> Result<Resolution<B>, CapacityExhausted>
+        -> Result<Resolution<B>, TooManyResolutions>
     {
         let resolutions = self.active_resolutions();
         trace!(
             "resolve; authority={:?}; active_resolutions={:?};",
             authority, resolutions,
         );
-        if resolutions == self.capacity {
-            debug!("resolver at capacity ({})!", self.capacity);
-            return Err(CapacityExhausted { capacity: self.capacity });
+        if resolutions == self.max_resolutions {
+            warn!("maximum number of resolutions ({}) reached", self.max_resolutions);
+            return Err(TooManyResolutions { max: self.max_resolutions });
         }
 
         let (update_tx, update_rx) = mpsc::unbounded();
@@ -312,15 +322,15 @@ impl Metadata {
 }
 
 
-// ===== impl CapacityExhausted =====
+// ===== impl TooManyResolutions =====
 
-impl fmt::Display for CapacityExhausted {
+impl fmt::Display for TooManyResolutions {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Destination service resolutions at capacity ({})", self.capacity)
+        write!(f, "Destination service resolutions at maximum ({})", self.max)
     }
 }
 
-impl Error for CapacityExhausted {
+impl Error for TooManyResolutions {
     fn cause(&self) -> Option<&Error> {
         None
     }

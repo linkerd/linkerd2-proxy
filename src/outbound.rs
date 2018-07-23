@@ -33,7 +33,7 @@ pub struct Outbound<B> {
 #[derive(Clone, Debug)]
 pub enum RouteError {
     Buffer(bind::BufferSpawnError),
-    DestinationCapacity(destination::CapacityExhausted),
+    TooManyResolutions(destination::TooManyResolutions),
 }
 
 const MAX_IN_FLIGHT: usize = 10_000;
@@ -288,8 +288,9 @@ impl fmt::Display for Dst {
 impl fmt::Display for RouteError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RouteError::Buffer(ref b) => fmt::Display::fmt(b, f),
-            RouteError::DestinationCapacity(ref c) => fmt::Display::fmt(c, f)
+            RouteError::Buffer(ref e) => fmt::Display::fmt(e, f),
+            RouteError::TooManyResolutions(ref e) => fmt::Display::fmt(e, f),
+
         }
     }
 }
@@ -297,22 +298,22 @@ impl fmt::Display for RouteError {
 impl error::Error for RouteError {
     fn cause(&self) -> Option<&error::Error> {
         match self {
-            RouteError::Buffer(ref b) => Some(b),
-            RouteError::DestinationCapacity(ref c) => Some(c),
+            RouteError::Buffer(ref e) => Some(e),
+            RouteError::TooManyResolutions(ref e) => Some(e),
         }
     }
 
 }
 
-impl From<destination::CapacityExhausted> for RouteError {
-    fn from(d: destination::CapacityExhausted) -> Self {
-        RouteError::DestinationCapacity(d)
+impl From<destination::TooManyResolutions> for RouteError {
+    fn from(e: destination::TooManyResolutions) -> Self {
+        RouteError::TooManyResolutions(e)
     }
 }
 
 
 impl From<bind::BufferSpawnError> for RouteError {
-    fn from(b: bind::BufferSpawnError) -> Self {
-        RouteError::Buffer(b)
+    fn from(e: bind::BufferSpawnError) -> Self {
+        RouteError::Buffer(e)
     }
 }
