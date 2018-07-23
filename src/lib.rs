@@ -276,6 +276,7 @@ where
             control_host_and_port,
             controller_tls,
             config.control_backoff_delay,
+            100 // TODO: config parameter
         );
 
         let (drain_tx, drain_rx) = drain::channel();

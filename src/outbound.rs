@@ -30,6 +30,12 @@ pub struct Outbound<B> {
     bind_timeout: Duration,
 }
 
+#[derive(Clone, Debug)]
+pub enum RouteError {
+    Buffer(bind::BufferSpawnError),
+    DestinationCapacity(destination::CapacityExhausted),
+}
+
 const MAX_IN_FLIGHT: usize = 10_000;
 
 /// This default is used by Finagle.
@@ -145,7 +151,7 @@ where
     >>;
     type Error = <Self::Service as tower::Service>::Error;
     type Key = (Destination, Protocol);
-    type RouteError = bind::BufferSpawnError;
+    type RouteError = RouteError;
     type Service = InFlightLimit<Timeout<Buffer<Balance<
         load::WithPeakEwma<Discovery<B>, PendingUntilFirstData>,
         choose::PowerOfTwoChoices,
@@ -174,7 +180,7 @@ where
             let proto = self.bind.clone().with_protocol(protocol.clone());
             match *dest {
                 Destination::Name(ref authority) =>
-                    Discovery::Name(self.discovery.resolve(authority, proto)),
+                    Discovery::Name(self.discovery.resolve(authority, proto)?),
                 Destination::Addr(addr) => Discovery::Addr(Some((addr, proto))),
             }
         };
@@ -274,5 +280,39 @@ impl fmt::Display for Dst {
             }
             Destination::Addr(ref addr) => addr.fmt(f),
         }
+    }
+}
+
+// ===== impl RouteError ======
+
+impl fmt::Display for RouteError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RouteError::Buffer(ref b) => fmt::Display::fmt(b, f),
+            RouteError::DestinationCapacity(ref c) => fmt::Display::fmt(c, f)
+        }
+    }
+}
+
+impl error::Error for RouteError {
+    fn cause(&self) -> Option<&error::Error> {
+        match self {
+            RouteError::Buffer(ref b) => Some(b),
+            RouteError::DestinationCapacity(ref c) => Some(c),
+        }
+    }
+
+}
+
+impl From<destination::CapacityExhausted> for RouteError {
+    fn from(d: destination::CapacityExhausted) -> Self {
+        RouteError::DestinationCapacity(d)
+    }
+}
+
+
+impl From<bind::BufferSpawnError> for RouteError {
+    fn from(b: bind::BufferSpawnError) -> Self {
+        RouteError::Buffer(b)
     }
 }

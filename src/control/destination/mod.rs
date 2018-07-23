@@ -24,9 +24,13 @@
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
-use std::net::SocketAddr;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::{
+    fmt,
+    error::Error,
+    net::SocketAddr,
+    sync::{Arc, Weak},
+    time::Duration,
+};
 use tls;
 
 use futures::{
@@ -55,6 +59,12 @@ use conditional::Conditional;
 #[derive(Clone, Debug)]
 pub struct Resolver {
     request_tx: mpsc::UnboundedSender<ResolveRequest>,
+
+    /// Used for counting the number of currently active `Responder`s.
+    active_resolutions: Arc<()>,
+
+    /// An upper bound on the number of currently active resolutions.
+    capacity: usize,
 }
 
 /// Requests that resolution updaes for `authority` be sent on `responder`.
@@ -72,6 +82,10 @@ struct Responder {
 
     /// Indicates whether the corresponding `Resolution` is still active.
     active: Weak<()>,
+
+    /// Indicates to the parent `Resolver` that this `Respondedr` is still
+    /// active.
+    _active_resolutions: Weak<()>,
 }
 
 /// A `tower_discover::Discover`, given to a `tower_balance::Balance`.
@@ -100,6 +114,10 @@ pub struct Metadata {
     tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
 }
 
+#[derive(Clone, Debug)]
+pub struct CapacityExhausted {
+    capacity: usize,
+}
 
 #[derive(Debug, Clone)]
 enum Update {
@@ -147,9 +165,14 @@ pub fn new(
     host_and_port: Option<HostAndPort>,
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
     control_backoff_delay: Duration,
+    capacity: usize,
 ) -> (Resolver, impl Future<Item = (), Error = ()>) {
     let (request_tx, rx) = mpsc::unbounded();
-    let disco = Resolver { request_tx };
+    let disco = Resolver {
+        request_tx,
+        active_resolutions: Arc::new(()),
+        capacity,
+    };
     let bg = background::task(
         rx,
         dns_resolver,
@@ -164,18 +187,35 @@ pub fn new(
 // ==== impl Resolver =====
 
 impl Resolver {
+    /// Returns the number of currently active resolutions.
+    fn active_resolutions(&self) -> usize {
+        Arc::weak_count(&self.active_resolutions)
+    }
+
     /// Start watching for address changes for a certain authority.
-    pub fn resolve<B>(&self, authority: &DnsNameAndPort, bind: B) -> Resolution<B> {
-        trace!("resolve; authority={:?}", authority);
+    pub fn resolve<B>(&self, authority: &DnsNameAndPort, bind: B)
+        -> Result<Resolution<B>, CapacityExhausted>
+    {
+        let resolutions = self.active_resolutions();
+        trace!(
+            "resolve; authority={:?}; active_resolutions={:?};",
+            authority, resolutions,
+        );
+        if resolutions == self.capacity {
+            debug!("resolver at capacity ({})!", self.capacity);
+            return Err(CapacityExhausted { capacity: self.capacity });
+        }
+
         let (update_tx, update_rx) = mpsc::unbounded();
-        let active = Arc::new(());
+        let responder_active = Arc::new(());
         let req = {
             let authority = authority.clone();
             ResolveRequest {
                 authority,
                 responder: Responder {
                     update_tx,
-                    active: Arc::downgrade(&active),
+                    active: Arc::downgrade(&responder_active),
+                    _active_resolutions: Arc::downgrade(&self.active_resolutions),
                 },
             }
         };
@@ -183,11 +223,11 @@ impl Resolver {
             .unbounded_send(req)
             .expect("unbounded can't fail");
 
-        Resolution {
+        Ok(Resolution {
             update_rx,
-            _active: active,
+            _active: responder_active,
             bind,
-        }
+        })
     }
 }
 
@@ -268,5 +308,20 @@ impl Metadata {
 
     pub fn tls_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoIdentity> {
         self.tls_identity.as_ref()
+    }
+}
+
+
+// ===== impl CapacityExhausted =====
+
+impl fmt::Display for CapacityExhausted {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Destination service resolutions at capacity ({})", self.capacity)
+    }
+}
+
+impl Error for CapacityExhausted {
+    fn cause(&self) -> Option<&Error> {
+        None
     }
 }
