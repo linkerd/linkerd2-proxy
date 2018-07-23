@@ -154,12 +154,14 @@ fn record_one_conn_request(b: &mut Bencher) {
 
         TransportClose(server_transport.clone(), event::TransportClose {
             clean: true,
+            errno: None,
             duration: Duration::from_secs(30_000),
             rx_bytes: 4321,
             tx_bytes: 4321,
         }),
         TransportClose(client_transport.clone(), event::TransportClose {
             clean: true,
+            errno: None,
             duration: Duration::from_secs(30_000),
             rx_bytes: 4321,
             tx_bytes: 4321,
@@ -221,6 +223,7 @@ fn record_many_dsts(b: &mut Bencher) {
 
         events.push(TransportClose(client_transport.clone(), event::TransportClose {
             clean: true,
+            errno: None,
             duration: Duration::from_secs(30_000),
             rx_bytes: 4321,
             tx_bytes: 4321,
@@ -229,6 +232,7 @@ fn record_many_dsts(b: &mut Bencher) {
 
     events.push(TransportClose(server_transport.clone(), event::TransportClose {
         clean: true,
+        errno: None,
         duration: Duration::from_secs(30_000),
         rx_bytes: 4321,
         tx_bytes: 4321,

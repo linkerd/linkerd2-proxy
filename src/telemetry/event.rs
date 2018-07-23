@@ -27,6 +27,7 @@ pub struct TransportClose {
     /// Indicates that the transport was closed without error.
     // TODO include details.
     pub clean: bool,
+    pub errno: Option<i32>,
 
     pub duration: Duration,
 
