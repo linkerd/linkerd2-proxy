@@ -67,16 +67,6 @@ impl Server {
         self
     }
 
-    /// Return a 200 OK response with no body when the path matches.
-    pub fn route_empty_ok(self, path: &str) -> Self {
-        self.route_fn(path, |_| {
-            Response::builder()
-                .header("content-length", "0")
-                .body(Default::default())
-                .unwrap()
-        })
-    }
-
     /// Call a closure when the request matches, returning a response
     /// to send back.
     pub fn route_fn<F>(mut self, path: &str, cb: F) -> Self

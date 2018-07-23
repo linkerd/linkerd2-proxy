@@ -816,7 +816,7 @@ fn http1_one_connection_per_host() {
     let _ = env_logger::try_init();
 
     let srv = server::http1()
-        .route_empty_ok("/")
+        .route("/", "hello hosts")
         .run();
     let proxy = proxy::new().inbound(srv).run();
 
@@ -875,7 +875,7 @@ fn http1_requests_without_host_have_unique_connections() {
     let _ = env_logger::try_init();
 
     let srv = server::http1()
-        .route_empty_ok("/")
+        .route("/", "unique hosts")
         .run();
     let proxy = proxy::new().inbound(srv).run();
 
