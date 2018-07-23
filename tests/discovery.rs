@@ -22,6 +22,45 @@ macro_rules! generate_tests {
         }
 
         #[test]
+        fn outbound_max_dests() {
+            let _ = env_logger::try_init();
+            let srv = $make_server().route("/", "hello").run();
+            let mut env = config::TestEnv::new();
+
+            env.put(config::ENV_OUTBOUND_MAX_DESTINATIONS, "10".to_owned());
+
+            let ctrl = controller::new();
+            let _txs = (1..10).map(|n| {
+                let disco_n = format!("disco{}.test.svc.cluster.local", n);
+                let tx = ctrl.destination_tx(&disco_n);
+                tx.send_addr(srv.addr);
+                tx // This will go into a vec, to keep the stream open.
+            }).collect::<Vec<_>>();
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv)
+                .run_with_test_env(env);
+
+            for n in 1..9 {
+                let route = format!("disco{}.test.svc.cluster.local", n);
+                let client = $make_client(proxy.outbound, route);
+                println!("trying {}th destination....", n);
+                assert_eq!(client.get("/"), "hello");
+            }
+
+            let client = $make_client(proxy.outbound, "disco10.test.svc.cluster.local");
+            println!("trying 10th destination....");
+            let mut req = client.request_builder("/");
+            let rsp = client.request(req.method("GET"));
+            // The request should fail.
+            assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+
+            // TODO: The controller should also assert the proxy doesn't make requests
+            // when it has hit the maximum number of resolutions.
+        }
+
+        #[test]
         fn outbound_reconnects_if_controller_stream_ends() {
             let _ = env_logger::try_init();
 
@@ -35,6 +74,7 @@ macro_rules! generate_tests {
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
             assert_eq!(client.get("/recon"), "nect");
+
         }
 
         #[test]
