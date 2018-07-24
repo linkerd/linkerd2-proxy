@@ -524,7 +524,7 @@ pub mod test_util {
 
         // Returns a `ConnectionConfig<ClientConfigWatch>` preloaded with a
         // valid client TLS configuration.
-        pub fn client(&self, server_identity: Identity) -> (ConnectionConfig<ClientConfigWatch>)
+        pub fn client(&self, server_identity: Identity) -> ConnectionConfig<ClientConfigWatch>
         {
             let settings = self.to_settings();
             let mut config_watch = ConfigWatch::new(Conditional::Some(settings.clone()));
