@@ -70,7 +70,6 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS);
 }
 
-#[allow(dead_code)]
 struct Transported<R> {
     /// The value of `Connection::tls_status()` for the established connection.
     ///
