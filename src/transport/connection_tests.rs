@@ -67,7 +67,7 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     assert_eq!(client_result.is_tls(), false);
     assert!(client_result.result.is_err());
     assert_eq!(server_result.is_tls(), false);
-    assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS)
+    assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS);
 }
 
 #[allow(dead_code)]
