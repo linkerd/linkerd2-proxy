@@ -147,7 +147,7 @@ impl BoundPort {
             Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
             <Fut as IntoFuture>::Future: Send,
     {
-        self.listen_and_fold_(std::u64::MAX, initial, f)
+        self.listen_and_fold_inner(std::u64::MAX, initial, f)
     }
 
     #[cfg(test)]
@@ -163,10 +163,10 @@ impl BoundPort {
             Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
             <Fut as IntoFuture>::Future: Send,
     {
-        self.listen_and_fold_(connection_limit, initial, f)
+        self.listen_and_fold_inner(connection_limit, initial, f)
     }
 
-    fn listen_and_fold_<T, F, Fut>(
+    fn listen_and_fold_inner<T, F, Fut>(
         self,
         connection_limit: u64,
         initial: T,
