@@ -76,6 +76,14 @@ impl std::fmt::Debug for ClientConfig {
 #[derive(Clone)]
 pub struct ServerConfig(pub(super) Arc<rustls::ServerConfig>);
 
+/// XXX: `rustls::ServerConfig` doesn't implement `Debug` yet.
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        f.debug_struct("ServerConfig")
+            .finish()
+    }
+}
+
 pub type ClientConfigWatch = Watch<Conditional<ClientConfig, ReasonForNoTls>>;
 pub type ServerConfigWatch = Watch<ServerConfig>;
 
@@ -83,7 +91,7 @@ pub type ServerConfigWatch = Watch<ServerConfig>;
 /// (`ServerConfig`) TLS connection.
 #[derive(Clone, Debug)]
 pub struct ConnectionConfig<C> where C: Clone {
-    pub identity: Identity,
+    pub server_identity: Identity,
     pub config: C,
 }
 
@@ -475,11 +483,11 @@ pub(super) const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::
     rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
 
 #[cfg(test)]
-mod test_util {
+pub mod test_util {
+    use super::*;
     use std::path::PathBuf;
-
     use conditional::Conditional;
-    use tls::{CommonSettings, Identity, ReasonForNoIdentity};
+    use tls::Identity;
 
     pub struct Strings {
         pub identity: &'static str,
@@ -495,6 +503,13 @@ mod test_util {
         private_key: "foo-ns1-ca1.p8",
     };
 
+    pub static BAR_NS1: Strings = Strings {
+        identity: "bar.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local",
+        trust_anchors: "ca1.pem",
+        end_entity_cert: "bar-ns1-ca1.crt",
+        private_key: "bar-ns1-ca1.p8",
+    };
+
     impl Strings {
         pub fn to_settings(&self) -> CommonSettings {
             let dir = PathBuf::from("src/transport/tls/testdata");
@@ -504,6 +519,39 @@ mod test_util {
                 trust_anchors: dir.join(self.trust_anchors),
                 end_entity_cert: dir.join(self.end_entity_cert),
                 private_key: dir.join(self.private_key),
+            }
+        }
+
+        // Returns a `ConnectionConfig<ClientConfigWatch>` preloaded with a
+        // valid client TLS configuration.
+        pub fn client(&self, server_identity: Identity) -> ConnectionConfig<ClientConfigWatch>
+        {
+            let settings = self.to_settings();
+            let mut config_watch = ConfigWatch::new(Conditional::Some(settings.clone()));
+            let common = CommonConfig::load_from_disk(&settings).unwrap();
+            config_watch.client_store.store(Conditional::Some(ClientConfig::from(&common)))
+                .unwrap();
+            ConnectionConfig {
+                server_identity: server_identity,
+                config: config_watch.client,
+            }
+        }
+
+        // Returns a `ConnectionConfig<ServerConfigWatch>` preloaded with a
+        // valid server TLS configuration.
+        pub fn server(&self) -> ConnectionConfig<ServerConfigWatch>
+        {
+            let settings = self.to_settings();
+            let mut config_watch = ConfigWatch::new(Conditional::Some(settings.clone()));
+            let common = CommonConfig::load_from_disk(&settings).unwrap();
+            config_watch.server_store.store(ServerConfig::from(&common)).unwrap();
+            let config = match config_watch.server {
+                Conditional::Some(watch) => watch,
+                Conditional::None(_) => unreachable!(),
+            };
+            ConnectionConfig {
+                server_identity: settings.pod_identity,
+                config,
             }
         }
     }

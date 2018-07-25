@@ -141,6 +141,37 @@ impl BoundPort {
         initial: T,
         f: F)
         -> impl Future<Item = (), Error = io::Error> + Send + 'static
+        where
+            F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
+            T: Send + 'static,
+            Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
+            <Fut as IntoFuture>::Future: Send,
+    {
+        self.listen_and_fold_inner(std::u64::MAX, initial, f)
+    }
+
+    #[cfg(test)]
+    pub fn listen_and_fold_n<T, F, Fut>(
+        self,
+        connection_limit: u64,
+        initial: T,
+        f: F)
+        -> impl Future<Item = (), Error = io::Error> + Send + 'static
+        where
+            F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
+            T: Send + 'static,
+            Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
+            <Fut as IntoFuture>::Future: Send,
+    {
+        self.listen_and_fold_inner(connection_limit, initial, f)
+    }
+
+    fn listen_and_fold_inner<T, F, Fut>(
+        self,
+        connection_limit: u64,
+        initial: T,
+        f: F)
+        -> impl Future<Item = (), Error = io::Error> + Send + 'static
     where
         F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
         T: Send + 'static,
@@ -156,8 +187,9 @@ impl BoundPort {
             // background reactor if `listen_and_fold` is called before we've
             // initialized the runtime.
             TcpListener::from_std(inner, &Handle::current())
-        }).and_then(|listener|
+        }).and_then(move |listener|
             listener.incoming()
+                .take(connection_limit)
                 .and_then(move |socket| {
                     let remote_addr = socket.peer_addr()
                         .expect("couldn't get remote addr!");
@@ -173,7 +205,7 @@ impl BoundPort {
                     let conn = match &tls {
                         Conditional::Some(tls) => {
                             let tls = tls::ConnectionConfig {
-                                identity: tls.identity.clone(),
+                                server_identity: tls.server_identity.clone(),
                                 config: tls.config.borrow().clone(),
                             };
                             Either::A(ConditionallyUpgradeServerToTls::new(socket, tls))
@@ -265,7 +297,7 @@ impl ConditionallyUpgradeServerToTlsInner {
         }
 
         let buf = self.peek_buf.as_ref();
-        Ok(tls::conditional_accept::match_client_hello(buf, &self.tls.identity).into())
+        Ok(tls::conditional_accept::match_client_hello(buf, &self.tls.server_identity).into())
     }
 
     fn into_tls_upgrade(self) -> tls::UpgradeServerToTls {
@@ -298,7 +330,7 @@ impl Future for Connecting {
                         Conditional::Some(config) => {
                             trace!("plaintext connection established; trying to upgrade");
                             let upgrade = tls::Connection::connect(
-                                plaintext_stream, &config.identity, config.config);
+                                plaintext_stream, &config.server_identity, config.config);
                             ConnectingState::UpgradeToTls(upgrade)
                         },
                         Conditional::None(why) => {

@@ -458,6 +458,12 @@ impl From<Addr> for SocketAddr {
     }
 }
 
+impl From<SocketAddr> for Addr {
+    fn from(addr: SocketAddr) -> Self {
+        Addr(addr)
+    }
+}
+
 // ===== impl Env =====
 
 impl Strings for Env {
