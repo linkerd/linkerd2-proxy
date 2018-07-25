@@ -46,6 +46,10 @@ impl Handle {
             let ev = mk();
             trace!("event: {:?}", ev);
 
+            if let Ok(mut taps) = inner.taps.lock() {
+                taps.inspect(&ev);
+            }
+
             inner.metrics.record_event(&ev);
         }
     }
