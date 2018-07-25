@@ -216,7 +216,7 @@ pub struct Server {
     name: &'static str,
     listen: SocketAddr,
     remote: Option<SocketAddr>,
-    tls: Option<TlsStatus>,
+    tls_status: Option<TlsStatus>,
 }
 
 /// A utility for logging actions taken on behalf of a client task.
@@ -227,7 +227,7 @@ pub struct Client<C: fmt::Display, D: fmt::Display> {
     dst: D,
     protocol: Option<::bind::Protocol>,
     remote: Option<SocketAddr>,
-    tls: Option<TlsStatus>,
+    tls_status: Option<TlsStatus>,
 }
 
 /// A utility for logging actions taken on behalf of a background task.
@@ -251,7 +251,7 @@ impl Section {
             name,
             listen,
             remote: None,
-            tls: None,
+            tls_status: None,
         }
     }
 
@@ -262,7 +262,7 @@ impl Section {
             dst,
             protocol: None,
             remote: None,
-            tls: None,
+            tls_status: None,
         }
     }
 }
@@ -298,9 +298,9 @@ impl Server {
         }
     }
 
-    pub fn with_tls(self, tls: TlsStatus) -> Self {
+    pub fn with_tls_status(self, tls_status: TlsStatus) -> Self {
         Self {
-            tls: Some(tls),
+            tls_status: Some(tls_status),
             ..self
         }
     }
@@ -320,8 +320,8 @@ impl fmt::Display for Server {
         if let Some(remote) = self.remote {
             write!(f, " remote={}", remote)?;
         }
-        if let Some(tls) = self.tls {
-            write!(f, " tls={}", tls)?;
+        if let Some(tls_status) = self.tls_status {
+            write!(f, " tls_status={}", tls_status)?;
         }
         write!(f, "}}")
     }
@@ -353,9 +353,9 @@ impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
         }
     }
 
-    pub fn with_tls(self, tls: TlsStatus) -> Self {
+    pub fn with_tls_status(self, tls_status: TlsStatus) -> Self {
         Self {
-            tls: Some(tls),
+            tls_status: Some(tls_status),
             ..self
         }
     }
@@ -374,8 +374,8 @@ impl<C: fmt::Display, D: fmt::Display> fmt::Display for Client<C, D> {
         if let Some(remote) = self.remote {
             write!(f, " remote={}", remote)?;
         }
-        if let Some(tls) = self.tls {
-            write!(f, " tls={}", tls)?;
+        if let Some(tls_status) = self.tls_status {
+            write!(f, " tls_status={}", tls_status)?;
         }
         write!(f, "}}")
     }
