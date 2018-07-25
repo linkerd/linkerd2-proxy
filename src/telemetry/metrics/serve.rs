@@ -1,8 +1,6 @@
 use deflate::CompressionOptions;
 use deflate::write::GzEncoder;
-use futures::{
-    future::{self, FutureResult}, Future,
-};
+use futures::{future::{self, FutureResult}, Future};
 use http::{self, header, StatusCode};
 use hyper::{
     service::Service,
