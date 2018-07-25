@@ -30,12 +30,10 @@ pub use self::sensor::Sensors;
 /// [`Control`]: struct.Control.html
 pub fn new(
     process: &Arc<ctx::Process>,
-    capacity: usize,
     metrics_retain_idle: Duration,
     taps: &Arc<Mutex<tap::Taps>>,
-) -> (Sensors, Control) {
-    let (tx, rx) = futures_mpsc_lossy::channel(capacity);
-    let s = Sensors::new(tx);
-    let c = Control::new(rx, process, metrics_retain_idle, taps);
-    (s, c)
+) -> (Sensors, metrics::Serve) {
+    let (metrics_record, metrics_serve) = metrics::new(process, metrics_retain_idle);
+    let s = Sensors::new(metrics_record);
+    (s, metrics_serve)
 }
