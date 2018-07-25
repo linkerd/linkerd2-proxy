@@ -246,9 +246,8 @@ where
         );
 
         let (taps, observe) = control::Observe::new(100);
-        let (sensors, telemetry) = telemetry::new(
+        let (sensors, metrics_server) = telemetry::new(
             &process_ctx,
-            config.event_buffer_capacity,
             config.metrics_retain_idle,
             &taps,
         );
@@ -345,14 +344,13 @@ where
 
                     let tap = serve_tap(control_listener, TapServer::new(observe));
 
-                    let metrics_server = telemetry.serve_metrics(metrics_listener);
+                    let metrics = metrics_server.serve(metrics_listener);
 
                     rt.spawn(::logging::admin().bg("resolver").future(resolver_bg));
-                    rt.spawn(::logging::admin().bg("telemetry").future(telemetry));
                     // tap is already wrapped in a logging Future.
                     rt.spawn(tap);
                     // metrics_server is already wrapped in a logging Future.
-                    rt.spawn(metrics_server);
+                    rt.spawn(metrics);
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
 
                     rt.spawn(::logging::admin().bg("tls-config").future(tls_cfg_bg));

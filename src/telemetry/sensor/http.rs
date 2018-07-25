@@ -125,12 +125,12 @@ where
 {
     pub(super) fn new(
         new_service: N,
-        handle: &super::Handle,
+        handle: super::Handle,
         client_ctx: &Arc<ctx::transport::Client>,
     ) -> Self {
         Self {
             new_service,
-            handle: handle.clone(),
+            handle,
             client_ctx: Arc::clone(client_ctx),
             _p: PhantomData,
         }
