@@ -76,7 +76,7 @@ pub struct Config {
     /// Age after which metrics may be dropped.
     pub metrics_retain_idle: Duration,
 
-    /// timeout after which to cancel binding a request.
+    /// Timeout after which to cancel binding a request.
     pub bind_timeout: Duration,
 
     pub namespaces: Namespaces,
