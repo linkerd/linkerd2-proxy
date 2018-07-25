@@ -10,6 +10,8 @@ use futures::{Future, Poll};
 use futures::future::{ExecuteError, Executor};
 use log::{Level};
 
+use ctx::transport::TlsStatus;
+
 const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 
 thread_local! {
@@ -214,6 +216,7 @@ pub struct Server {
     name: &'static str,
     listen: SocketAddr,
     remote: Option<SocketAddr>,
+    tls: Option<TlsStatus>,
 }
 
 /// A utility for logging actions taken on behalf of a client task.
@@ -224,6 +227,7 @@ pub struct Client<C: fmt::Display, D: fmt::Display> {
     dst: D,
     protocol: Option<::bind::Protocol>,
     remote: Option<SocketAddr>,
+    tls: Option<TlsStatus>,
 }
 
 /// A utility for logging actions taken on behalf of a background task.
@@ -247,6 +251,7 @@ impl Section {
             name,
             listen,
             remote: None,
+            tls: None,
         }
     }
 
@@ -257,6 +262,7 @@ impl Section {
             dst,
             protocol: None,
             remote: None,
+            tls: None,
         }
     }
 }
@@ -292,6 +298,13 @@ impl Server {
         }
     }
 
+    pub fn with_tls(self, tls: TlsStatus) -> Self {
+        Self {
+            tls: Some(tls),
+            ..self
+        }
+    }
+
     pub fn executor(self) -> ServerExecutor {
         context_executor(self)
     }
@@ -306,6 +319,9 @@ impl fmt::Display for Server {
         write!(f, "{}={{server={} listen={}", self.section, self.name, self.listen)?;
         if let Some(remote) = self.remote {
             write!(f, " remote={}", remote)?;
+        }
+        if let Some(tls) = self.tls {
+            write!(f, " tls={}", tls)?;
         }
         write!(f, "}}")
     }
@@ -337,6 +353,13 @@ impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
         }
     }
 
+    pub fn with_tls(self, tls: TlsStatus) -> Self {
+        Self {
+            tls: Some(tls),
+            ..self
+        }
+    }
+
     pub fn executor(self) -> ClientExecutor<C, D> {
         context_executor(self)
     }
@@ -350,6 +373,9 @@ impl<C: fmt::Display, D: fmt::Display> fmt::Display for Client<C, D> {
         }
         if let Some(remote) = self.remote {
             write!(f, " remote={}", remote)?;
+        }
+        if let Some(tls) = self.tls {
+            write!(f, " tls={}", tls)?;
         }
         write!(f, "}}")
     }

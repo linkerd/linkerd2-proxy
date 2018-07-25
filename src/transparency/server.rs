@@ -121,6 +121,7 @@ where
         let opened_at = Instant::now();
 
         // create Server context
+        let tls = connection.tls_status();
         let orig_dst = connection.original_dst_addr(&self.get_orig_dst);
         let local_addr = connection.local_addr().unwrap_or(self.listen_addr);
         let srv_ctx = ServerCtx::new(
@@ -128,10 +129,11 @@ where
             &local_addr,
             &remote_addr,
             &orig_dst,
-            connection.tls_status(),
+            tls,
         );
         let log = self.log.clone()
-            .with_remote(remote_addr);
+            .with_remote(remote_addr)
+            .with_tls(tls);
 
         // record telemetry
         let io = self.sensors.accept(connection, opened_at, &srv_ctx);
