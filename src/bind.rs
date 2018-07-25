@@ -69,7 +69,7 @@ where
 /// requests. The `BindsPerRequest` binding ensures that a new stack is bound for each
 /// request.
 ///
-/// `Bound` serivces may be used to process an arbitrary number of requests.
+/// `Bound` services may be used to process an arbitrary number of requests.
 pub enum Binding<B>
 where
     B: tower_h2::Body + Send + 'static,

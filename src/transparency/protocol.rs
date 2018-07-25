@@ -28,7 +28,7 @@ impl Protocol {
         let mut headers = [httparse::EMPTY_HEADER; 0];
         let mut req = httparse::Request::new(&mut headers);
         match req.parse(bytes) {
-            // Ok(Compelete) or Ok(Partial) both mean it looks like HTTP1!
+            // Ok(Complete) or Ok(Partial) both mean it looks like HTTP1!
             //
             // If we got past the first line, we'll see TooManyHeaders,
             // because we passed an array of 0 headers to parse into. That's fine!

@@ -5,7 +5,7 @@
 #
 # When PROXY_UNOPTIMIZED is set and not empty, unoptimized rust artifacts are produced.
 # This reduces build time and produces binaries with debug symbols, at the expense of
-# runtime perforamnce.
+# runtime performance.
 
 ARG RUST_IMAGE=rust:1.27.1
 ARG RUNTIME_IMAGE=gcr.io/linkerd-io/base:2017-10-30.01

@@ -7,7 +7,7 @@ use conditional::Conditional;
 
 /// An individual traffic target.
 ///
-/// Equality, Ordering, and hashability is determined soley by the Endpoint's address.
+/// Equality, Ordering, and hashability is determined solely by the Endpoint's address.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint {
     address: SocketAddr,
