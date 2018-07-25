@@ -1,10 +1,15 @@
-use deflate::write::GzEncoder;
 use deflate::CompressionOptions;
+use deflate::write::GzEncoder;
 use futures::{
     future::{self, FutureResult}, Future,
 };
 use http::{self, header, StatusCode};
-use hyper::{service::Service, Body, Request, Response};
+use hyper::{
+    service::Service,
+    Body,
+    Request,
+    Response,
+};
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
@@ -41,12 +46,9 @@ impl Serve {
 
     fn is_gzip<B>(req: &Request<B>) -> bool {
         req.headers()
-            .get_all(header::ACCEPT_ENCODING)
-            .iter()
+            .get_all(header::ACCEPT_ENCODING).iter()
             .any(|value| {
-                value
-                    .to_str()
-                    .ok()
+                value.to_str().ok()
                     .map(|value| value.contains("gzip"))
                     .unwrap_or(false)
             })
@@ -100,7 +102,8 @@ impl Service for Serve {
             return future::ok(rsp);
         }
 
-        let mut metrics = self.metrics.lock().expect("metrics lock poisoned");
+        let mut metrics = self.metrics.lock()
+            .expect("metrics lock poisoned");
 
         metrics.retain_since(Instant::now() - self.idle_retain);
         let metrics = metrics;
@@ -157,9 +160,7 @@ impl From<io::Error> for ServeError {
 
 impl fmt::Display for ServeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}: {}",
+        write!(f, "{}: {}",
             self.description(),
             self.cause().expect("ServeError must have cause")
         )
@@ -170,7 +171,7 @@ impl Error for ServeError {
     fn description(&self) -> &str {
         match *self {
             ServeError::Http(_) => "error constructing HTTP response",
-            ServeError::Io(_) => "error writing metrics",
+            ServeError::Io(_) => "error writing metrics"
         }
     }
 
