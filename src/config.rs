@@ -177,6 +177,7 @@ pub const ENV_BIND_TIMEOUT: &str = "LINKERD2_PROXY_BIND_TIMEOUT";
 // route for each protocol and authority.
 pub const ENV_INBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_INBOUND_ROUTER_CAPACITY";
 pub const ENV_OUTBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_CAPACITY";
+
 /// Limits the maximum number of outbound Destination service resolutions.
 ///
 /// Routes which do not result in service discovery lookups will not be capped

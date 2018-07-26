@@ -74,7 +74,6 @@ macro_rules! generate_tests {
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
             assert_eq!(client.get("/recon"), "nect");
-
         }
 
         #[test]
