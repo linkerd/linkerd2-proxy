@@ -25,15 +25,23 @@ macro_rules! generate_tests {
         fn outbound_max_dests() {
             let _ = env_logger::try_init();
             let srv = $make_server().route("/", "hello").run();
+            let srv_addr = srv.addr;
+
             let mut env = config::TestEnv::new();
 
+            // Set the maximum number of Destination service resolutions
+            // lower than the total router capacity, so we can reach the
+            // maximum number of destinations before we start evicting
+            // routes.
             env.put(config::ENV_OUTBOUND_MAX_DESTINATIONS, "10".to_owned());
+            env.put(config::ENV_OUTBOUND_ROUTER_CAPACITY, "11".to_owned());
+            env.put(config::ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, "1s".to_owned());
 
             let ctrl = controller::new();
-            let _txs = (1..10).map(|n| {
+            let _txs = (1..=11).map(|n| {
                 let disco_n = format!("disco{}.test.svc.cluster.local", n);
                 let tx = ctrl.destination_tx(&disco_n);
-                tx.send_addr(srv.addr);
+                tx.send_addr(srv_addr);
                 tx // This will go into a vec, to keep the stream open.
             }).collect::<Vec<_>>();
 
@@ -42,22 +50,47 @@ macro_rules! generate_tests {
                 .outbound(srv)
                 .run_with_test_env(env);
 
-            for n in 1..9 {
+            // Make ten requests that go through service discovery, to reach the
+            // maximum number of Destination resolutions.
+            for n in 1..=10 {
                 let route = format!("disco{}.test.svc.cluster.local", n);
                 let client = $make_client(proxy.outbound, route);
-                println!("trying {}th destination....", n);
+                println!("trying {}th destination...", n);
                 assert_eq!(client.get("/"), "hello");
             }
 
-            let client = $make_client(proxy.outbound, "disco10.test.svc.cluster.local");
-            println!("trying 10th destination....");
+            // The next request will fail, because we have reached the
+            // Destination resolution limit, but we have _not_ reached the
+            // route cache capacity, so we won't start evicting inactive
+            // routes yet, and their Destination resolutions will remain
+            // active.
+            let client = $make_client(proxy.outbound, "disco11.test.svc.cluster.local");
+            println!("trying 11th destination...");
             let mut req = client.request_builder("/");
             let rsp = client.request(req.method("GET"));
             // The request should fail.
             assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
 
-            // TODO: The controller should also assert the proxy doesn't make requests
-            // when it has hit the maximum number of resolutions.
+            // TODO: The controller should also assert the proxy doesn't make
+            // requests when it has hit the maximum number of resolutions.
+
+            // Sleep for longer than the router cache's max idle age, so that
+            //  at least one old route will be considered inactive.
+            ::std::thread::sleep(Duration::from_secs(2));
+
+            // Next, make a request that _won't_ trigger a Destination lookup,
+            // so that we can reach the router's capacity as well.
+            let addr_client = $make_client(proxy.outbound, format!("{}", srv_addr));
+            println!("trying {} directly...", srv_addr);
+            assert_eq!(addr_client.get("/"), "hello");
+
+            // Now that the router cache capacity has been reached, subsequent
+            // requests that add a new route will evict an inactive route. This
+            // should drop their Destination resolutions, so we should now be
+            // able to open a new one.
+            println!("trying 11th destination again...");
+            let client = $make_client(proxy.outbound, "disco11.test.svc.cluster.local");
+            assert_eq!(client.get("/"), "hello");
         }
 
         #[test]
