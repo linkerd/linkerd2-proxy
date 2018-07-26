@@ -18,14 +18,13 @@ mod transport;
 pub use self::http::{Http, NewHttp};
 pub use self::transport::{Connect, Transport};
 
-/// Accepts events from sensors.
 #[derive(Clone, Debug)]
 struct Inner {
     metrics: metrics::Record,
     taps: Arc<Mutex<tap::Taps>>,
 }
 
-/// Supports the creation of telemetry scopes.
+/// Accepts events from sensors.
 #[derive(Clone, Debug)]
 pub struct Handle(Option<Inner>);
 
