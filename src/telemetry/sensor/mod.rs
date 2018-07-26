@@ -26,7 +26,7 @@ struct Inner {
 
 /// Accepts events from sensors.
 #[derive(Clone, Debug)]
-pub struct Handle(Option<Inner>);
+struct Handle(Option<Inner>);
 
 /// Supports the creation of telemetry scopes.
 #[derive(Clone, Debug)]
