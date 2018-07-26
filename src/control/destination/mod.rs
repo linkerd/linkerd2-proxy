@@ -86,14 +86,6 @@ struct Responder {
 
     /// Indicates whether the corresponding `Resolution` is still active.
     active: Weak<()>,
-
-    /// Indicates to the parent `Resolver` that this `Responder` is still
-    /// active.
-    ///
-    /// The `Resolver` owns the `Arc` that this weak ref points to, and
-    /// can use `Arc::weak_count` to determine how many of its `Responder`s
-    /// still exist.
-    _active_resolutions: Weak<()>,
 }
 
 /// A `tower_discover::Discover`, given to a `tower_balance::Balance`.
@@ -106,7 +98,14 @@ pub struct Resolution<B> {
     ///
     /// `Responder` holds a weak reference to this `Arc` and can determine when this
     /// reference has been dropped.
-    _active: Arc<()>,
+    _responder_active: Arc<()>,
+
+    /// Allows the `Resolver` to determine how many `Resolution`s are still active.
+    ///
+    /// The `Resolver` owns the `Arc` that this weak ref points to, and
+    /// can use `Arc::weak_count` to determine how many of its `Responder`s
+    /// still exist.
+    _resolver_active: Weak<()>,
 
     /// Binds an update endpoint to a Service.
     bind: B,
@@ -225,7 +224,6 @@ impl Resolver {
                 responder: Responder {
                     update_tx,
                     active: Arc::downgrade(&responder_active),
-                    _active_resolutions: Arc::downgrade(&self.active_resolutions),
                 },
             }
         };
@@ -235,7 +233,8 @@ impl Resolver {
 
         Ok(Resolution {
             update_rx,
-            _active: responder_active,
+            _responder_active: responder_active,
+            _resolver_active: Arc::downgrade(&self.active_resolutions),
             bind,
         })
     }
