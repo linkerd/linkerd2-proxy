@@ -871,7 +871,7 @@ mod transport {
             "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"failure\",errno=\"EXFULL\"} 1");
         // Connection to the client should have closed cleanly.
         assert_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"disabled\",classification=\"success\"} 1");
+            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\",classification=\"success\"} 1");
     }
 
     #[test]

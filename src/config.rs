@@ -73,9 +73,6 @@ pub struct Config {
     /// a new connection.
     pub control_backoff_delay: Duration,
 
-    /// Event queue capacity.
-    pub event_buffer_capacity: usize,
-
     /// Age after which metrics may be dropped.
     pub metrics_retain_idle: Duration,
 
@@ -163,7 +160,6 @@ pub struct TestEnv {
 }
 
 // Environment variables to look at when loading the configuration
-const ENV_EVENT_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_EVENT_BUFFER_CAPACITY";
 pub const ENV_PRIVATE_LISTENER: &str = "LINKERD2_PROXY_PRIVATE_LISTENER";
 pub const ENV_PRIVATE_FORWARD: &str = "LINKERD2_PROXY_PRIVATE_FORWARD";
 pub const ENV_PUBLIC_LISTENER: &str = "LINKERD2_PROXY_PUBLIC_LISTENER";
@@ -212,7 +208,6 @@ const ENV_DNS_MIN_TTL: &str = "LINKERD2_PROXY_DNS_MIN_TTL";
 const ENV_DNS_MAX_TTL: &str = "LINKERD2_PROXY_DNS_MAX_TTL";
 
 // Default values for various configuration fields
-const DEFAULT_EVENT_BUFFER_CAPACITY: usize = 10_000; // FIXME
 const DEFAULT_PRIVATE_LISTENER: &str = "tcp://127.0.0.1:4140";
 const DEFAULT_PUBLIC_LISTENER: &str = "tcp://0.0.0.0:4143";
 const DEFAULT_CONTROL_LISTENER: &str = "tcp://0.0.0.0:4190";
@@ -283,7 +278,6 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let tls_controller_identity = strings.get(ENV_TLS_CONTROLLER_IDENTITY);
         let bind_timeout = parse(strings, ENV_BIND_TIMEOUT, parse_duration);
         let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
-        let event_buffer_capacity = parse(strings, ENV_EVENT_BUFFER_CAPACITY, parse_number);
         let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
         let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
         let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
@@ -420,7 +414,6 @@ impl<'a> TryFrom<&'a Strings> for Config {
             control_host_and_port,
             control_backoff_delay,
 
-            event_buffer_capacity: event_buffer_capacity?.unwrap_or(DEFAULT_EVENT_BUFFER_CAPACITY),
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
 
             bind_timeout: bind_timeout?.unwrap_or(DEFAULT_BIND_TIMEOUT),

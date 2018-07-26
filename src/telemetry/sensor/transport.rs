@@ -47,11 +47,9 @@ impl<T: AsyncRead + AsyncWrite> Transport<T> {
     pub(super) fn open(
         io: T,
         opened_at: Instant,
-        handle: &super::Handle,
+        mut handle: super::Handle,
         ctx: Arc<ctx::transport::Ctx>,
     ) -> Self {
-        let mut handle = handle.clone();
-
         handle.send(|| event::Event::TransportOpen(Arc::clone(&ctx)));
 
         Transport(
@@ -201,12 +199,12 @@ where
     /// Returns a `Connect` to `addr` and `handle`.
     pub(super) fn new(
         underlying: C,
-        handle: &super::Handle,
+        handle: super::Handle,
         ctx: &Arc<ctx::transport::Client>,
     ) -> Self {
         Connect {
             underlying,
-            handle: handle.clone(),
+            handle,
             ctx: Arc::clone(ctx),
         }
     }
@@ -248,7 +246,7 @@ where
             io.tls_status(),
         );
         let ctx = Arc::new(ctx.into());
-        let trans = Transport::open(io, Instant::now(), &self.handle, ctx);
+        let trans = Transport::open(io, Instant::now(), self.handle.clone(), ctx);
         Ok(trans.into())
     }
 }

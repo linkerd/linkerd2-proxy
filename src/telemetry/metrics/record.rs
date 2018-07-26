@@ -12,7 +12,7 @@ use super::labels::{
 use std::time::UNIX_EPOCH;
 
 /// Tracks Prometheus metrics
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Record {
     metrics: Arc<Mutex<Root>>,
 }
