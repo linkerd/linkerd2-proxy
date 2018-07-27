@@ -181,7 +181,7 @@ pub const ENV_OUTBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_C
 /// Limits the maximum number of outbound Destination service resolutions.
 ///
 /// Routes which do not result in service discovery lookups will not be capped
-/// by this limit. This will have no effect if it is greater mthan the total
+/// by this limit. This will have no effect if it is greater than the total
 /// router capacity (as configured by `ENV_OUTBOUND_ROUTER_CAPACITY`).
 pub const ENV_MAX_DESTINATION_QUERIES: &str = "LINKERD2_PROXY_MAX_DESTINATION_QUERIES";
 
