@@ -276,7 +276,7 @@ where
             control_host_and_port,
             controller_tls,
             config.control_backoff_delay,
-            config.outbound_max_dsts,
+            config.max_dst_queries,
         );
 
         let (drain_tx, drain_rx) = drain::channel();

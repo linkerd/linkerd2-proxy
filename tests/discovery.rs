@@ -16,7 +16,7 @@ macro_rules! generate_outbound_dns_limit_test {
             let srv_addr = srv.addr;
 
             let mut env = config::TestEnv::new();
-            env.put(config::ENV_OUTBOUND_MAX_DESTINATIONS, "2".to_owned());
+            env.put(config::ENV_MAX_DESTINATION_QUERIES, "2".to_owned());
 
             let ctrl = controller::new();
             let _txs = (1..=3).map(|n| {
@@ -96,7 +96,7 @@ macro_rules! generate_tests {
             // lower than the total router capacity, so we can reach the
             // maximum number of destinations before we start evicting
             // routes.
-            env.put(config::ENV_OUTBOUND_MAX_DESTINATIONS, "10".to_owned());
+            env.put(config::ENV_MAX_DESTINATION_QUERIES, "10".to_owned());
             env.put(config::ENV_OUTBOUND_ROUTER_CAPACITY, "11".to_owned());
             env.put(config::ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, "1s".to_owned());
 
