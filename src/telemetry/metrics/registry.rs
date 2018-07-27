@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use telemetry::event::Event;
 use super::Root;
@@ -14,92 +14,76 @@ use std::time::UNIX_EPOCH;
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
 pub struct Registry {
-    metrics: Arc<Mutex<Root>>,
+    metrics: Arc<Root>,
 }
 
 // ===== impl Registry =====
 
 impl Registry {
-    pub(super) fn new(metrics: &Arc<Mutex<Root>>) -> Self {
+    pub(super) fn new(metrics: &Arc<Root>) -> Self {
         Self { metrics: metrics.clone() }
     }
 
-    #[inline]
-    fn update<F: Fn(&mut Root)>(&mut self, f: F) {
-        let mut lock = self.metrics.lock()
-            .expect("metrics lock poisoned");
-        f(&mut *lock);
-    }
-
     /// Observe the given event.
-    pub fn record_event(&mut self, event: &Event) {
+    pub fn record_event(&self, event: &Event) {
         trace!("Root::record({:?})", event);
         match *event {
 
             Event::StreamRequestOpen(_) => {},
 
             Event::StreamRequestFail(ref req, _) => {
-                self.update(|metrics| {
-                    metrics.request(RequestLabels::new(req)).end();
-                })
+                self.metrics.request(RequestLabels::new(req), |r| r.end());
             },
 
             Event::StreamRequestEnd(ref req, _) => {
-                self.update(|metrics| {
-                    metrics.request(RequestLabels::new(req)).end();
-                })
+                self.metrics.request(RequestLabels::new(req), |r| r.end());
             },
 
             Event::StreamResponseOpen(_, _) => {},
 
             Event::StreamResponseEnd(ref res, ref end) => {
                 let latency = end.response_first_frame_at - end.request_open_at;
-                self.update(|metrics| {
-                    metrics.response(ResponseLabels::new(res, end.grpc_status))
-                        .end(latency);
-                });
+                self.metrics.response(
+                    ResponseLabels::new(res, end.grpc_status),
+                    |r| r.end(latency),
+                );
             },
 
             Event::StreamResponseFail(ref res, ref fail) => {
                 // TODO: do we care about the failure's error code here?
                 let first_frame_at = fail.response_first_frame_at.unwrap_or(fail.response_fail_at);
                 let latency = first_frame_at - fail.request_open_at;
-                self.update(|metrics| {
-                    metrics.response(ResponseLabels::fail(res)).end(latency)
-                });
+                self.metrics.response(ResponseLabels::fail(res), |r| r.end(latency));
             },
 
             Event::TransportOpen(ref ctx) => {
-                self.update(|metrics| {
-                    metrics.transport(TransportLabels::new(ctx)).open();
-                })
+                self.metrics.transport(TransportLabels::new(ctx), |t| t.open());
             },
 
             Event::TransportClose(ref ctx, ref close) => {
-                self.update(|metrics| {
-                    metrics.transport(TransportLabels::new(ctx))
-                        .close(close.rx_bytes, close.tx_bytes);
+                self.metrics.transport(
+                    TransportLabels::new(ctx),
+                    |t| t.close(close.rx_bytes, close.tx_bytes),
+                );
 
-                    metrics.transport_close(TransportCloseLabels::new(ctx, close))
-                        .close(close.duration);
-                })
+                self.metrics.transport_close(
+                    TransportCloseLabels::new(ctx, close),
+                    |t| t.close(close.duration),
+                );
             },
 
-            Event::TlsConfigReloaded(ref when) =>
-                self.update(|metrics| {
-                    let timestamp_secs = when
-                        .duration_since(UNIX_EPOCH)
-                        .expect("SystemTime before UNIX_EPOCH!")
-                        .as_secs()
-                        .into();
-                    metrics.tls_config_last_reload_seconds = Some(timestamp_secs);
-                    metrics.tls_config(TlsConfigLabels::success()).incr();
-                }),
+            Event::TlsConfigReloaded(ref when) => {
+                let t = when
+                    .duration_since(UNIX_EPOCH)
+                    .expect("SystemTime before UNIX_EPOCH!")
+                    .as_secs();
+                *self.metrics.tls_config_last_reload_seconds.lock().expect("lock") = Some(t.into());
+                self.metrics.tls_config(TlsConfigLabels::success(), |t| t.incr());
+            },
 
-            Event::TlsConfigReloadFailed(ref err) =>
-                self.update(|metrics| {
-                    metrics.tls_config(err.clone().into()).incr();
-                }),
+            Event::TlsConfigReloadFailed(ref err) => {
+                self.metrics.tls_config(err.clone().into(), |t| t.incr());
+            },
         };
     }
 }
