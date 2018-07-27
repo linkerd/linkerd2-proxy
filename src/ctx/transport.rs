@@ -52,7 +52,6 @@ impl fmt::Display for TlsStatus {
         f.pad(match *self {
             Conditional::Some(()) => "true",
             Conditional::None(tls::ReasonForNoTls::NoConfig) => "no_config",
-            Conditional::None(tls::ReasonForNoTls::HandshakeFailed) => "handshake_failed",
             Conditional::None(tls::ReasonForNoTls::Disabled) => "disabled",
             Conditional::None(tls::ReasonForNoTls::InternalTraffic) => "internal_traffic",
             Conditional::None(tls::ReasonForNoTls::NoIdentity(_)) => "no_identity",
