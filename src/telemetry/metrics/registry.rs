@@ -13,13 +13,13 @@ use std::time::UNIX_EPOCH;
 
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
-pub struct Record {
+pub struct Registry {
     metrics: Arc<Mutex<Root>>,
 }
 
-// ===== impl Record =====
+// ===== impl Registry =====
 
-impl Record {
+impl Registry {
     pub(super) fn new(metrics: &Arc<Mutex<Root>>) -> Self {
         Self { metrics: metrics.clone() }
     }

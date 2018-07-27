@@ -20,7 +20,7 @@ pub use self::transport::{Connect, Transport};
 
 #[derive(Clone, Debug)]
 struct Inner {
-    metrics: metrics::Record,
+    metrics: metrics::Registry,
     taps: Arc<Mutex<tap::Taps>>,
 }
 
@@ -55,7 +55,7 @@ impl Handle {
 }
 
 impl Sensors {
-    pub(super) fn new(metrics: metrics::Record, taps: &Arc<Mutex<tap::Taps>>) -> Self {
+    pub(super) fn new(metrics: metrics::Registry, taps: &Arc<Mutex<tap::Taps>>) -> Self {
         Sensors(Some(Inner {
             metrics,
             taps: taps.clone(),

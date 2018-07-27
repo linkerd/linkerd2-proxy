@@ -57,7 +57,7 @@ mod http;
 mod labels;
 mod latency;
 mod process;
-mod record;
+mod registry;
 mod serve;
 mod transport;
 
@@ -74,7 +74,7 @@ pub use self::labels::{
     DstLabels,
     TlsConfigLabels,
 };
-pub use self::record::Record;
+pub use self::registry::Registry;
 pub use self::serve::Serve;
 
 /// Writes a metric in prometheus-formatted output.
@@ -144,9 +144,9 @@ type TlsConfigScopes = Scopes<labels::TlsConfigLabels, Counter>;
 /// is a Hyper service which can be used to create the server for the
 /// scrape endpoint, while the `Record` side can receive updates to the
 /// metrics by calling `record_event`.
-pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration) -> (Record, Serve){
+pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration) -> (Registry, Serve){
     let metrics = Arc::new(Mutex::new(Root::new(process)));
-    (Record::new(&metrics), Serve::new(&metrics, idle_retain))
+    (Registry::new(&metrics), Serve::new(&metrics, idle_retain))
 }
 
 // ===== impl Metric =====
