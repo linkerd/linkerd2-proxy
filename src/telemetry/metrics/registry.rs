@@ -10,7 +10,6 @@ use super::labels::{
     TlsConfigLabels,
 };
 use std::time::UNIX_EPOCH;
-
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -131,26 +130,23 @@ mod test {
             frames_sent: 0,
         };
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(100));
+        let (r, _) = metrics::new(&process, Duration::from_secs(100));
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
         let labels = labels::ResponseLabels::new(&rsp, None);
 
         assert_eq!(labels.tls_status(), client_tls.into());
 
-        assert!(r.metrics.lock()
-            .expect("lock")
-            .responses.scopes
+        assert!(r.metrics
+            .responses.lock().expect("lock")
+            .scopes
             .get(&labels)
             .is_none()
         );
 
         r.record_event(&ev);
         {
-            let lock = r.metrics.lock()
-                .expect("lock");
-            let scope = lock.responses.scopes
-                .get(&labels)
-                .expect("scope should be some after event");
+            let s = r.metrics.responses.lock().expect("lock");
+            let scope = s.scopes.get(&labels).expect("scope should be some after event");
 
             assert_eq!(scope.total(), 1);
 
@@ -226,7 +222,7 @@ mod test {
             ),
         ];
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(1000));
+        let (r, _) = metrics::new(&process, Duration::from_secs(1000));
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);
@@ -248,37 +244,34 @@ mod test {
         assert_eq!(server_tls, srv_open_labels.tls_status().into());
         assert_eq!(server_tls, srv_close_labels.tls_status().into());
 
-        {
-            let lock = r.metrics.lock()
-                .expect("lock");
-            assert!(lock.requests.scopes.get(&req_labels).is_none());
-            assert!(lock.responses.scopes.get(&rsp_labels).is_none());
-            assert!(lock.transports.scopes.get(&srv_open_labels).is_none());
-            assert!(lock.transports.scopes.get(&client_open_labels).is_none());
-            assert!(lock.transport_closes.scopes.get(&srv_close_labels).is_none());
-            assert!(lock.transport_closes.scopes.get(&client_close_labels).is_none());
-        }
+        assert!(r.metrics.requests.lock().unwrap().scopes.get(&req_labels).is_none());
+        assert!(r.metrics.responses.lock().unwrap().scopes.get(&rsp_labels).is_none());
+        assert!(r.metrics.transports.lock().unwrap().scopes.get(&srv_open_labels).is_none());
+        assert!(r.metrics.transports.lock().unwrap().scopes.get(&client_open_labels).is_none());
+        assert!(r.metrics.transport_closes.lock().unwrap().scopes.get(&srv_close_labels).is_none());
+        assert!(r.metrics.transport_closes.lock().unwrap().scopes.get(&client_close_labels).is_none());
 
         for e in &events {
             r.record_event(e);
         }
 
         {
-            let lock = r.metrics.lock()
-                .expect("lock");
-
             // === request scope ====================================
             assert_eq!(
-                lock.requests.scopes
+                r.metrics
+                    .requests.lock().expect("lock")
+                    .scopes
                     .get(&req_labels)
                     .map(|scope| scope.total()),
                 Some(1)
             );
+        }
+
+        {
+            let s = r.metrics.responses.lock().expect("lock");
 
             // === response scope ===================================
-            let response_scope = lock
-                .responses.scopes
-                .get(&rsp_labels)
+            let response_scope = s.scopes.get(&rsp_labels)
                 .expect("response scope missing");
             assert_eq!(response_scope.total(), 1);
 
@@ -286,31 +279,33 @@ mod test {
                 .assert_bucket_exactly(200, 1)
                 .assert_gt_exactly(200, 0)
                 .assert_lt_exactly(200, 0);
+        }
+
+        {
+            let s = r.metrics.transports.lock().expect("lock");
 
             // === server transport open scope ======================
-            let srv_transport_scope = lock
-                .transports.scopes
-                .get(&srv_open_labels)
+            let srv_transport_scope = s.scopes.get(&srv_open_labels)
                 .expect("server transport scope missing");
             assert_eq!(srv_transport_scope.open_total(), 1);
             assert_eq!(srv_transport_scope.write_bytes_total(), 4321);
             assert_eq!(srv_transport_scope.read_bytes_total(), 4321);
 
             // === client transport open scope ======================
-            let client_transport_scope = lock
-                .transports.scopes
-                .get(&client_open_labels)
+            let client_transport_scope = s.scopes.get(&client_open_labels)
                 .expect("client transport scope missing");
             assert_eq!(client_transport_scope.open_total(), 1);
             assert_eq!(client_transport_scope.write_bytes_total(), 4321);
             assert_eq!(client_transport_scope.read_bytes_total(), 4321);
+        }
 
-            let transport_duration: u64 = 30_000 * 1_000;
+        let transport_duration: u64 = 30_000 * 1_000;
+
+        {
+            let s = r.metrics.transport_closes.lock().expect("lock");
 
             // === server transport close scope =====================
-            let srv_transport_close_scope = lock
-                .transport_closes.scopes
-                .get(&srv_close_labels)
+            let srv_transport_close_scope = s.scopes.get(&srv_close_labels)
                 .expect("server transport close scope missing");
             assert_eq!(srv_transport_close_scope.close_total(), 1);
             srv_transport_close_scope.connection_duration()
@@ -319,9 +314,7 @@ mod test {
                 .assert_lt_exactly(transport_duration, 0);
 
             // === client transport close scope =====================
-            let client_transport_close_scope = lock
-                .transport_closes.scopes
-                .get(&client_close_labels)
+            let client_transport_close_scope = s.scopes.get(&client_close_labels)
                 .expect("client transport close scope missing");
             assert_eq!(client_transport_close_scope.close_total(), 1);
             client_transport_close_scope.connection_duration()

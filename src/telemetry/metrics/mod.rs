@@ -357,11 +357,11 @@ mod tests {
 
         let client_transport = Arc::new(ctx::transport::Ctx::Client(client));
         let transport = TransportLabels::new(&client_transport);
-        root.transport(transport.clone()).open();
+        root.transport(transport.clone(), |t| t.open());
 
-        root.request(RequestLabels::new(&req)).end();
-        root.response(ResponseLabels::new(&rsp, None)).end(Duration::from_millis(10));
-        root.transport(transport).close(100, 200);
+        root.request(RequestLabels::new(&req), |t| t.end());
+        root.response(ResponseLabels::new(&rsp, None), |t| t.end(Duration::from_millis(10)));
+        root.transport(transport, |t| t.close(100, 200));
 
         let end = TransportCloseLabels::new(&client_transport, &event::TransportClose {
             clean: true,
@@ -370,7 +370,7 @@ mod tests {
             rx_bytes: 40,
             tx_bytes: 0,
         });
-        root.transport_close(end).close(Duration::from_millis(15));
+        root.transport_close(end, |t| t.close(Duration::from_millis(15)));
     }
 
     #[test]
@@ -384,7 +384,7 @@ mod tests {
         let mut root = Root::default();
 
         let t0 = Instant::now();
-        root.transport(TransportLabels::new(&server_transport)).open();
+        root.transport(TransportLabels::new(&server_transport), |t| t.open());
 
         mock_route(&mut root, &proxy, &server, "warriors");
         let t1 = Instant::now();
@@ -392,27 +392,27 @@ mod tests {
         mock_route(&mut root, &proxy, &server, "sixers");
         let t2 = Instant::now();
 
-        assert_eq!(root.requests.scopes.len(), 2);
-        assert_eq!(root.responses.scopes.len(), 2);
-        assert_eq!(root.transports.scopes.len(), 2);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.responses.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.transports.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.transport_closes.lock().expect("lock").scopes.len(), 1);
 
         root.retain_since(t0);
-        assert_eq!(root.requests.scopes.len(), 2);
-        assert_eq!(root.responses.scopes.len(), 2);
-        assert_eq!(root.transports.scopes.len(), 2);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.responses.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.transports.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.transport_closes.lock().expect("lock").scopes.len(), 1);
 
         root.retain_since(t1);
-        assert_eq!(root.requests.scopes.len(), 1);
-        assert_eq!(root.responses.scopes.len(), 1);
-        assert_eq!(root.transports.scopes.len(), 1);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.lock().expect("lock").scopes.len(), 1);
+        assert_eq!(root.responses.lock().expect("lock").scopes.len(), 1);
+        assert_eq!(root.transports.lock().expect("lock").scopes.len(), 1);
+        assert_eq!(root.transport_closes.lock().expect("lock").scopes.len(), 1);
 
         root.retain_since(t2);
-        assert_eq!(root.requests.scopes.len(), 0);
-        assert_eq!(root.responses.scopes.len(), 0);
-        assert_eq!(root.transports.scopes.len(), 0);
-        assert_eq!(root.transport_closes.scopes.len(), 0);
+        assert_eq!(root.requests.lock().expect("lock").scopes.len(), 0);
+        assert_eq!(root.responses.lock().expect("lock").scopes.len(), 0);
+        assert_eq!(root.transports.lock().expect("lock").scopes.len(), 0);
+        assert_eq!(root.transport_closes.lock().expect("lock").scopes.len(), 0);
     }
 }
