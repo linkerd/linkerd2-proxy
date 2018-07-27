@@ -29,7 +29,6 @@ pub struct DnsNameAndPort {
     pub port: u16,
 }
 
-
 #[derive(Clone, Debug)]
 pub enum Host {
     DnsName(dns::Name),
@@ -50,6 +49,14 @@ pub struct LookupAddressAndConnect {
     host_and_port: HostAndPort,
     dns_resolver: dns::Resolver,
     tls: tls::ConditionalConnectionConfig<tls::ClientConfig>,
+}
+
+// ===== impl DnsNameAndPort =====
+
+impl fmt::Display for DnsNameAndPort {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.host, self.port)
+    }
 }
 
 // ===== impl HostAndPort =====

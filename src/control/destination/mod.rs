@@ -60,13 +60,6 @@ use conditional::Conditional;
 pub struct Resolver {
     request_tx: mpsc::UnboundedSender<ResolveRequest>,
 
-    /// Used for counting the number of currently active `Responder`s.
-    ///
-    /// Each `Responder` created by this `Resolver` will hold a `Weak`
-    /// reference back to this `Arc`, so we can determine how many of
-    /// them still exist by counting the number of `Weak`s.
-    active_resolutions: Arc<()>,
-
     /// An upper bound on the number of currently active resolutions.
     max_resolutions: usize,
 }
@@ -98,14 +91,7 @@ pub struct Resolution<B> {
     ///
     /// `Responder` holds a weak reference to this `Arc` and can determine when this
     /// reference has been dropped.
-    _responder_active: Arc<()>,
-
-    /// Allows the `Resolver` to determine how many `Resolution`s are still active.
-    ///
-    /// The `Resolver` owns the `Arc` that this weak ref points to, and
-    /// can use `Arc::weak_count` to determine how many of its `Responder`s
-    /// still exist.
-    _resolver_active: Weak<()>,
+    _active: Arc<()>,
 
     /// Binds an update endpoint to a Service.
     bind: B,
@@ -179,7 +165,6 @@ pub fn new(
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver {
         request_tx,
-        active_resolutions: Arc::new(()),
         max_resolutions,
     };
     let bg = background::task(
@@ -189,6 +174,7 @@ pub fn new(
         host_and_port,
         controller_tls,
         control_backoff_delay,
+        max_resolutions
     );
     (disco, bg)
 }
@@ -196,34 +182,22 @@ pub fn new(
 // ==== impl Resolver =====
 
 impl Resolver {
-    /// Returns the number of currently active resolutions.
-    fn active_resolutions(&self) -> usize {
-        Arc::weak_count(&self.active_resolutions)
-    }
 
     /// Start watching for address changes for a certain authority.
     pub fn resolve<B>(&self, authority: &DnsNameAndPort, bind: B)
         -> Result<Resolution<B>, TooManyResolutions>
     {
-        let resolutions = self.active_resolutions();
-        trace!(
-            "resolve; authority={:?}; active_resolutions={:?};",
-            authority, resolutions,
-        );
-        if resolutions == self.max_resolutions {
-            warn!("maximum number of resolutions ({}) reached", self.max_resolutions);
-            return Err(TooManyResolutions { max: self.max_resolutions });
-        }
+        trace!("resolve; authority={:?}", authority);
 
         let (update_tx, update_rx) = mpsc::unbounded();
-        let responder_active = Arc::new(());
+        let active = Arc::new(());
         let req = {
             let authority = authority.clone();
             ResolveRequest {
                 authority,
                 responder: Responder {
                     update_tx,
-                    active: Arc::downgrade(&responder_active),
+                    active: Arc::downgrade(&active),
                 },
             }
         };
@@ -233,8 +207,7 @@ impl Resolver {
 
         Ok(Resolution {
             update_rx,
-            _responder_active: responder_active,
-            _resolver_active: Arc::downgrade(&self.active_resolutions),
+            _active: active,
             bind,
         })
     }

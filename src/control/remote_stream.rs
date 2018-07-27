@@ -1,7 +1,10 @@
 use futures::{Future, Poll, Stream};
 use http::HeaderMap;
 use prost::Message;
-use std::fmt;
+use std::{
+    fmt,
+    sync::Weak,
+};
 use tower_h2::{HttpService, Body, Data};
 use tower_grpc::{
     self as grpc,
@@ -16,7 +19,8 @@ use tower_grpc::{
 pub enum Remote<M, S: HttpService> {
     NeedsReconnect,
     ConnectedOrConnecting {
-        rx: Receiver<M, S>
+        rx: Receiver<M, S>,
+        active: Weak<()>,
     },
 }
 
