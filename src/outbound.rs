@@ -30,12 +30,6 @@ pub struct Outbound<B> {
     bind_timeout: Duration,
 }
 
-#[derive(Clone, Debug)]
-pub enum RouteError {
-    Buffer(bind::BufferSpawnError),
-    TooManyResolutions(destination::TooManyResolutions),
-}
-
 const MAX_IN_FLIGHT: usize = 10_000;
 
 /// This default is used by Finagle.
@@ -151,7 +145,7 @@ where
     >>;
     type Error = <Self::Service as tower::Service>::Error;
     type Key = (Destination, Protocol);
-    type RouteError = RouteError;
+    type RouteError = bind::BufferSpawnError;
     type Service = InFlightLimit<Timeout<Buffer<Balance<
         load::WithPeakEwma<Discovery<B>, PendingUntilFirstData>,
         choose::PowerOfTwoChoices,
@@ -180,7 +174,7 @@ where
             let proto = self.bind.clone().with_protocol(protocol.clone());
             match *dest {
                 Destination::Name(ref authority) =>
-                    Discovery::Name(self.discovery.resolve(authority, proto)?),
+                    Discovery::Name(self.discovery.resolve(authority, proto)),
                 Destination::Addr(addr) => Discovery::Addr(Some((addr, proto))),
             }
         };
@@ -280,40 +274,5 @@ impl fmt::Display for Dst {
             }
             Destination::Addr(ref addr) => addr.fmt(f),
         }
-    }
-}
-
-// ===== impl RouteError ======
-
-impl fmt::Display for RouteError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RouteError::Buffer(ref e) => fmt::Display::fmt(e, f),
-            RouteError::TooManyResolutions(ref e) => fmt::Display::fmt(e, f),
-
-        }
-    }
-}
-
-impl error::Error for RouteError {
-    fn cause(&self) -> Option<&error::Error> {
-        match self {
-            RouteError::Buffer(ref e) => Some(e),
-            RouteError::TooManyResolutions(ref e) => Some(e),
-        }
-    }
-
-}
-
-impl From<destination::TooManyResolutions> for RouteError {
-    fn from(e: destination::TooManyResolutions) -> Self {
-        RouteError::TooManyResolutions(e)
-    }
-}
-
-
-impl From<bind::BufferSpawnError> for RouteError {
-    fn from(e: bind::BufferSpawnError) -> Self {
-        RouteError::Buffer(e)
     }
 }

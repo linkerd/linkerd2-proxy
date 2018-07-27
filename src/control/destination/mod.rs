@@ -24,13 +24,9 @@
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
-use std::{
-    fmt,
-    error::Error,
-    net::SocketAddr,
-    sync::{Arc, Weak},
-    time::Duration,
-};
+use std::net::SocketAddr;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
 use tls;
 
 use futures::{
@@ -59,9 +55,6 @@ use conditional::Conditional;
 #[derive(Clone, Debug)]
 pub struct Resolver {
     request_tx: mpsc::UnboundedSender<ResolveRequest>,
-
-    /// An upper bound on the number of currently active resolutions.
-    max_resolutions: usize,
 }
 
 /// Requests that resolution updaes for `authority` be sent on `responder`.
@@ -107,12 +100,6 @@ pub struct Metadata {
     tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
 }
 
-/// Indicates that the maximum number of concurrently active resolutions
-/// has been reached.
-#[derive(Clone, Debug)]
-pub struct TooManyResolutions {
-    max: usize,
-}
 
 #[derive(Debug, Clone)]
 enum Update {
@@ -160,13 +147,10 @@ pub fn new(
     host_and_port: Option<HostAndPort>,
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
     control_backoff_delay: Duration,
-    max_resolutions: usize,
+    max_queries: usize,
 ) -> (Resolver, impl Future<Item = (), Error = ()>) {
     let (request_tx, rx) = mpsc::unbounded();
-    let disco = Resolver {
-        request_tx,
-        max_resolutions,
-    };
+    let disco = Resolver { request_tx };
     let bg = background::task(
         rx,
         dns_resolver,
@@ -174,7 +158,7 @@ pub fn new(
         host_and_port,
         controller_tls,
         control_backoff_delay,
-        max_resolutions
+        max_queries,
     );
     (disco, bg)
 }
@@ -182,13 +166,9 @@ pub fn new(
 // ==== impl Resolver =====
 
 impl Resolver {
-
     /// Start watching for address changes for a certain authority.
-    pub fn resolve<B>(&self, authority: &DnsNameAndPort, bind: B)
-        -> Result<Resolution<B>, TooManyResolutions>
-    {
+    pub fn resolve<B>(&self, authority: &DnsNameAndPort, bind: B) -> Resolution<B> {
         trace!("resolve; authority={:?}", authority);
-
         let (update_tx, update_rx) = mpsc::unbounded();
         let active = Arc::new(());
         let req = {
@@ -205,11 +185,11 @@ impl Resolver {
             .unbounded_send(req)
             .expect("unbounded can't fail");
 
-        Ok(Resolution {
+        Resolution {
             update_rx,
             _active: active,
             bind,
-        })
+        }
     }
 }
 
@@ -290,20 +270,5 @@ impl Metadata {
 
     pub fn tls_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoIdentity> {
         self.tls_identity.as_ref()
-    }
-}
-
-
-// ===== impl TooManyResolutions =====
-
-impl fmt::Display for TooManyResolutions {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Destination service resolutions at maximum ({})", self.max)
-    }
-}
-
-impl Error for TooManyResolutions {
-    fn cause(&self) -> Option<&Error> {
-        None
     }
 }
