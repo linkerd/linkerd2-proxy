@@ -75,7 +75,6 @@ macro_rules! generate_tests {
             // TODO: The controller should also assert the proxy doesn't make
             // requests when it has hit the maximum number of resolutions.
 
-
             // Sleep for longer than the router cache's max idle age, so that
             //  at least one old route will be considered inactive.
             ::std::thread::sleep(Duration::from_secs(2));
@@ -92,14 +91,7 @@ macro_rules! generate_tests {
             // able to open a new one.
             println!("trying 11th destination again...");
             let client = $make_client(proxy.outbound, "disco11.test.svc.cluster.local");
-
-            // In case the services aren't dropped before the request tries to
-            // open another resolution, we'll retry this a couple of times.
-            assert_eventually!(client.request(
-                    client.request_builder("/")
-                        .method("GET")
-                ).status() == http::StatusCode::OK
-            );
+            assert_eq!(client.get("/"), "hello");
         }
 
         #[test]
