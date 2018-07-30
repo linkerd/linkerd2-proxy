@@ -221,7 +221,6 @@ mod http1 {
 
 }
 
-
 #[test]
 fn outbound_updates_newer_services() {
     let _ = env_logger::try_init();
@@ -252,4 +251,73 @@ fn outbound_updates_newer_services() {
     // get into the newer service
     let client2 = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
     assert_eq!(client2.get("/h1"), "hello h1");
+}
+
+mod proxy_to_proxy {
+    use super::*;
+
+    #[test]
+    fn outbound_http1() {
+        let _ = env_logger::try_init();
+
+        // Instead of a second proxy, this mocked h2 server will be the target.
+        let srv = server::http2()
+            .route_fn("/hint", |req| {
+                assert_eq!(req.headers()["l5d-orig-proto"], "HTTP/1.1");
+                Response::builder()
+                    .header("l5d-orig-proto", "HTTP/1.1")
+                    .body(Default::default())
+                    .unwrap()
+            })
+            .run();
+
+        let ctrl = controller::new();
+        let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
+        dst.send_h2_hinted(srv.addr);
+
+        let proxy = proxy::new()
+            .controller(ctrl.run())
+            .run();
+
+        let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
+
+        let res = client.request(&mut client.request_builder("/hint"));
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.version(), http::Version::HTTP_11);
+    }
+
+
+    #[test]
+    fn inbound_http1() {
+        let _ = env_logger::try_init();
+
+        let srv = server::http1()
+            .route_fn("/h1", |req| {
+                assert_eq!(req.version(), http::Version::HTTP_11);
+                assert!(
+                    !req.headers().contains_key("l5d-orig-proto"),
+                    "h1 server shouldn't receive l5d-orig-proto header"
+                );
+                Response::default()
+            })
+            .run();
+
+        let ctrl = controller::new();
+
+        let proxy = proxy::new()
+            .controller(ctrl.run())
+            .inbound(srv)
+            .run();
+
+        // This client will be used as a mocked-other-proxy.
+        let client = client::http2(proxy.inbound, "disco.test.svc.cluster.local");
+
+        let res = client.request(
+            client
+                .request_builder("/h1")
+                .header("l5d-orig-proto", "HTTP/1.1")
+        );
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.version(), http::Version::HTTP_2);
+    }
 }

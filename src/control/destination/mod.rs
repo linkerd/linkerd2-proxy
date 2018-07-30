@@ -96,10 +96,22 @@ pub struct Metadata {
     /// A set of Prometheus metric labels describing the destination.
     dst_labels: Option<DstLabels>,
 
+    /// A hint from the controller about what protocol (HTTP1, HTTP2, etc) the
+    /// destination understands.
+    protocol_hint: ProtocolHint,
+
     /// How to verify TLS for the endpoint.
     tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProtocolHint {
+    /// We don't what the destination understands, so forward messages in the
+    /// protocol we received them in.
+    Unknown,
+    /// The destination can receive HTTP2 messages.
+    Http2,
+}
 
 #[derive(Debug, Clone)]
 enum Update {
@@ -245,6 +257,7 @@ impl Metadata {
     pub fn no_metadata() -> Self {
         Metadata {
             dst_labels: None,
+            protocol_hint: ProtocolHint::Unknown,
             // If we have no metadata on an endpoint, assume it does not support TLS.
             tls_identity:
                 Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery),
@@ -253,10 +266,12 @@ impl Metadata {
 
     pub fn new(
         dst_labels: Option<DstLabels>,
+        protocol_hint: ProtocolHint,
         tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>
     ) -> Self {
         Metadata {
             dst_labels,
+            protocol_hint,
             tls_identity,
         }
     }
@@ -264,6 +279,10 @@ impl Metadata {
     /// Returns the endpoint's labels from the destination service, if it has them.
     pub fn dst_labels(&self) -> Option<&DstLabels> {
         self.dst_labels.as_ref()
+    }
+
+    pub fn protocol_hint(&self) -> ProtocolHint {
+        self.protocol_hint
     }
 
     pub fn tls_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoIdentity> {

@@ -20,6 +20,7 @@ use tower_h2::{self, BoxBody, HttpService, RecvBody};
 use tower_reconnect::Reconnect;
 
 use linkerd2_proxy_api::destination::client::Destination;
+use linkerd2_proxy_api::destination::protocol_hint::Protocol;
 use linkerd2_proxy_api::destination::update::Update as PbUpdate2;
 use linkerd2_proxy_api::destination::{
     GetDestination,
@@ -28,7 +29,7 @@ use linkerd2_proxy_api::destination::{
 };
 use linkerd2_proxy_api::net::TcpAddress;
 
-use super::{Metadata, ResolveRequest, Responder, Update};
+use super::{Metadata, ResolveRequest, Responder, ProtocolHint, Update};
 use config::Namespaces;
 use control::{
     cache::{Cache, CacheChange, Exists},
@@ -685,7 +686,19 @@ fn pb_to_addr_meta(
         }
     };
 
-    let meta = Metadata::new(DstLabels::new(labels.into_iter()), tls_identity);
+    let mut proto_hint = ProtocolHint::Unknown;
+
+    if let Some(hint) = pb.protocol_hint {
+        if let Some(proto) = hint.protocol {
+            match proto {
+                Protocol::H2(..) => {
+                    proto_hint = ProtocolHint::Http2;
+                }
+            }
+        }
+    }
+
+    let meta = Metadata::new(DstLabels::new(labels.into_iter()), proto_hint, tls_identity);
     Some((addr, meta))
 }
 
