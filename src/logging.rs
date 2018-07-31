@@ -321,7 +321,7 @@ impl fmt::Display for Server {
             write!(f, " remote={}", remote)?;
         }
         if let Some(tls_status) = self.tls_status {
-            write!(f, " tls_status={}", tls_status)?;
+            write!(f, " tls={}", tls_status)?;
         }
         write!(f, "}}")
     }
@@ -375,7 +375,7 @@ impl<C: fmt::Display, D: fmt::Display> fmt::Display for Client<C, D> {
             write!(f, " remote={}", remote)?;
         }
         if let Some(tls_status) = self.tls_status {
-            write!(f, " tls_status={}", tls_status)?;
+            write!(f, " tls={}", tls_status)?;
         }
         write!(f, "}}")
     }
