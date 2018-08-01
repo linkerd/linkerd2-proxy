@@ -4,6 +4,7 @@ use std::{
     iter::IntoIterator,
     net::SocketAddr,
     time::{Instant, Duration},
+    sync::Weak,
 };
 
 use futures::{Async, Future, Stream,};
@@ -35,6 +36,13 @@ pub(super) struct DestinationSet<T: HttpService<ResponseBody = RecvBody>> {
     pub query: Option<DestinationServiceQuery<T>>,
     pub dns_query: Option<IpAddrListFuture>,
     pub responders: Vec<Responder>,
+
+    /// This flag is set if `query` is `None` because we wanted to make a
+    /// query for this destination, but were at the query capacity limit.
+    ///
+    /// Otherwise, if `query` is `None` and this is _not_ set, then the
+    /// authority does not require a Destination query.
+    pub wants_query: bool,
 }
 
 // ===== impl DestinationSet =====
@@ -68,6 +76,7 @@ where
         auth: &DnsNameAndPort,
         mut rx: UpdateRx<T>,
         tls_controller_namespace: Option<&str>,
+        active: Weak<()>,
     ) -> (DestinationServiceQuery<T>, Exists<()>) {
         let mut exists = Exists::Unknown;
 
@@ -111,7 +120,7 @@ where
                     return (Remote::NeedsReconnect, exists);
                 },
                 Ok(Async::NotReady) => {
-                    return (Remote::ConnectedOrConnecting { rx }, exists);
+                    return (Remote::ConnectedOrConnecting { rx, active }, exists);
                 },
                 Err(err) => {
                     warn!("Destination.Get stream errored for {:?}: {:?}", auth, err);

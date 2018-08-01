@@ -5,6 +5,7 @@ use std::{
     },
     fmt,
     time::{Instant, Duration},
+    sync::Arc,
 };
 use futures::{
     future,
@@ -74,6 +75,8 @@ struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
 /// query.
 struct Config {
     namespaces: Namespaces,
+    active_queries: Arc<()>,
+    max_queries: usize,
 }
 
 /// Returns a new discovery background task.
@@ -84,6 +87,7 @@ pub(super) fn task(
     host_and_port: Option<HostAndPort>,
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
     control_backoff_delay: Duration,
+    max_queries: usize,
 ) -> impl Future<Item = (), Error = ()>
 {
     // Build up the Controller Client Stack
@@ -113,6 +117,7 @@ pub(super) fn task(
         request_rx,
         dns_resolver,
         namespaces,
+        max_queries,
     );
 
     future::poll_fn(move || {
@@ -131,11 +136,10 @@ where
         request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
         dns_resolver: dns::Resolver,
         namespaces: Namespaces,
+        max_queries: usize,
     ) -> Self {
         Self {
-            config: Config {
-                namespaces,
-            },
+            config: Config::new(namespaces, max_queries),
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -194,12 +198,20 @@ where
                     let config = &self.config;
                     let dsts = &mut self.dsts;
 
+                    // If the requested authority currently needs more
+                    // query capacity to query the destination service, go
+                    // ahead and try to free up capacity (by dropping any
+                    // inactive DestinationSets).
+                    if dsts.needs_query_for(&resolve.authority) {
+                        trace!("--> no query capacity, try retain_active...", );
+                        dsts.retain_active();
+                    };
+
                     match dsts.destinations.entry(resolve.authority) {
                         Entry::Occupied(mut occ) => {
-                            let set = occ.get_mut();
                             // we may already know of some addresses here, so push
                             // them onto the new watch first
-                            match set.addrs {
+                            match occ.get().addrs {
                                 Exists::Yes(ref cache) => for (&addr, meta) in cache {
                                     let update = Update::Bind(addr, meta.clone());
                                     resolve.responder.update_tx
@@ -208,21 +220,39 @@ where
                                 },
                                 Exists::No | Exists::Unknown => (),
                             }
-                            set.responders.push(resolve.responder);
+
+                            // If the destinationSet was previously unable to
+                            // make a query due to insufficient capacity, try
+                            // to open a new query if possible.
+                            if occ.get().wants_query {
+                                trace!("--> {:?} wants to query Destination", occ.key());
+                                debug_assert!(occ.get().query.is_none());
+                                let (query, wants_query) =
+                                    config.query_destination_service_if_relevant(
+                                        client.as_mut(),
+                                        occ.key(),
+                                        "connect (previously at capacity)",
+                                    );
+                                let set = occ.get_mut();
+                                set.query = query;
+                                set.wants_query = wants_query;
+                            }
+
+                            occ.get_mut().responders.push(resolve.responder);
                         },
                         Entry::Vacant(vac) => {
-                            let query = client.as_mut().and_then(|client| {
+                            let (query, wants_query) =
                                 config.query_destination_service_if_relevant(
-                                    client,
+                                    client.as_mut(),
                                     vac.key(),
                                     "connect",
-                                )
-                            });
+                                );
                             let mut set = DestinationSet {
                                 addrs: Exists::Unknown,
                                 query,
                                 dns_query: None,
                                 responders: vec![resolve.responder],
+                                wants_query,
                             };
                             // If the authority is one for which the Destination service is never
                             // relevant (e.g. an absolute name that doesn't end in ".svc.$zone." in
@@ -255,12 +285,15 @@ where
 
         while let Some(auth) = self.dsts.reconnects.pop_front() {
             if let Some(set) = self.dsts.destinations.get_mut(&auth) {
-                set.query = self.config.query_destination_service_if_relevant(
-                    client,
-                    &auth,
-                    "reconnect",
-                );
-                return true;
+                let (query, wants_query) = self.config
+                    .query_destination_service_if_relevant(
+                        Some(client),
+                        &auth,
+                        "reconnect",
+                    );
+                set.query = query;
+                set.wants_query = wants_query;
+                return !wants_query;
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
             }
@@ -272,10 +305,14 @@ where
         for (auth, set) in &mut self.dsts.destinations {
             // Query the Destination service first.
             let (new_query, found_by_destination_service) = match set.query.take() {
-                Some(Remote::ConnectedOrConnecting { rx }) => {
+                Some(Remote::ConnectedOrConnecting { rx, active }) => {
                     let (new_query, found_by_destination_service) =
                         set.poll_destination_service(
-                            auth, rx, self.config.tls_controller_ns());
+                            auth,
+                            rx,
+                            self.config.tls_controller_ns(),
+                            active
+                        );
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
@@ -317,15 +354,42 @@ where
 // ===== impl Config =====
 
 impl Config {
-    /// Initiates a query `query` to the Destination service and returns it as
-    /// `Some(query)` if the given authority's host is of a form suitable for using to
-    /// query the Destination service. Otherwise, returns `None`.
+
+    fn new(namespaces: Namespaces, max_queries: usize) -> Self {
+        Config {
+            namespaces,
+            max_queries,
+            active_queries: Arc::new(()),
+        }
+    }
+
+    /// Returns true if there is currently capacity for additional
+    /// Destination service queries.
+    fn has_more_queries(&self) -> bool {
+        Arc::weak_count(&self.active_queries) < self.max_queries
+    }
+
+    /// Attepts to initiate a query `query` to the Destination service
+    /// if the given authority's host is of a form suitable for using to
+    /// query the Destination service.
+    ///
+    /// # Returns
+    ///
+    /// - `(None, true)` if the given authority _should_ query the
+    ///   Destination service, but the query limit has already been reached.
+    ///   In this case, this function should be called again when there is
+    ///   capacity for additional queries.
+    /// - `(None, false)` if the authority is not suitable for querying the
+    ///   Destination service.
+    /// - `(Some(DestinationServiceQuery), true)` if the authority is suitable
+    ///   for querying the Destination service and there is sufficient capacity
+    ///   to initiate a new query.
     fn query_destination_service_if_relevant<T>(
         &self,
-        client: &mut T,
+        client: Option<&mut T>,
         auth: &DnsNameAndPort,
         connect_or_reconnect: &str,
-    ) -> Option<DestinationServiceQuery<T>>
+    ) -> (Option<DestinationServiceQuery<T>>, bool)
     where
         T: HttpService<RequestBody = BoxBody, ResponseBody = RecvBody>,
         T::Error: fmt::Debug,
@@ -336,17 +400,44 @@ impl Config {
             auth
         );
         let default_ns = self.namespaces.pod.as_ref();
-        FullyQualifiedAuthority::normalize(auth, default_ns).map(|auth| {
-            let req = GetDestination {
-                scheme: "k8s".into(),
-                path: auth.without_trailing_dot().to_owned(),
-            };
-            let mut svc = Destination::new(client.lift_ref());
-            let response = svc.get(grpc::Request::new(req));
-            Remote::ConnectedOrConnecting {
-                rx: Receiver::new(response),
-            }
-        })
+        let client_and_authority = client.and_then(|client| {
+            FullyQualifiedAuthority::normalize(auth, default_ns)
+                .map(|auth| (auth, client))
+        });
+        match client_and_authority {
+            // If we were able to normalize the authority (indicating we should
+            // query the Destination service), but we're out of queries, return
+            // None and set the "needs query" flag.
+            Some((ref auth, _)) if !self.has_more_queries() => {
+                warn!(
+                    "Can't query Destination service for {:?}, maximum \
+                     number of queries ({}) reached.",
+                    auth,
+                    self.max_queries,
+                );
+                (None, true)
+            },
+            // We should query the Destination service and there is sufficient
+            // query capacity, so we're good to go!
+            Some((auth, client)) => {
+                let req = GetDestination {
+                    scheme: "k8s".into(),
+                    path: auth.without_trailing_dot().to_owned(),
+                };
+                let mut svc = Destination::new(client.lift_ref());
+                let response = svc.get(grpc::Request::new(req));
+                let active = Arc::downgrade(&self.active_queries);
+                let query = Remote::ConnectedOrConnecting {
+                    rx: Receiver::new(response),
+                    active,
+                };
+                (Some(query), false)
+
+            },
+            // This authority should not query the Destination service. Return
+            // None, but set the "needs query" flag to false.
+            None => (None, false),
+        }
     }
 
     fn tls_controller_ns(&self) -> Option<&str> {
@@ -367,6 +458,16 @@ where
             destinations: HashMap::new(),
             reconnects: VecDeque::new(),
         }
+    }
+
+    /// Returns true if `auth` is currently known to need a Destination
+    /// service query, but was unable to query previously due to the query
+    /// limit being reached.
+    fn needs_query_for(&self, auth: &DnsNameAndPort) -> bool {
+        self.destinations
+            .get(auth)
+            .map(|dst| dst.wants_query)
+            .unwrap_or(false)
     }
 
     /// Ensures that `destinations` is updated to only maintain active resolutions.
