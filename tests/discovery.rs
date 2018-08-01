@@ -1,6 +1,69 @@
 #![deny(warnings)]
+#[macro_use]
 mod support;
 use self::support::*;
+
+// This test has to be generated separately, since we want it to run for
+// HTTP/1, but not for HTTP/2. This is because the test uses httpbin.org
+// as an external DNS name, and it will 500 our H2 requests because it
+// requires prior knowledge.
+macro_rules! generate_outbound_dns_limit_test {
+    (server: $make_server:path, client: $make_client:path) => {
+        #[test]
+        fn outbound_max_dests_does_not_limit_dns() {
+            let _ = env_logger::try_init();
+            let srv = $make_server().route("/", "hello").run();
+            let srv_addr = srv.addr;
+
+            let mut env = config::TestEnv::new();
+            env.put(config::ENV_MAX_DESTINATION_QUERIES, "2".to_owned());
+
+            let ctrl = controller::new();
+            let _txs = (1..=3).map(|n| {
+                let disco_n = format!("disco{}.test.svc.cluster.local", n);
+                let tx = ctrl.destination_tx(&disco_n);
+                tx.send_addr(srv_addr);
+                tx // This will go into a vec, to keep the stream open.
+            }).collect::<Vec<_>>();
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv)
+                .run_with_test_env(env);
+
+            // Make two requests that go through service discovery, to reach the
+            // maximum number of Destination resolutions.
+            for n in 1..=2 {
+                let route = format!("disco{}.test.svc.cluster.local", n);
+                let client = $make_client(proxy.outbound, route);
+                println!("trying {}th destination...", n);
+                assert_eq!(client.get("/"), "hello");
+            }
+
+            // The next request will fail, because we have reached the
+            // Destination resolution limit, but we have _not_ reached the
+            // route cache capacity, so we won't start evicting inactive
+            // routes yet, and their Destination resolutions will remain
+            // active.
+            let client = $make_client(proxy.outbound, "disco3.test.svc.cluster.local");
+            println!("trying 3rd destination...");
+            let mut req = client.request_builder("/");
+            let rsp = client.request(req.method("GET"));
+            // The request should fail.
+            assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+
+            // However, a request for a DNS name that _doesn't_ go through the
+            // Destination service should not be affected by the limit.
+            // TODO: The controller should also assert the proxy doesn't make
+            // requests when it has hit the maximum number of resolutions.
+            let client = $make_client(proxy.outbound, "httpbin.org");
+            println!("trying httpbin.org...");
+            let mut req = client.request_builder("/");
+            let rsp = client.request(req.method("GET"));
+            assert_eq!(rsp.status(), http::StatusCode::OK);
+        }
+    }
+}
 
 macro_rules! generate_tests {
     (server: $make_server:path, client: $make_client:path) => {
@@ -19,6 +82,78 @@ macro_rules! generate_tests {
 
             assert_eq!(client.get("/"), "hello");
             assert_eq!(client.get("/bye"), "bye");
+        }
+
+        #[test]
+        fn outbound_max_dests() {
+            let _ = env_logger::try_init();
+            let srv = $make_server().route("/", "hello").run();
+            let srv_addr = srv.addr;
+
+            let mut env = config::TestEnv::new();
+
+            // Set the maximum number of Destination service resolutions
+            // lower than the total router capacity, so we can reach the
+            // maximum number of destinations before we start evicting
+            // routes.
+            env.put(config::ENV_MAX_DESTINATION_QUERIES, "10".to_owned());
+            env.put(config::ENV_OUTBOUND_ROUTER_CAPACITY, "11".to_owned());
+            env.put(config::ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, "1s".to_owned());
+
+            let ctrl = controller::new();
+            let _txs = (1..=11).map(|n| {
+                let disco_n = format!("disco{}.test.svc.cluster.local", n);
+                let tx = ctrl.destination_tx(&disco_n);
+                tx.send_addr(srv_addr);
+                tx // This will go into a vec, to keep the stream open.
+            }).collect::<Vec<_>>();
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv)
+                .run_with_test_env(env);
+
+            // Make ten requests that go through service discovery, to reach the
+            // maximum number of Destination resolutions.
+            for n in 1..=10 {
+                let route = format!("disco{}.test.svc.cluster.local", n);
+                let client = $make_client(proxy.outbound, route);
+                println!("trying {}th destination...", n);
+                assert_eq!(client.get("/"), "hello");
+            }
+
+            // The next request will fail, because we have reached the
+            // Destination resolution limit, but we have _not_ reached the
+            // route cache capacity, so we won't start evicting inactive
+            // routes yet, and their Destination resolutions will remain
+            // active.
+            let client = $make_client(proxy.outbound, "disco11.test.svc.cluster.local");
+            println!("trying 11th destination...");
+            let mut req = client.request_builder("/");
+            let rsp = client.request(req.method("GET"));
+            // The request should fail.
+            assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+
+            // TODO: The controller should also assert the proxy doesn't make
+            // requests when it has hit the maximum number of resolutions.
+
+            // Sleep for longer than the router cache's max idle age, so that
+            //  at least one old route will be considered inactive.
+            ::std::thread::sleep(Duration::from_secs(2));
+
+            // Next, make a request that _won't_ trigger a Destination lookup,
+            // so that we can reach the router's capacity as well.
+            let addr_client = $make_client(proxy.outbound, format!("{}", srv_addr));
+            println!("trying {} directly...", srv_addr);
+            assert_eq!(addr_client.get("/"), "hello");
+
+            // Now that the router cache capacity has been reached, subsequent
+            // requests that add a new route will evict an inactive route. This
+            // should drop their Destination resolutions, so we should now be
+            // able to open a new one.
+            println!("trying 11th destination again...");
+            let client = $make_client(proxy.outbound, "disco11.test.svc.cluster.local");
+            assert_eq!(client.get("/"), "hello");
         }
 
         #[test]
@@ -207,7 +342,12 @@ mod http2 {
 mod http1 {
     use super::support::*;
 
-    generate_tests! { server: server::http1, client: client::http1 }
+    generate_tests! {
+        server: server::http1, client: client::http1
+    }
+    generate_outbound_dns_limit_test! {
+        server: server::http1, client: client::http1
+    }
 
     mod absolute_uris {
         use super::super::support::*;
@@ -217,6 +357,10 @@ mod http1 {
             client: client::http1_absolute_uris
         }
 
+        generate_outbound_dns_limit_test! {
+            server: server::http1,
+            client: client::http1_absolute_uris
+        }
     }
 
 }
