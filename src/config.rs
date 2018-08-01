@@ -54,6 +54,10 @@ pub struct Config {
 
     pub outbound_router_max_idle_age: Duration,
 
+    /// The maximum number of queries to the Destination service which may be
+    /// active concurrently.
+    pub max_dst_queries: usize,
+
     pub tls_settings: Conditional<tls::CommonSettings, tls::ReasonForNoTls>,
 
     /// The path to "/etc/resolv.conf"
@@ -179,6 +183,14 @@ pub const ENV_OUTBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_C
 pub const ENV_INBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_INBOUND_ROUTER_MAX_IDLE_AGE";
 pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_MAX_IDLE_AGE";
 
+
+/// Limits the maximum number of outbound Destination service queries.
+///
+/// Routes which do not result in service discovery lookups will not be capped
+/// by this limit. This will have no effect if it is greater than the total
+/// router capacity (as configured by `ENV_OUTBOUND_ROUTER_CAPACITY`).
+pub const ENV_MAX_DESTINATION_QUERIES: &str = "LINKERD2_PROXY_MAX_DESTINATION_QUERIES";
+
 // These *disable* our protocol detection for connections whose SO_ORIGINAL_DST
 // has a port in the provided list.
 pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str = "LINKERD2_PROXY_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
@@ -227,6 +239,8 @@ const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 100;
 const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE:  Duration = Duration::from_secs(60);
 const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 
+const DEFAULT_MAX_DESTINATION_QUERIES: usize = 100;
+
 // By default, we keep a list of known assigned ports of server-first protocols.
 //
 // https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt
@@ -271,6 +285,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let outbound_router_capacity = parse(strings, ENV_OUTBOUND_ROUTER_CAPACITY, parse_number);
         let inbound_router_max_idle_age = parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
         let outbound_router_max_idle_age = parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
+        let max_dst_queries = parse(strings, ENV_MAX_DESTINATION_QUERIES, parse_number);
         let tls_trust_anchors = parse(strings, ENV_TLS_TRUST_ANCHORS, parse_path);
         let tls_end_entity_cert = parse(strings, ENV_TLS_CERT, parse_path);
         let tls_private_key = parse(strings, ENV_TLS_PRIVATE_KEY, parse_path);
@@ -405,6 +420,9 @@ impl<'a> TryFrom<&'a Strings> for Config {
                 .unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE),
             outbound_router_max_idle_age: outbound_router_max_idle_age?
                 .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
+
+            max_dst_queries: max_dst_queries?
+                .unwrap_or(DEFAULT_MAX_DESTINATION_QUERIES),
 
             tls_settings,
 
