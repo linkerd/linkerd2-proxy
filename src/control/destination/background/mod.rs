@@ -51,7 +51,7 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 /// provided authority to a set of addresses, and ensures that resolution updates are
 /// propagated to all requesters.
 struct Background<T: HttpService<ResponseBody = RecvBody>> {
-    cfg: QueryCfg,
+    config: Config,
     dns_resolver: dns::Resolver,
     dsts: DestinationCache<T>,
     /// The Destination.Get RPC client service.
@@ -63,6 +63,7 @@ struct Background<T: HttpService<ResponseBody = RecvBody>> {
 
 /// Holds the currently active `DestinationSet`s and a list of any destinations
 /// which require reconnects.
+#[derive(Default)]
 struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
     destinations: HashMap<DnsNameAndPort, DestinationSet<T>>,
     /// A queue of authorities that need to be reconnected.
@@ -71,7 +72,7 @@ struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
 
 /// The configurationn necessary to create a new Destination service
 /// query.
-struct QueryCfg {
+struct Config {
     namespaces: Namespaces,
 }
 
@@ -88,8 +89,8 @@ pub(super) fn task(
     // Build up the Controller Client Stack
     let mut client = host_and_port.map(|host_and_port| {
         let (identity, watch) = match controller_tls {
-            Conditional::Some(cfg) =>
-                (Conditional::Some(cfg.server_identity), cfg.config),
+            Conditional::Some(config) =>
+                (Conditional::Some(config.server_identity), config.config),
             Conditional::None(reason) => {
                 // If there's no connection config, then construct a new
                 // `Watch` that never updates to construct the `WatchService`.
@@ -132,7 +133,7 @@ where
         namespaces: Namespaces,
     ) -> Self {
         Self {
-            cfg: QueryCfg {
+            config: Config {
                 namespaces,
             },
             dns_resolver,
@@ -190,7 +191,7 @@ where
                 Ok(Async::Ready(Some(resolve))) => {
                     trace!("Destination.Get {:?}", resolve.authority);
 
-                    let cfg = &self.cfg;
+                    let config = &self.config;
                     let dsts = &mut self.dsts;
 
                     match dsts.destinations.entry(resolve.authority) {
@@ -211,7 +212,7 @@ where
                         },
                         Entry::Vacant(vac) => {
                             let query = client.as_mut().and_then(|client| {
-                                cfg.query_destination_service_if_relevant(
+                                config.query_destination_service_if_relevant(
                                     client,
                                     vac.key(),
                                     "connect",
@@ -254,7 +255,7 @@ where
 
         while let Some(auth) = self.dsts.reconnects.pop_front() {
             if let Some(set) = self.dsts.destinations.get_mut(&auth) {
-                set.query = self.cfg.query_destination_service_if_relevant(
+                set.query = self.config.query_destination_service_if_relevant(
                     client,
                     &auth,
                     "reconnect",
@@ -274,7 +275,7 @@ where
                 Some(Remote::ConnectedOrConnecting { rx }) => {
                     let (new_query, found_by_destination_service) =
                         set.poll_destination_service(
-                            auth, rx, self.cfg.tls_controller_ns());
+                            auth, rx, self.config.tls_controller_ns());
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
@@ -313,9 +314,9 @@ where
 
 }
 
-// ===== impl QueryCfg =====
+// ===== impl Config =====
 
-impl QueryCfg {
+impl Config {
     /// Initiates a query `query` to the Destination service and returns it as
     /// `Some(query)` if the given authority's host is of a form suitable for using to
     /// query the Destination service. Otherwise, returns `None`.
@@ -360,6 +361,7 @@ where
     T: HttpService<RequestBody = BoxBody, ResponseBody = RecvBody>,
     T::Error: fmt::Debug,
 {
+
     fn new() -> Self {
         Self {
             destinations: HashMap::new(),
