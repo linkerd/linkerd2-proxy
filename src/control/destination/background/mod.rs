@@ -53,14 +53,20 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 struct Background<T: HttpService<ResponseBody = RecvBody>> {
     dns_resolver: dns::Resolver,
     namespaces: Namespaces,
-    destinations: HashMap<DnsNameAndPort, DestinationSet<T>>,
-    /// A queue of authorities that need to be reconnected.
-    reconnects: VecDeque<DnsNameAndPort>,
+    dsts: DestinationCache<T>,
     /// The Destination.Get RPC client service.
     /// Each poll, records whether the rpc service was till ready.
     rpc_ready: bool,
     /// A receiver of new watch requests.
     request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
+}
+
+/// Holds the currently active `DestinationSet`s and a list of any destinations
+/// which require reconnects.
+struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
+    destinations: HashMap<DnsNameAndPort, DestinationSet<T>>,
+    /// A queue of authorities that need to be reconnected.
+    reconnects: VecDeque<DnsNameAndPort>,
 }
 
 /// Returns a new discovery background task.
@@ -122,8 +128,7 @@ where
         Self {
             dns_resolver,
             namespaces,
-            destinations: HashMap::new(),
-            reconnects: VecDeque::new(),
+            dsts: DestinationCache::new(),
             rpc_ready: false,
             request_rx,
         }
@@ -138,10 +143,10 @@ where
                 // request_rx has closed, meaning the main thread is terminating.
                 return Ok(Async::Ready(()));
             }
-            self.retain_active_destinations();
+            self.dsts.retain_active();
             self.poll_destinations();
 
-            if self.reconnects.is_empty() || !self.rpc_ready {
+            if self.dsts.reconnects.is_empty() || !self.rpc_ready {
                 return Ok(Async::NotReady);
             }
         }
@@ -176,7 +181,7 @@ where
             match self.request_rx.poll() {
                 Ok(Async::Ready(Some(resolve))) => {
                     trace!("Destination.Get {:?}", resolve.authority);
-                    match self.destinations.entry(resolve.authority) {
+                    match self.dsts.destinations.entry(resolve.authority) {
                         Entry::Occupied(mut occ) => {
                             let set = occ.get_mut();
                             // we may already know of some addresses here, so push
@@ -237,8 +242,8 @@ where
     fn poll_reconnect(&mut self, client: &mut T) -> bool {
         debug_assert!(self.rpc_ready);
 
-        while let Some(auth) = self.reconnects.pop_front() {
-            if let Some(set) = self.destinations.get_mut(&auth) {
+        while let Some(auth) = self.dsts.reconnects.pop_front() {
+            if let Some(set) = self.dsts.destinations.get_mut(&auth) {
                 set.query = Self::query_destination_service_if_relevant(
                     &self.namespaces.pod,
                     client,
@@ -253,18 +258,8 @@ where
         false
     }
 
-    /// Ensures that `destinations` is updated to only maintain active resolutions.
-    ///
-    /// If there are no active resolutions for a destination, the destination is removed.
-    fn retain_active_destinations(&mut self) {
-        self.destinations.retain(|_, ref mut dst| {
-            dst.responders.retain(|r| r.is_active());
-            dst.responders.len() > 0
-        })
-    }
-
     fn poll_destinations(&mut self) {
-        for (auth, set) in &mut self.destinations {
+        for (auth, set) in &mut self.dsts.destinations {
             // Query the Destination service first.
             let (new_query, found_by_destination_service) = match set.query.take() {
                 Some(Remote::ConnectedOrConnecting { rx }) => {
@@ -273,7 +268,7 @@ where
                             auth, rx, self.namespaces.tls_controller.as_ref().map(|s| s.as_ref()));
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
-                        self.reconnects.push_back(auth.clone());
+                        self.dsts.reconnects.push_back(auth.clone());
                     }
                     (Some(new_query), found_by_destination_service)
                 },
@@ -332,5 +327,30 @@ where
                 rx: Receiver::new(response),
             }
         })
+    }
+}
+
+// ===== impl DestinationCache =====
+
+impl<T> DestinationCache<T>
+where
+    T: HttpService<RequestBody = BoxBody, ResponseBody = RecvBody>,
+    T::Error: fmt::Debug,
+{
+    fn new() -> Self {
+        Self {
+            destinations: HashMap::new(),
+            reconnects: VecDeque::new(),
+        }
+    }
+
+    /// Ensures that `destinations` is updated to only maintain active resolutions.
+    ///
+    /// If there are no active resolutions for a destination, the destination is removed.
+    fn retain_active(&mut self) {
+        self.destinations.retain(|_, ref mut dst| {
+            dst.responders.retain(|r| r.is_active());
+            dst.responders.len() > 0
+        });
     }
 }
