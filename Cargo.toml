@@ -27,7 +27,7 @@ deflate = {version = "0.7.18", features = ["gzip"] }
 env_logger = { version = "0.5", default-features = false }
 futures = "0.1"
 futures-watch = { git = "https://github.com/carllerche/better-future" }
-h2 = "0.1.10"
+h2 = "0.1.11"
 http = "0.1"
 httparse = "1.2"
 hyper = "0.12.3"
