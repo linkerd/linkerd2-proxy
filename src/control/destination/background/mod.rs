@@ -76,7 +76,7 @@ struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
 struct Config {
     namespaces: Namespaces,
     active_queries: Arc<()>,
-    max_queries: usize,
+    concurrency_limit: usize,
 }
 
 /// Returns a new discovery background task.
@@ -87,7 +87,7 @@ pub(super) fn task(
     host_and_port: Option<HostAndPort>,
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
     control_backoff_delay: Duration,
-    max_queries: usize,
+    concurrency_limit: usize,
 ) -> impl Future<Item = (), Error = ()>
 {
     // Build up the Controller Client Stack
@@ -117,7 +117,7 @@ pub(super) fn task(
         request_rx,
         dns_resolver,
         namespaces,
-        max_queries,
+        concurrency_limit,
     );
 
     future::poll_fn(move || {
@@ -136,10 +136,10 @@ where
         request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
         dns_resolver: dns::Resolver,
         namespaces: Namespaces,
-        max_queries: usize,
+        concurrency_limit: usize,
     ) -> Self {
         Self {
-            config: Config::new(namespaces, max_queries),
+            config: Config::new(namespaces, concurrency_limit),
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -354,10 +354,10 @@ where
 
 impl Config {
 
-    fn new(namespaces: Namespaces, max_queries: usize) -> Self {
+    fn new(namespaces: Namespaces, concurrency_limit: usize) -> Self {
         Config {
             namespaces,
-            max_queries,
+            concurrency_limit,
             active_queries: Arc::new(()),
         }
     }
@@ -365,7 +365,7 @@ impl Config {
     /// Returns true if there is currently capacity for additional
     /// Destination service queries.
     fn has_more_queries(&self) -> bool {
-        Arc::weak_count(&self.active_queries) < self.max_queries
+        Arc::weak_count(&self.active_queries) < self.concurrency_limit
     }
 
     /// Attepts to initiate a query `query` to the Destination service
@@ -412,7 +412,7 @@ impl Config {
                     "Can't query Destination service for {:?}, maximum \
                      number of queries ({}) reached.",
                     auth,
-                    self.max_queries,
+                    self.concurrency_limit,
                 );
                 (None, true)
             },

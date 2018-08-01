@@ -147,7 +147,7 @@ pub fn new(
     host_and_port: Option<HostAndPort>,
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
     control_backoff_delay: Duration,
-    max_queries: usize,
+    concurrency_limit: usize,
 ) -> (Resolver, impl Future<Item = (), Error = ()>) {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
@@ -158,7 +158,7 @@ pub fn new(
         host_and_port,
         controller_tls,
         control_backoff_delay,
-        max_queries,
+        concurrency_limit,
     );
     (disco, bg)
 }
