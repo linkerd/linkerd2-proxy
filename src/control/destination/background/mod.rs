@@ -51,8 +51,8 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 /// provided authority to a set of addresses, and ensures that resolution updates are
 /// propagated to all requesters.
 struct Background<T: HttpService<ResponseBody = RecvBody>> {
+    cfg: QueryCfg,
     dns_resolver: dns::Resolver,
-    namespaces: Namespaces,
     dsts: DestinationCache<T>,
     /// The Destination.Get RPC client service.
     /// Each poll, records whether the rpc service was till ready.
@@ -67,6 +67,12 @@ struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
     destinations: HashMap<DnsNameAndPort, DestinationSet<T>>,
     /// A queue of authorities that need to be reconnected.
     reconnects: VecDeque<DnsNameAndPort>,
+}
+
+/// The configurationn necessary to create a new Destination service
+/// query.
+struct QueryCfg {
+    namespaces: Namespaces,
 }
 
 /// Returns a new discovery background task.
@@ -126,8 +132,10 @@ where
         namespaces: Namespaces,
     ) -> Self {
         Self {
+            cfg: QueryCfg {
+                namespaces,
+            },
             dns_resolver,
-            namespaces,
             dsts: DestinationCache::new(),
             rpc_ready: false,
             request_rx,
@@ -181,7 +189,11 @@ where
             match self.request_rx.poll() {
                 Ok(Async::Ready(Some(resolve))) => {
                     trace!("Destination.Get {:?}", resolve.authority);
-                    match self.dsts.destinations.entry(resolve.authority) {
+
+                    let cfg = &self.cfg;
+                    let dsts = &mut self.dsts;
+
+                    match dsts.destinations.entry(resolve.authority) {
                         Entry::Occupied(mut occ) => {
                             let set = occ.get_mut();
                             // we may already know of some addresses here, so push
@@ -198,10 +210,8 @@ where
                             set.responders.push(resolve.responder);
                         },
                         Entry::Vacant(vac) => {
-                            let pod_namespace = &self.namespaces.pod;
                             let query = client.as_mut().and_then(|client| {
-                                Self::query_destination_service_if_relevant(
-                                    pod_namespace,
+                                cfg.query_destination_service_if_relevant(
                                     client,
                                     vac.key(),
                                     "connect",
@@ -244,8 +254,7 @@ where
 
         while let Some(auth) = self.dsts.reconnects.pop_front() {
             if let Some(set) = self.dsts.destinations.get_mut(&auth) {
-                set.query = Self::query_destination_service_if_relevant(
-                    &self.namespaces.pod,
+                set.query = self.cfg.query_destination_service_if_relevant(
                     client,
                     &auth,
                     "reconnect",
@@ -265,7 +274,7 @@ where
                 Some(Remote::ConnectedOrConnecting { rx }) => {
                     let (new_query, found_by_destination_service) =
                         set.poll_destination_service(
-                            auth, rx, self.namespaces.tls_controller.as_ref().map(|s| s.as_ref()));
+                            auth, rx, self.cfg.tls_controller_ns());
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
@@ -302,21 +311,31 @@ where
         }
     }
 
+}
+
+// ===== impl QueryCfg =====
+
+impl QueryCfg {
     /// Initiates a query `query` to the Destination service and returns it as
     /// `Some(query)` if the given authority's host is of a form suitable for using to
     /// query the Destination service. Otherwise, returns `None`.
-    fn query_destination_service_if_relevant(
-        default_destination_namespace: &str,
+    fn query_destination_service_if_relevant<T>(
+        &self,
         client: &mut T,
         auth: &DnsNameAndPort,
         connect_or_reconnect: &str,
-    ) -> Option<DestinationServiceQuery<T>> {
+    ) -> Option<DestinationServiceQuery<T>>
+    where
+        T: HttpService<RequestBody = BoxBody, ResponseBody = RecvBody>,
+        T::Error: fmt::Debug,
+    {
         trace!(
             "DestinationServiceQuery {} {:?}",
             connect_or_reconnect,
             auth
         );
-        FullyQualifiedAuthority::normalize(auth, default_destination_namespace).map(|auth| {
+        let default_ns = self.namespaces.pod.as_ref();
+        FullyQualifiedAuthority::normalize(auth, default_ns).map(|auth| {
             let req = GetDestination {
                 scheme: "k8s".into(),
                 path: auth.without_trailing_dot().to_owned(),
@@ -327,6 +346,10 @@ where
                 rx: Receiver::new(response),
             }
         })
+    }
+
+    fn tls_controller_ns(&self) -> Option<&str> {
+        self.namespaces.tls_controller.as_ref().map(String::as_ref)
     }
 }
 
