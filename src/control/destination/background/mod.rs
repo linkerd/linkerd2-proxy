@@ -305,13 +305,12 @@ where
         for (auth, set) in &mut self.dsts.destinations {
             // Query the Destination service first.
             let (new_query, found_by_destination_service) = match set.query.take() {
-                Some(Remote::ConnectedOrConnecting { rx, active }) => {
+                Some(Remote::ConnectedOrConnecting { rx }) => {
                     let (new_query, found_by_destination_service) =
                         set.poll_destination_service(
                             auth,
                             rx,
                             self.config.tls_controller_ns(),
-                            active
                         );
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
@@ -428,8 +427,7 @@ impl Config {
                 let response = svc.get(grpc::Request::new(req));
                 let active = Arc::downgrade(&self.active_queries);
                 let query = Remote::ConnectedOrConnecting {
-                    rx: Receiver::new(response),
-                    active,
+                    rx: Receiver::new(response, active),
                 };
                 (Some(query), false)
 

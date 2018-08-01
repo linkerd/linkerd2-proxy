@@ -20,7 +20,6 @@ pub enum Remote<M, S: HttpService> {
     NeedsReconnect,
     ConnectedOrConnecting {
         rx: Receiver<M, S>,
-        active: Weak<()>,
     },
 }
 
@@ -29,7 +28,10 @@ pub enum Remote<M, S: HttpService> {
 /// Streaming gRPC endpoints return a `ResponseFuture` whose item is a `Response<Stream>`.
 /// A `Receiver` holds the state of that RPC call, exposing a `Stream` that drives both
 /// the gRPC response and its streaming body.
-pub struct Receiver<M, S: HttpService>(Rx<M, S>);
+pub struct Receiver<M, S: HttpService> {
+    rx: Rx<M, S>,
+    _active: Weak<()>,
+}
 
 enum Rx<M, S: HttpService> {
     Waiting(ResponseFuture<M, S::Future>),
@@ -43,8 +45,11 @@ where
     S::ResponseBody: Body<Data = Data>,
     S::Error: fmt::Debug,
 {
-    pub fn new(future: ResponseFuture<M, S::Future>) -> Self {
-        Receiver(Rx::Waiting(future))
+    pub fn new(future: ResponseFuture<M, S::Future>, active: Weak<()>) -> Self {
+        Receiver {
+            rx: Rx::Waiting(future),
+            _active: active,
+        }
     }
 
     // Coerces the stream's Error<()> to an Error<S::Error>.
@@ -74,7 +79,7 @@ where
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
-            let stream = match self.0 {
+            let stream = match self.rx {
                 Rx::Waiting(ref mut future) => {
                     try_ready!(future.poll()).into_inner()
                 }
@@ -84,7 +89,7 @@ where
                 }
             };
 
-            self.0 = Rx::Streaming(stream);
+            self.rx = Rx::Streaming(stream);
         }
     }
 }

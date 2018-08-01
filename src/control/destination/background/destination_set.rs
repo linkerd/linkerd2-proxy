@@ -4,7 +4,6 @@ use std::{
     iter::IntoIterator,
     net::SocketAddr,
     time::{Instant, Duration},
-    sync::Weak,
 };
 
 use futures::{Async, Future, Stream,};
@@ -76,7 +75,6 @@ where
         auth: &DnsNameAndPort,
         mut rx: UpdateRx<T>,
         tls_controller_namespace: Option<&str>,
-        active: Weak<()>,
     ) -> (DestinationServiceQuery<T>, Exists<()>) {
         let mut exists = Exists::Unknown;
 
@@ -120,7 +118,7 @@ where
                     return (Remote::NeedsReconnect, exists);
                 },
                 Ok(Async::NotReady) => {
-                    return (Remote::ConnectedOrConnecting { rx, active }, exists);
+                    return (Remote::ConnectedOrConnecting { rx }, exists);
                 },
                 Err(err) => {
                     warn!("Destination.Get stream errored for {:?}: {:?}", auth, err);
