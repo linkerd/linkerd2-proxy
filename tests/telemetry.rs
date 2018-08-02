@@ -820,7 +820,7 @@ mod transport {
         let _ = env_logger::try_init();
         let srv = tcp::server()
             .accept_fut(move |sock| {
-                sock.shutdown(::std::net::Shutdown::Both).unwrap();
+                drop(sock);
                 future::ok(())
             })
             .run();
@@ -850,7 +850,7 @@ mod transport {
         let _ = env_logger::try_init();
         let srv = tcp::server()
             .accept_fut(move |sock| {
-                sock.shutdown(::std::net::Shutdown::Both).unwrap();
+                drop(sock);
                 future::ok(())
             })
             .run();
