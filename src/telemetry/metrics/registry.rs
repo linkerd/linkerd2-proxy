@@ -10,6 +10,7 @@ use super::labels::{
     TlsConfigLabels,
 };
 use std::time::UNIX_EPOCH;
+
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
 pub struct Registry {
