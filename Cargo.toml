@@ -47,6 +47,7 @@ tokio = "0.1.7"
 tokio-signal = "0.2"
 tokio-timer = "0.2.4"   # for tokio_timer::clock
 tokio-connect         = { git = "https://github.com/carllerche/tokio-connect" }
+tower-add-origin      = { git = "https://github.com/tower-rs/tower-http" }
 tower-balance         = { git = "https://github.com/tower-rs/tower" }
 tower-buffer          = { git = "https://github.com/tower-rs/tower" }
 tower-discover        = { git = "https://github.com/tower-rs/tower" }

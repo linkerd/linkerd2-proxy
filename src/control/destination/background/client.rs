@@ -11,6 +11,7 @@ use http;
 use tokio::timer::Delay;
 
 use tower_h2::{self, BoxBody};
+use tower_add_origin::AddOrigin;
 use tower_service::Service;
 use tower_reconnect::{Reconnect, Error as ReconnectError};
 use conditional::Conditional;
@@ -49,14 +50,6 @@ pub(super) struct Backoff<S> {
     timer: Delay,
     waiting: bool,
     wait_dur: Duration,
-}
-
-
-/// Wraps an HTTP service, injecting authority and scheme on every request.
-pub(super) struct AddOrigin<S> {
-    authority: http::uri::Authority,
-    inner: S,
-    scheme: http::uri::Scheme,
 }
 
 /// Log errors talking to the controller in human format.
@@ -133,8 +126,7 @@ impl Rebind<tls::ConditionalClientConfig> for BindClient {
         let reconnect = Reconnect::new(h2_client);
         let log_errors = LogErrors::new(reconnect);
         let backoff = Backoff::new(log_errors, self.backoff_delay);
-        // TODO: Use AddOrigin in tower-http
-        AddOrigin::new(scheme, authority, backoff)
+        AddOrigin::new(backoff, scheme, authority)
     }
 
 }
@@ -253,42 +245,6 @@ impl<'a> fmt::Display for HumanError<'a> {
                 f.pad("bug: called service when not ready")
             },
         }
-    }
-}
-
-// ===== impl AddOrigin =====
-
-impl<S> AddOrigin<S> {
-    pub(super) fn new(scheme: http::uri::Scheme, auth: http::uri::Authority, service: S) -> Self {
-        AddOrigin {
-            authority: auth,
-            inner: service,
-            scheme,
-        }
-    }
-}
-
-impl<S, B> Service for AddOrigin<S>
-where
-    S: Service<Request = http::Request<B>>,
-{
-    type Request = http::Request<B>;
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
-
-    fn call(&mut self, req: Self::Request) -> Self::Future {
-        let (mut head, body) = req.into_parts();
-        let mut uri: http::uri::Parts = head.uri.into();
-        uri.scheme = Some(self.scheme.clone());
-        uri.authority = Some(self.authority.clone());
-        head.uri = http::Uri::from_parts(uri).expect("valid uri");
-
-        self.inner.call(http::Request::from_parts(head, body))
     }
 }
 
