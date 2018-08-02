@@ -27,12 +27,12 @@ use telemetry::metrics::DstLabels;
 use transport::{tls, DnsNameAndPort};
 use conditional::Conditional;
 
-use super::{DestinationServiceQuery, UpdateRx};
+use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
 /// Holds the state of a single resolution.
 pub(super) struct DestinationSet<T: HttpService<ResponseBody = RecvBody>> {
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
-    pub query: Option<DestinationServiceQuery<T>>,
+    pub query: DestinationServiceQuery<T>,
     pub dns_query: Option<IpAddrListFuture>,
     pub responders: Vec<Responder>,
 }
@@ -68,7 +68,7 @@ where
         auth: &DnsNameAndPort,
         mut rx: UpdateRx<T>,
         tls_controller_namespace: Option<&str>,
-    ) -> (DestinationServiceQuery<T>, Exists<()>) {
+    ) -> (ActiveQuery<T>, Exists<()>) {
         let mut exists = Exists::Unknown;
 
         loop {
@@ -108,14 +108,14 @@ where
                         "Destination.Get stream ended for {:?}, must reconnect",
                         auth
                     );
-                    return (Remote::NeedsReconnect, exists);
+                    return (Remote::NeedsReconnect.into(), exists);
                 },
                 Ok(Async::NotReady) => {
-                    return (Remote::ConnectedOrConnecting { rx }, exists);
+                    return (Remote::ConnectedOrConnecting { rx }.into(), exists);
                 },
                 Err(err) => {
                     warn!("Destination.Get stream errored for {:?}: {:?}", auth, err);
-                    return (Remote::NeedsReconnect, exists);
+                    return (Remote::NeedsReconnect.into(), exists);
                 },
             };
         }
@@ -179,6 +179,13 @@ where
 }
 
 impl<T: HttpService<ResponseBody = RecvBody>> DestinationSet<T> {
+
+    /// Returns `true` if the authority that created this query _should_ query
+    /// the Destination service, but was unable to due to insufficient capaacity.
+    pub(super) fn needs_query_capacity(&self) -> bool {
+        self.query.needs_query_capacity()
+    }
+
     pub(super) fn reset_on_next_modification(&mut self) {
         match self.addrs {
             Exists::Yes(ref mut cache) => {
