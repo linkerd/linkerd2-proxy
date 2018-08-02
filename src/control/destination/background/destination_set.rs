@@ -179,8 +179,11 @@ where
 }
 
 impl<T: HttpService<ResponseBody = RecvBody>> DestinationSet<T> {
-    pub(super) fn wants_query(&self) -> bool {
-        self.query.wants_query()
+
+    /// Returns `true` if the authority that created this query _should_ query
+    /// the Destination service, but was unable to due to insufficient capaacity.
+    pub(super) fn needs_query_capacity(&self) -> bool {
+        self.query.needs_query_capacity()
     }
 
     pub(super) fn reset_on_next_modification(&mut self) {

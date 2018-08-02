@@ -30,6 +30,9 @@ pub enum Remote<M, S: HttpService> {
 /// the gRPC response and its streaming body.
 pub struct Receiver<M, S: HttpService> {
     rx: Rx<M, S>,
+
+    /// Used by `background::NewQuery` for counting the number of currently
+    /// active queries that it has created.
     _active: Weak<()>,
 }
 

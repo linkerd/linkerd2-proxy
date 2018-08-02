@@ -234,10 +234,7 @@ where
                                 Exists::No | Exists::Unknown => (),
                             }
 
-                            // If the destinationSet was previously unable to
-                            // make a query due to insufficient capacity, try
-                            // to open a new query if possible.
-                            if occ.get().wants_query() {
+                            if occ.get().needs_query_capacity() {
                                 trace!("--> {:?} wants to query Destination", occ.key());
                                 let query = new_query
                                     .query_destination_service_if_relevant(
@@ -300,7 +297,7 @@ where
                         &auth,
                         "reconnect",
                     );
-                return !set.wants_query();
+                return !set.needs_query_capacity();
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
             }
@@ -381,15 +378,16 @@ impl NewQuery {
     ///
     /// # Returns
     ///
-    /// - `(None, true)` if the given authority _should_ query the
-    ///   Destination service, but the query limit has already been reached.
-    ///   In this case, this function should be called again when there is
-    ///   capacity for additional queries.
-    /// - `(None, false)` if the authority is not suitable for querying the
-    ///   Destination service.
-    /// - `(Some(DestinationServiceQuery), true)` if the authority is suitable
-    ///   for querying the Destination service and there is sufficient capacity
-    ///   to initiate a new query.
+    /// - `DestinationServiceQuery::NoCapacity` if the given authority _should_
+    ///   query the Destination service, but the query limit has already been
+    ///   reached. In this case, this function should be called again when
+    ///   there is capacity for additional queries.
+    /// - `DestinationServiceQuery::Inactive` if the authority is not suitable
+    ///    for querying the Destination service, or the provided `client` was
+    ///    `None`.
+    /// - `DestinationServiceQuery::Active` if the authority is suitable for
+    ///    querying the Destination service and there is sufficient capacity to
+    ///    initiate a new query.
     fn query_destination_service_if_relevant<T>(
         &self,
         client: Option<&mut T>,
@@ -470,7 +468,7 @@ where
     fn needs_query_for(&self, auth: &DnsNameAndPort) -> bool {
         self.destinations
             .get(auth)
-            .map(DestinationSet::wants_query)
+            .map(|dst| dst.needs_query_capacity())
             .unwrap_or(false)
     }
 
@@ -496,7 +494,9 @@ impl<T: HttpService<ResponseBody = RecvBody>> DestinationServiceQuery<T> {
         }
     }
 
-    pub fn wants_query(&self) -> bool {
+    /// Returns `true` if the authority that created this query _should_ query
+    /// the Destination service, but was unable to due to insufficient capaacity.
+    pub fn needs_query_capacity(&self) -> bool {
         match self {
             DestinationServiceQuery::NoCapacity => true,
             _ => false,
