@@ -10,10 +10,14 @@ use h2;
 use http;
 use tokio::timer::Delay;
 
-use tower_h2::{self, BoxBody};
+use tower_h2::{self, BoxBody, RecvBody};
 use tower_add_origin::AddOrigin;
 use tower_service::Service;
-use tower_reconnect::{Reconnect, Error as ReconnectError};
+use tower_reconnect::{
+    Reconnect,
+    Error as ReconnectError,
+    ResponseFuture as ReconnectFuture,
+};
 use conditional::Conditional;
 use dns;
 use timeout::{Timeout, TimeoutError};
@@ -21,7 +25,7 @@ use transport::{tls, HostAndPort, LookupAddressAndConnect};
 use watch_service::Rebind;
 
 /// Type of the client service stack used to make destination requests.
-pub(super) type ClientService = AddOrigin<Backoff<LogErrors<Reconnect<
+pub(super) struct ClientService(AddOrigin<Backoff<LogErrors<Reconnect<
         tower_h2::client::Connect<
             Timeout<LookupAddressAndConnect>,
             ::logging::ContextualExecutor<
@@ -32,7 +36,7 @@ pub(super) type ClientService = AddOrigin<Backoff<LogErrors<Reconnect<
             >,
             BoxBody,
         >
-    >>>>;
+    >>>>);
 
 /// The state needed to bind a new controller client stack.
 pub(super) struct BindClient {
@@ -45,7 +49,7 @@ pub(super) struct BindClient {
 
 /// Wait a duration if inner `poll_ready` returns an error.
 //TODO: move to tower-backoff
-pub(super) struct Backoff<S> {
+struct Backoff<S> {
     inner: S,
     timer: Delay,
     waiting: bool,
@@ -53,7 +57,7 @@ pub(super) struct Backoff<S> {
 }
 
 /// Log errors talking to the controller in human format.
-pub(super) struct LogErrors<S> {
+struct LogErrors<S> {
     inner: S,
 }
 
@@ -72,6 +76,31 @@ type LogError = ReconnectError<
         >
     >
 >;
+
+// ===== impl ClientService =====
+
+impl Service for ClientService {
+    type Request = http::Request<BoxBody>;
+    type Response = http::Response<RecvBody>;
+    type Error = LogError;
+    type Future = ReconnectFuture<
+        tower_h2::client::Connect<
+            Timeout<LookupAddressAndConnect>,
+            ::logging::ContextualExecutor<
+                ::logging::Client<
+                    &'static str,
+                    HostAndPort,
+                >
+            >, BoxBody>>;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.0.poll_ready()
+    }
+
+    fn call(&mut self, request: Self::Request) -> Self::Future {
+        self.0.call(request)
+    }
+}
 
 // ===== impl BindClient =====
 
@@ -126,7 +155,7 @@ impl Rebind<tls::ConditionalClientConfig> for BindClient {
         let reconnect = Reconnect::new(h2_client);
         let log_errors = LogErrors::new(reconnect);
         let backoff = Backoff::new(log_errors, self.backoff_delay);
-        AddOrigin::new(backoff, scheme, authority)
+        ClientService(AddOrigin::new(backoff, scheme, authority))
     }
 
 }
@@ -137,7 +166,7 @@ impl<S> Backoff<S>
 where
     S: Service,
 {
-    pub(super) fn new(inner: S, wait_dur: Duration) -> Self {
+    fn new(inner: S, wait_dur: Duration) -> Self {
         Backoff {
             inner,
             timer: Delay::new(Instant::now() + wait_dur),
@@ -199,7 +228,7 @@ impl<S> LogErrors<S>
 where
     S: Service<Error=LogError>,
 {
-    pub(super) fn new(service: S) -> Self {
+    fn new(service: S) -> Self {
         LogErrors {
             inner: service,
         }
@@ -227,7 +256,7 @@ where
     }
 }
 
-pub(super) struct HumanError<'a>(&'a LogError);
+struct HumanError<'a>(&'a LogError);
 
 impl<'a> fmt::Display for HumanError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
