@@ -33,8 +33,8 @@ use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 pub(super) struct DestinationSet<T: HttpService<ResponseBody = RecvBody>> {
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
     pub query: DestinationServiceQuery<T>,
-    pub dns_query: Option<IpAddrListFuture>,
-    pub responders: Vec<Responder>,
+    dns_query: Option<IpAddrListFuture>,
+    responders: Vec<Responder>,
 }
 
 // ===== impl DestinationSet =====
@@ -44,6 +44,18 @@ where
     T: HttpService<RequestBody = BoxBody, ResponseBody = RecvBody>,
     T::Error: fmt::Debug,
 {
+    pub(super) fn new(
+        responder: Responder,
+        query: DestinationServiceQuery<T>,
+    ) -> Self {
+        Self {
+            addrs: Exists::Unknown,
+            query,
+            dns_query: None,
+            responders: vec![responder],
+        }
+    }
+
     pub(super) fn reset_dns_query(
         &mut self,
         dns_resolver: &dns::Resolver,
@@ -57,6 +69,24 @@ where
         );
         self.reset_on_next_modification();
         self.dns_query = Some(dns_resolver.resolve_all_ips(deadline, &authority.host));
+    }
+
+    pub(super) fn end_dns_query(&mut self) {
+        self.dns_query = None;
+    }
+
+    pub(super) fn add_responder(&mut self, responder: Responder) {
+        self.responders.push(responder)
+    }
+
+    /// Drops any responders which have become inactive.
+    ///
+    /// # Returns
+    /// `true` if this `DestinationSet` is still active after cleaning up any
+    /// inactive responders, `false` if it is inactive.
+    pub(super) fn retain_active_responders(&mut self) -> bool {
+        self.responders.retain(Responder::is_active);
+        self.responders.len() > 0
     }
 
     // Processes Destination service updates from `request_rx`, returning the new query

@@ -245,7 +245,7 @@ where
                                 occ.get_mut().query = query;
                             }
 
-                            occ.get_mut().responders.push(resolve.responder);
+                            occ.get_mut().add_responder(resolve.responder);
                         },
                         Entry::Vacant(vac) => {
                             let query = new_query
@@ -254,12 +254,10 @@ where
                                     vac.key(),
                                     "connect",
                                 );
-                            let mut set = DestinationSet {
-                                addrs: Exists::Unknown,
+                            let mut set = DestinationSet::new(
+                                resolve.responder,
                                 query,
-                                dns_query: None,
-                                responders: vec![resolve.responder],
-                            };
+                            );
                             // If the authority is one for which the Destination service is never
                             // relevant (e.g. an absolute name that doesn't end in ".svc.$zone." in
                             // Kubernetes), or if we don't have a `client`, then immediately start
@@ -337,7 +335,7 @@ where
             match found_by_destination_service {
                 Exists::Yes(()) => {
                     // Stop polling DNS on any active update from the Destination service.
-                    set.dns_query = None;
+                    set.end_dns_query();
                 },
                 Exists::No => {
                     // Fall back to DNS.
@@ -476,10 +474,9 @@ where
     ///
     /// If there are no active resolutions for a destination, the destination is removed.
     fn retain_active(&mut self) {
-        self.destinations.retain(|_, ref mut dst| {
-            dst.responders.retain(|r| r.is_active());
-            dst.responders.len() > 0
-        });
+        self.destinations.retain(|_, ref mut dst|
+            dst.retain_active_responders()
+        )
     }
 }
 
