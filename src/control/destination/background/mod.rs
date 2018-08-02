@@ -4,6 +4,7 @@ use std::{
         VecDeque,
     },
     fmt,
+    mem,
     time::{Instant, Duration},
     sync::Arc,
 };
@@ -42,7 +43,7 @@ use self::{
     destination_set::DestinationSet,
 };
 
-type DestinationServiceQuery<T> = Remote<PbUpdate, T>;
+type ActiveQuery<T> = Remote<PbUpdate, T>;
 type UpdateRx<T> = Receiver<PbUpdate, T>;
 
 /// Satisfies resolutions as requested via `request_rx`.
@@ -83,6 +84,12 @@ struct NewQuery {
     /// will go down accordingly.
     active_query_handle: Arc<()>,
     concurrency_limit: usize,
+}
+
+enum DestinationServiceQuery<T: HttpService<ResponseBody = RecvBody>> {
+    Inactive,
+    Active(ActiveQuery<T>),
+    NoCapacity,
 }
 
 /// Returns a new discovery background task.
@@ -230,25 +237,22 @@ where
                             // If the destinationSet was previously unable to
                             // make a query due to insufficient capacity, try
                             // to open a new query if possible.
-                            if occ.get().wants_query {
+                            if occ.get().wants_query() {
                                 trace!("--> {:?} wants to query Destination", occ.key());
-                                debug_assert!(occ.get().query.is_none());
-                                let (query, wants_query) =
-                                    new_query.query_destination_service_if_relevant(
+                                let query = new_query
+                                    .query_destination_service_if_relevant(
                                         client.as_mut(),
                                         occ.key(),
                                         "connect (previously at capacity)",
                                     );
-                                let set = occ.get_mut();
-                                set.query = query;
-                                set.wants_query = wants_query;
+                                occ.get_mut().query = query;
                             }
 
                             occ.get_mut().responders.push(resolve.responder);
                         },
                         Entry::Vacant(vac) => {
-                            let (query, wants_query) =
-                                new_query.query_destination_service_if_relevant(
+                            let query = new_query
+                                .query_destination_service_if_relevant(
                                     client.as_mut(),
                                     vac.key(),
                                     "connect",
@@ -258,13 +262,12 @@ where
                                 query,
                                 dns_query: None,
                                 responders: vec![resolve.responder],
-                                wants_query,
                             };
                             // If the authority is one for which the Destination service is never
                             // relevant (e.g. an absolute name that doesn't end in ".svc.$zone." in
                             // Kubernetes), or if we don't have a `client`, then immediately start
                             // polling DNS.
-                            if set.query.is_none() {
+                            if !set.query.is_active() {
                                 set.reset_dns_query(
                                     &self.dns_resolver,
                                     Instant::now(),
@@ -291,15 +294,13 @@ where
 
         while let Some(auth) = self.dsts.reconnects.pop_front() {
             if let Some(set) = self.dsts.destinations.get_mut(&auth) {
-                let (query, wants_query) = self.new_query
+                set.query = self.new_query
                     .query_destination_service_if_relevant(
                         Some(client),
                         &auth,
                         "reconnect",
                     );
-                set.query = query;
-                set.wants_query = wants_query;
-                return !wants_query;
+                return !set.wants_query();
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
             }
@@ -311,7 +312,7 @@ where
         for (auth, set) in &mut self.dsts.destinations {
             // Query the Destination service first.
             let (new_query, found_by_destination_service) = match set.query.take() {
-                Some(Remote::ConnectedOrConnecting { rx }) => {
+                DestinationServiceQuery::Active(Remote::ConnectedOrConnecting { rx }) => {
                     let (new_query, found_by_destination_service) =
                         set.poll_destination_service(
                             auth,
@@ -322,7 +323,7 @@ where
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
                     }
-                    (Some(new_query), found_by_destination_service)
+                    (new_query.into(), found_by_destination_service)
                 },
                 query => (query, Exists::Unknown),
             };
@@ -394,7 +395,7 @@ impl NewQuery {
         client: Option<&mut T>,
         auth: &DnsNameAndPort,
         connect_or_reconnect: &str,
-    ) -> (Option<DestinationServiceQuery<T>>, bool)
+    ) -> DestinationServiceQuery<T>
     where
         T: HttpService<RequestBody = BoxBody, ResponseBody = RecvBody>,
         T::Error: fmt::Debug,
@@ -404,7 +405,7 @@ impl NewQuery {
             connect_or_reconnect,
             auth
         );
-        let default_ns = self.namespaces.pod.as_ref();
+        let default_ns = &self.namespaces.pod;
         let client_and_authority = client.and_then(|client| {
             FullyQualifiedAuthority::normalize(auth, default_ns)
                 .map(|auth| (auth, client))
@@ -420,7 +421,7 @@ impl NewQuery {
                     auth,
                     self.concurrency_limit,
                 );
-                (None, true)
+                DestinationServiceQuery::NoCapacity
             },
             // We should query the Destination service and there is sufficient
             // query capacity, so we're good to go!
@@ -435,12 +436,11 @@ impl NewQuery {
                 let query = Remote::ConnectedOrConnecting {
                     rx: Receiver::new(response, active),
                 };
-                (Some(query), false)
-
+                DestinationServiceQuery::Active(query)
             },
             // This authority should not query the Destination service. Return
             // None, but set the "needs query" flag to false.
-            None => (None, false),
+            None => DestinationServiceQuery::Inactive
         }
     }
 
@@ -470,7 +470,7 @@ where
     fn needs_query_for(&self, auth: &DnsNameAndPort) -> bool {
         self.destinations
             .get(auth)
-            .map(|dst| dst.wants_query)
+            .map(DestinationSet::wants_query)
             .unwrap_or(false)
     }
 
@@ -482,5 +482,38 @@ where
             dst.responders.retain(|r| r.is_active());
             dst.responders.len() > 0
         });
+    }
+}
+
+// ===== impl DestinationServiceQuery =====
+
+impl<T: HttpService<ResponseBody = RecvBody>> DestinationServiceQuery<T> {
+
+    pub fn is_active(&self) -> bool {
+        match self {
+            DestinationServiceQuery::Active(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn wants_query(&self) -> bool {
+        match self {
+            DestinationServiceQuery::NoCapacity => true,
+            _ => false,
+        }
+    }
+
+    pub fn take(&mut self) -> Self {
+         mem::replace(self, DestinationServiceQuery::Inactive)
+    }
+
+}
+
+impl<T> From<ActiveQuery<T>> for DestinationServiceQuery<T>
+where
+    T: HttpService<ResponseBody = RecvBody>,
+{
+    fn from(active: ActiveQuery<T>) -> Self {
+        DestinationServiceQuery::Active(active)
     }
 }

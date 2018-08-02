@@ -27,21 +27,14 @@ use telemetry::metrics::DstLabels;
 use transport::{tls, DnsNameAndPort};
 use conditional::Conditional;
 
-use super::{DestinationServiceQuery, UpdateRx};
+use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
 /// Holds the state of a single resolution.
 pub(super) struct DestinationSet<T: HttpService<ResponseBody = RecvBody>> {
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
-    pub query: Option<DestinationServiceQuery<T>>,
+    pub query: DestinationServiceQuery<T>,
     pub dns_query: Option<IpAddrListFuture>,
     pub responders: Vec<Responder>,
-
-    /// This flag is set if `query` is `None` because we wanted to make a
-    /// query for this destination, but were at the query capacity limit.
-    ///
-    /// Otherwise, if `query` is `None` and this is _not_ set, then the
-    /// authority does not require a Destination query.
-    pub wants_query: bool,
 }
 
 // ===== impl DestinationSet =====
@@ -75,7 +68,7 @@ where
         auth: &DnsNameAndPort,
         mut rx: UpdateRx<T>,
         tls_controller_namespace: Option<&str>,
-    ) -> (DestinationServiceQuery<T>, Exists<()>) {
+    ) -> (ActiveQuery<T>, Exists<()>) {
         let mut exists = Exists::Unknown;
 
         loop {
@@ -115,14 +108,14 @@ where
                         "Destination.Get stream ended for {:?}, must reconnect",
                         auth
                     );
-                    return (Remote::NeedsReconnect, exists);
+                    return (Remote::NeedsReconnect.into(), exists);
                 },
                 Ok(Async::NotReady) => {
-                    return (Remote::ConnectedOrConnecting { rx }, exists);
+                    return (Remote::ConnectedOrConnecting { rx }.into(), exists);
                 },
                 Err(err) => {
                     warn!("Destination.Get stream errored for {:?}: {:?}", auth, err);
-                    return (Remote::NeedsReconnect, exists);
+                    return (Remote::NeedsReconnect.into(), exists);
                 },
             };
         }
@@ -186,6 +179,10 @@ where
 }
 
 impl<T: HttpService<ResponseBody = RecvBody>> DestinationSet<T> {
+    pub(super) fn wants_query(&self) -> bool {
+        self.query.wants_query()
+    }
+
     pub(super) fn reset_on_next_modification(&mut self) {
         match self.addrs {
             Exists::Yes(ref mut cache) => {
