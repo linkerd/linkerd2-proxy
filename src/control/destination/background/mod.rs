@@ -52,7 +52,7 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 /// provided authority to a set of addresses, and ensures that resolution updates are
 /// propagated to all requesters.
 struct Background<T: HttpService<ResponseBody = RecvBody>> {
-    config: Config,
+    new_query: NewQuery,
     dns_resolver: dns::Resolver,
     dsts: DestinationCache<T>,
     /// The Destination.Get RPC client service.
@@ -73,9 +73,15 @@ struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
 
 /// The configurationn necessary to create a new Destination service
 /// query.
-struct Config {
+struct NewQuery {
     namespaces: Namespaces,
-    active_queries: Arc<()>,
+    /// Used for counting the number of currently-active queries.
+    ///
+    /// Each active query will hold a `Weak` reference back to this `Arc`, and
+    /// `NewQuery` can use `Arc::weak_count` to count the number of queries
+    /// that currently exist. When those queries are dropped, the weak count
+    /// will go down accordingly.
+    active_query_handle: Arc<()>,
     concurrency_limit: usize,
 }
 
@@ -139,7 +145,7 @@ where
         concurrency_limit: usize,
     ) -> Self {
         Self {
-            config: Config::new(namespaces, concurrency_limit),
+            new_query: NewQuery::new(namespaces, concurrency_limit),
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -195,7 +201,7 @@ where
                 Ok(Async::Ready(Some(resolve))) => {
                     trace!("Destination.Get {:?}", resolve.authority);
 
-                    let config = &self.config;
+                    let new_query = &self.new_query;
                     let dsts = &mut self.dsts;
 
                     // If the requested authority currently needs more
@@ -228,7 +234,7 @@ where
                                 trace!("--> {:?} wants to query Destination", occ.key());
                                 debug_assert!(occ.get().query.is_none());
                                 let (query, wants_query) =
-                                    config.query_destination_service_if_relevant(
+                                    new_query.query_destination_service_if_relevant(
                                         client.as_mut(),
                                         occ.key(),
                                         "connect (previously at capacity)",
@@ -242,7 +248,7 @@ where
                         },
                         Entry::Vacant(vac) => {
                             let (query, wants_query) =
-                                config.query_destination_service_if_relevant(
+                                new_query.query_destination_service_if_relevant(
                                     client.as_mut(),
                                     vac.key(),
                                     "connect",
@@ -285,7 +291,7 @@ where
 
         while let Some(auth) = self.dsts.reconnects.pop_front() {
             if let Some(set) = self.dsts.destinations.get_mut(&auth) {
-                let (query, wants_query) = self.config
+                let (query, wants_query) = self.new_query
                     .query_destination_service_if_relevant(
                         Some(client),
                         &auth,
@@ -310,7 +316,7 @@ where
                         set.poll_destination_service(
                             auth,
                             rx,
-                            self.config.tls_controller_ns(),
+                            self.new_query.tls_controller_ns(),
                         );
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
@@ -350,22 +356,22 @@ where
 
 }
 
-// ===== impl Config =====
+// ===== impl NewQuery =====
 
-impl Config {
+impl NewQuery {
 
     fn new(namespaces: Namespaces, concurrency_limit: usize) -> Self {
-        Config {
+        Self {
             namespaces,
             concurrency_limit,
-            active_queries: Arc::new(()),
+            active_query_handle: Arc::new(()),
         }
     }
 
     /// Returns true if there is currently capacity for additional
     /// Destination service queries.
     fn has_more_queries(&self) -> bool {
-        Arc::weak_count(&self.active_queries) < self.concurrency_limit
+        Arc::weak_count(&self.active_query_handle) < self.concurrency_limit
     }
 
     /// Attepts to initiate a query `query` to the Destination service
@@ -425,7 +431,7 @@ impl Config {
                 };
                 let mut svc = Destination::new(client.lift_ref());
                 let response = svc.get(grpc::Request::new(req));
-                let active = Arc::downgrade(&self.active_queries);
+                let active = Arc::downgrade(&self.active_query_handle);
                 let query = Remote::ConnectedOrConnecting {
                     rx: Receiver::new(response, active),
                 };
