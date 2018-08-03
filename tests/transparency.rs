@@ -31,120 +31,6 @@ fn inbound_http1() {
 }
 
 #[test]
-fn http1_removes_connection_headers() {
-    let _ = env_logger::try_init();
-
-    let srv = server::http1()
-        .route_fn("/", |req| {
-            assert!(!req.headers().contains_key("x-foo-bar"));
-            Response::builder()
-                .header("x-server-quux", "lorem ipsum")
-                .header("connection", "close, x-server-quux")
-                .body("".into())
-                .unwrap()
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-    let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
-
-    let res = client.request(client.request_builder("/")
-        .header("x-foo-bar", "baz")
-        .header("connection", "x-foo-bar, close"));
-
-    assert_eq!(res.status(), http::StatusCode::OK);
-    assert!(!res.headers().contains_key("x-server-quux"));
-}
-
-#[test]
-fn http10_with_host() {
-    let _ = env_logger::try_init();
-
-    let host = "transparency.test.svc.cluster.local";
-    let srv = server::http1()
-        .route_fn("/", move |req| {
-            assert_eq!(req.version(), http::Version::HTTP_10);
-            assert_eq!(req.headers().get("host").unwrap(), host);
-            Response::builder()
-                .version(http::Version::HTTP_10)
-                .body("".into())
-                .unwrap()
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-    let client = client::http1(proxy.inbound, host);
-
-    let res = client.request(client.request_builder("/")
-        .version(http::Version::HTTP_10)
-        .header("host", host));
-
-    assert_eq!(res.status(), http::StatusCode::OK);
-    assert_eq!(res.version(), http::Version::HTTP_10);
-}
-
-#[test]
-fn http10_without_host() {
-    let _ = env_logger::try_init();
-
-    let srv = server::http1()
-        .route_fn("/", move |req| {
-            assert_eq!(req.version(), http::Version::HTTP_10);
-            assert!(!req.headers().contains_key("host"));
-            assert_eq!(req.uri().to_string(), "/");
-            Response::builder()
-                .version(http::Version::HTTP_10)
-                .body("".into())
-                .unwrap()
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-
-    let client = client::tcp(proxy.inbound);
-
-    let tcp_client = client.connect();
-
-    tcp_client.write("\
-        GET / HTTP/1.0\r\n\
-        \r\n\
-    ");
-
-    let expected = "HTTP/1.0 200 OK\r\n";
-    assert_eq!(s(&tcp_client.read()[..expected.len()]), expected);
-}
-
-#[test]
-fn http11_absolute_uri_differs_from_host() {
-    let _ = env_logger::try_init();
-
-    // We shouldn't touch the URI or the Host, just pass directly as we got.
-    let auth = "transparency.test.svc.cluster.local";
-    let host = "foo.bar";
-    let srv = server::http1()
-        .route_fn("/", move |req| {
-            assert_eq!(req.headers()["host"], host);
-            assert_eq!(req.uri().to_string(), format!("http://{}/", auth));
-            Response::new("".into())
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-    let client = client::http1_absolute_uris(proxy.inbound, auth);
-
-    let res = client.request(client.request_builder("/")
-        .version(http::Version::HTTP_11)
-        .header("host", host));
-
-    assert_eq!(res.status(), http::StatusCode::OK);
-    assert_eq!(res.version(), http::Version::HTTP_11);
-}
-
-#[test]
 fn outbound_tcp() {
     let _ = env_logger::try_init();
 
@@ -303,373 +189,638 @@ fn tcp_connections_close_if_client_closes() {
     rx.recv_timeout(Duration::from_secs(5)).unwrap();
 }
 
-#[test]
-fn http11_upgrades() {
-    let _ = env_logger::try_init();
+macro_rules! http1_tests {
+    (proxy: $proxy:expr) => {
+        #[test]
+        fn inbound_http1() {
+            let _ = env_logger::try_init();
 
-    // To simplify things for this test, we just use the test TCP
-    // client and server to do an HTTP upgrade.
-    //
-    // This is upgrading to 'chatproto', a made up plaintext protocol
-    // to simplify testing.
+            let srv = server::http1().route("/", "hello h1").run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-    let upgrade_req = "\
-        GET /chat HTTP/1.1\r\n\
-        Host: foo.bar\r\n\
-        Connection: upgrade\r\n\
-        Upgrade: chatproto\r\n\
-        \r\n\
-        ";
-    let upgrade_res = "\
-        HTTP/1.1 101 Switching Protocols\r\n\
-        Upgrade: chatproto\r\n\
-        Connection: upgrade\r\n\
-        \r\n\
-        ";
-    let upgrade_needle = "\r\nupgrade: chatproto\r\n";
-    let chatproto_req = "[chatproto-c]{send}: hi all\n";
-    let chatproto_res = "[chatproto-s]{recv}: welcome!\n";
+            assert_eq!(client.get("/"), "hello h1");
+        }
 
+        #[test]
+        fn http1_removes_connection_headers() {
+            let _ = env_logger::try_init();
 
-    let srv = server::tcp()
-        .accept_fut(move |sock| {
-            // Read upgrade_req...
-            tokio_io::io::read(sock, vec![0; 512])
-                .and_then(move |(sock, vec, n)| {
-                    let head = s(&vec[..n]);
-                    assert_contains!(head, upgrade_needle);
-
-                    // Write upgrade_res back...
-                    tokio_io::io::write_all(sock, upgrade_res)
+            let srv = server::http1()
+                .route_fn("/", |req| {
+                    assert!(!req.headers().contains_key("x-foo-bar"));
+                    Response::builder()
+                        .header("x-server-quux", "lorem ipsum")
+                        .header("connection", "close, x-server-quux")
+                        .body("".into())
+                        .unwrap()
                 })
-                .and_then(move |(sock, _)| {
-                    // Read the message in 'chatproto' format
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
+
+            let res = client.request(client.request_builder("/")
+                .header("x-foo-bar", "baz")
+                .header("connection", "x-foo-bar, close"));
+
+            assert_eq!(res.status(), http::StatusCode::OK);
+            assert!(!res.headers().contains_key("x-server-quux"));
+        }
+
+
+        #[test]
+        fn http10_with_host() {
+            let _ = env_logger::try_init();
+
+            let host = "transparency.test.svc.cluster.local";
+            let srv = server::http1()
+                .route_fn("/", move |req| {
+                    assert_eq!(req.version(), http::Version::HTTP_10);
+                    assert_eq!(req.headers().get("host").unwrap(), host);
+                    Response::builder()
+                        .version(http::Version::HTTP_10)
+                        .body("".into())
+                        .unwrap()
+                })
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, host);
+
+            let res = client.request(client.request_builder("/")
+                .version(http::Version::HTTP_10)
+                .header("host", host));
+
+            assert_eq!(res.status(), http::StatusCode::OK);
+            assert_eq!(res.version(), http::Version::HTTP_10);
+        }
+
+        #[test]
+        fn http11_absolute_uri_differs_from_host() {
+            let _ = env_logger::try_init();
+
+            // We shouldn't touch the URI or the Host, just pass directly as we got.
+            let auth = "transparency.test.svc.cluster.local";
+            let host = "foo.bar";
+            let srv = server::http1()
+                .route_fn("/", move |req| {
+                    assert_eq!(req.headers()["host"], host);
+                    assert_eq!(req.uri().to_string(), format!("http://{}/", auth));
+                    Response::new("".into())
+                })
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1_absolute_uris(proxy.inbound, auth);
+
+            let res = client.request(client.request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", host));
+
+            assert_eq!(res.status(), http::StatusCode::OK);
+            assert_eq!(res.version(), http::Version::HTTP_11);
+        }
+
+        #[test]
+        fn http11_upgrades() {
+            let _ = env_logger::try_init();
+
+            // To simplify things for this test, we just use the test TCP
+            // client and server to do an HTTP upgrade.
+            //
+            // This is upgrading to 'chatproto', a made up plaintext protocol
+            // to simplify testing.
+
+            let upgrade_req = "\
+                GET /chat HTTP/1.1\r\n\
+                Host: transparency.test.svc.cluster.local\r\n\
+                Connection: upgrade\r\n\
+                Upgrade: chatproto\r\n\
+                \r\n\
+                ";
+            let upgrade_res = "\
+                HTTP/1.1 101 Switching Protocols\r\n\
+                Upgrade: chatproto\r\n\
+                Connection: upgrade\r\n\
+                \r\n\
+                ";
+            let upgrade_needle = "\r\nupgrade: chatproto\r\n";
+            let chatproto_req = "[chatproto-c]{send}: hi all\n";
+            let chatproto_res = "[chatproto-s]{recv}: welcome!\n";
+
+
+            let srv = server::tcp()
+                .accept_fut(move |sock| {
+                    // Read upgrade_req...
                     tokio_io::io::read(sock, vec![0; 512])
+                        .and_then(move |(sock, vec, n)| {
+                            let head = s(&vec[..n]);
+                            assert_contains!(head, upgrade_needle);
+
+                            // Write upgrade_res back...
+                            tokio_io::io::write_all(sock, upgrade_res)
+                        })
+                        .and_then(move |(sock, _)| {
+                            // Read the message in 'chatproto' format
+                            tokio_io::io::read(sock, vec![0; 512])
+                        })
+                        .and_then(move |(sock, vec, n)| {
+                            assert_eq!(s(&vec[..n]), chatproto_req);
+
+                            // Some processing... and then write back in chatproto...
+                            tokio_io::io::write_all(sock, chatproto_res)
+                        })
+                        .map(|_| ())
+                        .map_err(|e| panic!("tcp server error: {}", e))
                 })
-                .and_then(move |(sock, vec, n)| {
-                    assert_eq!(s(&vec[..n]), chatproto_req);
+                .run();
+            let proxy = $proxy(srv);
 
-                    // Some processing... and then write back in chatproto...
-                    tokio_io::io::write_all(sock, chatproto_res)
+            let client = client::tcp(proxy.inbound);
+
+            let tcp_client = client.connect();
+
+            tcp_client.write(upgrade_req);
+
+            let resp = tcp_client.read();
+            let resp_str = s(&resp);
+            assert!(
+                resp_str.starts_with("HTTP/1.1 101 Switching Protocols\r\n"),
+                "response not an upgrade: {:?}",
+                resp_str
+            );
+            assert_contains!(resp_str, upgrade_needle);
+
+            // We've upgraded from HTTP to chatproto! Say hi!
+            tcp_client.write(chatproto_req);
+            // Did anyone respond?
+            let chat_resp = tcp_client.read();
+            assert_eq!(s(&chat_resp), chatproto_res);
+        }
+
+        #[test]
+        fn http11_upgrade_h2_stripped() {
+            let _ = env_logger::try_init();
+
+            // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
+            // and it succeeded, there would an h2 connection, but it would
+            // be opaque-to-the-proxy, acting as just a TCP proxy.
+            //
+            // A user wouldn't be able to see any usual HTTP telemetry about
+            // requests going over that connection. Instead of that confusion,
+            // the proxy strips h2 upgrade headers.
+            //
+            // Eventually, the proxy will support h2 upgrades directly.
+
+            let srv = server::http1()
+                .route_fn("/", |req| {
+                    assert!(!req.headers().contains_key("connection"));
+                    assert!(!req.headers().contains_key("upgrade"));
+                    assert!(!req.headers().contains_key("http2-settings"));
+                    Response::default()
                 })
-                .map(|_| ())
-                .map_err(|e| panic!("tcp server error: {}", e))
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
+                .run();
+            let proxy = $proxy(srv);
 
-    let client = client::tcp(proxy.inbound);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-    let tcp_client = client.connect();
+            let res = client.request(client.request_builder("/")
+                .header("upgrade", "h2c")
+                .header("http2-settings", "")
+                .header("connection", "upgrade, http2-settings"));
 
-    tcp_client.write(upgrade_req);
+            // If the assertion is trigger in the above test route, the proxy will
+            // just send back a 500.
+            assert_eq!(res.status(), http::StatusCode::OK);
+        }
 
-    let resp = tcp_client.read();
-    let resp_str = s(&resp);
-    assert!(
-        resp_str.starts_with("HTTP/1.1 101 Switching Protocols\r\n"),
-        "response not an upgrade: {:?}",
-        resp_str
-    );
-    assert_contains!(resp_str, upgrade_needle);
+        #[test]
+        fn http11_connect() {
+            let _ = env_logger::try_init();
 
-    // We've upgraded from HTTP to chatproto! Say hi!
-    tcp_client.write(chatproto_req);
-    // Did anyone respond?
-    let chat_resp = tcp_client.read();
-    assert_eq!(s(&chat_resp), chatproto_res);
-}
+            // To simplify things for this test, we just use the test TCP
+            // client and server to do an HTTP CONNECT.
+            //
+            // We don't *actually* perfom a new connect to requested host,
+            // but client doesn't need to know that for our tests.
 
-#[test]
-fn http11_upgrade_h2_stripped() {
-    let _ = env_logger::try_init();
+            let connect_req = "\
+                CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n\
+                Host: transparency.test.svc.cluster.local\r\n\
+                \r\n\
+                ";
+            let connect_res = "\
+                HTTP/1.1 200 OK\r\n\
+                \r\n\
+                ";
 
-    // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
-    // and it succeeded, there would an h2 connection, but it would
-    // be opaque-to-the-proxy, acting as just a TCP proxy.
-    //
-    // A user wouldn't be able to see any usual HTTP telemetry about
-    // requests going over that connection. Instead of that confusion,
-    // the proxy strips h2 upgrade headers.
-    //
-    // Eventually, the proxy will support h2 upgrades directly.
+            let tunneled_req = "{send}: hi all\n";
+            let tunneled_res = "{recv}: welcome!\n";
 
-    let srv = server::http1()
-        .route_fn("/", |req| {
-            assert!(!req.headers().contains_key("connection"));
-            assert!(!req.headers().contains_key("upgrade"));
-            assert!(!req.headers().contains_key("http2-settings"));
-            Response::default()
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-
-    let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
-
-    let res = client.request(client.request_builder("/")
-        .header("upgrade", "h2c")
-        .header("http2-settings", "")
-        .header("connection", "upgrade, http2-settings"));
-
-    // If the assertion is trigger in the above test route, the proxy will
-    // just send back a 500.
-    assert_eq!(res.status(), http::StatusCode::OK);
-}
-
-#[test]
-fn http11_connect() {
-    let _ = env_logger::try_init();
-
-    // To simplify things for this test, we just use the test TCP
-    // client and server to do an HTTP CONNECT.
-    //
-    // We don't *actually* perfom a new connect to requested host,
-    // but client doesn't need to know that for our tests.
-
-    let connect_req = "\
-        CONNECT foo.bar HTTP/1.1\r\n\
-        Host: foo.bar\r\n\
-        \r\n\
-        ";
-    let connect_res = "\
-        HTTP/1.1 200 OK\r\n\
-        \r\n\
-        ";
-
-    let tunneled_req = "{send}: hi all\n";
-    let tunneled_res = "{recv}: welcome!\n";
-
-    let srv = server::tcp()
-        .accept_fut(move |sock| {
-            // Read connect_req...
-            tokio_io::io::read(sock, vec![0; 512])
-                .and_then(move |(sock, vec, n)| {
-                    let head = s(&vec[..n]);
-                    assert_contains!(head, "CONNECT foo.bar HTTP/1.1\r\n");
-
-                    // Write connect_res back...
-                    tokio_io::io::write_all(sock, connect_res)
-                })
-                .and_then(move |(sock, _)| {
-                    // Read the message after tunneling...
+            let srv = server::tcp()
+                .accept_fut(move |sock| {
+                    // Read connect_req...
                     tokio_io::io::read(sock, vec![0; 512])
+                        .and_then(move |(sock, vec, n)| {
+                            let head = s(&vec[..n]);
+                            assert_contains!(head, "CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n");
+
+                            // Write connect_res back...
+                            tokio_io::io::write_all(sock, connect_res)
+                        })
+                        .and_then(move |(sock, _)| {
+                            // Read the message after tunneling...
+                            tokio_io::io::read(sock, vec![0; 512])
+                        })
+                        .and_then(move |(sock, vec, n)| {
+                            assert_eq!(s(&vec[..n]), tunneled_req);
+
+                            // Some processing... and then write back tunneled res...
+                            tokio_io::io::write_all(sock, tunneled_res)
+                        })
+                        .map(|_| ())
+                        .map_err(|e| panic!("tcp server error: {}", e))
                 })
-                .and_then(move |(sock, vec, n)| {
-                    assert_eq!(s(&vec[..n]), tunneled_req);
+                .run();
+            let proxy = $proxy(srv);
 
-                    // Some processing... and then write back tunneled res...
-                    tokio_io::io::write_all(sock, tunneled_res)
+            let client = client::tcp(proxy.inbound);
+
+            let tcp_client = client.connect();
+
+            tcp_client.write(connect_req);
+
+            let resp = tcp_client.read();
+            let resp_str = s(&resp);
+            assert!(
+                resp_str.starts_with("HTTP/1.1 200 OK\r\n"),
+                "response not an upgrade: {:?}",
+                resp_str
+            );
+
+            // We've CONNECTed from HTTP to foo.bar! Say hi!
+            tcp_client.write(tunneled_req);
+            // Did anyone respond?
+            let resp2 = tcp_client.read();
+            assert_eq!(s(&resp2), tunneled_res);
+        }
+
+        #[test]
+        fn http11_connect_bad_requests() {
+            let _ = env_logger::try_init();
+
+            let srv = server::tcp()
+                .accept(move |_sock| -> Vec<u8> {
+                    unreachable!("shouldn't get through the proxy");
                 })
-                .map(|_| ())
-                .map_err(|e| panic!("tcp server error: {}", e))
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
+                .run();
+            let proxy = $proxy(srv);
 
-    let client = client::tcp(proxy.inbound);
+            // A TCP client is used since the HTTP client would stop these requests
+            // from ever touching the network.
+            let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
+            let bad_uris = vec![
+                "/origin-form",
+                "/",
+                "http://test/bar",
+                "http://test",
+                "*",
+            ];
 
-    tcp_client.write(connect_req);
+            for bad_uri in bad_uris {
+                let tcp_client = client.connect();
 
-    let resp = tcp_client.read();
-    let resp_str = s(&resp);
-    assert!(
-        resp_str.starts_with("HTTP/1.1 200 OK\r\n"),
-        "response not an upgrade: {:?}",
-        resp_str
-    );
+                let req = format!("CONNECT {} HTTP/1.1\r\nHost: test\r\n\r\n", bad_uri);
+                tcp_client.write(req);
 
-    // We've CONNECTed from HTTP to foo.bar! Say hi!
-    tcp_client.write(tunneled_req);
-    // Did anyone respond?
-    let resp2 = tcp_client.read();
-    assert_eq!(s(&resp2), tunneled_res);
+                let resp = tcp_client.read();
+                let resp_str = s(&resp);
+                assert!(
+                    resp_str.starts_with("HTTP/1.1 400 Bad Request\r\n"),
+                    "bad URI ({:?}) should get 400 response: {:?}",
+                    bad_uri,
+                    resp_str
+                );
+            }
+
+            // origin-form URIs must be CONNECT
+            let tcp_client = client.connect();
+
+            tcp_client.write("GET test HTTP/1.1\r\nHost: test\r\n\r\n");
+
+            let resp = tcp_client.read();
+            let resp_str = s(&resp);
+            assert!(
+                resp_str.starts_with("HTTP/1.1 400 Bad Request\r\n"),
+                "origin-form without CONNECT should get 400 response: {:?}",
+                resp_str
+            );
+
+            // check that HTTP/1.0 is not allowed for CONNECT
+            let tcp_client = client.connect();
+
+            tcp_client.write("CONNECT test HTTP/1.0\r\nHost: test\r\n\r\n");
+
+            let resp = tcp_client.read();
+            let resp_str = s(&resp);
+            assert!(
+                resp_str.starts_with("HTTP/1.0 400 Bad Request\r\n"),
+                "HTTP/1.0 CONNECT should get 400 response: {:?}",
+                resp_str
+            );
+        }
+
+        #[test]
+        fn http1_requests_without_body_doesnt_add_transfer_encoding() {
+            let _ = env_logger::try_init();
+
+            let srv = server::http1()
+                .route_fn("/", |req| {
+                    let has_body_header = req.headers().contains_key("transfer-encoding")
+                        || req.headers().contains_key("content-length");
+                    let status = if  has_body_header {
+                        StatusCode::BAD_REQUEST
+                    } else {
+                        StatusCode::OK
+                    };
+                    let mut res = Response::new("".into());
+                    *res.status_mut() = status;
+                    res
+                })
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
+
+            let methods = &[
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "HEAD",
+                "PATCH",
+            ];
+
+            for &method in methods {
+                let resp = client.request(
+                    client
+                        .request_builder("/")
+                        .method(method)
+                );
+
+                assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
+            }
+        }
+
+        #[test]
+        fn http1_content_length_zero_is_preserved() {
+            let _ = env_logger::try_init();
+
+            let srv = server::http1()
+                .route_fn("/", |req| {
+                    let status = if req.headers()["content-length"] == "0" {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::BAD_REQUEST
+                    };
+                    Response::builder()
+                        .status(status)
+                        .header("content-length", "0")
+                        .body("".into())
+                        .unwrap()
+                })
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
+
+
+            let methods = &[
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "HEAD",
+                "PATCH",
+            ];
+
+            for &method in methods {
+                let resp = client.request(
+                    client
+                        .request_builder("/")
+                        .method(method)
+                        .header("content-length", "0")
+                );
+
+                assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
+                assert_eq!(resp.headers()["content-length"], "0", "method={:?}", method);
+            }
+        }
+
+        #[test]
+        fn http1_bodyless_responses() {
+            let _ = env_logger::try_init();
+
+            let req_status_header = "x-test-status-requested";
+
+            let srv = server::http1()
+                .route_fn("/", move |req| {
+                    let status = req.headers()
+                        .get(req_status_header)
+                        .map(|val| {
+                            val.to_str()
+                                .expect("req_status_header should be ascii")
+                                .parse::<u16>()
+                                .expect("req_status_header should be numbers")
+                        })
+                        .unwrap_or(200);
+
+                    Response::builder()
+                        .status(status)
+                        .body("".into())
+                        .unwrap()
+                })
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
+
+            // https://tools.ietf.org/html/rfc7230#section-3.3.3
+            // > response to a HEAD request, any 1xx, 204, or 304 cannot contain a body
+
+            //TODO: the proxy doesn't support CONNECT requests yet, but when we do,
+            //they should be tested here as well. As RFC7230 says, a 2xx response to
+            //a CONNECT request is not allowed to contain a body (but 4xx, 5xx can!).
+
+            let resp = client.request(
+                client
+                    .request_builder("/")
+                    .method("HEAD")
+            );
+
+            assert_eq!(resp.status(), StatusCode::OK);
+            assert!(!resp.headers().contains_key("transfer-encoding"));
+
+            let statuses = &[
+                //TODO: test some 1xx status codes.
+                //The current test server doesn't support sending 1xx responses
+                //easily. We could test this by making a new unit test with the
+                //server being a TCP server, and write the response manually.
+                StatusCode::NO_CONTENT, // 204
+                StatusCode::NOT_MODIFIED, // 304
+            ];
+
+            for &status in statuses {
+                let resp = client.request(
+                    client
+                        .request_builder("/")
+                        .header(req_status_header, status.as_str())
+                );
+
+                assert_eq!(resp.status(), status);
+                assert!(!resp.headers().contains_key("transfer-encoding"), "transfer-encoding with status={:?}", status);
+            }
+        }
+
+        #[test]
+        fn http1_head_responses() {
+            let _ = env_logger::try_init();
+
+            let srv = server::http1()
+                .route_fn("/", move |req| {
+                    assert_eq!(req.method(), "HEAD");
+                    Response::builder()
+                        .header("content-length", "55")
+                        .body("".into())
+                        .unwrap()
+                })
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
+
+            let resp = client.request(
+                client
+                    .request_builder("/")
+                    .method("HEAD")
+            );
+
+            assert_eq!(resp.status(), StatusCode::OK);
+            assert_eq!(resp.headers()["content-length"], "55");
+
+            let body = resp.into_body()
+                .concat2()
+                .wait()
+                .expect("response body concat");
+
+            assert_eq!(body, "");
+        }
+
+        #[test]
+        fn http1_response_end_of_file() {
+            let _ = env_logger::try_init();
+
+            // test both http/1.0 and 1.1
+            let srv = server::tcp()
+                .accept(move |_read| {
+                    "\
+                    HTTP/1.0 200 OK\r\n\
+                    \r\n\
+                    body till eof\
+                    "
+                })
+                .accept(move |_read| {
+                    "\
+                    HTTP/1.1 200 OK\r\n\
+                    \r\n\
+                    body till eof\
+                    "
+                })
+                .run();
+            let proxy = $proxy(srv);
+
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
+
+            let versions = &[
+                "1.0",
+                // TODO: We may wish to enforce not translating eof bodies to chunked,
+                // even if the client is 1.1. However, there also benefits of translating:
+                // the client can reuse the connection, and delimited messages are much
+                // safer than those that end with the connection (as it's difficult to
+                // notice if a full response was received).
+                //
+                // Either way, hyper's server does not provide the ability to do this,
+                // so we cannot test for it at the moment.
+                //"1.1",
+            ];
+
+            for v in versions {
+                let resp = client.request(
+                    client
+                        .request_builder("/")
+                        .method("GET")
+                );
+
+                assert_eq!(resp.status(), StatusCode::OK, "HTTP/{}", v);
+                assert!(!resp.headers().contains_key("transfer-encoding"), "HTTP/{} transfer-encoding", v);
+                assert!(!resp.headers().contains_key("content-length"), "HTTP/{} content-length", v);
+
+                let body = resp.into_body()
+                    .concat2()
+                    .wait()
+                    .expect("response body concat");
+
+                assert_eq!(body, "body till eof", "HTTP/{} body", v);
+            }
+        }
+
+    }
 }
 
-#[test]
-fn http11_connect_bad_requests() {
-    let _ = env_logger::try_init();
+mod one_proxy {
+    use super::support::*;
 
-    let srv = server::tcp()
-        .accept(move |_sock| -> Vec<u8> {
-            unreachable!("shouldn't get through the proxy");
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
+    http1_tests! { proxy: |srv| proxy::new().inbound(srv).run() }
+}
 
-    // A TCP client is used since the HTTP client would stop these requests
-    // from ever touching the network.
-    let client = client::tcp(proxy.inbound);
+mod proxy_to_proxy {
+    use super::support::*;
 
-    let bad_uris = vec![
-        "/origin-form",
-        "/",
-        "http://test/bar",
-        "http://test",
-        "*",
-    ];
-
-    for bad_uri in bad_uris {
-        let tcp_client = client.connect();
-
-        let req = format!("CONNECT {} HTTP/1.1\r\nHost: test\r\n\r\n", bad_uri);
-        tcp_client.write(req);
-
-        let resp = tcp_client.read();
-        let resp_str = s(&resp);
-        assert!(
-            resp_str.starts_with("HTTP/1.1 400 Bad Request\r\n"),
-            "bad URI ({:?}) should get 400 response: {:?}",
-            bad_uri,
-            resp_str
-        );
+    struct ProxyToProxy {
+        _in: proxy::Listening,
+        _out: proxy::Listening,
+        inbound: SocketAddr,
     }
 
-    // origin-form URIs must be CONNECT
-    let tcp_client = client.connect();
+    http1_tests! { proxy: |srv| {
+        let inbound = proxy::new().inbound(srv).run();
 
-    tcp_client.write("GET test HTTP/1.1\r\nHost: test\r\n\r\n");
+        let ctrl = controller::new();
+        let dst = ctrl.destination_tx("transparency.test.svc.cluster.local");
+        dst.send_h2_hinted(inbound.inbound);
 
-    let resp = tcp_client.read();
-    let resp_str = s(&resp);
-    assert!(
-        resp_str.starts_with("HTTP/1.1 400 Bad Request\r\n"),
-        "origin-form without CONNECT should get 400 response: {:?}",
-        resp_str
-    );
+        let outbound = proxy::new()
+            .controller(ctrl.run())
+            .run();
 
-    // check that HTTP/1.0 is not allowed for CONNECT
-    let tcp_client = client.connect();
-
-    tcp_client.write("CONNECT test HTTP/1.0\r\nHost: test\r\n\r\n");
-
-    let resp = tcp_client.read();
-    let resp_str = s(&resp);
-    assert!(
-        resp_str.starts_with("HTTP/1.0 400 Bad Request\r\n"),
-        "HTTP/1.0 CONNECT should get 400 response: {:?}",
-        resp_str
-    );
+        let addr = outbound.outbound;
+        ProxyToProxy {
+            _in: inbound,
+            _out: outbound,
+            inbound: addr,
+        }
+    } }
 }
 
-#[test]
-fn http1_requests_without_body_doesnt_add_transfer_encoding() {
-    let _ = env_logger::try_init();
-
-    let srv = server::http1()
-        .route_fn("/", |req| {
-            let has_body_header = req.headers().contains_key("transfer-encoding")
-                || req.headers().contains_key("content-length");
-            let status = if  has_body_header {
-                StatusCode::BAD_REQUEST
-            } else {
-                StatusCode::OK
-            };
-            let mut res = Response::new("".into());
-            *res.status_mut() = status;
-            res
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-    let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
-
-    let methods = &[
-        "GET",
-        "POST",
-        "PUT",
-        "DELETE",
-        "HEAD",
-        "PATCH",
-    ];
-
-    for &method in methods {
-        let resp = client.request(
-            client
-                .request_builder("/")
-                .method(method)
-        );
-
-        assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
-    }
-}
 
 #[test]
-fn http1_content_length_zero_is_preserved() {
+fn http10_without_host() {
+    // Without a host or authority, there's no way to route this test,
+    // so its not part of the proxy_to_proxy set.
     let _ = env_logger::try_init();
-
-    let srv = server::http1()
-        .route_fn("/", |req| {
-            let status = if req.headers()["content-length"] == "0" {
-                StatusCode::OK
-            } else {
-                StatusCode::BAD_REQUEST
-            };
-            Response::builder()
-                .status(status)
-                .header("content-length", "0")
-                .body("".into())
-                .unwrap()
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-    let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
-
-
-    let methods = &[
-        "GET",
-        "POST",
-        "PUT",
-        "DELETE",
-        "HEAD",
-        "PATCH",
-    ];
-
-    for &method in methods {
-        let resp = client.request(
-            client
-                .request_builder("/")
-                .method(method)
-                .header("content-length", "0")
-        );
-
-        assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
-        assert_eq!(resp.headers()["content-length"], "0", "method={:?}", method);
-    }
-}
-
-#[test]
-fn http1_bodyless_responses() {
-    let _ = env_logger::try_init();
-
-    let req_status_header = "x-test-status-requested";
 
     let srv = server::http1()
         .route_fn("/", move |req| {
-            let status = req.headers()
-                .get(req_status_header)
-                .map(|val| {
-                    val.to_str()
-                        .expect("req_status_header should be ascii")
-                        .parse::<u16>()
-                        .expect("req_status_header should be numbers")
-                })
-                .unwrap_or(200);
-
+            assert_eq!(req.version(), http::Version::HTTP_10);
+            assert!(!req.headers().contains_key("host"));
+            assert_eq!(req.uri().to_string(), "/");
             Response::builder()
-                .status(status)
+                .version(http::Version::HTTP_10)
                 .body("".into())
                 .unwrap()
         })
@@ -677,139 +828,20 @@ fn http1_bodyless_responses() {
     let proxy = proxy::new()
         .inbound(srv)
         .run();
-    let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-    // https://tools.ietf.org/html/rfc7230#section-3.3.3
-    // > response to a HEAD request, any 1xx, 204, or 304 cannot contain a body
+    let client = client::tcp(proxy.inbound);
 
-    //TODO: the proxy doesn't support CONNECT requests yet, but when we do,
-    //they should be tested here as well. As RFC7230 says, a 2xx response to
-    //a CONNECT request is not allowed to contain a body (but 4xx, 5xx can!).
+    let tcp_client = client.connect();
 
-    let resp = client.request(
-        client
-            .request_builder("/")
-            .method("HEAD")
-    );
+    tcp_client.write("\
+        GET / HTTP/1.0\r\n\
+        \r\n\
+    ");
 
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert!(!resp.headers().contains_key("transfer-encoding"));
-
-    let statuses = &[
-        //TODO: test some 1xx status codes.
-        //The current test server doesn't support sending 1xx responses
-        //easily. We could test this by making a new unit test with the
-        //server being a TCP server, and write the response manually.
-        StatusCode::NO_CONTENT, // 204
-        StatusCode::NOT_MODIFIED, // 304
-    ];
-
-    for &status in statuses {
-        let resp = client.request(
-            client
-                .request_builder("/")
-                .header(req_status_header, status.as_str())
-        );
-
-        assert_eq!(resp.status(), status);
-        assert!(!resp.headers().contains_key("transfer-encoding"), "transfer-encoding with status={:?}", status);
-    }
+    let expected = "HTTP/1.0 200 OK\r\n";
+    assert_eq!(s(&tcp_client.read()[..expected.len()]), expected);
 }
 
-#[test]
-fn http1_head_responses() {
-    let _ = env_logger::try_init();
-
-    let srv = server::http1()
-        .route_fn("/", move |req| {
-            assert_eq!(req.method(), "HEAD");
-            Response::builder()
-                .header("content-length", "55")
-                .body("".into())
-                .unwrap()
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-    let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
-
-    let resp = client.request(
-        client
-            .request_builder("/")
-            .method("HEAD")
-    );
-
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(resp.headers()["content-length"], "55");
-
-    let body = resp.into_body()
-        .concat2()
-        .wait()
-        .expect("response body concat");
-
-    assert_eq!(body, "");
-}
-
-#[test]
-fn http1_response_end_of_file() {
-    let _ = env_logger::try_init();
-
-    // test both http/1.0 and 1.1
-    let srv = server::tcp()
-        .accept(move |_read| {
-            "\
-            HTTP/1.0 200 OK\r\n\
-            \r\n\
-            body till eof\
-            "
-        })
-        .accept(move |_read| {
-            "\
-            HTTP/1.1 200 OK\r\n\
-            \r\n\
-            body till eof\
-            "
-        })
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
-
-    let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
-
-    let versions = &[
-        "1.0",
-        // TODO: We may wish to enforce not translating eof bodies to chunked,
-        // even if the client is 1.1. However, there also benefits of translating:
-        // the client can reuse the connection, and delimited messages are much
-        // safer than those that end with the connection (as it's difficult to
-        // notice if a full response was received).
-        //
-        // Either way, hyper's server does not provide the ability to do this,
-        // so we cannot test for it at the moment.
-        //"1.1",
-    ];
-
-    for v in versions {
-        let resp = client.request(
-            client
-                .request_builder("/")
-                .method("GET")
-        );
-
-        assert_eq!(resp.status(), StatusCode::OK, "HTTP/{}", v);
-        assert!(!resp.headers().contains_key("transfer-encoding"), "HTTP/{} transfer-encoding", v);
-        assert!(!resp.headers().contains_key("content-length"), "HTTP/{} content-length", v);
-
-        let body = resp.into_body()
-            .concat2()
-            .wait()
-            .expect("response body concat");
-
-        assert_eq!(body, "body till eof", "HTTP/{} body", v);
-    }
-}
 
 #[test]
 fn http1_one_connection_per_host() {

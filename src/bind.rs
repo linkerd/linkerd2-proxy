@@ -14,7 +14,7 @@ use control;
 use control::destination::Endpoint;
 use ctx;
 use telemetry::{self, sensor};
-use transparency::{self, HttpBody, h1};
+use transparency::{self, HttpBody, h1, orig_proto};
 use transport;
 use tls;
 use ctx::transport::TlsStatus;
@@ -93,6 +93,13 @@ where
 pub enum Protocol {
     Http1 {
         host: Host,
+        /// Whether the request wants to use HTTP/1.1's Upgrade mechanism.
+        ///
+        /// Since these cannot be translated into orig-proto, it must be
+        /// tracked here so as to allow those with `is_h1_upgrade: true` to
+        /// use an explicitly HTTP/1 service, instead of one that might
+        /// utilize orig-proto.
+        is_h1_upgrade: bool,
         /// Whether or not the request URI was in absolute form.
         ///
         /// This is used to configure Hyper's behaviour at the connection
@@ -134,7 +141,7 @@ pub type Service<B> = BoundService<B>;
 
 pub type Stack<B> = WatchService<tls::ConditionalClientConfig, RebindTls<B>>;
 
-type StackInner<B> = Reconnect<NormalizeUri<NewHttp<B>>>;
+type StackInner<B> = Reconnect<orig_proto::Upgrade<NormalizeUri<NewHttp<B>>>>;
 
 pub type NewHttp<B> = sensor::NewHttp<Client<B>, B, HttpBody>;
 
@@ -275,12 +282,13 @@ where
 
         // Rewrite the HTTP/1 URI, if the authorities in the Host header
         // and request URI are not in agreement, or are not present.
-        let proxy = NormalizeUri::new(sensors, protocol.was_absolute_form());
+        let normalize_uri = NormalizeUri::new(sensors, protocol.was_absolute_form());
+        let upgrade_orig_proto = orig_proto::Upgrade::new(normalize_uri, protocol.is_http2());
 
         // Automatically perform reconnects if the connection fails.
         //
         // TODO: Add some sort of backoff logic.
-        Reconnect::new(proxy)
+        Reconnect::new(upgrade_orig_proto)
     }
 
     /// Binds the endpoint stack used to construct a bound service.
@@ -309,6 +317,18 @@ where
     }
 
     pub fn bind_service(&self, ep: &Endpoint, protocol: &Protocol) -> BoundService<B> {
+        // If the endpoint is another instance of this proxy, AND the usage
+        // of HTTP/1.1 Upgrades are not needed, then bind to an HTTP2 service
+        // instead.
+        //
+        // The related `orig_proto` middleware will automatically translate
+        // if the protocol was originally HTTP/1.
+        let protocol = if ep.can_use_orig_proto() && !protocol.is_h1_upgrade() {
+            &Protocol::Http2
+        } else {
+            protocol
+        };
+
         let binding = if protocol.can_reuse_clients() {
             Binding::Bound(self.bind_stack(ep, protocol))
         } else {
@@ -536,7 +556,7 @@ where
 impl Protocol {
     pub fn detect<B>(req: &http::Request<B>) -> Self {
         if req.version() == http::Version::HTTP_2 {
-            return Protocol::Http2
+            return Protocol::Http2;
         }
 
         let was_absolute_form = h1::is_absolute_form(req.uri());
@@ -546,16 +566,15 @@ impl Protocol {
         );
         // If the request has an authority part, use that as the host part of
         // the key for an HTTP/1.x request.
-        let host = req
-            .uri()
-            .authority_part()
-            .cloned()
-            .or_else(|| h1::authority_from_host(req))
-            .map(Host::Authority)
-            .unwrap_or_else(|| Host::NoAuthority);
+        let host = Host::detect(req);
 
+        let is_h1_upgrade = h1::wants_upgrade(req);
 
-        Protocol::Http1 { host, was_absolute_form }
+        Protocol::Http1 {
+            host,
+            is_h1_upgrade,
+            was_absolute_form,
+        }
     }
 
     /// Returns true if the request was originally received in absolute form.
@@ -571,6 +590,32 @@ impl Protocol {
             Protocol::Http2 | Protocol::Http1 { host: Host::Authority(_), .. } => true,
             _ => false,
         }
+    }
+
+    pub fn is_h1_upgrade(&self) -> bool {
+        match *self {
+            Protocol::Http1 { is_h1_upgrade: true, .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_http2(&self) -> bool {
+        match *self {
+            Protocol::Http2 => true,
+            _ => false,
+        }
+    }
+}
+
+impl Host {
+    pub fn detect<B>(req: &http::Request<B>) -> Host {
+        req
+            .uri()
+            .authority_part()
+            .cloned()
+            .or_else(|| h1::authority_from_host(req))
+            .map(Host::Authority)
+            .unwrap_or_else(|| Host::NoAuthority)
     }
 }
 

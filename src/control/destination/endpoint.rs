@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use telemetry::metrics::DstLabels;
-use super::Metadata;
+use super::{Metadata, ProtocolHint};
 use tls;
 use conditional::Conditional;
 
@@ -34,6 +34,13 @@ impl Endpoint {
 
     pub fn dst_labels(&self) -> Option<&DstLabels> {
         self.metadata.dst_labels()
+    }
+
+    pub fn can_use_orig_proto(&self) -> bool {
+        match self.metadata.protocol_hint() {
+            ProtocolHint::Unknown => false,
+            ProtocolHint::Http2 => true,
+        }
     }
 
     pub fn tls_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoIdentity> {

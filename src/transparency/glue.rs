@@ -311,16 +311,11 @@ where
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut res = try_ready!(self.inner.poll().map_err(|e| {
+        let res = try_ready!(self.inner.poll().map_err(|e| {
             debug!("HTTP/1 error: {}", e);
             e
         }));
 
-        if h1::is_upgrade(&res) {
-            trace!("client response is HTTP/1.1 upgrade");
-        } else {
-            h1::strip_connection_headers(res.headers_mut());
-        }
         Ok(Async::Ready(res.map(BodyPayload::new)))
     }
 }
