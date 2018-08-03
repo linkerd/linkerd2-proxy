@@ -117,6 +117,7 @@ pub mod test_util {
         S: fmt::Display,
     {
         let meta = destination::Metadata::new(DstLabels::new(labels),
+            destination::ProtocolHint::Unknown,
             Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery));
         ctx::transport::Client::new(&proxy, &addr(), meta, tls)
     }

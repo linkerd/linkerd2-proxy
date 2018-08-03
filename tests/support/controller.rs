@@ -92,7 +92,11 @@ impl DstSender {
     }
 
     pub fn send_labeled(&self, addr: SocketAddr, addr_labels: Labels, parent_labels: Labels) {
-        self.send(destination_add_labeled(addr, addr_labels, parent_labels));
+        self.send(destination_add_labeled(addr, Hint::Unknown, addr_labels, parent_labels));
+    }
+
+    pub fn send_h2_hinted(&self, addr: SocketAddr) {
+        self.send(destination_add_hinted(addr, Hint::H2));
     }
 }
 
@@ -184,16 +188,32 @@ fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Sen
     }
 }
 
+pub enum Hint {
+    Unknown,
+    H2,
+}
+
 pub fn destination_add(addr: SocketAddr) -> pb::Update {
-    destination_add_labeled(addr, HashMap::new(), HashMap::new())
+    destination_add_hinted(addr, Hint::Unknown)
+}
+
+pub fn destination_add_hinted(addr: SocketAddr, hint: Hint) -> pb::Update {
+    destination_add_labeled(addr, hint, HashMap::new(), HashMap::new())
 }
 
 pub fn destination_add_labeled(
     addr: SocketAddr,
+    hint: Hint,
     set_labels: HashMap<String, String>,
     addr_labels: HashMap<String, String>)
     -> pb::Update
 {
+    let protocol_hint = match hint {
+        Hint::Unknown => None,
+        Hint::H2 => Some(pb::ProtocolHint {
+            protocol: Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
+        }),
+    };
     pb::Update {
         update: Some(pb::update::Update::Add(
             pb::WeightedAddrSet {
@@ -205,6 +225,7 @@ pub fn destination_add_labeled(
                         }),
                         weight: 0,
                         metric_labels: addr_labels,
+                        protocol_hint,
                         ..Default::default()
                     },
                 ],

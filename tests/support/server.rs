@@ -141,7 +141,8 @@ impl Server {
 
                 let srv: Box<Fn(TcpStream) -> Box<Future<Item=(), Error=()>>> = match self.version {
                     Run::Http1 => {
-                        let h1 = hyper::server::conn::Http::new();
+                        let mut h1 = hyper::server::conn::Http::new();
+                        h1.http1_only(true);
 
                         Box::new(move |sock| {
                             let h1_clone = h1.clone();

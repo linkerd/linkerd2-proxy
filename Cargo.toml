@@ -20,7 +20,7 @@ flaky_tests = []
 futures-mpsc-lossy    = { path = "./futures-mpsc-lossy" }
 linkerd2-proxy-router = { path = "./router" }
 
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.1", version = "0.1.1" }
 
 bytes = "0.4"
 deflate = {version = "0.7.18", features = ["gzip"] }
@@ -76,7 +76,7 @@ procinfo = "0.4.2"
 [dev-dependencies]
 net2 = "0.2"
 quickcheck = { version = "0.6", default-features = false }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.1", version = "0.1.1", features = ["arbitrary"] }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.

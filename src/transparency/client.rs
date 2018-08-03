@@ -12,6 +12,7 @@ use bind;
 use task::BoxExecutor;
 use telemetry::sensor::http::RequestBody;
 use super::glue::{BodyPayload, HttpBody, HyperConnect};
+use super::h1;
 use super::upgrade::{HttpConnect, Http11Upgrade};
 
 use std::{self, fmt};
@@ -228,8 +229,8 @@ where
     }
 
     fn call(&mut self, req: Self::Request) -> Self::Future {
-        debug!("client request: method={} uri={} headers={:?}",
-            req.method(), req.uri(), req.headers());
+        debug!("client request: method={} uri={} version={:?} headers={:?}",
+            req.method(), req.uri(), req.version(), req.headers());
         match self.inner {
             ClientServiceInner::Http1(ref h1) => {
                 let mut req = req.map(BodyPayload::new);
@@ -280,6 +281,12 @@ impl Future for ClientServiceFuture {
                     });
                 if *is_http_connect {
                     res.extensions_mut().insert(HttpConnect);
+                }
+
+                if h1::is_upgrade(&res) {
+                    trace!("client response is HTTP/1.1 upgrade");
+                } else {
+                    h1::strip_connection_headers(res.headers_mut());
                 }
                 Ok(Async::Ready(res))
             },

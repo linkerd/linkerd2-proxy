@@ -11,15 +11,16 @@ use tower_h2::{BoxBody, HttpService, RecvBody};
 
 use linkerd2_proxy_api::{
     destination::{
+        protocol_hint::Protocol,
         update::Update as PbUpdate2,
         WeightedAddr,
     },
     net::TcpAddress,
 };
 
-use super::super::{Metadata, Responder, Update};
 use control::{
     cache::{Cache, CacheChange, Exists},
+    destination::{Metadata, Responder, ProtocolHint, Update},
     remote_stream::Remote,
 };
 use dns::{self, IpAddrListFuture};
@@ -302,7 +303,23 @@ fn pb_to_addr_meta(
         }
     };
 
-    let meta = Metadata::new(DstLabels::new(labels.into_iter()), tls_identity);
+    let mut proto_hint = ProtocolHint::Unknown;
+
+    if let Some(hint) = pb.protocol_hint {
+        if let Some(proto) = hint.protocol {
+            match proto {
+                Protocol::H2(..) => {
+                    proto_hint = ProtocolHint::Http2;
+                }
+            }
+        }
+    }
+
+    let meta = Metadata::new(
+        DstLabels::new(labels.into_iter()),
+        proto_hint,
+        tls_identity,
+    );
     Some((addr, meta))
 }
 

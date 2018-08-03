@@ -40,6 +40,15 @@ pub fn normalize_our_view_of_uri<B>(req: &mut http::Request<B>) {
     }
 }
 
+/// Convert any URI into its origin-form (relative path part only).
+pub fn set_origin_form(uri: &mut Uri) {
+    let mut parts = mem::replace(uri, Uri::default()).into_parts();
+    parts.scheme = None;
+    parts.authority = None;
+    *uri = Uri::from_parts(parts)
+        .expect("path only is valid origin-form uri")
+}
+
 /// Returns an Authority from a request's Host header.
 pub fn authority_from_host<B>(req: &http::Request<B>) -> Option<Authority> {
     req.headers().get(HOST)

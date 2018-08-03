@@ -51,6 +51,7 @@ where
         &addr(),
         destination::Metadata::new(
             metrics::DstLabels::new(labels),
+            destination::ProtocolHint::Unknown,
             Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery)),
         TLS_DISABLED,
     )

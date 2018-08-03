@@ -10,6 +10,7 @@ use linkerd2_proxy_router::Recognize;
 
 use bind;
 use ctx;
+use transparency::orig_proto;
 
 type Bind<B> = bind::Bind<Arc<ctx::Proxy>, B>;
 
@@ -57,7 +58,7 @@ where
     >;
     type Key = (SocketAddr, bind::Protocol);
     type RouteError = bind::BufferSpawnError;
-    type Service = InFlightLimit<Buffer<bind::Service<B>>>;
+    type Service = InFlightLimit<Buffer<orig_proto::Downgrade<bind::Service<B>>>>;
 
     fn recognize(&self, req: &Self::Request) -> Option<Self::Key> {
         let key = req.extensions()
@@ -68,7 +69,7 @@ where
             })
             .or_else(|| self.default_addr);
 
-        let proto = bind::Protocol::detect(req);
+        let proto = orig_proto::detect(req);
 
         let key = key.map(move |addr| (addr, proto));
         trace!("recognize key={:?}", key);
@@ -87,10 +88,11 @@ where
 
         let endpoint = (*addr).into();
         let binding = self.bind.bind_service(&endpoint, proto);
+        let from_orig_proto = orig_proto::Downgrade::new(binding);
 
         let log = ::logging::proxy().client("in", "local")
             .with_remote(*addr);
-        Buffer::new(binding, &log.executor())
+        Buffer::new(from_orig_proto, &log.executor())
             .map(|buffer| {
                 InFlightLimit::new(buffer, MAX_IN_FLIGHT)
             })
@@ -120,6 +122,7 @@ mod tests {
     fn make_key_http1(addr: net::SocketAddr) -> (net::SocketAddr, bind::Protocol) {
         let protocol = bind::Protocol::Http1 {
             host: Host::NoAuthority,
+            is_h1_upgrade: false,
             was_absolute_form: false,
         };
         (addr, protocol)
