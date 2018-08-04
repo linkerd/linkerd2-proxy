@@ -11,7 +11,6 @@ use hyper::{
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::executor::current_thread::TaskExecutor;
 
@@ -22,7 +21,7 @@ use transport::BoundPort;
 /// Serve Prometheues metrics.
 #[derive(Debug, Clone)]
 pub struct Serve {
-    metrics: Arc<Mutex<Root>>,
+    metrics: Root,
     idle_retain: Duration,
 }
 
@@ -35,7 +34,7 @@ enum ServeError {
 // ===== impl Serve =====
 
 impl Serve {
-    pub(super) fn new(metrics: &Arc<Mutex<Root>>, idle_retain: Duration) -> Self {
+    pub(super) fn new(metrics: &Root, idle_retain: Duration) -> Self {
         Serve {
             metrics: metrics.clone(),
             idle_retain,
@@ -100,16 +99,12 @@ impl Service for Serve {
             return future::ok(rsp);
         }
 
-        let mut metrics = self.metrics.lock()
-            .expect("metrics lock poisoned");
-
-        metrics.retain_since(Instant::now() - self.idle_retain);
-        let metrics = metrics;
+        self.metrics.retain_since(Instant::now() - self.idle_retain);
 
         let resp = if Self::is_gzip(&req) {
             trace!("gzipping metrics");
             let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());
-            write!(&mut writer, "{}", *metrics)
+            write!(&mut writer, "{}", self.metrics)
                 .and_then(|_| writer.finish())
                 .map_err(ServeError::from)
                 .and_then(|body| {
@@ -121,7 +116,7 @@ impl Service for Serve {
                 })
         } else {
             let mut writer = Vec::<u8>::new();
-            write!(&mut writer, "{}", *metrics)
+            write!(&mut writer, "{}", self.metrics)
                 .map_err(ServeError::from)
                 .and_then(|_| {
                     Response::builder()

@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use telemetry::event::Event;
 use super::Root;
@@ -13,93 +13,77 @@ use std::time::UNIX_EPOCH;
 
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
-pub struct Record {
-    metrics: Arc<Mutex<Root>>,
+pub struct Registry {
+    metrics: Arc<Root>,
 }
 
-// ===== impl Record =====
+// ===== impl Registry =====
 
-impl Record {
-    pub(super) fn new(metrics: &Arc<Mutex<Root>>) -> Self {
+impl Registry {
+    pub(super) fn new(metrics: &Arc<Root>) -> Self {
         Self { metrics: metrics.clone() }
     }
 
-    #[inline]
-    fn update<F: Fn(&mut Root)>(&mut self, f: F) {
-        let mut lock = self.metrics.lock()
-            .expect("metrics lock poisoned");
-        f(&mut *lock);
-    }
-
     /// Observe the given event.
-    pub fn record_event(&mut self, event: &Event) {
+    pub fn record_event(&self, event: &Event) {
         trace!("Root::record({:?})", event);
         match *event {
 
             Event::StreamRequestOpen(_) => {},
 
             Event::StreamRequestFail(ref req, _) => {
-                self.update(|metrics| {
-                    metrics.request(RequestLabels::new(req)).end();
-                })
+                self.metrics.request(RequestLabels::new(req), |r| r.end());
             },
 
             Event::StreamRequestEnd(ref req, _) => {
-                self.update(|metrics| {
-                    metrics.request(RequestLabels::new(req)).end();
-                })
+                self.metrics.request(RequestLabels::new(req), |r| r.end());
             },
 
             Event::StreamResponseOpen(_, _) => {},
 
             Event::StreamResponseEnd(ref res, ref end) => {
                 let latency = end.response_first_frame_at - end.request_open_at;
-                self.update(|metrics| {
-                    metrics.response(ResponseLabels::new(res, end.grpc_status))
-                        .end(latency);
-                });
+                self.metrics.response(
+                    ResponseLabels::new(res, end.grpc_status),
+                    |r| r.end(latency),
+                );
             },
 
             Event::StreamResponseFail(ref res, ref fail) => {
                 // TODO: do we care about the failure's error code here?
                 let first_frame_at = fail.response_first_frame_at.unwrap_or(fail.response_fail_at);
                 let latency = first_frame_at - fail.request_open_at;
-                self.update(|metrics| {
-                    metrics.response(ResponseLabels::fail(res)).end(latency)
-                });
+                self.metrics.response(ResponseLabels::fail(res), |r| r.end(latency));
             },
 
             Event::TransportOpen(ref ctx) => {
-                self.update(|metrics| {
-                    metrics.transport(TransportLabels::new(ctx)).open();
-                })
+                self.metrics.transport(TransportLabels::new(ctx), |t| t.open());
             },
 
             Event::TransportClose(ref ctx, ref close) => {
-                self.update(|metrics| {
-                    metrics.transport(TransportLabels::new(ctx))
-                        .close(close.rx_bytes, close.tx_bytes);
+                self.metrics.transport(
+                    TransportLabels::new(ctx),
+                    |t| t.close(close.rx_bytes, close.tx_bytes),
+                );
 
-                    metrics.transport_close(TransportCloseLabels::new(ctx, close))
-                        .close(close.duration);
-                })
+                self.metrics.transport_close(
+                    TransportCloseLabels::new(ctx, close),
+                    |t| t.close(close.duration),
+                );
             },
 
-            Event::TlsConfigReloaded(ref when) =>
-                self.update(|metrics| {
-                    let timestamp_secs = when
-                        .duration_since(UNIX_EPOCH)
-                        .expect("SystemTime before UNIX_EPOCH!")
-                        .as_secs()
-                        .into();
-                    metrics.tls_config_last_reload_seconds = Some(timestamp_secs);
-                    metrics.tls_config(TlsConfigLabels::success()).incr();
-                }),
+            Event::TlsConfigReloaded(ref when) => {
+                let t = when
+                    .duration_since(UNIX_EPOCH)
+                    .expect("SystemTime before UNIX_EPOCH!")
+                    .as_secs();
+                *self.metrics.tls_config_last_reload_seconds.lock().expect("lock") = Some(t.into());
+                self.metrics.tls_config(TlsConfigLabels::success(), |t| t.incr());
+            },
 
-            Event::TlsConfigReloadFailed(ref err) =>
-                self.update(|metrics| {
-                    metrics.tls_config(err.clone().into()).incr();
-                }),
+            Event::TlsConfigReloadFailed(ref err) => {
+                self.metrics.tls_config(err.clone().into(), |t| t.incr());
+            },
         };
     }
 }
@@ -147,26 +131,23 @@ mod test {
             frames_sent: 0,
         };
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(100));
+        let (r, _) = metrics::new(&process, Duration::from_secs(100));
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
         let labels = labels::ResponseLabels::new(&rsp, None);
 
         assert_eq!(labels.tls_status(), client_tls.into());
 
-        assert!(r.metrics.lock()
-            .expect("lock")
-            .responses.scopes
+        assert!(r.metrics
+            .responses.lock().expect("lock")
+            .scopes
             .get(&labels)
             .is_none()
         );
 
         r.record_event(&ev);
         {
-            let lock = r.metrics.lock()
-                .expect("lock");
-            let scope = lock.responses.scopes
-                .get(&labels)
-                .expect("scope should be some after event");
+            let s = r.metrics.responses.lock().expect("lock");
+            let scope = s.scopes.get(&labels).expect("scope should be some after event");
 
             assert_eq!(scope.total(), 1);
 
@@ -242,7 +223,7 @@ mod test {
             ),
         ];
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(1000));
+        let (r, _) = metrics::new(&process, Duration::from_secs(1000));
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);
@@ -264,37 +245,34 @@ mod test {
         assert_eq!(server_tls, srv_open_labels.tls_status().into());
         assert_eq!(server_tls, srv_close_labels.tls_status().into());
 
-        {
-            let lock = r.metrics.lock()
-                .expect("lock");
-            assert!(lock.requests.scopes.get(&req_labels).is_none());
-            assert!(lock.responses.scopes.get(&rsp_labels).is_none());
-            assert!(lock.transports.scopes.get(&srv_open_labels).is_none());
-            assert!(lock.transports.scopes.get(&client_open_labels).is_none());
-            assert!(lock.transport_closes.scopes.get(&srv_close_labels).is_none());
-            assert!(lock.transport_closes.scopes.get(&client_close_labels).is_none());
-        }
+        assert!(r.metrics.requests.lock().unwrap().scopes.get(&req_labels).is_none());
+        assert!(r.metrics.responses.lock().unwrap().scopes.get(&rsp_labels).is_none());
+        assert!(r.metrics.transports.lock().unwrap().scopes.get(&srv_open_labels).is_none());
+        assert!(r.metrics.transports.lock().unwrap().scopes.get(&client_open_labels).is_none());
+        assert!(r.metrics.transport_closes.lock().unwrap().scopes.get(&srv_close_labels).is_none());
+        assert!(r.metrics.transport_closes.lock().unwrap().scopes.get(&client_close_labels).is_none());
 
         for e in &events {
             r.record_event(e);
         }
 
         {
-            let lock = r.metrics.lock()
-                .expect("lock");
-
             // === request scope ====================================
             assert_eq!(
-                lock.requests.scopes
+                r.metrics
+                    .requests.lock().expect("lock")
+                    .scopes
                     .get(&req_labels)
                     .map(|scope| scope.total()),
                 Some(1)
             );
+        }
+
+        {
+            let s = r.metrics.responses.lock().expect("lock");
 
             // === response scope ===================================
-            let response_scope = lock
-                .responses.scopes
-                .get(&rsp_labels)
+            let response_scope = s.scopes.get(&rsp_labels)
                 .expect("response scope missing");
             assert_eq!(response_scope.total(), 1);
 
@@ -302,31 +280,33 @@ mod test {
                 .assert_bucket_exactly(200, 1)
                 .assert_gt_exactly(200, 0)
                 .assert_lt_exactly(200, 0);
+        }
+
+        {
+            let s = r.metrics.transports.lock().expect("lock");
 
             // === server transport open scope ======================
-            let srv_transport_scope = lock
-                .transports.scopes
-                .get(&srv_open_labels)
+            let srv_transport_scope = s.scopes.get(&srv_open_labels)
                 .expect("server transport scope missing");
             assert_eq!(srv_transport_scope.open_total(), 1);
             assert_eq!(srv_transport_scope.write_bytes_total(), 4321);
             assert_eq!(srv_transport_scope.read_bytes_total(), 4321);
 
             // === client transport open scope ======================
-            let client_transport_scope = lock
-                .transports.scopes
-                .get(&client_open_labels)
+            let client_transport_scope = s.scopes.get(&client_open_labels)
                 .expect("client transport scope missing");
             assert_eq!(client_transport_scope.open_total(), 1);
             assert_eq!(client_transport_scope.write_bytes_total(), 4321);
             assert_eq!(client_transport_scope.read_bytes_total(), 4321);
+        }
 
-            let transport_duration: u64 = 30_000 * 1_000;
+        let transport_duration: u64 = 30_000 * 1_000;
+
+        {
+            let s = r.metrics.transport_closes.lock().expect("lock");
 
             // === server transport close scope =====================
-            let srv_transport_close_scope = lock
-                .transport_closes.scopes
-                .get(&srv_close_labels)
+            let srv_transport_close_scope = s.scopes.get(&srv_close_labels)
                 .expect("server transport close scope missing");
             assert_eq!(srv_transport_close_scope.close_total(), 1);
             srv_transport_close_scope.connection_duration()
@@ -335,9 +315,7 @@ mod test {
                 .assert_lt_exactly(transport_duration, 0);
 
             // === client transport close scope =====================
-            let client_transport_close_scope = lock
-                .transport_closes.scopes
-                .get(&client_close_labels)
+            let client_transport_close_scope = s.scopes.get(&client_close_labels)
                 .expect("client transport close scope missing");
             assert_eq!(client_transport_close_scope.close_total(), 1);
             client_transport_close_scope.connection_duration()

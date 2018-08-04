@@ -57,7 +57,7 @@ mod http;
 mod labels;
 mod latency;
 mod process;
-mod record;
+mod registry;
 mod serve;
 mod transport;
 
@@ -74,7 +74,7 @@ pub use self::labels::{
     DstLabels,
     TlsConfigLabels,
 };
-pub use self::record::Record;
+pub use self::registry::Registry;
 pub use self::serve::Serve;
 
 /// Writes a metric in prometheus-formatted output.
@@ -106,17 +106,17 @@ struct Metric<'a, M: FmtMetric> {
 }
 
 /// The root scope for all runtime metrics.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Root {
-    requests: http::RequestScopes,
-    responses: http::ResponseScopes,
-    transports: transport::OpenScopes,
-    transport_closes: transport::CloseScopes,
+    requests: Arc<Mutex<http::RequestScopes>>,
+    responses: Arc<Mutex<http::ResponseScopes>>,
+    transports: Arc<Mutex<transport::OpenScopes>>,
+    transport_closes: Arc<Mutex<transport::CloseScopes>>,
 
-    tls_config: TlsConfigScopes,
-    tls_config_last_reload_seconds: Option<Gauge>,
+    tls_config: Arc<Mutex<TlsConfigScopes>>,
+    tls_config_last_reload_seconds: Arc<Mutex<Option<Gauge>>>,
 
-    process_metrics: Option<process::Sensor>,
+    process_metrics: Option<Arc<Mutex<process::Sensor>>>,
 
     start_time: Gauge,
 }
@@ -144,9 +144,9 @@ type TlsConfigScopes = Scopes<labels::TlsConfigLabels, Counter>;
 /// is a Hyper service which can be used to create the server for the
 /// scrape endpoint, while the `Record` side can receive updates to the
 /// metrics by calling `record_event`.
-pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration) -> (Record, Serve){
-    let metrics = Arc::new(Mutex::new(Root::new(process)));
-    (Record::new(&metrics), Serve::new(&metrics, idle_retain))
+pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration) -> (Registry, Serve){
+    let metrics = Arc::new(Root::new(process));
+    (Registry::new(&metrics), Serve::new(&metrics, idle_retain))
 }
 
 // ===== impl Metric =====
@@ -200,7 +200,9 @@ impl Root {
 
         let process_metrics = process::Sensor::new()
             .map_err(|e| info!("{}", e))
-            .ok();
+            .ok()
+            .map(Mutex::new)
+            .map(Arc::new);
 
         Self {
             start_time: t0.into(),
@@ -209,58 +211,58 @@ impl Root {
         }
     }
 
-    fn request(&mut self, labels: RequestLabels) -> &mut http::RequestMetrics {
-        self.requests.scopes.entry(labels)
+    fn request<F: FnOnce(&mut http::RequestMetrics)>(&self, labels: RequestLabels, f: F) {
+        f(self.requests.lock().expect("lock").scopes.entry(labels)
             .or_insert_with(|| http::RequestMetrics::default().into())
-            .stamped()
+            .stamped());
     }
 
-    fn response(&mut self, labels: ResponseLabels) -> &mut http::ResponseMetrics {
-        self.responses.scopes.entry(labels)
+    fn response<F: FnOnce(&mut http::ResponseMetrics)>(&self, labels: ResponseLabels, f: F) {
+        f(self.responses.lock().expect("lock").scopes.entry(labels)
             .or_insert_with(|| http::ResponseMetrics::default().into())
-            .stamped()
+            .stamped());
     }
 
-    fn transport(&mut self, labels: TransportLabels) -> &mut transport::OpenMetrics {
-        self.transports.scopes.entry(labels)
+    fn transport<F: FnOnce(&mut transport::OpenMetrics)>(&self, labels: TransportLabels, f: F) {
+        f(self.transports.lock().expect("lock").scopes.entry(labels)
             .or_insert_with(|| transport::OpenMetrics::default().into())
-            .stamped()
+            .stamped());
     }
 
-    fn transport_close(&mut self, labels: TransportCloseLabels) -> &mut transport::CloseMetrics {
-        self.transport_closes.scopes.entry(labels)
+    fn transport_close<F: FnOnce(&mut transport::CloseMetrics)>(&self, labels: TransportCloseLabels, f: F) {
+        f(self.transport_closes.lock().expect("lock").scopes.entry(labels)
             .or_insert_with(|| transport::CloseMetrics::default().into())
-            .stamped()
+            .stamped())
     }
 
-    fn tls_config(&mut self, labels: TlsConfigLabels) -> &mut Counter {
-        self.tls_config.scopes.entry(labels)
-            .or_insert_with(|| Counter::default())
+    fn tls_config<F: FnOnce(&mut Counter)>(&self, labels: TlsConfigLabels, f: F) {
+        f(self.tls_config.lock().expect("lock").scopes.entry(labels)
+            .or_insert_with(|| Counter::default()))
     }
 
-    fn retain_since(&mut self, epoch: Instant) {
-        self.requests.retain_since(epoch);
-        self.responses.retain_since(epoch);
-        self.transports.retain_since(epoch);
-        self.transport_closes.retain_since(epoch);
+    fn retain_since(&self, epoch: Instant) {
+        self.requests.lock().expect("lock").retain_since(epoch);
+        self.responses.lock().expect("lock").retain_since(epoch);
+        self.transports.lock().expect("lock").retain_since(epoch);
+        self.transport_closes.lock().expect("lock").retain_since(epoch);
     }
 }
 
 impl fmt::Display for Root {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.requests.fmt(f)?;
-        self.responses.fmt(f)?;
-        self.transports.fmt(f)?;
-        self.transport_closes.fmt(f)?;
-        self.tls_config.fmt(f)?;
+        self.requests.lock().expect("lock").fmt(f)?;
+        self.responses.lock().expect("lock").fmt(f)?;
+        self.transports.lock().expect("lock").fmt(f)?;
+        self.transport_closes.lock().expect("lock").fmt(f)?;
+        self.tls_config.lock().expect("lock").fmt(f)?;
 
-        if let Some(timestamp) = self.tls_config_last_reload_seconds {
+        if let Some(timestamp) = *self.tls_config_last_reload_seconds.lock().expect("lock") {
             Self::tls_config_last_reload_seconds.fmt_help(f)?;
             Self::tls_config_last_reload_seconds.fmt_metric(f, timestamp)?;
         }
 
         if let Some(ref process_metrics) = self.process_metrics {
-            match process_metrics.metrics() {
+            match process_metrics.lock().expect("lock").metrics() {
                 Ok(process) => process.fmt(f)?,
                 Err(e) => warn!("error collecting process metrics: {:?}", e),
             }
@@ -355,11 +357,11 @@ mod tests {
 
         let client_transport = Arc::new(ctx::transport::Ctx::Client(client));
         let transport = TransportLabels::new(&client_transport);
-        root.transport(transport.clone()).open();
+        root.transport(transport.clone(), |t| t.open());
 
-        root.request(RequestLabels::new(&req)).end();
-        root.response(ResponseLabels::new(&rsp, None)).end(Duration::from_millis(10));
-        root.transport(transport).close(100, 200);
+        root.request(RequestLabels::new(&req), |t| t.end());
+        root.response(ResponseLabels::new(&rsp, None), |t| t.end(Duration::from_millis(10)));
+        root.transport(transport, |t| t.close(100, 200));
 
         let end = TransportCloseLabels::new(&client_transport, &event::TransportClose {
             clean: true,
@@ -368,7 +370,7 @@ mod tests {
             rx_bytes: 40,
             tx_bytes: 0,
         });
-        root.transport_close(end).close(Duration::from_millis(15));
+        root.transport_close(end, |t| t.close(Duration::from_millis(15)));
     }
 
     #[test]
@@ -382,7 +384,7 @@ mod tests {
         let mut root = Root::default();
 
         let t0 = Instant::now();
-        root.transport(TransportLabels::new(&server_transport)).open();
+        root.transport(TransportLabels::new(&server_transport), |t| t.open());
 
         mock_route(&mut root, &proxy, &server, "warriors");
         let t1 = Instant::now();
@@ -390,27 +392,27 @@ mod tests {
         mock_route(&mut root, &proxy, &server, "sixers");
         let t2 = Instant::now();
 
-        assert_eq!(root.requests.scopes.len(), 2);
-        assert_eq!(root.responses.scopes.len(), 2);
-        assert_eq!(root.transports.scopes.len(), 2);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.responses.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.transports.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.transport_closes.lock().expect("lock").scopes.len(), 1);
 
         root.retain_since(t0);
-        assert_eq!(root.requests.scopes.len(), 2);
-        assert_eq!(root.responses.scopes.len(), 2);
-        assert_eq!(root.transports.scopes.len(), 2);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.responses.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.transports.lock().expect("lock").scopes.len(), 2);
+        assert_eq!(root.transport_closes.lock().expect("lock").scopes.len(), 1);
 
         root.retain_since(t1);
-        assert_eq!(root.requests.scopes.len(), 1);
-        assert_eq!(root.responses.scopes.len(), 1);
-        assert_eq!(root.transports.scopes.len(), 1);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.lock().expect("lock").scopes.len(), 1);
+        assert_eq!(root.responses.lock().expect("lock").scopes.len(), 1);
+        assert_eq!(root.transports.lock().expect("lock").scopes.len(), 1);
+        assert_eq!(root.transport_closes.lock().expect("lock").scopes.len(), 1);
 
         root.retain_since(t2);
-        assert_eq!(root.requests.scopes.len(), 0);
-        assert_eq!(root.responses.scopes.len(), 0);
-        assert_eq!(root.transports.scopes.len(), 0);
-        assert_eq!(root.transport_closes.scopes.len(), 0);
+        assert_eq!(root.requests.lock().expect("lock").scopes.len(), 0);
+        assert_eq!(root.responses.lock().expect("lock").scopes.len(), 0);
+        assert_eq!(root.transports.lock().expect("lock").scopes.len(), 0);
+        assert_eq!(root.transport_closes.lock().expect("lock").scopes.len(), 0);
     }
 }
