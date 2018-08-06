@@ -86,11 +86,25 @@ struct NewQuery {
     concurrency_limit: usize,
 }
 
+/// A query to the Destination service, which can be in one of three states.
 enum DestinationServiceQuery<T: HttpService<ResponseBody = RecvBody>> {
+    /// Indicates that the Destination service should not be queried for
+    /// the authority that this `DestinationServiceQuery` was created for.
+    ///
+    /// These authorities should fall back to DNS.
     Inactive,
+    /// The query is currently receiving updates from the Destination service.
     Active(ActiveQuery<T>),
+    /// Indicates that the authority this query was created for is one that
+    /// we _should_ query the Destination service for, but we were unable to
+    /// as the limit on concurrently active queries was reached.
+    ///
+    /// These authorities may temporarily fall back to DNS, but should resume
+    /// querying the Destination service when additional query capacity
+    /// becomes available.
     NoCapacity,
 }
+
 
 /// Returns a new discovery background task.
 pub(super) fn task(
@@ -461,6 +475,8 @@ where
 
 impl<T: HttpService<ResponseBody = RecvBody>> DestinationServiceQuery<T> {
 
+    /// Returns `true` if and only if this `DestinationServiceQuery` is
+    /// currently querying the Destination service.
     pub fn is_active(&self) -> bool {
         match self {
             DestinationServiceQuery::Active(_) => true,
@@ -477,6 +493,8 @@ impl<T: HttpService<ResponseBody = RecvBody>> DestinationServiceQuery<T> {
         }
     }
 
+    /// Replaces this `DestinationServiceQuery` with an `Inactive` one,
+    /// returning the prior value.
     pub fn take(&mut self) -> Self {
         mem::replace(self, DestinationServiceQuery::Inactive)
     }

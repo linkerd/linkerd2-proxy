@@ -80,6 +80,11 @@ where
         set
     }
 
+    /// Replaces this `DestinationSet`'s current `DestinationServiceQuery`
+    /// with a new one returned by
+    /// `new_query.query_destination_service_if_relevant`.
+    ///
+    /// Returns `true` if the `DestinationSet` was reconnected successfully.
     pub(super) fn reconnect_destination_query(
         &mut self,
         new_query: &super::NewQuery,
@@ -108,6 +113,7 @@ where
         self.dns_query = Some(dns_resolver.resolve_all_ips(deadline, &self.auth.host));
     }
 
+    /// If this `DestinationSet` is currently polling DNS, stop doing so.
     pub(super) fn end_dns_query(&mut self) {
         self.dns_query = None;
     }
