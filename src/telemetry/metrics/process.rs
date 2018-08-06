@@ -1,65 +1,52 @@
 use std::fmt;
-use super::{Counter, Gauge, Metric};
+use std::time::UNIX_EPOCH;
 
-pub use self::imp::Sensor;
+use ctx;
+use super::{Gauge, Metric};
 
-#[derive(Copy, Clone)]
-pub struct ProcessMetrics {
-    cpu_seconds_total: Counter,
-    open_fds: Gauge,
-    max_fds: Option<Gauge>,
-    virtual_memory_bytes: Gauge,
-    resident_memory_bytes: Gauge,
+use self::system::System;
+
+#[derive(Debug, Default)]
+pub struct Process {
+    start_time: Gauge,
+    system: Option<System>,
 }
 
-impl ProcessMetrics {
+impl Process {
     metrics! {
-        process_cpu_seconds_total: Counter {
-            "Total user and system CPU time spent in seconds."
-        },
-        process_open_fds: Gauge { "Number of open file descriptors." },
-        process_max_fds: Gauge { "Maximum number of open file descriptors." },
-        process_virtual_memory_bytes: Gauge {
-            "Virtual memory size in bytes."
-        },
-        process_resident_memory_bytes: Gauge {
-            "Resident memory size in bytes."
+        process_start_time_seconds: Gauge {
+            "Time that the process started (in seconds since the UNIX epoch)"
+        }
+    }
+
+    pub fn new(process: &ctx::Process) -> Self {
+        let t0 = process.start_time
+            .duration_since(UNIX_EPOCH)
+            .expect("process start time")
+            .as_secs();
+
+        Self {
+            start_time: t0.into(),
+            system: System::new().ok(),
         }
     }
 }
 
-impl fmt::Display for ProcessMetrics {
+impl fmt::Display for Process {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Self::process_cpu_seconds_total.fmt_help(f)?;
-        Self::process_cpu_seconds_total.fmt_metric(
-            f,
-            self.cpu_seconds_total
-        )?;
+        Self::process_start_time_seconds.fmt_help(f)?;
+        Self::process_start_time_seconds.fmt_metric(f, self.start_time)?;
 
-        Self::process_open_fds.fmt_help(f)?;
-        Self::process_open_fds.fmt_metric(f, self.open_fds)?;
-
-        if let Some(ref max_fds) = self.max_fds {
-            Self::process_max_fds.fmt_help(f)?;
-            Self::process_max_fds.fmt_metric(f, *max_fds)?;
+        if let Some(ref sys) = self.system {
+            sys.fmt(f)?;
         }
 
-        Self::process_virtual_memory_bytes.fmt_help(f)?;
-        Self::process_virtual_memory_bytes.fmt_metric(
-            f,
-            self.virtual_memory_bytes
-        )?;
-
-        Self::process_resident_memory_bytes.fmt_help(f)?;
-        Self::process_resident_memory_bytes.fmt_metric(
-            f,
-            self.resident_memory_bytes
-        )
+        Ok(())
     }
 }
 
 #[cfg(target_os = "linux")]
-mod imp {
+mod system {
     use super::*;
     use super::super::{Counter, Gauge};
 
@@ -69,91 +56,128 @@ mod imp {
     use libc::{self, pid_t};
 
     #[derive(Debug)]
-    pub struct Sensor {
+    pub(super) struct System {
         page_size: u64,
         clock_ticks_per_sec: u64,
     }
 
-    fn sysconf(num: libc::c_int, name: &'static str) -> Result<u64, io::Error> {
-        match unsafe { libc::sysconf(num) } {
-            e if e <= 0 => {
-                let error = io::Error::last_os_error();
-                error!("error getting {}: {:?}", name, error);
-                Err(error)
+    impl System {
+        metrics! {
+            process_cpu_seconds_total: Counter {
+                "Total user and system CPU time spent in seconds."
             },
-            val => Ok(val as u64),
+            process_open_fds: Gauge { "Number of open file descriptors." },
+            process_max_fds: Gauge { "Maximum number of open file descriptors." },
+            process_virtual_memory_bytes: Gauge {
+                "Virtual memory size in bytes."
+            },
+            process_resident_memory_bytes: Gauge {
+                "Resident memory size in bytes."
+            }
         }
     }
 
-    impl Sensor {
-        pub fn new() -> io::Result<Sensor> {
-            let page_size = sysconf(libc::_SC_PAGESIZE, "page size")?;
-            let clock_ticks_per_sec = sysconf(libc::_SC_CLK_TCK, "clock ticks per second")?;
-            Ok(Sensor {
+    impl System {
+        pub fn new() -> io::Result<Self> {
+            let page_size = Self::sysconf(libc::_SC_PAGESIZE, "page size")?;
+            let clock_ticks_per_sec = Self::sysconf(libc::_SC_CLK_TCK, "clock ticks per second")?;
+            Ok(Self {
                 page_size,
                 clock_ticks_per_sec,
             })
         }
 
-        pub fn metrics(&self) -> io::Result<ProcessMetrics> {
-            // XXX potentially blocking call
-            let stat = pid::stat_self()?;
-
-            let clock_ticks = stat.utime as u64 + stat.stime as u64;
-            let cpu_seconds_total = Counter::from(clock_ticks / self.clock_ticks_per_sec);
-            let virtual_memory_bytes = Gauge::from(stat.vsize as u64);
-            let resident_memory_bytes = Gauge::from(stat.rss as u64 * self.page_size);
-
-            let metrics = ProcessMetrics {
-                cpu_seconds_total,
-                virtual_memory_bytes,
-                resident_memory_bytes,
-                open_fds: open_fds(stat.pid)?,
-                max_fds: max_fds()?,
-            };
-
-            Ok(metrics)
+        fn open_fds(pid: pid_t) -> io::Result<Gauge> {
+            let mut open = 0;
+            for f in fs::read_dir(format!("/proc/{}/fd", pid))? {
+                if !f?.file_type()?.is_dir() {
+                    open += 1;
+                }
+            }
+            Ok(Gauge::from(open))
         }
-    }
 
+        fn max_fds() -> io::Result<Option<Gauge>> {
+            let limit = pid::limits_self()?.max_open_files;
+            let max_fds = limit.soft.or(limit.hard)
+                .map(|max| Gauge::from(max as u64));
+            Ok(max_fds)
+        }
 
-    fn open_fds(pid: pid_t) -> io::Result<Gauge> {
-        let mut open = 0;
-        for f in fs::read_dir(format!("/proc/{}/fd", pid))? {
-            if !f?.file_type()?.is_dir() {
-                open += 1;
+        fn sysconf(num: libc::c_int, name: &'static str) -> Result<u64, io::Error> {
+            match unsafe { libc::sysconf(num) } {
+                e if e <= 0 => {
+                    let error = io::Error::last_os_error();
+                    error!("error getting {}: {:?}", name, error);
+                    Err(error)
+                },
+                val => Ok(val as u64),
             }
         }
-        Ok(Gauge::from(open))
     }
 
-    fn max_fds() -> io::Result<Option<Gauge>> {
-        let limit = pid::limits_self()?.max_open_files;
-        let max_fds = limit.soft.or(limit.hard)
-            .map(|max| Gauge::from(max as u64));
-        Ok(max_fds)
+    impl fmt::Display for System {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            // XXX potentially blocking call
+            let stat = match pid::stat_self() {
+                Ok(stat) => stat,
+                Err(err) => {
+                    warn!("failed to read process stats: {}", err);
+                    return Ok(());
+                }
+            };
+
+            let clock_ticks = stat.utime as u64 + stat.stime as u64;
+            Self::process_cpu_seconds_total.fmt_help(f)?;
+            Self::process_cpu_seconds_total.fmt_metric(
+                f,
+                Counter::from(clock_ticks / self.clock_ticks_per_sec),
+            )?;
+
+            if let Ok(open_fds) = Self::open_fds(stat.pid) {
+                Self::process_open_fds.fmt_help(f)?;
+                Self::process_open_fds.fmt_metric(f, open_fds)?;
+            }
+
+            if let Ok(Some(ref max_fds)) = Self::max_fds() {
+                Self::process_max_fds.fmt_help(f)?;
+                Self::process_max_fds.fmt_metric(f, *max_fds)?;
+            }
+
+            Self::process_virtual_memory_bytes.fmt_help(f)?;
+            Self::process_virtual_memory_bytes.fmt_metric(
+                f,
+                Gauge::from(stat.vsize as u64),
+            )?;
+
+            Self::process_resident_memory_bytes.fmt_help(f)?;
+            Self::process_resident_memory_bytes.fmt_metric(
+                f,
+                Gauge::from(stat.rss as u64 * self.page_size),
+            )
+        }
     }
 }
 
 #[cfg(not(target_os = "linux"))]
-mod imp {
-    use super::*;
-    use std::io;
+mod system {
+    use std::{fmt, io};
 
     #[derive(Debug)]
-    pub struct Sensor {}
+    pub(super) struct System {}
 
-    impl Sensor {
+    impl System {
         pub fn new() -> io::Result<Sensor> {
             Err(io::Error::new(
                 io::ErrorKind::Other,
                 "procinfo not supported on this operating system"
             ))
         }
-
-        pub fn metrics(&self) -> io::Result<ProcessMetrics> {
-            unreachable!("process::Sensor::metrics() on unsupported OS!")
-        }
     }
 
+    impl fmt::Display for System {
+        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
+            Ok(())
+        }
+    }
 }
