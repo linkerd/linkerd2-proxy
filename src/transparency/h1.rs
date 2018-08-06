@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bytes::BytesMut;
 use http;
-use http::header::{HOST, UPGRADE};
+use http::header::{CONNECTION, HOST, UPGRADE};
 use http::uri::{Authority, Parts, Scheme, Uri};
 
 use ctx::transport::{Server as ServerCtx};
@@ -86,26 +86,26 @@ fn set_authority(uri: &mut http::Uri, auth: Authority) {
 }
 
 pub fn strip_connection_headers(headers: &mut http::HeaderMap) {
-    let conn_val = if let Some(val) = headers.remove(http::header::CONNECTION) {
-        val
-    } else {
-        return
-    };
+    if let Some(val) = headers.remove(CONNECTION) {
+        if let Ok(conn_header) = val.to_str() {
+            // A `Connection` header may have a comma-separated list of
+            // names of other headers that are meant for only this specific
+            // connection.
+            //
+            // Iterate these names and remove them as headers.
+            for name in conn_header.split(',') {
+                let name = name.trim();
+                headers.remove(name);
+            }
 
-    let conn_header = if let Ok(s) = conn_val.to_str() {
-        s
-    } else {
-        return
-    };
-
-    // A `Connection` header may have a comma-separated list of
-    // names of other headers that are meant for only this specific connection.
-    //
-    // Iterate these names and remove them as headers.
-    for name in conn_header.split(',') {
-        let name = name.trim();
-        headers.remove(name);
+        }
     }
+
+    // Additionally, strip these "connection-level" headers always, since
+    // they are otherwise illegal if upgraded to HTTP2.
+    headers.remove(UPGRADE);
+    headers.remove("proxy-connection");
+    headers.remove("keep-alive");
 }
 
 /// Checks requests to determine if they want to perform an HTTP upgrade.
