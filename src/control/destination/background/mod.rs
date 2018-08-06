@@ -6,7 +6,7 @@ use std::{
     fmt,
     mem,
     time::{Instant, Duration},
-    sync::Arc,
+    sync::{Arc, Weak},
 };
 use futures::{
     future,
@@ -69,7 +69,7 @@ struct Background<T: HttpService<ResponseBody = RecvBody>> {
 struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
     destinations: HashMap<Arc<DnsNameAndPort>, DestinationSet<T>>,
     /// A queue of authorities that need to be reconnected.
-    reconnects: VecDeque<Arc<DnsNameAndPort>>,
+    reconnects: VecDeque<Weak<DnsNameAndPort>>,
 }
 
 /// The configurationn necessary to create a new Destination service
@@ -287,9 +287,16 @@ where
     /// Tries to reconnect next watch stream. Returns true if reconnection started.
     fn poll_reconnect(&mut self, client: &mut T) -> bool {
         debug_assert!(self.rpc_ready);
-
-        while let Some(auth) = self.dsts.reconnects.pop_front() {
-            if let Some(set) = self.dsts.destinations.get_mut(&auth) {
+        let dsts = &mut self.dsts;
+        while let Some(auth) = dsts.reconnects.pop_front() {
+            if let Some(set) = auth
+                // If the `DestinationSet` corresponding to this authority
+                // has already been dropped, the `Weak` reference to it in
+                // `reconnects` no longer points to a present value. That's
+                // fine, as we no longer need to reconnect that authority.
+                .upgrade()
+                .and_then(|auth| dsts.destinations.get_mut(&auth))
+            {
                 return set.reconnect_destination_query(&self.new_query, Some(client));
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
@@ -307,7 +314,7 @@ where
                         set.poll_destination_service(rx, self.new_query.tls_controller_ns());
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
-                        self.dsts.reconnects.push_back(auth.clone());
+                        self.dsts.reconnects.push_back(Arc::downgrade(auth))
                     }
                     (new_query.into(), found_by_destination_service)
                 },
