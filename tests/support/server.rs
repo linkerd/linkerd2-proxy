@@ -69,30 +69,45 @@ impl Server {
 
     /// Call a closure when the request matches, returning a response
     /// to send back.
-    pub fn route_fn<F>(mut self, path: &str, cb: F) -> Self
+    pub fn route_fn<F>(self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<()>) -> Response<Bytes> + Send + 'static,
+        F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + 'static,
     {
-        self.routes.insert(path.into(), Route(Box::new(cb)));
+        self.route_async(path, move |req| {
+            Ok(cb(req))
+        })
+    }
+
+    /// Call a closure when the request matches, returning a Future of
+    /// a response to send back.
+    pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
+    where
+        F: Fn(Request<ReqBody>) -> U + Send + 'static,
+        U: IntoFuture<Item=Response<Bytes>, Error=()> + Send + 'static,
+        U::Future: Send + 'static,
+    {
+        let func = move |req| {
+            Box::new(cb(req).into_future())
+                as Box<Future<Item=Response<Bytes>, Error=()> + Send>
+        };
+        self.routes.insert(path.into(), Route(Box::new(func)));
         self
     }
 
     pub fn route_with_latency(
-        mut self,
+        self,
         path: &str,
         resp: &str,
         latency: Duration
     ) -> Self {
         let resp = Bytes::from(resp);
-        let route = Route(Box::new(move |_| {
+        self.route_fn(path, move |_| {
             thread::sleep(latency);
             http::Response::builder()
                 .status(200)
                 .body(resp.clone())
                 .unwrap()
-        }));
-        self.routes.insert(path.into(), route);
-        self
+        })
     }
 
     pub fn delay_listen<F>(self, f: F) -> Listening
@@ -262,16 +277,18 @@ impl Body for RspBody {
     }
 }
 
-struct Route(Box<Fn(Request<()>) -> Response<Bytes> + Send>);
+struct Route(Box<
+    Fn(Request<ReqBody>) -> Box<Future<Item=Response<Bytes>, Error=()> + Send> + Send
+>);
 
 impl Route {
     fn string(body: &str) -> Route {
         let body = Bytes::from(body);
         Route(Box::new(move |_| {
-            http::Response::builder()
+            Box::new(future::ok(http::Response::builder()
                 .status(200)
                 .body(body.clone())
-                .unwrap()
+                .unwrap()))
         }))
     }
 }
@@ -282,34 +299,51 @@ impl ::std::fmt::Debug for Route {
     }
 }
 
+type ReqBody = Box<Stream<Item=Bytes, Error=()> + Send>;
+
 #[derive(Debug)]
 struct Svc(Arc<HashMap<String, Route>>);
+
+impl Svc {
+    fn route(&mut self, req: Request<ReqBody>) -> impl Future<Item=Response<Bytes>, Error=()> {
+        match self.0.get(req.uri().path()) {
+            Some(Route(ref func)) => {
+                func(req)
+            }
+            None => {
+                println!("server 404: {:?}", req.uri().path());
+                let res = http::Response::builder()
+                    .status(404)
+                    .body(Default::default())
+                    .unwrap();
+                Box::new(future::ok(res))
+            }
+        }
+    }
+}
 
 impl Service for Svc {
     type Request = Request<RecvBody>;
     type Response = Response<RspBody>;
     type Error = h2::Error;
-    type Future = future::FutureResult<Self::Response, Self::Error>;
+    type Future = Box<Future<Item=Self::Response, Error=Self::Error> + Send>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(Async::Ready(()))
     }
 
     fn call(&mut self, req: Self::Request) -> Self::Future {
-        let rsp = match self.0.get(req.uri().path()) {
-            Some(route) => {
-                (route.0)(req.map(|_| ()))
-                    .map(|s| RspBody::new(s))
-            }
-            None => {
-                println!("server 404: {:?}", req.uri().path());
-                let mut rsp = http::Response::builder();
-                rsp.version(http::Version::HTTP_2);
-                let body = RspBody::empty();
-                rsp.status(404).body(body).unwrap()
-            }
-        };
-        future::ok(rsp)
+        let req = req.map(|body| {
+            assert!(body.is_end_stream(), "h2 test server doesn't support request bodies yet");
+            Box::new(futures::stream::empty()) as ReqBody
+        });
+        Box::new(self.route(req)
+            .map(|res| {
+                res.map(|s| RspBody::new(s))
+            })
+            .map_err(|()| {
+                panic!("test route handler errored")
+            }))
     }
 }
 
@@ -317,31 +351,28 @@ impl hyper::service::Service for Svc {
     type ReqBody = hyper::Body;
     type ResBody = hyper::Body;
     type Error = http::Error;
-    type Future = future::FutureResult<hyper::Response<hyper::Body>, Self::Error>;
+    type Future = Box<Future<Item=hyper::Response<hyper::Body>, Error=Self::Error> + Send>;
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-
-        let rsp = match self.0.get(req.uri().path()) {
-            Some(route) => {
-                let rsp = (route.0)(Request::from(req).map(|_| ()))
-                    .map(|s| hyper::Body::from(s));
-                Ok(rsp)
-            }
-            None => {
-                println!("server 404: {:?}", req.uri().path());
-                let mut rsp = hyper::Response::builder();
-                let body = hyper::Body::empty();
-                rsp.status(StatusCode::NOT_FOUND)
-                    .body(body)
-            }
-        };
-
-        future::result(rsp)
+        let req = req.map(|body| {
+            Box::new(body.map(|chunk| chunk.into_bytes())
+                .map_err(|err| {
+                    panic!("body error: {}", err);
+                })) as ReqBody
+        });
+        Box::new(self.route(req)
+            .map(|res| {
+                res.map(|s| hyper::Body::from(s))
+            })
+            .map_err(|()| {
+                panic!("test route handler errored")
+            }))
     }
 }
 
 #[derive(Debug)]
 struct NewSvc(Arc<HashMap<String, Route>>);
+
 impl NewService for NewSvc {
     type Request = Request<RecvBody>;
     type Response = Response<RspBody>;

@@ -530,6 +530,67 @@ macro_rules! http1_tests {
         }
 
         #[test]
+        fn http1_request_with_body_content_length() {
+            let _ = env_logger::try_init();
+
+            let srv = server::http1()
+                .route_fn("/", |req| {
+                    assert_eq!(req.headers()["content-length"], "5");
+                    Response::default()
+                })
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
+
+            let req = client
+                .request_builder("/")
+                .method("POST")
+                .body("hello".into())
+                .unwrap();
+
+            let resp = client.request_body(req);
+
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+
+        #[test]
+        fn http1_request_with_body_chunked() {
+            let _ = env_logger::try_init();
+
+            let srv = server::http1()
+                .route_async("/", |req| {
+                    assert_eq!(req.headers()["transfer-encoding"], "chunked");
+                    req
+                        .into_body()
+                        .concat2()
+                        .map(|body| {
+                            assert_eq!(body, "hello");
+                            Response::builder()
+                                .header("transfer-encoding", "chunked")
+                                .body("world".into())
+                                .unwrap()
+                        })
+                })
+                .run();
+            let proxy = $proxy(srv);
+            let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
+
+            let req = client
+                .request_builder("/")
+                .method("POST")
+                .header("transfer-encoding", "chunked")
+                .body("hello".into())
+                .unwrap();
+
+            let resp = client.request_body(req);
+
+            assert_eq!(resp.status(), StatusCode::OK);
+            assert_eq!(resp.headers()["transfer-encoding"], "chunked");
+            let body = resp.into_body().concat2().wait().unwrap();
+            assert_eq!(body, "world");
+        }
+
+        #[test]
         fn http1_requests_without_body_doesnt_add_transfer_encoding() {
             let _ = env_logger::try_init();
 
@@ -782,6 +843,9 @@ mod proxy_to_proxy {
     use super::support::*;
 
     struct ProxyToProxy {
+        // Held to prevent closing, to reduce controller request noise during
+        // tests
+        _dst: controller::DstSender,
         _in: proxy::Listening,
         _out: proxy::Listening,
         inbound: SocketAddr,
@@ -800,6 +864,7 @@ mod proxy_to_proxy {
 
         let addr = outbound.outbound;
         ProxyToProxy {
+            _dst: dst,
             _in: inbound,
             _out: outbound,
             inbound: addr,
