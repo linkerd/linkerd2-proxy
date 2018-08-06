@@ -187,7 +187,7 @@ mod system {
     pub(super) struct System {}
 
     impl System {
-        pub fn new() -> io::Result<Sensor> {
+        pub fn new() -> io::Result<Self> {
             Err(io::Error::new(
                 io::ErrorKind::Other,
                 "procinfo not supported on this operating system"
