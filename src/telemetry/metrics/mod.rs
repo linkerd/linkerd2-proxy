@@ -31,7 +31,7 @@ use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
-use std::time::{UNIX_EPOCH, Duration, Instant};
+use std::time::{Duration, Instant};
 
 use indexmap::IndexMap;
 
@@ -116,9 +116,7 @@ struct Root {
     tls_config: TlsConfigScopes,
     tls_config_last_reload_seconds: Option<Gauge>,
 
-    process_metrics: Option<process::Sensor>,
-
-    start_time: Gauge,
+    process: process::Process,
 }
 
 
@@ -183,9 +181,6 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
 
 impl Root {
     metrics! {
-        process_start_time_seconds: Gauge {
-            "Time that the process started (in seconds since the UNIX epoch)"
-        },
         tls_config_last_reload_seconds: Gauge {
             "Timestamp of when the TLS configuration files were last reloaded \
              successfully (in seconds since the UNIX epoch)"
@@ -193,18 +188,8 @@ impl Root {
     }
 
     pub fn new(process: &Arc<ctx::Process>) -> Self {
-        let t0 = process.start_time
-            .duration_since(UNIX_EPOCH)
-            .expect("process start time")
-            .as_secs();
-
-        let process_metrics = process::Sensor::new()
-            .map_err(|e| info!("{}", e))
-            .ok();
-
         Self {
-            start_time: t0.into(),
-            process_metrics,
+            process: process::Process::new(&process),
             .. Root::default()
         }
     }
@@ -259,15 +244,7 @@ impl fmt::Display for Root {
             Self::tls_config_last_reload_seconds.fmt_metric(f, timestamp)?;
         }
 
-        if let Some(ref process_metrics) = self.process_metrics {
-            match process_metrics.metrics() {
-                Ok(process) => process.fmt(f)?,
-                Err(e) => warn!("error collecting process metrics: {:?}", e),
-            }
-        };
-
-        Self::process_start_time_seconds.fmt_help(f)?;
-        Self::process_start_time_seconds.fmt_metric(f, self.start_time)?;
+        self.process.fmt(f)?;
 
         Ok(())
     }
