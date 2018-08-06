@@ -1,6 +1,6 @@
 use futures::{future, Future, Poll};
 use http;
-use http::header::HeaderValue;
+use http::header::{TRANSFER_ENCODING, HeaderValue};
 use tower_service::{Service, NewService};
 
 use bind;
@@ -98,6 +98,8 @@ where
                 HeaderValue::from_static(val)
             );
 
+            // transfer-encoding is illegal in HTTP2
+            req.headers_mut().remove(TRANSFER_ENCODING);
 
             *req.version_mut() = http::Version::HTTP_2;
             downgrade_response = true;
@@ -228,6 +230,10 @@ where
                     L5D_ORIG_PROTO,
                     HeaderValue::from_static(orig_proto)
                 );
+
+                // transfer-encoding is illegal in HTTP2
+                res.headers_mut().remove(TRANSFER_ENCODING);
+
                 *res.version_mut() = http::Version::HTTP_2;
                 res
             })

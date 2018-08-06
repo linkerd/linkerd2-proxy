@@ -1,7 +1,7 @@
 use support::*;
 
 use std::io;
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 use self::futures::{
     future::Executor,
@@ -12,7 +12,7 @@ use self::tokio::{
     io::{AsyncRead, AsyncWrite},
 };
 
-type Request = http::Request<()>;
+type Request = http::Request<Bytes>;
 type Response = http::Response<BodyStream>;
 type BodyStream = Box<Stream<Item=Bytes, Error=String> + Send>;
 type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, String>>)>;
@@ -85,7 +85,7 @@ impl Client {
 
     pub fn request_async(&self, builder: &mut http::request::Builder) -> Box<Future<Item=Response, Error=String> + Send> {
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send((builder.body(()).unwrap(), tx));
+        let _ = self.tx.unbounded_send((builder.body(Bytes::new()).unwrap(), tx));
         Box::new(rx.then(|oneshot_result| oneshot_result.expect("request canceled")))
     }
 
@@ -95,8 +95,17 @@ impl Client {
             .expect("response")
     }
 
+    pub fn request_body(&self, req: Request) -> Response {
+        let (tx, rx) = oneshot::channel();
+        let _ = self.tx.unbounded_send((req, tx));
+        rx
+            .then(|oneshot_result| oneshot_result.expect("request canceled"))
+            .wait()
+            .expect("response")
+    }
+
     pub fn request_builder(&self, path: &str) -> http::request::Builder {
-        let mut b = Request::builder();
+        let mut b = ::http::Request::builder();
         b.uri(format!("http://{}{}", self.authority, path).as_str())
             .version(self.version);
         b
@@ -133,7 +142,7 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
         };
         let conn = Conn {
             addr,
-            running: RefCell::new(Some(running_tx)),
+            running: Mutex::new(Some(running_tx)),
             absolute_uris,
         };
 
@@ -142,10 +151,7 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
                 let client = hyper::Client::builder()
                     .build::<Conn, hyper::Body>(conn);
                 Box::new(rx.for_each(move |(req, cb)| {
-                    let req = req.map(|_| hyper::Body::empty());
-                    if req.headers().get(http::header::CONTENT_LENGTH).is_none() {
-                        // assert!(req.body_mut().take().unwrap().is_empty());
-                    }
+                    let req = req.map(hyper::Body::from);
                     let fut = client.request(req).then(move |result| {
                         let result = result
                             .map(|res| {
@@ -175,6 +181,7 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
                     .map_err(move |err| println!("connect error ({:?}): {:?}", addr, err))
                     .and_then(move |mut h2| {
                         rx.for_each(move |(req, cb)| {
+                            let req = req.map(|s| assert!(s.is_empty(), "h2 test client doesn't support bodies yet"));
                             let fut = h2.call(req).then(|result| {
                                 let result = result
                                     .map(|res| {
@@ -205,14 +212,15 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
 struct Conn {
     addr: SocketAddr,
     /// When this Sender drops, that should mean the connection is closed.
-    running: RefCell<Option<oneshot::Sender<()>>>,
+    running: Mutex<Option<oneshot::Sender<()>>>,
     absolute_uris: bool,
 }
 
 impl Conn {
     fn connect_(&self) -> Box<Future<Item = RunningIo, Error = ::std::io::Error> + Send> {
         let running = self.running
-            .borrow_mut()
+            .lock()
+            .expect("running lock")
             .take()
             .expect("connected more than once");
         let c = TcpStream::connect(&self.addr)
@@ -248,12 +256,6 @@ impl hyper::client::connect::Connect for Conn {
         Box::new(self.connect_().map(|t| (t, connected)))
     }
 }
-
-// Hyper requires that implementors of `Connect` be `Sync`; and the `RefCell`
-// in `Conn` makes it `!Sync`. However, since we're using the current thread
-// executor, we know this type will never be sent between threads.
-// TODO: I would really prefer to not have to do this.
-unsafe impl Sync for Conn {}
 
 /// A wrapper around a TcpStream, allowing us to signal when the connection
 /// is dropped.
