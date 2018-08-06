@@ -67,9 +67,9 @@ struct Background<T: HttpService<ResponseBody = RecvBody>> {
 /// which require reconnects.
 #[derive(Default)]
 struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
-    destinations: HashMap<DnsNameAndPort, DestinationSet<T>>,
+    destinations: HashMap<Arc<DnsNameAndPort>, DestinationSet<T>>,
     /// A queue of authorities that need to be reconnected.
-    reconnects: VecDeque<DnsNameAndPort>,
+    reconnects: VecDeque<Arc<DnsNameAndPort>>,
 }
 
 /// The configurationn necessary to create a new Destination service
@@ -219,8 +219,8 @@ where
                         trace!("--> no query capacity, try retain_active...", );
                         dsts.retain_active();
                     };
-
-                    match dsts.destinations.entry(resolve.authority) {
+                    let authority = Arc::new(resolve.authority);
+                    match dsts.destinations.entry(authority.clone()) {
                         Entry::Occupied(mut occ) => {
                             // we may already know of some addresses here, so push
                             // them onto the new watch first
@@ -235,7 +235,7 @@ where
                             }
 
                             if occ.get().needs_query_capacity() {
-                                trace!("--> {:?} wants to query Destination", occ.key());
+                                trace!("--> {:?} wants to query Destination", authority);
                                 let query = new_query
                                     .query_destination_service_if_relevant(
                                         client.as_mut(),
@@ -248,27 +248,14 @@ where
                             occ.get_mut().add_responder(resolve.responder);
                         },
                         Entry::Vacant(vac) => {
-                            let query = new_query
-                                .query_destination_service_if_relevant(
-                                    client.as_mut(),
-                                    vac.key(),
-                                    "connect",
-                                );
-                            let mut set = DestinationSet::new(
+                            let set = DestinationSet::new(
+                                authority,
                                 resolve.responder,
-                                query,
+                                new_query,
+                                &self.dns_resolver,
+                                client.as_mut(),
                             );
-                            // If the authority is one for which the Destination service is never
-                            // relevant (e.g. an absolute name that doesn't end in ".svc.$zone." in
-                            // Kubernetes), or if we don't have a `client`, then immediately start
-                            // polling DNS.
-                            if !set.query.is_active() {
-                                set.reset_dns_query(
-                                    &self.dns_resolver,
-                                    Instant::now(),
-                                    vac.key(),
-                                );
-                            }
+
                             vac.insert(set);
                         },
                     }
@@ -289,13 +276,7 @@ where
 
         while let Some(auth) = self.dsts.reconnects.pop_front() {
             if let Some(set) = self.dsts.destinations.get_mut(&auth) {
-                set.query = self.new_query
-                    .query_destination_service_if_relevant(
-                        Some(client),
-                        &auth,
-                        "reconnect",
-                    );
-                return !set.needs_query_capacity();
+                return set.reconnect_destination_query(&self.new_query, Some(client));
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
             }
@@ -309,11 +290,7 @@ where
             let (new_query, found_by_destination_service) = match set.query.take() {
                 DestinationServiceQuery::Active(Remote::ConnectedOrConnecting { rx }) => {
                     let (new_query, found_by_destination_service) =
-                        set.poll_destination_service(
-                            auth,
-                            rx,
-                            self.new_query.tls_controller_ns(),
-                        );
+                        set.poll_destination_service(rx, self.new_query.tls_controller_ns());
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
@@ -339,14 +316,14 @@ where
                 },
                 Exists::No => {
                     // Fall back to DNS.
-                    set.reset_dns_query(&self.dns_resolver, Instant::now(), auth);
+                    set.reset_dns_query(&self.dns_resolver, Instant::now());
                 },
                 Exists::Unknown => (), // No change from Destination service's perspective.
             }
 
             // Poll DNS after polling the Destination service. This may reset the DNS query but it
             // won't affect the Destination Service query.
-            set.poll_dns(&self.dns_resolver, auth);
+            set.poll_dns(&self.dns_resolver);
         }
     }
 
@@ -501,7 +478,7 @@ impl<T: HttpService<ResponseBody = RecvBody>> DestinationServiceQuery<T> {
     }
 
     pub fn take(&mut self) -> Self {
-         mem::replace(self, DestinationServiceQuery::Inactive)
+        mem::replace(self, DestinationServiceQuery::Inactive)
     }
 
 }

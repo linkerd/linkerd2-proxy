@@ -3,6 +3,7 @@ use std::{
     fmt,
     iter::IntoIterator,
     net::SocketAddr,
+    sync::Arc,
     time::{Instant, Duration},
 };
 
@@ -31,6 +32,7 @@ use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
 /// Holds the state of a single resolution.
 pub(super) struct DestinationSet<T: HttpService<ResponseBody = RecvBody>> {
+    auth: Arc<DnsNameAndPort>,
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
     pub query: DestinationServiceQuery<T>,
     dns_query: Option<IpAddrListFuture>,
@@ -45,30 +47,65 @@ where
     T::Error: fmt::Debug,
 {
     pub(super) fn new(
+        auth: Arc<DnsNameAndPort>,
         responder: Responder,
-        query: DestinationServiceQuery<T>,
+        new_query: &super::NewQuery,
+        dns_resolver: &dns::Resolver,
+        client: Option<&mut T>,
     ) -> Self {
-        Self {
+        let query = new_query
+            .query_destination_service_if_relevant(
+                client,
+                &auth,
+                "connect",
+            );
+
+        let mut set = DestinationSet {
+            auth,
             addrs: Exists::Unknown,
             query,
             dns_query: None,
             responders: vec![responder],
+        };
+
+
+        // If the authority is one for which the Destination service is never
+        // relevant (e.g. an absolute name that doesn't end in ".svc.$zone." in
+        // Kubernetes), or if we don't have a `client`, then immediately start
+        // polling DNS.
+        if !set.query.is_active() {
+            set.reset_dns_query(dns_resolver, Instant::now());
         }
+
+        set
+    }
+
+    pub(super) fn reconnect_destination_query(
+        &mut self,
+        new_query: &super::NewQuery,
+        client: Option<&mut T>,
+    ) -> bool {
+        self.query = new_query
+            .query_destination_service_if_relevant(
+                client,
+                &self.auth,
+                "reconnect",
+            );
+        self.query.is_active()
     }
 
     pub(super) fn reset_dns_query(
         &mut self,
         dns_resolver: &dns::Resolver,
         deadline: Instant,
-        authority: &DnsNameAndPort,
     ) {
         trace!(
             "resetting DNS query for {} at {:?}",
-            authority.host,
+            self.auth.host,
             deadline
         );
         self.reset_on_next_modification();
-        self.dns_query = Some(dns_resolver.resolve_all_ips(deadline, &authority.host));
+        self.dns_query = Some(dns_resolver.resolve_all_ips(deadline, &self.auth.host));
     }
 
     pub(super) fn end_dns_query(&mut self) {
@@ -95,7 +132,6 @@ where
     // "no change in existence" instead of "unknown".
     pub(super) fn poll_destination_service(
         &mut self,
-        auth: &DnsNameAndPort,
         mut rx: UpdateRx<T>,
         tls_controller_namespace: Option<&str>,
     ) -> (ActiveQuery<T>, Exists<()>) {
@@ -111,12 +147,11 @@ where
                             .into_iter()
                             .filter_map(|pb|
                                 pb_to_addr_meta(pb, &set_labels, tls_controller_namespace));
-                        self.add(auth, addrs)
+                        self.add(addrs)
                     },
                     Some(PbUpdate2::Remove(r_set)) => {
                         exists = Exists::Yes(());
                         self.remove(
-                            auth,
                             r_set
                                 .addrs
                                 .iter()
@@ -125,7 +160,7 @@ where
                     },
                     Some(PbUpdate2::NoEndpoints(ref no_endpoints)) if no_endpoints.exists => {
                         exists = Exists::Yes(());
-                        self.no_endpoints(auth, no_endpoints.exists);
+                        self.no_endpoints(no_endpoints.exists);
                     },
                     Some(PbUpdate2::NoEndpoints(no_endpoints)) => {
                         debug_assert!(!no_endpoints.exists);
@@ -136,7 +171,7 @@ where
                 Ok(Async::Ready(None)) => {
                     trace!(
                         "Destination.Get stream ended for {:?}, must reconnect",
-                        auth
+                        self.auth
                     );
                     return (Remote::NeedsReconnect.into(), exists);
                 },
@@ -144,38 +179,38 @@ where
                     return (Remote::ConnectedOrConnecting { rx }.into(), exists);
                 },
                 Err(err) => {
-                    warn!("Destination.Get stream errored for {:?}: {:?}", auth, err);
+                    warn!("Destination.Get stream errored for {:?}: {:?}", self.auth, err);
                     return (Remote::NeedsReconnect.into(), exists);
                 },
             };
         }
     }
 
-    pub(super) fn poll_dns(&mut self, dns_resolver: &dns::Resolver, authority: &DnsNameAndPort) {
+    pub(super) fn poll_dns(&mut self, dns_resolver: &dns::Resolver) {
         // Duration to wait before polling DNS again after an error
         // (or a NXDOMAIN response with no TTL).
         const DNS_ERROR_TTL: Duration = Duration::from_secs(5);
 
-        trace!("checking DNS for {:?}", authority);
+        trace!("checking DNS for {:?}", self.auth);
         while let Some(mut query) = self.dns_query.take() {
-            trace!("polling DNS for {:?}", authority);
+            trace!("polling DNS for {:?}", self.auth);
             let deadline = match query.poll() {
                 Ok(Async::NotReady) => {
-                    trace!("DNS query not ready {:?}", authority);
+                    trace!("DNS query not ready {:?}", self.auth);
                     self.dns_query = Some(query);
                     return;
                 },
                 Ok(Async::Ready(dns::Response::Exists(ips))) => {
                     trace!(
                         "positive result of DNS query for {:?}: {:?}",
-                        authority,
+                        self.auth,
                         ips
                     );
+                    let port = self.auth.port;
                     self.add(
-                        authority,
                         ips.iter().map(|ip| {
                             (
-                                SocketAddr::from((ip, authority.port)),
+                                SocketAddr::from((ip, port)),
                                 Metadata::no_metadata(),
                             )
                         }),
@@ -187,9 +222,9 @@ where
                 Ok(Async::Ready(dns::Response::DoesNotExist { retry_after })) => {
                     trace!(
                         "negative result (NXDOMAIN) of DNS query for {:?}",
-                        authority
+                        self.auth
                     );
-                    self.no_endpoints(authority, false);
+                    self.no_endpoints(false);
                     // Poll again after the deadline on the DNS response, if
                     // there is one.
                     retry_after.unwrap_or_else(|| Instant::now() + DNS_ERROR_TTL)
@@ -197,13 +232,13 @@ where
                 Err(e) => {
                     // Do nothing so that the most recent non-error response is used until a
                     // non-error response is received
-                    trace!("DNS resolution failed for {}: {}", &authority.host, e);
+                    trace!("DNS resolution failed for {}: {}", self.auth.host, e);
 
                     // Poll again after the default wait time.
                     Instant::now() + DNS_ERROR_TTL
                 },
             };
-            self.reset_dns_query(dns_resolver, deadline, &authority)
+            self.reset_dns_query(dns_resolver, deadline)
         }
     }
 }
@@ -225,7 +260,7 @@ impl<T: HttpService<ResponseBody = RecvBody>> DestinationSet<T> {
         }
     }
 
-    fn add<A>(&mut self, authority_for_logging: &DnsNameAndPort, addrs_to_add: A)
+    fn add<A>(&mut self, addrs_to_add: A)
     where
         A: Iterator<Item = (SocketAddr, Metadata)>,
     {
@@ -234,19 +269,19 @@ impl<T: HttpService<ResponseBody = RecvBody>> DestinationSet<T> {
             Exists::Unknown | Exists::No => Cache::new(),
         };
         cache.update_union(addrs_to_add, &mut |change| {
-            Self::on_change(&mut self.responders, authority_for_logging, change)
+            Self::on_change(&mut self.responders, &self.auth, change)
         });
         self.addrs = Exists::Yes(cache);
     }
 
-    fn remove<A>(&mut self, authority_for_logging: &DnsNameAndPort, addrs_to_remove: A)
+    fn remove<A>(&mut self, addrs_to_remove: A)
     where
         A: Iterator<Item = SocketAddr>,
     {
         let cache = match self.addrs.take() {
             Exists::Yes(mut cache) => {
                 cache.remove(addrs_to_remove, &mut |change| {
-                    Self::on_change(&mut self.responders, authority_for_logging, change)
+                    Self::on_change(&mut self.responders, &self.auth, change)
                 });
                 cache
             },
@@ -255,16 +290,16 @@ impl<T: HttpService<ResponseBody = RecvBody>> DestinationSet<T> {
         self.addrs = Exists::Yes(cache);
     }
 
-    fn no_endpoints(&mut self, authority_for_logging: &DnsNameAndPort, exists: bool) {
+    fn no_endpoints(&mut self, exists: bool) {
         trace!(
             "no endpoints for {:?} that is known to {}",
-            authority_for_logging,
+            &self.auth,
             if exists { "exist" } else { "not exist" }
         );
         match self.addrs.take() {
             Exists::Yes(mut cache) => {
                 cache.clear(&mut |change| {
-                    Self::on_change(&mut self.responders, authority_for_logging, change)
+                    Self::on_change(&mut self.responders, &self.auth, change)
                 });
             },
             Exists::Unknown | Exists::No => (),
