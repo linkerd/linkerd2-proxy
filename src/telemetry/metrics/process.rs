@@ -25,9 +25,16 @@ impl Process {
             .expect("process start time")
             .as_secs();
 
+        let system = match System::new() {
+            Ok(s) => Some(s),
+            Err(err) => {
+                debug!("failed to load system stats: {}", err);
+                None
+            }
+        };
         Self {
             start_time: t0.into(),
-            system: System::new().ok(),
+            system,
         }
     }
 }
@@ -134,14 +141,27 @@ mod system {
                 Counter::from(clock_ticks / self.clock_ticks_per_sec),
             )?;
 
-            if let Ok(open_fds) = Self::open_fds(stat.pid) {
-                Self::process_open_fds.fmt_help(f)?;
-                Self::process_open_fds.fmt_metric(f, open_fds)?;
+            match Self::open_fds(stat.pid) {
+                Ok(open_fds) => {
+                    Self::process_open_fds.fmt_help(f)?;
+                    Self::process_open_fds.fmt_metric(f, open_fds)?;
+                }
+                Err(err) => {
+                    warn!("could not determine process_open_fds: {}", err);
+                    return Ok(());
+                }
             }
 
-            if let Ok(Some(ref max_fds)) = Self::max_fds() {
-                Self::process_max_fds.fmt_help(f)?;
-                Self::process_max_fds.fmt_metric(f, *max_fds)?;
+            match Self::max_fds() {
+                Ok(None) => {}
+                Ok(Some(ref max_fds)) => {
+                    Self::process_max_fds.fmt_help(f)?;
+                    Self::process_max_fds.fmt_metric(f, *max_fds)?;
+                }
+                Err(err) => {
+                    warn!("could not determine process_max_fds: {}", err);
+                    return Ok(());
+                }
             }
 
             Self::process_virtual_memory_bytes.fmt_help(f)?;
