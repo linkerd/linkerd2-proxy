@@ -212,6 +212,8 @@ macro_rules! http1_tests {
                     Response::builder()
                         .header("x-server-quux", "lorem ipsum")
                         .header("connection", "close, x-server-quux")
+                        .header("keep-alive", "500")
+                        .header("proxy-connection", "a")
                         .body("".into())
                         .unwrap()
                 })
@@ -221,7 +223,16 @@ macro_rules! http1_tests {
 
             let res = client.request(client.request_builder("/")
                 .header("x-foo-bar", "baz")
-                .header("connection", "x-foo-bar, close"));
+                .header("connection", "x-foo-bar, close")
+                // These headers will fail in the proxy_to_proxy case if
+                // they are not stripped.
+                //
+                // normally would be stripped by `connection: keep-alive`,
+                // but test its removed even if the connection header forgot
+                // about it.
+                .header("keep-alive", "500")
+                .header("proxy-connection", "a")
+            );
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert!(!res.headers().contains_key("x-server-quux"));
