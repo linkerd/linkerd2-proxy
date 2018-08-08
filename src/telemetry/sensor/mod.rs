@@ -29,11 +29,8 @@ struct Inner {
 struct Handle(Option<Inner>);
 
 /// Supports the creation of telemetry scopes.
-#[derive(Clone, Debug, Default)]
-pub struct Sensors {
-    inner: Option<Inner>,
-    tls_config_reload: Arc<metrics::TlsConfigReload>,
-}
+#[derive(Clone, Debug)]
+pub struct Sensors(Option<Inner>);
 
 impl Handle {
     fn send<F>(&mut self, mk: F)
@@ -54,22 +51,15 @@ impl Handle {
 }
 
 impl Sensors {
-    pub(super) fn new(
-        metrics: metrics::Record,
-        tls_config_reload: Arc<metrics::TlsConfigReload>,
-        taps: &Arc<Mutex<tap::Taps>>
-    ) -> Self {
-        Sensors {
-            tls_config_reload,
-            inner: Some(Inner {
-                metrics,
-                taps: taps.clone(),
-            })
-        }
+    pub(super) fn new(metrics: metrics::Record, taps: &Arc<Mutex<tap::Taps>>) -> Self {
+        Sensors(Some(Inner {
+            metrics,
+            taps: taps.clone(),
+        }))
     }
 
     pub fn null() -> Sensors {
-        Sensors::default()
+        Sensors(None)
     }
 
     pub fn accept<T>(
@@ -83,14 +73,14 @@ impl Sensors {
     {
         debug!("server connection open");
         let ctx = Arc::new(ctx::transport::Ctx::Server(Arc::clone(ctx)));
-        Transport::open(io, opened_at, Handle(self.inner.clone()), ctx)
+        Transport::open(io, opened_at, Handle(self.0.clone()), ctx)
     }
 
     pub fn connect<C>(&self, connect: C, ctx: &Arc<ctx::transport::Client>) -> Connect<C>
     where
         C: tokio_connect::Connect<Connected = Connection>,
     {
-        Connect::new(connect, Handle(self.inner.clone()), ctx)
+        Connect::new(connect, Handle(self.0.clone()), ctx)
     }
 
     pub fn http<N, A, B>(
@@ -108,10 +98,6 @@ impl Sensors {
         >
             + 'static,
     {
-        NewHttp::new(new_service, Handle(self.inner.clone()), client_ctx)
-    }
-
-    pub fn tls_config_reload(&self) -> &Arc<metrics::TlsConfigReload> {
-        &self.tls_config_reload
+        NewHttp::new(new_service, Handle(self.0.clone()), client_ctx)
     }
 }

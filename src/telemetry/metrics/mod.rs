@@ -59,7 +59,7 @@ mod latency;
 mod process;
 mod record;
 mod serve;
-mod tls_config_reload;
+pub mod tls_config_reload;
 mod transport;
 
 use self::counter::Counter;
@@ -74,7 +74,6 @@ use self::labels::{
 pub use self::labels::DstLabels;
 pub use self::record::Record;
 pub use self::serve::Serve;
-pub use self::tls_config_reload::TlsConfigReload;
 
 /// Writes a metric in prometheus-formatted output.
 ///
@@ -111,7 +110,7 @@ struct Root {
     responses: http::ResponseScopes,
     transports: transport::OpenScopes,
     transport_closes: transport::CloseScopes,
-    tls_config_reload: Arc<TlsConfigReload>,
+    tls_config_reload: tls_config_reload::Fmt,
     process: process::Process,
 }
 
@@ -136,14 +135,11 @@ struct Stamped<T> {
 /// is a Hyper service which can be used to create the server for the
 /// scrape endpoint, while the `Record` side can receive updates to the
 /// metrics by calling `record_event`.
-pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration)
-    -> (Record, Arc<TlsConfigReload>, Serve)
+pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration, tls: tls_config_reload::Fmt)
+    -> (Record, Serve)
 {
-    let root = Root::new(process);
-    let tls_config_reload = root.tls_config_reload().clone();
-
-    let metrics = Arc::new(Mutex::new(root));
-    (Record::new(&metrics), tls_config_reload, Serve::new(&metrics, idle_retain))
+    let metrics = Arc::new(Mutex::new(Root::new(process, tls)));
+    (Record::new(&metrics), Serve::new(&metrics, idle_retain))
 }
 
 // ===== impl Metric =====
@@ -179,9 +175,10 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
 // ===== impl Root =====
 
 impl Root {
-    pub fn new(process: &Arc<ctx::Process>) -> Self {
+    pub fn new(process: &Arc<ctx::Process>, tls_config_reload: tls_config_reload::Fmt) -> Self {
         Self {
             process: process::Process::new(&process),
+            tls_config_reload,
             .. Root::default()
         }
     }
@@ -208,10 +205,6 @@ impl Root {
         self.transport_closes.scopes.entry(labels)
             .or_insert_with(|| transport::CloseMetrics::default().into())
             .stamped()
-    }
-
-    fn tls_config_reload(&self) -> &Arc<TlsConfigReload> {
-        &self.tls_config_reload
     }
 
     fn retain_since(&mut self, epoch: Instant) {

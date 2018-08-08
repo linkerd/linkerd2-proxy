@@ -247,14 +247,14 @@ where
         );
 
         let (taps, observe) = control::Observe::new(100);
-        let (sensors, metrics_server) = telemetry::new(
+        let (sensors, tls_config_sensor, metrics_server) = telemetry::new(
             &process_ctx,
             config.metrics_retain_idle,
             &taps,
         );
 
         let tls_client_config = tls_config_watch.client.clone();
-        let tls_cfg_bg = tls_config_watch.start(sensors.tls_config_reload().clone());
+        let tls_cfg_bg = tls_config_watch.start(tls_config_sensor);
 
         let controller_tls = config.tls_settings.as_ref().and_then(|settings| {
             settings.controller_identity.as_ref().map(|controller_identity| {
