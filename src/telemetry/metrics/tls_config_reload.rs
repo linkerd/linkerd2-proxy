@@ -1,7 +1,7 @@
 use std::{
     fmt,
     path::PathBuf,
-    sync::{Arc, RwLock, Weak},
+    sync::{Arc, Mutex, Weak},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -20,7 +20,7 @@ metrics! {
 
 /// Constructs a Sensor/Fmt pair for TLS config reload metrics.
 pub fn new() -> (Sensor, Fmt) {
-    let inner = Arc::new(RwLock::new(Inner::default()));
+    let inner = Arc::new(Mutex::new(Inner::default()));
     let fmt = Fmt(Arc::downgrade(&inner));
     (Sensor(inner), fmt)
 }
@@ -29,11 +29,11 @@ pub fn new() -> (Sensor, Fmt) {
 ///
 /// When this type is dropped, its metrics may no longer be formatted for prometheus.
 #[derive(Debug)]
-pub struct Sensor(Arc<RwLock<Inner>>);
+pub struct Sensor(Arc<Mutex<Inner>>);
 
 /// Formats metrics for Prometheus for a corresonding `Sensor`.
 #[derive(Debug, Default)]
-pub struct Fmt(Weak<RwLock<Inner>>);
+pub struct Fmt(Weak<Mutex<Inner>>);
 
 #[derive(Debug, Default)]
 struct Inner {
@@ -59,7 +59,7 @@ impl Sensor {
             .expect("times must be after UNIX epoch")
             .as_secs();
 
-        if let Ok(mut inner) = self.0.write() {
+        if let Ok(mut inner) = self.0.lock() {
             inner.last_reload = Some(t.into());
 
             inner
@@ -72,7 +72,7 @@ impl Sensor {
     }
 
     pub fn failed(&mut self, e: tls::ConfigError) {
-        if let Ok(mut inner) = self.0.write() {
+        if let Ok(mut inner) = self.0.lock() {
             inner
                 .by_status
                 .scopes
@@ -91,7 +91,7 @@ impl fmt::Display for Fmt {
             None => return Ok(()),
             Some(lock) => lock,
         };
-        let inner = match lock.read() {
+        let inner = match lock.lock() {
             Err(_) => return Ok(()),
             Ok(inner) => inner,
         };
