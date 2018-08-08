@@ -7,9 +7,7 @@ use super::labels::{
     ResponseLabels,
     TransportLabels,
     TransportCloseLabels,
-    TlsConfigLabels,
 };
-use std::time::UNIX_EPOCH;
 
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
@@ -86,20 +84,10 @@ impl Record {
             },
 
             Event::TlsConfigReloaded(ref when) =>
-                self.update(|metrics| {
-                    let timestamp_secs = when
-                        .duration_since(UNIX_EPOCH)
-                        .expect("SystemTime before UNIX_EPOCH!")
-                        .as_secs()
-                        .into();
-                    metrics.tls_config_last_reload_seconds = Some(timestamp_secs);
-                    metrics.tls_config(TlsConfigLabels::success()).incr();
-                }),
+                self.update(|m| m.tls_config().success(when)),
 
             Event::TlsConfigReloadFailed(ref err) =>
-                self.update(|metrics| {
-                    metrics.tls_config(err.clone().into()).incr();
-                }),
+                self.update(|m| m.tls_config().error(err.clone())),
         };
     }
 }
