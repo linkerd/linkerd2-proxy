@@ -1,5 +1,36 @@
 use std::fmt;
 
+macro_rules! mk_err_enum {
+    { $(#[$m:meta])* enum $name:ident from $from_ty:ty {
+         $( $from:pat => $reason:ident ),+
+     } } => {
+        $(#[$m])*
+        pub enum $name {
+            $( $reason ),+
+        }
+
+        impl fmt::Display for $name {
+             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match self {
+                    $(
+                        $name::$reason => f.pad(stringify!($reason))
+                    ),+
+                }
+             }
+        }
+
+        impl<'a> From<$from_ty> for $name {
+            fn from(err: $from_ty) -> Self {
+                match err {
+                    $(
+                        $from => $name::$reason
+                    ),+
+                }
+            }
+        }
+    }
+}
+
 mk_err_enum! {
     /// Taken from `errno.h`.
     #[cfg(not(target_os="windows"))]
