@@ -59,6 +59,7 @@ mod latency;
 mod process;
 mod record;
 mod serve;
+mod tls_config_reload;
 mod transport;
 
 use self::counter::Counter;
@@ -70,12 +71,10 @@ use self::labels::{
     TransportLabels,
     TransportCloseLabels,
 };
-pub use self::labels::{
-    DstLabels,
-    TlsConfigLabels,
-};
+pub use self::labels::DstLabels;
 pub use self::record::Record;
 pub use self::serve::Serve;
+pub use self::tls_config_reload::TlsConfigReload;
 
 /// Writes a metric in prometheus-formatted output.
 ///
@@ -112,10 +111,7 @@ struct Root {
     responses: http::ResponseScopes,
     transports: transport::OpenScopes,
     transport_closes: transport::CloseScopes,
-
-    tls_config: TlsConfigScopes,
-    tls_config_last_reload_seconds: Option<Gauge>,
-
+    tls_config_reload: TlsConfigReload,
     process: process::Process,
 }
 
@@ -133,8 +129,6 @@ struct Stamped<T> {
     stamp: Instant,
     inner: T,
 }
-
-type TlsConfigScopes = Scopes<labels::TlsConfigLabels, Counter>;
 
 /// Construct the Prometheus metrics.
 ///
@@ -180,13 +174,6 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
 // ===== impl Root =====
 
 impl Root {
-    metrics! {
-        tls_config_last_reload_seconds: Gauge {
-            "Timestamp of when the TLS configuration files were last reloaded \
-             successfully (in seconds since the UNIX epoch)"
-        }
-    }
-
     pub fn new(process: &Arc<ctx::Process>) -> Self {
         Self {
             process: process::Process::new(&process),
@@ -218,9 +205,8 @@ impl Root {
             .stamped()
     }
 
-    fn tls_config(&mut self, labels: TlsConfigLabels) -> &mut Counter {
-        self.tls_config.scopes.entry(labels)
-            .or_insert_with(|| Counter::default())
+    fn tls_config(&mut self) -> &mut TlsConfigReload {
+        &mut self.tls_config_reload
     }
 
     fn retain_since(&mut self, epoch: Instant) {
@@ -237,35 +223,8 @@ impl fmt::Display for Root {
         self.responses.fmt(f)?;
         self.transports.fmt(f)?;
         self.transport_closes.fmt(f)?;
-        self.tls_config.fmt(f)?;
-
-        if let Some(timestamp) = self.tls_config_last_reload_seconds {
-            Self::tls_config_last_reload_seconds.fmt_help(f)?;
-            Self::tls_config_last_reload_seconds.fmt_metric(f, timestamp)?;
-        }
-
+        self.tls_config_reload.fmt(f)?;
         self.process.fmt(f)?;
-
-        Ok(())
-    }
-}
-
-impl TlsConfigScopes {
-    metrics! {
-        tls_config_reload_total: Counter {
-            "Total number of times the proxy's TLS config files were reloaded."
-        }
-    }
-}
-
-impl fmt::Display for TlsConfigScopes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.scopes.is_empty() {
-            return Ok(());
-        }
-
-        Self::tls_config_reload_total.fmt_help(f)?;
-        Self::tls_config_reload_total.fmt_scopes(f, &self, |s| &s)?;
 
         Ok(())
     }
