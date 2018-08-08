@@ -82,12 +82,6 @@ impl Record {
                         .close(close.duration);
                 })
             },
-
-            Event::TlsConfigReloaded(ref when) =>
-                self.update(|m| m.tls_config().success(when)),
-
-            Event::TlsConfigReloadFailed(ref err) =>
-                self.update(|m| m.tls_config().error(err.clone())),
         };
     }
 }
@@ -135,7 +129,7 @@ mod test {
             frames_sent: 0,
         };
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(100));
+        let (mut r, _) = metrics::new(&process, Duration::from_secs(100), Default::default());
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
         let labels = labels::ResponseLabels::new(&rsp, None);
 
@@ -230,7 +224,7 @@ mod test {
             ),
         ];
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(1000));
+        let (mut r, _) = metrics::new(&process, Duration::from_secs(1000), Default::default());
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);

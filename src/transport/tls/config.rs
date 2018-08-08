@@ -16,7 +16,7 @@ use super::{
     webpki,
 };
 use conditional::Conditional;
-use telemetry::sensor;
+use telemetry::metrics::tls_config_reload;
 
 use futures::{future, stream, Future, Stream};
 use futures_watch::{Store, Watch};
@@ -182,7 +182,7 @@ impl CommonSettings {
     fn stream_changes(
         self,
         interval: Duration,
-        mut sensor: sensor::TlsConfig,
+        mut sensor: tls_config_reload::Sensor,
     ) -> impl Stream<Item = CommonConfig, Error = ()>
     {
         let paths = self.paths().iter()
@@ -337,7 +337,7 @@ impl ConfigWatch {
     ///
     /// The returned task Future is expected to never complete. If TLS is
     /// disabled then an empty future is returned.
-    pub fn start(self, sensor: sensor::TlsConfig) -> PublishConfigs {
+    pub fn start(self, sensor: tls_config_reload::Sensor) -> PublishConfigs {
         let settings = match self.settings {
             Conditional::Some(settings) => settings,
             Conditional::None(_) => {

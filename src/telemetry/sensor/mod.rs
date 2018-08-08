@@ -9,7 +9,7 @@ use tower_h2::Body;
 
 use ctx;
 use telemetry::{event, metrics, tap};
-use transport::{Connection, tls};
+use transport::Connection;
 use transparency::ClientError;
 
 pub mod http;
@@ -31,10 +31,6 @@ struct Handle(Option<Inner>);
 /// Supports the creation of telemetry scopes.
 #[derive(Clone, Debug)]
 pub struct Sensors(Option<Inner>);
-
-/// Given to the TLS config watch to generate events on reloads.
-#[derive(Clone, Debug)]
-pub struct TlsConfig(Handle);
 
 impl Handle {
     fn send<F>(&mut self, mk: F)
@@ -103,21 +99,5 @@ impl Sensors {
             + 'static,
     {
         NewHttp::new(new_service, Handle(self.0.clone()), client_ctx)
-    }
-
-    pub fn tls_config(&self) -> TlsConfig {
-        TlsConfig(Handle(self.0.clone()))
-    }
-}
-
-impl TlsConfig {
-
-    pub fn reloaded(&mut self) {
-        use std::time::SystemTime;
-        self.0.send(|| event::Event::TlsConfigReloaded(SystemTime::now()))
-    }
-
-    pub fn failed(&mut self, err: tls::ConfigError) {
-        self.0.send(|| event::Event::TlsConfigReloadFailed(err.into()))
     }
 }
