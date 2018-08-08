@@ -254,7 +254,7 @@ where
         );
 
         let tls_client_config = tls_config_watch.client.clone();
-        let tls_cfg_bg = tls_config_watch.start(sensors.tls_config());
+        let tls_cfg_bg = tls_config_watch.start(sensors.tls_config_reload().clone());
 
         let controller_tls = config.tls_settings.as_ref().and_then(|settings| {
             settings.controller_identity.as_ref().map(|controller_identity| {

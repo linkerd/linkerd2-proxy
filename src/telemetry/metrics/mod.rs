@@ -111,7 +111,7 @@ struct Root {
     responses: http::ResponseScopes,
     transports: transport::OpenScopes,
     transport_closes: transport::CloseScopes,
-    tls_config_reload: TlsConfigReload,
+    tls_config_reload: Arc<TlsConfigReload>,
     process: process::Process,
 }
 
@@ -136,9 +136,14 @@ struct Stamped<T> {
 /// is a Hyper service which can be used to create the server for the
 /// scrape endpoint, while the `Record` side can receive updates to the
 /// metrics by calling `record_event`.
-pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration) -> (Record, Serve){
-    let metrics = Arc::new(Mutex::new(Root::new(process)));
-    (Record::new(&metrics), Serve::new(&metrics, idle_retain))
+pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration)
+    -> (Record, Arc<TlsConfigReload>, Serve)
+{
+    let root = Root::new(process);
+    let tls_config_reload = root.tls_config_reload().clone();
+
+    let metrics = Arc::new(Mutex::new(root));
+    (Record::new(&metrics), tls_config_reload, Serve::new(&metrics, idle_retain))
 }
 
 // ===== impl Metric =====
@@ -205,8 +210,8 @@ impl Root {
             .stamped()
     }
 
-    fn tls_config(&mut self) -> &mut TlsConfigReload {
-        &mut self.tls_config_reload
+    fn tls_config_reload(&self) -> &Arc<TlsConfigReload> {
+        &self.tls_config_reload
     }
 
     fn retain_since(&mut self, epoch: Instant) {

@@ -16,7 +16,7 @@ pub fn new(
     metrics_retain_idle: Duration,
     taps: &Arc<Mutex<tap::Taps>>,
 ) -> (Sensors, metrics::Serve) {
-    let (metrics_record, metrics_serve) = metrics::new(process, metrics_retain_idle);
-    let s = Sensors::new(metrics_record, taps);
+    let (metrics_record, tls_config_reload, metrics_serve) = metrics::new(process, metrics_retain_idle);
+    let s = Sensors::new(metrics_record, tls_config_reload, taps);
     (s, metrics_serve)
 }

@@ -1,4 +1,4 @@
-use std::{fmt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+use std::{fmt, path::PathBuf, sync::RwLock, time::{SystemTime, UNIX_EPOCH}};
 
 use telemetry::metrics::{Counter, Gauge, Metric, Scopes, labels::Errno};
 use transport::tls;
@@ -14,7 +14,10 @@ metrics! {
 }
 
 #[derive(Debug, Default)]
-pub struct TlsConfigReload {
+pub struct TlsConfigReload(RwLock<Inner>);
+
+#[derive(Debug, Default)]
+struct Inner {
     last_reload: Option<Gauge>,
     by_status: Scopes<Status, Counter>,
 }
@@ -31,21 +34,24 @@ enum Status {
 // ===== impl TlsConfigReload =====
 
 impl TlsConfigReload {
-    pub fn success(&mut self, when: &SystemTime) {
-        let t = when
+    pub fn reloaded(&self) {
+        let t = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("times must be after UNIX epoch")
             .as_secs();
-        self.last_reload = Some(t.into());
 
-        self.by_status.scopes
+        let mut inner = self.0.write().expect("lock");
+        inner.last_reload = Some(t.into());
+
+        inner.by_status.scopes
             .entry(Status::Reloaded)
             .or_insert_with(|| Counter::default())
             .incr()
     }
 
-    pub fn error(&mut self, e: tls::ConfigError) {
-        self.by_status.scopes
+    pub fn failed(&self, e: tls::ConfigError) {
+        let mut inner = self.0.write().expect("lock");
+        inner.by_status.scopes
             .entry(e.into())
             .or_insert_with(|| Counter::default())
             .incr()
@@ -54,12 +60,14 @@ impl TlsConfigReload {
 
 impl fmt::Display for TlsConfigReload {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if !self.by_status.scopes.is_empty() {
+        let inner = self.0.read().expect("lock");
+
+        if !inner.by_status.scopes.is_empty() {
             tls_config_reload_total.fmt_help(f)?;
-            tls_config_reload_total.fmt_scopes(f, &self.by_status, |s| &s)?;
+            tls_config_reload_total.fmt_scopes(f, &inner.by_status, |s| &s)?;
         }
 
-        if let Some(timestamp) = self.last_reload {
+        if let Some(timestamp) = inner.last_reload {
             tls_config_last_reload_seconds.fmt_help(f)?;
             tls_config_last_reload_seconds.fmt_metric(f, timestamp)?;
         }

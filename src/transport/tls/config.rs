@@ -16,7 +16,7 @@ use super::{
     webpki,
 };
 use conditional::Conditional;
-use telemetry::sensor;
+use telemetry::metrics::TlsConfigReload;
 
 use futures::{future, stream, Future, Stream};
 use futures_watch::{Store, Watch};
@@ -182,7 +182,7 @@ impl CommonSettings {
     fn stream_changes(
         self,
         interval: Duration,
-        mut sensor: sensor::TlsConfig,
+        metrics: Arc<TlsConfigReload>,
     ) -> impl Stream<Item = CommonConfig, Error = ()>
     {
         let paths = self.paths().iter()
@@ -196,11 +196,11 @@ impl CommonSettings {
                 match CommonConfig::load_from_disk(&self) {
                     Err(e) => {
                         warn!("error reloading TLS config: {:?}, falling back", e);
-                        sensor.failed(e);
+                        metrics.failed(e);
                         None
                     },
                     Ok(cfg) => {
-                        sensor.reloaded();
+                        metrics.reloaded();
                         Some(cfg)
                     }
                 }
@@ -337,7 +337,7 @@ impl ConfigWatch {
     ///
     /// The returned task Future is expected to never complete. If TLS is
     /// disabled then an empty future is returned.
-    pub fn start(self, sensor: sensor::TlsConfig) -> PublishConfigs {
+    pub fn start(self, metrics: Arc<TlsConfigReload>) -> PublishConfigs {
         let settings = match self.settings {
             Conditional::Some(settings) => settings,
             Conditional::None(_) => {
@@ -347,7 +347,7 @@ impl ConfigWatch {
 
         let (client_store, server_store) = (self.client_store, self.server_store);
 
-        let changes = settings.stream_changes(Duration::from_secs(1), sensor);
+        let changes = settings.stream_changes(Duration::from_secs(1), metrics);
 
         // `Store::store` will return an error iff all watchers have been dropped,
         // so we'll use `fold` to cancel the forwarding future. Eventually, we can
