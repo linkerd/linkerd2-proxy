@@ -5,7 +5,6 @@ use super::{
     latency,
     Counter,
     Histogram,
-    Metric,
     RequestLabels,
     ResponseLabels,
     Scopes,

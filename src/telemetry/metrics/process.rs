@@ -2,7 +2,7 @@ use std::fmt;
 use std::time::UNIX_EPOCH;
 
 use ctx;
-use super::{Gauge, Metric};
+use super::Gauge;
 
 use self::system::System;
 
