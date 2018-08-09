@@ -36,22 +36,22 @@ use std::time::{Duration, Instant};
 use indexmap::IndexMap;
 
 use ctx;
+use super::tls_config_reload;
 
 mod counter;
 mod gauge;
 mod histogram;
 mod http;
 mod labels;
-mod latency;
+pub mod latency;
 mod process;
 mod record;
 mod serve;
-pub mod tls_config_reload;
 mod transport;
 
-use self::counter::Counter;
-use self::gauge::Gauge;
-use self::histogram::Histogram;
+pub use self::counter::Counter;
+pub use self::gauge::Gauge;
+pub use self::histogram::Histogram;
 use self::labels::{
     RequestLabels,
     ResponseLabels,
@@ -97,7 +97,7 @@ struct Root {
     responses: http::ResponseScopes,
     transports: transport::OpenScopes,
     transport_closes: transport::CloseScopes,
-    tls_config_reload: tls_config_reload::Fmt,
+    tls_config_reload: tls_config_reload::Report,
     process: process::Process,
 }
 
@@ -122,7 +122,7 @@ struct Stamped<T> {
 /// is a Hyper service which can be used to create the server for the
 /// scrape endpoint, while the `Record` side can receive updates to the
 /// metrics by calling `record_event`.
-pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration, tls: tls_config_reload::Fmt)
+pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration, tls: tls_config_reload::Report)
     -> (Record, Serve)
 {
     let metrics = Arc::new(Mutex::new(Root::new(process, tls)));
@@ -162,7 +162,7 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
 // ===== impl Root =====
 
 impl Root {
-    pub fn new(process: &Arc<ctx::Process>, tls_config_reload: tls_config_reload::Fmt) -> Self {
+    pub fn new(process: &Arc<ctx::Process>, tls_config_reload: tls_config_reload::Report) -> Self {
         Self {
             process: process::Process::new(&process),
             tls_config_reload,
@@ -245,6 +245,18 @@ impl<T> ::std::ops::Deref for Stamped<T> {
 impl<L: Display + Hash + Eq, S> Default for Scopes<L, S> {
     fn default() -> Self {
         Scopes { scopes: IndexMap::default(), }
+    }
+}
+
+impl<L: Display + Hash + Eq, S> Scopes<L, S> {
+    pub fn is_empty(&self) -> bool {
+        self.scopes.is_empty()
+    }
+}
+
+impl<L: Display + Hash + Eq, S: Default> Scopes<L, S> {
+    pub fn get_or_default(&mut self, key: L) -> &mut S {
+        self.scopes.entry(key).or_insert_with(|| S::default())
     }
 }
 

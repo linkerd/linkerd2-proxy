@@ -16,7 +16,7 @@ use super::{
     webpki,
 };
 use conditional::Conditional;
-use telemetry::metrics::tls_config_reload;
+use telemetry::tls_config_reload;
 
 use futures::{future, stream, Future, Stream};
 use futures_watch::{Store, Watch};

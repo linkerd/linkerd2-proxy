@@ -18,10 +18,10 @@ metrics! {
     }
 }
 
-/// Constructs a Sensor/Fmt pair for TLS config reload metrics.
-pub fn new() -> (Sensor, Fmt) {
+/// Constructs a Sensor/Report pair for TLS config reload metrics.
+pub fn new() -> (Sensor, Report) {
     let inner = Arc::new(Mutex::new(Inner::default()));
-    let fmt = Fmt(Arc::downgrade(&inner));
+    let fmt = Report(Arc::downgrade(&inner));
     (Sensor(inner), fmt)
 }
 
@@ -33,7 +33,7 @@ pub struct Sensor(Arc<Mutex<Inner>>);
 
 /// Formats metrics for Prometheus for a corresonding `Sensor`.
 #[derive(Debug, Default)]
-pub struct Fmt(Weak<Mutex<Inner>>);
+pub struct Report(Weak<Mutex<Inner>>);
 
 #[derive(Debug, Default)]
 struct Inner {
@@ -61,31 +61,20 @@ impl Sensor {
 
         if let Ok(mut inner) = self.0.lock() {
             inner.last_reload = Some(t.into());
-
-            inner
-                .by_status
-                .scopes
-                .entry(Status::Reloaded)
-                .or_insert_with(|| Counter::default())
-                .incr();
+            inner.by_status.get_or_default(Status::Reloaded).incr();
         }
     }
 
     pub fn failed(&mut self, e: tls::ConfigError) {
         if let Ok(mut inner) = self.0.lock() {
-            inner
-                .by_status
-                .scopes
-                .entry(e.into())
-                .or_insert_with(|| Counter::default())
-                .incr();
+            inner.by_status.get_or_default(e.into()).incr();
         }
     }
 }
 
-// ===== impl Fmt =====
+// ===== impl Report =====
 
-impl fmt::Display for Fmt {
+impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let lock = match self.0.upgrade() {
             None => return Ok(()),
@@ -96,7 +85,7 @@ impl fmt::Display for Fmt {
             Ok(inner) => inner,
         };
 
-        if !inner.by_status.scopes.is_empty() {
+        if !inner.by_status.is_empty() {
             tls_config_reload_total.fmt_help(f)?;
             tls_config_reload_total.fmt_scopes(f, &inner.by_status, |s| &s)?;
         }
