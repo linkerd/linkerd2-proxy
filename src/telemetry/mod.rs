@@ -3,7 +3,22 @@ use std::time::Duration;
 
 use ctx;
 
+macro_rules! metrics {
+    { $( $name:ident : $kind:ty { $help:expr } ),+ } => {
+        $(
+            #[allow(non_upper_case_globals)]
+            const $name: ::telemetry::metrics::Metric<'static, $kind> =
+                ::telemetry::metrics::Metric {
+                    name: stringify!($name),
+                    help: $help,
+                    _p: ::std::marker::PhantomData,
+                };
+        )+
+    }
+}
+
 pub mod event;
+// TODO this shouldn't need to be public.
 pub mod metrics;
 pub mod sensor;
 pub mod tap;

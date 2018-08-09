@@ -6,7 +6,6 @@ use super::{
     Counter,
     Gauge,
     Histogram,
-    Metric,
     TransportLabels,
     TransportCloseLabels,
     Scopes,

@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use telemetry::metrics::{labels::Errno, Counter, Gauge, Metric, Scopes};
+use telemetry::metrics::{labels::Errno, Counter, Gauge, Scopes};
 use transport::tls;
 
 metrics! {

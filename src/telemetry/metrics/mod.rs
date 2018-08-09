@@ -37,19 +37,6 @@ use indexmap::IndexMap;
 
 use ctx;
 
-macro_rules! metrics {
-    { $( $name:ident : $kind:ty { $help:expr } ),+ } => {
-        $(
-            #[allow(non_upper_case_globals)]
-            const $name: Metric<'static, $kind> = Metric {
-                name: stringify!($name),
-                help: $help,
-                _p: ::std::marker::PhantomData,
-            };
-        )+
-    }
-}
-
 mod counter;
 mod gauge;
 mod histogram;
@@ -80,7 +67,7 @@ pub use self::serve::Serve;
 /// This trait is implemented by `Counter`, `Gauge`, and `Histogram` to account for the
 /// differences in formatting each type of metric. Specifically, `Histogram` formats a
 /// counter for each bucket, as well as a count and total sum.
-trait FmtMetric {
+pub trait FmtMetric {
     /// The metric's `TYPE` in help messages.
     const KIND: &'static str;
 
@@ -97,10 +84,10 @@ trait FmtMetric {
 /// Describes a metric statically.
 ///
 /// Formats help messages and metric values for prometheus output.
-struct Metric<'a, M: FmtMetric> {
-    name: &'a str,
-    help: &'a str,
-    _p: PhantomData<M>,
+pub struct Metric<'a, M: FmtMetric> {
+    pub name: &'a str,
+    pub help: &'a str,
+    pub _p: PhantomData<M>,
 }
 
 /// The root scope for all runtime metrics.
@@ -119,7 +106,7 @@ struct Root {
 ///
 /// An `S` type typically holds one or more metrics.
 #[derive(Debug)]
-struct Scopes<L: Display + Hash + Eq, S> {
+pub struct Scopes<L: Display + Hash + Eq, S> {
     scopes: IndexMap<L, S>,
 }
 
