@@ -17,12 +17,14 @@ macro_rules! metrics {
     }
 }
 
+mod errno;
 pub mod event;
 // TODO this shouldn't need to be public.
 pub mod metrics;
 pub mod sensor;
 pub mod tap;
 
+use self::errno::Errno;
 pub use self::event::Event;
 pub use self::sensor::Sensors;
 

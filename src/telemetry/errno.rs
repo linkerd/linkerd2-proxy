@@ -169,3 +169,21 @@ mk_err_enum! {
         _   => UNKNOWN_ERRNO
     }
 }
+
+#[cfg(target_os="windows")]
+pub struct Errno(i32);
+
+#[cfg(target_os="windows")]
+impl From<i32> for Errno {
+    fn from(code: i32) -> Self {
+        Errno(code)
+    }
+}
+
+#[cfg(target_os="windows")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+impl fmt::Display for Errno {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display.fmt(self.0, f)
+    }
+}
