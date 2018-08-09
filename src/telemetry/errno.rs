@@ -1,5 +1,8 @@
 use std::fmt;
 
+/// Represents a platform-agnostic system error for metrics labels.
+// This exists to hide the `enum` vs `struct` difference of the
+// platform-specific type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Errno(self::code::Code);
 
