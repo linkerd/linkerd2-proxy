@@ -82,11 +82,6 @@ mod system {
     }
 
     impl System {
-        metrics! {
-       }
-    }
-
-    impl System {
         pub fn new() -> io::Result<Self> {
             let page_size = Self::sysconf(libc::_SC_PAGESIZE, "page size")?;
             let clock_ticks_per_sec = Self::sysconf(libc::_SC_CLK_TCK, "clock ticks per second")?;
