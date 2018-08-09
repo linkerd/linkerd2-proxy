@@ -197,21 +197,17 @@ impl Root {
 
     fn transport(&mut self, labels: TransportLabels) -> &mut transport::OpenMetrics {
         self.transports.scopes.entry(labels)
-            .or_insert_with(|| transport::OpenMetrics::default().into())
-            .stamped()
+            .or_insert_with(|| transport::OpenMetrics::default())
     }
 
     fn transport_close(&mut self, labels: TransportCloseLabels) -> &mut transport::CloseMetrics {
         self.transport_closes.scopes.entry(labels)
-            .or_insert_with(|| transport::CloseMetrics::default().into())
-            .stamped()
+            .or_insert_with(|| transport::CloseMetrics::default())
     }
 
     fn retain_since(&mut self, epoch: Instant) {
         self.requests.retain_since(epoch);
         self.responses.retain_since(epoch);
-        self.transports.retain_since(epoch);
-        self.transport_closes.retain_since(epoch);
     }
 }
 
@@ -338,13 +334,13 @@ mod tests {
         root.retain_since(t1);
         assert_eq!(root.requests.scopes.len(), 1);
         assert_eq!(root.responses.scopes.len(), 1);
-        assert_eq!(root.transports.scopes.len(), 1);
+        assert_eq!(root.transports.scopes.len(), 2);
         assert_eq!(root.transport_closes.scopes.len(), 1);
 
         root.retain_since(t2);
         assert_eq!(root.requests.scopes.len(), 0);
         assert_eq!(root.responses.scopes.len(), 0);
-        assert_eq!(root.transports.scopes.len(), 0);
-        assert_eq!(root.transport_closes.scopes.len(), 0);
+        assert_eq!(root.transports.scopes.len(), 2);
+        assert_eq!(root.transport_closes.scopes.len(), 1);
     }
 }
