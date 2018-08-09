@@ -1,22 +1,7 @@
-use std::fmt;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Errno(self::code::Code);
-
-impl<C: Into<self::code::Code>> From<C> for Errno {
-    fn from(c: C) -> Self {
-        Errno(c.into())
-    }
-}
-
-impl fmt::Display for Errno {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
+pub use self::platform::Errno;
 
 #[cfg(not(target_os="windows"))]
-mod code {
+mod platform {
     use std::fmt;
 
     macro_rules! mk_err_enum {
@@ -54,7 +39,7 @@ mod code {
         /// Taken from `errno.h`.
         #[allow(non_camel_case_types)]
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-        enum Code from i32 {
+        enum Errno from i32 {
             1 => EPERM,
             2 => ENOENT,
             3 => ESRCH,
@@ -190,20 +175,20 @@ mod code {
 }
 
 #[cfg(target_os="windows")]
-mod code {
+mod platform {
     use std::fmt;
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-    pub struct Code(i32);
+    pub struct Errno(i32);
 
     #[cfg(target_os="windows")]
-    impl From<i32> for Code {
+    impl From<i32> for Errno {
         fn from(n: i32) -> Self {
-            Errno(codes::Code(n))
+            Errno(codes::Errno(n))
         }
     }
 
-    impl fmt::Display for Code {
+    impl fmt::Display for Errno {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             fmt::Display.fmt(self.0, f)
         }
