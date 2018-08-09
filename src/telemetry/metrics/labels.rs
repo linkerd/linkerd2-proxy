@@ -9,11 +9,8 @@ use http;
 
 use ctx;
 use conditional::Conditional;
-use telemetry::event;
+use telemetry::{event, Errno};
 use transport::tls;
-
-mod errno;
-pub use self::errno::Errno;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RequestLabels {
@@ -433,23 +430,6 @@ impl fmt::Display for tls::ReasonForNoIdentity {
                 f.pad("not_implemented_for_tap"),
             tls::ReasonForNoIdentity::NotImplementedForMetrics =>
                 f.pad("not_implemented_for_metrics"),
-        }
-    }
-}
-
-#[cfg(target_os="windows")]
-mod errno {
-    pub struct Errno(i32);
-
-    impl From<i32> for Errno {
-        fn from(code: i32) -> Self {
-            Errno(code)
-        }
-    }
-
-    impl fmt::Display for Errno {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            fmt::Display.fmt(self.0, f)
         }
     }
 }
