@@ -2,23 +2,23 @@ use std::fmt;
 use std::time::UNIX_EPOCH;
 
 use ctx;
-use super::Gauge;
+use super::metrics::Gauge;
 
 use self::system::System;
 
+metrics! {
+    process_start_time_seconds: Gauge {
+        "Time that the process started (in seconds since the UNIX epoch)"
+    }
+}
+
 #[derive(Debug, Default)]
-pub struct Process {
+pub struct Report {
     start_time: Gauge,
     system: Option<System>,
 }
 
-impl Process {
-    metrics! {
-        process_start_time_seconds: Gauge {
-            "Time that the process started (in seconds since the UNIX epoch)"
-        }
-    }
-
+impl Report {
     pub fn new(process: &ctx::Process) -> Self {
         let t0 = process.start_time
             .duration_since(UNIX_EPOCH)
@@ -39,10 +39,10 @@ impl Process {
     }
 }
 
-impl fmt::Display for Process {
+impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Self::process_start_time_seconds.fmt_help(f)?;
-        Self::process_start_time_seconds.fmt_metric(f, self.start_time)?;
+        process_start_time_seconds.fmt_help(f)?;
+        process_start_time_seconds.fmt_metric(f, self.start_time)?;
 
         if let Some(ref sys) = self.system {
             sys.fmt(f)?;
@@ -54,34 +54,31 @@ impl fmt::Display for Process {
 
 #[cfg(target_os = "linux")]
 mod system {
-    use super::*;
-    use super::super::{Counter, Gauge};
-
-    use std::{io, fs};
-
     use procinfo::pid;
     use libc::{self, pid_t};
+    use std::{io, fs};
+
+    use super::*;
+    use super::super::metrics::{Counter, Gauge};
+
+    metrics! {
+        process_cpu_seconds_total: Counter {
+            "Total user and system CPU time spent in seconds."
+        },
+        process_open_fds: Gauge { "Number of open file descriptors." },
+        process_max_fds: Gauge { "Maximum number of open file descriptors." },
+        process_virtual_memory_bytes: Gauge {
+            "Virtual memory size in bytes."
+        },
+        process_resident_memory_bytes: Gauge {
+            "Resident memory size in bytes."
+        }
+    }
 
     #[derive(Debug)]
     pub(super) struct System {
         page_size: u64,
         clock_ticks_per_sec: u64,
-    }
-
-    impl System {
-        metrics! {
-            process_cpu_seconds_total: Counter {
-                "Total user and system CPU time spent in seconds."
-            },
-            process_open_fds: Gauge { "Number of open file descriptors." },
-            process_max_fds: Gauge { "Maximum number of open file descriptors." },
-            process_virtual_memory_bytes: Gauge {
-                "Virtual memory size in bytes."
-            },
-            process_resident_memory_bytes: Gauge {
-                "Resident memory size in bytes."
-            }
-        }
     }
 
     impl System {
@@ -135,16 +132,16 @@ mod system {
             };
 
             let clock_ticks = stat.utime as u64 + stat.stime as u64;
-            Self::process_cpu_seconds_total.fmt_help(f)?;
-            Self::process_cpu_seconds_total.fmt_metric(
+            process_cpu_seconds_total.fmt_help(f)?;
+            process_cpu_seconds_total.fmt_metric(
                 f,
                 Counter::from(clock_ticks / self.clock_ticks_per_sec),
             )?;
 
             match Self::open_fds(stat.pid) {
                 Ok(open_fds) => {
-                    Self::process_open_fds.fmt_help(f)?;
-                    Self::process_open_fds.fmt_metric(f, open_fds)?;
+                    process_open_fds.fmt_help(f)?;
+                    process_open_fds.fmt_metric(f, open_fds)?;
                 }
                 Err(err) => {
                     warn!("could not determine process_open_fds: {}", err);
@@ -155,8 +152,8 @@ mod system {
             match Self::max_fds() {
                 Ok(None) => {}
                 Ok(Some(ref max_fds)) => {
-                    Self::process_max_fds.fmt_help(f)?;
-                    Self::process_max_fds.fmt_metric(f, *max_fds)?;
+                    process_max_fds.fmt_help(f)?;
+                    process_max_fds.fmt_metric(f, *max_fds)?;
                 }
                 Err(err) => {
                     warn!("could not determine process_max_fds: {}", err);
@@ -164,14 +161,14 @@ mod system {
                 }
             }
 
-            Self::process_virtual_memory_bytes.fmt_help(f)?;
-            Self::process_virtual_memory_bytes.fmt_metric(
+            process_virtual_memory_bytes.fmt_help(f)?;
+            process_virtual_memory_bytes.fmt_metric(
                 f,
                 Gauge::from(stat.vsize as u64),
             )?;
 
-            Self::process_resident_memory_bytes.fmt_help(f)?;
-            Self::process_resident_memory_bytes.fmt_metric(
+            process_resident_memory_bytes.fmt_help(f)?;
+            process_resident_memory_bytes.fmt_metric(
                 f,
                 Gauge::from(stat.rss as u64 * self.page_size),
             )
