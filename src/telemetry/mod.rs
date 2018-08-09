@@ -20,6 +20,7 @@ macro_rules! metrics {
 pub mod event;
 // TODO this shouldn't need to be public.
 pub mod metrics;
+mod process;
 pub mod sensor;
 pub mod tap;
 

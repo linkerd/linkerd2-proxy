@@ -42,16 +42,15 @@ mod gauge;
 mod histogram;
 mod http;
 mod labels;
-mod latency;
-mod process;
+pub mod latency;
 mod record;
 mod serve;
 pub mod tls_config_reload;
 mod transport;
 
-use self::counter::Counter;
-use self::gauge::Gauge;
-use self::histogram::Histogram;
+pub use self::counter::Counter;
+pub use self::gauge::Gauge;
+pub use self::histogram::Histogram;
 use self::labels::{
     RequestLabels,
     ResponseLabels,
@@ -61,6 +60,7 @@ use self::labels::{
 pub use self::labels::DstLabels;
 pub use self::record::Record;
 pub use self::serve::Serve;
+use super::process;
 
 /// Writes a metric in prometheus-formatted output.
 ///
@@ -98,7 +98,7 @@ struct Root {
     transports: transport::OpenScopes,
     transport_closes: transport::CloseScopes,
     tls_config_reload: tls_config_reload::Fmt,
-    process: process::Process,
+    process: process::Report,
 }
 
 
@@ -164,7 +164,7 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
 impl Root {
     pub fn new(process: &Arc<ctx::Process>, tls_config_reload: tls_config_reload::Fmt) -> Self {
         Self {
-            process: process::Process::new(&process),
+            process: process::Report::new(&process),
             tls_config_reload,
             .. Root::default()
         }
