@@ -51,9 +51,8 @@ pub use self::histogram::Histogram;
 use self::labels::{
     RequestLabels,
     ResponseLabels,
-    TransportLabels,
-    TransportCloseLabels,
 };
+use self::transport::{TransportLabels, TransportCloseLabels};
 pub use self::labels::DstLabels;
 pub use self::record::Record;
 pub use self::scopes::Scopes;
