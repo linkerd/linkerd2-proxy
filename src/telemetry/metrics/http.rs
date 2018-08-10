@@ -36,7 +36,7 @@ impl RequestScopes {
 
 impl fmt::Display for RequestScopes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.scopes.is_empty() {
+        if self.is_empty() {
             return Ok(());
         }
 
@@ -74,7 +74,7 @@ impl ResponseScopes {
 
 impl fmt::Display for ResponseScopes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.scopes.is_empty() {
+        if self.is_empty() {
             return Ok(());
         }
 

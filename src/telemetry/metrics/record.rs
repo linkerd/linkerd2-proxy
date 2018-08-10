@@ -137,7 +137,7 @@ mod test {
 
         assert!(r.metrics.lock()
             .expect("lock")
-            .responses.scopes
+            .responses
             .get(&labels)
             .is_none()
         );
@@ -146,7 +146,8 @@ mod test {
         {
             let lock = r.metrics.lock()
                 .expect("lock");
-            let scope = lock.responses.scopes
+            let scope = lock
+                .responses
                 .get(&labels)
                 .expect("scope should be some after event");
 
@@ -249,12 +250,12 @@ mod test {
         {
             let lock = r.metrics.lock()
                 .expect("lock");
-            assert!(lock.requests.scopes.get(&req_labels).is_none());
-            assert!(lock.responses.scopes.get(&rsp_labels).is_none());
-            assert!(lock.transports.scopes.get(&srv_open_labels).is_none());
-            assert!(lock.transports.scopes.get(&client_open_labels).is_none());
-            assert!(lock.transport_closes.scopes.get(&srv_close_labels).is_none());
-            assert!(lock.transport_closes.scopes.get(&client_close_labels).is_none());
+            assert!(lock.requests.get(&req_labels).is_none());
+            assert!(lock.responses.get(&rsp_labels).is_none());
+            assert!(lock.transports.get(&srv_open_labels).is_none());
+            assert!(lock.transports.get(&client_open_labels).is_none());
+            assert!(lock.transport_closes.get(&srv_close_labels).is_none());
+            assert!(lock.transport_closes.get(&client_close_labels).is_none());
         }
 
         for e in &events {
@@ -267,7 +268,7 @@ mod test {
 
             // === request scope ====================================
             assert_eq!(
-                lock.requests.scopes
+                lock.requests
                     .get(&req_labels)
                     .map(|scope| scope.total()),
                 Some(1)
@@ -275,7 +276,7 @@ mod test {
 
             // === response scope ===================================
             let response_scope = lock
-                .responses.scopes
+                .responses
                 .get(&rsp_labels)
                 .expect("response scope missing");
             assert_eq!(response_scope.total(), 1);
@@ -287,7 +288,7 @@ mod test {
 
             // === server transport open scope ======================
             let srv_transport_scope = lock
-                .transports.scopes
+                .transports
                 .get(&srv_open_labels)
                 .expect("server transport scope missing");
             assert_eq!(srv_transport_scope.open_total(), 1);
@@ -296,7 +297,7 @@ mod test {
 
             // === client transport open scope ======================
             let client_transport_scope = lock
-                .transports.scopes
+                .transports
                 .get(&client_open_labels)
                 .expect("client transport scope missing");
             assert_eq!(client_transport_scope.open_total(), 1);
@@ -307,7 +308,7 @@ mod test {
 
             // === server transport close scope =====================
             let srv_transport_close_scope = lock
-                .transport_closes.scopes
+                .transport_closes
                 .get(&srv_close_labels)
                 .expect("server transport close scope missing");
             assert_eq!(srv_transport_close_scope.close_total(), 1);
@@ -318,7 +319,7 @@ mod test {
 
             // === client transport close scope =====================
             let client_transport_close_scope = lock
-                .transport_closes.scopes
+                .transport_closes
                 .get(&client_close_labels)
                 .expect("client transport close scope missing");
             assert_eq!(client_transport_close_scope.close_total(), 1);

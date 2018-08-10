@@ -33,8 +33,6 @@ use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use indexmap::IndexMap;
-
 use ctx;
 mod counter;
 mod gauge;
@@ -43,6 +41,7 @@ mod http;
 mod labels;
 pub mod latency;
 mod record;
+mod scopes;
 mod serve;
 mod transport;
 
@@ -57,6 +56,7 @@ use self::labels::{
 };
 pub use self::labels::DstLabels;
 pub use self::record::Record;
+pub use self::scopes::Scopes;
 pub use self::serve::Serve;
 use super::process;
 use super::tls_config_reload;
@@ -100,15 +100,6 @@ struct Root {
     process: process::Report,
 }
 
-
-/// Holds an `S`-typed scope for each `L`-typed label set.
-///
-/// An `S` type typically holds one or more metrics.
-#[derive(Debug)]
-pub struct Scopes<L: Display + Hash + Eq, S> {
-    scopes: IndexMap<L, S>,
-}
-
 #[derive(Debug)]
 struct Stamped<T> {
     stamp: Instant,
@@ -150,7 +141,7 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
         scopes: &Scopes<L, S>,
         to_metric: F
     )-> fmt::Result {
-        for (labels, scope) in &scopes.scopes {
+        for (labels, scope) in scopes {
             to_metric(scope).fmt_metric_labeled(f, self.name, labels)?;
         }
 
@@ -170,30 +161,25 @@ impl Root {
     }
 
     fn request(&mut self, labels: RequestLabels) -> &mut http::RequestMetrics {
-        self.requests.scopes.entry(labels)
-            .or_insert_with(|| http::RequestMetrics::default().into())
-            .stamped()
+        self.requests.get_or_default(labels).stamped()
+
     }
 
     fn response(&mut self, labels: ResponseLabels) -> &mut http::ResponseMetrics {
-        self.responses.scopes.entry(labels)
-            .or_insert_with(|| http::ResponseMetrics::default().into())
-            .stamped()
+        self.responses.get_or_default(labels).stamped()
     }
 
     fn transport(&mut self, labels: TransportLabels) -> &mut transport::OpenMetrics {
-        self.transports.scopes.entry(labels)
-            .or_insert_with(|| transport::OpenMetrics::default())
+        self.transports.get_or_default(labels)
     }
 
     fn transport_close(&mut self, labels: TransportCloseLabels) -> &mut transport::CloseMetrics {
-        self.transport_closes.scopes.entry(labels)
-            .or_insert_with(|| transport::CloseMetrics::default())
+        self.transport_closes.get_or_default(labels)
     }
 
     fn retain_since(&mut self, epoch: Instant) {
-        self.requests.retain_since(epoch);
-        self.responses.retain_since(epoch);
+        self.requests.retain(|_, v| v.stamp >= epoch);
+        self.responses.retain(|_, v| v.stamp >= epoch);
     }
 }
 
@@ -219,6 +205,12 @@ impl<T> Stamped<T> {
     }
 }
 
+impl<T: Default> Default for Stamped<T> {
+    fn default() -> Self {
+        T::default().into()
+    }
+}
+
 impl<T> From<T> for Stamped<T> {
     fn from(inner: T) -> Self {
         Self {
@@ -232,32 +224,6 @@ impl<T> ::std::ops::Deref for Stamped<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.inner
-    }
-}
-
-// ===== impl Scopes =====
-
-impl<L: Display + Hash + Eq, S> Default for Scopes<L, S> {
-    fn default() -> Self {
-        Scopes { scopes: IndexMap::default(), }
-    }
-}
-
-impl<L: Display + Hash + Eq, S> Scopes<L, S> {
-    pub fn is_empty(&self) -> bool {
-        self.scopes.is_empty()
-    }
-}
-
-impl<L: Display + Hash + Eq, S: Default> Scopes<L, S> {
-    pub fn get_or_default(&mut self, key: L) -> &mut S {
-        self.scopes.entry(key).or_insert_with(|| S::default())
-    }
-}
-
-impl<L: Display + Hash + Eq, S> Scopes<L, Stamped<S>> {
-    fn retain_since(&mut self, epoch: Instant) {
-        self.scopes.retain(|_, v| v.stamp >= epoch);
     }
 }
 
@@ -318,27 +284,27 @@ mod tests {
         mock_route(&mut root, &proxy, &server, "sixers");
         let t2 = Instant::now();
 
-        assert_eq!(root.requests.scopes.len(), 2);
-        assert_eq!(root.responses.scopes.len(), 2);
-        assert_eq!(root.transports.scopes.len(), 2);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.len(), 2);
+        assert_eq!(root.responses.len(), 2);
+        assert_eq!(root.transports.len(), 2);
+        assert_eq!(root.transport_closes.len(), 1);
 
         root.retain_since(t0);
-        assert_eq!(root.requests.scopes.len(), 2);
-        assert_eq!(root.responses.scopes.len(), 2);
-        assert_eq!(root.transports.scopes.len(), 2);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.len(), 2);
+        assert_eq!(root.responses.len(), 2);
+        assert_eq!(root.transports.len(), 2);
+        assert_eq!(root.transport_closes.len(), 1);
 
         root.retain_since(t1);
-        assert_eq!(root.requests.scopes.len(), 1);
-        assert_eq!(root.responses.scopes.len(), 1);
-        assert_eq!(root.transports.scopes.len(), 2);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.len(), 1);
+        assert_eq!(root.responses.len(), 1);
+        assert_eq!(root.transports.len(), 2);
+        assert_eq!(root.transport_closes.len(), 1);
 
         root.retain_since(t2);
-        assert_eq!(root.requests.scopes.len(), 0);
-        assert_eq!(root.responses.scopes.len(), 0);
-        assert_eq!(root.transports.scopes.len(), 2);
-        assert_eq!(root.transport_closes.scopes.len(), 1);
+        assert_eq!(root.requests.len(), 0);
+        assert_eq!(root.responses.len(), 0);
+        assert_eq!(root.transports.len(), 2);
+        assert_eq!(root.transport_closes.len(), 1);
     }
 }
