@@ -59,10 +59,6 @@ build: $(TARGET_BIN)
 test: fetch
 	$(CARGO_TEST)
 
-.PHONY: test-benches
-test-benches: fetch
-	$(CARGO_TEST) --benches
-
 .PHONY: package
 package: $(PKG_ROOT)/$(PKG)
 
