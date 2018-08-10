@@ -16,12 +16,6 @@ jobs:
       script: make test
       rust: stable
 
-    - if: type = pull_request
-      script: make test-benches
-      # An arbitrary, ~recent, known-good nightly is used to ensure benches can
-      # be run.
-      rust: nightly-2018-06-29
-
     # On master, package an artifact and run tests in release mode before
     # publishing the artifact to build.l5d.io/linkerd2-proxy.
     #
