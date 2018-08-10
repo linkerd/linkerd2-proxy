@@ -1,15 +1,16 @@
 use std::fmt;
 use std::time::Duration;
 
+use ctx;
 use super::{
+    labels::{Classification, Direction, TlsStatus},
     latency,
     Counter,
     Gauge,
     Histogram,
-    TransportLabels,
-    TransportCloseLabels,
     Scopes,
 };
+use telemetry::{event, Errno};
 
 pub(super) type OpenScopes = Scopes<TransportLabels, OpenMetrics>;
 
@@ -22,6 +23,36 @@ pub(super) struct OpenMetrics {
 }
 
 pub(super) type CloseScopes = Scopes<TransportCloseLabels, CloseMetrics>;
+
+/// Labels describing a TCP connection
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TransportLabels {
+    /// Was the transport opened in the inbound or outbound direction?
+    direction: Direction,
+
+    peer: Peer,
+
+    /// Was the transport secured with TLS?
+    tls_status: TlsStatus,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Peer { Src, Dst }
+
+/// Labels describing the end of a TCP connection
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TransportCloseLabels {
+    /// Labels describing the TCP connection that closed.
+    pub(super) transport: TransportLabels,
+
+    /// Was the transport closed successfully?
+    classification: Classification,
+
+    /// If `classification` == `Failure`, this may be set with the
+    /// OS error number describing the error, if there was one.
+    /// Otherwise, it should be `None`.
+    errno: Option<Errno>,
+}
 
 #[derive(Debug, Default)]
 pub(super) struct CloseMetrics {
@@ -135,3 +166,76 @@ impl CloseMetrics {
         &self.connection_duration
     }
 }
+
+
+// ===== impl TransportLabels =====
+
+impl TransportLabels {
+    pub fn new(ctx: &ctx::transport::Ctx) -> Self {
+        TransportLabels {
+            direction: ctx.proxy().as_ref().into(),
+            peer: match *ctx {
+                ctx::transport::Ctx::Server(_) => Peer::Src,
+                ctx::transport::Ctx::Client(_) => Peer::Dst,
+            },
+            tls_status: ctx.tls_status().into(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn tls_status(&self) -> TlsStatus {
+        self.tls_status
+    }
+}
+
+impl fmt::Display for TransportLabels {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{},{},{}", self.direction, self.peer, self.tls_status)
+    }
+}
+
+impl fmt::Display for Peer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Peer::Src => f.pad("peer=\"src\""),
+            Peer::Dst => f.pad("peer=\"dst\""),
+        }
+    }
+}
+
+// ===== impl TransportCloseLabels =====
+
+impl TransportCloseLabels {
+    pub fn new(ctx: &ctx::transport::Ctx,
+               close: &event::TransportClose)
+               -> Self {
+        let classification = Classification::transport_close(close);
+        let errno = close.errno.map(|code| {
+            // If the error code is set, this should be classified
+            // as a failure!
+            debug_assert!(classification == Classification::Failure);
+            Errno::from(code)
+        });
+        TransportCloseLabels {
+            transport: TransportLabels::new(ctx),
+            classification,
+            errno,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn tls_status(&self) -> TlsStatus  {
+        self.transport.tls_status()
+    }
+}
+
+impl fmt::Display for TransportCloseLabels {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{},{}", self.transport, self.classification)?;
+        if let Some(errno) = self.errno {
+            write!(f, ",errno=\"{}\"", errno)?;
+        }
+        Ok(())
+    }
+}
+

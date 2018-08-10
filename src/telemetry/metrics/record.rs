@@ -5,9 +5,8 @@ use super::Root;
 use super::labels::{
     RequestLabels,
     ResponseLabels,
-    TransportLabels,
-    TransportCloseLabels,
 };
+use super::transport::{TransportLabels, TransportCloseLabels};
 
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
@@ -90,7 +89,7 @@ impl Record {
 mod test {
     use telemetry::{
         event,
-        metrics::{self, labels},
+        metrics::{self, labels, transport::{TransportLabels, TransportCloseLabels}},
         Event,
     };
     use ctx::{self, test_util::*, transport::TlsStatus};
