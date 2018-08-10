@@ -173,7 +173,7 @@ impl CloseMetrics {
 impl TransportLabels {
     pub fn new(ctx: &ctx::transport::Ctx) -> Self {
         TransportLabels {
-            direction: ctx.proxy().as_ref().into(),
+            direction: Direction::from_context(ctx.proxy().as_ref()),
             peer: match *ctx {
                 ctx::transport::Ctx::Server(_) => Peer::Src,
                 ctx::transport::Ctx::Client(_) => Peer::Dst,

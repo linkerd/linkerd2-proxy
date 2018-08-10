@@ -71,7 +71,7 @@ pub struct TlsStatus(ctx::transport::TlsStatus);
 
 impl RequestLabels {
     pub fn new(req: &ctx::http::Request) -> Self {
-        let direction = req.server.proxy.as_ref().into();
+        let direction = Direction::from_context(req.server.proxy.as_ref());
 
         let outbound_labels = req.dst_labels().cloned();
 
@@ -214,11 +214,11 @@ impl fmt::Display for Classification {
 
 // ===== impl Direction =====
 
-impl<'a> From<&'a ctx::Proxy> for Direction {
-    fn from(c: &'a ctx::Proxy) -> Self {
-        match *c {
-            ctx::Proxy::Inbound(_) => Direction::Inbound,
-            ctx::Proxy::Outbound(_) => Direction::Outbound,
+impl Direction {
+    pub fn from_context(context: &ctx::Proxy) -> Self {
+        match context {
+            &ctx::Proxy::Inbound(_) => Direction::Inbound,
+            &ctx::Proxy::Outbound(_) => Direction::Outbound,
         }
     }
 }
