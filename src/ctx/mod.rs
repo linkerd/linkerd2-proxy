@@ -88,7 +88,7 @@ pub mod test_util {
 
     use ctx;
     use control::destination;
-    use telemetry::metrics::DstLabels;
+    use telemetry::DstLabels;
     use tls;
     use conditional::Conditional;
 

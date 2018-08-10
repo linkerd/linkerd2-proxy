@@ -24,7 +24,7 @@ use control::{
     remote_stream::Remote,
 };
 use dns::{self, IpAddrListFuture};
-use telemetry::metrics::DstLabels;
+use telemetry::DstLabels;
 use transport::{tls, DnsNameAndPort};
 use conditional::Conditional;
 

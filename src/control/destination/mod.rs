@@ -41,7 +41,7 @@ use tower_discover::{Change, Discover};
 use tower_service::Service;
 
 use dns;
-use telemetry::metrics::DstLabels;
+use telemetry::DstLabels;
 use transport::{DnsNameAndPort, HostAndPort};
 
 pub mod background;

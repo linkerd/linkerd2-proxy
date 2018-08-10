@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use telemetry::metrics::DstLabels;
+use telemetry::DstLabels;
 use super::{Metadata, ProtocolHint};
 use tls;
 use conditional::Conditional;
