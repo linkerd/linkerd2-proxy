@@ -42,7 +42,7 @@ impl OpenScopes {
 
 impl fmt::Display for OpenScopes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.scopes.is_empty() {
+        if self.is_empty() {
             return Ok(());
         }
 
@@ -103,7 +103,7 @@ impl CloseScopes {
 
 impl fmt::Display for CloseScopes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.scopes.is_empty() {
+        if self.is_empty() {
             return Ok(());
         }
 
