@@ -2,7 +2,7 @@ use http;
 use std::sync::{Arc, atomic::AtomicUsize};
 
 use ctx;
-use telemetry::metrics::DstLabels;
+use telemetry::DstLabels;
 use std::sync::atomic::Ordering;
 use transport::tls;
 use conditional::Conditional;

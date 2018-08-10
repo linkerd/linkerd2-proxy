@@ -6,7 +6,7 @@ use std::{
 };
 use ctx;
 use control::destination;
-use telemetry::metrics::DstLabels;
+use telemetry::DstLabels;
 use transport::tls;
 use conditional::Conditional;
 
