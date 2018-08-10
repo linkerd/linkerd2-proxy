@@ -47,16 +47,16 @@ impl fmt::Display for OpenScopes {
         }
 
         Self::tcp_open_total.fmt_help(f)?;
-        Self::tcp_open_total.fmt_scopes(f, &self, |s| &s.open_total)?;
+        Self::tcp_open_total.fmt_scopes(f, self, |s| &s.open_total)?;
 
         Self::tcp_open_connections.fmt_help(f)?;
-        Self::tcp_open_connections.fmt_scopes(f, &self, |s| &s.open_connections)?;
+        Self::tcp_open_connections.fmt_scopes(f, self, |s| &s.open_connections)?;
 
         Self::tcp_read_bytes_total.fmt_help(f)?;
-        Self::tcp_read_bytes_total.fmt_scopes(f, &self, |s| &s.read_bytes_total)?;
+        Self::tcp_read_bytes_total.fmt_scopes(f, self, |s| &s.read_bytes_total)?;
 
         Self::tcp_write_bytes_total.fmt_help(f)?;
-        Self::tcp_write_bytes_total.fmt_scopes(f, &self, |s| &s.write_bytes_total)?;
+        Self::tcp_write_bytes_total.fmt_scopes(f, self, |s| &s.write_bytes_total)?;
 
         Ok(())
     }
@@ -108,10 +108,10 @@ impl fmt::Display for CloseScopes {
         }
 
         Self::tcp_close_total.fmt_help(f)?;
-        Self::tcp_close_total.fmt_scopes(f, &self, |s| &s.close_total)?;
+        Self::tcp_close_total.fmt_scopes(f, self, |s| &s.close_total)?;
 
         Self::tcp_connection_duration_ms.fmt_help(f)?;
-        Self::tcp_connection_duration_ms.fmt_scopes(f, &self, |s| &s.connection_duration)?;
+        Self::tcp_connection_duration_ms.fmt_scopes(f, self, |s| &s.connection_duration)?;
 
         Ok(())
     }

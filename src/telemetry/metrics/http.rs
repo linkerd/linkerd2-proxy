@@ -41,7 +41,7 @@ impl fmt::Display for RequestScopes {
         }
 
         Self::request_total.fmt_help(f)?;
-        Self::request_total.fmt_scopes(f, &self, |s| &s.total)?;
+        Self::request_total.fmt_scopes(f, self, |s| &s.total)?;
 
         Ok(())
     }
@@ -79,10 +79,10 @@ impl fmt::Display for ResponseScopes {
         }
 
         Self::response_total.fmt_help(f)?;
-        Self::response_total.fmt_scopes(f, &self, |s| &s.total)?;
+        Self::response_total.fmt_scopes(f, self, |s| &s.total)?;
 
         Self::response_latency_ms.fmt_help(f)?;
-        Self::response_latency_ms.fmt_scopes(f, &self, |s| &s.latency)?;
+        Self::response_latency_ms.fmt_scopes(f, self, |s| &s.latency)?;
 
         Ok(())
     }
