@@ -135,12 +135,17 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
     }
 
     /// Formats a single metric across labeled scopes.
-    pub fn fmt_scopes<L: Display + Hash + Eq, S, F: Fn(&S) -> &M>(
+    pub fn fmt_scopes<'i, L: 'i, S: 'i, I, F>(
         &self,
         f: &mut fmt::Formatter,
-        scopes: &Scopes<L, S>,
+        scopes: I,
         to_metric: F
-    )-> fmt::Result {
+    ) -> fmt::Result
+    where
+        L: Display + Hash + Eq,
+        I: IntoIterator<Item = (&'i L, &'i S)>,
+        F: Fn(&S) -> &M
+    {
         for (labels, scope) in scopes {
             to_metric(scope).fmt_metric_labeled(f, self.name, labels)?;
         }
