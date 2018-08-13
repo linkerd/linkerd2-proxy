@@ -411,29 +411,34 @@ where
     Router<R>: Send,
     G: GetOriginalDst + Send + 'static,
 {
+    let router_sensor = sensors.router().error_total(&proxy_ctx);
     let stack = Arc::new(NewServiceFn::new(move || {
         // Clone the router handle
         let router = router.clone();
-
+        let router_sensor = router_sensor.clone();
         // Map errors to appropriate response error codes.
-        let map_err = MapErr::new(router, |e| {
+        let map_err = MapErr::new(router, move |e| {
             match e {
                 RouteError::Route(r) => {
                     error!(" turning route error: {} into 500", r);
+                    router_sensor.route_error();
                     http::StatusCode::INTERNAL_SERVER_ERROR
                 }
                 RouteError::Inner(i) => {
                     error!("turning {} into 500", i);
+                    router_sensor.inner_error();
                     http::StatusCode::INTERNAL_SERVER_ERROR
                 }
                 RouteError::NotRecognized => {
                     error!("turning route not recognized error into 500");
+                    router_sensor.route_not_recognized();
                     http::StatusCode::INTERNAL_SERVER_ERROR
                 }
                 RouteError::NoCapacity(capacity) => {
                     // TODO For H2 streams, we should probably signal a protocol-level
                     // capacity change.
                     error!("router at capacity ({}); returning a 503", capacity);
+                    router_sensor.at_capacity();
                     http::StatusCode::SERVICE_UNAVAILABLE
                 }
             }
