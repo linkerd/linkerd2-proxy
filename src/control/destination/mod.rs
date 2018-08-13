@@ -24,6 +24,7 @@
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
+use std::fmt;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -113,8 +114,20 @@ pub enum ProtocolHint {
     Http2,
 }
 
+/// Counts the number of currently active Destination service queries.
+///
+/// This is used for the `router_active_destination_queries` metric, and for
+/// query concurrency limit bookkeeping.
+///
+/// Each active query will hold a `Weak` reference back to this `Arc`, and
+/// `NewQuery` can use `Arc::weak_count` to count the number of queries
+/// that currently exist. When those queries are dropped, the weak count
+/// will go down accordingly.
 #[derive(Clone, Debug, Default)]
 pub struct QueryCounter(Arc<()>);
+
+/// Marker attached to an active query that decreases the query count on drop.
+pub(in control) struct QueryMarker(Weak<()>);
 
 #[derive(Debug, Clone)]
 enum Update {
@@ -308,7 +321,13 @@ impl QueryCounter {
         Arc::weak_count(&self.0)
     }
 
-    pub(in control::destination) fn new_marker(&self) -> Weak<()> {
-        Arc::downgrade(&self.0)
+    pub(in control::destination) fn new_marker(&self) -> QueryMarker {
+        QueryMarker(Arc::downgrade(&self.0))
+    }
+}
+
+impl fmt::Debug for QueryMarker {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.pad("QueryMarker(...)")
     }
 }

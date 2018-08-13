@@ -76,11 +76,6 @@ struct DestinationCache<T: HttpService<ResponseBody = RecvBody>> {
 struct NewQuery {
     namespaces: Namespaces,
     /// Used for counting the number of currently-active queries.
-    ///
-    /// Each active query will hold a `Weak` reference back to this `Arc`, and
-    /// `NewQuery` can use `Arc::weak_count` to count the number of queries
-    /// that currently exist. When those queries are dropped, the weak count
-    /// will go down accordingly.
     query_counter: QueryCounter,
     concurrency_limit: usize,
 }

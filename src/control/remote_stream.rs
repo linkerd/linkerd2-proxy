@@ -1,16 +1,15 @@
 use futures::{Future, Poll, Stream};
 use http::HeaderMap;
 use prost::Message;
-use std::{
-    fmt,
-    sync::Weak,
-};
+use std::fmt;
 use tower_h2::{HttpService, Body, Data};
 use tower_grpc::{
     self as grpc,
     Streaming,
     client::server_streaming::ResponseFuture,
 };
+
+use super::destination::QueryMarker;
 
 /// Tracks the state of a gRPC response stream from a remote.
 ///
@@ -33,7 +32,7 @@ pub struct Receiver<M, S: HttpService> {
 
     /// Used by `background::NewQuery` for counting the number of currently
     /// active queries that it has created.
-    _active: Weak<()>,
+    _active: QueryMarker,
 }
 
 enum Rx<M, S: HttpService> {
@@ -48,7 +47,10 @@ where
     S::ResponseBody: Body<Data = Data>,
     S::Error: fmt::Debug,
 {
-    pub fn new(future: ResponseFuture<M, S::Future>, active: Weak<()>) -> Self {
+    pub(in control) fn new(
+        future: ResponseFuture<M, S::Future>,
+        active: QueryMarker,
+    ) -> Self {
         Receiver {
             rx: Rx::Waiting(future),
             _active: active,
