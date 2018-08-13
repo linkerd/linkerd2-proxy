@@ -146,7 +146,7 @@ where
     type Error = <Self::Service as tower::Service>::Error;
     type Key = (Destination, Protocol);
     type RouteError = bind::BufferSpawnError;
-    type Service = InFlightLimit<Timeout<'static, Buffer<Balance<
+    type Service = InFlightLimit<Timeout<Buffer<Balance<
         load::WithPeakEwma<Discovery<B>, PendingUntilFirstData>,
         choose::PowerOfTwoChoices,
     >>>>;

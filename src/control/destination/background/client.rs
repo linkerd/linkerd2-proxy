@@ -27,7 +27,7 @@ use watch_service::Rebind;
 /// Type of the client service stack used to make destination requests.
 pub(super) struct ClientService(AddOrigin<Backoff<LogErrors<Reconnect<
         tower_h2::client::Connect<
-            Timeout<'static, LookupAddressAndConnect>,
+            Timeout<LookupAddressAndConnect>,
             ::logging::ContextualExecutor<
                 ::logging::Client<
                     &'static str,
@@ -72,7 +72,6 @@ type LogError = ReconnectError<
     tower_h2::client::Error,
     tower_h2::client::ConnectError<
         TimeoutError<
-            'static,
             io::Error
         >
     >
@@ -86,7 +85,7 @@ impl Service for ClientService {
     type Error = LogError;
     type Future = ReconnectFuture<
         tower_h2::client::Connect<
-            Timeout<'static, LookupAddressAndConnect>,
+            Timeout<LookupAddressAndConnect>,
             ::logging::ContextualExecutor<
                 ::logging::Client<
                     &'static str,

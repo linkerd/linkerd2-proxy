@@ -12,17 +12,17 @@ use tower_service::Service;
 
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]
-pub struct Timeout<'name, T> {
+pub struct Timeout<T> {
     inner: T,
     duration: Duration,
-    name: &'name str,
+    name: &'static str,
 }
 
 
 /// An error representing that an operation timed out.
 #[derive(Debug)]
-pub struct TimeoutError<'name, E> {
-    name: &'name str,
+pub struct TimeoutError<E> {
+    name: &'static str,
     kind: TimeoutErrorKind<E>,
 }
 
@@ -45,7 +45,7 @@ pub struct HumanDuration(pub Duration);
 
 //===== impl Timeout =====
 
-impl<T> Timeout<'static, T> {
+impl<T> Timeout<T> {
     /// Construct a new `Timeout` wrapping `inner`.
     pub fn new(inner: T, duration: Duration) -> Self {
         Timeout {
@@ -54,25 +54,22 @@ impl<T> Timeout<'static, T> {
             name: "operation",
         }
     }
-}
 
-impl<'name, T> Timeout<'name, T> {
-    pub fn named<'a>(self, name: &'a str) -> Timeout<'a, T> {
+    pub fn named(self, name: &'static str) -> Self {
         Timeout {
-            inner: self.inner,
-            duration: self.duration,
             name,
+            ..self
         }
     }
 
-    fn error<E>(&self, error: E) -> TimeoutError<'name, E> {
+    fn error<E>(&self, error: E) -> TimeoutError<E> {
         TimeoutError {
             name: self.name,
             kind: TimeoutErrorKind::Error(error),
         }
     }
 
-    fn deadline_error<E>(&self, error: DeadlineError<E>) -> TimeoutError<'name, E> {
+    fn deadline_error<E>(&self, error: DeadlineError<E>) -> TimeoutError<E> {
         let kind = match error {
             _ if error.is_timer() =>
                 TimeoutErrorKind::Timer(error.into_timer()
@@ -86,14 +83,14 @@ impl<'name, T> Timeout<'name, T> {
     }
 }
 
-impl<'name, S, T, E> Service for Timeout<'name, S>
+impl<S, T, E> Service for Timeout<S>
 where
     S: Service<Response=T, Error=E>,
 {
     type Request = S::Request;
     type Response = T;
-    type Error = TimeoutError<'name, E>;
-    type Future = Timeout<'name, Deadline<S::Future>>;
+    type Error = TimeoutError<E>;
+    type Future = Timeout<Deadline<S::Future>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready().map_err(|e| self.error(e))
@@ -112,13 +109,13 @@ where
 }
 
 
-impl<'name, C> Connect for Timeout<'name, C>
+impl<C> Connect for Timeout<C>
 where
     C: Connect,
 {
     type Connected = C::Connected;
-    type Error = TimeoutError<'name, C::Error>;
-    type Future = Timeout<'name, Deadline<C::Future>>;
+    type Error = TimeoutError<C::Error>;
+    type Future = Timeout<Deadline<C::Future>>;
 
     fn connect(&self) -> Self::Future {
         let deadline = Instant::now() + self.duration;
@@ -131,20 +128,20 @@ where
     }
 }
 
-impl<'name, F> Future for Timeout<'name, Deadline<F>>
+impl<F> Future for Timeout<Deadline<F>>
 where
     F: Future,
     // F::Error: Error,
 {
     type Item = F::Item;
-    type Error = TimeoutError<'name, F::Error>;
+    type Error = TimeoutError<F::Error>;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         self.inner.poll().map_err(|e| self.deadline_error(e))
     }
 }
 
 
-impl<'name, C> io::Read for Timeout<'name, C>
+impl<C> io::Read for Timeout<C>
 where
     C: io::Read,
 {
@@ -153,7 +150,7 @@ where
     }
 }
 
-impl<'name, C> io::Write for Timeout<'name, C>
+impl<C> io::Write for Timeout<C>
 where
     C: io::Write,
 {
@@ -166,7 +163,7 @@ where
     }
 }
 
-impl<'name, C> AsyncRead for Timeout<'name, C>
+impl<C> AsyncRead for Timeout<C>
 where
     C: AsyncRead,
 {
@@ -175,7 +172,7 @@ where
     }
 }
 
-impl<'name, C> AsyncWrite for Timeout<'name, C>
+impl<C> AsyncWrite for Timeout<C>
 where
     C: AsyncWrite,
 {
@@ -186,7 +183,7 @@ where
 
 //===== impl TimeoutError =====
 
-impl<'name, E> fmt::Display for TimeoutError<'name, E>
+impl<E> fmt::Display for TimeoutError<E>
 where
     E: fmt::Display
 {
@@ -200,7 +197,7 @@ where
     }
 }
 
-impl<'name, E> Error for TimeoutError<'name, E>
+impl<E> Error for TimeoutError<E>
 where
     E: Error
 {
