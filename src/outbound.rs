@@ -190,7 +190,8 @@ where
         let buffer = Buffer::new(balance, &log.executor())
             .map_err(|_| bind::BufferSpawnError::Outbound)?;
 
-        let timeout = Timeout::new(buffer, self.bind_timeout);
+        let timeout = Timeout::new(buffer, self.bind_timeout)
+            .named("binding outbound client");
 
         Ok(InFlightLimit::new(timeout, MAX_IN_FLIGHT))
     }

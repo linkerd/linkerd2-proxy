@@ -146,7 +146,7 @@ impl Rebind<tls::ConditionalClientConfig> for BindClient {
                                          self.dns_resolver.clone(),
                                          conn_cfg),
             Duration::from_secs(3),
-        );
+        ).named("connecting to control plane");
         let h2_client = tower_h2::client::Connect::new(
             connect,
             h2::client::Builder::default(),
