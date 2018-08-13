@@ -128,7 +128,12 @@ mod test {
             frames_sent: 0,
         };
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(100), Default::default());
+        let (mut r, _) = metrics::new(
+            &process,
+            Duration::from_secs(100),
+            Default::default(),
+            Default::default(),
+        );
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
         let labels = labels::ResponseLabels::new(&rsp, None);
 
@@ -224,7 +229,12 @@ mod test {
             ),
         ];
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(1000), Default::default());
+        let (mut r, _) = metrics::new(
+            &process,
+            Duration::from_secs(1000),
+            Default::default(),
+            Default::default(),
+        );
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);

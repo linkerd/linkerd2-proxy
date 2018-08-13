@@ -8,7 +8,7 @@ use tower_service::NewService;
 use tower_h2::Body;
 
 use ctx;
-use telemetry::{event, metrics, tap};
+use telemetry::{event, metrics, router, tap};
 use transport::Connection;
 use transparency::ClientError;
 
@@ -30,7 +30,10 @@ struct Handle(Option<Inner>);
 
 /// Supports the creation of telemetry scopes.
 #[derive(Clone, Debug)]
-pub struct Sensors(Option<Inner>);
+pub struct Sensors {
+    inner: Option<Inner>,
+    router_sensors: router::Sensors,
+}
 
 impl Handle {
     fn send<F>(&mut self, mk: F)
@@ -51,15 +54,26 @@ impl Handle {
 }
 
 impl Sensors {
-    pub(super) fn new(metrics: metrics::Record, taps: &Arc<Mutex<tap::Taps>>) -> Self {
-        Sensors(Some(Inner {
+    pub(super) fn new(
+        metrics: metrics::Record,
+        router_sensors: router::Sensors,
+        taps: &Arc<Mutex<tap::Taps>>,
+    ) -> Self {
+        let inner = Some(Inner {
             metrics,
             taps: taps.clone(),
-        }))
+        });
+        Sensors {
+            inner,
+            router_sensors,
+        }
     }
 
     pub fn null() -> Sensors {
-        Sensors(None)
+        Sensors {
+            inner: None,
+            router_sensors: router::Sensors::default(),
+        }
     }
 
     pub fn accept<T>(
@@ -73,14 +87,14 @@ impl Sensors {
     {
         debug!("server connection open");
         let ctx = Arc::new(ctx::transport::Ctx::Server(Arc::clone(ctx)));
-        Transport::open(io, opened_at, Handle(self.0.clone()), ctx)
+        Transport::open(io, opened_at, Handle(self.inner.clone()), ctx)
     }
 
     pub fn connect<C>(&self, connect: C, ctx: &Arc<ctx::transport::Client>) -> Connect<C>
     where
         C: tokio_connect::Connect<Connected = Connection>,
     {
-        Connect::new(connect, Handle(self.0.clone()), ctx)
+        Connect::new(connect, Handle(self.inner.clone()), ctx)
     }
 
     pub fn http<N, A, B>(
@@ -98,6 +112,10 @@ impl Sensors {
         >
             + 'static,
     {
-        NewHttp::new(new_service, Handle(self.0.clone()), client_ctx)
+        NewHttp::new(new_service, Handle(self.inner.clone()), client_ctx)
+    }
+
+    pub fn router(&self) -> &router::Sensors {
+        &self.router_sensors
     }
 }

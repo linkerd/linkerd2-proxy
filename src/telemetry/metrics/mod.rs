@@ -53,12 +53,18 @@ use self::labels::{
     ResponseLabels,
 };
 use self::transport::{TransportLabels, TransportCloseLabels};
-pub use self::labels::DstLabels;
+pub use self::labels::{
+    DstLabels,
+    Direction,
+};
 pub use self::record::Record;
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
-use super::process;
-use super::tls_config_reload;
+use super::{
+    process,
+    tls_config_reload,
+    router,
+};
 
 /// Writes a metric in prometheus-formatted output.
 ///
@@ -96,6 +102,7 @@ struct Root {
     transports: transport::OpenScopes,
     transport_closes: transport::CloseScopes,
     tls_config_reload: tls_config_reload::Report,
+    router: router::Report,
     process: process::Report,
 }
 
@@ -111,10 +118,14 @@ struct Stamped<T> {
 /// is a Hyper service which can be used to create the server for the
 /// scrape endpoint, while the `Record` side can receive updates to the
 /// metrics by calling `record_event`.
-pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration, tls: tls_config_reload::Report)
-    -> (Record, Serve)
+pub fn new(
+    process: &Arc<ctx::Process>,
+    idle_retain: Duration,
+    tls: tls_config_reload::Report,
+    router: router::Report
+) -> (Record, Serve)
 {
-    let metrics = Arc::new(Mutex::new(Root::new(process, tls)));
+    let metrics = Arc::new(Mutex::new(Root::new(process, tls, router)));
     (Record::new(&metrics), Serve::new(&metrics, idle_retain))
 }
 
@@ -156,10 +167,15 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
 // ===== impl Root =====
 
 impl Root {
-    pub fn new(process: &Arc<ctx::Process>, tls_config_reload: tls_config_reload::Report) -> Self {
+    pub fn new(
+        process: &Arc<ctx::Process>,
+        tls_config_reload: tls_config_reload::Report,
+        router: router::Report,
+    ) -> Self {
         Self {
             process: process::Report::new(&process),
             tls_config_reload,
+            router,
             .. Root::default()
         }
     }
