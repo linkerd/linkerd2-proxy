@@ -12,28 +12,29 @@ use tower_service::Service;
 
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]
-pub struct Timeout<T> {
+pub struct Timeout<'name, T> {
     inner: T,
     duration: Duration,
+    name: &'name str,
 }
 
 
 /// An error representing that an operation timed out.
 #[derive(Debug)]
-pub struct TimeoutError<E> {
+pub struct TimeoutError<'name, E> {
+    name: &'name str,
     kind: TimeoutErrorKind<E>,
 }
 
 #[derive(Debug)]
 enum TimeoutErrorKind<E> {
     /// Indicates the underlying operation timed out.
-    Timeout (Duration),
+    Timeout(Duration),
     /// Indicates that the underlying operation failed.
     Error(E),
     // Indicates that the timer returned an error.
     Timer(timer::Error),
 }
-
 
 /// A duration which pretty-prints as fractional seconds.
 ///
@@ -44,22 +45,34 @@ pub struct HumanDuration(pub Duration);
 
 //===== impl Timeout =====
 
-impl<T> Timeout<T> {
+impl<T> Timeout<'static, T> {
     /// Construct a new `Timeout` wrapping `inner`.
     pub fn new(inner: T, duration: Duration) -> Self {
         Timeout {
             inner,
             duration,
+            name: "operation",
+        }
+    }
+}
+
+impl<'name, T> Timeout<'name, T> {
+    pub fn named<'a>(self, name: &'a str) -> Timeout<'a, T> {
+        Timeout {
+            inner: self.inner,
+            duration: self.duration,
+            name,
         }
     }
 
-    fn error<E>(&self, error: E) -> TimeoutError<E> {
+    fn error<E>(&self, error: E) -> TimeoutError<'name, E> {
         TimeoutError {
+            name: self.name,
             kind: TimeoutErrorKind::Error(error),
         }
     }
 
-    fn deadline_error<E>(&self, error: DeadlineError<E>) -> TimeoutError<E> {
+    fn deadline_error<E>(&self, error: DeadlineError<E>) -> TimeoutError<'name, E> {
         let kind = match error {
             _ if error.is_timer() =>
                 TimeoutErrorKind::Timer(error.into_timer()
@@ -69,18 +82,18 @@ impl<T> Timeout<T> {
             _ => TimeoutErrorKind::Error(error.into_inner()
                 .expect("if error is not elapsed or timer, must be inner")),
         };
-        TimeoutError { kind }
+        TimeoutError { name: self.name, kind }
     }
 }
 
-impl<S, T, E> Service for Timeout<S>
+impl<'name, S, T, E> Service for Timeout<'name, S>
 where
     S: Service<Response=T, Error=E>,
 {
     type Request = S::Request;
     type Response = T;
-    type Error = TimeoutError<E>;
-    type Future = Timeout<Deadline<S::Future>>;
+    type Error = TimeoutError<'name, E>;
+    type Future = Timeout<'name, Deadline<S::Future>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready().map_err(|e| self.error(e))
@@ -93,18 +106,19 @@ where
         Timeout {
             inner,
             duration: self.duration,
+            name: self.name,
         }
     }
 }
 
 
-impl<C> Connect for Timeout<C>
+impl<'name, C> Connect for Timeout<'name, C>
 where
     C: Connect,
 {
     type Connected = C::Connected;
-    type Error = TimeoutError<C::Error>;
-    type Future = Timeout<Deadline<C::Future>>;
+    type Error = TimeoutError<'name, C::Error>;
+    type Future = Timeout<'name, Deadline<C::Future>>;
 
     fn connect(&self) -> Self::Future {
         let deadline = Instant::now() + self.duration;
@@ -112,24 +126,25 @@ where
         Timeout {
             inner,
             duration: self.duration,
+            name: self.name
         }
     }
 }
 
-impl<F> Future for Timeout<Deadline<F>>
+impl<'name, F> Future for Timeout<'name, Deadline<F>>
 where
     F: Future,
     // F::Error: Error,
 {
     type Item = F::Item;
-    type Error = TimeoutError<F::Error>;
+    type Error = TimeoutError<'name, F::Error>;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         self.inner.poll().map_err(|e| self.deadline_error(e))
     }
 }
 
 
-impl<C> io::Read for Timeout<C>
+impl<'name, C> io::Read for Timeout<'name, C>
 where
     C: io::Read,
 {
@@ -138,7 +153,7 @@ where
     }
 }
 
-impl<C> io::Write for Timeout<C>
+impl<'name, C> io::Write for Timeout<'name, C>
 where
     C: io::Write,
 {
@@ -151,7 +166,7 @@ where
     }
 }
 
-impl<C> AsyncRead for Timeout<C>
+impl<'name, C> AsyncRead for Timeout<'name, C>
 where
     C: AsyncRead,
 {
@@ -160,7 +175,7 @@ where
     }
 }
 
-impl<C> AsyncWrite for Timeout<C>
+impl<'name, C> AsyncWrite for Timeout<'name, C>
 where
     C: AsyncWrite,
 {
@@ -171,21 +186,21 @@ where
 
 //===== impl TimeoutError =====
 
-impl<E> fmt::Display for TimeoutError<E>
+impl<'name, E> fmt::Display for TimeoutError<'name, E>
 where
     E: fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.kind {
             TimeoutErrorKind::Timeout(ref d) =>
-                write!(f, "operation timed out after {}", HumanDuration(*d)),
+                write!(f, "{} timed out after {}", self.name, HumanDuration(*d)),
             TimeoutErrorKind::Timer(ref err) => write!(f, "timer failed: {}", err),
             TimeoutErrorKind::Error(ref err) => fmt::Display::fmt(err, f),
         }
     }
 }
 
-impl<E> Error for TimeoutError<E>
+impl<'name, E> Error for TimeoutError<'name, E>
 where
     E: Error
 {
@@ -194,14 +209,6 @@ where
             TimeoutErrorKind::Error(ref err) => Some(err),
             TimeoutErrorKind::Timer(ref err) => Some(err),
             _ => None,
-        }
-    }
-
-    fn description(&self) -> &str {
-        match self.kind {
-            TimeoutErrorKind::Timeout(_) => "operation timed out",
-            TimeoutErrorKind::Error(ref err) => err.description(),
-            TimeoutErrorKind::Timer(ref err) => err.description(),
         }
     }
 }
