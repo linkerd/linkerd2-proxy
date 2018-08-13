@@ -9,9 +9,6 @@ use control::destination::QueryCounter;
 use telemetry::metrics::{Counter, Gauge, Scopes, Direction};
 
 metrics! {
-    router_cache_active_routes: Gauge {
-        "Current number of active routes in the router cache."
-    },
     router_active_destination_queries: Gauge {
         "Current number of active Destination service queries."
     },
@@ -22,18 +19,15 @@ metrics! {
 
 #[derive(Clone, Debug, Default)]
 pub struct Sensors {
-    cache_active_routes: Arc<ActiveRoutesInner>,
     active_destination_queries: QueryCounter,
     error_total: Arc<ErrorTotalInner>,
 }
 
 type ErrorTotalInner = Mutex<Scopes<ErrorLabels, Counter>>;
-type ActiveRoutesInner = Mutex<Scopes<Direction, Gauge>>;
 
-/// Formats metrics for Prometheus for a corresonding `Sensor`.
+/// Formats metrics for Prometheus for a corresponding set of router `Sensors`.
 #[derive(Debug, Default)]
 pub struct Report {
-    cache_active_routes: Weak<ActiveRoutesInner>,
     active_destination_queries: QueryCounter,
     error_total: Weak<ErrorTotalInner>,
 }
@@ -102,7 +96,6 @@ impl Sensors {
 
     pub fn report(&self) -> Report {
         Report {
-            cache_active_routes: Arc::downgrade(&self.cache_active_routes),
             active_destination_queries: self.active_destination_queries.clone(),
             error_total: Arc::downgrade(&self.error_total),
         }
@@ -159,13 +152,6 @@ impl ErrorSensor {
 
 impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(lock) = self.cache_active_routes.upgrade() {
-            if let Ok(active_routes) = lock.lock() {
-                router_cache_active_routes.fmt_help(f)?;
-                router_cache_active_routes
-                    .fmt_scopes(f, &*active_routes, |s| &s)?;
-            }
-        }
 
         if let Some(lock) = self.error_total.upgrade() {
             if let Ok(error_total) = lock.lock() {
