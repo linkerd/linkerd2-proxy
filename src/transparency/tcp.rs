@@ -71,8 +71,7 @@ impl Proxy {
         let c = Timeout::new(
             transport::Connect::new(orig_dst, tls),
             self.connect_timeout,
-        )
-        .named("TCP connection");
+        ).named("TCP connect");
         let connect = self.sensors.connect(c, &client_ctx);
 
         future::Either::A(connect.connect()
