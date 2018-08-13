@@ -1187,6 +1187,89 @@ mod transport {
     }
 }
 
+mod router {
+    use super::support::*;
+
+    #[test]
+    fn active_dst_queries() {
+        let _ = env_logger::try_init();
+
+        let srv = server::http2().route("/", "hello").run();
+        let srv_addr = srv.addr;
+
+        let ctrl = controller::new();
+        let _txs = (1..=10).map(|n| {
+            let disco_n = format!("tele{}.test.svc.cluster.local", n);
+            let tx = ctrl.destination_tx(&disco_n);
+            tx.send_addr(srv_addr);
+            tx // This will go into a vec, to keep the stream open.
+        }).collect::<Vec<_>>();
+
+        let proxy = proxy::new()
+            .controller(ctrl.run())
+            .outbound(srv)
+            .run();
+
+        let metrics = client::http1(proxy.metrics, "localhost");
+
+        for n in 1..=10 {
+            let route = format!("tele{}.test.svc.cluster.local", n);
+            let client = client::http2(proxy.outbound, route);
+            println!("trying {}th destination...", n);
+            assert_eq!(client.get("/"), "hello");
+            let expected_metric = format!("router_active_destination_queries {}", n);
+            assert_contains!(metrics.get("/metrics"), &expected_metric);
+        }
+    }
+
+    #[test]
+    fn capacity_limit() {
+        let _ = env_logger::try_init();
+
+        let srv = server::http2().route("/", "hello").run();
+        let srv_addr = srv.addr;
+
+        let mut env = config::TestEnv::new();
+
+        env.put(config::ENV_OUTBOUND_ROUTER_CAPACITY, "10".to_owned());
+        env.put(config::ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, "10s".to_owned());
+
+        let ctrl = controller::new();
+        let _txs = (1..=10).map(|n| {
+            let disco_n = format!("tele{}.test.svc.cluster.local", n);
+            let tx = ctrl.destination_tx(&disco_n);
+            tx.send_addr(srv_addr);
+            tx // This will go into a vec, to keep the stream open.
+        }).collect::<Vec<_>>();
+
+        let proxy = proxy::new()
+            .controller(ctrl.run())
+            .outbound(srv)
+            .run_with_test_env(env);
+
+        let metrics = client::http1(proxy.metrics, "localhost");
+
+        for n in 1..=10 {
+            let route = format!("tele{}.test.svc.cluster.local", n);
+            let client = client::http2(proxy.outbound, route);
+            println!("trying {}th destination...", n);
+            assert_eq!(client.get("/"), "hello");
+        }
+
+        let client = client::http2(proxy.outbound, format!("{}", srv_addr));
+        println!("trying 11th destination...");
+        let mut req = client.request_builder("/");
+        let rsp = client.request(req.method("GET"));
+        // The request should fail.
+        assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+
+        assert_contains!(
+            metrics.get("/metrics"),
+            "router_error_total{direction=\"outbound\",kind=\"at_capacity\"} 1"
+        );
+    }
+}
+
 // linkerd/linkerd2#613
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
