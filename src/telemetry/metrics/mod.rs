@@ -210,6 +210,7 @@ impl fmt::Display for Root {
         self.transports.fmt(f)?;
         self.transport_closes.fmt(f)?;
         self.tls_config_reload.fmt(f)?;
+        self.router.fmt(f)?;
         self.process.fmt(f)?;
 
         Ok(())
