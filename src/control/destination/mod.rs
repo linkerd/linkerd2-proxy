@@ -113,6 +113,9 @@ pub enum ProtocolHint {
     Http2,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct QueryCounter(Arc<()>);
+
 #[derive(Debug, Clone)]
 enum Update {
     /// Indicates that an endpoint should be bound to `SocketAddr` with the
@@ -160,6 +163,7 @@ pub fn new(
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
     control_backoff_delay: Duration,
     concurrency_limit: usize,
+    query_counter: &QueryCounter,
 ) -> (Resolver, impl Future<Item = (), Error = ()>) {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
@@ -171,6 +175,7 @@ pub fn new(
         controller_tls,
         control_backoff_delay,
         concurrency_limit,
+        query_counter,
     );
     (disco, bg)
 }
@@ -289,5 +294,21 @@ impl Metadata {
 
     pub fn tls_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoIdentity> {
         self.tls_identity.as_ref()
+    }
+}
+
+// ===== impl QueryCounter =====
+
+impl QueryCounter {
+    pub fn new() -> Self {
+        QueryCounter(Arc::new(()))
+    }
+
+    pub fn active_queries(&self) -> usize {
+        Arc::weak_count(&self.0)
+    }
+
+    pub(in control::destination) fn new_marker(&self) -> Weak<()> {
+        Arc::downgrade(&self.0)
     }
 }

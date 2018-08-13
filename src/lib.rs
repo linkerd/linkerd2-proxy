@@ -278,6 +278,7 @@ where
             controller_tls,
             config.control_backoff_delay,
             config.destination_concurrency_limit,
+            sensors.router().query_counter(),
         );
 
         let (drain_tx, drain_rx) = drain::channel();

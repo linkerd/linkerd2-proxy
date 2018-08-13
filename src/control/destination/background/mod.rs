@@ -6,7 +6,6 @@ use std::{
     fmt,
     mem,
     time::{Instant, Duration},
-    sync::Arc,
 };
 use futures::{
     future,
@@ -22,7 +21,7 @@ use linkerd2_proxy_api::destination::{
     Update as PbUpdate,
 };
 
-use super::{ResolveRequest, Update};
+use super::{ResolveRequest, Update, QueryCounter};
 use config::Namespaces;
 use control::{
     cache::Exists,
@@ -82,7 +81,7 @@ struct NewQuery {
     /// `NewQuery` can use `Arc::weak_count` to count the number of queries
     /// that currently exist. When those queries are dropped, the weak count
     /// will go down accordingly.
-    active_query_handle: Arc<()>,
+    query_counter: QueryCounter,
     concurrency_limit: usize,
 }
 
@@ -101,6 +100,7 @@ pub(super) fn task(
     controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
     control_backoff_delay: Duration,
     concurrency_limit: usize,
+    query_counter: &QueryCounter,
 ) -> impl Future<Item = (), Error = ()>
 {
     // Build up the Controller Client Stack
@@ -131,6 +131,7 @@ pub(super) fn task(
         dns_resolver,
         namespaces,
         concurrency_limit,
+        query_counter,
     );
 
     future::poll_fn(move || {
@@ -150,9 +151,15 @@ where
         dns_resolver: dns::Resolver,
         namespaces: Namespaces,
         concurrency_limit: usize,
+        query_counter: &QueryCounter,
     ) -> Self {
+        let new_query = NewQuery {
+            namespaces,
+            concurrency_limit,
+            query_counter: query_counter.clone(),
+        };
         Self {
-            new_query: NewQuery::new(namespaces, concurrency_limit),
+            new_query,
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -358,18 +365,10 @@ where
 
 impl NewQuery {
 
-    fn new(namespaces: Namespaces, concurrency_limit: usize) -> Self {
-        Self {
-            namespaces,
-            concurrency_limit,
-            active_query_handle: Arc::new(()),
-        }
-    }
-
     /// Returns true if there is currently capacity for additional
     /// Destination service queries.
     fn has_more_queries(&self) -> bool {
-        Arc::weak_count(&self.active_query_handle) < self.concurrency_limit
+        self.query_counter.active_queries() < self.concurrency_limit
     }
 
     /// Attepts to initiate a query `query` to the Destination service
@@ -430,7 +429,7 @@ impl NewQuery {
                 };
                 let mut svc = Destination::new(client.lift_ref());
                 let response = svc.get(grpc::Request::new(req));
-                let active = Arc::downgrade(&self.active_query_handle);
+                let active = self.query_counter.new_marker();
                 let query = Remote::ConnectedOrConnecting {
                     rx: Receiver::new(response, active),
                 };

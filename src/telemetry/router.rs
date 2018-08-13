@@ -5,6 +5,7 @@ use std::{
 };
 
 use ctx;
+use control::destination::QueryCounter;
 use telemetry::metrics::{Counter, Gauge, Scopes, Direction};
 
 metrics! {
@@ -19,18 +20,22 @@ metrics! {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
-enum ErrorKind {
-    Route,
-    Capacity,
-    NotRecognized,
-    Inner,
+#[derive(Clone, Debug, Default)]
+pub struct Sensors {
+    cache_active_routes: Arc<ActiveRoutesInner>,
+    active_destination_queries: QueryCounter,
+    error_total: Arc<ErrorTotalInner>,
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub struct ErrorLabels {
-    direction: Direction,
-    kind: ErrorKind,
+type ErrorTotalInner = Mutex<Scopes<ErrorLabels, Counter>>;
+type ActiveRoutesInner = Mutex<Scopes<Direction, Gauge>>;
+
+/// Formats metrics for Prometheus for a corresonding `Sensor`.
+#[derive(Debug, Default)]
+pub struct Report {
+    cache_active_routes: Weak<ActiveRoutesInner>,
+    active_destination_queries: QueryCounter,
+    error_total: Weak<ErrorTotalInner>,
 }
 
 /// Sensor for recording error total metrics.
@@ -42,23 +47,19 @@ pub struct ErrorSensor {
     direction: Direction,
 }
 
-/// Formats metrics for Prometheus for a corresonding `Sensor`.
-#[derive(Debug, Default)]
-pub struct Report {
-    cache_active_routes: Weak<ActiveRoutesInner>,
-    active_destination_queries: Weak<Mutex<Gauge>>,
-    error_total: Weak<ErrorTotalInner>,
+#[derive(Debug, Eq, PartialEq, Hash)]
+enum ErrorKind {
+    Route,
+    Capacity,
+    NotRecognized,
+    Inner,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Sensors {
-    cache_active_routes: Arc<ActiveRoutesInner>,
-    active_destination_queries: Arc<Mutex<Gauge>>,
-    error_total: Arc<ErrorTotalInner>,
+#[derive(Debug, Eq, PartialEq, Hash)]
+struct ErrorLabels {
+    direction: Direction,
+    kind: ErrorKind,
 }
-
-type ErrorTotalInner = Mutex<Scopes<ErrorLabels, Counter>>;
-type ActiveRoutesInner = Mutex<Scopes<Direction, Gauge>>;
 
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -77,11 +78,13 @@ impl fmt::Display for ErrorLabels {
     }
 }
 
+
 // ===== impl Sensors =====
 
 impl Sensors {
     pub fn new() -> Self {
         Self {
+
             ..Default::default()
         }
     }
@@ -93,10 +96,14 @@ impl Sensors {
         }
     }
 
+    pub fn query_counter(&self) -> &QueryCounter {
+        &self.active_destination_queries
+    }
+
     pub fn report(&self) -> Report {
         Report {
             cache_active_routes: Arc::downgrade(&self.cache_active_routes),
-            active_destination_queries: Arc::downgrade(&self.active_destination_queries),
+            active_destination_queries: self.active_destination_queries.clone(),
             error_total: Arc::downgrade(&self.error_total),
         }
     }
@@ -137,6 +144,7 @@ impl ErrorSensor {
     }
 
     pub fn inner_error(&self) {
+        // TODO: It would be good to have more information about these errors.
         if let Ok(mut scopes) = self.inner.lock() {
             let labels = ErrorLabels {
                 direction: self.direction,
@@ -166,13 +174,12 @@ impl fmt::Display for Report {
             }
         }
 
-        if let Some(lock) = self.active_destination_queries.upgrade() {
-            if let Ok(active_queries) = lock.lock() {
-                router_active_destination_queries.fmt_help(f)?;
-                router_active_destination_queries
-                    .fmt_metric(f, *active_queries)?;
-            }
-        }
+        let queries = Gauge::from(
+            self.active_destination_queries
+                .active_queries() as u64
+        );
+        router_active_destination_queries.fmt_help(f)?;
+        router_active_destination_queries.fmt_metric(f, queries)?;
 
         Ok(())
     }
