@@ -3,30 +3,49 @@ use std::time::Duration;
 
 use ctx;
 use super::{
-    labels::{Classification, Direction, TlsStatus},
+    labels::{Direction, TlsStatus},
     latency,
     Counter,
     Gauge,
     Histogram,
     Scopes,
 };
-use telemetry::{event, Errno};
+use telemetry::Errno;
 
-pub(super) type OpenScopes = Scopes<TransportLabels, OpenMetrics>;
+metrics! {
+    tcp_open_total: Counter { "Total count of opened connections" },
+    tcp_open_connections: Gauge { "Number of currently-open connections" },
+    tcp_read_bytes_total: Counter { "Total count of bytes read from peers" },
+    tcp_write_bytes_total: Counter { "Total count of bytes written to peers" },
+
+    tcp_close_total: Counter { "Total count of closed connections" },
+    tcp_connection_duration_ms: Histogram<latency::Ms> { "Connection lifetimes" }
+}
+
+/// Holds all transport stats.
+///
+/// Implements `fmt::Display` to render prometheus-formatted metrics for all transports.
+#[derive(Debug, Default)]
+pub struct Transports {
+    opens: OpenScopes,
+    closes: CloseScopes,
+}
+
+type OpenScopes = Scopes<TransportLabels, OpenMetrics>;
 
 #[derive(Debug, Default)]
-pub(super) struct OpenMetrics {
+struct OpenMetrics {
     open_total: Counter,
     open_connections: Gauge,
     write_bytes_total: Counter,
     read_bytes_total: Counter,
 }
 
-pub(super) type CloseScopes = Scopes<TransportCloseLabels, CloseMetrics>;
+type CloseScopes = Scopes<TransportCloseLabels, CloseMetrics>;
 
 /// Labels describing a TCP connection
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TransportLabels {
+struct TransportLabels {
     /// Was the transport opened in the inbound or outbound direction?
     direction: Direction,
 
@@ -37,39 +56,111 @@ pub struct TransportLabels {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Peer { Src, Dst }
+enum Peer { Src, Dst }
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Eos {
+    Clean,
+    Error {
+        errno: Option<Errno>,
+    },
+}
 
 /// Labels describing the end of a TCP connection
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TransportCloseLabels {
-    /// Labels describing the TCP connection that closed.
-    pub(super) transport: TransportLabels,
-
-    /// Was the transport closed successfully?
-    classification: Classification,
-
-    /// If `classification` == `Failure`, this may be set with the
-    /// OS error number describing the error, if there was one.
-    /// Otherwise, it should be `None`.
-    errno: Option<Errno>,
+struct TransportCloseLabels {
+    transport: TransportLabels,
+    eos: Eos,
 }
 
 #[derive(Debug, Default)]
-pub(super) struct CloseMetrics {
+struct CloseMetrics {
     close_total: Counter,
     connection_duration: Histogram<latency::Ms>,
 }
 
-// ===== impl OpenScopes =====
+// ===== impl Transports =====
 
-impl OpenScopes {
-    metrics! {
-        tcp_open_total: Counter { "Total count of opened connections" },
-        tcp_open_connections: Gauge { "Number of currently-open connections" },
-        tcp_read_bytes_total: Counter { "Total count of bytes read from peers" },
-        tcp_write_bytes_total: Counter { "Total count of bytes written to peers" }
+impl Transports {
+    pub fn open(&mut self, ctx: &ctx::transport::Ctx) {
+        let k = TransportLabels::new(ctx);
+        let metrics = self.opens.get_or_default(k);
+        metrics.open_total.incr();
+        metrics.open_connections.incr();
+    }
+
+    pub fn close(
+        &mut self,
+        ctx: &ctx::transport::Ctx,
+        eos: Eos,
+        duration: Duration,
+        rx: u64,
+        tx: u64,
+    ) {
+        let key = TransportLabels::new(ctx);
+
+        let o = self.opens.get_or_default(key);
+        o.open_connections.decr();
+        o.read_bytes_total += rx;
+        o.write_bytes_total += tx;
+
+        let k = TransportCloseLabels::new(key, eos);
+        let c = self.closes.get_or_default(k);
+        c.close_total.incr();
+        c.connection_duration.add(duration);
+    }
+
+    #[cfg(test)]
+    pub fn open_total(&self, ctx: &ctx::transport::Ctx) -> u64 {
+        self.opens
+            .get(&TransportLabels::new(ctx))
+            .map(|m| m.open_total.into())
+            .unwrap_or(0)
+    }
+
+    // #[cfg(test)]
+    // pub fn open_connections(&self, ctx: &ctx::transport::Ctx) -> u64 {
+    //     self.metrics
+    //         .get(&Key::from(ctx))
+    //         .map(|m| m.open_connections.into())
+    //         .unwrap_or(0)
+    // }
+
+    #[cfg(test)]
+    pub fn rx_tx_bytes_total(&self, ctx: &ctx::transport::Ctx) -> (u64, u64) {
+        self.opens
+            .get(&TransportLabels::new(ctx))
+            .map(|m| (m.read_bytes_total.into(), m.write_bytes_total.into()))
+            .unwrap_or((0, 0))
+    }
+
+    #[cfg(test)]
+    pub fn close_total(&self, ctx: &ctx::transport::Ctx, eos: Eos) -> u64 {
+        self.closes
+            .get(&TransportCloseLabels::new(TransportLabels::new(ctx), eos))
+            .map(|m| m.close_total.into())
+            .unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub fn connection_durations(&self, ctx: &ctx::transport::Ctx, eos: Eos) -> Histogram<latency::Ms> {
+        self.closes
+            .get(&TransportCloseLabels::new(TransportLabels::new(ctx), eos))
+            .map(|m| m.connection_duration.clone())
+            .unwrap_or_default()
     }
 }
+
+impl fmt::Display for Transports {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.opens.fmt(f)?;
+        self.closes.fmt(f)?;
+
+        Ok(())
+    }
+}
+
+// ===== impl OpenScopes =====
 
 impl fmt::Display for OpenScopes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -77,60 +168,23 @@ impl fmt::Display for OpenScopes {
             return Ok(());
         }
 
-        Self::tcp_open_total.fmt_help(f)?;
-        Self::tcp_open_total.fmt_scopes(f, self, |s| &s.open_total)?;
+        tcp_open_total.fmt_help(f)?;
+        tcp_open_total.fmt_scopes(f, self, |s| &s.open_total)?;
 
-        Self::tcp_open_connections.fmt_help(f)?;
-        Self::tcp_open_connections.fmt_scopes(f, self, |s| &s.open_connections)?;
+        tcp_open_connections.fmt_help(f)?;
+        tcp_open_connections.fmt_scopes(f, self, |s| &s.open_connections)?;
 
-        Self::tcp_read_bytes_total.fmt_help(f)?;
-        Self::tcp_read_bytes_total.fmt_scopes(f, self, |s| &s.read_bytes_total)?;
+        tcp_read_bytes_total.fmt_help(f)?;
+        tcp_read_bytes_total.fmt_scopes(f, self, |s| &s.read_bytes_total)?;
 
-        Self::tcp_write_bytes_total.fmt_help(f)?;
-        Self::tcp_write_bytes_total.fmt_scopes(f, self, |s| &s.write_bytes_total)?;
+        tcp_write_bytes_total.fmt_help(f)?;
+        tcp_write_bytes_total.fmt_scopes(f, self, |s| &s.write_bytes_total)?;
 
         Ok(())
     }
 }
 
-// ===== impl OpenMetrics =====
-
-impl OpenMetrics {
-    pub(super) fn open(&mut self) {
-        self.open_total.incr();
-        self.open_connections.incr();
-    }
-
-    pub(super) fn close(&mut self, rx: u64, tx: u64) {
-        self.open_connections.decr();
-        self.read_bytes_total += rx;
-        self.write_bytes_total += tx;
-    }
-
-    #[cfg(test)]
-    pub(super) fn open_total(&self) -> u64 {
-        self.open_total.into()
-    }
-
-    #[cfg(test)]
-    pub(super) fn read_bytes_total(&self) -> u64 {
-        self.read_bytes_total.into()
-    }
-
-    #[cfg(test)]
-    pub(super) fn write_bytes_total(&self) -> u64 {
-        self.write_bytes_total.into()
-    }
-}
-
 // ===== impl CloseScopes =====
-
-impl CloseScopes {
-    metrics! {
-        tcp_close_total: Counter { "Total count of closed connections" },
-        tcp_connection_duration_ms: Histogram<latency::Ms> { "Connection lifetimes" }
-    }
-}
 
 impl fmt::Display for CloseScopes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -138,40 +192,20 @@ impl fmt::Display for CloseScopes {
             return Ok(());
         }
 
-        Self::tcp_close_total.fmt_help(f)?;
-        Self::tcp_close_total.fmt_scopes(f, self, |s| &s.close_total)?;
+        tcp_close_total.fmt_help(f)?;
+        tcp_close_total.fmt_scopes(f, self, |s| &s.close_total)?;
 
-        Self::tcp_connection_duration_ms.fmt_help(f)?;
-        Self::tcp_connection_duration_ms.fmt_scopes(f, self, |s| &s.connection_duration)?;
+        tcp_connection_duration_ms.fmt_help(f)?;
+        tcp_connection_duration_ms.fmt_scopes(f, self, |s| &s.connection_duration)?;
 
         Ok(())
     }
 }
 
-// ===== impl CloseMetrics =====
-
-impl CloseMetrics {
-    pub(super) fn close(&mut self, duration: Duration) {
-        self.close_total.incr();
-        self.connection_duration.add(duration);
-    }
-
-    #[cfg(test)]
-    pub(super) fn close_total(&self) -> u64 {
-        self.close_total.into()
-    }
-
-    #[cfg(test)]
-    pub(super) fn connection_duration(&self) -> &Histogram<latency::Ms> {
-        &self.connection_duration
-    }
-}
-
-
 // ===== impl TransportLabels =====
 
 impl TransportLabels {
-    pub fn new(ctx: &ctx::transport::Ctx) -> Self {
+    fn new(ctx: &ctx::transport::Ctx) -> Self {
         TransportLabels {
             direction: Direction::from_context(ctx.proxy().as_ref()),
             peer: match *ctx {
@@ -180,11 +214,6 @@ impl TransportLabels {
             },
             tls_status: ctx.tls_status().into(),
         }
-    }
-
-    #[cfg(test)]
-    pub fn tls_status(&self) -> TlsStatus {
-        self.tls_status
     }
 }
 
@@ -206,36 +235,33 @@ impl fmt::Display for Peer {
 // ===== impl TransportCloseLabels =====
 
 impl TransportCloseLabels {
-    pub fn new(ctx: &ctx::transport::Ctx,
-               close: &event::TransportClose)
-               -> Self {
-        let classification = Classification::transport_close(close);
-        let errno = close.errno.map(|code| {
-            // If the error code is set, this should be classified
-            // as a failure!
-            debug_assert!(classification == Classification::Failure);
-            Errno::from(code)
-        });
-        TransportCloseLabels {
-            transport: TransportLabels::new(ctx),
-            classification,
-            errno,
+    fn new(transport: TransportLabels, eos: Eos) -> Self {
+        Self {
+            transport,
+            eos,
         }
-    }
-
-    #[cfg(test)]
-    pub fn tls_status(&self) -> TlsStatus  {
-        self.transport.tls_status()
     }
 }
 
 impl fmt::Display for TransportCloseLabels {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{},{}", self.transport, self.classification)?;
-        if let Some(errno) = self.errno {
-            write!(f, ",errno=\"{}\"", errno)?;
-        }
-        Ok(())
+        write!(f, "{},{}", self.transport, self.eos)
     }
 }
 
+// ===== impl Eos =====
+
+impl fmt::Display for Eos {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self {
+            Eos::Clean => f.pad("classification=\"success\""),
+            Eos::Error { errno } => {
+                f.pad("classification=\"failure\"")?;
+                if let Some(e) = errno {
+                    write!(f, ",errno=\"{}\"", e)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}

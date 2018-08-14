@@ -51,11 +51,11 @@ use self::labels::{
     RequestLabels,
     ResponseLabels,
 };
-use self::transport::{TransportLabels, TransportCloseLabels};
 pub use self::labels::DstLabels;
 pub use self::record::Record;
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
+pub use self::transport::Transports;
 use super::process;
 use super::tls_config_reload;
 
@@ -92,8 +92,7 @@ pub struct Metric<'a, M: FmtMetric> {
 struct Root {
     requests: http::RequestScopes,
     responses: http::ResponseScopes,
-    transports: transport::OpenScopes,
-    transport_closes: transport::CloseScopes,
+    transports: Transports,
     tls_config_reload: tls_config_reload::Report,
     process: process::Report,
 }
@@ -171,12 +170,8 @@ impl Root {
         self.responses.get_or_default(labels).stamped()
     }
 
-    fn transport(&mut self, labels: TransportLabels) -> &mut transport::OpenMetrics {
-        self.transports.get_or_default(labels)
-    }
-
-    fn transport_close(&mut self, labels: TransportCloseLabels) -> &mut transport::CloseMetrics {
-        self.transport_closes.get_or_default(labels)
+    fn transports(&mut self) -> &mut Transports {
+        &mut self.transports
     }
 
     fn retain_since(&mut self, epoch: Instant) {
@@ -190,7 +185,6 @@ impl fmt::Display for Root {
         self.requests.fmt(f)?;
         self.responses.fmt(f)?;
         self.transports.fmt(f)?;
-        self.transport_closes.fmt(f)?;
         self.tls_config_reload.fmt(f)?;
         self.process.fmt(f)?;
 
@@ -232,7 +226,6 @@ impl<T> ::std::ops::Deref for Stamped<T> {
 #[cfg(test)]
 mod tests {
     use ctx::test_util::*;
-    use telemetry::event;
     use super::*;
     use conditional::Conditional;
     use tls;
@@ -250,22 +243,14 @@ mod tests {
         let (req, rsp) = request("http://nba.com", &server, &client);
 
         let client_transport = Arc::new(ctx::transport::Ctx::Client(client));
-        let transport = TransportLabels::new(&client_transport);
-        root.transport(transport.clone()).open();
+        root.transports.open(&client_transport);
 
         root.request(RequestLabels::new(&req)).end();
         root.response(ResponseLabels::new(&rsp, None)).end(Duration::from_millis(10));
-        root.transport(transport).close(100, 200);
 
-        let end = TransportCloseLabels::new(&client_transport, &event::TransportClose {
-            clean: true,
-            errno: None,
-            duration: Duration::from_millis(15),
-            rx_bytes: 40,
-            tx_bytes: 0,
-        });
-        root.transport_close(end).close(Duration::from_millis(15));
-    }
+        let duration = Duration::from_millis(15);
+        root.transports().close(&client_transport, transport::Eos::Clean, duration, 100, 200);
+   }
 
     #[test]
     fn expiry() {
@@ -278,7 +263,7 @@ mod tests {
         let mut root = Root::default();
 
         let t0 = Instant::now();
-        root.transport(TransportLabels::new(&server_transport)).open();
+        root.transports().open(&server_transport);
 
         mock_route(&mut root, &proxy, &server, "warriors");
         let t1 = Instant::now();
@@ -288,25 +273,17 @@ mod tests {
 
         assert_eq!(root.requests.len(), 2);
         assert_eq!(root.responses.len(), 2);
-        assert_eq!(root.transports.len(), 2);
-        assert_eq!(root.transport_closes.len(), 1);
 
         root.retain_since(t0);
         assert_eq!(root.requests.len(), 2);
         assert_eq!(root.responses.len(), 2);
-        assert_eq!(root.transports.len(), 2);
-        assert_eq!(root.transport_closes.len(), 1);
 
         root.retain_since(t1);
         assert_eq!(root.requests.len(), 1);
         assert_eq!(root.responses.len(), 1);
-        assert_eq!(root.transports.len(), 2);
-        assert_eq!(root.transport_closes.len(), 1);
 
         root.retain_since(t2);
         assert_eq!(root.requests.len(), 0);
         assert_eq!(root.responses.len(), 0);
-        assert_eq!(root.transports.len(), 2);
-        assert_eq!(root.transport_closes.len(), 1);
     }
 }
