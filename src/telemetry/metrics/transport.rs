@@ -52,6 +52,9 @@ struct Metrics {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum Peer { Src, Dst }
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Eos {
     Clean,
     Error {
@@ -65,9 +68,6 @@ struct EosMetrics {
     close_total: Counter,
     connection_duration: Histogram<latency::Ms>,
 }
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Peer { Src, Dst }
 
 struct FmtEos<'a>(&'a Key, &'a Eos);
 
