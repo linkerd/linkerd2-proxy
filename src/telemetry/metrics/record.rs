@@ -6,7 +6,7 @@ use super::labels::{
     RequestLabels,
     ResponseLabels,
 };
-use super::transport::{TransportLabels, TransportCloseLabels};
+use super::transport;
 
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
@@ -68,17 +68,21 @@ impl Record {
 
             Event::TransportOpen(ref ctx) => {
                 self.update(|metrics| {
-                    metrics.transport(TransportLabels::new(ctx)).open();
+                    metrics.transports().open(ctx);
                 })
             },
 
             Event::TransportClose(ref ctx, ref close) => {
+                let eos = if close.clean {
+                    transport::Eos::Clean
+                } else {
+                    transport::Eos::Error {
+                        errno: close.errno.map(|e| e.into())
+                    }
+                };
                 self.update(|metrics| {
-                    metrics.transport(TransportLabels::new(ctx))
-                        .close(close.rx_bytes, close.tx_bytes);
-
-                    metrics.transport_close(TransportCloseLabels::new(ctx, close))
-                        .close(close.duration);
+                    metrics.transports()
+                        .close(ctx, eos, close.duration, close.rx_bytes, close.tx_bytes);
                 })
             },
         };
@@ -89,7 +93,7 @@ impl Record {
 mod test {
     use telemetry::{
         event,
-        metrics::{self, labels, transport::{TransportLabels, TransportCloseLabels}},
+        metrics::{self, labels},
         Event,
     };
     use ctx::{self, test_util::*, transport::TlsStatus};
@@ -228,33 +232,16 @@ mod test {
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);
-        let srv_open_labels = TransportLabels::new(&server_transport);
-        let srv_close_labels = TransportCloseLabels::new(
-            &ctx::transport::Ctx::Server(server.clone()),
-            &transport_close,
-        );
-        let client_open_labels = TransportLabels::new(&client_transport);
-        let client_close_labels = TransportCloseLabels::new(
-            &ctx::transport::Ctx::Client(client.clone()),
-            &transport_close,
-        );
 
         assert_eq!(client_tls, req_labels.tls_status().into());
         assert_eq!(client_tls, rsp_labels.tls_status().into());
-        assert_eq!(client_tls, client_open_labels.tls_status().into());
-        assert_eq!(client_tls, client_close_labels.tls_status().into());
-        assert_eq!(server_tls, srv_open_labels.tls_status().into());
-        assert_eq!(server_tls, srv_close_labels.tls_status().into());
 
         {
-            let lock = r.metrics.lock()
-                .expect("lock");
+            let mut lock = r.metrics.lock().expect("lock");
             assert!(lock.requests.get(&req_labels).is_none());
             assert!(lock.responses.get(&rsp_labels).is_none());
-            assert!(lock.transports.get(&srv_open_labels).is_none());
-            assert!(lock.transports.get(&client_open_labels).is_none());
-            assert!(lock.transport_closes.get(&srv_close_labels).is_none());
-            assert!(lock.transport_closes.get(&client_close_labels).is_none());
+            assert_eq!(lock.transports().open_total(&server_transport), 0);
+            assert_eq!(lock.transports().open_total(&client_transport), 0);
         }
 
         for e in &events {
@@ -262,8 +249,7 @@ mod test {
         }
 
         {
-            let lock = r.metrics.lock()
-                .expect("lock");
+            let mut lock = r.metrics.lock().expect("lock");
 
             // === request scope ====================================
             assert_eq!(
@@ -274,55 +260,35 @@ mod test {
             );
 
             // === response scope ===================================
-            let response_scope = lock
-                .responses
-                .get(&rsp_labels)
-                .expect("response scope missing");
-            assert_eq!(response_scope.total(), 1);
+            {
+                let response_scope = lock
+                    .responses
+                    .get(&rsp_labels)
+                    .expect("response scope missing");
+                assert_eq!(response_scope.total(), 1);
 
-            response_scope.latency()
-                .assert_bucket_exactly(200, 1)
-                .assert_gt_exactly(200, 0)
-                .assert_lt_exactly(200, 0);
+                response_scope.latency()
+                    .assert_bucket_exactly(200, 1)
+                    .assert_gt_exactly(200, 0)
+                    .assert_lt_exactly(200, 0);
+            }
 
-            // === server transport open scope ======================
-            let srv_transport_scope = lock
-                .transports
-                .get(&srv_open_labels)
-                .expect("server transport scope missing");
-            assert_eq!(srv_transport_scope.open_total(), 1);
-            assert_eq!(srv_transport_scope.write_bytes_total(), 4321);
-            assert_eq!(srv_transport_scope.read_bytes_total(), 4321);
-
-            // === client transport open scope ======================
-            let client_transport_scope = lock
-                .transports
-                .get(&client_open_labels)
-                .expect("client transport scope missing");
-            assert_eq!(client_transport_scope.open_total(), 1);
-            assert_eq!(client_transport_scope.write_bytes_total(), 4321);
-            assert_eq!(client_transport_scope.read_bytes_total(), 4321);
-
+            use super::transport::Eos;
             let transport_duration: u64 = 30_000 * 1_000;
+            let t = lock.transports();
 
-            // === server transport close scope =====================
-            let srv_transport_close_scope = lock
-                .transport_closes
-                .get(&srv_close_labels)
-                .expect("server transport close scope missing");
-            assert_eq!(srv_transport_close_scope.close_total(), 1);
-            srv_transport_close_scope.connection_duration()
+            assert_eq!(t.open_total(&server_transport), 1);
+            assert_eq!(t.rx_tx_bytes_total(&server_transport), (4321, 4321));
+            assert_eq!(t.close_total(&server_transport, Eos::Clean), 1);
+            t.connection_durations(&server_transport, Eos::Clean)
                 .assert_bucket_exactly(transport_duration, 1)
                 .assert_gt_exactly(transport_duration, 0)
                 .assert_lt_exactly(transport_duration, 0);
 
-            // === client transport close scope =====================
-            let client_transport_close_scope = lock
-                .transport_closes
-                .get(&client_close_labels)
-                .expect("client transport close scope missing");
-            assert_eq!(client_transport_close_scope.close_total(), 1);
-            client_transport_close_scope.connection_duration()
+            assert_eq!(t.open_total(&client_transport), 1);
+            assert_eq!(t.rx_tx_bytes_total(&client_transport), (4321, 4321));
+            assert_eq!(t.close_total(&server_transport, Eos::Clean), 1);
+            t.connection_durations(&server_transport, Eos::Clean)
                 .assert_bucket_exactly(transport_duration, 1)
                 .assert_gt_exactly(transport_duration, 0)
                 .assert_lt_exactly(transport_duration, 0);

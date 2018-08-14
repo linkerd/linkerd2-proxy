@@ -9,7 +9,6 @@ use http;
 
 use ctx;
 use conditional::Conditional;
-use telemetry::event;
 use transport::tls;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -192,15 +191,6 @@ impl Classification {
         grpc_status.map(Classification::grpc_status)
             .unwrap_or_else(|| Classification::http_status(&rsp.status))
     }
-
-    pub fn transport_close(close: &event::TransportClose) -> Self {
-        if close.clean {
-            Classification::Success
-        } else {
-            Classification::Failure
-        }
-    }
-
 }
 
 impl fmt::Display for Classification {
