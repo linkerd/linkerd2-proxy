@@ -134,15 +134,15 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
     }
 
     /// Formats a single metric across labeled scopes.
-    pub fn fmt_scopes<'i, L: 'i, S: 'i, I, F>(
+    pub fn fmt_scopes<'s, L, S: 's, I, F>(
         &self,
         f: &mut fmt::Formatter,
         scopes: I,
         to_metric: F
     ) -> fmt::Result
     where
-        L: Display + Hash + Eq,
-        I: IntoIterator<Item = (&'i L, &'i S)>,
+        L: Display,
+        I: IntoIterator<Item = (L, &'s S)>,
         F: Fn(&S) -> &M
     {
         for (labels, scope) in scopes {
@@ -166,7 +166,6 @@ impl Root {
 
     fn request(&mut self, labels: RequestLabels) -> &mut http::RequestMetrics {
         self.requests.get_or_default(labels).stamped()
-
     }
 
     fn response(&mut self, labels: ResponseLabels) -> &mut http::ResponseMetrics {
