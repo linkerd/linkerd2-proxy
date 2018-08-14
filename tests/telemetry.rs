@@ -815,6 +815,7 @@ mod transport {
     }
 
     #[test]
+    #[cfg(macos)]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_connect_err() {
         let _ = env_logger::try_init();
@@ -839,12 +840,13 @@ mod transport {
         // code.
         assert_contains!(metrics.get("/metrics"),
             "tcp_close_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"failure\",errno=\"EXFULL\"} 1");
-        // Connection to the client should have closed cleanly.
+        // Connection from the client should have closed cleanly.
         assert_contains!(metrics.get("/metrics"),
             "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",classification=\"success\"} 1");
     }
 
     #[test]
+    #[cfg(macos)]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn outbound_tcp_connect_err() {
         let _ = env_logger::try_init();
@@ -869,7 +871,7 @@ mod transport {
         // code.
         assert_contains!(metrics.get("/metrics"),
             "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",classification=\"failure\",errno=\"EXFULL\"} 1");
-        // Connection to the client should have closed cleanly.
+        // Connection from the client should have closed cleanly.
         assert_contains!(metrics.get("/metrics"),
             "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\",classification=\"success\"} 1");
     }
