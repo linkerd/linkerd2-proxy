@@ -28,7 +28,6 @@
 //! end of the label set (all of which will make Prometheus angry).
 use std::default::Default;
 use std::fmt::{self, Display};
-use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
