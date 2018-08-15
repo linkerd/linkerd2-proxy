@@ -14,6 +14,15 @@ pub enum Proxy {
     Outbound,
 }
 
+impl Proxy {
+    pub fn as_str(&self) -> &'static str {
+        match *self {
+            Proxy::Inbound => "in",
+            Proxy::Outbound => "out",
+        }
+    }
+}
+
 #[cfg(test)]
 pub mod test_util {
     use http;

@@ -277,12 +277,7 @@ pub type ServerFuture<F> = ContextualFuture<Server, F>;
 
 impl Server {
     pub fn proxy(ctx: ::ctx::Proxy, listen: SocketAddr) -> Self {
-        use ::ctx::Proxy::*;
-        let name = match ctx {
-            Inbound => "in",
-            Outbound => "out",
-        };
-        Section::Proxy.server(name, listen)
+        Section::Proxy.server(ctx.as_str(), listen)
     }
 
     pub fn with_remote(self, remote: SocketAddr) -> Self {
@@ -313,12 +308,7 @@ impl fmt::Display for Server {
 
 impl<D: fmt::Display> Client<&'static str, D> {
     pub fn proxy(ctx: ::ctx::Proxy, dst: D) -> Self {
-        use ::ctx::Proxy::*;
-        let name = match ctx {
-            Inbound => "in",
-            Outbound => "out",
-        };
-        Section::Proxy.client(name, dst)
+        Section::Proxy.client(ctx.as_str(), dst)
     }
 }
 
