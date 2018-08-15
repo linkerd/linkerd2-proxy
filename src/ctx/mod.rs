@@ -7,7 +7,7 @@ pub mod transport;
 /// - The _inbound_ proxy receives traffic from another services forwards it to within the
 ///   local instance.
 /// - The  _outbound_ proxy receives traffic from the local instance and forwards it to a
-///   remove service.
+///   remote service.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Proxy {
     Inbound,
