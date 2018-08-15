@@ -1,27 +1,5 @@
-//! Describes proxy traffic.
-//!
-//! Contexts are primarily intended to describe traffic contexts for the purposes of
-//! telemetry. They may also be useful for, for instance,
-//! routing/rate-limiting/policy/etc.
-//!
-//! As a rule, context types should implement `Clone + Send + Sync`. This allows them to
-//! be stored in `http::Extensions`, for instance. Furthermore, because these contexts
-//! will be sent to a telemetry processing thread, we want to avoid excessive cloning.
-use config;
-use std::time::SystemTime;
-use std::sync::Arc;
-
 pub mod http;
 pub mod transport;
-
-/// Describes a single running proxy instance.
-#[derive(Clone, Debug)]
-pub struct Process {
-    /// Identifies the Kubernetes namespace in which this proxy is process.
-    pub scheduled_namespace: String,
-
-    pub start_time: SystemTime,
-}
 
 /// Indicates the orientation of traffic, relative to a sidecar proxy.
 ///
@@ -29,51 +7,19 @@ pub struct Process {
 /// - The _inbound_ proxy receives traffic from another services forwards it to within the
 ///   local instance.
 /// - The  _outbound_ proxy receives traffic from the local instance and forwards it to a
-///   remove service.
-#[derive(Clone, Debug)]
+///   remote service.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Proxy {
-    Inbound(Arc<Process>),
-    Outbound(Arc<Process>),
-}
-
-impl Process {
-    // Test-only, but we can't use `#[cfg(test)]` because it is used by the
-    // benchmarks
-    pub fn test(ns: &str) -> Arc<Self> {
-        Arc::new(Self {
-            scheduled_namespace: ns.into(),
-            start_time: SystemTime::now(),
-        })
-    }
-
-    /// Construct a new `Process` from environment variables.
-    pub fn new(config: &config::Config) -> Arc<Self> {
-        let start_time = SystemTime::now();
-        Arc::new(Self {
-            scheduled_namespace: config.namespaces.pod.clone(),
-            start_time,
-        })
-    }
+    Inbound,
+    Outbound,
 }
 
 impl Proxy {
-    pub fn inbound(p: &Arc<Process>) -> Arc<Self> {
-        Arc::new(Proxy::Inbound(Arc::clone(p)))
-    }
-
-    pub fn outbound(p: &Arc<Process>) -> Arc<Self> {
-        Arc::new(Proxy::Outbound(Arc::clone(p)))
-    }
-
-    pub fn is_inbound(&self) -> bool {
+    pub fn as_str(&self) -> &'static str {
         match *self {
-            Proxy::Inbound(_) => true,
-            Proxy::Outbound(_) => false,
+            Proxy::Inbound => "in",
+            Proxy::Outbound => "out",
         }
-    }
-
-    pub fn is_outbound(&self) -> bool {
-        !self.is_inbound()
     }
 }
 
@@ -96,19 +42,15 @@ pub mod test_util {
         ([1, 2, 3, 4], 5678).into()
     }
 
-    pub fn process() -> Arc<ctx::Process> {
-        ctx::Process::test("test")
-    }
-
     pub fn server(
-        proxy: &Arc<ctx::Proxy>,
+        proxy: ctx::Proxy,
         tls: ctx::transport::TlsStatus
     ) -> Arc<ctx::transport::Server> {
-        ctx::transport::Server::new(&proxy, &addr(), &addr(), &Some(addr()), tls)
+        ctx::transport::Server::new(proxy, &addr(), &addr(), &Some(addr()), tls)
     }
 
     pub fn client<L, S>(
-        proxy: &Arc<ctx::Proxy>,
+        proxy: ctx::Proxy,
         labels: L,
         tls: ctx::transport::TlsStatus,
     ) -> Arc<ctx::transport::Client>
@@ -119,7 +61,7 @@ pub mod test_util {
         let meta = destination::Metadata::new(DstLabels::new(labels),
             destination::ProtocolHint::Unknown,
             Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery));
-        ctx::transport::Client::new(&proxy, &addr(), meta, tls)
+        ctx::transport::Client::new(proxy, &addr(), meta, tls)
     }
 
     pub fn request(

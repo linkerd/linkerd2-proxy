@@ -19,7 +19,7 @@ pub enum Ctx {
 /// Identifies a connection from another process to a proxy listener.
 #[derive(Debug)]
 pub struct Server {
-    pub proxy: Arc<ctx::Proxy>,
+    pub proxy: ctx::Proxy,
     pub remote: SocketAddr,
     pub local: SocketAddr,
     pub orig_dst: Option<SocketAddr>,
@@ -29,7 +29,7 @@ pub struct Server {
 /// Identifies a connection from the proxy to another process.
 #[derive(Debug)]
 pub struct Client {
-    pub proxy: Arc<ctx::Proxy>,
+    pub proxy: ctx::Proxy,
     pub remote: SocketAddr,
     pub metadata: destination::Metadata,
     pub tls_status: TlsStatus,
@@ -63,16 +63,16 @@ impl fmt::Display for TlsStatus {
 
 
 impl Ctx {
-    pub fn proxy(&self) -> &Arc<ctx::Proxy> {
+    pub fn proxy(&self) -> ctx::Proxy {
         match *self {
-            Ctx::Client(ref ctx) => &ctx.proxy,
-            Ctx::Server(ref ctx) => &ctx.proxy,
+            Ctx::Client(ref ctx) => ctx.proxy,
+            Ctx::Server(ref ctx) => ctx.proxy,
         }
     }
 
     pub fn tls_status(&self) -> TlsStatus {
         match self {
-            Ctx::Client(ctx)  => ctx.tls_status,
+            Ctx::Client(ctx) => ctx.tls_status,
             Ctx::Server(ctx) => ctx.tls_status,
         }
     }
@@ -80,14 +80,14 @@ impl Ctx {
 
 impl Server {
     pub fn new(
-        proxy: &Arc<ctx::Proxy>,
+        proxy: ctx::Proxy,
         local: &SocketAddr,
         remote: &SocketAddr,
         orig_dst: &Option<SocketAddr>,
         tls_status: TlsStatus,
     ) -> Arc<Server> {
         let s = Server {
-            proxy: Arc::clone(proxy),
+            proxy,
             local: *local,
             remote: *remote,
             orig_dst: *orig_dst,
@@ -123,13 +123,13 @@ fn same_addr(a0: &SocketAddr, a1: &SocketAddr) -> bool {
 
 impl Client {
     pub fn new(
-        proxy: &Arc<ctx::Proxy>,
+        proxy: ctx::Proxy,
         remote: &SocketAddr,
         metadata: destination::Metadata,
         tls_status: TlsStatus,
     ) -> Arc<Client> {
         let c = Client {
-            proxy: Arc::clone(proxy),
+            proxy,
             remote: *remote,
             metadata,
             tls_status,

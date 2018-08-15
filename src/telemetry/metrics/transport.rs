@@ -189,7 +189,7 @@ impl fmt::Display for Key {
 impl Key {
     fn new(ctx: &ctx::transport::Ctx) -> Self {
         Self {
-            direction: Direction::from_context(ctx.proxy().as_ref()),
+            direction: Direction::new(ctx.proxy()),
             peer: match *ctx {
                 ctx::transport::Ctx::Server(_) => Peer::Src,
                 ctx::transport::Ctx::Client(_) => Peer::Dst,

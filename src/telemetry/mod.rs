@@ -1,7 +1,5 @@
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use ctx;
+use std::time::{Duration, SystemTime};
 
 macro_rules! metrics {
     { $( $name:ident : $kind:ty { $help:expr } ),+ } => {
@@ -31,12 +29,12 @@ pub use self::metrics::{DstLabels, Serve as ServeMetrics};
 pub use self::sensor::Sensors;
 
 pub fn new(
-    process: &Arc<ctx::Process>,
+    start_time: SystemTime,
     metrics_retain_idle: Duration,
     taps: &Arc<Mutex<tap::Taps>>,
 ) -> (Sensors, tls_config_reload::Sensor, ServeMetrics) {
     let (tls_config_sensor, tls_config_fmt) = tls_config_reload::new();
-    let (metrics_record, metrics_serve) = metrics::new(process, metrics_retain_idle, tls_config_fmt);
+    let (metrics_record, metrics_serve) = metrics::new(start_time, metrics_retain_idle, tls_config_fmt);
     let s = Sensors::new(metrics_record, taps);
     (s, tls_config_sensor, metrics_serve)
 }

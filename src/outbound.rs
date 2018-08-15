@@ -22,10 +22,10 @@ use timeout::Timeout;
 use transparency::{h1, HttpBody};
 use transport::{DnsNameAndPort, Host, HostAndPort};
 
-type BindProtocol<B> = bind::BindProtocol<Arc<ctx::Proxy>, B>;
+type BindProtocol<B> = bind::BindProtocol<ctx::Proxy, B>;
 
 pub struct Outbound<B> {
-    bind: Bind<Arc<ctx::Proxy>, B>,
+    bind: Bind<ctx::Proxy, B>,
     discovery: destination::Resolver,
     bind_timeout: Duration,
 }
@@ -48,7 +48,7 @@ pub enum Destination {
 // ===== impl Outbound =====
 
 impl<B> Outbound<B> {
-    pub fn new(bind: Bind<Arc<ctx::Proxy>, B>,
+    pub fn new(bind: Bind<ctx::Proxy, B>,
                discovery: destination::Resolver,
                bind_timeout: Duration)
                -> Outbound<B> {
