@@ -209,10 +209,9 @@ impl Direction {
 
 impl fmt::Display for Direction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use ctx::Proxy::*;
         match self.0 {
-            Inbound => f.pad("direction=\"inbound\""),
-            Outbound => f.pad("direction=\"outbound\""),
+            ctx::Proxy::Inbound => f.pad("direction=\"inbound\""),
+            ctx::Proxy::Outbound => f.pad("direction=\"outbound\""),
         }
     }
 }
