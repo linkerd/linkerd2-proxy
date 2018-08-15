@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use super::FmtMetric;
+use super::{FmtMetric, FmtLabels};
 
 /// An instaneous metric value.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -47,13 +47,11 @@ impl FmtMetric for Gauge {
 
     fn fmt_metric_labeled<N, L>(&self, f: &mut fmt::Formatter, name: N, labels: L) -> fmt::Result
     where
+        L: FmtLabels,
         N: Display,
-        L: Display,
     {
-        writeln!(f, "{name}{{{labels}}} {value}",
-            name = name,
-            labels = labels,
-            value = self.0,
-        )
+        write!(f, "{}{{", name)?;
+        labels.fmt_labels(f)?;
+        writeln!(f, "}} {}", self.0)
     }
 }

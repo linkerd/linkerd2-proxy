@@ -6,6 +6,7 @@ use ctx;
 use super::{
     labels::{Direction, TlsStatus},
     latency,
+    prom::{FmtLabels, FmtPrometheus},
     Counter,
     Gauge,
     Histogram,
@@ -69,8 +70,6 @@ struct EosMetrics {
     connection_duration: Histogram<latency::Ms>,
 }
 
-struct FmtEos<'a>(&'a Key, &'a Eos);
-
 // ===== impl Transports =====
 
 impl Transports {
@@ -101,11 +100,11 @@ impl Transports {
     }
 
     /// Iterates over all end-of-stream metrics.
-    fn iter_eos(&self) -> impl Iterator<Item = (FmtEos, &EosMetrics)> {
+    fn iter_eos(&self) -> impl Iterator<Item = ((&Key, &Eos), &EosMetrics)> {
         self.metrics
             .iter()
             .flat_map(|(k, t)| {
-                t.by_eos.iter().map(move |(e, m)| (FmtEos(k ,e), m))
+                t.by_eos.iter().map(move |(e, m)| ((k ,e), m))
             })
     }
 
@@ -150,8 +149,8 @@ impl Transports {
     }
 }
 
-impl fmt::Display for Transports {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtPrometheus for Transports {
+    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.metrics.is_empty() {
             return Ok(());
         }
@@ -180,9 +179,9 @@ impl fmt::Display for Transports {
 
 // ===== impl Key =====
 
-impl fmt::Display for Key {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{},{},{}", self.direction, self.peer, self.tls_status)
+impl FmtLabels for Key {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        ((self.direction, self.peer), self.tls_status).fmt_labels(f)
     }
 }
 
@@ -199,8 +198,8 @@ impl Key {
     }
 }
 
-impl fmt::Display for Peer {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtLabels for Peer {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Peer::Src => f.pad("peer=\"src\""),
             Peer::Dst => f.pad("peer=\"dst\""),
@@ -211,8 +210,8 @@ impl fmt::Display for Peer {
 
 // ===== impl Eos =====
 
-impl fmt::Display for Eos {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtLabels for Eos {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
             Eos::Clean => f.pad("classification=\"success\""),
             Eos::Error { errno } => {
@@ -224,12 +223,4 @@ impl fmt::Display for Eos {
             }
         }
     }
-}
-
-// ===== impl FmtEos =====
-
-impl<'a> fmt::Display for FmtEos<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{},{}", self.0, self.1)
-   }
 }

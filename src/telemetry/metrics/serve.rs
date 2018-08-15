@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::executor::current_thread::TaskExecutor;
 
-use super::Root;
+use super::{prom::FmtPrometheus, Root};
 use task;
 use transport::BoundPort;
 
@@ -31,6 +31,8 @@ enum ServeError {
     Http(http::Error),
     Io(io::Error),
 }
+
+struct PromWriter<F: FmtPrometheus>(F);
 
 // ===== impl Serve =====
 
@@ -109,7 +111,7 @@ impl Service for Serve {
         let resp = if Self::is_gzip(&req) {
             trace!("gzipping metrics");
             let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());
-            write!(&mut writer, "{}", *metrics)
+            write!(&mut writer, "{}", PromWriter(&*metrics))
                 .and_then(|_| writer.finish())
                 .map_err(ServeError::from)
                 .and_then(|body| {
@@ -121,7 +123,7 @@ impl Service for Serve {
                 })
         } else {
             let mut writer = Vec::<u8>::new();
-            write!(&mut writer, "{}", *metrics)
+            write!(&mut writer, "{}", PromWriter(&*metrics))
                 .map_err(ServeError::from)
                 .and_then(|_| {
                     Response::builder()
@@ -178,5 +180,11 @@ impl Error for ServeError {
             ServeError::Http(ref cause) => Some(cause),
             ServeError::Io(ref cause) => Some(cause),
         }
+    }
+}
+
+impl<F: FmtPrometheus> fmt::Display for PromWriter<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_prometheus(f)
     }
 }

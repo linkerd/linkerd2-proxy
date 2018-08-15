@@ -5,7 +5,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use telemetry::{Errno, metrics::{Counter, Gauge, Scopes}};
+use telemetry::{
+    metrics::{
+        prom::{FmtLabels, FmtPrometheus},
+        Counter,
+        Gauge,
+        Scopes,
+    },
+    Errno,
+};
 use transport::tls;
 
 metrics! {
@@ -74,8 +82,8 @@ impl Sensor {
 
 // ===== impl Report =====
 
-impl fmt::Display for Report {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtPrometheus for Report {
+    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let lock = match self.0.upgrade() {
             None => return Ok(()),
             Some(lock) => lock,
@@ -115,8 +123,8 @@ impl From<tls::ConfigError> for Status {
     }
 }
 
-impl fmt::Display for Status {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtLabels for Status {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Status::Reloaded => f.pad("status=\"reloaded\""),
             Status::Io {
