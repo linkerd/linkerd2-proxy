@@ -63,7 +63,7 @@ impl Proxy {
         let tls = Conditional::None(tls::ReasonForNoIdentity::NotHttp.into()); // TODO
 
         let client_ctx = ClientCtx::new(
-            &srv_ctx.proxy,
+            srv_ctx.proxy,
             &orig_dst,
             destination::Metadata::no_metadata(),
             TlsStatus::from(&tls),

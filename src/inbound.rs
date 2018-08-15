@@ -12,7 +12,7 @@ use bind;
 use ctx;
 use transparency::orig_proto;
 
-type Bind<B> = bind::Bind<Arc<ctx::Proxy>, B>;
+type Bind<B> = bind::Bind<ctx::Proxy, B>;
 
 pub struct Inbound<B> {
     default_addr: Option<SocketAddr>,
@@ -103,7 +103,6 @@ where
 #[cfg(test)]
 mod tests {
     use std::net;
-    use std::sync::Arc;
 
     use http;
     use linkerd2_proxy_router::Recognize;
@@ -114,8 +113,8 @@ mod tests {
     use conditional::Conditional;
     use tls;
 
-    fn new_inbound(default: Option<net::SocketAddr>, ctx: &Arc<ctx::Proxy>) -> Inbound<()> {
-        let bind = Bind::new(tls::ClientConfig::no_tls()).with_ctx(ctx.clone());
+    fn new_inbound(default: Option<net::SocketAddr>, ctx: ctx::Proxy) -> Inbound<()> {
+        let bind = Bind::new(tls::ClientConfig::no_tls()).with_ctx(ctx);
         Inbound::new(default, bind)
     }
 
@@ -137,12 +136,12 @@ mod tests {
             local: net::SocketAddr,
             remote: net::SocketAddr
         ) -> bool {
-            let ctx = ctx::Proxy::inbound(&ctx::Process::test("test"));
+            let ctx = ctx::Proxy::Inbound;
 
-            let inbound = new_inbound(None, &ctx);
+            let inbound = new_inbound(None, ctx);
 
             let srv_ctx = ctx::transport::Server::new(
-                &ctx, &local, &remote, &Some(orig_dst), TLS_DISABLED);
+                ctx, &local, &remote, &Some(orig_dst), TLS_DISABLED);
 
             let rec = srv_ctx.orig_dst_if_not_local().map(make_key_http1);
 
@@ -158,14 +157,14 @@ mod tests {
             local: net::SocketAddr,
             remote: net::SocketAddr
         ) -> bool {
-            let ctx = ctx::Proxy::inbound(&ctx::Process::test("test"));
+            let ctx = ctx::Proxy::Inbound;
 
-            let inbound = new_inbound(default, &ctx);
+            let inbound = new_inbound(default, ctx);
 
             let mut req = http::Request::new(());
             req.extensions_mut()
                 .insert(ctx::transport::Server::new(
-                    &ctx,
+                    ctx,
                     &local,
                     &remote,
                     &None,
@@ -176,9 +175,9 @@ mod tests {
         }
 
         fn recognize_default_no_ctx(default: Option<net::SocketAddr>) -> bool {
-            let ctx = ctx::Proxy::inbound(&ctx::Process::test("test"));
+            let ctx = ctx::Proxy::Inbound;
 
-            let inbound = new_inbound(default, &ctx);
+            let inbound = new_inbound(default, ctx);
 
             let req = http::Request::new(());
 
@@ -190,14 +189,14 @@ mod tests {
             local: net::SocketAddr,
             remote: net::SocketAddr
         ) -> bool {
-            let ctx = ctx::Proxy::inbound(&ctx::Process::test("test"));
+            let ctx = ctx::Proxy::Inbound;
 
-            let inbound = new_inbound(default, &ctx);
+            let inbound = new_inbound(default, ctx);
 
             let mut req = http::Request::new(());
             req.extensions_mut()
                 .insert(ctx::transport::Server::new(
-                    &ctx,
+                    ctx,
                     &local,
                     &remote,
                     &Some(local),

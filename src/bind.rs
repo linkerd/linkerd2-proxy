@@ -2,7 +2,6 @@ use std::error::Error;
 use std::fmt;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use futures::{Async, Future, Poll, future, task};
 use http::{self, uri};
@@ -53,7 +52,7 @@ where
     B: tower_h2::Body + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
 {
-    bind: Bind<Arc<ctx::Proxy>, B>,
+    bind: Bind<ctx::Proxy, B>,
     binding: Binding<B>,
     /// Prevents logging repeated connect errors.
     ///
@@ -132,7 +131,7 @@ pub struct NormalizeUri<S> {
 }
 
 pub struct RebindTls<B> {
-    bind: Bind<Arc<ctx::Proxy>, B>,
+    bind: Bind<ctx::Proxy, B>,
     protocol: Protocol,
     endpoint: Endpoint,
 }
@@ -219,7 +218,7 @@ impl<C: Clone, B> Clone for Bind<C, B> {
     }
 }
 
-impl<B> Bind<Arc<ctx::Proxy>, B>
+impl<B> Bind<ctx::Proxy, B>
 where
     B: tower_h2::Body + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
@@ -255,7 +254,7 @@ where
         });
 
         let client_ctx = ctx::transport::Client::new(
-            &self.ctx,
+            self.ctx,
             &addr,
             ep.metadata().clone(),
             TlsStatus::from(&tls),
@@ -267,7 +266,7 @@ where
             &client_ctx,
         );
 
-        let log = ::logging::Client::proxy(&self.ctx, addr)
+        let log = ::logging::Client::proxy(self.ctx, addr)
             .with_protocol(protocol.clone());
         let client = transparency::Client::new(
             protocol,
@@ -361,7 +360,7 @@ impl<C, B> Bind<C, B> {
     }
 }
 
-impl<B> control::destination::Bind for BindProtocol<Arc<ctx::Proxy>, B>
+impl<B> control::destination::Bind for BindProtocol<ctx::Proxy, B>
 where
     B: tower_h2::Body + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,

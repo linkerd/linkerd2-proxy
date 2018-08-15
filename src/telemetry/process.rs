@@ -1,7 +1,6 @@
 use std::fmt;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use ctx;
 use super::metrics::{Gauge, prom::FmtPrometheus};
 
 use self::system::System;
@@ -19,8 +18,8 @@ pub struct Report {
 }
 
 impl Report {
-    pub fn new(process: &ctx::Process) -> Self {
-        let t0 = process.start_time
+    pub fn new(start_time: SystemTime) -> Self {
+        let t0 = start_time
             .duration_since(UNIX_EPOCH)
             .expect("process start time")
             .as_secs();

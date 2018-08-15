@@ -97,7 +97,7 @@ mod test {
         Event,
     };
     use ctx::{self, test_util::*, transport::TlsStatus};
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime};
     use conditional::Conditional;
     use tls;
 
@@ -106,11 +106,10 @@ mod test {
         Conditional::None(tls::ReasonForNoTls::Disabled);
 
     fn test_record_response_end_outbound(client_tls: TlsStatus, server_tls: TlsStatus) {
-        let process = process();
-        let proxy = ctx::Proxy::outbound(&process);
-        let server = server(&proxy, server_tls);
+        let proxy = ctx::Proxy::Outbound;
+        let server = server(proxy, server_tls);
 
-        let client = client(&proxy, vec![
+        let client = client(proxy, vec![
             ("service", "draymond"),
             ("deployment", "durant"),
             ("pod", "klay"),
@@ -132,7 +131,7 @@ mod test {
             frames_sent: 0,
         };
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(100), Default::default());
+        let (mut r, _) = metrics::new(SystemTime::now(), Duration::from_secs(100), Default::default());
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
         let labels = labels::ResponseLabels::new(&rsp, None);
 
@@ -168,11 +167,10 @@ mod test {
         use self::labels::*;
         use std::sync::Arc;
 
-        let process = process();
-        let proxy = ctx::Proxy::outbound(&process);
-        let server = server(&proxy, server_tls);
+        let proxy = ctx::Proxy::Outbound;
+        let server = server(proxy, server_tls);
 
-        let client = client(&proxy, vec![
+        let client = client(proxy, vec![
             ("service", "draymond"),
             ("deployment", "durant"),
             ("pod", "klay"),
@@ -228,7 +226,7 @@ mod test {
             ),
         ];
 
-        let (mut r, _) = metrics::new(&process, Duration::from_secs(1000), Default::default());
+        let (mut r, _) = metrics::new(SystemTime::now(), Duration::from_secs(1000), Default::default());
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);

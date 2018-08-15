@@ -240,7 +240,7 @@ where
         let io = try_ready!(self.underlying.poll());
         debug!("client connection open");
         let ctx = ctx::transport::Client::new(
-            &self.ctx.proxy,
+            self.ctx.proxy,
             &self.ctx.remote,
             self.ctx.metadata.clone(),
             io.tls_status(),

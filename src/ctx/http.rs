@@ -83,14 +83,11 @@ impl Request {
 
     /// Returns a `TlsStatus` indicating if the request was sent was over TLS.
     pub fn tls_status(&self) -> ctx::transport::TlsStatus {
-        if self.server.proxy.is_outbound() {
-            // If the request is in the outbound direction, then we opened the
-            // client connection, so check if it was secured.
-            self.client.tls_status
-        } else {
-            // Otherwise, the request is inbound, so check if we accepted it
-            // over TLS.
-            self.server.tls_status
+        use ctx::Proxy::*;
+        // The proxy only handles TLS on one side of each proxy.
+        match self.server.proxy {
+            Outbound => self.client.tls_status,
+            Inbound => self.server.tls_status,
         }
     }
 
