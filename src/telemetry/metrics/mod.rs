@@ -30,9 +30,8 @@ use std::default::Default;
 use std::fmt::{self, Display};
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
-use ctx;
 mod counter;
 mod gauge;
 mod histogram;
@@ -109,10 +108,10 @@ struct Stamped<T> {
 /// is a Hyper service which can be used to create the server for the
 /// scrape endpoint, while the `Record` side can receive updates to the
 /// metrics by calling `record_event`.
-pub fn new(process: &Arc<ctx::Process>, idle_retain: Duration, tls: tls_config_reload::Report)
+pub fn new(start_time: SystemTime, idle_retain: Duration, tls: tls_config_reload::Report)
     -> (Record, Serve)
 {
-    let metrics = Arc::new(Mutex::new(Root::new(process, tls)));
+    let metrics = Arc::new(Mutex::new(Root::new(start_time, tls)));
     (Record::new(&metrics), Serve::new(&metrics, idle_retain))
 }
 
@@ -154,9 +153,9 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
 // ===== impl Root =====
 
 impl Root {
-    pub fn new(process: &Arc<ctx::Process>, tls_config_reload: tls_config_reload::Report) -> Self {
+    pub fn new(start_time: SystemTime, tls_config_reload: tls_config_reload::Report) -> Self {
         Self {
-            process: process::Report::new(&process),
+            process: process::Report::new(start_time),
             tls_config_reload,
             .. Root::default()
         }
@@ -225,6 +224,7 @@ impl<T> ::std::ops::Deref for Stamped<T> {
 
 #[cfg(test)]
 mod tests {
+    use ctx;
     use ctx::test_util::*;
     use super::*;
     use conditional::Conditional;
@@ -235,11 +235,11 @@ mod tests {
 
     fn mock_route(
         root: &mut Root,
-        proxy: &Arc<ctx::Proxy>,
+        proxy: ctx::Proxy,
         server: &Arc<ctx::transport::Server>,
         team: &str
     ) {
-        let client = client(&proxy, vec![("team", team)], TLS_DISABLED);
+        let client = client(proxy, vec![("team", team)], TLS_DISABLED);
         let (req, rsp) = request("http://nba.com", &server, &client);
 
         let client_transport = Arc::new(ctx::transport::Ctx::Client(client));
@@ -254,10 +254,9 @@ mod tests {
 
     #[test]
     fn expiry() {
-        let process = process();
-        let proxy = ctx::Proxy::outbound(&process);
+        let proxy = ctx::Proxy::Outbound;
 
-        let server = server(&proxy, TLS_DISABLED);
+        let server = server(proxy, TLS_DISABLED);
         let server_transport = Arc::new(ctx::transport::Ctx::Server(server.clone()));
 
         let mut root = Root::default();
@@ -265,10 +264,10 @@ mod tests {
         let t0 = Instant::now();
         root.transports().open(&server_transport);
 
-        mock_route(&mut root, &proxy, &server, "warriors");
+        mock_route(&mut root, proxy, &server, "warriors");
         let t1 = Instant::now();
 
-        mock_route(&mut root, &proxy, &server, "sixers");
+        mock_route(&mut root, proxy, &server, "sixers");
         let t2 = Instant::now();
 
         assert_eq!(root.requests.len(), 2);

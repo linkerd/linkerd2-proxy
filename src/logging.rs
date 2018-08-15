@@ -276,11 +276,11 @@ pub type ServerExecutor = ContextualExecutor<Server>;
 pub type ServerFuture<F> = ContextualFuture<Server, F>;
 
 impl Server {
-    pub fn proxy(ctx: &::ctx::Proxy, listen: SocketAddr) -> Self {
-        let name = if ctx.is_inbound() {
-            "in"
-        } else {
-            "out"
+    pub fn proxy(ctx: ::ctx::Proxy, listen: SocketAddr) -> Self {
+        use ::ctx::Proxy::*;
+        let name = match ctx {
+            Inbound => "in",
+            Outbound => "out",
         };
         Section::Proxy.server(name, listen)
     }
@@ -312,11 +312,11 @@ impl fmt::Display for Server {
 }
 
 impl<D: fmt::Display> Client<&'static str, D> {
-    pub fn proxy(ctx: &::ctx::Proxy, dst: D) -> Self {
-        let name = if ctx.is_inbound() {
-            "in"
-        } else {
-            "out"
+    pub fn proxy(ctx: ::ctx::Proxy, dst: D) -> Self {
+        use ::ctx::Proxy::*;
+        let name = match ctx {
+            Inbound => "in",
+            Outbound => "out",
         };
         Section::Proxy.client(name, dst)
     }

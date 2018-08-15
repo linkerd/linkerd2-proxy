@@ -193,10 +193,10 @@ impl ctx::transport::Server {
     }
 
     fn direction(&self) -> tap::tap_event::ProxyDirection {
-        if self.proxy.is_outbound() {
-            tap::tap_event::ProxyDirection::Outbound
-        } else {
-            tap::tap_event::ProxyDirection::Inbound
+        use ctx::Proxy::*;
+        match self.proxy {
+            Outbound => tap::tap_event::ProxyDirection::Outbound,
+            Inbound => tap::tap_event::ProxyDirection::Inbound,
         }
     }
 }

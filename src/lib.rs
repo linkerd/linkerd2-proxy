@@ -60,7 +60,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use indexmap::IndexSet;
 use tokio::{
@@ -122,6 +122,8 @@ pub struct Main<G> {
     config: config::Config,
     tls_config_watch: tls::ConfigWatch,
 
+    start_time: SystemTime,
+
     control_listener: BoundPort,
     inbound_listener: BoundPort,
     outbound_listener: BoundPort,
@@ -144,6 +146,8 @@ where
     where
         R: Into<MainRuntime>,
     {
+        let start_time = SystemTime::now();
+
         let tls_config_watch = tls::ConfigWatch::new(config.tls_settings.clone());
 
         // TODO: Serve over TLS.
@@ -180,6 +184,7 @@ where
 
         Main {
             config,
+            start_time,
             tls_config_watch,
             control_listener,
             inbound_listener,
@@ -211,10 +216,9 @@ where
     where
         F: Future<Item = (), Error = ()> + Send + 'static,
     {
-        let process_ctx = ctx::Process::new(&self.config);
-
         let Main {
             config,
+            start_time,
             tls_config_watch,
             control_listener,
             inbound_listener,
@@ -248,7 +252,7 @@ where
 
         let (taps, observe) = control::Observe::new(100);
         let (sensors, tls_config_sensor, metrics_server) = telemetry::new(
-            &process_ctx,
+            start_time,
             config.metrics_retain_idle,
             &taps,
         );
@@ -288,7 +292,7 @@ where
         // address and listen for inbound connections that should be forwarded
         // to the managed application (private destination).
         let inbound = {
-            let ctx = ctx::Proxy::inbound(&process_ctx);
+            let ctx = ctx::Proxy::Inbound;
             let bind = bind.clone().with_ctx(ctx.clone());
             let default_addr = config.private_forward.map(|a| a.into());
 
@@ -313,8 +317,8 @@ where
         // address and listen for outbound requests that should be routed
         // to a remote service (public destination).
         let outbound = {
-            let ctx = ctx::Proxy::outbound(&process_ctx);
-            let bind = bind.clone().with_ctx(ctx.clone());
+            let ctx = ctx::Proxy::Outbound;
+            let bind = bind.clone().with_ctx(ctx);
             let router = Router::new(
                 Outbound::new(bind, resolver, config.bind_timeout),
                 config.outbound_router_capacity,
@@ -387,7 +391,7 @@ fn serve<R, B, E, F, G>(
     router: Router<R>,
     tcp_connect_timeout: Duration,
     disable_protocol_detection_ports: IndexSet<u16>,
-    proxy_ctx: Arc<ctx::Proxy>,
+    proxy_ctx: ctx::Proxy,
     sensors: telemetry::Sensors,
     get_orig_dst: G,
     drain_rx: drain::Watch,
@@ -448,7 +452,7 @@ where
     let listen_addr = bound_port.local_addr();
     let server = Server::new(
         listen_addr,
-        proxy_ctx.clone(),
+        proxy_ctx,
         sensors,
         get_orig_dst,
         stack,

@@ -52,10 +52,7 @@ pub enum Classification {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Direction {
-    Inbound,
-    Outbound,
-}
+pub struct Direction(ctx::Proxy);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DstLabels {
@@ -70,7 +67,7 @@ pub struct TlsStatus(ctx::transport::TlsStatus);
 
 impl RequestLabels {
     pub fn new(req: &ctx::http::Request) -> Self {
-        let direction = Direction::from_context(req.server.proxy.as_ref());
+        let direction = Direction::new(req.server.proxy);
 
         let outbound_labels = req.dst_labels().cloned();
 
@@ -205,19 +202,17 @@ impl fmt::Display for Classification {
 // ===== impl Direction =====
 
 impl Direction {
-    pub fn from_context(context: &ctx::Proxy) -> Self {
-        match context {
-            &ctx::Proxy::Inbound(_) => Direction::Inbound,
-            &ctx::Proxy::Outbound(_) => Direction::Outbound,
-        }
+    pub fn new(ctx: ctx::Proxy) -> Self {
+        Direction(ctx)
     }
 }
 
 impl fmt::Display for Direction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Direction::Inbound => f.pad("direction=\"inbound\""),
-            &Direction::Outbound => f.pad("direction=\"outbound\""),
+        use ctx::Proxy::*;
+        match self.0 {
+            Inbound => f.pad("direction=\"inbound\""),
+            Outbound => f.pad("direction=\"outbound\""),
         }
     }
 }

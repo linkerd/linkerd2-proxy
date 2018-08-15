@@ -46,7 +46,7 @@ where
     >,
     listen_addr: SocketAddr,
     new_service: S,
-    proxy_ctx: Arc<ProxyCtx>,
+    proxy_ctx: ProxyCtx,
     sensors: Sensors,
     tcp: tcp::Proxy,
     log: ::logging::Server,
@@ -75,7 +75,7 @@ where
    /// Creates a new `Server`.
     pub fn new(
         listen_addr: SocketAddr,
-        proxy_ctx: Arc<ProxyCtx>,
+        proxy_ctx: ProxyCtx,
         sensors: Sensors,
         get_orig_dst: G,
         stack: S,
@@ -85,7 +85,7 @@ where
     ) -> Self {
         let recv_body_svc = HttpBodyNewSvc::new(stack.clone());
         let tcp = tcp::Proxy::new(tcp_connect_timeout, sensors.clone());
-        let log = ::logging::Server::proxy(&proxy_ctx, listen_addr);
+        let log = ::logging::Server::proxy(proxy_ctx, listen_addr);
         Server {
             disable_protocol_detection_ports,
             drain_signal,
@@ -124,7 +124,7 @@ where
         let orig_dst = connection.original_dst_addr(&self.get_orig_dst);
         let local_addr = connection.local_addr().unwrap_or(self.listen_addr);
         let srv_ctx = ServerCtx::new(
-            &self.proxy_ctx,
+            self.proxy_ctx,
             &local_addr,
             &remote_addr,
             &orig_dst,
