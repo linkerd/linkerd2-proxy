@@ -293,7 +293,7 @@ where
         // to the managed application (private destination).
         let inbound = {
             let ctx = ctx::Proxy::Inbound;
-            let bind = bind.clone().with_ctx(ctx.clone());
+            let bind = bind.clone().with_ctx(ctx);
             let default_addr = config.private_forward.map(|a| a.into());
 
             let router = Router::new(
