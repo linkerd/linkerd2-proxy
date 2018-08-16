@@ -13,7 +13,9 @@ jobs:
   include:
     # On PRs and branches, quickly run tests in debug mode.
     - if: type = pull_request
-      script: make test
+      script:
+        - find target -type f -ls
+        - make test
       rust: stable
       before_cache:
         - rm -rf target/debug/linkerd2-proxy
