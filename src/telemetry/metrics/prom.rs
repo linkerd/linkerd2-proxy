@@ -1,18 +1,19 @@
 use std::fmt;
 use std::marker::{PhantomData, Sized};
 
-pub struct AsDisplay<F>(F);
-
 /// Writes a block of metrics in prometheus-formatted output.
 pub trait FmtMetrics {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result;
 
-    fn as_display(&self) -> AsDisplay<&Self> where Self: Sized {
-        AsDisplay(self)
+    fn as_display(&self) -> DisplayMetrics<&Self> where Self: Sized {
+        DisplayMetrics(self)
     }
 }
 
-impl<F: FmtMetrics> fmt::Display for AsDisplay<F> {
+/// Adapts `FmtMetrics` to `fmt::Display`.
+pub struct DisplayMetrics<F>(F);
+
+impl<F: FmtMetrics> fmt::Display for DisplayMetrics<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt_metrics(f)
     }
@@ -21,12 +22,6 @@ impl<F: FmtMetrics> fmt::Display for AsDisplay<F> {
 /// Writes a series of key-quoted-val pairs for use as prometheus labels.
 pub trait FmtLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result;
-}
-
-impl<F: FmtMetrics> fmt::Display for AsDisplay<F> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt_labels(f)
-    }
 }
 
 /// Writes a metric in prometheus-formatted output.
