@@ -179,6 +179,8 @@ mod system {
 mod system {
     use std::{fmt, io};
 
+    use super::super::metrics::FmtPrometheus;
+
     #[derive(Debug)]
     pub(super) struct System {}
 
