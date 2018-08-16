@@ -5,8 +5,8 @@ macro_rules! metrics {
     { $( $name:ident : $kind:ty { $help:expr } ),+ } => {
         $(
             #[allow(non_upper_case_globals)]
-            const $name: ::telemetry::metrics::Metric<'static, $kind> =
-                ::telemetry::metrics::Metric {
+            const $name: ::telemetry::metrics::prom::Metric<'static, $kind> =
+                ::telemetry::metrics::prom::Metric {
                     name: stringify!($name),
                     help: $help,
                     _p: ::std::marker::PhantomData,

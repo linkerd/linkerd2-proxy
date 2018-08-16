@@ -9,6 +9,7 @@ use http;
 
 use ctx;
 use conditional::Conditional;
+use super::prom::FmtLabels;
 use transport::tls;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -23,7 +24,7 @@ pub struct RequestLabels {
 
     /// The value of the `:authority` (HTTP/2) or `Host` (HTTP/1.1) header of
     /// the request.
-    authority: Option<http::uri::Authority>,
+    authority: Authority,
 
     /// Whether or not the request was made over TLS.
     tls_status: TlsStatus,
@@ -35,11 +36,11 @@ pub struct ResponseLabels {
     request_labels: RequestLabels,
 
     /// The HTTP status code of the response.
-    status_code: u16,
+    status_code: StatusCode,
 
     /// The value of the grpc-status trailer. Only applicable to response
     /// metrics for gRPC responses.
-    grpc_status_code: Option<u32>,
+    grpc_status: Option<GrpcStatus>,
 
     /// Was the response a success or failure?
     classification: Classification,
@@ -63,6 +64,15 @@ pub struct DstLabels {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsStatus(ctx::transport::TlsStatus);
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct Authority(Option<http::uri::Authority>);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+struct StatusCode(u16);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+struct GrpcStatus(u32);
+
 // ===== impl RequestLabels =====
 
 impl RequestLabels {
@@ -78,7 +88,7 @@ impl RequestLabels {
         RequestLabels {
             direction,
             outbound_labels,
-            authority,
+            authority: Authority(authority),
             tls_status: TlsStatus(req.tls_status()),
         }
     }
@@ -89,26 +99,23 @@ impl RequestLabels {
     }
 }
 
-impl fmt::Display for RequestLabels {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.authority {
-            Some(ref authority) =>
-                write!(f, "authority=\"{}\",{}", authority, self.direction),
-            None =>
-                write!(f, "authority=\"\",{}", self.direction),
-        }?;
+impl FmtLabels for RequestLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let dst = (self.outbound_labels.as_ref(), &self.tls_status);
 
-        if let Some(ref outbound) = self.outbound_labels {
-            // leading comma added between the direction label and the
-            // destination labels, if there are destination labels.
-            write!(f, ",{}", outbound)?;
-        }
-
-        write!(f, ",{}", self.tls_status)?;
-
-        Ok(())
+        ((&self.authority, &self.direction), dst).fmt_labels(f)
     }
 }
+
+impl<'a> FmtLabels for Authority {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            Some(ref a) => write!(f, "authority=\"{}\"", a),
+            None => write!(f, "authority=\"\""),
+        }
+    }
+}
+
 
 // ===== impl ResponseLabels =====
 
@@ -119,8 +126,8 @@ impl ResponseLabels {
         let classification = Classification::classify(rsp, grpc_status_code);
         ResponseLabels {
             request_labels,
-            status_code: rsp.status.as_u16(),
-            grpc_status_code,
+            status_code: StatusCode(rsp.status.as_u16()),
+            grpc_status: grpc_status_code.map(GrpcStatus),
             classification,
         }
     }
@@ -132,8 +139,8 @@ impl ResponseLabels {
             request_labels,
             // TODO: is it correct to always treat this as 500?
             // Alternatively, the status_code field could be made optional...
-            status_code: 500,
-            grpc_status_code: None,
+            status_code: StatusCode(500),
+            grpc_status: None,
             classification: Classification::Failure,
         }
     }
@@ -144,21 +151,23 @@ impl ResponseLabels {
     }
 }
 
-impl fmt::Display for ResponseLabels {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{},{},status_code=\"{}\"",
-            self.request_labels,
-            self.classification,
-            self.status_code
-        )?;
+impl FmtLabels for ResponseLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let status = (&self.status_code, self.grpc_status.as_ref());
+        let class = (&self.classification, status);
+        (&self.request_labels, class).fmt_labels(f)
+    }
+}
 
-        if let Some(ref status) = self.grpc_status_code {
-            // leading comma added between the status code label and the
-            // gRPC status code labels, if there is a gRPC status code.
-            write!(f, ",grpc_status_code=\"{}\"", status)?;
-        }
+impl FmtLabels for StatusCode {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "status_code=\"{}\"", self.0)
+    }
+}
 
-        Ok(())
+impl FmtLabels for GrpcStatus {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "grpc_status_code=\"{}\"", self.0)
     }
 }
 
@@ -190,8 +199,8 @@ impl Classification {
     }
 }
 
-impl fmt::Display for Classification {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtLabels for Classification {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &Classification::Success => f.pad("classification=\"success\""),
             &Classification::Failure => f.pad("classification=\"failure\""),
@@ -207,8 +216,8 @@ impl Direction {
     }
 }
 
-impl fmt::Display for Direction {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtLabels for Direction {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             ctx::Proxy::Inbound => f.pad("direction=\"inbound\""),
             ctx::Proxy::Outbound => f.pad("direction=\"outbound\""),
@@ -268,16 +277,16 @@ impl hash::Hash for DstLabels {
     }
 }
 
-impl fmt::Display for DstLabels {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.formatted.fmt(f)
+impl FmtLabels for DstLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.formatted, f)
     }
 }
 
 // ===== impl TlsStatus =====
 
-impl fmt::Display for TlsStatus {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtLabels for TlsStatus {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             Conditional::None(tls::ReasonForNoTls::NoIdentity(why)) =>
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why),
@@ -292,12 +301,13 @@ impl From<ctx::transport::TlsStatus> for TlsStatus {
     }
 }
 
-
+#[cfg(test)]
 impl Into<ctx::transport::TlsStatus> for TlsStatus {
     fn into(self) -> ctx::transport::TlsStatus {
         self.0
     }
 }
+
 impl fmt::Display for tls::ReasonForNoIdentity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

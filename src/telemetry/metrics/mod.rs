@@ -27,8 +27,7 @@
 //! to worry about missing commas, double commas, or trailing commas at the
 //! end of the label set (all of which will make Prometheus angry).
 use std::default::Default;
-use std::fmt::{self, Display};
-use std::marker::PhantomData;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -38,6 +37,7 @@ mod histogram;
 mod http;
 mod labels;
 pub mod latency;
+pub mod prom;
 mod record;
 mod scopes;
 mod serve;
@@ -51,40 +51,13 @@ use self::labels::{
     ResponseLabels,
 };
 pub use self::labels::DstLabels;
+pub use self::prom::{FmtMetrics, FmtLabels, FmtMetric};
 pub use self::record::Record;
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
 pub use self::transport::Transports;
 use super::process;
 use super::tls_config_reload;
-
-/// Writes a metric in prometheus-formatted output.
-///
-/// This trait is implemented by `Counter`, `Gauge`, and `Histogram` to account for the
-/// differences in formatting each type of metric. Specifically, `Histogram` formats a
-/// counter for each bucket, as well as a count and total sum.
-pub trait FmtMetric {
-    /// The metric's `TYPE` in help messages.
-    const KIND: &'static str;
-
-    /// Writes a metric with the given name and no labels.
-    fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter, name: N) -> fmt::Result;
-
-    /// Writes a metric with the given name and labels.
-    fn fmt_metric_labeled<N, L>(&self, f: &mut fmt::Formatter, name: N, labels: L) -> fmt::Result
-    where
-        N: Display,
-        L: Display;
-}
-
-/// Describes a metric statically.
-///
-/// Formats help messages and metric values for prometheus output.
-pub struct Metric<'a, M: FmtMetric> {
-    pub name: &'a str,
-    pub help: &'a str,
-    pub _p: PhantomData<M>,
-}
 
 /// The root scope for all runtime metrics.
 #[derive(Debug, Default)]
@@ -113,41 +86,6 @@ pub fn new(start_time: SystemTime, idle_retain: Duration, tls: tls_config_reload
 {
     let metrics = Arc::new(Mutex::new(Root::new(start_time, tls)));
     (Record::new(&metrics), Serve::new(&metrics, idle_retain))
-}
-
-// ===== impl Metric =====
-
-impl<'a, M: FmtMetric> Metric<'a, M> {
-    /// Formats help messages for this metric.
-    pub fn fmt_help(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "# HELP {} {}", self.name, self.help)?;
-        writeln!(f, "# TYPE {} {}", self.name, M::KIND)?;
-        Ok(())
-    }
-
-    /// Formats a single metric without labels.
-    pub fn fmt_metric(&self, f: &mut fmt::Formatter, metric: M) -> fmt::Result {
-        metric.fmt_metric(f, self.name)
-    }
-
-    /// Formats a single metric across labeled scopes.
-    pub fn fmt_scopes<'s, L, S: 's, I, F>(
-        &self,
-        f: &mut fmt::Formatter,
-        scopes: I,
-        to_metric: F
-    ) -> fmt::Result
-    where
-        L: Display,
-        I: IntoIterator<Item = (L, &'s S)>,
-        F: Fn(&S) -> &M
-    {
-        for (labels, scope) in scopes {
-            to_metric(scope).fmt_metric_labeled(f, self.name, labels)?;
-        }
-
-        Ok(())
-    }
 }
 
 // ===== impl Root =====
@@ -179,13 +117,13 @@ impl Root {
     }
 }
 
-impl fmt::Display for Root {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.requests.fmt(f)?;
-        self.responses.fmt(f)?;
-        self.transports.fmt(f)?;
-        self.tls_config_reload.fmt(f)?;
-        self.process.fmt(f)?;
+impl FmtMetrics for Root {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.requests.fmt_metrics(f)?;
+        self.responses.fmt_metrics(f)?;
+        self.transports.fmt_metrics(f)?;
+        self.tls_config_reload.fmt_metrics(f)?;
+        self.process.fmt_metrics(f)?;
 
         Ok(())
     }

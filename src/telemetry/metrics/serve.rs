@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::executor::current_thread::TaskExecutor;
 
-use super::Root;
+use super::{prom::FmtMetrics, Root};
 use task;
 use transport::BoundPort;
 
@@ -109,7 +109,7 @@ impl Service for Serve {
         let resp = if Self::is_gzip(&req) {
             trace!("gzipping metrics");
             let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());
-            write!(&mut writer, "{}", *metrics)
+            write!(&mut writer, "{}", (*metrics).as_display())
                 .and_then(|_| writer.finish())
                 .map_err(ServeError::from)
                 .and_then(|body| {
@@ -121,7 +121,7 @@ impl Service for Serve {
                 })
         } else {
             let mut writer = Vec::<u8>::new();
-            write!(&mut writer, "{}", *metrics)
+            write!(&mut writer, "{}", (*metrics).as_display())
                 .map_err(ServeError::from)
                 .and_then(|_| {
                     Response::builder()

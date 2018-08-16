@@ -1,8 +1,8 @@
 use std::{cmp, iter, slice};
-use std::fmt::{self, Display};
+use std::fmt;
 use std::marker::PhantomData;
 
-use super::{Counter, FmtMetric};
+use super::{Counter, FmtMetric, FmtLabels};
 
 /// A series of latency values and counts.
 #[derive(Debug, Clone)]
@@ -46,13 +46,10 @@ pub enum Bucket {
 pub struct Bounds(pub &'static [Bucket]);
 
 /// Helper that lazily formats metric keys as {0}_{1}.
-struct Key<A: Display, B: Display>(A, B);
-
-/// Helper that lazily formats comma-separated labels `A,B`.
-struct Labels<A: Display, B: Display>(A, B);
+struct Key<A: fmt::Display, B: fmt::Display>(A, B);
 
 /// Helper that lazily formats an `{K}="{V}"`" label.
-struct Label<K: Display, V: Display>(K, V);
+struct Label<K: fmt::Display, V: fmt::Display>(K, V);
 
 // ===== impl Histogram =====
 
@@ -195,7 +192,7 @@ impl<'a, V: Into<u64>> IntoIterator for &'a Histogram<V> {
 impl<V: Into<u64>> FmtMetric for Histogram<V> {
     const KIND: &'static str = "histogram";
 
-    fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter, name: N) -> fmt::Result {
+    fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter, name: N) -> fmt::Result {
         let mut total = Counter::default();
         for (le, count) in self {
             total += *count;
@@ -209,13 +206,13 @@ impl<V: Into<u64>> FmtMetric for Histogram<V> {
 
     fn fmt_metric_labeled<N, L>(&self, f: &mut fmt::Formatter, name: N, labels: L) -> fmt::Result
     where
-        N: Display,
-        L: Display,
+        N: fmt::Display,
+        L: FmtLabels,
     {
         let mut total = Counter::default();
         for (le, count) in self {
             total += *count;
-            total.fmt_metric_labeled(f, Key(&name, "bucket"), Labels(&labels, Label("le", le)))?;
+            total.fmt_metric_labeled(f, Key(&name, "bucket"), (&labels, Label("le", le)))?;
         }
         total.fmt_metric_labeled(f, Key(&name, "count"), &labels)?;
         self.sum.fmt_metric_labeled(f, Key(&name, "sum"), &labels)?;
@@ -226,7 +223,7 @@ impl<V: Into<u64>> FmtMetric for Histogram<V> {
 
 // ===== impl Key =====
 
-impl<A: Display, B: Display> fmt::Display for Key<A, B> {
+impl<A: fmt::Display, B: fmt::Display> fmt::Display for Key<A, B> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}_{}", self.0, self.1)
     }
@@ -234,17 +231,9 @@ impl<A: Display, B: Display> fmt::Display for Key<A, B> {
 
 // ===== impl Label =====
 
-impl<K: Display, V: Display> fmt::Display for Label<K, V> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl<K: fmt::Display, V: fmt::Display> FmtLabels for Label<K, V> {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}=\"{}\"", self.0, self.1)
-    }
-}
-
-// ===== impl Labels =====
-
-impl<A: Display, B: Display> fmt::Display for Labels<A, B> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{},{}", self.0, self.1)
     }
 }
 

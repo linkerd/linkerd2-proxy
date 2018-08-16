@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use super::{
     latency,
+    prom::FmtMetrics,
     Counter,
     Histogram,
     RequestLabels,
@@ -34,8 +35,8 @@ impl RequestScopes {
     }
 }
 
-impl fmt::Display for RequestScopes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtMetrics for RequestScopes {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_empty() {
             return Ok(());
         }
@@ -72,8 +73,8 @@ impl ResponseScopes {
     }
 }
 
-impl fmt::Display for ResponseScopes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtMetrics for ResponseScopes {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_empty() {
             return Ok(());
         }
