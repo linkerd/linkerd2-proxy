@@ -1,12 +1,13 @@
+use indexmap::IndexMap;
 use std::{
     self,
     fmt,
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
+
 use ctx;
 use control::destination;
-use telemetry::DstLabels;
 use transport::tls;
 use conditional::Conditional;
 
@@ -142,10 +143,11 @@ impl Client {
         self.metadata.tls_identity()
     }
 
-    pub fn dst_labels(&self) -> Option<&DstLabels> {
-        self.metadata.dst_labels()
+    pub fn labels(&self) -> &IndexMap<String, String> {
+        self.metadata.labels()
     }
 }
+
 impl From<Arc<Client>> for Ctx {
     fn from(c: Arc<Client>) -> Self {
         Ctx::Client(c)

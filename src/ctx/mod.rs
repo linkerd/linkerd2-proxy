@@ -26,15 +26,14 @@ impl Proxy {
 #[cfg(test)]
 pub mod test_util {
     use http;
+    use indexmap::IndexMap;
     use std::{
-        fmt,
         net::SocketAddr,
         sync::Arc,
     };
 
     use ctx;
     use control::destination;
-    use telemetry::DstLabels;
     use tls;
     use conditional::Conditional;
 
@@ -49,18 +48,16 @@ pub mod test_util {
         ctx::transport::Server::new(proxy, &addr(), &addr(), &Some(addr()), tls)
     }
 
-    pub fn client<L, S>(
+    pub fn client(
         proxy: ctx::Proxy,
-        labels: L,
+        labels: IndexMap<String, String>,
         tls: ctx::transport::TlsStatus,
-    ) -> Arc<ctx::transport::Client>
-    where
-        L: IntoIterator<Item=(S, S)>,
-        S: fmt::Display,
-    {
-        let meta = destination::Metadata::new(DstLabels::new(labels),
+    ) -> Arc<ctx::transport::Client> {
+        let meta = destination::Metadata::new(
+            labels,
             destination::ProtocolHint::Unknown,
-            Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery));
+            Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery)
+        );
         ctx::transport::Client::new(proxy, &addr(), meta, tls)
     }
 

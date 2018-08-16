@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use std::{
     collections::HashMap,
     fmt,
@@ -24,7 +25,6 @@ use control::{
     remote_stream::Remote,
 };
 use dns::{self, IpAddrListFuture};
-use telemetry::DstLabels;
 use transport::{tls, DnsNameAndPort};
 use conditional::Conditional;
 
@@ -281,10 +281,19 @@ fn pb_to_addr_meta(
 ) -> Option<(SocketAddr, Metadata)> {
     let addr = pb.addr.and_then(pb_to_sock_addr)?;
 
-    let mut labels = set_labels.iter()
-        .chain(pb.metric_labels.iter())
-        .collect::<Vec<_>>();
-    labels.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
+    let meta = {
+        let mut t = set_labels.iter()
+            .chain(pb.metric_labels.iter())
+            .collect::<Vec<(&String, &String)>>();
+        t.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
+
+        let mut m = IndexMap::with_capacity(t.len());
+        for (k, v) in t.into_iter() {
+            m.insert(k.clone(), v.clone());
+        }
+
+        m
+    };
 
     let mut tls_identity =
         Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery);
@@ -315,11 +324,7 @@ fn pb_to_addr_meta(
         }
     }
 
-    let meta = Metadata::new(
-        DstLabels::new(labels.into_iter()),
-        proto_hint,
-        tls_identity,
-    );
+    let meta = Metadata::new(meta, proto_hint, tls_identity);
     Some((addr, meta))
 }
 

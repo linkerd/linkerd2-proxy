@@ -1,5 +1,5 @@
+use indexmap::IndexMap;
 use std::boxed::Box;
-use std::collections::HashMap;
 use std::net;
 use std::sync::Arc;
 
@@ -107,20 +107,14 @@ impl Match {
 
             Match::DestinationLabel(ref label) => match *ev {
                 Event::StreamRequestOpen(ref req) | Event::StreamRequestFail(ref req, _) => {
-                    match req.dst_labels() {
-                        None => false,
-                        Some(labels) => label.matches(labels.as_map()),
-                    }
+                    label.matches(req.labels())
                 }
 
                 Event::StreamResponseOpen(ref rsp, _) |
                 Event::StreamResponseFail(ref rsp, _) |
                 Event::StreamResponseEnd(ref rsp, _) => {
-                    match rsp.request.dst_labels() {
-                        None => false,
-                        Some(labels) => label.matches(labels.as_map()),
-                    }
-                },
+                    label.matches(rsp.request.labels())
+                }
 
                 _ => false,
             }
@@ -195,7 +189,7 @@ impl<'a> TryFrom<&'a observe_request::match_::Match> for Match {
 // ===== impl LabelMatch ======
 
 impl LabelMatch {
-    fn matches(&self, labels: &HashMap<String, String>) -> bool {
+    fn matches(&self, labels: &IndexMap<String, String>) -> bool {
         labels.get(&self.key) == Some(&self.value)
     }
 }
@@ -387,6 +381,7 @@ impl<'a> TryFrom<&'a observe_request::match_::Http> for HttpMatch {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use ipnet::{Contains, Ipv4Net, Ipv6Net};
     use quickcheck::*;
 
@@ -427,6 +422,7 @@ mod tests {
             }
         }
     }
+
     quickcheck! {
         fn tcp_from_proto(tcp: observe_request::match_::Tcp) -> bool {
             use self::observe_request::match_::tcp;
@@ -480,7 +476,11 @@ mod tests {
 
         fn label_matches(l: LabelMatch, labels: HashMap<String, String>) -> bool {
             let matches = labels.get(&l.key) == Some(&l.value);
-            l.matches(&labels) == matches
+            let mut ilabels = IndexMap::with_capacity(labels.len());
+            for (k, v) in &labels {
+                ilabels.insert(k.clone(), v.clone());
+            }
+            l.matches(&ilabels) == matches
         }
 
         fn http_from_proto(http: observe_request::match_::Http) -> bool {

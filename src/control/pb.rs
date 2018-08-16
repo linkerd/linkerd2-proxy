@@ -204,10 +204,8 @@ impl ctx::transport::Client {
     fn dst_meta(&self) -> tap::tap_event::EndpointMeta {
         let mut meta = tap::tap_event::EndpointMeta::default();
 
-        if let Some(ref d) = self.dst_labels() {
-            for (k, v) in d.as_map() {
-                meta.labels.insert(k.clone(), v.clone());
-            }
+        for (k, v) in self.labels() {
+            meta.labels.insert(k.clone(), v.clone());
         }
 
         meta.labels.insert("tls".to_owned(), format!("{}", self.tls_status));

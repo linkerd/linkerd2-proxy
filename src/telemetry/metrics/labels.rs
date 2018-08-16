@@ -1,8 +1,6 @@
+use indexmap::IndexMap;
 use std::{
-    collections::HashMap,
     fmt::{self, Write},
-    hash,
-    sync::Arc,
 };
 
 use http;
@@ -55,11 +53,8 @@ pub enum Classification {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Direction(ctx::Proxy);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DstLabels {
-    formatted: Arc<str>,
-    original: Arc<HashMap<String, String>>,
-}
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct DstLabels(String);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsStatus(ctx::transport::TlsStatus);
@@ -79,7 +74,7 @@ impl RequestLabels {
     pub fn new(req: &ctx::http::Request) -> Self {
         let direction = Direction::new(req.server.proxy);
 
-        let outbound_labels = req.dst_labels().cloned();
+        let outbound_labels = DstLabels::new(req.labels());
 
         let authority = req.uri
             .authority_part()
@@ -228,58 +223,32 @@ impl FmtLabels for Direction {
 // ===== impl DstLabels ====
 
 impl DstLabels {
-    pub fn new<I, S>(labels: I) -> Option<Self>
-    where
-        I: IntoIterator<Item=(S, S)>,
-        S: fmt::Display,
-    {
+    fn new(labels: &IndexMap<String, String>) -> Option<Self> {
+        if labels.is_empty() {
+            return None;
+        }
+
         let mut labels = labels.into_iter();
 
-        if let Some((k, v)) = labels.next() {
-            let mut original = HashMap::new();
+        let (k, v) = labels.next().expect("labels must be non-empty");
+        // Format the first label pair without a leading comma, since we
+        // don't know where it is in the output labels at this point.
+        let mut s = format!("dst_{}=\"{}\"", k, v);
 
-            // Format the first label pair without a leading comma, since we
-            // don't know where it is in the output labels at this point.
-            let mut s = format!("dst_{}=\"{}\"", k, v);
-            original.insert(format!("{}", k), format!("{}", v));
-
-            // Format subsequent label pairs with leading commas, since
-            // we know that we already formatted the first label pair.
-            for (k, v) in labels {
-                write!(s, ",dst_{}=\"{}\"", k, v)
-                    .expect("writing to string should not fail");
-                original.insert(format!("{}", k), format!("{}", v));
-            }
-
-            Some(DstLabels {
-                formatted: Arc::from(s),
-                original: Arc::new(original),
-            })
-        } else {
-            // The iterator is empty; return None
-            None
+        // Format subsequent label pairs with leading commas, since
+        // we know that we already formatted the first label pair.
+        for (k, v) in labels {
+            write!(s, ",dst_{}=\"{}\"", k, v)
+                .expect("writing to string should not fail");
         }
-    }
 
-    pub fn as_map(&self) -> &HashMap<String, String> {
-        &self.original
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.formatted
-    }
-}
-
-// Simply hash the formatted string and no other fields on `DstLabels`.
-impl hash::Hash for DstLabels {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.formatted.hash(state)
+        Some(DstLabels(s))
     }
 }
 
 impl FmtLabels for DstLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.formatted, f)
+        fmt::Display::fmt(&self.0, f)
     }
 }
 
