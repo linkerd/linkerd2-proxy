@@ -32,8 +32,6 @@ enum ServeError {
     Io(io::Error),
 }
 
-struct PromWriter<F: FmtPrometheus>(F);
-
 // ===== impl Serve =====
 
 impl Serve {
@@ -111,7 +109,7 @@ impl Service for Serve {
         let resp = if Self::is_gzip(&req) {
             trace!("gzipping metrics");
             let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());
-            write!(&mut writer, "{}", PromWriter(&*metrics))
+            write!(&mut writer, "{}", (*metrics).as_display())
                 .and_then(|_| writer.finish())
                 .map_err(ServeError::from)
                 .and_then(|body| {
@@ -123,7 +121,7 @@ impl Service for Serve {
                 })
         } else {
             let mut writer = Vec::<u8>::new();
-            write!(&mut writer, "{}", PromWriter(&*metrics))
+            write!(&mut writer, "{}", (*metrics).as_display())
                 .map_err(ServeError::from)
                 .and_then(|_| {
                     Response::builder()
@@ -180,11 +178,5 @@ impl Error for ServeError {
             ServeError::Http(ref cause) => Some(cause),
             ServeError::Io(ref cause) => Some(cause),
         }
-    }
-}
-
-impl<F: FmtPrometheus> fmt::Display for PromWriter<F> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt_prometheus(f)
     }
 }

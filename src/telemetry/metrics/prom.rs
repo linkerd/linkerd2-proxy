@@ -1,9 +1,22 @@
 use std::fmt;
-use std::marker::PhantomData;
+use std::marker::{PhantomData, Sized};
+
+pub struct AsDisplay<F>(F);
 
 /// Writes a block of metrics in prometheus-formatted output.
 pub trait FmtPrometheus {
     fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result;
+
+    /// Allows FmtPrometheus to be used in the context of a fmt::Display.
+    fn as_display(&self) -> AsDisplay<&Self> where Self: Sized {
+        AsDisplay(self)
+    }
+}
+
+impl<F: FmtPrometheus> fmt::Display for AsDisplay<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_prometheus(f)
+    }
 }
 
 /// Writes a series of key-quoted-val pairs for use as prometheus labels.
