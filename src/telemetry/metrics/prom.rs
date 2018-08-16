@@ -4,24 +4,29 @@ use std::marker::{PhantomData, Sized};
 pub struct AsDisplay<F>(F);
 
 /// Writes a block of metrics in prometheus-formatted output.
-pub trait FmtPrometheus {
-    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result;
+pub trait FmtMetrics {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result;
 
-    /// Allows FmtPrometheus to be used in the context of a fmt::Display.
     fn as_display(&self) -> AsDisplay<&Self> where Self: Sized {
         AsDisplay(self)
     }
 }
 
-impl<F: FmtPrometheus> fmt::Display for AsDisplay<F> {
+impl<F: FmtMetrics> fmt::Display for AsDisplay<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt_prometheus(f)
+        self.0.fmt_metrics(f)
     }
 }
 
 /// Writes a series of key-quoted-val pairs for use as prometheus labels.
 pub trait FmtLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result;
+}
+
+impl<F: FmtMetrics> fmt::Display for AsDisplay<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_labels(f)
+    }
 }
 
 /// Writes a metric in prometheus-formatted output.
@@ -129,11 +134,11 @@ impl<A: FmtLabels, B: FmtLabels> FmtLabels for (Option<A>, B) {
     }
 }
 
-// ===== impl FmtPrometheus =====
+// ===== impl FmtMetrics =====
 
-impl<'a, A: FmtPrometheus + 'a> FmtPrometheus for &'a A {
-    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (*self).fmt_prometheus(f)
+impl<'a, A: FmtMetrics + 'a> FmtMetrics for &'a A {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (*self).fmt_metrics(f)
     }
 }
 

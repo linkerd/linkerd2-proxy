@@ -6,7 +6,7 @@ use ctx;
 use super::{
     labels::{Direction, TlsStatus},
     latency,
-    prom::{FmtLabels, FmtPrometheus},
+    prom::{FmtLabels, FmtMetrics},
     Counter,
     Gauge,
     Histogram,
@@ -149,8 +149,8 @@ impl Transports {
     }
 }
 
-impl FmtPrometheus for Transports {
-    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtMetrics for Transports {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.metrics.is_empty() {
             return Ok(());
         }

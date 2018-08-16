@@ -7,7 +7,7 @@ use std::{
 
 use telemetry::{
     metrics::{
-        prom::{FmtLabels, FmtPrometheus},
+        prom::{FmtLabels, FmtMetrics},
         Counter,
         Gauge,
         Scopes,
@@ -82,8 +82,8 @@ impl Sensor {
 
 // ===== impl Report =====
 
-impl FmtPrometheus for Report {
-    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtMetrics for Report {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let lock = match self.0.upgrade() {
             None => return Ok(()),
             Some(lock) => lock,

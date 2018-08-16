@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::executor::current_thread::TaskExecutor;
 
-use super::{prom::FmtPrometheus, Root};
+use super::{prom::FmtMetrics, Root};
 use task;
 use transport::BoundPort;
 

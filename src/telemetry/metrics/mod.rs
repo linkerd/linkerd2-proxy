@@ -51,7 +51,7 @@ use self::labels::{
     ResponseLabels,
 };
 pub use self::labels::DstLabels;
-pub use self::prom::{FmtPrometheus, FmtLabels, FmtMetric};
+pub use self::prom::{FmtMetrics, FmtLabels, FmtMetric};
 pub use self::record::Record;
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
@@ -117,13 +117,13 @@ impl Root {
     }
 }
 
-impl FmtPrometheus for Root {
-    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.requests.fmt_prometheus(f)?;
-        self.responses.fmt_prometheus(f)?;
-        self.transports.fmt_prometheus(f)?;
-        self.tls_config_reload.fmt_prometheus(f)?;
-        self.process.fmt_prometheus(f)?;
+impl FmtMetrics for Root {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.requests.fmt_metrics(f)?;
+        self.responses.fmt_metrics(f)?;
+        self.transports.fmt_metrics(f)?;
+        self.tls_config_reload.fmt_metrics(f)?;
+        self.process.fmt_metrics(f)?;
 
         Ok(())
     }

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use super::{
     latency,
-    prom::FmtPrometheus,
+    prom::FmtMetrics,
     Counter,
     Histogram,
     RequestLabels,
@@ -35,8 +35,8 @@ impl RequestScopes {
     }
 }
 
-impl FmtPrometheus for RequestScopes {
-    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtMetrics for RequestScopes {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_empty() {
             return Ok(());
         }
@@ -73,8 +73,8 @@ impl ResponseScopes {
     }
 }
 
-impl FmtPrometheus for ResponseScopes {
-    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtMetrics for ResponseScopes {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_empty() {
             return Ok(());
         }

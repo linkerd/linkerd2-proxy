@@ -1,7 +1,7 @@
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::metrics::{Gauge, prom::FmtPrometheus};
+use super::metrics::{Gauge, prom::FmtMetrics};
 
 use self::system::System;
 
@@ -38,13 +38,13 @@ impl Report {
     }
 }
 
-impl FmtPrometheus for Report {
-    fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtMetrics for Report {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
         process_start_time_seconds.fmt_help(f)?;
         process_start_time_seconds.fmt_metric(f, self.start_time)?;
 
         if let Some(ref sys) = self.system {
-            sys.fmt_prometheus(f)?;
+            sys.fmt_metrics(f)?;
         }
 
         Ok(())
@@ -58,7 +58,7 @@ mod system {
     use std::{io, fs};
 
     use super::*;
-    use super::super::metrics::{Counter, Gauge, FmtPrometheus};
+    use super::super::metrics::{Counter, Gauge, FmtMetrics};
 
     metrics! {
         process_cpu_seconds_total: Counter {
@@ -119,8 +119,8 @@ mod system {
         }
     }
 
-    impl FmtPrometheus for System {
-        fn fmt_prometheus(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    impl FmtMetrics for System {
+        fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
             // XXX potentially blocking call
             let stat = match pid::stat_self() {
                 Ok(stat) => stat,
@@ -179,7 +179,7 @@ mod system {
 mod system {
     use std::{fmt, io};
 
-    use super::super::metrics::FmtPrometheus;
+    use super::super::metrics::FmtMetrics;
 
     #[derive(Debug)]
     pub(super) struct System {}
@@ -193,8 +193,8 @@ mod system {
         }
     }
 
-    impl FmtPrometheus for System {
-        fn fmt_prometheus(&self, _: &mut fmt::Formatter) -> fmt::Result {
+    impl FmtMetrics for System {
+        fn fmt_metrics(&self, _: &mut fmt::Formatter) -> fmt::Result {
             Ok(())
         }
     }
