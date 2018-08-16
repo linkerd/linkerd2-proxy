@@ -101,11 +101,9 @@ impl RequestLabels {
 
 impl FmtLabels for RequestLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let labels = (((&self.authority,
-            &self.direction),
-            self.outbound_labels.as_ref()),
-            &self.tls_status);
-        labels.fmt_labels(f)
+        let dst = (self.outbound_labels.as_ref(), &self.tls_status);
+
+        ((&self.authority, &self.direction), dst).fmt_labels(f)
     }
 }
 
@@ -155,11 +153,9 @@ impl ResponseLabels {
 
 impl FmtLabels for ResponseLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let l = (((&self.request_labels,
-            &self.classification),
-            &self.status_code),
-            self.grpc_status.as_ref());
-        l.fmt_labels(f)
+        let status = (&self.status_code, self.grpc_status.as_ref());
+        let class = (&self.classification, status);
+        (&self.request_labels, class).fmt_labels(f)
     }
 }
 
