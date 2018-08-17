@@ -253,7 +253,7 @@ impl FmtLabels for DstLabels {
 
 impl FmtLabels for ctx::transport::TlsStatus {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             Conditional::None(tls::ReasonForNoTls::NoIdentity(why)) =>
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why),
             status => write!(f, "tls=\"{}\"", status),
