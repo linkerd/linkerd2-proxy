@@ -109,10 +109,10 @@ mod test {
         let proxy = ctx::Proxy::Outbound;
         let server = server(proxy, server_tls);
 
-        let client = client(proxy, vec![
-            ("service", "draymond"),
-            ("deployment", "durant"),
-            ("pod", "klay"),
+        let client = client(proxy, indexmap![
+            "service".into() => "draymond".into(),
+            "deployment".into() => "durant".into(),
+            "pod".into() => "klay".into(),
         ], client_tls);
 
         let (_, rsp) = request("http://buoyant.io", &server, &client);
@@ -170,10 +170,10 @@ mod test {
         let proxy = ctx::Proxy::Outbound;
         let server = server(proxy, server_tls);
 
-        let client = client(proxy, vec![
-            ("service", "draymond"),
-            ("deployment", "durant"),
-            ("pod", "klay"),
+        let client = client(proxy, indexmap![
+            "service".into() => "draymond".into(),
+            "deployment".into() => "durant".into(),
+            "pod".into() => "klay".into(),
         ], client_tls);
 
         let (req, rsp) = request("http://buoyant.io", &server, &client);

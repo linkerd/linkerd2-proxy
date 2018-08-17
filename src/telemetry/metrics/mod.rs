@@ -50,7 +50,6 @@ use self::labels::{
     RequestLabels,
     ResponseLabels,
 };
-pub use self::labels::DstLabels;
 pub use self::prom::{FmtMetrics, FmtLabels, FmtMetric};
 pub use self::record::Record;
 pub use self::scopes::Scopes;
@@ -177,7 +176,7 @@ mod tests {
         server: &Arc<ctx::transport::Server>,
         team: &str
     ) {
-        let client = client(proxy, vec![("team", team)], TLS_DISABLED);
+        let client = client(proxy, indexmap!["team".into() => team.into(),], TLS_DISABLED);
         let (req, rsp) = request("http://nba.com", &server, &client);
 
         let client_transport = Arc::new(ctx::transport::Ctx::Client(client));

@@ -1,6 +1,6 @@
+use indexmap::IndexMap;
 use std::net::SocketAddr;
 
-use telemetry::DstLabels;
 use super::{Metadata, ProtocolHint};
 use tls;
 use conditional::Conditional;
@@ -32,8 +32,8 @@ impl Endpoint {
         &self.metadata
     }
 
-    pub fn dst_labels(&self) -> Option<&DstLabels> {
-        self.metadata.dst_labels()
+    pub fn labels(&self) -> &IndexMap<String, String> {
+        self.metadata.labels()
     }
 
     pub fn can_use_orig_proto(&self) -> bool {

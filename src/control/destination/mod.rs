@@ -24,10 +24,10 @@
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
+use indexmap::IndexMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
-use tls;
 
 use futures::{
     sync::mpsc,
@@ -41,7 +41,7 @@ use tower_discover::{Change, Discover};
 use tower_service::Service;
 
 use dns;
-use telemetry::DstLabels;
+use tls;
 use transport::{DnsNameAndPort, HostAndPort};
 
 pub mod background;
@@ -93,8 +93,8 @@ pub struct Resolution<B> {
 /// Metadata describing an endpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
-    /// A set of Prometheus metric labels describing the destination.
-    dst_labels: Option<DstLabels>,
+    /// Arbitrary endpoint labels. Primarily used for telemetry.
+    labels: IndexMap<String, String>,
 
     /// A hint from the controller about what protocol (HTTP1, HTTP2, etc) the
     /// destination understands.
@@ -257,8 +257,8 @@ impl Responder {
 impl Metadata {
     /// Construct a Metadata struct representing an endpoint with no metadata.
     pub fn no_metadata() -> Self {
-        Metadata {
-            dst_labels: None,
+        Self {
+            labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
             // If we have no metadata on an endpoint, assume it does not support TLS.
             tls_identity:
@@ -267,20 +267,20 @@ impl Metadata {
     }
 
     pub fn new(
-        dst_labels: Option<DstLabels>,
+        labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
         tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>
     ) -> Self {
-        Metadata {
-            dst_labels,
+        Self {
+            labels,
             protocol_hint,
             tls_identity,
         }
     }
 
     /// Returns the endpoint's labels from the destination service, if it has them.
-    pub fn dst_labels(&self) -> Option<&DstLabels> {
-        self.dst_labels.as_ref()
+    pub fn labels(&self) -> &IndexMap<String, String> {
+        &self.labels
     }
 
     pub fn protocol_hint(&self) -> ProtocolHint {

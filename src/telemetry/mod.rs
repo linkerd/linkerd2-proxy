@@ -25,7 +25,7 @@ pub mod tls_config_reload;
 
 use self::errno::Errno;
 pub use self::event::Event;
-pub use self::metrics::{DstLabels, Serve as ServeMetrics};
+pub use self::metrics::{Serve as ServeMetrics};
 pub use self::sensor::Sensors;
 
 pub fn new(

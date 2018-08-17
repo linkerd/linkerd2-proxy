@@ -1,9 +1,9 @@
+use indexmap::IndexMap;
 use http;
 use std::sync::{Arc, atomic::AtomicUsize};
+use std::sync::atomic::Ordering;
 
 use ctx;
-use telemetry::DstLabels;
-use std::sync::atomic::Ordering;
 use transport::tls;
 use conditional::Conditional;
 
@@ -91,8 +91,8 @@ impl Request {
         }
     }
 
-    pub fn dst_labels(&self) -> Option<&DstLabels> {
-        self.client.dst_labels()
+    pub fn labels(&self) -> &IndexMap<String, String> {
+        self.client.labels()
     }
 }
 
@@ -111,7 +111,7 @@ impl Response {
         self.request.tls_status()
     }
 
-    pub fn dst_labels(&self) -> Option<&DstLabels> {
-        self.request.dst_labels()
+    pub fn labels(&self) -> &IndexMap<String, String> {
+        self.request.labels()
     }
 }
