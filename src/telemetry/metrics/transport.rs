@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ctx;
 use super::{
-    labels::{Direction, TlsStatus},
+    labels::Direction,
     latency,
     prom::{FmtLabels, FmtMetrics},
     Counter,
@@ -38,7 +38,7 @@ pub struct Transports {
 struct Key {
     direction: Direction,
     peer: Peer,
-    tls_status: TlsStatus,
+    tls_status: ctx::transport::TlsStatus,
 }
 
 /// Holds all of the metrics for a class of transport.
