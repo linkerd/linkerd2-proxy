@@ -12,13 +12,14 @@ use super::transport;
 #[derive(Clone, Debug)]
 pub struct Record {
     metrics: Arc<Mutex<Root>>,
+    transports: transport::Registry,
 }
 
 // ===== impl Record =====
 
 impl Record {
-    pub(super) fn new(metrics: &Arc<Mutex<Root>>) -> Self {
-        Self { metrics: metrics.clone() }
+    pub(super) fn new(metrics: &Arc<Mutex<Root>>, transports: transport::Registry) -> Self {
+        Self { metrics: metrics.clone(), transports }
     }
 
     #[inline]
@@ -67,9 +68,7 @@ impl Record {
             },
 
             Event::TransportOpen(ref ctx) => {
-                self.update(|metrics| {
-                    metrics.transports().open(ctx);
-                })
+                self.transports.open(ctx);
             },
 
             Event::TransportClose(ref ctx, ref close) => {
@@ -80,10 +79,8 @@ impl Record {
                         errno: close.errno.map(|e| e.into())
                     }
                 };
-                self.update(|metrics| {
-                    metrics.transports()
-                        .close(ctx, eos, close.duration, close.rx_bytes, close.tx_bytes);
-                })
+                self.transports
+                    .close(ctx, eos, close.duration, close.rx_bytes, close.tx_bytes);
             },
         };
     }
@@ -97,7 +94,7 @@ mod test {
         Event,
     };
     use ctx::{self, test_util::*, transport::TlsStatus};
-    use std::time::{Duration, Instant, SystemTime};
+    use std::time::{Duration, Instant};
     use conditional::Conditional;
     use tls;
 
@@ -131,7 +128,7 @@ mod test {
             frames_sent: 0,
         };
 
-        let (mut r, _) = metrics::new(SystemTime::now(), Duration::from_secs(100), Default::default());
+        let (mut r, _) = metrics::new(Duration::from_secs(100), Default::default(), Default::default());
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
         let labels = labels::ResponseLabels::new(&rsp, None);
 
@@ -226,7 +223,7 @@ mod test {
             ),
         ];
 
-        let (mut r, _) = metrics::new(SystemTime::now(), Duration::from_secs(1000), Default::default());
+        let (mut r, _) = metrics::new(Duration::from_secs(1000), Default::default(), Default::default());
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);
@@ -235,11 +232,11 @@ mod test {
         assert_eq!(client_tls, rsp_labels.tls_status());
 
         {
-            let mut lock = r.metrics.lock().expect("lock");
+            let lock = r.metrics.lock().expect("lock");
             assert!(lock.requests.get(&req_labels).is_none());
             assert!(lock.responses.get(&rsp_labels).is_none());
-            assert_eq!(lock.transports().open_total(&server_transport), 0);
-            assert_eq!(lock.transports().open_total(&client_transport), 0);
+            assert_eq!(r.transports.open_total(&server_transport), 0);
+            assert_eq!(r.transports.open_total(&client_transport), 0);
         }
 
         for e in &events {
@@ -247,7 +244,7 @@ mod test {
         }
 
         {
-            let mut lock = r.metrics.lock().expect("lock");
+            let lock = r.metrics.lock().expect("lock");
 
             // === request scope ====================================
             assert_eq!(
@@ -273,7 +270,7 @@ mod test {
 
             use super::transport::Eos;
             let transport_duration: u64 = 30_000 * 1_000;
-            let t = lock.transports();
+            let t = r.transports;
 
             assert_eq!(t.open_total(&server_transport), 1);
             assert_eq!(t.rx_tx_bytes_total(&server_transport), (4321, 4321));
