@@ -19,7 +19,6 @@ mod errno;
 pub mod event;
 mod metrics;
 mod process;
-mod proxy_label;
 pub mod sensor;
 pub mod tap;
 pub mod tls_config_reload;
@@ -27,7 +26,6 @@ pub mod tls_config_reload;
 use self::errno::Errno;
 pub use self::event::Event;
 pub use self::metrics::{Serve as ServeMetrics};
-use self::proxy_label::ProxyLabel;
 pub use self::sensor::Sensors;
 
 pub fn new(
