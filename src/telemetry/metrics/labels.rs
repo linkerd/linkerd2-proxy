@@ -12,9 +12,7 @@ use transport::tls;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RequestLabels {
-
-    /// Was the request in the inbound or outbound direction?
-    direction: Direction,
+    proxy: ctx::Proxy,
 
     // Additional labels identifying the destination service of an outbound
     // request, provided by service discovery.
@@ -50,9 +48,6 @@ pub enum Classification {
     Failure,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Direction(ctx::Proxy);
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct DstLabels(String);
 
@@ -69,8 +64,6 @@ struct GrpcStatus(u32);
 
 impl RequestLabels {
     pub fn new(req: &ctx::http::Request) -> Self {
-        let direction = Direction::new(req.server.proxy);
-
         let outbound_labels = DstLabels::new(req.labels());
 
         let authority = req.uri
@@ -78,7 +71,7 @@ impl RequestLabels {
             .cloned();
 
         RequestLabels {
-            direction,
+            proxy: req.server.proxy,
             outbound_labels,
             authority: Authority(authority),
             tls_status: req.tls_status(),
@@ -95,7 +88,7 @@ impl FmtLabels for RequestLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let dst = (self.outbound_labels.as_ref(), &self.tls_status);
 
-        ((&self.authority, &self.direction), dst).fmt_labels(f)
+        ((&self.authority, &self.proxy), dst).fmt_labels(f)
     }
 }
 
@@ -200,17 +193,10 @@ impl FmtLabels for Classification {
     }
 }
 
-// ===== impl Direction =====
-
-impl Direction {
-    pub fn new(ctx: ctx::Proxy) -> Self {
-        Direction(ctx)
-    }
-}
-
-impl FmtLabels for Direction {
+// TODO https://github.com/linkerd/linkerd2/issues/1486
+impl FmtLabels for ctx::Proxy {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0 {
+        match *self {
             ctx::Proxy::Inbound => f.pad("direction=\"inbound\""),
             ctx::Proxy::Outbound => f.pad("direction=\"outbound\""),
         }
