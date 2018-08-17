@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ctx;
 use super::{
-    labels::{Direction, TlsStatus},
+    labels::TlsStatus,
     latency,
     prom::{FmtLabels, FmtMetrics},
     Counter,
@@ -36,7 +36,7 @@ pub struct Transports {
 /// Implements `fmt::Display` to render a comma-separated list of key-value pairs.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 struct Key {
-    direction: Direction,
+    proxy: ctx::Proxy,
     peer: Peer,
     tls_status: TlsStatus,
 }
@@ -181,14 +181,14 @@ impl FmtMetrics for Transports {
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        ((self.direction, self.peer), self.tls_status).fmt_labels(f)
+        ((self.proxy, self.peer), self.tls_status).fmt_labels(f)
     }
 }
 
 impl Key {
     fn new(ctx: &ctx::transport::Ctx) -> Self {
         Self {
-            direction: Direction::new(ctx.proxy()),
+            proxy: ctx.proxy(),
             peer: match *ctx {
                 ctx::transport::Ctx::Server(_) => Peer::Src,
                 ctx::transport::Ctx::Client(_) => Peer::Dst,
