@@ -11,7 +11,7 @@ use super::{
     Gauge,
     Histogram,
 };
-use telemetry::Errno;
+use telemetry::{ProxyLabel, Errno};
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
@@ -181,7 +181,7 @@ impl FmtMetrics for Transports {
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        ((self.proxy, self.peer), self.tls_status).fmt_labels(f)
+        ((ProxyLabel(self.proxy), self.peer), self.tls_status).fmt_labels(f)
     }
 }
 

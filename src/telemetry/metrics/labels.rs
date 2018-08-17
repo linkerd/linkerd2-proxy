@@ -8,6 +8,7 @@ use http;
 use ctx;
 use conditional::Conditional;
 use super::prom::FmtLabels;
+use telemetry::ProxyLabel;
 use transport::tls;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -91,7 +92,7 @@ impl FmtLabels for RequestLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let dst = (self.outbound_labels.as_ref(), &self.tls_status);
 
-        ((&self.authority, &self.proxy), dst).fmt_labels(f)
+        ((&self.authority, ProxyLabel(self.proxy)), dst).fmt_labels(f)
     }
 }
 
@@ -192,15 +193,6 @@ impl FmtLabels for Classification {
         match self {
             &Classification::Success => f.pad("classification=\"success\""),
             &Classification::Failure => f.pad("classification=\"failure\""),
-        }
-    }
-}
-
-impl FmtLabels for ctx::Proxy {
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            ctx::Proxy::Inbound => f.pad("direction=\"inbound\""),
-            ctx::Proxy::Outbound => f.pad("direction=\"outbound\""),
         }
     }
 }
