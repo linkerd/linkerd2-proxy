@@ -93,7 +93,7 @@ pub struct Resolution<B> {
 /// Metadata describing an endpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
-    /// Arbitrary endpoint labels. Useful for telemetry, especially.
+    /// Arbitrary endpoint labels. Primarily used for telemetry.
     labels: IndexMap<String, String>,
 
     /// A hint from the controller about what protocol (HTTP1, HTTP2, etc) the
