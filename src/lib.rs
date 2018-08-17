@@ -251,7 +251,7 @@ where
         );
 
         let (taps, observe) = control::Observe::new(100);
-        let (sensors, tls_config_sensor, metrics_server) = telemetry::new(
+        let (sensors, transport_registry, tls_config_sensor, metrics_server) = telemetry::new(
             start_time,
             config.metrics_retain_idle,
             &taps,
@@ -286,7 +286,8 @@ where
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let bind = Bind::new(tls_client_config).with_sensors(sensors.clone());
+        let bind = Bind::new(transport_registry.clone(), tls_client_config)
+            .with_sensors(sensors.clone());
 
         // Setup the public listener. This will listen on a publicly accessible
         // address and listen for inbound connections that should be forwarded
@@ -307,7 +308,7 @@ where
                 config.private_connect_timeout,
                 config.inbound_ports_disable_protocol_detection,
                 ctx,
-                sensors.clone(),
+                transport_registry.clone(),
                 get_original_dst.clone(),
                 drain_rx.clone(),
             )
@@ -330,7 +331,7 @@ where
                 config.public_connect_timeout,
                 config.outbound_ports_disable_protocol_detection,
                 ctx,
-                sensors,
+                transport_registry,
                 get_original_dst,
                 drain_rx,
             )
@@ -392,7 +393,7 @@ fn serve<R, B, E, F, G>(
     tcp_connect_timeout: Duration,
     disable_protocol_detection_ports: IndexSet<u16>,
     proxy_ctx: ctx::Proxy,
-    sensors: telemetry::Sensors,
+    transport_registry: telemetry::transport::Registry,
     get_orig_dst: G,
     drain_rx: drain::Watch,
 ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
@@ -453,7 +454,7 @@ where
     let server = Server::new(
         listen_addr,
         proxy_ctx,
-        sensors,
+        transport_registry,
         get_orig_dst,
         stack,
         tcp_connect_timeout,

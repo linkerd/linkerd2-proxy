@@ -29,6 +29,7 @@ use watch_service::{WatchService, Rebind};
 pub struct Bind<C, B> {
     ctx: C,
     sensors: telemetry::Sensors,
+    transport_registry: telemetry::transport::Registry,
     tls_client_config: tls::ClientConfigWatch,
     _p: PhantomData<fn() -> B>,
 }
@@ -149,7 +150,7 @@ pub type HttpResponse = http::Response<sensor::http::ResponseBody<HttpBody>>;
 pub type HttpRequest<B> = http::Request<sensor::http::RequestBody<B>>;
 
 pub type Client<B> = transparency::Client<
-    sensor::Connect<transport::Connect>,
+    telemetry::transport::Connect<transport::Connect>,
     ::logging::ClientExecutor<&'static str, SocketAddr>,
     B,
 >;
@@ -181,10 +182,14 @@ impl Error for BufferSpawnError {
 }
 
 impl<B> Bind<(), B> {
-    pub fn new(tls_client_config: tls::ClientConfigWatch) -> Self {
+    pub fn new(
+        transport_registry: telemetry::transport::Registry,
+        tls_client_config: tls::ClientConfigWatch
+    ) -> Self {
         Self {
             ctx: (),
             sensors: telemetry::Sensors::null(),
+            transport_registry,
             tls_client_config,
             _p: PhantomData,
         }
@@ -201,6 +206,7 @@ impl<B> Bind<(), B> {
         Bind {
             ctx,
             sensors: self.sensors,
+            transport_registry: self.transport_registry,
             tls_client_config: self.tls_client_config,
             _p: PhantomData,
         }
@@ -212,6 +218,7 @@ impl<C: Clone, B> Clone for Bind<C, B> {
         Self {
             ctx: self.ctx.clone(),
             sensors: self.sensors.clone(),
+            transport_registry: self.transport_registry.clone(),
             tls_client_config: self.tls_client_config.clone(),
             _p: PhantomData,
         }
@@ -261,10 +268,9 @@ where
         );
 
         // Map a socket address to a connection.
-        let connect = self.sensors.connect(
-            transport::Connect::new(addr, tls),
-            &client_ctx,
-        );
+        let connect = self.transport_registry
+            .new_connect(client_ctx.as_ref(), transport::Connect::new(addr, tls));
+
 
         let log = ::logging::Client::proxy(self.ctx, addr)
             .with_protocol(protocol.clone());

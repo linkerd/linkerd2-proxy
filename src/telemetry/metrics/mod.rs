@@ -82,11 +82,11 @@ struct Stamped<T> {
 pub fn new(
     idle_retain: Duration,
     process: process::Report,
+    transport_report: transport::Report,
     tls: tls_config_reload::Report
 ) -> (Record, Serve) {
-    let (transports, transports_report) = transport::new();
-    let metrics = Arc::new(Mutex::new(Root::new(process, transports_report, tls)));
-    (Record::new(&metrics, transports), Serve::new(&metrics, idle_retain))
+    let metrics = Arc::new(Mutex::new(Root::new(process, transport_report, tls)));
+    (Record::new(&metrics), Serve::new(&metrics, idle_retain))
 }
 
 // ===== impl Root =====

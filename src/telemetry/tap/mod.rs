@@ -37,7 +37,7 @@ impl Taps {
 
     ///
     pub(super) fn inspect(&mut self, ev: &Event) {
-        if !ev.is_http() || self.by_id.is_empty() {
+        if self.by_id.is_empty() {
             return;
         }
         debug!("inspect taps={:?} event={:?}", self.by_id.keys().collect::<Vec<_>>(), ev);

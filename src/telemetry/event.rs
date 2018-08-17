@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use h2;
 
@@ -7,9 +7,6 @@ use ctx;
 
 #[derive(Clone, Debug)]
 pub enum Event {
-    TransportOpen(Arc<ctx::transport::Ctx>),
-    TransportClose(Arc<ctx::transport::Ctx>, TransportClose),
-
     StreamRequestOpen(Arc<ctx::http::Request>),
     StreamRequestFail(Arc<ctx::http::Request>, StreamRequestFail),
     StreamRequestEnd(Arc<ctx::http::Request>, StreamRequestEnd),
@@ -17,19 +14,6 @@ pub enum Event {
     StreamResponseOpen(Arc<ctx::http::Response>, StreamResponseOpen),
     StreamResponseFail(Arc<ctx::http::Response>, StreamResponseFail),
     StreamResponseEnd(Arc<ctx::http::Response>, StreamResponseEnd),
-}
-
-#[derive(Clone, Debug)]
-pub struct TransportClose {
-    /// Indicates that the transport was closed without error.
-    // TODO include details.
-    pub clean: bool,
-    pub errno: Option<i32>,
-
-    pub duration: Duration,
-
-    pub rx_bytes: u64,
-    pub tx_bytes: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -71,27 +55,4 @@ pub struct StreamResponseEnd {
     pub grpc_status: Option<u32>,
     pub bytes_sent: u64,
     pub frames_sent: u32,
-}
-
-// ===== impl Event =====
-
-impl Event {
-    pub fn is_http(&self) -> bool {
-        match *self {
-            Event::StreamRequestOpen(_) |
-            Event::StreamRequestFail(_, _) |
-            Event::StreamRequestEnd(_, _) |
-            Event::StreamResponseOpen(_, _) |
-            Event::StreamResponseFail(_, _) |
-            Event::StreamResponseEnd(_, _) => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_transport(&self) -> bool {
-        match *self {
-            Event::TransportOpen(_) | Event::TransportClose(_, _) => true,
-            _ => false,
-        }
-    }
 }
