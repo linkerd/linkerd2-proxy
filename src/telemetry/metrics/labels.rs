@@ -23,7 +23,7 @@ pub struct RequestLabels {
     authority: Authority,
 
     /// Whether or not the request was made over TLS.
-    tls_status: TlsStatus,
+    tls_status: ctx::transport::TlsStatus,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -51,9 +51,6 @@ pub enum Classification {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct DstLabels(String);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsStatus(ctx::transport::TlsStatus);
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct Authority(Option<http::uri::Authority>);
 
@@ -77,12 +74,12 @@ impl RequestLabels {
             proxy: req.server.proxy,
             outbound_labels,
             authority: Authority(authority),
-            tls_status: TlsStatus(req.tls_status()),
+            tls_status: req.tls_status(),
         }
     }
 
     #[cfg(test)]
-    pub fn tls_status(&self) -> TlsStatus {
+    pub fn tls_status(&self) -> ctx::transport::TlsStatus {
         self.tls_status
     }
 }
@@ -134,7 +131,7 @@ impl ResponseLabels {
     }
 
     #[cfg(test)]
-    pub fn tls_status(&self) -> TlsStatus {
+    pub fn tls_status(&self) -> ctx::transport::TlsStatus {
         self.request_labels.tls_status
     }
 }
@@ -240,43 +237,12 @@ impl FmtLabels for DstLabels {
 
 // ===== impl TlsStatus =====
 
-impl FmtLabels for TlsStatus {
+impl FmtLabels for ctx::transport::TlsStatus {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0 {
+        match self {
             Conditional::None(tls::ReasonForNoTls::NoIdentity(why)) =>
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why),
             status => write!(f, "tls=\"{}\"", status),
-        }
-    }
-}
-
-impl From<ctx::transport::TlsStatus> for TlsStatus {
-    fn from(tls: ctx::transport::TlsStatus) -> Self {
-        TlsStatus(tls)
-    }
-}
-
-#[cfg(test)]
-impl Into<ctx::transport::TlsStatus> for TlsStatus {
-    fn into(self) -> ctx::transport::TlsStatus {
-        self.0
-    }
-}
-
-impl fmt::Display for tls::ReasonForNoIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            tls::ReasonForNoIdentity::NotHttp => f.pad("not_http"),
-            tls::ReasonForNoIdentity::NoAuthorityInHttpRequest =>
-                f.pad("no_authority_in_http_request"),
-            tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery =>
-                f.pad("not_provided_by_service_discovery"),
-            tls::ReasonForNoIdentity::Loopback => f.pad("loopback"),
-            tls::ReasonForNoIdentity::NotConfigured => f.pad("not_configured"),
-            tls::ReasonForNoIdentity::NotImplementedForTap =>
-                f.pad("not_implemented_for_tap"),
-            tls::ReasonForNoIdentity::NotImplementedForMetrics =>
-                f.pad("not_implemented_for_metrics"),
         }
     }
 }

@@ -135,7 +135,7 @@ mod test {
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
         let labels = labels::ResponseLabels::new(&rsp, None);
 
-        assert_eq!(labels.tls_status(), client_tls.into());
+        assert_eq!(labels.tls_status(), client_tls);
 
         assert!(r.metrics.lock()
             .expect("lock")
@@ -231,8 +231,8 @@ mod test {
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);
 
-        assert_eq!(client_tls, req_labels.tls_status().into());
-        assert_eq!(client_tls, rsp_labels.tls_status().into());
+        assert_eq!(client_tls, req_labels.tls_status());
+        assert_eq!(client_tls, rsp_labels.tls_status());
 
         {
             let mut lock = r.metrics.lock().expect("lock");

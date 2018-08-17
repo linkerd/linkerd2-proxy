@@ -1,5 +1,6 @@
 use std::{
     self,
+    fmt,
     fs::File,
     io::{self, Cursor, Read},
     path::PathBuf,
@@ -151,6 +152,24 @@ pub enum ReasonForNoIdentity {
 impl From<ReasonForNoIdentity> for ReasonForNoTls {
     fn from(r: ReasonForNoIdentity) -> Self {
         ReasonForNoTls::NoIdentity(r)
+    }
+}
+
+impl fmt::Display for ReasonForNoIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ReasonForNoIdentity::NotHttp => f.pad("not_http"),
+            ReasonForNoIdentity::NoAuthorityInHttpRequest =>
+                f.pad("no_authority_in_http_request"),
+            ReasonForNoIdentity::NotProvidedByServiceDiscovery =>
+                f.pad("not_provided_by_service_discovery"),
+            ReasonForNoIdentity::Loopback => f.pad("loopback"),
+            ReasonForNoIdentity::NotConfigured => f.pad("not_configured"),
+            ReasonForNoIdentity::NotImplementedForTap =>
+                f.pad("not_implemented_for_tap"),
+            ReasonForNoIdentity::NotImplementedForMetrics =>
+                f.pad("not_implemented_for_metrics"),
+        }
     }
 }
 
