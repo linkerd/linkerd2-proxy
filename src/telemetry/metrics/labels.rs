@@ -196,6 +196,7 @@ impl FmtLabels for Classification {
     }
 }
 
+// TODO https://github.com/linkerd/linkerd2/issues/1486
 impl FmtLabels for ctx::Proxy {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {

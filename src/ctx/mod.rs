@@ -8,6 +8,8 @@ pub mod transport;
 ///   local instance.
 /// - The  _outbound_ proxy receives traffic from the local instance and forwards it to a
 ///   remote service.
+///
+/// This type is used for the purposes of caching and telemetry.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Proxy {
     Inbound,
