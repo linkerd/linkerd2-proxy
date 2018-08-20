@@ -6,12 +6,6 @@ use std::time::Duration;
 use ctx;
 use telemetry::Errno;
 use telemetry::metrics::{
-<<<<<<< HEAD
-||||||| parent of 17b17e5... wip
-    labels::{Direction, TlsStatus},
-=======
-    labels::TlsStatus,
->>>>>>> 17b17e5... wip
     latency,
     prom::{FmtLabels, FmtMetrics},
     Counter,
@@ -225,13 +219,7 @@ impl FmtMetrics for Report {
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-<<<<<<< HEAD
         ((self.proxy, self.peer), self.tls_status).fmt_labels(f)
-||||||| parent of 17b17e5... wip
-        ((self.direction, self.peer), self.tls_status).fmt_labels(f)
-=======
-        ((direction, self.peer), self.tls_status).fmt_labels(f)
->>>>>>> 17b17e5... wip
     }
 }
 
