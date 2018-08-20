@@ -29,7 +29,7 @@
 use std::default::Default;
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 mod counter;
 mod gauge;
@@ -41,7 +41,6 @@ pub mod prom;
 mod record;
 mod scopes;
 mod serve;
-mod transport;
 
 pub use self::counter::Counter;
 pub use self::gauge::Gauge;
@@ -54,7 +53,7 @@ pub use self::prom::{FmtMetrics, FmtLabels, FmtMetric};
 pub use self::record::Record;
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
-pub use self::transport::Transports;
+use super::transport;
 use super::process;
 use super::tls_config_reload;
 
@@ -63,7 +62,7 @@ use super::tls_config_reload;
 struct Root {
     requests: http::RequestScopes,
     responses: http::ResponseScopes,
-    transports: Transports,
+    transports: transport::Report,
     tls_config_reload: tls_config_reload::Report,
     process: process::Report,
 }
@@ -80,19 +79,27 @@ struct Stamped<T> {
 /// is a Hyper service which can be used to create the server for the
 /// scrape endpoint, while the `Record` side can receive updates to the
 /// metrics by calling `record_event`.
-pub fn new(start_time: SystemTime, idle_retain: Duration, tls: tls_config_reload::Report)
-    -> (Record, Serve)
-{
-    let metrics = Arc::new(Mutex::new(Root::new(start_time, tls)));
-    (Record::new(&metrics), Serve::new(&metrics, idle_retain))
+pub fn new(
+    idle_retain: Duration,
+    process: process::Report,
+    tls: tls_config_reload::Report
+) -> (Record, Serve) {
+    let (transports, transports_report) = transport::new();
+    let metrics = Arc::new(Mutex::new(Root::new(process, transports_report, tls)));
+    (Record::new(&metrics, transports), Serve::new(&metrics, idle_retain))
 }
 
 // ===== impl Root =====
 
 impl Root {
-    pub fn new(start_time: SystemTime, tls_config_reload: tls_config_reload::Report) -> Self {
+    fn new(
+        process: process::Report,
+        transports: transport::Report,
+        tls_config_reload: tls_config_reload::Report
+    ) -> Self {
         Self {
-            process: process::Report::new(start_time),
+            process,
+            transports,
             tls_config_reload,
             .. Root::default()
         }
@@ -104,10 +111,6 @@ impl Root {
 
     fn response(&mut self, labels: ResponseLabels) -> &mut http::ResponseMetrics {
         self.responses.get_or_default(labels).stamped()
-    }
-
-    fn transports(&mut self) -> &mut Transports {
-        &mut self.transports
     }
 
     fn retain_since(&mut self, epoch: Instant) {
@@ -178,15 +181,8 @@ mod tests {
     ) {
         let client = client(proxy, indexmap!["team".into() => team.into(),], TLS_DISABLED);
         let (req, rsp) = request("http://nba.com", &server, &client);
-
-        let client_transport = Arc::new(ctx::transport::Ctx::Client(client));
-        root.transports.open(&client_transport);
-
         root.request(RequestLabels::new(&req)).end();
         root.response(ResponseLabels::new(&rsp, None)).end(Duration::from_millis(10));
-
-        let duration = Duration::from_millis(15);
-        root.transports().close(&client_transport, transport::Eos::Clean, duration, 100, 200);
    }
 
     #[test]
@@ -194,12 +190,10 @@ mod tests {
         let proxy = ctx::Proxy::Outbound;
 
         let server = server(proxy, TLS_DISABLED);
-        let server_transport = Arc::new(ctx::transport::Ctx::Server(server.clone()));
 
         let mut root = Root::default();
 
         let t0 = Instant::now();
-        root.transports().open(&server_transport);
 
         mock_route(&mut root, proxy, &server, "warriors");
         let t1 = Instant::now();
