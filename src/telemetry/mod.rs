@@ -22,7 +22,7 @@ mod process;
 pub mod sensor;
 pub mod tap;
 pub mod tls_config_reload;
-mod transport;
+pub mod transport;
 
 use self::errno::Errno;
 pub use self::event::Event;
@@ -33,11 +33,17 @@ pub fn new(
     start_time: SystemTime,
     metrics_retain_idle: Duration,
     taps: &Arc<Mutex<tap::Taps>>,
-) -> (Sensors, tls_config_reload::Sensor, ServeMetrics) {
+) -> (Sensors, transport::Registry, tls_config_reload::Sensor, ServeMetrics) {
     let process = process::Report::new(start_time);
+    let (transport_registry, transport_report) = transport::new();
     let (tls_config_sensor, tls_config_fmt) = tls_config_reload::new();
 
-    let (record, serve) = metrics::new(metrics_retain_idle, process, tls_config_fmt);
+    let (record, serve) = metrics::new(
+        metrics_retain_idle,
+        process,
+        transport_report,
+        tls_config_fmt
+    );
     let s = Sensors::new(record, taps);
-    (s, tls_config_sensor, serve)
+    (s, transport_registry, tls_config_sensor, serve)
 }

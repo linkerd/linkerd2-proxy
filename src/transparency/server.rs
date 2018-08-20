@@ -3,7 +3,7 @@ use std::{
     fmt,
     net::SocketAddr,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use futures::{future::Either, Future};
@@ -18,7 +18,7 @@ use transport::{Connection, Peek};
 use ctx::Proxy as ProxyCtx;
 use ctx::transport::{Server as ServerCtx};
 use drain;
-use telemetry::Sensors;
+use telemetry;
 use transport::GetOriginalDst;
 use super::glue::{HttpBody, HttpBodyNewSvc, HyperServerSvc};
 use super::protocol::Protocol;
@@ -47,7 +47,7 @@ where
     listen_addr: SocketAddr,
     new_service: S,
     proxy_ctx: ProxyCtx,
-    sensors: Sensors,
+    transport_registry: telemetry::transport::Registry,
     tcp: tcp::Proxy,
     log: ::logging::Server,
 }
@@ -76,7 +76,7 @@ where
     pub fn new(
         listen_addr: SocketAddr,
         proxy_ctx: ProxyCtx,
-        sensors: Sensors,
+        transport_registry: telemetry::transport::Registry,
         get_orig_dst: G,
         stack: S,
         tcp_connect_timeout: Duration,
@@ -84,7 +84,7 @@ where
         drain_signal: drain::Watch,
     ) -> Self {
         let recv_body_svc = HttpBodyNewSvc::new(stack.clone());
-        let tcp = tcp::Proxy::new(tcp_connect_timeout, sensors.clone());
+        let tcp = tcp::Proxy::new(tcp_connect_timeout, transport_registry.clone());
         let log = ::logging::Server::proxy(proxy_ctx, listen_addr);
         Server {
             disable_protocol_detection_ports,
@@ -99,7 +99,7 @@ where
             listen_addr,
             new_service: stack,
             proxy_ctx,
-            sensors,
+            transport_registry,
             tcp,
             log,
         }
@@ -118,8 +118,6 @@ where
     pub fn serve(&self, connection: Connection, remote_addr: SocketAddr)
         -> impl Future<Item=(), Error=()>
     {
-        let opened_at = Instant::now();
-
         // create Server context
         let orig_dst = connection.original_dst_addr(&self.get_orig_dst);
         let local_addr = connection.local_addr().unwrap_or(self.listen_addr);
@@ -134,7 +132,7 @@ where
             .with_remote(remote_addr);
 
         // record telemetry
-        let io = self.sensors.accept(connection, opened_at, &srv_ctx);
+        let io = self.transport_registry.accept(&srv_ctx, connection);
 
         // We are using the port from the connection's SO_ORIGINAL_DST to
         // determine whether to skip protocol detection, not any port that

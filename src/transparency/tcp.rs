@@ -13,7 +13,7 @@ use ctx::transport::{
     Client as ClientCtx,
     Server as ServerCtx,
 };
-use telemetry::Sensors;
+use telemetry;
 use timeout::Timeout;
 use transport::{self, tls};
 use ctx::transport::TlsStatus;
@@ -22,15 +22,18 @@ use ctx::transport::TlsStatus;
 #[derive(Debug, Clone)]
 pub struct Proxy {
     connect_timeout: Duration,
-    sensors: Sensors,
+    transport_registry: telemetry::transport::Registry,
 }
 
 impl Proxy {
     /// Create a new TCP `Proxy`.
-    pub fn new(connect_timeout: Duration, sensors: Sensors) -> Self {
+    pub fn new(
+        connect_timeout: Duration,
+        transport_registry: telemetry::transport::Registry
+    ) -> Self {
         Self {
             connect_timeout,
-            sensors,
+            transport_registry,
         }
     }
 
@@ -72,7 +75,7 @@ impl Proxy {
             transport::Connect::new(orig_dst, tls),
             self.connect_timeout,
         );
-        let connect = self.sensors.connect(c, &client_ctx);
+        let connect = self.transport_registry.new_connect(&client_ctx, c);
 
         future::Either::A(connect.connect()
             .map_err(move |e| error!("tcp connect error to {}: {:?}", orig_dst, e))

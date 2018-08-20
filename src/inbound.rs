@@ -114,8 +114,11 @@ mod tests {
     use tls;
 
     fn new_inbound(default: Option<net::SocketAddr>, ctx: ctx::Proxy) -> Inbound<()> {
-        let bind = Bind::new(tls::ClientConfig::no_tls()).with_ctx(ctx);
-        Inbound::new(default, bind)
+        let bind = Bind::new(
+            ::telemetry::transport::Registry::default(),
+            tls::ClientConfig::no_tls()
+        );
+        Inbound::new(default, bind.with_ctx(ctx))
     }
 
     fn make_key_http1(addr: net::SocketAddr) -> (net::SocketAddr, bind::Protocol) {

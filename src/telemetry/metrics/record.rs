@@ -6,20 +6,18 @@ use super::labels::{
     RequestLabels,
     ResponseLabels,
 };
-use super::transport;
 
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
 pub struct Record {
     metrics: Arc<Mutex<Root>>,
-    transports: transport::Registry,
 }
 
 // ===== impl Record =====
 
 impl Record {
-    pub(super) fn new(metrics: &Arc<Mutex<Root>>, transports: transport::Registry) -> Self {
-        Self { metrics: metrics.clone(), transports }
+    pub(super) fn new(metrics: &Arc<Mutex<Root>>) -> Self {
+        Self { metrics: metrics.clone() }
     }
 
     #[inline]
@@ -66,22 +64,6 @@ impl Record {
                     metrics.response(ResponseLabels::fail(res)).end(latency)
                 });
             },
-
-            Event::TransportOpen(ref ctx) => {
-                self.transports.open(ctx);
-            },
-
-            Event::TransportClose(ref ctx, ref close) => {
-                let eos = if close.clean {
-                    transport::Eos::Clean
-                } else {
-                    transport::Eos::Error {
-                        errno: close.errno.map(|e| e.into())
-                    }
-                };
-                self.transports
-                    .close(ctx, eos, close.duration, close.rx_bytes, close.tx_bytes);
-            },
         };
     }
 }
@@ -101,6 +83,16 @@ mod test {
     const TLS_ENABLED: Conditional<(), tls::ReasonForNoTls> = Conditional::Some(());
     const TLS_DISABLED: Conditional<(), tls::ReasonForNoTls> =
         Conditional::None(tls::ReasonForNoTls::Disabled);
+
+    fn new_record() -> super::Record {
+        let (r, _) = metrics::new(
+            Duration::from_secs(100),
+            Default::default(),
+            Default::default(),
+            Default::default()
+        );
+        r
+    }
 
     fn test_record_response_end_outbound(client_tls: TlsStatus, server_tls: TlsStatus) {
         let proxy = ctx::Proxy::Outbound;
@@ -128,7 +120,7 @@ mod test {
             frames_sent: 0,
         };
 
-        let (mut r, _) = metrics::new(Duration::from_secs(100), Default::default(), Default::default());
+        let mut r = new_record();
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
         let labels = labels::ResponseLabels::new(&rsp, None);
 
@@ -162,7 +154,6 @@ mod test {
     fn test_record_one_conn_request_outbound(client_tls: TlsStatus, server_tls: TlsStatus) {
         use self::Event::*;
         use self::labels::*;
-        use std::sync::Arc;
 
         let proxy = ctx::Proxy::Outbound;
         let server = server(proxy, server_tls);
@@ -174,17 +165,6 @@ mod test {
         ], client_tls);
 
         let (req, rsp) = request("http://buoyant.io", &server, &client);
-        let server_transport =
-            Arc::new(ctx::transport::Ctx::Server(server.clone()));
-        let client_transport =
-             Arc::new(ctx::transport::Ctx::Client(client.clone()));
-        let transport_close = event::TransportClose {
-            clean: true,
-            errno: None,
-            duration: Duration::from_secs(30_000),
-            rx_bytes: 4321,
-            tx_bytes: 4321,
-        };
 
         let request_open_at = Instant::now();
         let request_end_at = request_open_at + Duration::from_millis(10);
@@ -192,8 +172,6 @@ mod test {
         let response_first_frame_at = response_open_at + Duration::from_millis(100);
         let response_end_at = response_first_frame_at + Duration::from_millis(100);
         let events = vec![
-            TransportOpen(server_transport.clone()),
-            TransportOpen(client_transport.clone()),
             StreamRequestOpen(req.clone()),
             StreamRequestEnd(req.clone(), event::StreamRequestEnd {
                 request_open_at,
@@ -213,17 +191,9 @@ mod test {
                 bytes_sent: 0,
                 frames_sent: 0,
             }),
-            TransportClose(
-                server_transport.clone(),
-                transport_close.clone(),
-            ),
-            TransportClose(
-                client_transport.clone(),
-                transport_close.clone(),
-            ),
-        ];
+       ];
 
-        let (mut r, _) = metrics::new(Duration::from_secs(1000), Default::default(), Default::default());
+        let mut r = new_record();
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);
@@ -235,8 +205,6 @@ mod test {
             let lock = r.metrics.lock().expect("lock");
             assert!(lock.requests.get(&req_labels).is_none());
             assert!(lock.responses.get(&rsp_labels).is_none());
-            assert_eq!(r.transports.open_total(&server_transport), 0);
-            assert_eq!(r.transports.open_total(&client_transport), 0);
         }
 
         for e in &events {
@@ -267,26 +235,6 @@ mod test {
                     .assert_gt_exactly(200, 0)
                     .assert_lt_exactly(200, 0);
             }
-
-            use super::transport::Eos;
-            let transport_duration: u64 = 30_000 * 1_000;
-            let t = r.transports;
-
-            assert_eq!(t.open_total(&server_transport), 1);
-            assert_eq!(t.rx_tx_bytes_total(&server_transport), (4321, 4321));
-            assert_eq!(t.close_total(&server_transport, Eos::Clean), 1);
-            t.connection_durations(&server_transport, Eos::Clean)
-                .assert_bucket_exactly(transport_duration, 1)
-                .assert_gt_exactly(transport_duration, 0)
-                .assert_lt_exactly(transport_duration, 0);
-
-            assert_eq!(t.open_total(&client_transport), 1);
-            assert_eq!(t.rx_tx_bytes_total(&client_transport), (4321, 4321));
-            assert_eq!(t.close_total(&server_transport, Eos::Clean), 1);
-            t.connection_durations(&server_transport, Eos::Clean)
-                .assert_bucket_exactly(transport_duration, 1)
-                .assert_gt_exactly(transport_duration, 0)
-                .assert_lt_exactly(transport_duration, 0);
         }
     }
 
