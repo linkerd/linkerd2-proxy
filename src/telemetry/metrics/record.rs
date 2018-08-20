@@ -197,9 +197,9 @@ mod test {
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);
+
         assert_eq!(client_tls, req_labels.tls_status().into());
         assert_eq!(client_tls, rsp_labels.tls_status().into());
-
 
         {
             let lock = r.metrics.lock().expect("lock");
