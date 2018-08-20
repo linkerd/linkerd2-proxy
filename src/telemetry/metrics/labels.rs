@@ -77,6 +77,11 @@ impl RequestLabels {
             tls_status: req.tls_status(),
         }
     }
+
+    #[cfg(test)]
+    pub fn tls_status(&self) -> ctx::transport::TlsStatus {
+        self.tls_status
+    }
 }
 
 impl FmtLabels for RequestLabels {
