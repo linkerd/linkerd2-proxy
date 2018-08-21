@@ -183,22 +183,16 @@ impl Error for BufferSpawnError {
 
 impl<B> Bind<(), B> {
     pub fn new(
+        sensors: telemetry::Sensors,
         transport_registry: telemetry::transport::Registry,
         tls_client_config: tls::ClientConfigWatch
     ) -> Self {
         Self {
             ctx: (),
-            sensors: telemetry::Sensors::null(),
+            sensors,
             transport_registry,
             tls_client_config,
             _p: PhantomData,
-        }
-    }
-
-    pub fn with_sensors(self, sensors: telemetry::Sensors) -> Self {
-        Self {
-            sensors,
-            ..self
         }
     }
 

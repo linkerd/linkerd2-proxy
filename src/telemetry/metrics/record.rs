@@ -20,6 +20,11 @@ impl Record {
         Self { metrics: metrics.clone() }
     }
 
+    #[cfg(test)]
+    pub fn for_test() -> Self {
+        Self { metrics: Default::default() }
+    }
+
     #[inline]
     fn update<F: Fn(&mut Root)>(&mut self, f: F) {
         let mut lock = self.metrics.lock()
