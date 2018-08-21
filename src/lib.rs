@@ -286,8 +286,11 @@ where
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let bind = Bind::new(transport_registry.clone(), tls_client_config)
-            .with_sensors(sensors.clone());
+        let bind = Bind::new(
+            sensors.clone(),
+            transport_registry.clone(),
+            tls_client_config
+        );
 
         // Setup the public listener. This will listen on a publicly accessible
         // address and listen for inbound connections that should be forwarded

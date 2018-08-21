@@ -19,40 +19,39 @@ struct Inner {
 
 /// Accepts events from sensors.
 #[derive(Clone, Debug)]
-pub(super) struct Handle(Option<Inner>);
+pub(super) struct Handle(Inner);
 
 /// Supports the creation of telemetry scopes.
 #[derive(Clone, Debug)]
-pub struct Sensors(Option<Inner>);
+pub struct Sensors(Inner);
 
 impl Handle {
     pub fn send<F>(&mut self, mk: F)
     where
         F: FnOnce() -> event::Event,
     {
-        if let Some(inner) = self.0.as_mut() {
-            let ev = mk();
-            trace!("event: {:?}", ev);
+        let ev = mk();
+        trace!("event: {:?}", ev);
 
-            if let Ok(mut taps) = inner.taps.lock() {
-                taps.inspect(&ev);
-            }
-
-            inner.metrics.record_event(&ev);
+        if let Ok(mut taps) = self.0.taps.lock() {
+            taps.inspect(&ev);
         }
+
+        self.0.metrics.record_event(&ev);
     }
 }
 
 impl Sensors {
     pub fn new(metrics: Record, taps: &Arc<Mutex<tap::Taps>>) -> Self {
-        Sensors(Some(Inner {
+        Sensors(Inner {
             metrics,
             taps: taps.clone(),
-        }))
+        })
     }
 
-    pub fn null() -> Sensors {
-        Sensors(None)
+    #[cfg(test)]
+    pub fn for_test() -> Self {
+        Self::new(metrics::Record::for_test(), &Default::default())
     }
 
     pub fn http<N, A, B>(
