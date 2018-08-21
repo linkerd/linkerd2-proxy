@@ -450,7 +450,7 @@ where
         // Install the request open timestamp module at the very top
         // of the stack, in order to take the timestamp as close as
         // possible to the beginning of the request's lifetime.
-        telemetry::sensor::http::TimestampRequestOpen::new(map_err)
+        telemetry::http::service::TimestampRequestOpen::new(map_err)
     }));
 
     let listen_addr = bound_port.local_addr();

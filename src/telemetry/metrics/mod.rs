@@ -34,43 +34,27 @@ use std::time::{Duration, Instant};
 mod counter;
 mod gauge;
 mod histogram;
-mod http;
-mod labels;
 pub mod latency;
 pub mod prom;
-mod record;
 mod scopes;
 mod serve;
 
 pub use self::counter::Counter;
 pub use self::gauge::Gauge;
 pub use self::histogram::Histogram;
-use self::labels::{
-    RequestLabels,
-    ResponseLabels,
-};
 pub use self::prom::{FmtMetrics, FmtLabels, FmtMetric};
-pub use self::record::Record;
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
-use super::transport;
-use super::process;
-use super::tls_config_reload;
+use super::{http, process, tls_config_reload, transport};
 
 /// The root scope for all runtime metrics.
 #[derive(Debug, Default)]
-struct Root {
-    requests: http::RequestScopes,
-    responses: http::ResponseScopes,
+pub struct Root {
+    pub(super) requests: http::RequestScopes,
+    pub(super) responses: http::ResponseScopes,
     transports: transport::Report,
     tls_config_reload: tls_config_reload::Report,
     process: process::Report,
-}
-
-#[derive(Debug)]
-struct Stamped<T> {
-    stamp: Instant,
-    inner: T,
 }
 
 /// Construct the Prometheus metrics.
@@ -84,9 +68,9 @@ pub fn new(
     process: process::Report,
     transport_report: transport::Report,
     tls: tls_config_reload::Report
-) -> (Record, Serve) {
+) -> (http::Record, Serve) {
     let metrics = Arc::new(Mutex::new(Root::new(process, transport_report, tls)));
-    (Record::new(&metrics), Serve::new(&metrics, idle_retain))
+    (http::Record::new(&metrics), Serve::new(&metrics, idle_retain))
 }
 
 // ===== impl Root =====
@@ -105,17 +89,17 @@ impl Root {
         }
     }
 
-    fn request(&mut self, labels: RequestLabels) -> &mut http::RequestMetrics {
+    pub(super) fn request(&mut self, labels: http::RequestLabels) -> &mut http::RequestMetrics {
         self.requests.get_or_default(labels).stamped()
     }
 
-    fn response(&mut self, labels: ResponseLabels) -> &mut http::ResponseMetrics {
+    pub(super) fn response(&mut self, labels: http::ResponseLabels) -> &mut http::ResponseMetrics {
         self.responses.get_or_default(labels).stamped()
     }
 
     fn retain_since(&mut self, epoch: Instant) {
-        self.requests.retain(|_, v| v.stamp >= epoch);
-        self.responses.retain(|_, v| v.stamp >= epoch);
+        self.requests.retain(|_, v| v.stamp() >= epoch);
+        self.responses.retain(|_, v| v.stamp() >= epoch);
     }
 }
 
@@ -131,36 +115,6 @@ impl FmtMetrics for Root {
     }
 }
 
-// ===== impl Stamped =====
-
-impl<T> Stamped<T> {
-    fn stamped(&mut self) -> &mut T {
-        self.stamp = Instant::now();
-        &mut self.inner
-    }
-}
-
-impl<T: Default> Default for Stamped<T> {
-    fn default() -> Self {
-        T::default().into()
-    }
-}
-
-impl<T> From<T> for Stamped<T> {
-    fn from(inner: T) -> Self {
-        Self {
-            inner,
-            stamp: Instant::now(),
-        }
-    }
-}
-
-impl<T> ::std::ops::Deref for Stamped<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -181,8 +135,8 @@ mod tests {
     ) {
         let client = client(proxy, indexmap!["team".into() => team.into(),], TLS_DISABLED);
         let (req, rsp) = request("http://nba.com", &server, &client);
-        root.request(RequestLabels::new(&req)).end();
-        root.response(ResponseLabels::new(&rsp, None)).end(Duration::from_millis(10));
+        root.request(http::RequestLabels::new(&req)).end();
+        root.response(http::ResponseLabels::new(&rsp, None)).end(Duration::from_millis(10));
    }
 
     #[test]
