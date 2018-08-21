@@ -26,7 +26,7 @@ pub mod transport;
 use self::errno::Errno;
 pub use self::http::event::Event;
 pub use self::metrics::{Serve as ServeMetrics};
-pub use self::http::sensors::Sensors;
+pub use self::http::Sensors;
 
 pub fn new(
     start_time: SystemTime,

@@ -3,16 +3,16 @@ use std::time::{Duration, Instant};
 
 use super::metrics::{
     latency,
-    FmtMetrics,
     Counter,
+    FmtMetrics,
     Histogram,
     Scopes,
 };
 
 pub mod event;
 mod labels;
-pub mod record;
-pub mod sensors;
+mod record;
+mod sensors;
 pub mod service;
 
 pub use self::labels::{RequestLabels, ResponseLabels};
