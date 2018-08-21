@@ -26,10 +26,8 @@
 //! labels, we can add new labels or modify the existing ones without having
 //! to worry about missing commas, double commas, or trailing commas at the
 //! end of the label set (all of which will make Prometheus angry).
-use std::default::Default;
 use std::fmt;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 mod counter;
 mod gauge;
@@ -48,126 +46,46 @@ pub use self::serve::Serve;
 use super::{http, process, tls_config_reload, transport};
 
 /// The root scope for all runtime metrics.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Root {
-    pub(super) requests: http::RequestScopes,
-    pub(super) responses: http::ResponseScopes,
+    http: http::Report,
     transports: transport::Report,
     tls_config_reload: tls_config_reload::Report,
     process: process::Report,
 }
 
-/// Construct the Prometheus metrics.
-///
-/// Returns the `Record` and `Serve` sides. The `Serve` side
-/// is a Hyper service which can be used to create the server for the
-/// scrape endpoint, while the `Record` side can receive updates to the
-/// metrics by calling `record_event`.
-pub fn new(
-    idle_retain: Duration,
-    process: process::Report,
-    transport_report: transport::Report,
-    tls: tls_config_reload::Report
-) -> (http::Record, Serve) {
-    let metrics = Arc::new(Mutex::new(Root::new(process, transport_report, tls)));
-    (http::Record::new(&metrics), Serve::new(&metrics, idle_retain))
+// ===== impl Root =====
+
+impl Root {
+    pub(super) fn new(
+        http: http::Report,
+        transports: transport::Report,
+        tls_config_reload: tls_config_reload::Report,
+        process: process::Report,
+    ) -> Self {
+        Self {
+            http,
+            transports,
+            tls_config_reload,
+            process,
+        }
+    }
+
+    // TODO this should be moved into `http`
+    fn retain_since(&mut self, epoch: Instant) {
+        self.http.retain_since(epoch);
+    }
 }
 
 // ===== impl Root =====
 
-impl Root {
-    fn new(
-        process: process::Report,
-        transports: transport::Report,
-        tls_config_reload: tls_config_reload::Report
-    ) -> Self {
-        Self {
-            process,
-            transports,
-            tls_config_reload,
-            .. Root::default()
-        }
-    }
-
-    pub(super) fn request(&mut self, labels: http::RequestLabels) -> &mut http::RequestMetrics {
-        self.requests.get_or_default(labels).stamped()
-    }
-
-    pub(super) fn response(&mut self, labels: http::ResponseLabels) -> &mut http::ResponseMetrics {
-        self.responses.get_or_default(labels).stamped()
-    }
-
-    fn retain_since(&mut self, epoch: Instant) {
-        self.requests.retain(|_, v| v.stamp() >= epoch);
-        self.responses.retain(|_, v| v.stamp() >= epoch);
-    }
-}
-
 impl FmtMetrics for Root {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.requests.fmt_metrics(f)?;
-        self.responses.fmt_metrics(f)?;
+        self.http.fmt_metrics(f)?;
         self.transports.fmt_metrics(f)?;
         self.tls_config_reload.fmt_metrics(f)?;
         self.process.fmt_metrics(f)?;
 
         Ok(())
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use ctx;
-    use ctx::test_util::*;
-    use super::*;
-    use conditional::Conditional;
-    use tls;
-
-    const TLS_DISABLED: Conditional<(), tls::ReasonForNoTls> =
-        Conditional::None(tls::ReasonForNoTls::Disabled);
-
-    fn mock_route(
-        root: &mut Root,
-        proxy: ctx::Proxy,
-        server: &Arc<ctx::transport::Server>,
-        team: &str
-    ) {
-        let client = client(proxy, indexmap!["team".into() => team.into(),], TLS_DISABLED);
-        let (req, rsp) = request("http://nba.com", &server, &client);
-        root.request(http::RequestLabels::new(&req)).end();
-        root.response(http::ResponseLabels::new(&rsp, None)).end(Duration::from_millis(10));
-   }
-
-    #[test]
-    fn expiry() {
-        let proxy = ctx::Proxy::Outbound;
-
-        let server = server(proxy, TLS_DISABLED);
-
-        let mut root = Root::default();
-
-        let t0 = Instant::now();
-
-        mock_route(&mut root, proxy, &server, "warriors");
-        let t1 = Instant::now();
-
-        mock_route(&mut root, proxy, &server, "sixers");
-        let t2 = Instant::now();
-
-        assert_eq!(root.requests.len(), 2);
-        assert_eq!(root.responses.len(), 2);
-
-        root.retain_since(t0);
-        assert_eq!(root.requests.len(), 2);
-        assert_eq!(root.responses.len(), 2);
-
-        root.retain_since(t1);
-        assert_eq!(root.requests.len(), 1);
-        assert_eq!(root.responses.len(), 1);
-
-        root.retain_since(t2);
-        assert_eq!(root.requests.len(), 0);
-        assert_eq!(root.responses.len(), 0);
     }
 }

@@ -115,7 +115,7 @@ mod tests {
 
     fn new_inbound(default: Option<net::SocketAddr>, ctx: ctx::Proxy) -> Inbound<()> {
         let bind = Bind::new(
-            ::telemetry::Sensors::for_test(),
+            ::telemetry::http::Sensors::for_test(),
             ::telemetry::transport::Registry::default(),
             tls::ClientConfig::no_tls()
         );

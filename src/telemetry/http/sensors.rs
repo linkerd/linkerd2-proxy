@@ -5,10 +5,10 @@ use tower_service::NewService;
 use tower_h2::Body;
 
 use ctx;
-use telemetry::tap;
+use telemetry::{http::event, tap};
 use transparency::ClientError;
 
-use super::{event, Record};
+use super::record::Record;
 use super::service::{NewHttp, RequestBody};
 
 #[derive(Clone, Debug)]
@@ -42,7 +42,7 @@ impl Handle {
 }
 
 impl Sensors {
-    pub fn new(metrics: Record, taps: &Arc<Mutex<tap::Taps>>) -> Self {
+    pub(super) fn new(metrics: Record, taps: &Arc<Mutex<tap::Taps>>) -> Self {
         Sensors(Inner {
             metrics,
             taps: taps.clone(),

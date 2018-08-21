@@ -10,7 +10,7 @@ use tower_grpc::{self as grpc, Response};
 use linkerd2_proxy_api::tap::{server, ObserveRequest, TapEvent};
 use convert::*;
 use ctx;
-use telemetry::Event;
+use telemetry::http::event::Event;
 use telemetry::tap::{Tap, Taps};
 use std::hash::{Hash, Hasher};
 
