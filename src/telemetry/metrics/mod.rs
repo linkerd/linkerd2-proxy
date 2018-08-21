@@ -50,8 +50,8 @@ use super::{http, process, tls_config_reload, transport};
 /// The root scope for all runtime metrics.
 #[derive(Debug, Default)]
 pub struct Root {
-    requests: http::RequestScopes,
-    responses: http::ResponseScopes,
+    pub(super) requests: http::RequestScopes,
+    pub(super) responses: http::ResponseScopes,
     transports: transport::Report,
     tls_config_reload: tls_config_reload::Report,
     process: process::Report,

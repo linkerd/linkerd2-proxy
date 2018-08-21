@@ -70,14 +70,11 @@ impl Record {
 
 #[cfg(test)]
 mod test {
-    use telemetry::{
-        event,
-        metrics::{self, labels},
-        Event,
-    };
-    use ctx::{self, test_util::*, transport::TlsStatus};
     use std::time::{Duration, Instant};
+
+    use ctx::{self, test_util::*, transport::TlsStatus};
     use conditional::Conditional;
+    use telemetry::http::{event::{self, Event}, labels};
     use tls;
 
     const TLS_ENABLED: Conditional<(), tls::ReasonForNoTls> = Conditional::Some(());
@@ -85,13 +82,7 @@ mod test {
         Conditional::None(tls::ReasonForNoTls::Disabled);
 
     fn new_record() -> super::Record {
-        let (r, _) = metrics::new(
-            Duration::from_secs(100),
-            Default::default(),
-            Default::default(),
-            Default::default()
-        );
-        r
+        super::Record::new(&Default::default())
     }
 
     fn test_record_response_end_outbound(client_tls: TlsStatus, server_tls: TlsStatus) {
