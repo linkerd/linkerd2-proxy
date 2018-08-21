@@ -16,18 +16,17 @@ macro_rules! metrics {
 }
 
 mod errno;
-pub mod event;
+pub mod http;
 mod metrics;
 mod process;
-pub mod sensor;
 pub mod tap;
 pub mod tls_config_reload;
 pub mod transport;
 
 use self::errno::Errno;
-pub use self::event::Event;
+pub use self::http::event::Event;
 pub use self::metrics::{Serve as ServeMetrics};
-pub use self::sensor::Sensors;
+pub use self::http::sensors::Sensors;
 
 pub fn new(
     start_time: SystemTime,

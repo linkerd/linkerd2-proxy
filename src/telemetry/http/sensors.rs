@@ -5,29 +5,28 @@ use tower_service::NewService;
 use tower_h2::Body;
 
 use ctx;
-use telemetry::{event, metrics, tap};
+use telemetry::tap;
 use transparency::ClientError;
 
-pub mod http;
-
-pub use self::http::{Http, NewHttp};
+use super::{event, Record};
+use super::service::{NewHttp, RequestBody};
 
 #[derive(Clone, Debug)]
 struct Inner {
-    metrics: metrics::Record,
+    metrics: Record,
     taps: Arc<Mutex<tap::Taps>>,
 }
 
 /// Accepts events from sensors.
 #[derive(Clone, Debug)]
-struct Handle(Option<Inner>);
+pub(super) struct Handle(Option<Inner>);
 
 /// Supports the creation of telemetry scopes.
 #[derive(Clone, Debug)]
 pub struct Sensors(Option<Inner>);
 
 impl Handle {
-    fn send<F>(&mut self, mk: F)
+    pub fn send<F>(&mut self, mk: F)
     where
         F: FnOnce() -> event::Event,
     {
@@ -45,7 +44,7 @@ impl Handle {
 }
 
 impl Sensors {
-    pub(super) fn new(metrics: metrics::Record, taps: &Arc<Mutex<tap::Taps>>) -> Self {
+    pub fn new(metrics: Record, taps: &Arc<Mutex<tap::Taps>>) -> Self {
         Sensors(Some(Inner {
             metrics,
             taps: taps.clone(),
@@ -65,7 +64,7 @@ impl Sensors {
         A: Body + 'static,
         B: Body + 'static,
         N: NewService<
-            Request = Request<http::RequestBody<A>>,
+            Request = Request<RequestBody<A>>,
             Response = Response<B>,
             Error = ClientError
         >

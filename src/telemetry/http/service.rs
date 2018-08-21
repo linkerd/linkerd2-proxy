@@ -10,8 +10,10 @@ use tower_service::{NewService, Service};
 use tower_h2::Body;
 
 use ctx;
-use telemetry::event::{self, Event};
 use transparency::ClientError;
+
+use super::event::{self, Event};
+use super::sensors::Handle;
 
 const GRPC_STATUS: &str = "grpc-status";
 
@@ -36,14 +38,14 @@ pub struct TimestampRequestOpen<S> {
 
 pub struct NewHttp<N, A, B> {
     new_service: N,
-    handle: super::Handle,
+    handle: Handle,
     client_ctx: Arc<ctx::transport::Client>,
     _p: PhantomData<(A, B)>,
 }
 
 pub struct Init<F, A, B> {
     future: F,
-    handle: super::Handle,
+    handle: Handle,
     client_ctx: Arc<ctx::transport::Client>,
     _p: PhantomData<(A, B)>,
 }
@@ -52,7 +54,7 @@ pub struct Init<F, A, B> {
 #[derive(Debug)]
 pub struct Http<S, A, B> {
     service: S,
-    handle: super::Handle,
+    handle: Handle,
     client_ctx: Arc<ctx::transport::Client>,
     _p: PhantomData<(A, B)>,
 }
@@ -66,7 +68,7 @@ pub struct Respond<F, B> {
 
 #[derive(Debug)]
 struct RespondInner {
-    handle: super::Handle,
+    handle: Handle,
     ctx: Arc<ctx::http::Request>,
     request_open_at: Instant,
 }
@@ -91,7 +93,7 @@ pub trait BodySensor: Sized {
 
 #[derive(Debug)]
 pub struct ResponseBodyInner {
-    handle: super::Handle,
+    handle: Handle,
     ctx: Arc<ctx::http::Response>,
     bytes_sent: u64,
     frames_sent: u32,
@@ -103,7 +105,7 @@ pub struct ResponseBodyInner {
 
 #[derive(Debug)]
 pub struct RequestBodyInner {
-    handle: super::Handle,
+    handle: Handle,
     ctx: Arc<ctx::http::Request>,
     bytes_sent: u64,
     frames_sent: u32,
@@ -125,7 +127,7 @@ where
 {
     pub(super) fn new(
         new_service: N,
-        handle: super::Handle,
+        handle: Handle,
         client_ctx: &Arc<ctx::transport::Client>,
     ) -> Self {
         Self {

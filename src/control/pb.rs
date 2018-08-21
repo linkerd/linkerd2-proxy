@@ -8,7 +8,7 @@ use std::sync::Arc;
 use linkerd2_proxy_api::*;
 use convert::*;
 use ctx;
-use telemetry::{event, Event};
+use telemetry::http::event::{self, Event};
 
 #[derive(Debug, Clone)]
 pub struct UnknownEvent;

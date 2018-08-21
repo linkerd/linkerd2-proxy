@@ -1,16 +1,29 @@
 use std::fmt;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use super::{
+use super::metrics::{
     latency,
-    prom::FmtMetrics,
+    FmtMetrics,
     Counter,
     Histogram,
-    RequestLabels,
-    ResponseLabels,
     Scopes,
-    Stamped,
 };
+
+pub mod event;
+mod labels;
+pub mod record;
+pub mod sensors;
+pub mod service;
+
+pub use self::labels::{RequestLabels, ResponseLabels};
+pub use self::record::Record;
+pub use self::sensors::Sensors;
+
+#[derive(Debug)]
+pub(super) struct Stamped<T> {
+    stamp: Instant,
+    inner: T,
+}
 
 pub(super) type RequestScopes = Scopes<RequestLabels, Stamped<RequestMetrics>>;
 
@@ -105,5 +118,40 @@ impl ResponseMetrics {
     #[cfg(test)]
     pub(super) fn latency(&self) -> &Histogram<latency::Ms> {
         &self.latency
+    }
+}
+
+// ===== impl Stamped =====
+
+impl<T> Stamped<T> {
+    pub fn stamp(&self) -> Instant {
+        self.stamp
+    }
+
+    pub fn stamped(&mut self) -> &mut T {
+        self.stamp = Instant::now();
+        &mut self.inner
+    }
+}
+
+impl<T: Default> Default for Stamped<T> {
+    fn default() -> Self {
+        T::default().into()
+    }
+}
+
+impl<T> From<T> for Stamped<T> {
+    fn from(inner: T) -> Self {
+        Self {
+            inner,
+            stamp: Instant::now(),
+        }
+    }
+}
+
+impl<T> ::std::ops::Deref for Stamped<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }

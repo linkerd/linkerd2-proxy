@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use telemetry::event::Event;
-use super::Root;
+use telemetry::http::event::Event;
+use telemetry::metrics::Root;
 use super::labels::{
     RequestLabels,
     ResponseLabels,
@@ -16,7 +16,7 @@ pub struct Record {
 // ===== impl Record =====
 
 impl Record {
-    pub(super) fn new(metrics: &Arc<Mutex<Root>>) -> Self {
+    pub fn new(metrics: &Arc<Mutex<Root>>) -> Self {
         Self { metrics: metrics.clone() }
     }
 

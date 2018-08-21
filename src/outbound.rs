@@ -17,7 +17,7 @@ use linkerd2_proxy_router::Recognize;
 use bind::{self, Bind, Protocol};
 use control::destination::{self, Bind as BindTrait, Resolution};
 use ctx;
-use telemetry::sensor::http::{ResponseBody as SensorBody};
+use telemetry::http::service::{ResponseBody as SensorBody};
 use timeout::Timeout;
 use transparency::{h1, HttpBody};
 use transport::{DnsNameAndPort, Host, HostAndPort};

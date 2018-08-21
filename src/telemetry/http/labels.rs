@@ -7,7 +7,7 @@ use http;
 
 use ctx;
 use conditional::Conditional;
-use super::prom::FmtLabels;
+use telemetry::metrics::FmtLabels;
 use transport::tls;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

@@ -10,7 +10,7 @@ use tower_h2;
 
 use bind;
 use task::BoxExecutor;
-use telemetry::sensor::http::RequestBody;
+use telemetry::http::service::RequestBody;
 use super::glue::{BodyPayload, HttpBody, HyperConnect};
 use super::h1;
 use super::upgrade::{HttpConnect, Http11Upgrade};
