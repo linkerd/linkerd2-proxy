@@ -51,7 +51,7 @@ impl Sensors {
 
     #[cfg(test)]
     pub fn for_test() -> Self {
-        Self::new(metrics::Record::for_test(), &Default::default())
+        Self::new(Record::for_test(), &Default::default())
     }
 
     pub fn http<N, A, B>(
