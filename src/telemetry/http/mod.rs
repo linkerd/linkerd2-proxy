@@ -19,12 +19,6 @@ pub use self::labels::{RequestLabels, ResponseLabels};
 pub use self::record::Record;
 pub use self::sensors::Sensors;
 
-#[derive(Debug)]
-pub(super) struct Stamped<T> {
-    stamp: Instant,
-    inner: T,
-}
-
 pub(super) type RequestScopes = Scopes<RequestLabels, Stamped<RequestMetrics>>;
 
 #[derive(Debug, Default)]
@@ -38,6 +32,12 @@ pub(super) type ResponseScopes = Scopes<ResponseLabels, Stamped<ResponseMetrics>
 pub struct ResponseMetrics {
     total: Counter,
     latency: Histogram<latency::Ms>,
+}
+
+#[derive(Debug)]
+pub(super) struct Stamped<T> {
+    stamp: Instant,
+    inner: T,
 }
 
 // ===== impl RequestScopes =====
