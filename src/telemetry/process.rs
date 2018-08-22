@@ -1,7 +1,7 @@
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::metrics::{Gauge, prom::FmtMetrics};
+use super::metrics::{FmtMetrics, Gauge};
 
 use self::system::System;
 
@@ -11,7 +11,7 @@ metrics! {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Report {
     start_time: Gauge,
     system: Option<System>,
@@ -74,7 +74,7 @@ mod system {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub(super) struct System {
         page_size: u64,
         clock_ticks_per_sec: u64,
@@ -181,7 +181,7 @@ mod system {
 
     use super::super::metrics::FmtMetrics;
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub(super) struct System {}
 
     impl System {
