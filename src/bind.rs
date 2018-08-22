@@ -28,7 +28,7 @@ use watch_service::{WatchService, Rebind};
 /// Buffering is not bounded and no timeouts are applied.
 pub struct Bind<C, B> {
     ctx: C,
-    sensors: telemetry::http::Sensors,
+    sensors: telemetry::Sensors,
     transport_registry: telemetry::transport::Registry,
     tls_client_config: tls::ClientConfigWatch,
     _p: PhantomData<fn() -> B>,
@@ -183,7 +183,7 @@ impl Error for BufferSpawnError {
 
 impl<B> Bind<(), B> {
     pub fn new(
-        sensors: telemetry::http::Sensors,
+        sensors: telemetry::Sensors,
         transport_registry: telemetry::transport::Registry,
         tls_client_config: tls::ClientConfigWatch
     ) -> Self {

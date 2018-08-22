@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 
 use linkerd2_proxy_api::tap::observe_request;
 
-use super::http::event::Event;
+use super::Event;
 
 mod match_;
 

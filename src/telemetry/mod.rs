@@ -24,13 +24,15 @@ pub mod tls_config_reload;
 pub mod transport;
 
 use self::errno::Errno;
+pub use self::http::event::Event;
 pub use self::metrics::{Serve as ServeMetrics};
+pub use self::http::Sensors;
 
 pub fn new(
     start_time: SystemTime,
     metrics_retain_idle: Duration,
     taps: &Arc<Mutex<tap::Taps>>,
-) -> (http::Sensors, transport::Registry, tls_config_reload::Sensor, ServeMetrics) {
+) -> (Sensors, transport::Registry, tls_config_reload::Sensor, ServeMetrics) {
     let process = process::Report::new(start_time);
     let (http_sensors, http_report) = http::new(taps);
     let (transport_registry, transport_report) = transport::new();

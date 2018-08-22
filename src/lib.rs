@@ -287,7 +287,7 @@ where
         let (drain_tx, drain_rx) = drain::channel();
 
         let bind = Bind::new(
-            sensors,
+            sensors.clone(),
             transport_registry.clone(),
             tls_client_config
         );
