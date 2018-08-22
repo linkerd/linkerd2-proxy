@@ -12,7 +12,6 @@ use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 use tokio::executor::current_thread::TaskExecutor;
 
 use super::{prom::FmtMetrics, Root};
@@ -23,7 +22,6 @@ use transport::BoundPort;
 #[derive(Debug, Clone)]
 pub struct Serve {
     metrics: Arc<Mutex<Root>>,
-    idle_retain: Duration,
 }
 
 #[derive(Debug)]
@@ -35,11 +33,8 @@ enum ServeError {
 // ===== impl Serve =====
 
 impl Serve {
-    pub fn new(metrics: &Arc<Mutex<Root>>, idle_retain: Duration) -> Self {
-        Serve {
-            metrics: metrics.clone(),
-            idle_retain,
-        }
+    pub fn new(metrics: &Arc<Mutex<Root>>) -> Self {
+        Self { metrics: metrics.clone() }
     }
 
     fn is_gzip<B>(req: &Request<B>) -> bool {
@@ -100,11 +95,8 @@ impl Service for Serve {
             return future::ok(rsp);
         }
 
-        let mut metrics = self.metrics.lock()
+        let metrics = self.metrics.lock()
             .expect("metrics lock poisoned");
-
-        metrics.retain_since(Instant::now() - self.idle_retain);
-        let metrics = metrics;
 
         let resp = if Self::is_gzip(&req) {
             trace!("gzipping metrics");

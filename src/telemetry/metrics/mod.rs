@@ -27,7 +27,6 @@
 //! to worry about missing commas, double commas, or trailing commas at the
 //! end of the label set (all of which will make Prometheus angry).
 use std::fmt;
-use std::time::Instant;
 
 mod counter;
 mod gauge;
@@ -69,11 +68,6 @@ impl Root {
             tls_config_reload,
             process,
         }
-    }
-
-    // TODO this should be moved into `http`
-    fn retain_since(&mut self, epoch: Instant) {
-        self.http.retain_since(epoch);
     }
 }
 

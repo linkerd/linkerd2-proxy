@@ -34,7 +34,7 @@ pub fn new(
     taps: &Arc<Mutex<tap::Taps>>,
 ) -> (Sensors, transport::Registry, tls_config_reload::Sensor, ServeMetrics) {
     let process = process::Report::new(start_time);
-    let (http_sensors, http_report) = http::new(taps);
+    let (http_sensors, http_report) = http::new(metrics_retain_idle, taps);
     let (transport_registry, transport_report) = transport::new();
     let (tls_config_sensor, tls_config_fmt) = tls_config_reload::new();
 
@@ -44,6 +44,6 @@ pub fn new(
         tls_config_fmt,
         process,
     )));
-    let serve = ServeMetrics::new(&report, metrics_retain_idle);
+    let serve = ServeMetrics::new(&report);
     (http_sensors, transport_registry, tls_config_sensor, serve)
 }
