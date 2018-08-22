@@ -354,7 +354,11 @@ where
 
                     let tap = serve_tap(control_listener, TapServer::new(observe));
 
-                    let metrics = metrics_server.serve(metrics_listener);
+                    let metrics = control::serve_http(
+                        "metrics",
+                        metrics_listener,
+                        metrics_server,
+                    );
 
                     rt.spawn(::logging::admin().bg("resolver").future(resolver_bg));
                     // tap is already wrapped in a logging Future.
