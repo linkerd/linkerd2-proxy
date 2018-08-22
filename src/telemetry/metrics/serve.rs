@@ -35,7 +35,7 @@ enum ServeError {
 // ===== impl Serve =====
 
 impl Serve {
-    pub(super) fn new(metrics: &Arc<Mutex<Root>>, idle_retain: Duration) -> Self {
+    pub fn new(metrics: &Arc<Mutex<Root>>, idle_retain: Duration) -> Self {
         Serve {
             metrics: metrics.clone(),
             idle_retain,

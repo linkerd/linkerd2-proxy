@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::metrics::{
@@ -8,6 +9,7 @@ use super::metrics::{
     Histogram,
     Scopes,
 };
+use telemetry::tap::Taps;
 
 pub mod event;
 mod labels;
@@ -15,18 +17,53 @@ mod record;
 mod sensors;
 pub mod service;
 
-pub use self::labels::{RequestLabels, ResponseLabels};
-pub use self::record::Record;
+use self::labels::{RequestLabels, ResponseLabels};
+use self::record::Record;
 pub use self::sensors::Sensors;
 
-pub(super) type RequestScopes = Scopes<RequestLabels, Stamped<RequestMetrics>>;
+metrics! {
+    request_total: Counter { "Total count of HTTP requests." },
+    response_total: Counter { "Total count of HTTP responses" },
+    response_latency_ms: Histogram<latency::Ms> {
+        "Elapsed times between a request's headers being received \
+        and its response stream completing"
+    }
+}
+
+pub fn new(taps: &Arc<Mutex<Taps>>) -> (Sensors, Report) {
+    let inner = Arc::new(Mutex::new(Inner::default()));
+    let sensors = Sensors::new(Record::new(Registry(inner.clone())), taps);
+    (sensors, Report(inner))
+}
+
+/// Updates HTTP metrics.
+///
+/// TODO Currently, this is only used by `Record`. Later this, will be made
+/// public and `Record` will be obviated.
+#[derive(Clone, Debug)]
+struct Registry(Arc<Mutex<Inner>>);
+
+/// Reports HTTP metrics for prometheus.
+///
+/// TODO retain_since should be done implicitly and should not be part of the
+/// public interface.
+#[derive(Clone, Debug)]
+pub struct Report(Arc<Mutex<Inner>>);
 
 #[derive(Debug, Default)]
-pub(super) struct RequestMetrics {
+struct Inner {
+    requests: RequestScopes,
+    responses: ResponseScopes,
+}
+
+type RequestScopes = Scopes<RequestLabels, Stamped<RequestMetrics>>;
+
+#[derive(Debug, Default)]
+struct RequestMetrics {
     total: Counter,
 }
 
-pub(super) type ResponseScopes = Scopes<ResponseLabels, Stamped<ResponseMetrics>>;
+type ResponseScopes = Scopes<ResponseLabels, Stamped<ResponseMetrics>>;
 
 #[derive(Debug, Default)]
 pub struct ResponseMetrics {
@@ -35,27 +72,69 @@ pub struct ResponseMetrics {
 }
 
 #[derive(Debug)]
-pub(super) struct Stamped<T> {
+struct Stamped<T> {
     stamp: Instant,
     inner: T,
 }
 
-// ===== impl RequestScopes =====
+// ===== impl Registry =====
 
-impl RequestScopes {
-    metrics! {
-        request_total: Counter { "Total count of HTTP requests." }
+impl Registry {
+
+    #[cfg(test)]
+    fn for_test() -> Self {
+        Registry(Arc::new(Mutex::new(Inner::default())))
+    }
+
+    fn end_request(&mut self, labels: RequestLabels) {
+        let mut inner = match self.0.lock() {
+            Err(_) => return,
+            Ok(lock) => lock,
+        };
+
+        inner.requests.get_or_default(labels).stamped().end()
+    }
+
+    fn end_response(&mut self, labels: ResponseLabels, latency: Duration) {
+        let mut inner = match self.0.lock() {
+            Err(_) => return,
+            Ok(lock) => lock,
+        };
+
+        inner.responses.get_or_default(labels).stamped().end(latency)
     }
 }
 
-impl FmtMetrics for RequestScopes {
+// ===== impl Report =====
+
+impl Report {
+    pub(super) fn retain_since(&mut self, epoch: Instant) {
+        if let Ok(mut inner) = self.0.lock() {
+            inner.requests.retain(|_, v| v.stamp >= epoch);
+            inner.responses.retain(|_, v| v.stamp >= epoch);
+        }
+    }
+}
+
+impl FmtMetrics for Report {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.is_empty() {
-            return Ok(());
+        let inner = match self.0.lock() {
+            Err(_) => return Ok(()),
+            Ok(inner) => inner,
+        };
+
+        if !inner.requests.is_empty() {
+            request_total.fmt_help(f)?;
+            request_total.fmt_scopes(f, &inner.requests, |s| &s.total)?;
         }
 
-        Self::request_total.fmt_help(f)?;
-        Self::request_total.fmt_scopes(f, self, |s| &s.total)?;
+        if !inner.responses.is_empty() {
+            response_total.fmt_help(f)?;
+            response_total.fmt_scopes(f, &inner.responses, |s| &s.total)?;
+
+            response_latency_ms.fmt_help(f)?;
+            response_latency_ms.fmt_scopes(f, &inner.responses, |s| &s.latency)?;
+        }
 
         Ok(())
     }
@@ -71,34 +150,6 @@ impl RequestMetrics {
     #[cfg(test)]
     pub(super) fn total(&self) -> u64 {
         self.total.into()
-    }
-}
-
-// ===== impl ResponseScopes =====
-
-impl ResponseScopes {
-    metrics! {
-        response_total: Counter { "Total count of HTTP responses" },
-        response_latency_ms: Histogram<latency::Ms> {
-            "Elapsed times between a request's headers being received \
-            and its response stream completing"
-        }
-    }
-}
-
-impl FmtMetrics for ResponseScopes {
-    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.is_empty() {
-            return Ok(());
-        }
-
-        Self::response_total.fmt_help(f)?;
-        Self::response_total.fmt_scopes(f, self, |s| &s.total)?;
-
-        Self::response_latency_ms.fmt_help(f)?;
-        Self::response_latency_ms.fmt_scopes(f, self, |s| &s.latency)?;
-
-        Ok(())
     }
 }
 
@@ -124,11 +175,7 @@ impl ResponseMetrics {
 // ===== impl Stamped =====
 
 impl<T> Stamped<T> {
-    pub fn stamp(&self) -> Instant {
-        self.stamp
-    }
-
-    pub fn stamped(&mut self) -> &mut T {
+    fn stamped(&mut self) -> &mut T {
         self.stamp = Instant::now();
         &mut self.inner
     }
@@ -153,5 +200,77 @@ impl<T> ::std::ops::Deref for Stamped<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use ctx;
+    use ctx::test_util::*;
+    use super::*;
+    use conditional::Conditional;
+    use tls;
+
+    const TLS_DISABLED: Conditional<(), tls::ReasonForNoTls> =
+        Conditional::None(tls::ReasonForNoTls::Disabled);
+
+    fn mock_route(
+        registry: &mut Registry,
+        proxy: ctx::Proxy,
+        server: &Arc<ctx::transport::Server>,
+        team: &str
+    ) {
+        let client = client(proxy, indexmap!["team".into() => team.into(),], TLS_DISABLED);
+        let (req, rsp) = request("http://nba.com", &server, &client);
+        registry.end_request(RequestLabels::new(&req));
+        registry.end_response(ResponseLabels::new(&rsp, None), Duration::from_millis(10));
+   }
+
+    #[test]
+    fn expiry() {
+        let proxy = ctx::Proxy::Outbound;
+
+        let server = server(proxy, TLS_DISABLED);
+
+        let inner = Arc::new(Mutex::new(Inner::default()));
+        let mut registry = Registry(inner.clone());
+        let mut report = Report(inner.clone());
+
+        let t0 = Instant::now();
+
+        mock_route(&mut registry, proxy, &server, "warriors");
+        let t1 = Instant::now();
+
+        mock_route(&mut registry, proxy, &server, "sixers");
+        let t2 = Instant::now();
+
+        {
+            let inner = inner.lock().unwrap();
+            assert_eq!(inner.requests.len(), 2);
+            assert_eq!(inner.responses.len(), 2);
+        }
+
+        report.retain_since(t0);
+        {
+            let inner = inner.lock().unwrap();
+            assert_eq!(inner.requests.len(), 2);
+            assert_eq!(inner.responses.len(), 2);
+        }
+
+        report.retain_since(t1);
+        {
+            let inner = inner.lock().unwrap();
+            assert_eq!(inner.requests.len(), 1);
+            assert_eq!(inner.responses.len(), 1);
+        }
+
+        report.retain_since(t2);
+        {
+            let inner = inner.lock().unwrap();
+            assert_eq!(inner.requests.len(), 0);
+            assert_eq!(inner.responses.len(), 0);
+        }
     }
 }

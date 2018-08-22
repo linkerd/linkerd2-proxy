@@ -1,35 +1,23 @@
-use std::sync::{Arc, Mutex};
-
-use telemetry::http::event::Event;
-use telemetry::metrics::Root;
-use super::labels::{
-    RequestLabels,
-    ResponseLabels,
-};
+use super::Registry;
+use super::event::Event;
+use super::labels::{RequestLabels, ResponseLabels};
 
 /// Tracks Prometheus metrics
 #[derive(Clone, Debug)]
 pub struct Record {
-    metrics: Arc<Mutex<Root>>,
+    metrics: Registry,
 }
 
 // ===== impl Record =====
 
 impl Record {
-    pub fn new(metrics: &Arc<Mutex<Root>>) -> Self {
-        Self { metrics: metrics.clone() }
+    pub(super) fn new(metrics: Registry) -> Self {
+        Self { metrics }
     }
 
     #[cfg(test)]
     pub fn for_test() -> Self {
-        Self { metrics: Default::default() }
-    }
-
-    #[inline]
-    fn update<F: Fn(&mut Root)>(&mut self, f: F) {
-        let mut lock = self.metrics.lock()
-            .expect("metrics lock poisoned");
-        f(&mut *lock);
+        Self { metrics: Registry::for_test() }
     }
 
     /// Observe the given event.
@@ -40,34 +28,25 @@ impl Record {
             Event::StreamRequestOpen(_) => {},
 
             Event::StreamRequestFail(ref req, _) => {
-                self.update(|metrics| {
-                    metrics.request(RequestLabels::new(req)).end();
-                })
+                self.metrics.end_request(RequestLabels::new(req));
             },
 
             Event::StreamRequestEnd(ref req, _) => {
-                self.update(|metrics| {
-                    metrics.request(RequestLabels::new(req)).end();
-                })
+                self.metrics.end_request(RequestLabels::new(req));
             },
 
             Event::StreamResponseOpen(_, _) => {},
 
             Event::StreamResponseEnd(ref res, ref end) => {
                 let latency = end.response_first_frame_at - end.request_open_at;
-                self.update(|metrics| {
-                    metrics.response(ResponseLabels::new(res, end.grpc_status))
-                        .end(latency);
-                });
+                self.metrics.end_response(ResponseLabels::new(res, end.grpc_status), latency);
             },
 
             Event::StreamResponseFail(ref res, ref fail) => {
                 // TODO: do we care about the failure's error code here?
                 let first_frame_at = fail.response_first_frame_at.unwrap_or(fail.response_fail_at);
                 let latency = first_frame_at - fail.request_open_at;
-                self.update(|metrics| {
-                    metrics.response(ResponseLabels::fail(res)).end(latency)
-                });
+                self.metrics.end_response(ResponseLabels::fail(res), latency);
             },
         };
     }
@@ -75,19 +54,22 @@ impl Record {
 
 #[cfg(test)]
 mod test {
-    use std::time::{Duration, Instant};
-
+    use super::*;
+    use super::super::event;
+    use super::super::labels::{RequestLabels, ResponseLabels};
     use ctx::{self, test_util::*, transport::TlsStatus};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
     use conditional::Conditional;
-    use telemetry::http::{event::{self, Event}, labels};
     use tls;
 
     const TLS_ENABLED: Conditional<(), tls::ReasonForNoTls> = Conditional::Some(());
     const TLS_DISABLED: Conditional<(), tls::ReasonForNoTls> =
         Conditional::None(tls::ReasonForNoTls::Disabled);
 
-    fn new_record() -> super::Record {
-        super::Record::new(&Default::default())
+    fn new_record() -> (Record, Arc<Mutex<super::super::Inner>>) {
+        let inner = Arc::new(Mutex::new(super::super::Inner::default()));
+        (Record::new(Registry(inner.clone())), inner)
     }
 
     fn test_record_response_end_outbound(client_tls: TlsStatus, server_tls: TlsStatus) {
@@ -116,23 +98,17 @@ mod test {
             frames_sent: 0,
         };
 
-        let mut r = new_record();
+        let (mut r, i) = new_record();
         let ev = Event::StreamResponseEnd(rsp.clone(), end.clone());
-        let labels = labels::ResponseLabels::new(&rsp, None);
+        let labels = ResponseLabels::new(&rsp, None);
 
         assert_eq!(labels.tls_status(), client_tls);
 
-        assert!(r.metrics.lock()
-            .expect("lock")
-            .responses
-            .get(&labels)
-            .is_none()
-        );
+        assert!(i.lock().unwrap().responses.get(&labels).is_none());
 
         r.record_event(&ev);
         {
-            let lock = r.metrics.lock()
-                .expect("lock");
+            let lock = i.lock().unwrap();
             let scope = lock
                 .responses
                 .get(&labels)
@@ -144,12 +120,10 @@ mod test {
             scope.latency().assert_lt_exactly(200, 0);
             scope.latency().assert_gt_exactly(200, 0);
         }
-
     }
 
     fn test_record_one_conn_request_outbound(client_tls: TlsStatus, server_tls: TlsStatus) {
         use self::Event::*;
-        use self::labels::*;
 
         let proxy = ctx::Proxy::Outbound;
         let server = server(proxy, server_tls);
@@ -189,7 +163,7 @@ mod test {
             }),
        ];
 
-        let mut r = new_record();
+        let (mut r, i) = new_record();
 
         let req_labels = RequestLabels::new(&req);
         let rsp_labels = ResponseLabels::new(&rsp, None);
@@ -198,7 +172,7 @@ mod test {
         assert_eq!(client_tls, rsp_labels.tls_status());
 
         {
-            let lock = r.metrics.lock().expect("lock");
+            let lock = i.lock().unwrap();
             assert!(lock.requests.get(&req_labels).is_none());
             assert!(lock.responses.get(&rsp_labels).is_none());
         }
@@ -208,7 +182,7 @@ mod test {
         }
 
         {
-            let lock = r.metrics.lock().expect("lock");
+            let lock = i.lock().unwrap();
 
             // === request scope ====================================
             assert_eq!(
