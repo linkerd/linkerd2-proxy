@@ -1,6 +1,6 @@
 use deflate::CompressionOptions;
 use deflate::write::GzEncoder;
-use futures::{future::{self, FutureResult}, Future};
+use futures::future::{self, FutureResult};
 use http::{self, header, StatusCode};
 use hyper::{
     service::Service,
@@ -11,11 +11,8 @@ use hyper::{
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
-use tokio::executor::current_thread::TaskExecutor;
 
 use super::FmtMetrics;
-use task;
-use transport::BoundPort;
 
 /// Serve Prometheues metrics.
 #[derive(Debug, Clone)]
@@ -46,40 +43,6 @@ impl<M: FmtMetrics> Serve<M> {
                     .map(|value| value.contains("gzip"))
                     .unwrap_or(false)
             })
-    }
-}
-
-impl<M: FmtMetrics + Clone + Send + 'static> Serve<M> {
-    pub fn serve(self, bound_port: BoundPort) -> impl Future<Item = (), Error = ()> {
-        use hyper;
-
-        let log = ::logging::admin().server("metrics", bound_port.local_addr());
-        let fut = {
-            let log = log.clone();
-            bound_port
-                .listen_and_fold(
-                    hyper::server::conn::Http::new(),
-                    move |hyper, (conn, remote)| {
-                        let service = self.clone();
-                        let serve = hyper.serve_connection(conn, service).map(|_| {}).map_err(
-                            |e| {
-                                error!("error serving prometheus metrics: {:?}", e);
-                            },
-                        );
-                        let serve = log.clone().with_remote(remote).future(serve);
-
-                        let r = TaskExecutor::current()
-                            .spawn_local(Box::new(serve))
-                            .map(move |()| hyper)
-                            .map_err(task::Error::into_io);
-
-                        future::result(r)
-                    },
-                )
-                .map_err(|err| error!("metrics listener error: {}", err))
-        };
-
-        log.future(fut)
     }
 }
 
