@@ -9,10 +9,13 @@ use ctx;
 use telemetry::Errno;
 use telemetry::metrics::{
     latency,
-    prom::{FmtLabels, FmtMetric, FmtMetrics, Metric},
     Counter,
+    FmtLabels,
+    FmtMetric,
+    FmtMetrics,
     Gauge,
     Histogram,
+    Metric,
 };
 use transport::Connection;
 
@@ -36,7 +39,7 @@ pub fn new() -> (Registry, Report) {
 }
 
 /// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Report(Arc<Mutex<Inner>>);
 
 /// Instruments transports to record telemetry.
