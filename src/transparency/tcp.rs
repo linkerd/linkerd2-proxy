@@ -13,7 +13,6 @@ use ctx::transport::{
     Client as ClientCtx,
     Server as ServerCtx,
 };
-use telemetry;
 use timeout::Timeout;
 use transport::{self, tls};
 use ctx::transport::TlsStatus;
@@ -22,14 +21,14 @@ use ctx::transport::TlsStatus;
 #[derive(Debug, Clone)]
 pub struct Proxy {
     connect_timeout: Duration,
-    transport_registry: telemetry::transport::Registry,
+    transport_registry: transport::metrics::Registry,
 }
 
 impl Proxy {
     /// Create a new TCP `Proxy`.
     pub fn new(
         connect_timeout: Duration,
-        transport_registry: telemetry::transport::Registry
+        transport_registry: transport::metrics::Registry
     ) -> Self {
         Self {
             connect_timeout,

@@ -253,11 +253,18 @@ where
         );
 
         let (taps, observe) = control::Observe::new(100);
-        let (sensors, transport_registry, tls_config_sensor, metrics_server) = telemetry::new(
-            start_time,
-            config.metrics_retain_idle,
-            &taps,
-        );
+        let (http_sensors, http_report) = telemetry::http::new(config.metrics_retain_idle, &taps);
+
+        let (transport_registry, transport_report) = transport::metrics::new();
+
+        let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
+
+        let report = telemetry::Report::new(
+            http_report,
+            transport_report,
+            tls_config_report,
+            telemetry::process::Report::new(start_time),
+       );
 
         let tls_client_config = tls_config_watch.client.clone();
         let tls_cfg_bg = tls_config_watch.start(tls_config_sensor);
@@ -289,7 +296,7 @@ where
         let (drain_tx, drain_rx) = drain::channel();
 
         let bind = Bind::new(
-            sensors.clone(),
+            http_sensors.clone(),
             transport_registry.clone(),
             tls_client_config
         );
@@ -359,7 +366,7 @@ where
                     let metrics = control::serve_http(
                         "metrics",
                         metrics_listener,
-                        metrics_server,
+                        linkerd2_metrics::Serve::new(report),
                     );
 
                     rt.spawn(::logging::admin().bg("resolver").future(resolver_bg));
@@ -402,7 +409,7 @@ fn serve<R, B, E, F, G>(
     tcp_connect_timeout: Duration,
     disable_protocol_detection_ports: IndexSet<u16>,
     proxy_ctx: ctx::Proxy,
-    transport_registry: telemetry::transport::Registry,
+    transport_registry: transport::metrics::Registry,
     get_orig_dst: G,
     drain_rx: drain::Watch,
 ) -> impl Future<Item = (), Error = io::Error> + Send + 'static

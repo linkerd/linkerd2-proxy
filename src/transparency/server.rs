@@ -14,12 +14,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tower_service::NewService;
 use tower_h2;
 
-use transport::{Connection, Peek};
 use ctx::Proxy as ProxyCtx;
 use ctx::transport::{Server as ServerCtx};
 use drain;
-use telemetry;
-use transport::GetOriginalDst;
+use transport::{self, Connection, GetOriginalDst, Peek};
 use super::glue::{HttpBody, HttpBodyNewSvc, HyperServerSvc};
 use super::protocol::Protocol;
 use super::tcp;
@@ -47,7 +45,7 @@ where
     listen_addr: SocketAddr,
     new_service: S,
     proxy_ctx: ProxyCtx,
-    transport_registry: telemetry::transport::Registry,
+    transport_registry: transport::metrics::Registry,
     tcp: tcp::Proxy,
     log: ::logging::Server,
 }
@@ -76,7 +74,7 @@ where
     pub fn new(
         listen_addr: SocketAddr,
         proxy_ctx: ProxyCtx,
-        transport_registry: telemetry::transport::Registry,
+        transport_registry: transport::metrics::Registry,
         get_orig_dst: G,
         stack: S,
         tcp_connect_timeout: Duration,

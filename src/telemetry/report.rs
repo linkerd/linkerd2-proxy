@@ -1,6 +1,7 @@
 use std::fmt;
 
-use super::{http, process, tls_config_reload, transport};
+use transport::metrics as transport;
+use super::{http, process, tls_config_reload};
 use super::metrics::FmtMetrics;
 
 /// Implements `FmtMetrics` to report runtime metrics.
@@ -15,7 +16,7 @@ pub struct Report {
 // ===== impl Report =====
 
 impl Report {
-    pub(super) fn new(
+    pub fn new(
         http: http::Report,
         transports: transport::Report,
         tls_config_reload: tls_config_reload::Report,

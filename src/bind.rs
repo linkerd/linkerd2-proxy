@@ -29,7 +29,7 @@ use watch_service::{WatchService, Rebind};
 pub struct Bind<C, B> {
     ctx: C,
     sensors: telemetry::Sensors,
-    transport_registry: telemetry::transport::Registry,
+    transport_registry: transport::metrics::Registry,
     tls_client_config: tls::ClientConfigWatch,
     _p: PhantomData<fn() -> B>,
 }
@@ -150,7 +150,7 @@ pub type HttpResponse = http::Response<telemetry::http::service::ResponseBody<Ht
 pub type HttpRequest<B> = http::Request<telemetry::http::service::RequestBody<B>>;
 
 pub type Client<B> = transparency::Client<
-    telemetry::transport::Connect<transport::Connect>,
+    transport::metrics::Connect<transport::Connect>,
     ::logging::ClientExecutor<&'static str, SocketAddr>,
     B,
 >;
@@ -184,7 +184,7 @@ impl Error for BufferSpawnError {
 impl<B> Bind<(), B> {
     pub fn new(
         sensors: telemetry::Sensors,
-        transport_registry: telemetry::transport::Registry,
+        transport_registry: transport::metrics::Registry,
         tls_client_config: tls::ClientConfigWatch
     ) -> Self {
         Self {

@@ -5,9 +5,7 @@ use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_connect;
 
-use ctx;
-use telemetry::Errno;
-use telemetry::metrics::{
+use linkerd2_metrics::{
     latency,
     Counter,
     FmtLabels,
@@ -17,6 +15,9 @@ use telemetry::metrics::{
     Histogram,
     Metric,
 };
+
+use ctx;
+use telemetry::Errno;
 use transport::Connection;
 
 mod io;
@@ -197,50 +198,6 @@ impl Registry {
     }
 }
 
-#[cfg(test)]
-impl Registry {
-
-    pub fn open_total(&self, ctx: &ctx::transport::Ctx) -> u64 {
-        self.0.lock().unwrap().0
-            .get(&Key::new(ctx))
-            .map(|m| m.lock().unwrap().open_total.into())
-            .unwrap_or(0)
-    }
-
-    // pub fn open_connections(&self, ctx: &ctx::transport::Ctx) -> u64 {
-    //    self.0.lock().unwrap().0
-    //         .get(&Key::new(ctx))
-    //         .map(|m| m.lock().unwrap().open_connections.into())
-    //         .unwrap_or(0)
-    // }
-
-    pub fn rx_tx_bytes_total(&self, ctx: &ctx::transport::Ctx) -> (u64, u64) {
-        self.0.lock().unwrap().0
-            .get(&Key::new(ctx))
-            .map(|m| {
-                let m = m.lock().unwrap();
-                (m.read_bytes_total.into(), m.write_bytes_total.into())
-            })
-            .unwrap_or((0, 0))
-    }
-
-    pub fn close_total(&self, ctx: &ctx::transport::Ctx, eos: Eos) -> u64 {
-        self.0.lock().unwrap().0
-            .get(&Key::new(ctx))
-            .and_then(move |m| m.lock().unwrap().by_eos.get(&eos).map(|m| m.close_total.into()))
-            .unwrap_or(0)
-    }
-
-    pub fn connection_durations(&self, ctx: &ctx::transport::Ctx, eos: Eos) -> Histogram<latency::Ms> {
-        self.0.lock().unwrap().0
-            .get(&Key::new(ctx))
-            .and_then(move |m| {
-                m.lock().unwrap().by_eos.get(&eos).map(|m| m.connection_duration.clone())
-            })
-            .unwrap_or_default()
-    }
-}
-
 // ===== impl Report =====
 
 impl FmtMetrics for Report {
@@ -343,14 +300,6 @@ impl NewSensor {
 // ===== impl Key =====
 
 impl Key {
-    #[cfg(test)]
-    fn new(ctx: &ctx::transport::Ctx) -> Self {
-        match ctx {
-            ctx::transport::Ctx::Client(ctx) => Self::client(ctx),
-            ctx::transport::Ctx::Server(ctx) => Self::server(ctx),
-        }
-    }
-
     fn client(ctx: &ctx::transport::Client) -> Self {
         Self {
             proxy: ctx.proxy,
