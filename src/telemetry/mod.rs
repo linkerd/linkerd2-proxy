@@ -1,23 +1,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-macro_rules! metrics {
-    { $( $name:ident : $kind:ty { $help:expr } ),+ } => {
-        $(
-            #[allow(non_upper_case_globals)]
-            const $name: ::telemetry::metrics::Metric<'static, $kind> =
-                ::telemetry::metrics::Metric {
-                    name: stringify!($name),
-                    help: $help,
-                    _p: ::std::marker::PhantomData,
-                };
-        )+
-    }
-}
+use linkerd2_metrics as metrics;
 
 mod errno;
 pub mod http;
-mod metrics;
 mod process;
 mod report;
 pub mod tap;

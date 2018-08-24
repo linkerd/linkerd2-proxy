@@ -3,9 +3,7 @@
 #![deny(warnings)]
 
 extern crate bytes;
-extern crate linkerd2_proxy_api;
 extern crate env_logger;
-extern crate deflate;
 #[macro_use]
 extern crate futures;
 extern crate futures_mpsc_lossy;
@@ -47,11 +45,15 @@ extern crate tower_h2;
 extern crate tower_h2_balance;
 extern crate tower_reconnect;
 extern crate tower_service;
-extern crate linkerd2_proxy_router;
 extern crate tower_util;
 extern crate tower_in_flight_limit;
 extern crate trust_dns_resolver;
 extern crate try_lock;
+
+#[macro_use]
+extern crate linkerd2_metrics;
+extern crate linkerd2_proxy_api;
+extern crate linkerd2_proxy_router;
 
 use futures::*;
 

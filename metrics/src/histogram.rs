@@ -85,11 +85,11 @@ impl<V: Into<u64>> Histogram<V> {
         self.buckets[idx].incr();
         self.sum += value;
     }
+}
 
-    // ===== Test-only methods to help with assertions about histograms. =====
-
+#[cfg(any(test, feature = "test_util"))]
+impl<V: Into<u64>> Histogram<V> {
     /// Assert the bucket containing `le` has a count of at least `at_least`.
-    #[cfg(test)]
     pub fn assert_bucket_at_least(&self, le: u64, at_least: u64) {
         for (&bucket, &count) in self {
             if bucket >= le {
@@ -104,7 +104,6 @@ impl<V: Into<u64>> Histogram<V> {
     }
 
     /// Assert the bucket containing `le` has a count of exactly `exactly`.
-    #[cfg(test)]
     pub fn assert_bucket_exactly(&self, le: u64, exactly: u64) -> &Self {
         for (&bucket, &count) in self {
             if bucket >= le {
@@ -122,7 +121,6 @@ impl<V: Into<u64>> Histogram<V> {
 
     /// Assert all buckets less than the one containing `value` have
     /// counts of exactly `exactly`.
-    #[cfg(test)]
     pub fn assert_lt_exactly(&self, value: u64, exactly: u64) -> &Self {
         for (i, &bucket) in self.bounds.0.iter().enumerate() {
             let ceiling = match bucket {
@@ -148,7 +146,6 @@ impl<V: Into<u64>> Histogram<V> {
 
     /// Assert all buckets greater than the one containing `value` have
     /// counts of exactly `exactly`.
-    #[cfg(test)]
     pub fn assert_gt_exactly(&self, value: u64, exactly: u64) -> &Self {
         // We set this to true after we've iterated past the first bucket
         // whose upper bound is >= `value`.
