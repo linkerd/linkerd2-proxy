@@ -4,7 +4,6 @@
 
 extern crate bytes;
 extern crate env_logger;
-extern crate deflate;
 #[macro_use]
 extern crate futures;
 extern crate futures_mpsc_lossy;
