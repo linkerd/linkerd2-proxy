@@ -2,6 +2,7 @@ mod connect;
 mod connection;
 mod addr_info;
 mod io;
+pub mod metrics;
 mod prefixed;
 pub mod tls;
 
