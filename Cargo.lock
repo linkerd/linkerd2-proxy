@@ -470,6 +470,18 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "linkerd2-metrics"
+version = "0.1.0"
+dependencies = [
+ "deflate 0.7.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "http 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hyper 0.12.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "indexmap 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "linkerd2-proxy"
 version = "0.1.0"
 dependencies = [
@@ -488,6 +500,7 @@ dependencies = [
  "inotify 0.5.2-dev (git+https://github.com/inotify-rs/inotify)",
  "ipnet 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.40 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-metrics 0.1.0",
  "linkerd2-proxy-api 0.1.1 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.1)",
  "linkerd2-proxy-router 0.1.0",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
