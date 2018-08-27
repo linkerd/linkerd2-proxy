@@ -36,11 +36,11 @@ use futures::{
     Poll,
     Stream
 };
-use http;
 use tower_discover::{Change, Discover};
 use tower_service::Service;
 
 use dns;
+use svc::NewClient;
 use tls;
 use transport::{DnsNameAndPort, HostAndPort};
 
@@ -125,29 +125,6 @@ enum Update {
     Remove(SocketAddr),
 }
 
-/// Bind a `SocketAddr` with a protocol.
-pub trait Bind {
-    /// The type of endpoint upon which a `Service` is bound.
-    type Endpoint;
-
-    /// Requests handled by the discovered services
-    type Request;
-
-    /// Responses given by the discovered services
-    type Response;
-
-    /// Errors produced by the discovered services
-    type Error;
-
-    type BindError;
-
-    /// The discovered `Service` instance.
-    type Service: Service<Request = Self::Request, Response = Self::Response, Error = Self::Error>;
-
-    /// Bind a service from an endpoint.
-    fn bind(&self, addr: &Self::Endpoint) -> Result<Self::Service, Self::BindError>;
-}
-
 /// Returns a `Resolver` and a background task future.
 ///
 /// The `Resolver` is used by a listener to request resolutions, while
@@ -207,15 +184,15 @@ impl Resolver {
 
 // ==== impl Resolution =====
 
-impl<B, A> Discover for Resolution<B>
+impl<B> Discover for Resolution<B>
 where
-    B: Bind<Endpoint = Endpoint, Request = http::Request<A>>,
+    B: NewClient<Target = Endpoint>,
 {
     type Key = SocketAddr;
-    type Request = B::Request;
-    type Response = B::Response;
-    type Error = B::Error;
-    type Service = B::Service;
+    type Request = <B::Client as Service>::Request;
+    type Response = <B::Client as Service>::Response;
+    type Error = <B::Client as Service>::Error;
+    type Service = B::Client;
     type DiscoverError = ();
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::DiscoverError> {
@@ -232,7 +209,7 @@ where
                     // existing ones can be handled in the same way.
                     let endpoint = Endpoint::new(addr, meta);
 
-                    let service = self.bind.bind(&endpoint).map_err(|_| ())?;
+                    let service = self.bind.new_client(&endpoint).map_err(|_| ())?;
 
                     return Ok(Async::Ready(Change::Insert(addr, service)));
                 },

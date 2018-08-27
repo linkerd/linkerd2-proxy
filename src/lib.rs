@@ -88,6 +88,7 @@ mod logging;
 mod map_err;
 mod outbound;
 pub mod stream;
+mod svc;
 pub mod task;
 pub mod telemetry;
 mod transparency;
