@@ -76,7 +76,7 @@ struct Responder {
 
 /// A `tower_discover::Discover`, given to a `tower_balance::Balance`.
 #[derive(Debug)]
-pub struct Resolution<B> {
+pub struct Resolution<N> {
     /// Receives updates from the controller.
     update_rx: mpsc::UnboundedReceiver<Update>,
 
@@ -86,8 +86,8 @@ pub struct Resolution<B> {
     /// reference has been dropped.
     _active: Arc<()>,
 
-    /// Binds an update endpoint to a Service.
-    bind: B,
+    /// Creates clients for each new endpoint in the resolution.
+    new_endpoint: N,
 }
 
 /// Metadata describing an endpoint.
@@ -120,7 +120,7 @@ enum Update {
     ///
     /// If there was already an endpoint in the load balancer for this
     /// address, it should be replaced with the new one.
-    Bind(SocketAddr, Metadata),
+    NewClient(SocketAddr, Metadata),
     /// Indicates that the endpoint for this `SocketAddr` should be removed.
     Remove(SocketAddr),
 }
@@ -156,7 +156,10 @@ pub fn new(
 
 impl Resolver {
     /// Start watching for address changes for a certain authority.
-    pub fn resolve<B>(&self, authority: &DnsNameAndPort, bind: B) -> Resolution<B> {
+    pub fn resolve<N>(&self, authority: &DnsNameAndPort, new_endpoint: N) -> Resolution<N>
+    where
+        N: NewClient,
+    {
         trace!("resolve; authority={:?}", authority);
         let (update_tx, update_rx) = mpsc::unbounded();
         let active = Arc::new(());
@@ -177,22 +180,22 @@ impl Resolver {
         Resolution {
             update_rx,
             _active: active,
-            bind,
+            new_endpoint,
         }
     }
 }
 
 // ==== impl Resolution =====
 
-impl<B> Discover for Resolution<B>
+impl<N> Discover for Resolution<N>
 where
-    B: NewClient<Target = Endpoint>,
+    N: NewClient<Target = Endpoint>,
 {
     type Key = SocketAddr;
-    type Request = <B::Client as Service>::Request;
-    type Response = <B::Client as Service>::Response;
-    type Error = <B::Client as Service>::Error;
-    type Service = B::Client;
+    type Request = <N::Client as Service>::Request;
+    type Response = <N::Client as Service>::Response;
+    type Error = <N::Client as Service>::Error;
+    type Service = N::Client;
     type DiscoverError = ();
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::DiscoverError> {
@@ -202,14 +205,14 @@ where
             let update = try_ready!(up).expect("destination stream must be infinite");
 
             match update {
-                Update::Bind(addr, meta) => {
+                Update::NewClient(addr, meta) => {
                     // We expect the load balancer to handle duplicate inserts
                     // by replacing the old endpoint with the new one, so
                     // insertions of new endpoints and metadata changes for
                     // existing ones can be handled in the same way.
                     let endpoint = Endpoint::new(addr, meta);
 
-                    let service = self.bind.new_client(&endpoint).map_err(|_| ())?;
+                    let service = self.new_endpoint.new_client(&endpoint).map_err(|_| ())?;
 
                     return Ok(Async::Ready(Change::Insert(addr, service)));
                 },
