@@ -47,7 +47,7 @@ pub trait NewClient {
     /// client must be discarded.
     type Client: Service;
 
-    /// Creates an HTTP client
+    /// Creates a client
     ///
     /// If the provided `Target` is valid, immediately return a `Client` that may
     /// become ready lazily, i.e. as the target is resolved and connections are
