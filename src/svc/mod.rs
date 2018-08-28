@@ -3,23 +3,26 @@
 //! This module contains utilities for proxying request-response streams. This
 //! module borrows (and re-exports) from `tower`.
 //!
+//! ## Clients
+//!
+//! A client is a `Service` through which the proxy may dispatch requests.
+//!
+//! In the proxy, there are currently two types of clients:
+//!
+//! - As the proxy routes requests to an outbound `Destination`, a client
+//!   service is resolves the destination to and load balances requests
+//!   over its endpoints.
+//!
+//! - As an outbound load balancer dispatches a request to an endpoint, or as
+//!   the inbound proxy fowards an inbound request, a client service models an
+//!   individual `SocketAddr`.
+//!
 //! ## TODO
 //!
 //! * Move HTTP-specific service infrastructure into `svc::http`.
 
 pub use tower_service::Service;
 
-/// Creates new client service.
-//!
-//! A client service one of several logical layers:
-//!
-//! - `destination`: As a proxy receives requests, each request is targetted a
-//!   `Destination` by the router. A service is created to represent each
-//!    destination.
-//!
-//! - `endpoint`: Each `destination` is associated with logical name, that may
-//!    described a load-balanced pool of endpoints. A service is created to
-//!    represent each endpoint.
 pub trait NewClient {
 
     /// Describes a resource to which the client will be attached.
