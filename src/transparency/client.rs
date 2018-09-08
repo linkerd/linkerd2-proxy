@@ -10,7 +10,6 @@ use tower_h2;
 
 use bind;
 use task::BoxExecutor;
-use telemetry::http::service::RequestBody;
 use super::glue::{BodyPayload, HttpBody, HyperConnect};
 use super::h1;
 use super::upgrade::{HttpConnect, Http11Upgrade};
@@ -18,7 +17,7 @@ use super::upgrade::{HttpConnect, Http11Upgrade};
 use std::{self, fmt};
 
 type HyperClient<C, B> =
-    hyper::Client<HyperConnect<C>, BodyPayload<RequestBody<B>>>;
+    hyper::Client<HyperConnect<C>, BodyPayload<B>>;
 
 /// A wrapper around the error types produced by the HTTP/1 and HTTP/2 clients.
 ///
@@ -52,7 +51,7 @@ where
     E: future::Executor<Box<Future<Item = (), Error = ()> + Send + 'static>> + Send + Sync + 'static,
 {
     Http1(HyperClient<C, B>),
-    Http2(tower_h2::client::Connect<C, BoxExecutor<E>, RequestBody<B>>),
+    Http2(tower_h2::client::Connect<C, BoxExecutor<E>, B>),
 }
 
 /// A `Future` returned from `Client::new_service()`.
@@ -74,7 +73,7 @@ where
     E: future::Executor<Box<Future<Item = (), Error = ()> + Send + 'static>> + Send + Sync + 'static,
 {
     Http1(Option<HyperClient<C, B>>),
-    Http2(tower_h2::client::ConnectFuture<C, BoxExecutor<E>, RequestBody<B>>),
+    Http2(tower_h2::client::ConnectFuture<C, BoxExecutor<E>, B>),
 }
 
 /// The `Service` yielded by `Client::new_service()`.
@@ -99,7 +98,7 @@ where
     Http2(tower_h2::client::Connection<
         <C as Connect>::Connected,
         BoxExecutor<E>,
-        RequestBody<B>,
+        B,
     >),
 }
 
@@ -154,9 +153,9 @@ where
     B: tower_h2::Body + Send + 'static,
    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    type Request = bind::HttpRequest<B>;
-    type Response = http::Response<HttpBody>;
-    type Error = Error;
+    type Request = <Self::Service as Service>::Request;
+    type Response = <Self::Service as Service>::Response;
+    type Error = <Self::Service as Service>::Error;
     type InitError = tower_h2::client::ConnectError<C::Error>;
     type Service = ClientService<C, E, B>;
     type Future = ClientNewServiceFuture<C, E, B>;
@@ -216,7 +215,7 @@ where
     B: tower_h2::Body + Send + 'static,
    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    type Request = bind::HttpRequest<B>;
+    type Request = http::Request<B>;
     type Response = http::Response<HttpBody>;
     type Error = Error;
     type Future = ClientServiceFuture;

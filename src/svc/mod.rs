@@ -21,7 +21,11 @@
 //!
 //! * Move HTTP-specific service infrastructure into `svc::http`.
 
-pub use tower_service::Service;
+pub use tower_service::{NewService, Service};
+
+mod reconnect;
+
+pub use self::reconnect::Reconnect;
 
 pub trait NewClient {
 

@@ -1,10 +1,9 @@
 use std::net::{SocketAddr};
 use std::sync::Arc;
 
-use http;
 use tower_service as tower;
-use tower_buffer::{self, Buffer};
-use tower_in_flight_limit::{self, InFlightLimit};
+use tower_buffer::Buffer;
+use tower_in_flight_limit::InFlightLimit;
 use tower_h2;
 use linkerd2_proxy_router::Recognize;
 
@@ -49,16 +48,12 @@ where
     B: tower_h2::Body + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
 {
-    type Request = http::Request<B>;
-    type Response = bind::HttpResponse;
-    type Error = tower_in_flight_limit::Error<
-        tower_buffer::Error<
-            <bind::Service<B> as tower::Service>::Error
-        >
-    >;
     type Key = (SocketAddr, bind::Protocol);
+    type Request = <Self::Service as tower::Service>::Request;
+    type Response = <Self::Service as tower::Service>::Response;
+    type Error = <Self::Service as tower::Service>::Error;
     type RouteError = bind::BufferSpawnError;
-    type Service = InFlightLimit<Buffer<orig_proto::Downgrade<bind::Service<B>>>>;
+    type Service = InFlightLimit<Buffer<orig_proto::Downgrade<bind::BoundService<B>>>>;
 
     fn recognize(&self, req: &Self::Request) -> Option<Self::Key> {
         let key = req.extensions()

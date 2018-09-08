@@ -36,20 +36,6 @@ pub struct TimestampRequestOpen<S> {
     inner: S,
 }
 
-pub struct NewHttp<N, A, B> {
-    new_service: N,
-    handle: Handle,
-    client_ctx: Arc<ctx::transport::Client>,
-    _p: PhantomData<(A, B)>,
-}
-
-pub struct Init<F, A, B> {
-    future: F,
-    handle: Handle,
-    client_ctx: Arc<ctx::transport::Client>,
-    _p: PhantomData<(A, B)>,
-}
-
 /// Wraps a transport with telemetry.
 #[derive(Debug)]
 pub struct Http<S, A, B> {
@@ -112,13 +98,13 @@ pub struct RequestBodyInner {
     request_open_at: Instant,
 }
 
-// === NewHttp ===
+// === Http ===
 
-impl<N, A, B> NewHttp<N, A, B>
+impl<S, A, B> Http<S, A, B>
 where
     A: Body + 'static,
     B: Body + 'static,
-    N: NewService<
+    S: Service<
         Request = http::Request<RequestBody<A>>,
         Response = http::Response<B>,
         Error = ClientError,
@@ -126,75 +112,18 @@ where
         + 'static,
 {
     pub(super) fn new(
-        new_service: N,
+        service: S,
         handle: Handle,
-        client_ctx: &Arc<ctx::transport::Client>,
+        client_ctx: Arc<ctx::transport::Client>,
     ) -> Self {
         Self {
-            new_service,
-            handle,
-            client_ctx: Arc::clone(client_ctx),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<N, A, B> NewService for NewHttp<N, A, B>
-where
-    A: Body + 'static,
-    B: Body + 'static,
-    N: NewService<
-        Request = http::Request<RequestBody<A>>,
-        Response = http::Response<B>,
-        Error = ClientError,
-    >
-        + 'static,
-{
-    type Request = http::Request<A>;
-    type Response = http::Response<ResponseBody<B>>;
-    type Error = N::Error;
-    type InitError = N::InitError;
-    type Future = Init<N::Future, A, B>;
-    type Service = Http<N::Service, A, B>;
-
-    fn new_service(&self) -> Self::Future {
-        Init {
-            future: self.new_service.new_service(),
-            handle: self.handle.clone(),
-            client_ctx: Arc::clone(&self.client_ctx),
-            _p: PhantomData,
-        }
-    }
-}
-
-// === Init ===
-
-impl<F, A, B> Future for Init<F, A, B>
-where
-    A: Body + 'static,
-    B: Body + 'static,
-    F: Future,
-    F::Item: Service<
-        Request = http::Request<RequestBody<A>>,
-        Response = http::Response<B>
-    >,
-{
-    type Item = Http<F::Item, A, B>;
-    type Error = F::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let service = try_ready!(self.future.poll());
-
-        Ok(Async::Ready(Http {
             service,
-            handle: self.handle.clone(),
-            client_ctx: self.client_ctx.clone(),
+            handle,
+            client_ctx,
             _p: PhantomData,
-        }))
+        }
     }
 }
-
-// === Http ===
 
 impl<S, A, B> Service for Http<S, A, B>
 where
