@@ -11,7 +11,7 @@ use tower_h2;
 
 use control::destination::Endpoint;
 use ctx;
-use svc::{NewClient, Reconnect};
+use svc::{MakeClient, Reconnect};
 use telemetry;
 use proxy::{self, HttpBody, h1, orig_proto};
 use transport;
@@ -343,16 +343,15 @@ impl<C, B> Bind<C, B> {
     }
 }
 
-impl<B> NewClient for BindProtocol<ctx::Proxy, B>
+impl<B> MakeClient<Endpoint> for BindProtocol<ctx::Proxy, B>
 where
     B: tower_h2::Body + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
 {
-    type Target = Endpoint;
     type Error = ();
     type Client = BoundService<B>;
 
-    fn new_client(&mut self, ep: &Endpoint) -> Result<Self::Client, ()> {
+    fn make_client(&self, ep: &Endpoint) -> Result<Self::Client, ()> {
         Ok(self.bind.bind_service(ep, &self.protocol))
     }
 }

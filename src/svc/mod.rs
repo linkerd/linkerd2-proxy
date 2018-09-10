@@ -27,16 +27,14 @@ mod reconnect;
 
 pub use self::reconnect::Reconnect;
 
-pub trait NewClient {
-
-    /// Describes a resource to which the client will be attached.
-    ///
-    /// Depending on the implementation, the target may describe a logical name
-    /// to be resolved (i.e. via DNS) and load balanced, or it may describe a
-    /// specific network address to which one or more connections will be
-    /// established, or it may describe an entirely arbitrary "virtual" service
-    /// (i.e. that exists locally in memory).
-    type Target;
+/// `Target` describes a resource to which the client will be attached.
+///
+/// Depending on the implementation, the target may describe a logical name
+/// to be resolved (i.e. via DNS) and load balanced, or it may describe a
+/// specific network address to which one or more connections will be
+/// established, or it may describe an entirely arbitrary "virtual" service
+/// (i.e. that exists locally in memory).
+ pub trait MakeClient<Target> {
 
     /// Indicates why the provided `Target` cannot be used to instantiate a client.
     type Error;
@@ -56,5 +54,5 @@ pub trait NewClient {
     /// If the provided `Target` is valid, immediately return a `Client` that may
     /// become ready lazily, i.e. as the target is resolved and connections are
     /// established.
-    fn new_client(&mut self, t: &Self::Target) -> Result<Self::Client, Self::Error>;
+    fn make_client(&self, t: &Target) -> Result<Self::Client, Self::Error>;
 }
