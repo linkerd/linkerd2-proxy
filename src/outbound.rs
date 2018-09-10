@@ -20,7 +20,7 @@ use svc::NewClient;
 use ctx;
 use telemetry::http::service::{ResponseBody as SensorBody};
 use timeout::Timeout;
-use transparency::{h1, HttpBody};
+use proxy::{h1, HttpBody};
 use transport::{DnsNameAndPort, Host, HostAndPort};
 
 type BindProtocol<B> = bind::BindProtocol<ctx::Proxy, B>;

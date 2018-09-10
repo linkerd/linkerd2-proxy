@@ -6,7 +6,7 @@ use tower_h2::Body;
 
 use ctx;
 use telemetry::{http::event, tap};
-use transparency::ClientError;
+use proxy::ClientError;
 
 use super::record::Record;
 use super::service::{Http, RequestBody};

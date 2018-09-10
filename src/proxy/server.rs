@@ -46,7 +46,7 @@ where
     new_service: S,
     proxy_ctx: ProxyCtx,
     transport_registry: transport::metrics::Registry,
-    tcp: tcp::Proxy,
+    tcp: tcp::Forward,
     log: ::logging::Server,
 }
 
@@ -82,7 +82,7 @@ where
         drain_signal: drain::Watch,
     ) -> Self {
         let recv_body_svc = HttpBodyNewSvc::new(stack.clone());
-        let tcp = tcp::Proxy::new(tcp_connect_timeout, transport_registry.clone());
+        let tcp = tcp::Forward::new(tcp_connect_timeout, transport_registry.clone());
         let log = ::logging::Server::proxy(proxy_ctx, listen_addr);
         Server {
             disable_protocol_detection_ports,
@@ -164,7 +164,7 @@ where
             .map_err(|e| debug!("peek error: {}", e))
             .and_then(move |io| match Protocol::detect(io.peeked()) {
                 Some(Protocol::Http1) => Either::A({
-                    trace!("transparency detected HTTP/1");
+                    trace!("detected HTTP/1");
 
                     let fut = new_service.new_service()
                         .map_err(|e| trace!("h1 new_service error: {:?}", e))
@@ -191,7 +191,7 @@ where
                     Either::A(fut)
                 }),
                 Some(Protocol::Http2) => Either::A({
-                    trace!("transparency detected HTTP/2");
+                    trace!("detected HTTP/2");
                     let set_ctx = move |request: &mut http::Request<()>| {
                         request.extensions_mut().insert(srv_ctx.clone());
                     };
@@ -205,7 +205,7 @@ where
                     Either::B(fut)
                 }),
                 None => {
-                    trace!("transparency did not detect protocol, treating as TCP");
+                    trace!("did not detect protocol, treating as TCP");
                     Either::B(tcp_serve(
                         &tcp,
                         io,
@@ -220,7 +220,7 @@ where
 }
 
 fn tcp_serve<T: AsyncRead + AsyncWrite + Send + 'static>(
-    tcp: &tcp::Proxy,
+    tcp: &tcp::Forward,
     io: T,
     srv_ctx: Arc<ServerCtx>,
     drain_signal: drain::Watch,

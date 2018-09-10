@@ -13,7 +13,7 @@ use control::destination::Endpoint;
 use ctx;
 use svc::{NewClient, Reconnect};
 use telemetry;
-use transparency::{self, HttpBody, h1, orig_proto};
+use proxy::{self, HttpBody, h1, orig_proto};
 use transport;
 use tls;
 use ctx::transport::TlsStatus;
@@ -30,7 +30,7 @@ pub type TlsStack<B> = telemetry::http::service::Http<HttpService<B>, B, HttpBod
 
 type HttpService<B> = Reconnect<
     Arc<ctx::transport::Client>,
-    transparency::Client<
+    proxy::Client<
         transport::metrics::Connect<transport::Connect>,
         ::logging::ClientExecutor<&'static str, SocketAddr>,
         telemetry::http::service::RequestBody<B>,
@@ -263,7 +263,7 @@ where
             client_ctx.clone(),
             Reconnect::new(
                 client_ctx.clone(),
-                transparency::Client::new(protocol, connect, log.executor())
+                proxy::Client::new(protocol, connect, log.executor())
             )
         )
    }
@@ -292,7 +292,7 @@ where
         // Rewrite the HTTP/1 URI, if the authorities in the Host header
         // and request URI are not in agreement, or are not present.
         //
-        // TODO move this into transparency::Client?
+        // TODO move this into proxy::Client?
         let normalize_uri = NormalizeUri::new(watch_tls, protocol.was_absolute_form());
 
         // Upgrade HTTP/1.1 requests to be HTTP/2 if the endpoint supports HTTP/2.
