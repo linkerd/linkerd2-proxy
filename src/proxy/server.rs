@@ -164,7 +164,7 @@ where
             .map_err(|e| debug!("peek error: {}", e))
             .and_then(move |io| match Protocol::detect(io.peeked()) {
                 Some(Protocol::Http1) => Either::A({
-                    trace!("transparency detected HTTP/1");
+                    trace!("detected HTTP/1");
 
                     let fut = new_service.new_service()
                         .map_err(|e| trace!("h1 new_service error: {:?}", e))
@@ -191,7 +191,7 @@ where
                     Either::A(fut)
                 }),
                 Some(Protocol::Http2) => Either::A({
-                    trace!("transparency detected HTTP/2");
+                    trace!("detected HTTP/2");
                     let set_ctx = move |request: &mut http::Request<()>| {
                         request.extensions_mut().insert(srv_ctx.clone());
                     };
@@ -205,7 +205,7 @@ where
                     Either::B(fut)
                 }),
                 None => {
-                    trace!("transparency did not detect protocol, treating as TCP");
+                    trace!("did not detect protocol, treating as TCP");
                     Either::B(tcp_serve(
                         &tcp,
                         io,

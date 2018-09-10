@@ -10,7 +10,7 @@ use tower_service::{NewService, Service};
 use tower_h2::Body;
 
 use ctx;
-use transparency::ClientError;
+use proxy::ClientError;
 
 use super::event::{self, Event};
 use super::sensors::Handle;

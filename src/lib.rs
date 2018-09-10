@@ -91,7 +91,7 @@ pub mod stream;
 mod svc;
 pub mod task;
 pub mod telemetry;
-mod transparency;
+mod proxy;
 mod transport;
 pub mod timeout;
 mod tower_fn; // TODO: move to tower-fn
@@ -102,7 +102,7 @@ use conditional::Conditional;
 use inbound::Inbound;
 use map_err::MapErr;
 use task::MainRuntime;
-use transparency::{HttpBody, Server};
+use proxy::{HttpBody, Server};
 use transport::{BoundPort, Connection};
 pub use transport::{AddrInfo, GetOriginalDst, SoOriginalDst, tls};
 use outbound::Outbound;

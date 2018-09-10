@@ -9,7 +9,7 @@ use linkerd2_proxy_router::Recognize;
 
 use bind;
 use ctx;
-use transparency::orig_proto;
+use proxy::orig_proto;
 
 type Bind<B> = bind::Bind<ctx::Proxy, B>;
 
