@@ -46,7 +46,7 @@ where
     new_service: S,
     proxy_ctx: ProxyCtx,
     transport_registry: transport::metrics::Registry,
-    tcp: tcp::Proxy,
+    tcp: tcp::Forward,
     log: ::logging::Server,
 }
 
@@ -82,7 +82,7 @@ where
         drain_signal: drain::Watch,
     ) -> Self {
         let recv_body_svc = HttpBodyNewSvc::new(stack.clone());
-        let tcp = tcp::Proxy::new(tcp_connect_timeout, transport_registry.clone());
+        let tcp = tcp::Forward::new(tcp_connect_timeout, transport_registry.clone());
         let log = ::logging::Server::proxy(proxy_ctx, listen_addr);
         Server {
             disable_protocol_detection_ports,
@@ -220,7 +220,7 @@ where
 }
 
 fn tcp_serve<T: AsyncRead + AsyncWrite + Send + 'static>(
-    tcp: &tcp::Proxy,
+    tcp: &tcp::Forward,
     io: T,
     srv_ctx: Arc<ServerCtx>,
     drain_signal: drain::Watch,

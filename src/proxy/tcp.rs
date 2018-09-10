@@ -17,15 +17,15 @@ use timeout::Timeout;
 use transport::{self, tls};
 use ctx::transport::TlsStatus;
 
-/// TCP Server Proxy
+/// Forwards a stream of bytes to the socket's `SO_ORIGINAL_DST`
 #[derive(Debug, Clone)]
-pub struct Proxy {
+pub struct Forward {
     connect_timeout: Duration,
     transport_registry: transport::metrics::Registry,
 }
 
-impl Proxy {
-    /// Create a new TCP `Proxy`.
+impl Forward {
+    /// Create a new TCP `Forward`.
     pub fn new(
         connect_timeout: Duration,
         transport_registry: transport::metrics::Registry
