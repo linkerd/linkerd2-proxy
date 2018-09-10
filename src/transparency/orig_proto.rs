@@ -1,7 +1,7 @@
 use futures::{future, Future, Poll};
 use http;
 use http::header::{TRANSFER_ENCODING, HeaderValue};
-use tower_service::{Service, NewService};
+use tower_service::Service;
 
 use bind;
 use super::h1;
@@ -133,34 +133,7 @@ where
     }
 }
 
-impl<S, B1, B2> NewService for Upgrade<S>
-where
-    S: NewService<Request = http::Request<B1>, Response = http::Response<B2>>,
-{
-    type Request = S::Request;
-    type Response = S::Response;
-    type Error = S::Error;
-    type Service = Upgrade<S::Service>;
-    type InitError = S::InitError;
-    type Future = future::Map<
-        S::Future,
-        fn(S::Service) -> Upgrade<S::Service>
-    >;
-
-    fn new_service(&self) -> Self::Future {
-        let s = self.inner.new_service();
-        // This weird dance is so that the closure doesn't have to
-        // capture `self` and can just be a `fn` (so the `Map`)
-        // can be returned unboxed.
-        if self.upgrade_h1 {
-            s.map(|inner| Upgrade::new(inner, true))
-        } else {
-            s.map(|inner| Upgrade::new(inner, false))
-        }
-    }
-}
-
-// ===== impl Upgrade =====
+// ===== impl Downgrade =====
 
 impl<S> Downgrade<S> {
     pub fn new(inner: S) -> Self {

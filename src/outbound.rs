@@ -208,10 +208,10 @@ where
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
 {
     type Key = SocketAddr;
-    type Request = http::Request<B>;
-    type Response = bind::HttpResponse;
+    type Request = <Self::Service as tower::Service>::Request;
+    type Response = <Self::Service as tower::Service>::Response;
     type Error = <Self::Service as tower::Service>::Error;
-    type Service = bind::Service<B>;
+    type Service = bind::BoundService<B>;
     type DiscoverError = BindError;
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::DiscoverError> {
