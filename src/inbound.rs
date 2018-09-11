@@ -5,10 +5,10 @@ use tower_service as tower;
 use tower_buffer::Buffer;
 use tower_in_flight_limit::InFlightLimit;
 use tower_h2;
-use linkerd2_proxy_router::Recognize;
 
 use bind;
 use ctx;
+use proxy::h2_router::Recognize;
 use proxy::orig_proto;
 
 type Bind<B> = bind::Bind<ctx::Proxy, B>;
@@ -100,7 +100,7 @@ mod tests {
     use std::net;
 
     use http;
-    use linkerd2_proxy_router::Recognize;
+    use proxy::h2_router::Recognize;
 
     use super::Inbound;
     use bind::{self, Bind, Host};

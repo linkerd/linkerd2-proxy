@@ -21,25 +21,23 @@
 //!
 //! * Move HTTP-specific service infrastructure into `svc::http`.
 
+use futures::future;
 pub use tower_service::{NewService, Service};
 
-mod reconnect;
+pub mod reconnect;
+pub mod layer;
 
 pub use self::reconnect::Reconnect;
+pub use self::layer::Layer;
 
-pub trait NewClient {
-
-    /// Describes a resource to which the client will be attached.
-    ///
-    /// Depending on the implementation, the target may describe a logical name
-    /// to be resolved (i.e. via DNS) and load balanced, or it may describe a
-    /// specific network address to which one or more connections will be
-    /// established, or it may describe an entirely arbitrary "virtual" service
-    /// (i.e. that exists locally in memory).
-    type Target;
-
-    /// Indicates why the provided `Target` cannot be used to instantiate a client.
-    type Error;
+/// `Target` describes a resource to which the client will be attached.
+///
+/// Depending on the implementation, the target may describe a logical name
+/// to be resolved (i.e. via DNS) and load balanced, or it may describe a
+/// specific network address to which one or more connections will be
+/// established, or it may describe an entirely arbitrary "virtual" service
+/// (i.e. that exists locally in memory).
+ pub trait MakeClient<Target> {
 
     /// Serves requests on behalf of a target.
     ///
@@ -51,10 +49,42 @@ pub trait NewClient {
     /// client must be discarded.
     type Client: Service;
 
+    /// Indicates why the provided `Target` cannot be used to instantiate a client.
+    type Error;
+
     /// Creates a client
     ///
     /// If the provided `Target` is valid, immediately return a `Client` that may
     /// become ready lazily, i.e. as the target is resolved and connections are
     /// established.
-    fn new_client(&mut self, t: &Self::Target) -> Result<Self::Client, Self::Error>;
+    fn make_client(&self, t: &Target) -> Result<Self::Client, Self::Error>;
+
+    fn into_new_service(self, target: Target) -> IntoNewService<Target, Self>
+    where
+        Self: Sized,
+    {
+        IntoNewService {
+           target,
+           make_client: self,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct IntoNewService<T, M: MakeClient<T>> {
+    target: T,
+    make_client: M,
+}
+
+impl<T, M: MakeClient<T>> NewService for IntoNewService<T, M> {
+    type Request = <M::Client as Service>::Request;
+    type Response = <M::Client as Service>::Response;
+    type Error = <M::Client as Service>::Error;
+    type Service = M::Client;
+    type InitError = M::Error;
+    type Future = future::FutureResult<Self::Service, Self::InitError>;
+
+    fn new_service(&self) -> Self::Future {
+        future::result(self.make_client.make_client(&self.target))
+    }
 }

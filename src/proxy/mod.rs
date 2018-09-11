@@ -16,6 +16,7 @@
 mod client;
 mod glue;
 pub mod h1;
+pub mod h2_router;
 mod upgrade;
 pub mod orig_proto;
 mod protocol;

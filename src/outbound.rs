@@ -12,12 +12,12 @@ use tower_discover::{Change, Discover};
 use tower_in_flight_limit::InFlightLimit;
 use tower_h2;
 use tower_h2_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
-use linkerd2_proxy_router::Recognize;
 
 use bind::{self, Bind, Protocol};
 use control::destination::{self, Resolution};
-use svc::NewClient;
 use ctx;
+use proxy::h2_router::Recognize;
+use svc::MakeClient;
 use telemetry::http::service::{ResponseBody as SensorBody};
 use timeout::Timeout;
 use proxy::{h1, HttpBody};
@@ -225,7 +225,7 @@ where
                 // circuit-breaking, this should be able to take care of itself,
                 // closing down when the connection is no longer usable.
                 if let Some((addr, mut bind)) = opt.take() {
-                    let svc = bind.new_client(&addr.into())
+                    let svc = bind.make_client(&addr.into())
                         .map_err(|_| BindError::External { addr })?;
                     Ok(Async::Ready(Change::Insert(addr, svc)))
                 } else {

@@ -16,6 +16,7 @@ mod labels;
 mod record;
 mod sensors;
 pub mod service;
+pub mod timestamp_request_open;
 
 use self::labels::{RequestLabels, ResponseLabels};
 use self::record::Record;
