@@ -33,7 +33,8 @@ where
 {
     outer: Outer,
     inner: Inner,
-    _p: PhantomData<Next>,
+    // `AndThen` should be Send/Sync independently of `Next`.
+    _p: PhantomData<fn() -> Next>,
 }
 
 impl<Next, Outer, Inner> Layer<Next> for AndThen<Next, Outer, Inner>

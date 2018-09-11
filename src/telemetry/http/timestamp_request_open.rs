@@ -26,7 +26,7 @@ pub struct TimestampRequestOpen<S> {
 
 /// Layers a `TimestampRequestOpen` middleware on an HTTP client.
 #[derive(Clone, Debug)]
-pub struct Layer<T, B>(PhantomData<(T, B)>);
+pub struct Layer<T, B>(PhantomData<fn() -> (T, B)>);
 
 /// Uses an `M`-typed `MakeClient` to build a `TimestampRequestOpen` service.
 #[derive(Clone, Debug)]
