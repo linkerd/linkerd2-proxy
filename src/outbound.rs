@@ -12,12 +12,12 @@ use tower_discover::{Change, Discover};
 use tower_in_flight_limit::InFlightLimit;
 use tower_h2;
 use tower_h2_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
-use linkerd2_proxy_router::Recognize;
 
 use bind::{self, Bind, Protocol};
 use control::destination::{self, Resolution};
-use svc::MakeClient;
 use ctx;
+use proxy::h2_router::Recognize;
+use svc::MakeClient;
 use telemetry::http::service::{ResponseBody as SensorBody};
 use timeout::Timeout;
 use proxy::{h1, HttpBody};

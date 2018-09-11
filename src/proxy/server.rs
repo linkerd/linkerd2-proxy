@@ -1,22 +1,23 @@
 use std::{
-    error::Error,
-    fmt,
+    error,
+    //fmt,
     net::SocketAddr,
     sync::Arc,
     time::Duration,
 };
 
-use futures::{future::Either, Future};
+use futures::{future::{self, Either}, Future};
+use h2;
 use http;
 use hyper;
 use indexmap::IndexSet;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tower_service::NewService;
 use tower_h2;
 
 use ctx::Proxy as ProxyCtx;
 use ctx::transport::{Server as ServerCtx};
 use drain;
+use svc::{MakeClient, Service};
 use transport::{self, Connection, GetOriginalDst, Peek};
 use super::glue::{HttpBody, HttpBodyNewSvc, HyperServerSvc};
 use super::protocol::Protocol;
@@ -27,44 +28,40 @@ use super::tcp;
 /// This type can `serve` new connections, determine what protocol
 /// the connection is speaking, and route it to the corresponding
 /// service.
-pub struct Server<S, B, G>
+pub struct Server<M, B, G>
 where
-    S: NewService<Request=http::Request<HttpBody>>,
-    S::Future: 'static,
+    M: MakeClient<Arc<ServerCtx>, Error = ()> + Clone,
+    M::Client: Service<
+        Request = http::Request<HttpBody>,
+        Response = http::Response<B>,
+    >,
     B: tower_h2::Body,
+    G: GetOriginalDst,
 {
     disable_protocol_detection_ports: IndexSet<u16>,
     drain_signal: drain::Watch,
     get_orig_dst: G,
     h1: hyper::server::conn::Http,
-    h2: tower_h2::Server<
-        HttpBodyNewSvc<S>,
-        ::logging::ServerExecutor,
-        B
-    >,
+    h2_settings: h2::server::Builder,
     listen_addr: SocketAddr,
-    new_service: S,
+    make_client: M,
     proxy_ctx: ProxyCtx,
     transport_registry: transport::metrics::Registry,
     tcp: tcp::Forward,
     log: ::logging::Server,
 }
 
-impl<S, B, G> Server<S, B, G>
+impl<M, B, G> Server<M, B, G>
 where
-    S: NewService<
+    M: MakeClient<Arc<ServerCtx>, Error = ()> + Clone,
+    M::Client: Service<
         Request = http::Request<HttpBody>,
-        Response = http::Response<B>
-    > + Clone + Send + 'static,
-    S::Future: 'static,
-    <S as NewService>::Service: Send,
-    <<S as NewService>::Service as ::tower_service::Service>::Future: Send,
-    S::InitError: fmt::Debug,
-    S::Future: Send + 'static,
-    B: tower_h2::Body + 'static,
-    S::Error: Error + Send + Sync + 'static,
-    S::InitError: Send + fmt::Debug,
-    B: tower_h2::Body + Send + Default + 'static,
+        Response = http::Response<B>,
+    >,
+    M::Client: Send + 'static,
+    <M::Client as Service>::Error: error::Error + Send + Sync + 'static,
+    <M::Client as Service>::Future: Send + 'static,
+    B: tower_h2::Body + Default + Send + 'static,
     B::Data: Send,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
     G: GetOriginalDst,
@@ -76,12 +73,12 @@ where
         proxy_ctx: ProxyCtx,
         transport_registry: transport::metrics::Registry,
         get_orig_dst: G,
-        stack: S,
+        make_client: M,
         tcp_connect_timeout: Duration,
         disable_protocol_detection_ports: IndexSet<u16>,
         drain_signal: drain::Watch,
+        h2_settings: h2::server::Builder,
     ) -> Self {
-        let recv_body_svc = HttpBodyNewSvc::new(stack.clone());
         let tcp = tcp::Forward::new(tcp_connect_timeout, transport_registry.clone());
         let log = ::logging::Server::proxy(proxy_ctx, listen_addr);
         Server {
@@ -89,13 +86,9 @@ where
             drain_signal,
             get_orig_dst,
             h1: hyper::server::conn::Http::new(),
-            h2: tower_h2::Server::new(
-                recv_body_svc,
-                Default::default(),
-                log.clone().executor(),
-            ),
+            h2_settings,
             listen_addr,
-            new_service: stack,
+            make_client,
             proxy_ctx,
             transport_registry,
             tcp,
@@ -153,69 +146,73 @@ where
             return log.future(Either::B(fut));
         }
 
-        // try to sniff protocol
+        let detect_protocol = io.peek()
+            .map_err(|e| debug!("peek error: {}", e))
+            .map(|io| {
+                let p = Protocol::detect(io.peeked());
+                (p, io)
+            });
+
         let h1 = self.h1.clone();
-        let h2 = self.h2.clone();
+        let h2_settings = self.h2_settings.clone();
+        let make_client = self.make_client.clone();
         let tcp = self.tcp.clone();
-        let new_service = self.new_service.clone();
         let drain_signal = self.drain_signal.clone();
         let log_clone = log.clone();
-        let fut = Either::A(io.peek()
-            .map_err(|e| debug!("peek error: {}", e))
-            .and_then(move |io| match Protocol::detect(io.peeked()) {
-                Some(Protocol::Http1) => Either::A({
-                    trace!("detected HTTP/1");
+        let serve = detect_protocol
+            .and_then(move |(proto, io)| match proto {
+                None => Either::A({
+                    trace!("did not detect protocol; forwarding TCP");
+                    tcp_serve(&tcp, io, srv_ctx, drain_signal)
+                }),
 
-                    let fut = new_service.new_service()
-                        .map_err(|e| trace!("h1 new_service error: {:?}", e))
-                        .and_then(move |s| {
-                            let svc = HyperServerSvc::new(
-                                s,
-                                srv_ctx,
-                                drain_signal.clone(),
-                                log_clone.executor(),
-                            );
-                            let conn = h1
-                                .serve_connection(io, svc)
-                                // Since using `Connection`s, enable
-                                // support for HTTP upgrades (CONNECT
-                                // and websockets).
-                                .with_upgrades();
-                            drain_signal
-                                .watch(conn, |conn| {
-                                    conn.graceful_shutdown();
-                                })
-                                .map(|_| ())
-                                .map_err(|e| trace!("http1 server error: {:?}", e))
+                Some(proto) => Either::B(match proto {
+                    Protocol::Http1 => Either::A({
+                        trace!("detected HTTP/1");
+                        match make_client.make_client(&srv_ctx) {
+                            Err(()) => Either::A({
+                                error!("failed to build HTTP/1 client");
+                                future::err(())
+                            }),
+                            Ok(s) => Either::B({
+                                let svc = HyperServerSvc::new(
+                                    s,
+                                    srv_ctx,
+                                    drain_signal.clone(),
+                                    log_clone.executor(),
+                                );
+                                // Enable support for HTTP upgrades (CONNECT and websockets).
+                                let conn = h1
+                                    .serve_connection(io, svc)
+                                    .with_upgrades();
+                                drain_signal
+                                    .watch(conn, |conn| {
+                                        conn.graceful_shutdown();
+                                    })
+                                    .map(|_| ())
+                                    .map_err(|e| trace!("http1 server error: {:?}", e))
+                            }),
+                        }
+                    }),
+                    Protocol::Http2 => Either::B({
+                        trace!("detected HTTP/2");
+                        let new_service = make_client.into_new_service(srv_ctx.clone());
+                        let h2 = tower_h2::Server::new(
+                            HttpBodyNewSvc::new(new_service),
+                            h2_settings,
+                            log_clone.executor(),
+                        );
+                        let serve = h2.serve_modified(io, move |r: &mut http::Request<()>| {
+                            r.extensions_mut().insert(srv_ctx.clone());
                         });
-                    Either::A(fut)
+                        drain_signal
+                            .watch(serve, |conn| conn.graceful_shutdown())
+                            .map_err(|e| trace!("h2 server error: {:?}", e))
+                    }),
                 }),
-                Some(Protocol::Http2) => Either::A({
-                    trace!("detected HTTP/2");
-                    let set_ctx = move |request: &mut http::Request<()>| {
-                        request.extensions_mut().insert(srv_ctx.clone());
-                    };
+            });
 
-                    let fut = drain_signal
-                        .watch(h2.serve_modified(io, set_ctx), |conn| {
-                            conn.graceful_shutdown();
-                        })
-                        .map_err(|e| trace!("h2 server error: {:?}", e));
-
-                    Either::B(fut)
-                }),
-                None => {
-                    trace!("did not detect protocol, treating as TCP");
-                    Either::B(tcp_serve(
-                        &tcp,
-                        io,
-                        srv_ctx,
-                        drain_signal,
-                    ))
-                }
-            }));
-
-        log.future(fut)
+        log.future(Either::A(serve))
     }
 }
 

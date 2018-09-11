@@ -53,14 +53,12 @@ extern crate try_lock;
 #[macro_use]
 extern crate linkerd2_metrics;
 extern crate linkerd2_proxy_api;
-extern crate linkerd2_proxy_router;
 
 use futures::*;
 
 use std::error::Error;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -70,8 +68,6 @@ use tokio::{
     runtime::current_thread,
 };
 use tower_service::NewService;
-use tower_fn::*;
-use linkerd2_proxy_router::{Recognize, Router, Error as RouteError};
 
 pub mod app;
 mod bind;
@@ -85,7 +81,6 @@ mod drain;
 pub mod fs_watch;
 mod inbound;
 mod logging;
-mod map_err;
 mod outbound;
 pub mod stream;
 mod svc;
@@ -94,15 +89,14 @@ pub mod telemetry;
 mod proxy;
 mod transport;
 pub mod timeout;
-mod tower_fn; // TODO: move to tower-fn
 mod watch_service; // TODO: move to tower
 
 use bind::Bind;
 use conditional::Conditional;
 use inbound::Inbound;
-use map_err::MapErr;
 use task::MainRuntime;
 use proxy::{HttpBody, Server};
+use proxy::h2_router::{self, Router, Recognize};
 use transport::{BoundPort, Connection};
 pub use transport::{AddrInfo, GetOriginalDst, SoOriginalDst, tls};
 use outbound::Outbound;
@@ -433,50 +427,17 @@ where
     Router<R>: Send,
     G: GetOriginalDst + Send + 'static,
 {
-    let stack = Arc::new(NewServiceFn::new(move || {
-        // Clone the router handle
-        let router = router.clone();
-
-        // Map errors to appropriate response error codes.
-        let map_err = MapErr::new(router, |e| {
-            match e {
-                RouteError::Route(r) => {
-                    error!(" turning route error: {} into 500", r);
-                    http::StatusCode::INTERNAL_SERVER_ERROR
-                }
-                RouteError::Inner(i) => {
-                    error!("turning {} into 500", i);
-                    http::StatusCode::INTERNAL_SERVER_ERROR
-                }
-                RouteError::NotRecognized => {
-                    error!("turning route not recognized error into 500");
-                    http::StatusCode::INTERNAL_SERVER_ERROR
-                }
-                RouteError::NoCapacity(capacity) => {
-                    // TODO For H2 streams, we should probably signal a protocol-level
-                    // capacity change.
-                    error!("router at capacity ({}); returning a 503", capacity);
-                    http::StatusCode::SERVICE_UNAVAILABLE
-                }
-            }
-        });
-
-        // Install the request open timestamp module at the very top
-        // of the stack, in order to take the timestamp as close as
-        // possible to the beginning of the request's lifetime.
-        telemetry::http::service::TimestampRequestOpen::new(map_err)
-    }));
-
     let listen_addr = bound_port.local_addr();
     let server = Server::new(
         listen_addr,
         proxy_ctx,
         transport_registry,
         get_orig_dst,
-        stack,
+        h2_router::Make::new(router),
         tcp_connect_timeout,
         disable_protocol_detection_ports,
         drain_rx.clone(),
+        h2::server::Builder::default(),
     );
     let log = server.log().clone();
 

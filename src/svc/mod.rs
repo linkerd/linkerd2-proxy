@@ -21,6 +21,7 @@
 //!
 //! * Move HTTP-specific service infrastructure into `svc::http`.
 
+use futures::future;
 pub use tower_service::{NewService, Service};
 
 mod reconnect;
@@ -55,4 +56,33 @@ pub use self::reconnect::Reconnect;
     /// become ready lazily, i.e. as the target is resolved and connections are
     /// established.
     fn make_client(&self, t: &Target) -> Result<Self::Client, Self::Error>;
+
+    fn into_new_service(self, target: Target) -> IntoNewService<Target, Self>
+    where
+        Self: Sized,
+    {
+        IntoNewService {
+           target,
+           make_client: self,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct IntoNewService<T, M: MakeClient<T>> {
+    target: T,
+    make_client: M,
+}
+
+impl<T, M: MakeClient<T>> NewService for IntoNewService<T, M> {
+    type Request = <M::Client as Service>::Request;
+    type Response = <M::Client as Service>::Response;
+    type Error = <M::Client as Service>::Error;
+    type Service = M::Client;
+    type InitError = M::Error;
+    type Future = future::FutureResult<Self::Service, Self::InitError>;
+
+    fn new_service(&self) -> Self::Future {
+        future::result(self.make_client.make_client(&self.target))
+    }
 }
