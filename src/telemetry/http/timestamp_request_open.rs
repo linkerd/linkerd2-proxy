@@ -66,7 +66,6 @@ where
     N: MakeClient<T>,
     N::Client: Service<Request = http::Request<B>>,
 {
-    type Error = N::Error;
     type Bound = Make<N>;
 
     fn bind(&self, next: N) -> Make<N> {
@@ -81,8 +80,8 @@ where
     N: MakeClient<T>,
     N::Client: Service<Request = http::Request<B>>,
 {
-    type Error = N::Error;
     type Client = TimestampRequestOpen<N::Client>;
+    type Error = N::Error;
 
     fn make_client(&self, target: &T) -> Result<Self::Client, Self::Error> {
         let inner = self.0.make_client(target)?;

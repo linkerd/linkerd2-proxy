@@ -39,9 +39,6 @@ pub use self::layer::Layer;
 /// (i.e. that exists locally in memory).
  pub trait MakeClient<Target> {
 
-    /// Indicates why the provided `Target` cannot be used to instantiate a client.
-    type Error;
-
     /// Serves requests on behalf of a target.
     ///
     /// `Client`s are expected to acquire resources lazily as
@@ -51,6 +48,9 @@ pub use self::layer::Layer;
     /// `Async::Ready`. When `Service::poll_ready` returns an error, the
     /// client must be discarded.
     type Client: Service;
+
+    /// Indicates why the provided `Target` cannot be used to instantiate a client.
+    type Error;
 
     /// Creates a client
     ///

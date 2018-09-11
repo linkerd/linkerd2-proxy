@@ -1,11 +1,16 @@
 use std::marker::PhantomData;
 
+/// A stackable element.
+///
+/// Given a `Next`-typed inner value, produces a `Bound`-typed value.
+/// This is especially useful for composable types like `MakeClient`s.
 pub trait Layer<Next> {
-    type Error;
     type Bound;
 
+    /// Produce a `Bound` value from a `Next` value.
     fn bind(&self, next: Next) -> Self::Bound;
 
+    /// Compose this `Layer` with another.
     fn and_then<M>(self, inner: M) -> AndThen<Next, Self, M>
     where
         Self: Layer<M::Bound> + Sized,
@@ -36,7 +41,6 @@ where
     Outer: Layer<Inner::Bound>,
     Inner: Layer<Next>,
 {
-    type Error = Outer::Error;
     type Bound = Outer::Bound;
 
     fn bind(&self, next: Next) -> Self::Bound {
