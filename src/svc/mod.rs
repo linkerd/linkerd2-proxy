@@ -24,9 +24,11 @@
 use futures::future;
 pub use tower_service::{NewService, Service};
 
-mod reconnect;
+pub mod reconnect;
+pub mod layer;
 
 pub use self::reconnect::Reconnect;
+pub use self::layer::Layer;
 
 /// `Target` describes a resource to which the client will be attached.
 ///

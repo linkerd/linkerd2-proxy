@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use ctx;
 use svc::{MakeClient, Service};
-use telemetry::http::service::TimestampRequestOpen;
 
 extern crate linkerd2_proxy_router;
 
@@ -81,20 +80,11 @@ where
     B: Default + Send + 'static,
 {
     type Error = ();
-    type Client = TimestampRequestOpen<H2Router<R>>;
+    type Client = H2Router<R>;
 
     fn make_client(&self, _: &Arc<ctx::transport::Server>) -> Result<Self::Client, Self::Error> {
-        let router = H2Router {
-            inner: self.router.clone(),
-        };
-
-        // Install the request open timestamp module at the very top of the
-        // stack, in order to take the timestamp as close as possible to the
-        // beginning of the request's lifetime.
-        //
-        // TODO replace with a metrics module that is registered to the server
-        // transport.
-        Ok(TimestampRequestOpen::new(router))
+        let inner = self.router.clone();
+        Ok(H2Router { inner })
     }
 }
 

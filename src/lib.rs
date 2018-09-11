@@ -97,6 +97,8 @@ use inbound::Inbound;
 use task::MainRuntime;
 use proxy::{HttpBody, Server};
 use proxy::h2_router::{self, Router, Recognize};
+use svc::Layer;
+use telemetry::http::timestamp_request_open;
 use transport::{BoundPort, Connection};
 pub use transport::{AddrInfo, GetOriginalDst, SoOriginalDst, tls};
 use outbound::Outbound;
@@ -427,13 +429,24 @@ where
     Router<R>: Send,
     G: GetOriginalDst + Send + 'static,
 {
+
+
+    // Install the request open timestamp module at the very top of the
+    // stack, in order to take the timestamp as close as possible to the
+    // beginning of the request's lifetime.
+    //
+    // TODO replace with a metrics module that is registered to the server
+    // transport.
+    let stack = timestamp_request_open::Layer::new()
+        .bind(h2_router::Make::new(router));
+
     let listen_addr = bound_port.local_addr();
     let server = Server::new(
         listen_addr,
         proxy_ctx,
         transport_registry,
         get_orig_dst,
-        h2_router::Make::new(router),
+        stack,
         tcp_connect_timeout,
         disable_protocol_detection_ports,
         drain_rx.clone(),
