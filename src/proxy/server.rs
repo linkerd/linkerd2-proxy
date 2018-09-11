@@ -1,6 +1,5 @@
 use std::{
     error,
-    //fmt,
     net::SocketAddr,
     sync::Arc,
     time::Duration,
