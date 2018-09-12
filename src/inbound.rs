@@ -101,13 +101,13 @@ mod tests {
     use std::net;
 
     use http;
-    use proxy::h2_router::Recognize;
 
     use super::Inbound;
-    use bind::{self, Bind, Host};
+    use bind::Bind;
     use ctx;
     use conditional::Conditional;
     use proxy;
+    use proxy::http::router::Recognize;
     use tls;
 
     fn new_inbound(default: Option<net::SocketAddr>, ctx: ctx::Proxy) -> Inbound<()> {
@@ -121,7 +121,7 @@ mod tests {
 
     fn make_key_http1(addr: net::SocketAddr) -> (net::SocketAddr, proxy::http::Dialect) {
         let dialect = proxy::http::Dialect::Http1 {
-            host: Host::NoAuthority,
+            host: proxy::http::dialect::Host::NoAuthority,
             is_h1_upgrade: false,
             was_absolute_form: false,
         };
