@@ -20,7 +20,11 @@ use ctx::transport::TlsStatus;
 use watch_service::{WatchService, Rebind};
 
 /// An HTTP `Service` that is created for each `Endpoint` and `Protocol`.
-pub type Stack<B> = proxy::http::orig_proto::Upgrade<NormalizeUri<WatchTls<B>>>;
+pub type Stack<B> = proxy::http::orig_proto::Upgrade<
+    proxy::http::normalize_uri::Service<
+        WatchTls<B>
+    >
+>;
 
 type WatchTls<B> = WatchService<tls::ConditionalClientConfig, RebindTls<B>>;
 
@@ -129,20 +133,6 @@ pub enum Protocol {
 pub enum Host {
     Authority(uri::Authority),
     NoAuthority,
-}
-
-/// Rewrites HTTP/1.x requests so that their URIs are in a canonical form.
-///
-/// The following transformations are applied:
-/// - If an absolute-form URI is received, it must replace
-///   the host header (in accordance with RFC7230#section-5.4)
-/// - If the request URI is not in absolute form, it is rewritten to contain
-///   the authority given in the `Host:` header, or, failing that, from the
-///   request's original destination according to `SO_ORIGINAL_DST`.
-#[derive(Copy, Clone, Debug)]
-pub struct NormalizeUri<S> {
-    inner: S,
-    was_absolute_form: bool,
 }
 
 pub struct RebindTls<B> {
@@ -293,7 +283,10 @@ where
         // and request URI are not in agreement, or are not present.
         //
         // TODO move this into proxy::Client?
-        let normalize_uri = NormalizeUri::new(watch_tls, protocol.was_absolute_form());
+        let normalize_uri = proxy::http::normalize_uri::Service::new(
+            watch_tls,
+            protocol.was_absolute_form()
+        );
 
         // Upgrade HTTP/1.1 requests to be HTTP/2 if the endpoint supports HTTP/2.
         proxy::http::orig_proto::Upgrade::new(normalize_uri, protocol.is_http2())
@@ -355,41 +348,6 @@ where
         Ok(self.bind.bind_service(ep, &self.protocol))
     }
 }
-
-
-// ===== impl NormalizeUri =====
-
-impl<S> NormalizeUri<S> {
-    fn new(inner: S, was_absolute_form: bool) -> Self {
-        Self { inner, was_absolute_form }
-    }
-}
-
-impl<S, B> tower::Service for NormalizeUri<S>
-where
-    S: tower::Service<Request = http::Request<B>>,
-{
-    type Request = S::Request;
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self) -> Poll<(), S::Error> {
-        self.inner.poll_ready()
-    }
-
-    fn call(&mut self, mut request: S::Request) -> Self::Future {
-        if request.version() != http::Version::HTTP_2 &&
-            // Skip normalizing the URI if it was received in
-            // absolute form.
-            !self.was_absolute_form
-        {
-            proxy::http::h1::normalize_our_view_of_uri(&mut request);
-        }
-        self.inner.call(request)
-    }
-}
-// ===== impl Binding =====
 
 impl<B> tower::Service for BoundService<B>
 where
