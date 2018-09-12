@@ -8,10 +8,9 @@ use tokio_connect::Connect;
 use tower_service::{Service, NewService};
 use tower_h2;
 
-use bind;
+use proxy::glue::{BodyPayload, HttpBody, HyperConnect};
 use task::BoxExecutor;
-use super::glue::{BodyPayload, HttpBody, HyperConnect};
-use super::h1;
+use super::{h1, Dialect};
 use super::upgrade::{HttpConnect, Http11Upgrade};
 
 use std::{self, fmt};
@@ -114,9 +113,9 @@ where
    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
     /// Create a new `Client`, bound to a specific protocol (HTTP/1 or HTTP/2).
-    pub fn new(protocol: &bind::Protocol, connect: C, executor: E) -> Self {
+    pub fn new(protocol: &Dialect, connect: C, executor: E) -> Self {
         match *protocol {
-            bind::Protocol::Http1 { was_absolute_form, .. } => {
+            Dialect::Http1 { was_absolute_form, .. } => {
                 let h1 = hyper::Client::builder()
                     .executor(executor)
                     // hyper should never try to automatically set the Host
@@ -127,7 +126,7 @@ where
                     inner: ClientInner::Http1(h1),
                 }
             },
-            bind::Protocol::Http2 => {
+            Dialect::Http2 => {
                 let mut h2_builder = h2::client::Builder::default();
                 // h2 currently doesn't handle PUSH_PROMISE that well, so we just
                 // disable it for now.

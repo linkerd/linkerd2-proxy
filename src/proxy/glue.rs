@@ -17,8 +17,8 @@ use tower_h2;
 
 use ctx::transport::{Server as ServerCtx};
 use drain;
-use super::h1;
-use super::upgrade::Http11Upgrade;
+use proxy::http::h1;
+use proxy::http::upgrade::Http11Upgrade;
 use task::{BoxSendFuture, ErasedExecutor, Executor};
 
 /// Glue between `hyper::Body` and `tower_h2::RecvBody`.

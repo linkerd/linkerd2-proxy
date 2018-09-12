@@ -13,20 +13,19 @@ use tower_in_flight_limit::InFlightLimit;
 use tower_h2;
 use tower_h2_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
 
-use bind::{self, Bind, Protocol};
+use bind;
 use control::destination::{self, Resolution};
 use ctx;
-use proxy::h2_router::Recognize;
 use svc::MakeClient;
 use telemetry::http::service::{ResponseBody as SensorBody};
 use timeout::Timeout;
-use proxy::{h1, HttpBody};
+use proxy;
 use transport::{DnsNameAndPort, Host, HostAndPort};
 
-type BindProtocol<B> = bind::BindProtocol<ctx::Proxy, B>;
+type BindDialect<B> = bind::BindDialect<ctx::Proxy, B>;
 
 pub struct Outbound<B> {
-    bind: Bind<ctx::Proxy, B>,
+    bind: bind::Bind<ctx::Proxy, B>,
     discovery: destination::Resolver,
     bind_timeout: Duration,
 }
@@ -49,7 +48,7 @@ pub enum Destination {
 // ===== impl Outbound =====
 
 impl<B> Outbound<B> {
-    pub fn new(bind: Bind<ctx::Proxy, B>,
+    pub fn new(bind: bind::Bind<ctx::Proxy, B>,
                discovery: destination::Resolver,
                bind_timeout: Duration)
                -> Outbound<B> {
@@ -80,7 +79,7 @@ impl<B> Outbound<B> {
             .authority_part()
             .and_then(Self::normalize)
             .or_else(|| {
-                h1::authority_from_host(req)
+                proxy::http::h1::authority_from_host(req)
                     .and_then(|h| Self::normalize(&h))
             })
     }
@@ -134,7 +133,7 @@ where
     }
 }
 
-impl<B> Recognize for Outbound<B>
+impl<B> proxy::http::router::Recognize for Outbound<B>
 where
     B: tower_h2::Body + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
@@ -142,10 +141,10 @@ where
     type Request = http::Request<B>;
     type Response = http::Response<PendingUntilFirstDataBody<
         load::peak_ewma::Handle,
-        SensorBody<HttpBody>,
+        SensorBody<proxy::http::Body>,
     >>;
     type Error = <Self::Service as tower::Service>::Error;
-    type Key = (Destination, Protocol);
+    type Key = (Destination, proxy::http::Dialect);
     type RouteError = bind::BufferSpawnError;
     type Service = InFlightLimit<Timeout<Buffer<Balance<
         load::WithPeakEwma<Discovery<B>, PendingUntilFirstData>,
@@ -156,8 +155,8 @@ where
     // requests from being routed to HTTP/2 servers, and vice versa.
     fn recognize(&self, req: &Self::Request) -> Option<Self::Key> {
         let dest = Self::destination(req)?;
-        let proto = bind::Protocol::detect(req);
-        Some((dest, proto))
+        let dialect = proxy::http::Dialect::detect(req);
+        Some((dest, dialect))
     }
 
     /// Builds a dynamic, load balancing service.
@@ -168,11 +167,11 @@ where
         &self,
         key: &Self::Key,
     ) -> Result<Self::Service, Self::RouteError> {
-        let &(ref dest, ref protocol) = key;
-        debug!("building outbound {:?} client to {:?}", protocol, dest);
+        let &(ref dest, ref dialect) = key;
+        debug!("building outbound {:?} client to {:?}", dialect, dest);
 
         let resolve = {
-            let proto = self.bind.clone().with_protocol(protocol.clone());
+            let proto = self.bind.clone().with_dialect(dialect.clone());
             match *dest {
                 Destination::Name(ref authority) =>
                     Discovery::Name(self.discovery.resolve(authority, proto)),
@@ -187,7 +186,7 @@ where
         };
 
         let log = ::logging::proxy().client("out", Dst(dest.clone()))
-            .with_protocol(protocol.clone());
+            .with_dialect(dialect.clone());
         let buffer = Buffer::new(balance, &log.executor())
             .map_err(|_| bind::BufferSpawnError::Outbound)?;
 
@@ -198,8 +197,8 @@ where
 }
 
 pub enum Discovery<B> {
-    Name(Resolution<BindProtocol<B>>),
-    Addr(Option<(SocketAddr, BindProtocol<B>)>),
+    Name(Resolution<BindDialect<B>>),
+    Addr(Option<(SocketAddr, BindDialect<B>)>),
 }
 
 impl<B> Discover for Discovery<B>

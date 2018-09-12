@@ -22,7 +22,7 @@ where
     router: Router<R>,
 }
 
-pub struct H2Router<R>
+pub struct RouteService<R>
 where
     R: Recognize,
     R::Error: error::Error,
@@ -80,11 +80,11 @@ where
     B: Default + Send + 'static,
 {
     type Error = ();
-    type Client = H2Router<R>;
+    type Client = RouteService<R>;
 
     fn make_client(&self, _: &Arc<ctx::transport::Server>) -> Result<Self::Client, Self::Error> {
         let inner = self.router.clone();
-        Ok(H2Router { inner })
+        Ok(RouteService { inner })
     }
 }
 
@@ -115,9 +115,9 @@ where
     }
 }
 
-// ===== impl Router =====
+// ===== impl RouteService =====
 
-impl<R, B> Service for H2Router<R>
+impl<R, B> Service for RouteService<R>
 where
     R: Recognize<Response = http::Response<B>>,
     R::Error: error::Error,
