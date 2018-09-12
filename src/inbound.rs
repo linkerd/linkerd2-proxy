@@ -8,8 +8,7 @@ use tower_h2;
 
 use bind;
 use ctx;
-use proxy::http::router::Recognize;
-use proxy::http::orig_proto;
+use proxy;
 
 type Bind<B> = bind::Bind<ctx::Proxy, B>;
 
@@ -43,17 +42,19 @@ where
     }
 }
 
-impl<B> Recognize for Inbound<B>
+impl<B> proxy::http::router::Recognize for Inbound<B>
 where
     B: tower_h2::Body + Send + 'static,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
 {
-    type Key = (SocketAddr, bind::Protocol);
+    type Key = (SocketAddr, proxy::http::Dialect);
     type Request = <Self::Service as tower::Service>::Request;
     type Response = <Self::Service as tower::Service>::Response;
     type Error = <Self::Service as tower::Service>::Error;
     type RouteError = bind::BufferSpawnError;
-    type Service = InFlightLimit<Buffer<orig_proto::Downgrade<bind::BoundService<B>>>>;
+    type Service = InFlightLimit<Buffer<
+        proxy::http::orig_proto::Downgrade<bind::BoundService<B>>,
+    >>;
 
     fn recognize(&self, req: &Self::Request) -> Option<Self::Key> {
         let key = req.extensions()
@@ -64,7 +65,7 @@ where
             })
             .or_else(|| self.default_addr);
 
-        let proto = orig_proto::detect(req);
+        let proto = proxy::http::orig_proto::detect(req);
 
         let key = key.map(move |addr| (addr, proto));
         trace!("recognize key={:?}", key);
@@ -83,7 +84,7 @@ where
 
         let endpoint = (*addr).into();
         let binding = self.bind.bind_service(&endpoint, proto);
-        let from_orig_proto = orig_proto::Downgrade::new(binding);
+        let from_orig_proto = proxy::http::orig_proto::Downgrade::new(binding);
 
         let log = ::logging::proxy().client("in", "local")
             .with_remote(*addr);
@@ -100,12 +101,13 @@ mod tests {
     use std::net;
 
     use http;
-    use proxy::http::router::Recognize;
 
     use super::Inbound;
-    use bind::{self, Bind, Host};
+    use bind::Bind;
     use ctx;
     use conditional::Conditional;
+    use proxy;
+    use proxy::http::router::Recognize;
     use tls;
 
     fn new_inbound(default: Option<net::SocketAddr>, ctx: ctx::Proxy) -> Inbound<()> {
@@ -117,13 +119,13 @@ mod tests {
         Inbound::new(default, bind.with_ctx(ctx))
     }
 
-    fn make_key_http1(addr: net::SocketAddr) -> (net::SocketAddr, bind::Protocol) {
-        let protocol = bind::Protocol::Http1 {
-            host: Host::NoAuthority,
+    fn make_key_http1(addr: net::SocketAddr) -> (net::SocketAddr, proxy::http::Dialect) {
+        let dialect = proxy::http::Dialect::Http1 {
+            host: proxy::http::dialect::Host::NoAuthority,
             is_h1_upgrade: false,
             was_absolute_form: false,
         };
-        (addr, protocol)
+        (addr, dialect)
     }
 
     const TLS_DISABLED: Conditional<(), tls::ReasonForNoTls> =

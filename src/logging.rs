@@ -222,7 +222,7 @@ pub struct Client<C: fmt::Display, D: fmt::Display> {
     section: Section,
     client: C,
     dst: D,
-    protocol: Option<::bind::Protocol>,
+    dialect: Option<::proxy::http::Dialect>,
     remote: Option<SocketAddr>,
 }
 
@@ -255,7 +255,7 @@ impl Section {
             section: *self,
             client,
             dst,
-            protocol: None,
+            dialect: None,
             remote: None,
         }
     }
@@ -313,9 +313,9 @@ impl<D: fmt::Display> Client<&'static str, D> {
 }
 
 impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
-    pub fn with_protocol(self, p: ::bind::Protocol) -> Self {
+    pub fn with_dialect(self, p: ::proxy::http::Dialect) -> Self {
         Self {
-            protocol: Some(p),
+            dialect: Some(p),
             .. self
         }
     }
@@ -335,7 +335,7 @@ impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
 impl<C: fmt::Display, D: fmt::Display> fmt::Display for Client<C, D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}={{client={} dst={}", self.section, self.client, self.dst)?;
-        if let Some(ref proto) = self.protocol {
+        if let Some(ref proto) = self.dialect {
             write!(f, " proto={:?}", proto)?;
         }
         if let Some(remote) = self.remote {

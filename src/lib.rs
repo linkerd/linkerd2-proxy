@@ -95,7 +95,7 @@ use bind::Bind;
 use conditional::Conditional;
 use inbound::Inbound;
 use task::MainRuntime;
-use proxy::http::router::{Router, Recognize};
+use proxy::http::router::{self, Router, Recognize};
 use svc::Layer;
 use telemetry::http::timestamp_request_open;
 use transport::{BoundPort, Connection};
@@ -428,8 +428,6 @@ where
     Router<R>: Send,
     G: GetOriginalDst + Send + 'static,
 {
-
-
     // Install the request open timestamp module at the very top of the
     // stack, in order to take the timestamp as close as possible to the
     // beginning of the request's lifetime.
@@ -437,7 +435,7 @@ where
     // TODO replace with a metrics module that is registered to the server
     // transport.
     let stack = timestamp_request_open::Layer::new()
-        .bind(proxy::http::router::Make::new(router));
+        .bind(router::Make::new(router));
 
     let listen_addr = bound_port.local_addr();
     let server = proxy::Server::new(
