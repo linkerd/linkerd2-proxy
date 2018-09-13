@@ -1,3 +1,4 @@
+pub mod add_target_extension;
 pub mod client;
 pub mod dialect;
 pub mod h1;

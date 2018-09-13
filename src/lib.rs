@@ -97,7 +97,6 @@ use inbound::Inbound;
 use task::MainRuntime;
 use proxy::http::router::{self, Router, Recognize};
 use svc::Layer;
-use telemetry::http::timestamp_request_open;
 use transport::{BoundPort, Connection};
 pub use transport::{AddrInfo, GetOriginalDst, SoOriginalDst, tls};
 use outbound::Outbound;
@@ -434,7 +433,8 @@ where
     //
     // TODO replace with a metrics module that is registered to the server
     // transport.
-    let stack = timestamp_request_open::Layer::new()
+    let stack = telemetry::http::timestamp_request_open::Layer::new()
+        .and_then(proxy::http::add_target_extension::layer())
         .bind(router::Make::new(router));
 
     let listen_addr = bound_port.local_addr();
