@@ -6,7 +6,7 @@ use std::{fmt, error};
 use std::sync::Arc;
 
 use ctx;
-use svc::{MakeClient, Service};
+use svc;
 
 extern crate linkerd2_proxy_router;
 
@@ -22,7 +22,7 @@ where
     router: Router<R>,
 }
 
-pub struct H2Router<R>
+pub struct Service<R>
 where
     R: Recognize,
     R::Error: error::Error,
@@ -38,7 +38,7 @@ where
     R::Error: error::Error,
     R::RouteError: fmt::Display,
 {
-    inner: <Router<R> as Service>::Future,
+    inner: <Router<R> as svc::Service>::Future,
 }
 
 // ===== impl Make =====
@@ -70,7 +70,7 @@ where
     }
 }
 
-impl<R, A, B> MakeClient<Arc<ctx::transport::Server>> for Make<R>
+impl<R, A, B> svc::MakeClient<Arc<ctx::transport::Server>> for Make<R>
 where
     R: Recognize<Request = http::Request<A>, Response = http::Response<B>>,
     R: Send + Sync + 'static,
@@ -80,11 +80,11 @@ where
     B: Default + Send + 'static,
 {
     type Error = ();
-    type Client = H2Router<R>;
+    type Client = Service<R>;
 
     fn make_client(&self, _: &Arc<ctx::transport::Server>) -> Result<Self::Client, Self::Error> {
         let inner = self.router.clone();
-        Ok(H2Router { inner })
+        Ok(Service { inner })
     }
 }
 
@@ -115,17 +115,17 @@ where
     }
 }
 
-// ===== impl Router =====
+// ===== impl Service =====
 
-impl<R, B> Service for H2Router<R>
+impl<R, B> svc::Service for Service<R>
 where
     R: Recognize<Response = http::Response<B>>,
     R::Error: error::Error,
     R::RouteError: fmt::Display,
     B: Default,
 {
-    type Request = <Router<R> as Service>::Request;
-    type Response = <Router<R> as Service>::Response;
+    type Request = <Router<R> as svc::Service>::Request;
+    type Response = <Router<R> as svc::Service>::Response;
     type Error = h2::Error;
     type Future = ResponseFuture<R>;
 

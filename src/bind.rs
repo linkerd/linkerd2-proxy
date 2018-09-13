@@ -13,24 +13,24 @@ use control::destination::Endpoint;
 use ctx;
 use svc::{MakeClient, Reconnect};
 use telemetry;
-use proxy::{self, HttpBody, h1, orig_proto};
+use proxy;
 use transport;
 use tls;
 use ctx::transport::TlsStatus;
 use watch_service::{WatchService, Rebind};
 
 /// An HTTP `Service` that is created for each `Endpoint` and `Protocol`.
-pub type Stack<B> = orig_proto::Upgrade<NormalizeUri<WatchTls<B>>>;
+pub type Stack<B> = proxy::http::orig_proto::Upgrade<NormalizeUri<WatchTls<B>>>;
 
 type WatchTls<B> = WatchService<tls::ConditionalClientConfig, RebindTls<B>>;
 
 /// An HTTP `Service` that is created for each `Endpoint`, `Protocol`, and client
 /// TLS configuration.
-pub type TlsStack<B> = telemetry::http::service::Http<HttpService<B>, B, HttpBody>;
+pub type TlsStack<B> = telemetry::http::service::Http<HttpService<B>, B, proxy::http::Body>;
 
 type HttpService<B> = Reconnect<
     Arc<ctx::transport::Client>,
-    proxy::Client<
+    proxy::http::Client<
         transport::metrics::Connect<transport::Connect>,
         ::logging::ClientExecutor<&'static str, SocketAddr>,
         telemetry::http::service::RequestBody<B>,
@@ -263,7 +263,7 @@ where
             client_ctx.clone(),
             Reconnect::new(
                 client_ctx.clone(),
-                proxy::Client::new(protocol, connect, log.executor())
+                proxy::http::Client::new(protocol, connect, log.executor())
             )
         )
    }
@@ -296,7 +296,7 @@ where
         let normalize_uri = NormalizeUri::new(watch_tls, protocol.was_absolute_form());
 
         // Upgrade HTTP/1.1 requests to be HTTP/2 if the endpoint supports HTTP/2.
-        orig_proto::Upgrade::new(normalize_uri, protocol.is_http2())
+        proxy::http::orig_proto::Upgrade::new(normalize_uri, protocol.is_http2())
     }
 
     pub fn bind_service(&self, ep: &Endpoint, protocol: &Protocol) -> BoundService<B> {
@@ -384,7 +384,7 @@ where
             // absolute form.
             !self.was_absolute_form
         {
-            h1::normalize_our_view_of_uri(&mut request);
+            proxy::http::h1::normalize_our_view_of_uri(&mut request);
         }
         self.inner.call(request)
     }
@@ -442,7 +442,7 @@ impl Protocol {
             return Protocol::Http2;
         }
 
-        let was_absolute_form = h1::is_absolute_form(req.uri());
+        let was_absolute_form = proxy::http::h1::is_absolute_form(req.uri());
         trace!(
             "Protocol::detect(); req.uri='{:?}'; was_absolute_form={:?};",
             req.uri(), was_absolute_form
@@ -451,7 +451,7 @@ impl Protocol {
         // the key for an HTTP/1.x request.
         let host = Host::detect(req);
 
-        let is_h1_upgrade = h1::wants_upgrade(req);
+        let is_h1_upgrade = proxy::http::h1::wants_upgrade(req);
 
         Protocol::Http1 {
             host,
@@ -496,7 +496,7 @@ impl Host {
             .uri()
             .authority_part()
             .cloned()
-            .or_else(|| h1::authority_from_host(req))
+            .or_else(|| proxy::http::h1::authority_from_host(req))
             .map(Host::Authority)
             .unwrap_or_else(|| Host::NoAuthority)
     }

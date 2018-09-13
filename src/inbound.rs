@@ -8,8 +8,8 @@ use tower_h2;
 
 use bind;
 use ctx;
-use proxy::h2_router::Recognize;
-use proxy::orig_proto;
+use proxy::http::router::Recognize;
+use proxy::http::orig_proto;
 
 type Bind<B> = bind::Bind<ctx::Proxy, B>;
 
@@ -100,7 +100,7 @@ mod tests {
     use std::net;
 
     use http;
-    use proxy::h2_router::Recognize;
+    use proxy::http::router::Recognize;
 
     use super::Inbound;
     use bind::{self, Bind, Host};

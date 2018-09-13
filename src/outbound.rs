@@ -16,11 +16,11 @@ use tower_h2_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
 use bind::{self, Bind, Protocol};
 use control::destination::{self, Resolution};
 use ctx;
-use proxy::h2_router::Recognize;
+use proxy::{self, http::h1};
+use proxy::http::router::Recognize;
 use svc::MakeClient;
 use telemetry::http::service::{ResponseBody as SensorBody};
 use timeout::Timeout;
-use proxy::{h1, HttpBody};
 use transport::{DnsNameAndPort, Host, HostAndPort};
 
 type BindProtocol<B> = bind::BindProtocol<ctx::Proxy, B>;
@@ -142,7 +142,7 @@ where
     type Request = http::Request<B>;
     type Response = http::Response<PendingUntilFirstDataBody<
         load::peak_ewma::Handle,
-        SensorBody<HttpBody>,
+        SensorBody<proxy::http::Body>,
     >>;
     type Error = <Self::Service as tower::Service>::Error;
     type Key = (Destination, Protocol);

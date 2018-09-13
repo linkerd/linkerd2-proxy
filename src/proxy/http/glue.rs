@@ -17,8 +17,8 @@ use tower_h2;
 
 use ctx::transport::{Server as ServerCtx};
 use drain;
-use super::h1;
-use super::upgrade::Http11Upgrade;
+use proxy::http::h1;
+use proxy::http::upgrade::Http11Upgrade;
 use task::{BoxSendFuture, ErasedExecutor, Executor};
 
 /// Glue between `hyper::Body` and `tower_h2::RecvBody`.
@@ -35,13 +35,13 @@ pub enum HttpBody {
 
 /// Glue for `tower_h2::Body`s to be used in hyper.
 #[derive(Debug, Default)]
-pub(super) struct BodyPayload<B> {
+pub(in proxy) struct BodyPayload<B> {
     body: B,
 }
 
 /// Glue for a `tower::Service` to used as a `hyper::server::Service`.
 #[derive(Debug)]
-pub(super) struct HyperServerSvc<S, E> {
+pub(in proxy) struct HyperServerSvc<S, E> {
     service: S,
     srv_ctx: Arc<ServerCtx>,
     /// Watch any spawned HTTP/1.1 upgrade tasks.
@@ -52,36 +52,36 @@ pub(super) struct HyperServerSvc<S, E> {
 }
 
 /// Future returned by `HyperServerSvc`.
-pub(super) struct HyperServerSvcFuture<F> {
+pub(in proxy) struct HyperServerSvcFuture<F> {
     inner: F,
 }
 
 /// Glue for any `Service` taking an h2 body to receive an `HttpBody`.
 #[derive(Debug)]
-pub(super) struct HttpBodySvc<S> {
+pub(in proxy) struct HttpBodySvc<S> {
     service: S,
 }
 
 /// Glue for any `NewService` taking an h2 body to receive an `HttpBody`.
 #[derive(Clone)]
-pub(super) struct HttpBodyNewSvc<N> {
+pub(in proxy) struct HttpBodyNewSvc<N> {
     new_service: N,
 }
 
 /// Future returned by `HttpBodyNewSvc`.
-pub(super) struct HttpBodyNewSvcFuture<F> {
+pub(in proxy) struct HttpBodyNewSvcFuture<F> {
     inner: F,
 }
 
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
 #[derive(Debug, Clone)]
-pub(super) struct HyperConnect<C> {
+pub(in proxy) struct HyperConnect<C> {
     connect: C,
     absolute_form: bool,
 }
 
 /// Future returned by `HyperConnect`.
-pub(super) struct HyperConnectFuture<F> {
+pub(in proxy) struct HyperConnectFuture<F> {
     inner: F,
     absolute_form: bool,
 }
@@ -183,7 +183,7 @@ impl Drop for HttpBody {
 
 impl<B> BodyPayload<B> {
     /// Wrap a `tower_h2::Body` into a `Stream` hyper can understand.
-    pub fn new(body: B) -> Self {
+    pub(in proxy) fn new(body: B) -> Self {
         BodyPayload {
             body,
         }
@@ -222,7 +222,7 @@ where
 // ===== impl HyperServerSvc =====
 
 impl<S, E> HyperServerSvc<S, E> {
-    pub fn new(
+    pub(in proxy) fn new(
         service: S,
         srv_ctx: Arc<ServerCtx>,
         upgrade_drain_signal: drain::Watch,
@@ -347,7 +347,7 @@ impl<N> HttpBodyNewSvc<N>
 where
     N: NewService<Request=http::Request<HttpBody>>,
 {
-    pub fn new(new_service: N) -> Self {
+    pub(in proxy) fn new(new_service: N) -> Self {
         HttpBodyNewSvc {
             new_service,
         }
@@ -394,7 +394,7 @@ where
     C: Connect,
     C::Future: 'static,
 {
-    pub fn new(connect: C, absolute_form: bool) -> Self {
+    pub(in proxy) fn new(connect: C, absolute_form: bool) -> Self {
         HyperConnect {
             connect,
             absolute_form,

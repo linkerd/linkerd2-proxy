@@ -13,16 +13,9 @@
 //! This module is intended only to store the infrastructure for building a
 //! proxy. The specific logic implemented by a proxy should live elsewhere.
 
-mod client;
-mod glue;
-pub mod h1;
-pub mod h2_router;
-mod upgrade;
-pub mod orig_proto;
+pub mod http;
 mod protocol;
 mod server;
 mod tcp;
 
-pub use self::client::{Client, Error as ClientError};
-pub use self::glue::HttpBody;
 pub use self::server::Server;
