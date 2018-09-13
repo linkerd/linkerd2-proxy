@@ -19,6 +19,8 @@ pub struct AddExtension<T, S> {
     inner: S,
 }
 
+// === Layer ===
+
 pub fn layer<T: Clone + Send + Sync + 'static, B>() -> Layer<T, B> {
     Layer(PhantomData)
 }
@@ -41,6 +43,8 @@ impl<T, A> Clone for Layer<T, A> {
         Layer(PhantomData)
     }
 }
+
+// === Make ===
 
 impl<T, A, N> svc::MakeClient<T> for Make<T, A, N>
 where
@@ -65,6 +69,8 @@ impl<T, A, N: Clone> Clone for Make<T, A, N> {
         Make(self.0.clone(), PhantomData)
     }
 }
+
+// === AddExtension ===
 
 impl<T, S, A> svc::Service for AddExtension<T, S>
 where
