@@ -100,7 +100,7 @@ mod tests {
     use std::net;
 
     use http;
-    use proxy::h2_router::Recognize;
+    use proxy::http::router::Recognize;
 
     use super::Inbound;
     use bind::{self, Bind, Host};
