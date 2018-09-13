@@ -9,10 +9,10 @@ use tower_service::{Service, NewService};
 use tower_h2;
 
 use bind;
+use proxy::http::glue::{BodyPayload, HttpBody, HyperConnect};
+use proxy::http::h1;
+use proxy::http::upgrade::{HttpConnect, Http11Upgrade};
 use task::BoxExecutor;
-use super::glue::{BodyPayload, HttpBody, HyperConnect};
-use super::h1;
-use super::upgrade::{HttpConnect, Http11Upgrade};
 
 use std::{self, fmt};
 

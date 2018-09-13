@@ -18,9 +18,9 @@ use ctx::transport::{Server as ServerCtx};
 use drain;
 use svc::{MakeClient, Service};
 use transport::{self, Connection, GetOriginalDst, Peek};
-use super::glue::{HttpBody, HttpBodyNewSvc, HyperServerSvc};
-use super::protocol::Protocol;
-use super::tcp;
+use proxy::http::glue::{HttpBody, HttpBodyNewSvc, HyperServerSvc};
+use proxy::protocol::Protocol;
+use proxy::tcp;
 
 /// A protocol-transparent Server!
 ///

@@ -17,8 +17,8 @@ use tower_h2;
 
 use ctx::transport::{Server as ServerCtx};
 use drain;
-use super::h1;
-use super::upgrade::Http11Upgrade;
+use proxy::http::h1;
+use proxy::http::upgrade::Http11Upgrade;
 use task::{BoxSendFuture, ErasedExecutor, Executor};
 
 /// Glue between `hyper::Body` and `tower_h2::RecvBody`.
@@ -35,13 +35,13 @@ pub enum HttpBody {
 
 /// Glue for `tower_h2::Body`s to be used in hyper.
 #[derive(Debug, Default)]
-pub(super) struct BodyPayload<B> {
+pub struct BodyPayload<B> {
     body: B,
 }
 
 /// Glue for a `tower::Service` to used as a `hyper::server::Service`.
 #[derive(Debug)]
-pub(super) struct HyperServerSvc<S, E> {
+pub struct HyperServerSvc<S, E> {
     service: S,
     srv_ctx: Arc<ServerCtx>,
     /// Watch any spawned HTTP/1.1 upgrade tasks.
@@ -52,36 +52,36 @@ pub(super) struct HyperServerSvc<S, E> {
 }
 
 /// Future returned by `HyperServerSvc`.
-pub(super) struct HyperServerSvcFuture<F> {
+pub struct HyperServerSvcFuture<F> {
     inner: F,
 }
 
 /// Glue for any `Service` taking an h2 body to receive an `HttpBody`.
 #[derive(Debug)]
-pub(super) struct HttpBodySvc<S> {
+pub struct HttpBodySvc<S> {
     service: S,
 }
 
 /// Glue for any `NewService` taking an h2 body to receive an `HttpBody`.
 #[derive(Clone)]
-pub(super) struct HttpBodyNewSvc<N> {
+pub struct HttpBodyNewSvc<N> {
     new_service: N,
 }
 
 /// Future returned by `HttpBodyNewSvc`.
-pub(super) struct HttpBodyNewSvcFuture<F> {
+pub struct HttpBodyNewSvcFuture<F> {
     inner: F,
 }
 
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
 #[derive(Debug, Clone)]
-pub(super) struct HyperConnect<C> {
+pub struct HyperConnect<C> {
     connect: C,
     absolute_form: bool,
 }
 
 /// Future returned by `HyperConnect`.
-pub(super) struct HyperConnectFuture<F> {
+pub struct HyperConnectFuture<F> {
     inner: F,
     absolute_form: bool,
 }

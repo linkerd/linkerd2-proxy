@@ -8,7 +8,7 @@ use hyper::upgrade::OnUpgrade;
 use try_lock::TryLock;
 
 use drain;
-use super::tcp;
+use proxy::tcp;
 use task::{ErasedExecutor, Executor};
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.

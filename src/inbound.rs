@@ -8,8 +8,8 @@ use tower_h2;
 
 use bind;
 use ctx;
-use proxy::h2_router::Recognize;
-use proxy::orig_proto;
+use proxy::http::router::Recognize;
+use proxy::http::orig_proto;
 
 type Bind<B> = bind::Bind<ctx::Proxy, B>;
 
