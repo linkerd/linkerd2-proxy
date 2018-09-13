@@ -176,7 +176,6 @@ where
                             Ok(s) => Either::B({
                                 let svc = HyperServerSvc::new(
                                     s,
-                                    srv_ctx,
                                     drain_signal.clone(),
                                     log_clone.executor(),
                                 );
@@ -201,9 +200,7 @@ where
                             h2_settings,
                             log_clone.executor(),
                         );
-                        let serve = h2.serve_modified(io, move |r: &mut http::Request<()>| {
-                            r.extensions_mut().insert(srv_ctx.clone());
-                        });
+                        let serve = h2.serve(io);
                         drain_signal
                             .watch(serve, |conn| conn.graceful_shutdown())
                             .map_err(|e| trace!("h2 server error: {:?}", e))
