@@ -1,101 +1,51 @@
-use std::io;
-use std::sync::Arc;
-use std::time::Duration;
-
 use bytes::{Buf, BufMut};
-use futures::{future, Async, Future, Poll};
-use tokio_connect::Connect;
+use futures::{Async, Future, Poll};
+use futures::future::{self, Either};
+use std::{fmt, io};
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use conditional::Conditional;
-use control::destination;
-use ctx::transport::{
-    Client as ClientCtx,
-    Server as ServerCtx,
-};
-use timeout::Timeout;
-use transport::{self, tls};
-use ctx::transport::TlsStatus;
+use svc;
+use transport::connect::Connect;
 
-/// Forwards a stream of bytes to the socket's `SO_ORIGINAL_DST`
-#[derive(Debug, Clone)]
-pub struct Forward {
-    connect_timeout: Duration,
-    transport_registry: transport::metrics::Registry,
-}
-
-impl Forward {
-    /// Create a new TCP `Forward`.
-    pub fn new(
-        connect_timeout: Duration,
-        transport_registry: transport::metrics::Registry
-    ) -> Self {
-        Self {
-            connect_timeout,
-            transport_registry,
-        }
-    }
-
-    /// Serve a TCP connection, trying to forward it to its destination.
-    pub fn serve<T>(&self, tcp_in: T, srv_ctx: Arc<ServerCtx>)
-        -> impl Future<Item=(), Error=()> + Send
-    where
-        T: AsyncRead + AsyncWrite + Send + 'static,
-    {
-        let orig_dst = srv_ctx.orig_dst_if_not_local();
-
-        // For TCP, we really have no extra information other than the
-        // SO_ORIGINAL_DST socket option. If that isn't set, the only thing
-        // to do is to drop this connection.
-        let orig_dst = if let Some(orig_dst) = orig_dst {
-            debug!(
-                "tcp accepted, forwarding ({}) to {}",
-                srv_ctx.remote,
-                orig_dst,
-            );
-            orig_dst
-        } else {
-            warn!(
-                "tcp accepted, no SO_ORIGINAL_DST to forward: remote={}",
-                srv_ctx.remote,
-            );
-            return future::Either::B(future::ok(()));
-        };
-
-        let tls = Conditional::None(tls::ReasonForNoIdentity::NotHttp.into()); // TODO
-
-        let client_ctx = ClientCtx::new(
-            srv_ctx.proxy,
-            &orig_dst,
-            destination::Metadata::no_metadata(),
-            TlsStatus::from(&tls),
-        );
-        let c = Timeout::new(
-            transport::Connect::new(orig_dst, tls),
-            self.connect_timeout,
-        );
-        let connect = self.transport_registry.new_connect(&client_ctx, c);
-
-        future::Either::A(connect.connect()
-            .map_err(move |e| error!("tcp connect error to {}: {:?}", orig_dst, e))
-            .and_then(move |tcp_out| {
-                duplex(tcp_in, tcp_out)
-            }))
-    }
-}
-
-pub(super) fn duplex<In, Out>(half_in: In, half_out: Out)
-    -> impl Future<Item=(), Error=()> + Send
+/// Attempt to proxy the `server_io` stream to a `T`-typed target.
+///
+/// If the trget is not valid, an error is logged and the server stream is
+/// dropped.
+pub(super) fn forward<I, C, T>(
+    server_io: I,
+    connect: &C,
+    target: &T,
+) -> impl Future<Item=(), Error=()> + Send + 'static
 where
-    In: AsyncRead + AsyncWrite + Send + 'static,
-    Out: AsyncRead + AsyncWrite + Send + 'static,
+    T: fmt::Debug,
+    I: AsyncRead + AsyncWrite + Send + 'static,
+    C: svc::Stack<T>,
+    C::Value: Connect,
+    C::Error: fmt::Debug,
+    <C::Value as Connect>::Future: Send + 'static,
+    <C::Value as Connect>::Error: fmt::Debug,
+    <C::Value as Connect>::Connected: Send + 'static,
 {
-    Duplex::new(half_in, half_out)
-        .map_err(|e| error!("tcp duplex error: {}", e))
+    let connect = match connect.make(&target) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("forward error: {:?}: {:?}", target, e);
+            return Either::A(future::ok(()));
+        }
+    };
+
+    let fwd = connect.connect()
+        .map_err(|e| info!("forward connect error: {:?}", e))
+        .and_then(move |io| {
+            Duplex::new(server_io, io)
+                .map_err(|e| info!("forward duplex error: {}", e))
+        });
+
+    Either::B(fwd)
 }
 
 /// A future piping data bi-directionally to In and Out.
-struct Duplex<In, Out> {
+pub struct Duplex<In, Out> {
     half_in: HalfDuplex<In>,
     half_out: HalfDuplex<Out>,
 }
@@ -125,7 +75,7 @@ where
     In: AsyncRead + AsyncWrite,
     Out: AsyncRead + AsyncWrite,
 {
-    fn new(in_io: In, out_io: Out) -> Self {
+    pub(super) fn new(in_io: In, out_io: Out) -> Self {
         Duplex {
             half_in: HalfDuplex::new(in_io),
             half_out: HalfDuplex::new(out_io),

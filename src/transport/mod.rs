@@ -1,4 +1,4 @@
-mod connect;
+pub mod connect;
 mod connection;
 mod addr_info;
 mod io;

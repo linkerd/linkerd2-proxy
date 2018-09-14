@@ -1,61 +1,39 @@
 use futures::{future, Future, Poll};
 use http;
 use http::header::{TRANSFER_ENCODING, HeaderValue};
-use tower_service::Service;
 
-use bind;
 use super::h1;
+use svc;
 
 const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 
 /// Upgrades HTTP requests from their original protocol to HTTP2.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Upgrade<S> {
     inner: S,
-    upgrade_h1: bool,
 }
 
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
 /// protocol.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Downgrade<S> {
     inner: S,
 }
 
-pub fn detect<B>(req: &http::Request<B>) -> bind::Protocol {
-    if req.version() == http::Version::HTTP_2 {
-        if let Some(orig_proto) = req.headers().get(L5D_ORIG_PROTO) {
-            trace!("detected orig-proto: {:?}", orig_proto);
-            let val = orig_proto.as_bytes();
-            let was_absolute_form = was_absolute_form(val);
-            let host = bind::Host::detect(req);
+// ==== impl Upgrade =====
 
-            return bind::Protocol::Http1 {
-                host,
-                is_h1_upgrade: false, // orig-proto is never used with upgrades
-                was_absolute_form,
-            };
-        }
-    }
-
-    bind::Protocol::detect(req)
-}
-
-
-// ===== impl Upgrade =====
-
-impl<S> Upgrade<S> {
-    pub fn new(inner: S, upgrade_h1: bool) -> Self {
-        Self {
-            inner,
-            upgrade_h1,
-        }
-    }
-}
-
-impl<S, B1, B2> Service for Upgrade<S>
+impl<S, A, B> From<S> for Upgrade<S>
 where
-    S: Service<Request = http::Request<B1>, Response = http::Response<B2>>,
+    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+{
+    fn from(inner: S) -> Self {
+        Self { inner }
+    }
+}
+
+impl<S, A, B> svc::Service for Upgrade<S>
+where
+    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
 {
     type Request = S::Request;
     type Response = S::Response;
@@ -72,7 +50,7 @@ where
     fn call(&mut self, mut req: Self::Request) -> Self::Future {
         let mut downgrade_response = false;
 
-        if self.upgrade_h1 && req.version() != http::Version::HTTP_2 {
+        if req.version() != http::Version::HTTP_2 {
             debug!("upgrading {:?} to HTTP2 with orig-proto", req.version());
 
             // absolute-form is far less common, origin-form is the usual,
@@ -135,17 +113,19 @@ where
 
 // ===== impl Downgrade =====
 
-impl<S> Downgrade<S> {
-    pub fn new(inner: S) -> Self {
-        Self {
-            inner,
-        }
+impl<S, A, B> From<S> for Downgrade<S>
+where
+    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+{
+    fn from(inner: S) -> Self {
+        Self { inner }
     }
 }
 
-impl<S, B1, B2> Service for Downgrade<S>
+
+impl<S, A, B> svc::Service for Downgrade<S>
 where
-    S: Service<Request = http::Request<B1>, Response = http::Response<B2>>,
+    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
 {
     type Request = S::Request;
     type Response = S::Response;

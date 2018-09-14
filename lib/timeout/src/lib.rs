@@ -1,12 +1,11 @@
 extern crate futures;
 extern crate tokio_connect;
 extern crate tokio_timer;
-extern crate tower_service;
+extern crate tower_service as svc;
 
 use futures::{Future, Poll};
 use tokio_connect::Connect;
 use tokio_timer::{self as timer, clock, Deadline, DeadlineError};
-use tower_service::Service;
 use std::{error, fmt};
 use std::time::Duration;
 
@@ -70,9 +69,9 @@ impl<T> Timeout<T> {
     }
 }
 
-impl<S, T, E> Service for Timeout<S>
+impl<S, T, E> svc::Service for Timeout<S>
 where
-    S: Service<Response=T, Error=E>,
+    S: svc::Service<Response=T, Error=E>,
 {
     type Request = S::Request;
     type Response = T;

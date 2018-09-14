@@ -1,9 +1,12 @@
 [workspace]
 members = [
     ".",
+    "lib/fs-watch",
     "lib/futures-mpsc-lossy",
     "lib/metrics",
     "lib/router",
+    "lib/stack",
+    "lib/task",
     "lib/timeout",
 ]
 
@@ -19,10 +22,13 @@ default = ["flaky_tests"]
 flaky_tests = []
 
 [dependencies]
-futures-mpsc-lossy    = { path = "lib/futures-mpsc-lossy" }
-linkerd2-metrics      = { path = "lib/metrics" }
-linkerd2-proxy-router = { path = "lib/router" }
-linkerd2-timeout      = { path = "lib/timeout" }
+futures-mpsc-lossy = { path = "lib/futures-mpsc-lossy" }
+linkerd2-fs-watch  = { path = "lib/fs-watch" }
+linkerd2-metrics   = { path = "lib/metrics" }
+linkerd2-router    = { path = "lib/router" }
+linkerd2-stack     = { path = "lib/stack" }
+linkerd2-task      = { path = "lib/task" }
+linkerd2-timeout   = { path = "lib/timeout" }
 
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.1", version = "0.1.1" }
 
@@ -81,11 +87,9 @@ procinfo = "0.4.2"
 net2 = "0.2"
 quickcheck = { version = "0.6", default-features = false }
 linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
+linkerd2-task    = { path = "lib/task", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.1", version = "0.1.1", features = ["arbitrary"] }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.
 tokio-io = "0.1.6"
-# Used for filesystem watch tests. We should switch from `tempdir` to `tempfile` once
-# `prost-build` switches to it.`
-tempdir = "0.3"

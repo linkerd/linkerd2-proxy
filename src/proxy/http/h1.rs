@@ -1,14 +1,12 @@
-use std::fmt::Write;
-use std::mem;
-use std::sync::Arc;
-
 use bytes::BytesMut;
 use http;
 use http::header::{CONNECTION, HOST, UPGRADE};
 use http::uri::{Authority, Parts, Scheme, Uri};
+use std::fmt::Write;
+use std::mem;
 
-use ctx::transport::{Server as ServerCtx};
 use super::upgrade::HttpConnect;
+use super::super::server::Source;
 
 /// Tries to make sure the `Uri` of the request is in a form needed by
 /// hyper's Client.
@@ -27,14 +25,14 @@ pub fn normalize_our_view_of_uri<B>(req: &mut http::Request<B>) {
 
     // last resort is to use the so_original_dst
     let orig_dst = req.extensions()
-        .get::<Arc<ServerCtx>>()
+        .get::<Source>()
         .and_then(|ctx| ctx.orig_dst_if_not_local());
+
     if let Some(orig_dst) = orig_dst {
         let mut bytes = BytesMut::with_capacity(31);
         write!(&mut bytes, "{}", orig_dst)
             .expect("socket address display is under 31 bytes");
-        let bytes = bytes.freeze();
-        let auth = Authority::from_shared(bytes)
+        let auth = Authority::from_shared(bytes.freeze())
             .expect("socket address is valid authority");
         set_authority(req.uri_mut(), auth);
     }

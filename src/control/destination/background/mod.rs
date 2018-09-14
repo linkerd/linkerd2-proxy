@@ -13,17 +13,18 @@ use futures::{
     sync::mpsc,
     Async, Future, Poll, Stream,
 };
+use futures_watch;
 use tower_grpc as grpc;
 use tower_h2::{BoxBody, HttpService, RecvBody};
 
-use linkerd2_proxy_api::destination::client::Destination;
-use linkerd2_proxy_api::destination::{
+use api::destination::client::Destination;
+use api::destination::{
     GetDestination,
     Update as PbUpdate,
 };
 
 use super::{ResolveRequest, Update};
-use config::Namespaces;
+use app::config::Namespaces;
 use control::{
     cache::Exists,
     fully_qualified_authority::FullyQualifiedAuthority,
@@ -31,9 +32,8 @@ use control::{
 };
 use dns;
 use transport::{tls, DnsNameAndPort, HostAndPort};
-use conditional::Conditional;
-use watch_service::WatchService;
-use futures_watch::Watch;
+use Conditional;
+use svc::stack::watch;
 
 mod client;
 mod destination_set;
@@ -113,7 +113,7 @@ pub(super) fn task(
                 // `Watch` that never updates to construct the `WatchService`.
                 // We do this here rather than calling `ClientConfig::no_tls`
                 // in order to propagate the reason for no TLS to the watch.
-                let (watch, _) = Watch::new(Conditional::None(reason));
+                let (watch, _) = futures_watch::Watch::new(Conditional::None(reason));
                 (Conditional::None(reason), watch)
             },
         };
@@ -123,7 +123,8 @@ pub(super) fn task(
             host_and_port,
             control_backoff_delay,
         );
-        WatchService::new(watch, bind_client)
+        watch::Service::try(watch, bind_client)
+            .expect("client construction should be infallible")
     });
 
     let mut disco = Background::new(
@@ -226,7 +227,7 @@ where
                             // them onto the new watch first
                             match occ.get().addrs {
                                 Exists::Yes(ref cache) => for (&addr, meta) in cache {
-                                    let update = Update::NewClient(addr, meta.clone());
+                                    let update = Update::Add(addr, meta.clone());
                                     resolve.responder.update_tx
                                         .unbounded_send(update)
                                         .expect("unbounded_send does not fail");

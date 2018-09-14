@@ -19,13 +19,17 @@ WORKDIR /usr/src/linkerd2-proxy
 #
 # Mock out all local code and fetch external dependencies to ensure that
 # external sources are primarily cached on Cargo.lock.
-RUN for d in . lib/futures-mpsc-lossy lib/router lib/metrics lib/timeout ; \
-    do mkdir -p "${d}/src" && touch "${d}/src/lib.rs" ; \
+RUN mkdir -p src && touch src/lib.rs && \
+    for d in fs-watch futures-mpsc-lossy metrics router stack task timeout ; \
+    do mkdir -p "lib/${d}/src" && touch "lib/${d}/src/lib.rs" ; \
     done
 COPY Cargo.toml Cargo.lock ./
+COPY lib/fs-watch/Cargo.toml            lib/fs-watch/Cargo.toml
 COPY lib/futures-mpsc-lossy/Cargo.toml  lib/futures-mpsc-lossy/Cargo.toml
 COPY lib/metrics/Cargo.toml             lib/metrics/Cargo.toml
 COPY lib/router/Cargo.toml              lib/router/Cargo.toml
+COPY lib/stack/Cargo.toml               lib/stack/Cargo.toml
+COPY lib/task/Cargo.toml                lib/task/Cargo.toml
 COPY lib/timeout/Cargo.toml             lib/timeout/Cargo.toml
 RUN cargo fetch --locked
 

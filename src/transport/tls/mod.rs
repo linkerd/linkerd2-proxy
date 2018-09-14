@@ -4,6 +4,10 @@ extern crate tokio_rustls;
 extern crate untrusted;
 extern crate webpki;
 
+use std::fmt;
+
+use Conditional;
+
 pub mod conditional_accept;
 mod config;
 mod cert_resolver;
@@ -39,3 +43,33 @@ pub use self::{
 
 #[cfg(test)]
 pub use self::config::test_util as config_test_util;
+
+/// Describes whether or not a connection was secured with TLS and, if it was
+/// not, the reason why.
+pub type Status = Conditional<(), ReasonForNoTls>;
+
+impl Status {
+    pub fn from<C>(c: &Conditional<C, ReasonForNoTls>) -> Self
+    where
+        C: Clone + fmt::Debug
+    {
+        c.as_ref().map(|_| ())
+    }
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match *self {
+            Conditional::Some(()) => "true",
+            Conditional::None(ReasonForNoTls::NoConfig) => "no_config",
+            Conditional::None(ReasonForNoTls::HandshakeFailed) => "handshake_failed",
+            Conditional::None(ReasonForNoTls::Disabled) => "disabled",
+            Conditional::None(ReasonForNoTls::InternalTraffic) => "internal_traffic",
+            Conditional::None(ReasonForNoTls::NoIdentity(_)) => "no_identity",
+            Conditional::None(ReasonForNoTls::NotProxyTls) => "no_proxy_tls"
+        };
+
+        f.pad(s)
+    }
+}
+

@@ -1,11 +1,11 @@
 use indexmap::IndexMap;
 use std::fmt;
+use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_connect;
 
-use linkerd2_metrics::{
+use metrics::{
     latency,
     Counter,
     FmtLabels,
@@ -16,9 +16,10 @@ use linkerd2_metrics::{
     Metric,
 };
 
-use ctx;
+use proxy;
+use svc;
 use telemetry::Errno;
-use transport::Connection;
+use transport::{connect, tls};
 
 mod io;
 
@@ -43,9 +44,45 @@ pub fn new() -> (Registry, Report) {
 #[derive(Clone, Debug, Default)]
 pub struct Report(Arc<Mutex<Inner>>);
 
-/// Instruments transports to record telemetry.
 #[derive(Clone, Debug, Default)]
 pub struct Registry(Arc<Mutex<Inner>>);
+
+#[derive(Debug)]
+pub struct LayerAccept<I, M> {
+    direction: Direction,
+    registry: Arc<Mutex<Inner>>,
+    _p: PhantomData<fn() -> (I, M)>,
+}
+
+#[derive(Debug)]
+pub struct StackAccept<I, M> {
+    inner: M,
+    direction: Direction,
+    registry: Arc<Mutex<Inner>>,
+    _p: PhantomData<fn() -> (I)>,
+}
+
+#[derive(Debug)]
+pub struct Accept<I, A> {
+    inner: A,
+    metrics: Option<Arc<Mutex<Metrics>>>,
+    _p: PhantomData<fn() -> (I)>,
+}
+
+#[derive(Debug)]
+pub struct LayerConnect<T, M> {
+    direction: Direction,
+    registry: Arc<Mutex<Inner>>,
+    _p: PhantomData<fn() -> (T, M)>,
+}
+
+#[derive(Debug)]
+pub struct StackConnect<T, M> {
+    inner: M,
+    direction: Direction,
+    registry: Arc<Mutex<Inner>>,
+    _p: PhantomData<fn() -> (T)>,
+}
 
 /// Describes a class of transport.
 ///
@@ -54,9 +91,20 @@ pub struct Registry(Arc<Mutex<Inner>>);
 /// Implements `FmtLabels`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 struct Key {
-    proxy: ctx::Proxy,
+    direction: Direction,
     peer: Peer,
-    tls_status: ctx::transport::TlsStatus,
+    tls_status: tls::Status,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+struct Direction(&'static str);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum Peer {
+    /// Represents the side of the proxy that accepts connections.
+    Src,
+    /// Represents the side of the proxy that opens connections.
+    Dst,
 }
 
 /// Stores a class of transport's metrics.
@@ -73,7 +121,7 @@ struct Metrics {
     by_eos: IndexMap<Eos, EosMetrics>,
 }
 
-/// Describes a class of transport end.
+/// Describes a classtransport end.
 ///
 /// An `EosMetrics` type exists for each unique `Key` and `Eos` pair.
 ///
@@ -107,14 +155,6 @@ struct NewSensor(Option<Arc<Mutex<Metrics>>>);
 /// Shares state between `Report` and `Registry`.
 #[derive(Debug, Default)]
 struct Inner(IndexMap<Key, Arc<Mutex<Metrics>>>);
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-enum Peer {
-    /// Represents the side of the proxy that accepts connections.
-    Src,
-    /// Represents the side of the proxy that opens connections.
-    Dst,
-}
 
 // ===== impl Inner =====
 
@@ -167,36 +207,219 @@ impl Inner {
 
 impl Registry {
 
-    pub fn new_connect<C>(&self, ctx: &ctx::transport::Client, inner: C) -> Connect<C>
+    pub fn accept<I, M>(&self, direction: &'static str) -> LayerAccept<I, M>
     where
-        C: tokio_connect::Connect<Connected = Connection>,
+        I: AsyncRead + AsyncWrite,
+        M: svc::Stack<proxy::Source>,
+        M::Value: proxy::Accept<I>,
     {
-        let metrics = match self.0.lock() {
-            Ok(mut inner) => {
-                Some(inner.get_or_default(Key::client(ctx)).clone())
-            }
-            Err(_) => {
-                error!("unable to lock metrics registry");
-                None
-            }
-        };
-        Connect::new(inner, NewSensor(metrics))
+        LayerAccept::new(direction, self.0.clone())
     }
 
-    pub fn accept<T>(&self, ctx: &ctx::transport::Server, io: T) -> Io<T>
+    pub fn connect<T, M>(&self, direction: &'static str) -> LayerConnect<T, M>
     where
-        T: AsyncRead + AsyncWrite,
+        T: Into<connect::Target> + Clone,
+        M: svc::Stack<T>,
+        M::Value: connect::Connect,
     {
-        let metrics = match self.0.lock() {
-            Ok(mut inner) => Some(inner.get_or_default(Key::server(ctx)).clone()),
+        LayerConnect::new(direction, self.0.clone())
+    }
+}
+
+impl<I, M> LayerAccept<I, M>
+where
+    I: AsyncRead + AsyncWrite,
+    M: svc::Stack<proxy::Source>,
+    M::Value: proxy::Accept<I>,
+{
+    fn new(d: &'static str, registry: Arc<Mutex<Inner>>) -> Self {
+        Self {
+            direction: Direction(d),
+            registry,
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<I, M> Clone for LayerAccept<I, M>
+where
+    I: AsyncRead + AsyncWrite,
+    M: svc::Stack<proxy::Source>,
+    M::Value: proxy::Accept<I>,
+{
+    fn clone(&self) -> Self {
+        Self::new(self.direction.0, self.registry.clone())
+    }
+}
+
+impl<I, M> svc::Layer<proxy::Source, proxy::Source, M> for LayerAccept<I, M>
+where
+    I: AsyncRead + AsyncWrite,
+    M: svc::Stack<proxy::Source>,
+    M::Value: proxy::Accept<I>
+{
+    type Value = <StackAccept<I, M> as svc::Stack<proxy::Source>>::Value;
+    type Error = <StackAccept<I, M> as svc::Stack<proxy::Source>>::Error;
+    type Stack = StackAccept<I, M>;
+
+    fn bind(&self, inner: M) -> Self::Stack {
+        StackAccept {
+            inner,
+            direction: self.direction,
+            registry: self.registry.clone(),
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<I, M> Clone for StackAccept<I, M>
+where
+    I: AsyncRead + AsyncWrite,
+    M: svc::Stack<proxy::Source> + Clone,
+    M::Value: proxy::Accept<I>,
+{
+    fn clone(&self) -> Self {
+        StackAccept {
+            inner: self.inner.clone(),
+            direction: self.direction,
+            registry: self.registry.clone(),
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<I, M> svc::Stack<proxy::Source> for StackAccept<I, M>
+where
+    I: AsyncRead + AsyncWrite,
+    M: svc::Stack<proxy::Source>,
+    M::Value: proxy::Accept<I>
+{
+    type Value = Accept<I, M::Value>;
+    type Error = M::Error;
+
+    fn make(&self, source: &proxy::Source) -> Result<Self::Value, Self::Error> {
+        // TODO use source metadata in `key`
+        let key = Key::accept(self.direction, source.tls_status);
+        let metrics = match self.registry.lock() {
+            Ok(mut inner) => Some(inner.get_or_default(key).clone()),
             Err(_) => {
                 error!("unable to lock metrics registry");
                 None
             }
         };
-        Io::new(io, Sensor::open(metrics))
+
+        let inner = self.inner.make(&source)?;
+        Ok(Accept {
+            inner,
+            metrics,
+            _p: PhantomData,
+        })
     }
 }
+
+impl<I, A> proxy::Accept<I> for Accept<I, A>
+where
+    I: AsyncRead + AsyncWrite,
+    A: proxy::Accept<I>,
+{
+    type Io = Io<A::Io>;
+
+    fn accept(&self, io: I) -> Self::Io {
+        let io = self.inner.accept(io);
+        Io::new(io, Sensor::open(self.metrics.clone()))
+    }
+}
+
+impl<T, M> LayerConnect<T, M>
+where
+    T: Into<connect::Target> + Clone,
+    M: svc::Stack<T>,
+    M::Value: connect::Connect,
+{
+    fn new(d: &'static str, registry: Arc<Mutex<Inner>>) -> Self {
+        Self {
+            direction: Direction(d),
+            registry,
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<T, M> Clone for LayerConnect<T, M>
+where
+    T: Into<connect::Target> + Clone,
+    M: svc::Stack<T>,
+    M::Value: connect::Connect,
+{
+    fn clone(&self) -> Self {
+        Self::new(self.direction.0, self.registry.clone())
+    }
+}
+
+impl<T, M> svc::Layer<T, T, M> for LayerConnect<T, M>
+where
+    T: Into<connect::Target> + Clone,
+    M: svc::Stack<T>,
+    M::Value: connect::Connect,
+{
+    type Value = <StackConnect<T, M> as svc::Stack<T>>::Value;
+    type Error = <StackConnect<T, M> as svc::Stack<T>>::Error;
+    type Stack = StackConnect<T, M>;
+
+    fn bind(&self, inner: M) -> Self::Stack {
+        StackConnect {
+            inner,
+            direction: self.direction,
+            registry: self.registry.clone(),
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<T, M> Clone for StackConnect<T, M>
+where
+    T: Into<connect::Target> + Clone,
+    M: svc::Stack<T> + Clone,
+    M::Value: connect::Connect,
+{
+    fn clone(&self) -> Self {
+        StackConnect {
+            inner: self.inner.clone(),
+            direction: self.direction,
+            registry: self.registry.clone(),
+            _p: PhantomData,
+        }
+    }
+}
+
+
+impl<T, M> svc::Stack<T> for StackConnect<T, M>
+where
+    T: Into<connect::Target> + Clone,
+    M: svc::Stack<T>,
+    M::Value: connect::Connect,
+{
+    type Value = Connect<M::Value>;
+    type Error = M::Error;
+
+    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+        // TODO use target metadata in `key`
+        let t: connect::Target = target.clone().into();
+        let tls_status = t.tls.clone().map(|_| {});
+        let key = Key::connect(self.direction, tls_status);
+        let metrics = match self.registry.lock() {
+            Ok(mut inner) => Some(inner.get_or_default(key).clone()),
+            Err(_) => {
+                error!("unable to lock metrics registry");
+                None
+            }
+        };
+
+        let inner = self.inner.make(&target)?;
+        Ok(Connect::new(inner, NewSensor(metrics)))
+    }
+}
+
 
 // ===== impl Report =====
 
@@ -300,26 +523,35 @@ impl NewSensor {
 // ===== impl Key =====
 
 impl Key {
-    fn client(ctx: &ctx::transport::Client) -> Self {
+
+    pub fn accept(direction: Direction, tls_status: tls::Status) -> Self {
         Self {
-            proxy: ctx.proxy,
-            peer: Peer::Dst,
-            tls_status: ctx.tls_status.into(),
+            peer: Peer::Src,
+            direction,
+            tls_status,
         }
     }
 
-    fn server(ctx: &ctx::transport::Server) -> Self {
+    pub fn connect(direction: Direction, tls_status: tls::Status) -> Self {
         Self {
-            proxy: ctx.proxy,
-            peer: Peer::Src,
-            tls_status: ctx.tls_status.into(),
+            direction,
+            peer: Peer::Dst,
+            tls_status,
         }
     }
 }
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        ((self.proxy, self.peer), self.tls_status).fmt_labels(f)
+        ((self.direction, self.peer), self.tls_status).fmt_labels(f)
+    }
+}
+
+// ===== impl Peer =====
+
+impl FmtLabels for Direction {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "direction=\"{}\"", self.0)
     }
 }
 

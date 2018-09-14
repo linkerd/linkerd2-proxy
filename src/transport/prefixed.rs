@@ -1,9 +1,9 @@
+use bytes::{Buf, Bytes};
 use std::{cmp, fmt::Debug, io, net::SocketAddr};
+use tokio::prelude::*;
 
 use super::io::internal::Io;
-use bytes::{Buf, Bytes};
-use tokio::prelude::*;
-use AddrInfo;
+use transport::AddrInfo;
 
 /// A TcpStream where the initial reads will be served from `prefix`.
 #[derive(Debug)]

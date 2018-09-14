@@ -1,0 +1,24 @@
+[package]
+name = "linkerd2-fs-watch"
+version = "0.1.0"
+authors = ["Oliver Gould <ver@buoyant.io>"]
+
+[dependencies]
+env_logger = { version = "0.5", default-features = false }
+futures = "0.1"
+futures-watch = { git = "https://github.com/carllerche/better-future" }
+log = "0.4.1"
+ring = "0.13"
+tokio-timer = "0.2.4"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+inotify = { git = "https://github.com/inotify-rs/inotify" }
+procinfo = "0.4.2"
+
+[dev-dependencies]
+tokio = "0.1.7"
+linkerd2-task = { path = "../task", features = ["test_util"] }
+# We should switch from `tempdir` to `tempfile` once `prost-build` switches to
+# it.`
+tempdir = "0.3"

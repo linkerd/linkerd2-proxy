@@ -470,6 +470,24 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "linkerd2-fs-watch"
+version = "0.1.0"
+dependencies = [
+ "env_logger 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-watch 0.1.0 (git+https://github.com/carllerche/better-future)",
+ "inotify 0.5.2-dev (git+https://github.com/inotify-rs/inotify)",
+ "libc 0.2.40 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-task 0.1.0",
+ "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "procinfo 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ring 0.13.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tempdir 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-timer 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "linkerd2-metrics"
 version = "0.1.0"
 dependencies = [
@@ -500,9 +518,12 @@ dependencies = [
  "inotify 0.5.2-dev (git+https://github.com/inotify-rs/inotify)",
  "ipnet 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.40 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-fs-watch 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-proxy-api 0.1.1 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.1)",
- "linkerd2-proxy-router 0.1.0",
+ "linkerd2-router 0.1.0",
+ "linkerd2-stack 0.1.0",
+ "linkerd2-task 0.1.0",
  "linkerd2-timeout 0.1.0",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.32 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -514,7 +535,6 @@ dependencies = [
  "regex 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ring 0.13.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tempdir 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-connect 0.1.0 (git+https://github.com/carllerche/tokio-connect)",
  "tokio-io 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -557,12 +577,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-proxy-router"
+name = "linkerd2-router"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "indexmap 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-stack 0.1.0",
  "tower-service 0.1.0 (git+https://github.com/tower-rs/tower)",
+]
+
+[[package]]
+name = "linkerd2-stack"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-watch 0.1.0 (git+https://github.com/carllerche/better-future)",
+ "linkerd2-task 0.1.0",
+ "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-service 0.1.0 (git+https://github.com/tower-rs/tower)",
+]
+
+[[package]]
+name = "linkerd2-task"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

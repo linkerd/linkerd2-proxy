@@ -8,6 +8,7 @@
 pub extern crate bytes;
 pub extern crate linkerd2_proxy_api;
 extern crate linkerd2_proxy;
+extern crate linkerd2_task;
 extern crate futures;
 extern crate h2;
 pub extern crate http;
@@ -30,7 +31,7 @@ pub use std::time::Duration;
 
 pub use self::bytes::Bytes;
 pub use self::linkerd2_proxy::*;
-pub use self::linkerd2_proxy::task::LazyExecutor;
+pub use self::linkerd2_task::LazyExecutor;
 pub use self::futures::{future::Executor, *,};
 pub use self::futures::sync::oneshot;
 pub use self::http::{HeaderMap, Request, Response, StatusCode};

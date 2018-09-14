@@ -25,31 +25,26 @@
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
 use indexmap::IndexMap;
-use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use futures::{
     sync::mpsc,
-    Future,
     Async,
+    Future,
     Poll,
     Stream
 };
-use tower_discover::{Change, Discover};
-use tower_service::Service;
 
 use dns;
-use svc::MakeClient;
-use tls;
+use transport::tls;
+use proxy::resolve::{self, Resolve, Update};
 use transport::{DnsNameAndPort, HostAndPort};
 
 pub mod background;
-mod endpoint;
 
-pub use self::endpoint::Endpoint;
-use config::Namespaces;
-use conditional::Conditional;
+use app::config::Namespaces;
+use Conditional;
 
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone, Debug)]
@@ -68,26 +63,22 @@ struct ResolveRequest {
 #[derive(Debug)]
 struct Responder {
     /// Sends updates from the controller to a `Resolution`.
-    update_tx: mpsc::UnboundedSender<Update>,
+    update_tx: mpsc::UnboundedSender<Update<Metadata>>,
 
     /// Indicates whether the corresponding `Resolution` is still active.
     active: Weak<()>,
 }
 
-/// A `tower_discover::Discover`, given to a `tower_balance::Balance`.
 #[derive(Debug)]
-pub struct Resolution<N> {
+pub struct Resolution {
     /// Receives updates from the controller.
-    update_rx: mpsc::UnboundedReceiver<Update>,
+    update_rx: mpsc::UnboundedReceiver<Update<Metadata>>,
 
     /// Allows `Responder` to detect when its `Resolution` has been lost.
     ///
     /// `Responder` holds a weak reference to this `Arc` and can determine when this
     /// reference has been dropped.
     _active: Arc<()>,
-
-    /// Creates clients for each new endpoint in the resolution.
-    new_endpoint: N,
 }
 
 /// Metadata describing an endpoint.
@@ -111,18 +102,6 @@ pub enum ProtocolHint {
     Unknown,
     /// The destination can receive HTTP2 messages.
     Http2,
-}
-
-#[derive(Debug, Clone)]
-enum Update {
-    /// Indicates that an endpoint should be bound to `SocketAddr` with the
-    /// provided `Metadata`.
-    ///
-    /// If there was already an endpoint in the load balancer for this
-    /// address, it should be replaced with the new one.
-    NewClient(SocketAddr, Metadata),
-    /// Indicates that the endpoint for this `SocketAddr` should be removed.
-    Remove(SocketAddr),
 }
 
 /// Returns a `Resolver` and a background task future.
@@ -154,12 +133,12 @@ pub fn new(
 
 // ==== impl Resolver =====
 
-impl Resolver {
+impl Resolve<DnsNameAndPort> for Resolver {
+    type Endpoint = Metadata;
+    type Resolution = Resolution;
+
     /// Start watching for address changes for a certain authority.
-    pub fn resolve<N>(&self, authority: &DnsNameAndPort, new_endpoint: N) -> Resolution<N>
-    where
-        N: MakeClient<Endpoint>,
-    {
+    fn resolve(&self, authority: &DnsNameAndPort) -> Resolution {
         trace!("resolve; authority={:?}", authority);
         let (update_tx, update_rx) = mpsc::unbounded();
         let active = Arc::new(());
@@ -180,47 +159,18 @@ impl Resolver {
         Resolution {
             update_rx,
             _active: active,
-            new_endpoint,
         }
     }
 }
 
-// ==== impl Resolution =====
+impl resolve::Resolution for Resolution {
+    type Endpoint = Metadata;
+    type Error = ();
 
-impl<N> Discover for Resolution<N>
-where
-    N: MakeClient<Endpoint>,
-{
-    type Key = SocketAddr;
-    type Request = <N::Client as Service>::Request;
-    type Response = <N::Client as Service>::Response;
-    type Error = <N::Client as Service>::Error;
-    type Service = N::Client;
-    type DiscoverError = ();
-
-    fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::DiscoverError> {
-        loop {
-            let up = self.update_rx.poll();
-            trace!("watch: {:?}", up);
-            let update = try_ready!(up).expect("destination stream must be infinite");
-
-            match update {
-                Update::NewClient(addr, meta) => {
-                    // We expect the load balancer to handle duplicate inserts
-                    // by replacing the old endpoint with the new one, so
-                    // insertions of new endpoints and metadata changes for
-                    // existing ones can be handled in the same way.
-                    let endpoint = Endpoint::new(addr, meta);
-
-                    let service = self.new_endpoint.make_client(&endpoint).map_err(|_| ())?;
-
-                    return Ok(Async::Ready(Change::Insert(addr, service)));
-                },
-                Update::Remove(addr) => {
-                    return Ok(Async::Ready(Change::Remove(addr)));
-                },
-            }
-        }
+    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
+        let up = try_ready!(self.update_rx.poll())
+            .expect("resolution stream must be infinite");
+        Ok(Async::Ready(up))
     }
 }
 
@@ -235,14 +185,11 @@ impl Responder {
 // ===== impl Metadata =====
 
 impl Metadata {
-    /// Construct a Metadata struct representing an endpoint with no metadata.
-    pub fn no_metadata() -> Self {
+    pub fn none(tls: tls::ReasonForNoIdentity) -> Self {
         Self {
             labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
-            // If we have no metadata on an endpoint, assume it does not support TLS.
-            tls_identity:
-                Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery),
+            tls_identity: Conditional::None(tls),
         }
     }
 
