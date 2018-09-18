@@ -23,6 +23,7 @@ extern crate tower_service;
 extern crate log;
 pub extern crate env_logger;
 
+use std::fmt;
 pub use std::collections::HashMap;
 pub use std::net::SocketAddr;
 pub use std::time::Duration;
@@ -90,7 +91,7 @@ macro_rules! assert_eventually {
                 } else if i == $retries {
                     panic!(
                         "assertion failed after {} (retried {} times): {}",
-                        timeout::HumanDuration(start_t.elapsed()),
+                        ::support::HumanDuration(start_t.elapsed()),
                         i,
                         format_args!($($arg)+)
                     )
@@ -188,4 +189,20 @@ pub fn thread_name() -> String {
 #[should_panic]
 fn assert_eventually() {
     assert_eventually!(false)
+}
+
+/// A duration which pretty-prints as fractional seconds.
+#[derive(Copy, Clone, Debug)]
+pub struct HumanDuration(pub Duration);
+
+impl fmt::Display for HumanDuration {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let secs = self.0.as_secs();
+        let subsec_ms = self.0.subsec_nanos() as f64 / 1_000_000f64;
+        if secs == 0 {
+            write!(fmt, "{}ms", subsec_ms)
+        } else {
+            write!(fmt, "{}s", secs as f64 + subsec_ms)
+        }
+    }
 }

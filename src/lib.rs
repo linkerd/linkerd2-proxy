@@ -53,6 +53,7 @@ extern crate try_lock;
 #[macro_use]
 extern crate linkerd2_metrics;
 extern crate linkerd2_proxy_api;
+extern crate linkerd2_timeout as timeout;
 
 use futures::*;
 
@@ -88,7 +89,6 @@ pub mod task;
 pub mod telemetry;
 mod proxy;
 mod transport;
-pub mod timeout;
 mod watch_service; // TODO: move to tower
 
 use bind::Bind;
