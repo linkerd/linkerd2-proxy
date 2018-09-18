@@ -20,7 +20,7 @@ use tower_reconnect::{
 };
 use conditional::Conditional;
 use dns;
-use timeout::{Timeout, TimeoutError};
+use timeout::{Timeout, Error as TimeoutError};
 use transport::{tls, HostAndPort, LookupAddressAndConnect};
 use watch_service::Rebind;
 
