@@ -7,6 +7,9 @@ extern crate http;
 extern crate hyper;
 #[macro_use]
 extern crate log;
+#[cfg(test)]
+#[macro_use]
+extern crate quickcheck;
 
 mod counter;
 mod gauge;

@@ -15,3 +15,6 @@ http = "0.1"
 hyper = "0.12.3"
 indexmap = "1.0"
 log = "0.4"
+
+[dev-dependencies]
+quickcheck = { version = "0.6", default-features = false }
