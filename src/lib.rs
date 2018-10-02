@@ -163,12 +163,12 @@ where
                     }
                 })
             });
-            BoundPort::new(config.public_listener.addr, tls)
+            BoundPort::new(config.inbound_listener.addr, tls)
                 .expect("public listener bind")
         };
 
         let outbound_listener = BoundPort::new(
-            config.private_listener.addr,
+            config.outbound_listener.addr,
             Conditional::None(tls::ReasonForNoTls::InternalTraffic))
             .expect("private listener bind");
 
@@ -233,7 +233,7 @@ where
         info!(
             "proxying on {:?} to {:?}",
             inbound_listener.local_addr(),
-            config.private_forward
+            config.inbound_forward
         );
         info!(
             "serving Prometheus metrics on {:?}",
@@ -303,7 +303,7 @@ where
         let inbound = {
             let ctx = ctx::Proxy::Inbound;
             let bind = bind.clone().with_ctx(ctx);
-            let default_addr = config.private_forward.map(|a| a.into());
+            let default_addr = config.inbound_forward.map(|a| a.into());
 
             let router = Router::new(
                 Inbound::new(default_addr, bind),
@@ -313,7 +313,7 @@ where
             serve(
                 inbound_listener,
                 router,
-                config.private_connect_timeout,
+                config.inbound_connect_timeout,
                 config.inbound_ports_disable_protocol_detection,
                 ctx,
                 transport_registry.clone(),
@@ -336,7 +336,7 @@ where
             serve(
                 outbound_listener,
                 router,
-                config.public_connect_timeout,
+                config.outbound_connect_timeout,
                 config.outbound_ports_disable_protocol_detection,
                 ctx,
                 transport_registry,

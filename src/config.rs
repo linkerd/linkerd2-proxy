@@ -10,9 +10,9 @@ use http;
 use indexmap::IndexSet;
 use trust_dns_resolver::config::ResolverOpts;
 
-use transport::{Host, HostAndPort, HostAndPortError, tls};
-use convert::TryFrom;
 use conditional::Conditional;
+use convert::TryFrom;
+use transport::{Host, HostAndPort, HostAndPortError, tls};
 
 // TODO:
 //
@@ -22,25 +22,25 @@ use conditional::Conditional;
 #[derive(Debug)]
 pub struct Config {
     /// Where to listen for connections that are initiated on the host.
-    pub private_listener: Listener,
+    pub outbound_listener: Listener,
 
     /// Where to listen for connections initiated by external sources.
-    pub public_listener: Listener,
+    pub inbound_listener: Listener,
 
-    /// Where to listen for connectoins initiated by the control planey.
+    /// Where to listen for connections initiated by the control plane.
     pub control_listener: Listener,
 
     /// Where to serve Prometheus metrics.
     pub metrics_listener: Listener,
 
     /// Where to forward externally received connections.
-    pub private_forward: Option<Addr>,
+    pub inbound_forward: Option<Addr>,
 
     /// The maximum amount of time to wait for a connection to the public peer.
-    pub public_connect_timeout: Duration,
+    pub inbound_connect_timeout: Duration,
 
     /// The maximum amount of time to wait for a connection to the private peer.
-    pub private_connect_timeout: Duration,
+    pub outbound_connect_timeout: Duration,
 
     pub inbound_ports_disable_protocol_detection: IndexSet<u16>,
 
@@ -164,15 +164,21 @@ pub struct TestEnv {
 }
 
 // Environment variables to look at when loading the configuration
-pub const ENV_PRIVATE_LISTENER: &str = "LINKERD2_PROXY_PRIVATE_LISTENER";
-pub const ENV_PRIVATE_FORWARD: &str = "LINKERD2_PROXY_PRIVATE_FORWARD";
-pub const ENV_PUBLIC_LISTENER: &str = "LINKERD2_PROXY_PUBLIC_LISTENER";
+pub const ENV_OUTBOUND_LISTENER: &str = "LINKERD2_PROXY_OUTBOUND_LISTENER";
+pub const ENV_INBOUND_FORWARD: &str = "LINKERD2_PROXY_INBOUND_FORWARD";
+pub const ENV_INBOUND_LISTENER: &str = "LINKERD2_PROXY_INBOUND_LISTENER";
 pub const ENV_CONTROL_LISTENER: &str = "LINKERD2_PROXY_CONTROL_LISTENER";
 pub const ENV_METRICS_LISTENER: &str = "LINKERD2_PROXY_METRICS_LISTENER";
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
-const ENV_PRIVATE_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_PRIVATE_CONNECT_TIMEOUT";
-const ENV_PUBLIC_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_PUBLIC_CONNECT_TIMEOUT";
+const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
+const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
 pub const ENV_BIND_TIMEOUT: &str = "LINKERD2_PROXY_BIND_TIMEOUT";
+
+pub const DEPRECATED_ENV_PRIVATE_LISTENER: &str = "LINKERD2_PROXY_PRIVATE_LISTENER";
+pub const DEPRECATED_ENV_PRIVATE_FORWARD: &str = "LINKERD2_PROXY_PRIVATE_FORWARD";
+const DEPRECATED_ENV_PUBLIC_LISTENER: &str = "LINKERD2_PROXY_PUBLIC_LISTENER";
+const DEPRECATED_ENV_PRIVATE_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_PRIVATE_CONNECT_TIMEOUT";
+const DEPRECATED_ENV_PUBLIC_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_PUBLIC_CONNECT_TIMEOUT";
 
 // Limits the number of HTTP routes that may be active in the proxy at any time. There is
 // an inbound route for each local port that receives connections. There is an outbound
@@ -221,13 +227,13 @@ const ENV_DNS_MIN_TTL: &str = "LINKERD2_PROXY_DNS_MIN_TTL";
 const ENV_DNS_MAX_TTL: &str = "LINKERD2_PROXY_DNS_MAX_TTL";
 
 // Default values for various configuration fields
-const DEFAULT_PRIVATE_LISTENER: &str = "tcp://127.0.0.1:4140";
-const DEFAULT_PUBLIC_LISTENER: &str = "tcp://0.0.0.0:4143";
+const DEFAULT_OUTBOUND_LISTENER: &str = "tcp://127.0.0.1:4140";
+const DEFAULT_INBOUND_LISTENER: &str = "tcp://0.0.0.0:4143";
 const DEFAULT_CONTROL_LISTENER: &str = "tcp://0.0.0.0:4190";
 const DEFAULT_METRICS_LISTENER: &str = "tcp://127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
-const DEFAULT_PRIVATE_CONNECT_TIMEOUT: Duration = Duration::from_millis(20);
-const DEFAULT_PUBLIC_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
+const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(20);
+const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const DEFAULT_BIND_TIMEOUT: Duration = Duration::from_secs(10); // same as in Linkerd
 const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(5);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
@@ -273,13 +279,18 @@ impl<'a> TryFrom<&'a Strings> for Config {
         // Parse all the environment variables. `env_var` and `env_var_parse`
         // will log any errors so defer returning any errors until all of them
         // have been parsed.
-        let private_listener_addr = parse(strings, ENV_PRIVATE_LISTENER, str::parse);
-        let public_listener_addr = parse(strings, ENV_PUBLIC_LISTENER, str::parse);
+        let outbound_listener_addr = parse_deprecated(
+            strings, ENV_OUTBOUND_LISTENER, DEPRECATED_ENV_PRIVATE_LISTENER, str::parse);
+        let inbound_listener_addr = parse_deprecated(
+            strings, ENV_INBOUND_LISTENER, DEPRECATED_ENV_PUBLIC_LISTENER, str::parse);
         let control_listener_addr = parse(strings, ENV_CONTROL_LISTENER, str::parse);
         let metrics_listener_addr = parse(strings, ENV_METRICS_LISTENER, str::parse);
-        let private_forward = parse(strings, ENV_PRIVATE_FORWARD, str::parse);
-        let public_connect_timeout = parse(strings, ENV_PUBLIC_CONNECT_TIMEOUT, parse_duration);
-        let private_connect_timeout = parse(strings, ENV_PRIVATE_CONNECT_TIMEOUT, parse_duration);
+        let inbound_forward = parse_deprecated(
+            strings, ENV_INBOUND_FORWARD, DEPRECATED_ENV_PRIVATE_FORWARD, str::parse);
+        let inbound_connect_timeout = parse_deprecated(
+            strings, ENV_INBOUND_CONNECT_TIMEOUT, DEPRECATED_ENV_PRIVATE_CONNECT_TIMEOUT, parse_duration);
+        let outbound_connect_timeout = parse_deprecated(
+            strings, ENV_OUTBOUND_CONNECT_TIMEOUT, DEPRECATED_ENV_PUBLIC_CONNECT_TIMEOUT, parse_duration);
         let inbound_disable_ports = parse(strings, ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, parse_port_set);
         let outbound_disable_ports = parse(strings, ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, parse_port_set);
         let inbound_router_capacity = parse(strings, ENV_INBOUND_ROUTER_CAPACITY, parse_number);
@@ -385,13 +396,13 @@ impl<'a> TryFrom<&'a Strings> for Config {
         }?;
 
         Ok(Config {
-            private_listener: Listener {
-                addr: private_listener_addr?
-                    .unwrap_or_else(|| Addr::from_str(DEFAULT_PRIVATE_LISTENER).unwrap()),
+            outbound_listener: Listener {
+                addr: outbound_listener_addr?
+                    .unwrap_or_else(|| Addr::from_str(DEFAULT_OUTBOUND_LISTENER).unwrap()),
             },
-            public_listener: Listener {
-                addr: public_listener_addr?
-                    .unwrap_or_else(|| Addr::from_str(DEFAULT_PUBLIC_LISTENER).unwrap()),
+            inbound_listener: Listener {
+                addr: inbound_listener_addr?
+                    .unwrap_or_else(|| Addr::from_str(DEFAULT_INBOUND_LISTENER).unwrap()),
             },
             control_listener: Listener {
                 addr: control_listener_addr?
@@ -401,12 +412,12 @@ impl<'a> TryFrom<&'a Strings> for Config {
                 addr: metrics_listener_addr?
                     .unwrap_or_else(|| Addr::from_str(DEFAULT_METRICS_LISTENER).unwrap()),
             },
-            private_forward: private_forward?,
+            inbound_forward: inbound_forward?,
 
-            public_connect_timeout: public_connect_timeout?
-                .unwrap_or(DEFAULT_PUBLIC_CONNECT_TIMEOUT),
-            private_connect_timeout: private_connect_timeout?
-                .unwrap_or(DEFAULT_PRIVATE_CONNECT_TIMEOUT),
+            inbound_connect_timeout: inbound_connect_timeout?
+                .unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
+            outbound_connect_timeout: outbound_connect_timeout?
+                .unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
 
             inbound_ports_disable_protocol_detection: inbound_disable_ports?
                 .unwrap_or_else(|| default_disable_ports_protocol_detection()),
@@ -583,6 +594,25 @@ fn parse<T, Parse>(strings: &Strings, name: &str, parse: Parse) -> Result<Option
         None => Ok(None),
     }
 }
+
+fn parse_deprecated<T, Parse>(strings: &Strings, name: &str, deprecated_name: &str, f: Parse)
+    -> Result<Option<T>, Error>
+where
+    Parse: Copy,
+    Parse: Fn(&str) -> Result<T, ParseError>
+{
+    match parse(strings, name, f)? {
+        Some(v) => Ok(Some(v)),
+        None => {
+            let v = parse(strings, deprecated_name, f)?;
+            if v.is_some() {
+                warn!("{} has been deprecated; use {}", deprecated_name, name);
+            }
+            Ok(v)
+        }
+    }
+ }
+
 
 #[cfg(test)]
 mod tests {

@@ -131,15 +131,15 @@ fn run(proxy: Proxy, mut env: config::TestEnv) -> Listening {
     let mut mock_orig_dst = DstInner::default();
 
     env.put(config::ENV_CONTROL_URL, format!("tcp://{}", controller.addr));
-    env.put(config::ENV_PRIVATE_LISTENER, "tcp://127.0.0.1:0".to_owned());
+    env.put(config::ENV_OUTBOUND_LISTENER, "tcp://127.0.0.1:0".to_owned());
     if let Some(ref inbound) = inbound {
-        env.put(config::ENV_PRIVATE_FORWARD, format!("tcp://{}", inbound.addr));
+        env.put(config::ENV_INBOUND_FORWARD, format!("tcp://{}", inbound.addr));
         mock_orig_dst.inbound_orig_addr = Some(inbound.addr);
     }
     if let Some(ref outbound) = outbound {
         mock_orig_dst.outbound_orig_addr = Some(outbound.addr);
     }
-    env.put(config::ENV_PUBLIC_LISTENER, "tcp://127.0.0.1:0".to_owned());
+    env.put(config::ENV_INBOUND_LISTENER, "tcp://127.0.0.1:0".to_owned());
     env.put(config::ENV_CONTROL_LISTENER, "tcp://127.0.0.1:0".to_owned());
     env.put(config::ENV_METRICS_LISTENER, "tcp://127.0.0.1:0".to_owned());
     env.put(config::ENV_POD_NAMESPACE, "test".to_owned());
