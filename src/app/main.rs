@@ -205,7 +205,7 @@ where
 
         let (dns_resolver, dns_bg) = dns::Resolver::from_system_config_and_env(&config)
             .unwrap_or_else(|e| {
-                // TODO: Stack DNS configuration infallible.
+                // TODO: DNS configuration should be infallible.
                 panic!("invalid DNS configuration: {:?}", e);
             });
 

@@ -71,7 +71,7 @@ impl Resolver {
     /// drive that resolver's futures, or an error if the system configuration
     /// could not be parsed.
     ///
-    /// TODO: Stack this infallible, like it is in the `domain` crate.
+    /// TODO: This should be infallible like it is in the `domain` crate.
     pub fn from_system_config_and_env(env_config: &Config)
         -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError> {
         let (config, opts) = trust_dns_resolver::system_conf::read_system_conf()?;
