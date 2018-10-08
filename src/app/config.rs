@@ -16,7 +16,7 @@ use Conditional;
 
 // TODO:
 //
-// * Stack struct fields private.
+// * Make struct fields private.
 
 /// Tracks all configuration settings for the process.
 #[derive(Debug)]
