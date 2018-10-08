@@ -225,6 +225,8 @@ where
         let outbound = {
             use super::outbound;
 
+            let http_metrics = http_metrics.clone();
+
             // As the outbound proxy accepts connections, we don't do any
             // special transport-level handling.
             let accept = transport_metrics.accept("outbound").bind(());
@@ -254,13 +256,10 @@ where
                 .and_then(limit::Layer::new(MAX_IN_FLIGHT))
                 .and_then(timeout::Layer::new(config.bind_timeout))
                 .and_then(buffer::Layer::new())
-                .and_then(balance::Layer::new(outbound::Resolve::new(resolver)))
-                .and_then(outbound::orig_proto_upgrade())
-                .and_then(outbound::LayerTlsConfig::new(tls_client_config))
-                .and_then(proxy::http::metrics::Layer::new(
-                    http_metrics.clone(),
-                    classify::Classify,
-                ))
+                .and_then(balance::Layer::new(outbound::discovery::Resolve::new(resolver)))
+                .and_then(outbound::orig_proto_upgrade::Layer::new())
+                .and_then(outbound::tls_config::Layer::new(tls_client_config))
+                .and_then(proxy::http::metrics::Layer::new(http_metrics, classify::Classify))
                 .and_then(tap::Layer::new(tap_next_id.clone(), taps.clone()))
                 .and_when(
                     |ep: &outbound::Endpoint| {
@@ -330,10 +329,7 @@ where
             let router_layer = router::Layer::new(inbound::Recognize::new(default_fwd_addr))
                 .and_then(limit::Layer::new(MAX_IN_FLIGHT))
                 .and_then(buffer::Layer::new())
-                .and_then(proxy::http::metrics::Layer::new(
-                    http_metrics,
-                    classify::Classify,
-                ))
+                .and_then(proxy::http::metrics::Layer::new(http_metrics, classify::Classify))
                 .and_then(tap::Layer::new(tap_next_id, taps))
                 .and_when(
                     |ep: &inbound::Endpoint| {
