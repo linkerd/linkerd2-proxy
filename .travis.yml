@@ -13,6 +13,7 @@ jobs:
   include:
     # On PRs and branches, quickly run tests in debug mode.
     - if: type = pull_request
+      install: export CARGO_VERBOSE=1
       script: make test
       rust: stable
 
