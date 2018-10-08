@@ -3,7 +3,8 @@ use std::fmt;
 
 use app::Destination;
 use control::destination::{Metadata, ProtocolHint};
-use proxy::http::{client, router};
+use proxy::http::{client, router, normalize_uri::ShouldNormalizeUri};
+use svc::stack_per_request::ShouldStackPerRequest;
 use tap;
 use transport::connect;
 
@@ -26,6 +27,18 @@ impl Endpoint {
             ProtocolHint::Unknown => false,
             ProtocolHint::Http2 => true,
         }
+    }
+}
+
+impl ShouldNormalizeUri for Endpoint {
+    fn should_normalize_uri(&self) -> bool {
+        !self.dst.settings.is_http2() && !self.dst.settings.was_absolute_form()
+    }
+}
+
+impl ShouldStackPerRequest for Endpoint {
+    fn should_stack_per_request(&self) -> bool {
+        !self.dst.settings.is_http2() && !self.dst.settings.can_reuse_clients()
     }
 }
 
@@ -231,7 +244,6 @@ pub mod orig_proto_upgrade {
             }
         }
     }
-
 }
 
 pub mod tls_config {

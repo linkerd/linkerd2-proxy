@@ -6,6 +6,10 @@ use std::marker::PhantomData;
 
 use svc;
 
+pub trait ShouldStackPerRequest {
+    fn should_stack_per_request(&self) -> bool;
+}
+
 /// A `Layer` produces a `Service` `Stack` that creates a new service for each
 /// request.
 #[derive(Debug)]
@@ -19,7 +23,7 @@ pub struct Stack<T, M: super::Stack<T>> {
 }
 
 /// A `Service` that uses a new inner service for each request.
- ///
+///
 /// `Service` does not handle any underlying errors and it is expected that an
 /// instance will not be used after an error is returned.
 pub struct Service<T, M: super::Stack<T>> {
@@ -27,7 +31,7 @@ pub struct Service<T, M: super::Stack<T>> {
     // ahead-of-time. This stack is used only to serve the next request to this
     // service.
     next: Option<M::Value>,
-    make: StackValid<T, M>
+    make: StackValid<T, M>,
 }
 
 /// A helper that asserts `M` can successfully build services for a specific
@@ -41,7 +45,7 @@ struct StackValid<T, M: super::Stack<T>> {
 
 impl<T, N> Layer<T, N>
 where
-    T: Clone,
+    T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
     N::Error: fmt::Debug,
 {
@@ -52,7 +56,7 @@ where
 
 impl<T, N> Clone for Layer<T, N>
 where
-    T: Clone,
+    T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
     N::Error: fmt::Debug,
 {
@@ -63,7 +67,7 @@ where
 
 impl<T, N> super::Layer<T, T, N> for Layer<T, N>
 where
-    T: Clone,
+    T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
     N::Error: fmt::Debug,
 {
@@ -83,35 +87,40 @@ where
 
 impl<T, N> Clone for Stack<T, N>
 where
-    T: Clone,
+    T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
     N::Error: fmt::Debug,
 {
     fn clone(&self) -> Self {
-        let inner = self.inner.clone();
-        Stack { inner, _p: PhantomData }
+        Self {
+            inner: self.inner.clone(),
+            _p: PhantomData,
+        }
     }
 }
 
 impl<T, N> super::Stack<T> for Stack<T, N>
 where
-    T: Clone,
+    T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
     N::Error: fmt::Debug,
 {
-    type Value = Service<T, N>;
+    type Value = super::Either<Service<T, N>, N::Value>;
     type Error = N::Error;
 
     fn make(&self, target: &T) -> Result<Self::Value, N::Error> {
-        let next = self.inner.make(target)?;
-        let valid = StackValid {
-            make: self.inner.clone(),
-            target: target.clone(),
-        };
-        Ok(Service {
-            next: Some(next),
-            make: valid,
-        })
+        let inner = self.inner.make(target)?;
+        if target.should_stack_per_request() {
+            Ok(super::Either::A(Service {
+                next: Some(inner),
+                make: StackValid {
+                    make: self.inner.clone(),
+                    target: target.clone(),
+                },
+            }))
+        } else {
+            Ok(super::Either::B(inner))
+        }
     }
 }
 
@@ -119,7 +128,7 @@ where
 
 impl<T, N> svc::Service for Service<T, N>
 where
-    T: Clone,
+    T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
     N::Value: svc::Service,
     N::Error: fmt::Debug,
@@ -156,11 +165,9 @@ where
 impl<T, M> StackValid<T, M>
 where
     M: super::Stack<T>,
-    M::Error: fmt::Debug
+    M::Error: fmt::Debug,
 {
     fn make_valid(&self) -> M::Value {
-        self.make
-            .make(&self.target)
-            .expect("make must succeed")
+        self.make.make(&self.target).expect("make must succeed")
     }
 }

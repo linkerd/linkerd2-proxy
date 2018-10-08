@@ -29,7 +29,7 @@ use svc::{self, Layer as _Layer, Stack as _Stack};
 use tap;
 use task;
 use telemetry;
-use transport::{self, connect, tls, Connection, GetOriginalDst, BoundPort};
+use transport::{self, connect, tls, BoundPort, Connection, GetOriginalDst};
 use Conditional;
 
 use super::config::Config;
@@ -256,23 +256,18 @@ where
                 .and_then(limit::Layer::new(MAX_IN_FLIGHT))
                 .and_then(timeout::Layer::new(config.bind_timeout))
                 .and_then(buffer::Layer::new())
-                .and_then(balance::Layer::new(outbound::discovery::Resolve::new(resolver)))
+                .and_then(balance::Layer::new(outbound::discovery::Resolve::new(
+                    resolver,
+                )))
                 .and_then(outbound::orig_proto_upgrade::Layer::new())
                 .and_then(outbound::tls_config::Layer::new(tls_client_config))
-                .and_then(proxy::http::metrics::Layer::new(http_metrics, classify::Classify))
+                .and_then(proxy::http::metrics::Layer::new(
+                    http_metrics,
+                    classify::Classify,
+                ))
                 .and_then(tap::Layer::new(tap_next_id.clone(), taps.clone()))
-                .and_when(
-                    |ep: &outbound::Endpoint| {
-                        !ep.dst.settings.is_http2() && !ep.dst.settings.was_absolute_form()
-                    },
-                    normalize_uri::Layer::new(),
-                )
-                .and_when(
-                    |ep: &outbound::Endpoint| {
-                        !ep.dst.settings.is_http2() && !ep.dst.settings.can_reuse_clients()
-                    },
-                    svc::stack_per_request::Layer::new(),
-                );
+                .and_then(normalize_uri::Layer::new())
+                .and_then(svc::stack_per_request::Layer::new());
 
             let capacity = config.outbound_router_capacity;
             let max_idle_age = config.outbound_router_max_idle_age;
@@ -329,20 +324,13 @@ where
             let router_layer = router::Layer::new(inbound::Recognize::new(default_fwd_addr))
                 .and_then(limit::Layer::new(MAX_IN_FLIGHT))
                 .and_then(buffer::Layer::new())
-                .and_then(proxy::http::metrics::Layer::new(http_metrics, classify::Classify))
+                .and_then(proxy::http::metrics::Layer::new(
+                    http_metrics,
+                    classify::Classify,
+                ))
                 .and_then(tap::Layer::new(tap_next_id, taps))
-                .and_when(
-                    |ep: &inbound::Endpoint| {
-                        !ep.settings.is_http2() && !ep.settings.was_absolute_form()
-                    },
-                    normalize_uri::Layer::new(),
-                )
-                .and_when(
-                    |ep: &inbound::Endpoint| {
-                        !ep.settings.is_http2() && !ep.settings.can_reuse_clients()
-                    },
-                    svc::stack_per_request::Layer::new(),
-                );
+                .and_then(normalize_uri::Layer::new())
+                .and_then(svc::stack_per_request::Layer::new());
 
             // Build a router using the above policy
             let capacity = config.inbound_router_capacity;

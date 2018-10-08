@@ -3,9 +3,9 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 
-use proxy::http::{client, h1, orig_proto, router, Settings};
+use proxy::http::{client, h1, normalize_uri::ShouldNormalizeUri, orig_proto, router, Settings};
 use proxy::server::Source;
-use svc;
+use svc::{self, stack_per_request::ShouldStackPerRequest};
 use tap;
 use transport::{connect, tls};
 use Conditional;
@@ -44,7 +44,10 @@ impl<A> router::Recognize<http::Request<A>> for Recognize {
             .and_then(|s| s.orig_dst_if_not_local())
             .or(self.default_addr)?;
 
-        let authority = req.uri().authority_part().cloned()
+        let authority = req
+            .uri()
+            .authority_part()
+            .cloned()
             .or_else(|| h1::authority_from_host(req))
             .or_else(|| {
                 let a = format!("{}", addr);
@@ -116,6 +119,18 @@ where
         info!("downgrading requests; source={:?}", target);
         let inner = self.inner.make(&target)?;
         Ok(inner.into())
+    }
+}
+
+impl ShouldNormalizeUri for Endpoint {
+    fn should_normalize_uri(&self) -> bool {
+        !self.settings.is_http2() && !self.settings.was_absolute_form()
+    }
+}
+
+impl ShouldStackPerRequest for Endpoint {
+    fn should_stack_per_request(&self) -> bool {
+        !self.settings.is_http2() && !self.settings.can_reuse_clients()
     }
 }
 
