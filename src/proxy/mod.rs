@@ -6,13 +6,12 @@ pub mod buffer;
 pub mod http;
 pub mod limit;
 mod protocol;
-mod reconnect;
+pub mod reconnect;
 pub mod resolve;
 pub mod server;
 mod tcp;
 pub mod timeout;
 
-pub use self::reconnect::Reconnect;
 pub use self::resolve::{Resolve, Resolution};
 pub use self::server::{Server, Source};
 

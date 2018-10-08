@@ -23,7 +23,7 @@ use proxy::{
     http::{
         balance, client, insert_target, metrics::timestamp_request_open, normalize_uri, router,
     },
-    limit, timeout,
+    limit, reconnect, timeout,
 };
 use svc::{self, Layer as _Layer, Stack as _Stack};
 use tap;
@@ -269,10 +269,14 @@ where
                 .and_then(normalize_uri::Layer::new())
                 .and_then(svc::stack_per_request::Layer::new());
 
+            let client = reconnect::Layer::new()
+                .and_then(client::Layer::new("out"))
+                .bind(connect.clone());
+
             let capacity = config.outbound_router_capacity;
             let max_idle_age = config.outbound_router_max_idle_age;
             let router = router_layer
-                .bind(client::Stack::new("out", connect.clone()))
+                .bind(client)
                 .make(&router::Config::new("out", capacity, max_idle_age))
                 .expect("outbound router");
 
@@ -332,11 +336,15 @@ where
                 .and_then(normalize_uri::Layer::new())
                 .and_then(svc::stack_per_request::Layer::new());
 
+            let client = reconnect::Layer::new()
+                .and_then(client::Layer::new("in"))
+                .bind(connect.clone());
+
             // Build a router using the above policy
             let capacity = config.inbound_router_capacity;
             let max_idle_age = config.inbound_router_max_idle_age;
             let router = router_layer
-                .bind(client::Stack::new("in", connect.clone()))
+                .bind(client)
                 .make(&router::Config::new("in", capacity, max_idle_age))
                 .expect("inbound router");
 

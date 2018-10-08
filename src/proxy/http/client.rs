@@ -11,7 +11,6 @@ use tower_h2;
 use super::{h1, Settings};
 use super::glue::{BodyPayload, HttpBody, HyperConnect};
 use super::upgrade::{HttpConnect, Http11Upgrade};
-use super::super::Reconnect;
 use svc;
 use task::BoxExecutor;
 use transport::connect;
@@ -24,6 +23,15 @@ pub struct Config {
     pub target: connect::Target,
     pub settings: Settings,
     _p: (),
+}
+
+/// Configurs an HTTP client that uses a `C`-typed connector
+///
+/// The `proxy_name` is used for diagnostics (logging, mostly).
+#[derive(Debug)]
+pub struct Layer<B> {
+    proxy_name: &'static str,
+    _p: PhantomData<fn() -> B>,
 }
 
 /// Configurs an HTTP client that uses a `C`-typed connector
@@ -144,31 +152,73 @@ impl Config {
     }
 }
 
-// === impl Stack ===
+// === impl Layer ===
 
-impl<C, B> Stack<C, B>
+impl<B> Layer<B>
 where
-    C: svc::Stack<connect::Target>,
-    C::Value: connect::Connect + Clone + Send + Sync + 'static,
-    B: tower_h2::Body + 'static,
+    B: tower_h2::Body + Send + 'static,
+    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    pub fn new(proxy_name: &'static str, connect: C) -> Self {
+    pub fn new(proxy_name: &'static str) -> Self {
         Self {
-            connect,
             proxy_name,
             _p: PhantomData,
         }
     }
 }
 
+impl<B> Clone for Layer<B>
+where
+    B: tower_h2::Body + 'static,
+    <B::Data as IntoBuf>::Buf: Send + 'static,
+{
+    fn clone(&self) -> Self {
+        Self {
+            proxy_name: self.proxy_name,
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<T, C, B> svc::Layer<T, connect::Target, C> for Layer<B>
+where
+    T: Into<Config> + Clone,
+    C: svc::Stack<connect::Target>,
+    C::Value: connect::Connect + Clone + Send + Sync + 'static,
+    <C::Value as connect::Connect>::Connected: Send,
+    <C::Value as connect::Connect>::Future: Send + 'static,
+    <C::Value as connect::Connect>::Error: error::Error + Send + Sync,
+    B: tower_h2::Body + Send + 'static,
+    <B::Data as IntoBuf>::Buf: Send + 'static,
+{
+    type Value = <Stack<C, B> as svc::Stack<T>>::Value;
+    type Error = <Stack<C, B> as svc::Stack<T>>::Error;
+    type Stack = Stack<C, B>;
+
+    fn bind(&self, connect: C) -> Self::Stack {
+        Stack {
+            connect,
+            proxy_name: self.proxy_name,
+            _p: PhantomData,
+         }
+    }
+}
+
+// === impl Stack ===
+
 impl<C, B> Clone for Stack<C, B>
 where
     C: svc::Stack<connect::Target> + Clone,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     B: tower_h2::Body + 'static,
+    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
     fn clone(&self) -> Self {
-        Self::new(self.proxy_name, self.connect.clone())
+        Self {
+            proxy_name: self.proxy_name,
+            connect: self.connect.clone(),
+            _p: PhantomData,
+        }
     }
 }
 
@@ -183,10 +233,7 @@ where
     B: tower_h2::Body + Send + 'static,
     <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    type Value = Reconnect<
-        Config,
-        Client<C::Value, ::logging::ClientExecutor<&'static str, net::SocketAddr>, B>,
-    >;
+    type Value = Client<C::Value, ::logging::ClientExecutor<&'static str, net::SocketAddr>, B>;
     type Error = C::Error;
 
     fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
@@ -196,8 +243,7 @@ where
             .with_settings(config.settings.clone())
             .executor();
         debug!("building client={:?}", config);
-        let client = Client::new(&config.settings, connect, executor);
-        Ok(Reconnect::new(config.clone(), client))
+        Ok(Client::new(&config.settings, connect, executor))
     }
 }
 
