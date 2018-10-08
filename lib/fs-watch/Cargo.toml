@@ -1,7 +1,10 @@
 [package]
 name = "linkerd2-fs-watch"
 version = "0.1.0"
-authors = ["Oliver Gould <ver@buoyant.io>"]
+authors = [
+    "Eliza Weisman <eliza@buoyant.io>",
+    "Oliver Gould <ver@buoyant.io>",
+]
 
 [dependencies]
 env_logger = { version = "0.5", default-features = false }
