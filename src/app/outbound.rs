@@ -87,10 +87,10 @@ pub mod discovery {
     use futures::{Async, Poll};
     use std::net::SocketAddr;
 
+    use super::Endpoint;
     use app::{Destination, NameOrAddr};
     use control::destination::Metadata;
     use proxy::resolve;
-    use super::Endpoint;
     use transport::{connect, tls, DnsNameAndPort};
     use Conditional;
 
@@ -141,7 +141,9 @@ pub mod discovery {
         fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
             match self {
                 Resolution::Name(ref dst, ref mut res) => match try_ready!(res.poll()) {
-                    resolve::Update::Remove(addr) => Ok(Async::Ready(resolve::Update::Remove(addr))),
+                    resolve::Update::Remove(addr) => {
+                        Ok(Async::Ready(resolve::Update::Remove(addr)))
+                    }
                     resolve::Update::Add(addr, metadata) => {
                         // If the endpoint does not have TLS, note the reason.
                         // Otherwise, indicate that we don't (yet) have a TLS
@@ -183,8 +185,8 @@ pub mod orig_proto_upgrade {
     use http;
     use std::marker::PhantomData;
 
-    use proxy::http::{orig_proto, Settings};
     use super::Endpoint;
+    use proxy::http::{orig_proto, Settings};
     use svc;
 
     #[derive(Debug)]
@@ -234,8 +236,9 @@ pub mod orig_proto_upgrade {
 
         fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
             if endpoint.can_use_orig_proto()
-                    && !endpoint.dst.settings.is_http2()
-                    && !endpoint.dst.settings.is_h1_upgrade() {
+                && !endpoint.dst.settings.is_http2()
+                && !endpoint.dst.settings.is_h1_upgrade()
+            {
                 let mut upgraded = endpoint.clone();
                 upgraded.dst.settings = Settings::Http2;
                 self.inner.make(&upgraded).map(|i| svc::Either::A(i.into()))
