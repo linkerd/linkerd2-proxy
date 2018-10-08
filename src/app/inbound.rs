@@ -1,11 +1,10 @@
 use http;
 use std::fmt;
-use std::marker::PhantomData;
 use std::net::SocketAddr;
 
-use proxy::http::{client, h1, normalize_uri::ShouldNormalizeUri, orig_proto, router, Settings};
+use proxy::http::{client, h1, normalize_uri::ShouldNormalizeUri, router, Settings};
 use proxy::server::Source;
-use svc::{self, stack_per_request::ShouldStackPerRequest};
+use svc::stack_per_request::ShouldStackPerRequest;
 use tap;
 use transport::{connect, tls};
 use Conditional;
@@ -23,6 +22,45 @@ pub struct Endpoint {
 #[derive(Clone, Debug, Default)]
 pub struct Recognize {
     default_addr: Option<SocketAddr>,
+}
+
+// === impl Endpoint ===
+
+impl ShouldNormalizeUri for Endpoint {
+    fn should_normalize_uri(&self) -> bool {
+        !self.settings.is_http2() && !self.settings.was_absolute_form()
+    }
+}
+
+impl ShouldStackPerRequest for Endpoint {
+    fn should_stack_per_request(&self) -> bool {
+        !self.settings.is_http2() && !self.settings.can_reuse_clients()
+    }
+}
+
+// Stacks it possible to build a client::Stack<Endpoint>.
+impl From<Endpoint> for client::Config {
+    fn from(ep: Endpoint) -> Self {
+        let tls = Conditional::None(tls::ReasonForNoTls::InternalTraffic);
+        let connect = connect::Target::new(ep.addr, tls);
+        client::Config::new(connect, ep.settings)
+    }
+}
+
+impl From<Endpoint> for tap::Endpoint {
+    fn from(ep: Endpoint) -> Self {
+        tap::Endpoint {
+            direction: tap::Direction::In,
+            client: ep.into(),
+            labels: Default::default(),
+        }
+    }
+}
+
+impl fmt::Display for Endpoint {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.addr.fmt(f)
+    }
 }
 
 impl Recognize {
@@ -72,90 +110,68 @@ impl fmt::Display for Recognize {
     }
 }
 
-pub fn orig_proto_downgrade<M>() -> LayerDowngrade<M> {
-    LayerDowngrade(PhantomData)
-}
+pub mod orig_proto_downgrade {
+    use http;
+    use std::marker::PhantomData;
 
-#[derive(Debug)]
-pub struct LayerDowngrade<M>(PhantomData<fn() -> (M)>);
+    use proxy::http::orig_proto;
+    use proxy::server::Source;
+    use svc;
 
-#[derive(Clone, Debug)]
-pub struct StackDowngrade<M>
-where
-    M: svc::Stack<Source>,
-{
-    inner: M,
-}
+    #[derive(Debug)]
+    pub struct Layer<M>(PhantomData<fn() -> (M)>);
 
-impl<M> Clone for LayerDowngrade<M> {
-    fn clone(&self) -> Self {
-        LayerDowngrade(PhantomData)
+    #[derive(Clone, Debug)]
+    pub struct Stack<M>
+    where
+        M: svc::Stack<Source>,
+    {
+        inner: M,
     }
-}
 
-impl<M, A, B> svc::Layer<Source, Source, M> for LayerDowngrade<M>
-where
-    M: svc::Stack<Source>,
-    M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
-{
-    type Value = <StackDowngrade<M> as svc::Stack<Source>>::Value;
-    type Error = <StackDowngrade<M> as svc::Stack<Source>>::Error;
-    type Stack = StackDowngrade<M>;
+    // === impl Layer ===
 
-    fn bind(&self, inner: M) -> Self::Stack {
-        StackDowngrade { inner }
-    }
-}
-
-impl<M, A, B> svc::Stack<Source> for StackDowngrade<M>
-where
-    M: svc::Stack<Source>,
-    M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
-{
-    type Value = orig_proto::Downgrade<M::Value>;
-    type Error = M::Error;
-
-    fn make(&self, target: &Source) -> Result<Self::Value, Self::Error> {
-        info!("downgrading requests; source={:?}", target);
-        let inner = self.inner.make(&target)?;
-        Ok(inner.into())
-    }
-}
-
-impl ShouldNormalizeUri for Endpoint {
-    fn should_normalize_uri(&self) -> bool {
-        !self.settings.is_http2() && !self.settings.was_absolute_form()
-    }
-}
-
-impl ShouldStackPerRequest for Endpoint {
-    fn should_stack_per_request(&self) -> bool {
-        !self.settings.is_http2() && !self.settings.can_reuse_clients()
-    }
-}
-
-// Stacks it possible to build a client::Stack<Endpoint>.
-impl From<Endpoint> for client::Config {
-    fn from(ep: Endpoint) -> Self {
-        let tls = Conditional::None(tls::ReasonForNoTls::InternalTraffic);
-        let connect = connect::Target::new(ep.addr, tls);
-        client::Config::new(connect, ep.settings)
-    }
-}
-
-impl From<Endpoint> for tap::Endpoint {
-    fn from(ep: Endpoint) -> Self {
-        tap::Endpoint {
-            direction: tap::Direction::In,
-            client: ep.into(),
-            labels: Default::default(),
+    impl<M> Layer<M> {
+        pub fn new() -> Self {
+            Layer(PhantomData)
         }
     }
-}
 
-impl fmt::Display for Endpoint {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.addr.fmt(f)
+    impl<M> Clone for Layer<M> {
+        fn clone(&self) -> Self {
+            Layer(PhantomData)
+        }
+    }
+
+    impl<M, A, B> svc::Layer<Source, Source, M> for Layer<M>
+    where
+        M: svc::Stack<Source>,
+        M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+    {
+        type Value = <Stack<M> as svc::Stack<Source>>::Value;
+        type Error = <Stack<M> as svc::Stack<Source>>::Error;
+        type Stack = Stack<M>;
+
+        fn bind(&self, inner: M) -> Self::Stack {
+            Stack { inner }
+        }
+    }
+
+    // === impl Stack ===
+
+    impl<M, A, B> svc::Stack<Source> for Stack<M>
+    where
+        M: svc::Stack<Source>,
+        M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+    {
+        type Value = orig_proto::Downgrade<M::Value>;
+        type Error = M::Error;
+
+        fn make(&self, target: &Source) -> Result<Self::Value, Self::Error> {
+            info!("downgrading requests; source={:?}", target);
+            let inner = self.inner.make(&target)?;
+            Ok(inner.into())
+        }
     }
 }
 

@@ -309,7 +309,7 @@ where
             // the router need not detect whether a request _will be_ downgraded.
             let source_layer = timestamp_request_open::Layer::new()
                 .and_then(insert_target::Layer::new())
-                .and_then(inbound::orig_proto_downgrade());
+                .and_then(inbound::orig_proto_downgrade::Layer::new());
 
             // A stack configured by `router::Config`, responsible for building
             // a router made of route stacks configured by `inbound::Endpoint`.
