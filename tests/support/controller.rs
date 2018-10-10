@@ -162,7 +162,7 @@ fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Sen
                     }
 
                     let serve = h2.serve(sock);
-                    current_thread::TaskExecutor::current()
+                    tokio_current_thread::TaskExecutor::current()
                         .execute(serve.map_err(|e| println!("controller error: {:?}", e)))
                         .map_err(|e| {
                             println!("controller execute error: {:?}", e);

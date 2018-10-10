@@ -185,7 +185,7 @@ fn run_client(addr: SocketAddr) -> TcpSender {
                         .map_err(|_| ())
                 });
 
-            current_thread::TaskExecutor::current()
+            tokio_current_thread::TaskExecutor::current()
                 .execute(fut)
                 .map_err(|e| {
                     println!("tcp client execute error: {:?}", e);
@@ -229,7 +229,7 @@ fn run_server(tcp: TcpServer) -> server::Listening {
 
                 let fut = cb.call_box(sock);
 
-                current_thread::TaskExecutor::current()
+                tokio_current_thread::TaskExecutor::current()
                     .execute(fut)
                     .map_err(|e| {
                         println!("tcp execute error: {:?}", e);

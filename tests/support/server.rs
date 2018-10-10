@@ -207,7 +207,7 @@ impl Server {
                         if let Err(e) = sock.set_nodelay(true) {
                             return Err(e);
                         }
-                        current_thread::TaskExecutor::current()
+                        tokio_current_thread::TaskExecutor::current()
                             .execute(srv(sock))
                             .map_err(|e| {
                                 println!("server execute error: {:?}", e);

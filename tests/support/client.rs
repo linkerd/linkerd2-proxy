@@ -165,7 +165,7 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
                         let _ = cb.send(result);
                         Ok(())
                     });
-                    current_thread::TaskExecutor::current().execute(fut)
+                    tokio_current_thread::TaskExecutor::current().execute(fut)
                         .map_err(|e| println!("client spawn error: {:?}", e))
                 })
                     .map_err(|e| println!("client error: {:?}", e)))
@@ -193,7 +193,7 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
                                 let _ = cb.send(result);
                                 Ok(())
                             });
-                            current_thread::TaskExecutor::current().execute(fut)
+                            tokio_current_thread::TaskExecutor::current().execute(fut)
                                 .map_err(|e| println!("client spawn error: {:?}", e))
                         })
                     })
