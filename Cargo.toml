@@ -43,7 +43,7 @@ rand = "0.5.5"
 try-lock = "0.2"
 
 # for config parsing
-regex = "1.0.0"
+regex = "1.0.5"
 
 # networking
 tokio = "0.1.11"
