@@ -5,7 +5,7 @@ extern crate tower_service;
 
 use futures::{Future, Poll};
 use tokio_connect::Connect;
-use tokio_timer::{self as timer, clock, Deadline, DeadlineError};
+use tokio_timer as timer;
 use tower_service::Service;
 use std::{error, fmt};
 use std::time::Duration;
@@ -56,7 +56,7 @@ impl<T> Timeout<T> {
         }
     }
 
-    fn deadline_error<E>(&self, error: DeadlineError<E>) -> Error<E> {
+    fn timeout_error<E>(&self, error: timer::timeout::Error<E>) -> Error<E> {
         let kind = match error {
             _ if error.is_timer() =>
                 ErrorKind::Timer(error.into_timer()
@@ -77,16 +77,14 @@ where
     type Request = S::Request;
     type Response = T;
     type Error = Error<E>;
-    type Future = Timeout<Deadline<S::Future>>;
+    type Future = Timeout<timer::Timeout<S::Future>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready().map_err(|e| self.error(e))
     }
 
     fn call(&mut self, req: Self::Request) -> Self::Future {
-        let duration = self.duration;
-        let deadline = clock::now() + duration;
-        let inner = Deadline::new(self.inner.call(req), deadline);
+        let inner = timer::Timeout::new(self.inner.call(req), self.duration);
         Timeout {
             inner,
             duration: self.duration,
@@ -101,11 +99,10 @@ where
 {
     type Connected = C::Connected;
     type Error = Error<C::Error>;
-    type Future = Timeout<Deadline<C::Future>>;
+    type Future = Timeout<timer::Timeout<C::Future>>;
 
     fn connect(&self) -> Self::Future {
-        let deadline = clock::now() + self.duration;
-        let inner = Deadline::new(self.inner.connect(), deadline);
+        let inner = timer::Timeout::new(self.inner.connect(), self.duration);
         Timeout {
             inner,
             duration: self.duration,
@@ -113,7 +110,7 @@ where
     }
 }
 
-impl<F> Future for Timeout<Deadline<F>>
+impl<F> Future for Timeout<timer::Timeout<F>>
 where
     F: Future,
     // F::Error: Error,
@@ -121,7 +118,7 @@ where
     type Item = F::Item;
     type Error = Error<F::Error>;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.inner.poll().map_err(|e| self.deadline_error(e))
+        self.inner.poll().map_err(|e| self.timeout_error(e))
     }
 }
 
