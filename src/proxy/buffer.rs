@@ -1,7 +1,6 @@
 extern crate tower_buffer;
 
 use std::fmt;
-use std::marker::PhantomData;
 
 pub use self::tower_buffer::{Buffer, SpawnError};
 
@@ -9,14 +8,13 @@ use logging;
 use svc;
 
 /// Wraps `Service` stacks with a `Buffer`.
-#[derive(Debug)]
-pub struct Layer<T, M>(PhantomData<fn() -> (T, M)>);
+#[derive(Debug, Clone)]
+pub struct Layer;
 
 /// Produces `Service`s wrapped with a `Buffer`
-#[derive(Debug)]
-pub struct Stack<T, M> {
+#[derive(Debug, Clone)]
+pub struct Stack<M> {
     inner: M,
-    _p: PhantomData<fn() -> T>,
 }
 
 pub enum Error<M, S> {
@@ -26,19 +24,13 @@ pub enum Error<M, S> {
 
 // === impl Layer ===
 
-impl<T, M> Layer<T, M> {
+impl Layer {
     pub fn new() -> Self {
-        Layer(PhantomData)
+        Layer
     }
 }
 
-impl<T, M> Clone for Layer<T, M> {
-    fn clone(&self) -> Self {
-        Self::new()
-    }
-}
-
-impl<T, M> svc::Layer<T, T, M> for Layer<T, M>
+impl<T, M> svc::Layer<T, T, M> for Layer
 where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
@@ -46,30 +38,21 @@ where
     <M::Value as svc::Service>::Request: Send,
     <M::Value as svc::Service>::Future: Send,
 {
-    type Value = <Stack<T, M> as svc::Stack<T>>::Value;
-    type Error = <Stack<T, M> as svc::Stack<T>>::Error;
-    type Stack = Stack<T, M>;
+    type Value = <Stack<M> as svc::Stack<T>>::Value;
+    type Error = <Stack<M> as svc::Stack<T>>::Error;
+    type Stack = Stack<M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             inner,
-            _p: PhantomData,
         }
     }
 }
 
 // === impl Stack ===
 
-impl<T, M: Clone> Clone for Stack<T, M> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            _p: PhantomData,
-        }
-    }
-}
 
-impl<T, M> svc::Stack<T> for Stack<T, M>
+impl<T, M> svc::Stack<T> for Stack<M>
 where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Stack<T>,

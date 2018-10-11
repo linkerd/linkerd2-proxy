@@ -20,7 +20,7 @@ pub trait Layer<T, U, M: super::Stack<U>> {
 
     /// Compose this `Layer` with another.
     fn and_then<V, N, L>(self, inner: L)
-        -> AndThen<T, U, V, N, Self, L>
+        -> AndThen<U, Self, L>
     where
         N: super::Stack<V>,
         L: Layer<U, V, N>,
@@ -39,20 +39,16 @@ pub trait Layer<T, U, M: super::Stack<U>> {
 /// Given an `Outer: Layer<T, U, _>` and an `Inner: Layer<U, V, _>`, producesa
 /// `Layer<T, C, _>`, encapsulating the logic of the Outer and Inner layers.
 #[derive(Debug, Clone)]
-pub struct AndThen<T, U, V, M, Outer, Inner>
-where
-    Outer: Layer<T, U, Inner::Stack>,
-    Inner: Layer<U, V, M>,
-    M: super::Stack<V>,
+pub struct AndThen<U, Outer, Inner>
 {
     outer: Outer,
     inner: Inner,
-    // `AndThen` should be Send/Sync independently of `M`.
-    _p: PhantomData<fn() -> (T, U, V, M)>,
+    // `AndThen` should be Send/Sync independently of U M`.
+    _p: PhantomData<fn() -> U>,
 }
 
 impl<T, U, V, M, Outer, Inner> Layer<T, V, M>
-    for AndThen<T, U, V, M, Outer, Inner>
+    for AndThen<U, Outer, Inner>
 where
     Outer: Layer<T, U, Inner::Stack>,
     Inner: Layer<U, V, M>,

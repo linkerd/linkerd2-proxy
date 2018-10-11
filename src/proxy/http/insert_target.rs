@@ -1,18 +1,17 @@
 use futures::Poll;
 use http;
-use std::marker::PhantomData;
 
 use svc;
 
 /// Wraps HTTP `Service` `Stack<T>`s so that `T` is cloned into each request's
 /// extensions.
-#[derive(Debug)]
-pub struct Layer<T, M>(PhantomData<fn() -> (T, M)>);
+#[derive(Debug, Clone)]
+pub struct Layer;
 
 /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
 /// each request's extensions.
 #[derive(Clone, Debug)]
-pub struct Stack<T, M>(M, PhantomData<fn() -> T>);
+pub struct Stack<M>(M);
 
 #[derive(Clone, Debug)]
 pub struct Service<T, S> {
@@ -22,36 +21,30 @@ pub struct Service<T, S> {
 
 // === impl Layer ===
 
-impl<T, M> Layer<T, M> {
+impl Layer {
     pub fn new() -> Self {
-        Layer(PhantomData)
+        Layer
     }
 }
 
-impl<T, M> Clone for Layer<T, M> {
-    fn clone(&self) -> Self {
-        Self::new()
-    }
-}
-
-impl<T, M, B> svc::Layer<T, T, M> for Layer<T, M>
+impl<T, M, B> svc::Layer<T, T, M> for Layer
 where
     T: Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
     M::Value: svc::Service<Request = http::Request<B>>,
 {
-    type Value = <Stack<T, M> as svc::Stack<T>>::Value;
-    type Error = <Stack<T, M> as svc::Stack<T>>::Error;
-    type Stack = Stack<T, M>;
+    type Value = <Stack<M> as svc::Stack<T>>::Value;
+    type Error = <Stack<M> as svc::Stack<T>>::Error;
+    type Stack = Stack<M>;
 
     fn bind(&self, next: M) -> Self::Stack {
-        Stack(next, PhantomData)
+        Stack(next)
     }
 }
 
 // === impl Stack ===
 
-impl<T, M, B> svc::Stack<T> for Stack<T, M>
+impl<T, M, B> svc::Stack<T> for Stack<M>
 where
     T: Clone + Send + Sync + 'static,
     M: svc::Stack<T>,

@@ -30,16 +30,15 @@ pub struct Config {
 ///
 /// The `proxy_name` is used for diagnostics (logging, mostly).
 #[derive(Debug)]
-pub struct Stack<T, C, B>
+pub struct Stack<C, B>
 where
-    T: Into<Config>,
     C: svc::Stack<connect::Target>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     B: tower_h2::Body + 'static,
 {
     connect: C,
     proxy_name: &'static str,
-    _p: PhantomData<fn() -> (T, B)>,
+    _p: PhantomData<fn() -> B>,
 }
 
 /// A wrapper around the error types produced by the HTTP/1 and HTTP/2 clients.
@@ -147,9 +146,8 @@ impl Config {
 
 // === impl Stack ===
 
-impl<T, C, B> Stack<T, C, B>
+impl<C, B> Stack<C, B>
 where
-    T: Into<Config>,
     C: svc::Stack<connect::Target>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     B: tower_h2::Body + 'static,
@@ -163,9 +161,8 @@ where
     }
 }
 
-impl<T, C, B> Clone for Stack<T, C, B>
+impl<C, B> Clone for Stack<C, B>
 where
-    T: Into<Config>,
     C: svc::Stack<connect::Target> + Clone,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     B: tower_h2::Body + 'static,
@@ -175,7 +172,7 @@ where
     }
 }
 
-impl<T, C, B> svc::Stack<T> for Stack<T, C, B>
+impl<T, C, B> svc::Stack<T> for Stack<C, B>
 where
     T: Into<Config> + Clone,
     C: svc::Stack<connect::Target>,

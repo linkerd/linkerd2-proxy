@@ -183,14 +183,13 @@ pub mod discovery {
 
 pub mod orig_proto_upgrade {
     use http;
-    use std::marker::PhantomData;
 
     use super::Endpoint;
     use proxy::http::{orig_proto, Settings};
     use svc;
 
-    #[derive(Debug)]
-    pub struct Layer<M>(PhantomData<fn() -> (M)>);
+    #[derive(Debug, Clone)]
+    pub struct Layer;
 
     #[derive(Clone, Debug)]
     pub struct Stack<M>
@@ -200,19 +199,14 @@ pub mod orig_proto_upgrade {
         inner: M,
     }
 
-    impl<M> Layer<M> {
+    impl Layer {
         pub fn new() -> Self {
-            Layer(PhantomData)
+            Layer
         }
     }
 
-    impl<M> Clone for Layer<M> {
-        fn clone(&self) -> Self {
-            Layer(PhantomData)
-        }
-    }
 
-    impl<M, A, B> svc::Layer<Endpoint, Endpoint, M> for Layer<M>
+    impl<M, A, B> svc::Layer<Endpoint, Endpoint, M> for Layer
     where
         M: svc::Stack<Endpoint>,
         M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
@@ -251,16 +245,14 @@ pub mod orig_proto_upgrade {
 
 pub mod tls_config {
     use futures_watch::Watch;
-    use std::marker::PhantomData;
 
     use super::Endpoint;
     use svc;
     use transport::tls;
 
-    #[derive(Debug)]
-    pub struct Layer<M: svc::Stack<Endpoint>> {
+    #[derive(Debug, Clone)]
+    pub struct Layer{
         watch: Watch<tls::ConditionalClientConfig>,
-        _p: PhantomData<fn() -> (M)>,
     }
 
     #[derive(Clone, Debug)]
@@ -275,28 +267,15 @@ pub mod tls_config {
         inner: M,
     }
 
-    impl<M> Layer<M>
-    where
-        M: svc::Stack<Endpoint> + Clone,
-    {
+    impl Layer {
         pub fn new(watch: Watch<tls::ConditionalClientConfig>) -> Self {
             Layer {
                 watch,
-                _p: PhantomData,
             }
         }
     }
 
-    impl<M> Clone for Layer<M>
-    where
-        M: svc::Stack<Endpoint> + Clone,
-    {
-        fn clone(&self) -> Self {
-            Self::new(self.watch.clone())
-        }
-    }
-
-    impl<M> svc::Layer<Endpoint, Endpoint, M> for Layer<M>
+    impl<M> svc::Layer<Endpoint, Endpoint, M> for Layer
     where
         M: svc::Stack<Endpoint> + Clone,
     {

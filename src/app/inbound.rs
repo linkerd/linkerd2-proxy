@@ -38,7 +38,7 @@ impl ShouldStackPerRequest for Endpoint {
     }
 }
 
-// Stacks it possible to build a client::Stack<Endpoint>.
+// Makes it possible to build a client::Stack<Endpoint>.
 impl From<Endpoint> for client::Config {
     fn from(ep: Endpoint) -> Self {
         let tls = Conditional::None(tls::ReasonForNoTls::InternalTraffic);
@@ -112,14 +112,13 @@ impl fmt::Display for Recognize {
 
 pub mod orig_proto_downgrade {
     use http;
-    use std::marker::PhantomData;
 
     use proxy::http::orig_proto;
     use proxy::server::Source;
     use svc;
 
-    #[derive(Debug)]
-    pub struct Layer<M>(PhantomData<fn() -> (M)>);
+    #[derive(Debug, Clone)]
+    pub struct Layer;
 
     #[derive(Clone, Debug)]
     pub struct Stack<M>
@@ -131,19 +130,13 @@ pub mod orig_proto_downgrade {
 
     // === impl Layer ===
 
-    impl<M> Layer<M> {
+    impl Layer {
         pub fn new() -> Self {
-            Layer(PhantomData)
+            Layer
         }
     }
 
-    impl<M> Clone for Layer<M> {
-        fn clone(&self) -> Self {
-            Layer(PhantomData)
-        }
-    }
-
-    impl<M, A, B> svc::Layer<Source, Source, M> for Layer<M>
+    impl<M, A, B> svc::Layer<Source, Source, M> for Layer
     where
         M: svc::Stack<Source>,
         M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,

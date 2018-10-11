@@ -14,36 +14,29 @@ use super::{ClassMetrics, Metrics, Registry};
 use svc;
 
 /// A stack module that wraps services to record metrics.
-#[derive(Debug)]
-pub struct Layer<T, M, K, C>
+#[derive(Debug, Clone)]
+pub struct Layer<M, K, C>
 where
-    T: Clone + Debug,
-    K: Clone + Hash + Eq + From<T>,
-    M: svc::Stack<T>,
-    M::Value: svc::Service,
+    K: Clone + Hash + Eq,
     C: Classify<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
 {
     classify: C,
     registry: Arc<Mutex<Registry<K, C::Class>>>,
-    _p: PhantomData<fn() -> (T, M)>,
+    _p: PhantomData<fn() -> (M)>,
 }
 
 /// Wraps services to record metrics.
-#[derive(Debug)]
-pub struct Stack<T, M, K, C>
+#[derive(Clone, Debug)]
+pub struct Stack<M, K, C>
 where
-    T: Clone + Debug,
-    K: Clone + Hash + Eq + From<T>,
-    M: svc::Stack<T>,
-    M::Value: svc::Service,
+    K: Clone + Hash + Eq,
     C: Classify<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
 {
     classify: C,
     registry: Arc<Mutex<Registry<K, C::Class>>>,
     inner: M,
-    _p: PhantomData<fn() -> (T)>,
 }
 
 /// A middleware that records HTTP metrics.
@@ -98,22 +91,25 @@ where
 
 // ===== impl Stack =====
 
-impl<T, M, K, C, A, B> Layer<T, M, K, C>
+impl<M, K, C> Layer<M, K, C>
 where
-    T: Clone + Debug,
-    K: Clone + Hash + Eq + From<T>,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A, C::Class>>,
-        Response = http::Response<B>,
-    >,
-    A: tower_h2::Body,
-    B: tower_h2::Body,
+    K: Clone + Hash + Eq,
     C: Classify<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
     C::ClassifyResponse: Send + Sync + 'static,
 {
-    pub fn new(registry: Arc<Mutex<Registry<K, C::Class>>>, classify: C) -> Self {
+    pub fn new<T, A, B>(registry: Arc<Mutex<Registry<K, C::Class>>>, classify: C) -> Self
+    where
+        T: Clone + Debug,
+        K: From<T>,
+        M: svc::Stack<T>,
+        M::Value: svc::Service<
+            Request = http::Request<RequestBody<A, C::Class>>,
+            Response = http::Response<B>,
+        >,
+        A: tower_h2::Body,
+        B: tower_h2::Body,
+    {
         Self {
             classify,
             registry,
@@ -122,27 +118,7 @@ where
     }
 }
 
-impl<T, M, K, C, A, B> Clone for Layer<T, M, K, C>
-where
-    T: Clone + Debug,
-    K: Clone + Hash + Eq + From<T>,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A, C::Class>>,
-        Response = http::Response<B>,
-    >,
-    A: tower_h2::Body,
-    B: tower_h2::Body,
-    C: Classify<Error = h2::Error> + Clone,
-    C::Class: Hash + Eq,
-    C::ClassifyResponse: Send + Sync + 'static,
-{
-    fn clone(&self) -> Self {
-        Self::new(self.registry.clone(), self.classify.clone())
-    }
-}
-
-impl<T, M, K, C, A, B> svc::Layer<T, T, M> for Layer<T, M, K, C>
+impl<T, M, K, C, A, B> svc::Layer<T, T, M> for Layer<M, K, C>
 where
     T: Clone + Debug,
     K: Clone + Hash + Eq + From<T>,
@@ -157,49 +133,22 @@ where
     C::ClassifyResponse: Debug + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Value = <Stack<T, M, K, C> as svc::Stack<T>>::Value;
+    type Value = <Stack<M, K, C> as svc::Stack<T>>::Value;
     type Error = M::Error;
-    type Stack = Stack<T, M, K, C>;
+    type Stack = Stack<M, K, C>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             classify: self.classify.clone(),
             registry: self.registry.clone(),
             inner,
-            _p: PhantomData,
         }
     }
 }
 
 // ===== impl Stack =====
 
-impl<T, M, K, C, A, B> Clone for Stack<T, M, K, C>
-where
-    T: Clone + Debug,
-    K: Clone + Hash + Eq + From<T>,
-    M: svc::Stack<T> + Clone,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A, C::Class>>,
-        Response = http::Response<B>,
-    >,
-    A: tower_h2::Body,
-    B: tower_h2::Body,
-    C: Classify<Error = h2::Error> + Clone,
-    C::Class: Hash + Eq,
-    C::ClassifyResponse: Send + Sync + 'static,
-{
-    fn clone(&self) -> Self {
-        Self {
-            classify: self.classify.clone(),
-            registry: self.registry.clone(),
-            inner: self.inner.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-
-impl<T, M, K, C, A, B> svc::Stack<T> for Stack<T, M, K, C>
+impl<T, M, K, C, A, B> svc::Stack<T> for Stack<M, K, C>
 where
     T: Clone + Debug,
     K: Clone + Hash + Eq + From<T>,
