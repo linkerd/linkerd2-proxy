@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 /// Some `Stack` types are dependendent on and generic over an inner `Stack`. For
 /// example, a load balancer may implement `Stack<Authority>` and be
 /// configured with a `Stack<SocketAddr>` that is used to build a service for
-/// each enpdoint. Such a load balancer would provide an implemntation like:
+/// each enpdoint. Such a load balancer would provide a signature like:
 ///
 /// ```ignore
 /// impl<M: Stack<SocketAddr>> Layer<Authority, SocketAddr, M> for BalanceLayer<M> { ... }
@@ -43,7 +43,7 @@ pub struct AndThen<U, Outer, Inner>
 {
     outer: Outer,
     inner: Inner,
-    // `AndThen` should be Send/Sync independently of U M`.
+    // `AndThen` should be Send/Sync independently of U`.
     _p: PhantomData<fn() -> U>,
 }
 
