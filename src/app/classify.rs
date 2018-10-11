@@ -13,13 +13,13 @@ pub struct ClassifyResponse {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Class {
-    Grpc(Result, u32),
-    Http(Result, http::StatusCode),
-    Stream(Result, String),
+    Grpc(SuccessOrFailure, u32),
+    Http(SuccessOrFailure, http::StatusCode),
+    Stream(SuccessOrFailure, String),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum Result { Success, Failure }
+pub enum SuccessOrFailure { Success, Failure }
 
 impl classify::Classify for Classify {
     type Class = Class;
@@ -48,24 +48,24 @@ impl classify::ClassifyResponse for ClassifyResponse {
                 .and_then(|s| s.parse::<u32>().ok());
             if let Some(grpc_status) = grpc_status.take() {
                 return if grpc_status == 0 {
-                    Class::Grpc(Result::Success, grpc_status)
+                    Class::Grpc(SuccessOrFailure::Success, grpc_status)
                 } else {
-                    Class::Grpc(Result::Failure, grpc_status)
+                    Class::Grpc(SuccessOrFailure::Failure, grpc_status)
                 }
             }
         }
 
         let status = self.status.take().expect("response closed more than once");
         let result = if status.is_server_error() {
-            Result::Failure
+            SuccessOrFailure::Failure
         } else {
-            Result::Success
+            SuccessOrFailure::Success
         };
         Class::Http(result, status)
     }
 
     fn error(&mut self, err: &h2::Error) -> Self::Class {
-        Class::Stream(Result::Failure, format!("{}", err))
+        Class::Stream(SuccessOrFailure::Failure, format!("{}", err))
     }
 }
 

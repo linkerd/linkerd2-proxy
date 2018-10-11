@@ -132,9 +132,9 @@ impl FmtLabels for classify::Class {
     }
 }
 
-impl fmt::Display for classify::Result {
+impl fmt::Display for classify::SuccessOrFailure {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::classify::Result::{Failure, Success};
+        use self::classify::SuccessOrFailure::{Failure, Success};
         match self {
             Success => write!(f, "success"),
             Failure => write!(f, "failure"),
