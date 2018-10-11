@@ -1,14 +1,15 @@
 use std::marker::PhantomData;
 
-use super::when;
-
 /// A `Layer` wraps `M`-typed `Stack<U>` to produce a `Stack<T>`
 ///
-/// Some `Stack` types are dependendent on an generic over an inner `Stack`. For
+/// Some `Stack` types are dependendent on and generic over an inner `Stack`. For
 /// example, a load balancer may implement `Stack<Authority>` and be
 /// configured with a `Stack<SocketAddr>` that is used to build a service for
-/// each enpdoint. Such a load balancer would provide an `impl<M: Stack<SocketAddr>>
-/// Layer<Authority, SocketAddr, M > for BalanceLayer<M>`.
+/// each enpdoint. Such a load balancer would provide an implemntation like:
+///
+/// ```compile_fail
+/// impl<M: Stack<SocketAddr>> Layer<Authority, SocketAddr, M> for BalanceLayer<M> { ... }
+/// ```
 pub trait Layer<T, U, M: super::Stack<U>> {
     type Value;
     type Error;
@@ -28,22 +29,6 @@ pub trait Layer<T, U, M: super::Stack<U>> {
         AndThen {
             outer: self,
             inner,
-            _p: PhantomData,
-        }
-    }
-
-    /// Conditionally compose this `Layer with another.
-    fn and_when<P, N, L>(self, predicate: P, inner: L)
-        -> AndThen<T, U, U, N, Self, when::Layer<U, P, N, L>>
-    where
-        P: when::Predicate<U> + Clone,
-        N: super::Stack<U> + Clone,
-        L: Layer<U, U, N, Error = N::Error> + Clone,
-        Self: Layer<T, U, when::Stack<U, P, N, L>> + Sized,
-    {
-        AndThen {
-            outer: self,
-            inner: when::Layer::new(predicate, inner),
             _p: PhantomData,
         }
     }

@@ -6,15 +6,12 @@ extern crate tower_service as svc;
 use std::marker::PhantomData;
 
 pub mod either;
-pub mod optional;
 pub mod layer;
 pub mod stack_new_service;
 pub mod stack_per_request;
 pub mod watch;
-pub mod when;
 
 pub use self::either::Either;
-pub use self::optional::Optional;
 pub use self::layer::Layer;
 pub use self::stack_new_service::StackNewService;
 
