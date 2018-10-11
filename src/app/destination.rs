@@ -26,10 +26,7 @@ pub enum NameOrAddr {
 }
 
 impl Destination {
-    pub fn new(
-        name_or_addr: NameOrAddr,
-        settings: Settings
-    ) -> Self {
+    pub fn new(name_or_addr: NameOrAddr, settings: Settings) -> Self {
         Self {
             name_or_addr,
             settings,
@@ -39,7 +36,7 @@ impl Destination {
 
     pub fn from_request<A>(req: &http::Request<A>) -> Option<Self> {
         let name_or_addr = NameOrAddr::from_request(req)?;
-       let settings = Settings::detect(req);
+        let settings = Settings::detect(req);
         Some(Self::new(name_or_addr, settings))
     }
 }
@@ -60,7 +57,6 @@ impl fmt::Display for NameOrAddr {
 }
 
 impl NameOrAddr {
-
     /// Determines the destination for a request.
     ///
     /// Typically, a request's authority is used to produce a `NameOrAddr`. If the
