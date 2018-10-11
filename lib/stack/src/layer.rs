@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 /// configured with a `Stack<SocketAddr>` that is used to build a service for
 /// each enpdoint. Such a load balancer would provide an implemntation like:
 ///
-/// ```compile_fail
+/// ```ignore
 /// impl<M: Stack<SocketAddr>> Layer<Authority, SocketAddr, M> for BalanceLayer<M> { ... }
 /// ```
 pub trait Layer<T, U, M: super::Stack<U>> {
