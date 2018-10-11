@@ -48,7 +48,7 @@ impl fmt::Display for Endpoint {
     }
 }
 
-// Stacks it possible to build a client::Stack<Endpoint>.
+// Makes it possible to build a client::Stack<Endpoint>.
 impl From<Endpoint> for client::Config {
     fn from(ep: Endpoint) -> Self {
         client::Config::new(ep.connect, ep.dst.settings)
