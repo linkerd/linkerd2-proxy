@@ -219,7 +219,7 @@ mod tests {
     use futures::Future;
     use std::{cell::RefCell, rc::Rc, time::{Duration, Instant}};
     use test_util::MultiplyAndAssign;
-    use tower_service::Service;
+    use svc::Service;
 
     /// A mocked instance of `Now` to drive tests.
     #[derive(Clone)]

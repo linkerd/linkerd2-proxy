@@ -1,6 +1,6 @@
 use httparse;
 
-/// Known protocols that we proxy transparently.
+/// Transport protocols that can be transparently detected by `Server`.
 #[derive(Debug)]
 pub enum Protocol {
     Http1,

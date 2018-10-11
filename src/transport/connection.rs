@@ -12,9 +12,8 @@ use tokio::{
     reactor::Handle,
 };
 
-use conditional::Conditional;
-use ctx::transport::TlsStatus;
-use config::Addr;
+use app::config::Addr;
+use Conditional;
 use transport::{AddrInfo, BoxedIo, GetOriginalDst, tls};
 
 pub struct BoundPort {
@@ -81,7 +80,7 @@ pub struct Connection {
     peek_buf: BytesMut,
 
     /// Whether or not the connection is secured with TLS.
-    tls_status: TlsStatus,
+    tls_status: tls::Status,
 }
 
 /// A trait describing that a type can peek bytes.
@@ -401,7 +400,7 @@ impl Connection {
         self.io.local_addr()
     }
 
-    pub fn tls_status(&self) -> TlsStatus {
+    pub fn tls_status(&self) -> tls::Status {
         self.tls_status
     }
 }

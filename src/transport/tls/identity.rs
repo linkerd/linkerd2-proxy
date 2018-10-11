@@ -1,4 +1,4 @@
-use linkerd2_proxy_api;
+use api;
 use convert::TryFrom;
 use super::{DnsName, InvalidDnsName, webpki};
 use std::sync::Arc;
@@ -16,10 +16,10 @@ impl Identity {
     /// information is returned.
     pub fn maybe_from_protobuf(
         controller_namespace: Option<&str>,
-        pb: linkerd2_proxy_api::destination::TlsIdentity)
+        pb: api::destination::TlsIdentity)
         -> Result<Option<Self>, ()>
     {
-        use linkerd2_proxy_api::destination::tls_identity::Strategy;
+        use api::destination::tls_identity::Strategy;
         match pb.strategy {
             Some(Strategy::K8sPodIdentity(i)) => {
                 // XXX: If we don't know the controller's namespace or we don't

@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 use ctx;
 use transport::tls;
-use conditional::Conditional;
+use Conditional;
 
 
 /// A `RequestId` can be mapped to a `u64`. No `RequestId`s will map to the
@@ -82,7 +82,7 @@ impl Request {
     }
 
     /// Returns a `TlsStatus` indicating if the request was sent was over TLS.
-    pub fn tls_status(&self) -> ctx::transport::TlsStatus {
+    pub fn tls_status(&self) -> tls::Status {
         use ctx::Proxy::*;
         // The proxy only handles TLS on one side of each proxy.
         match self.server.proxy {
@@ -107,7 +107,7 @@ impl Response {
     }
 
     /// Returns a `TlsStatus` indicating if the response was sent was over TLS.
-    pub fn tls_status(&self) -> ctx::transport::TlsStatus {
+    pub fn tls_status(&self) -> tls::Status {
         self.request.tls_status()
     }
 

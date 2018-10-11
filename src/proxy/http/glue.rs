@@ -1,9 +1,3 @@
-use std::{
-    error::Error,
-    fmt,
-    sync::Arc,
-};
-
 use bytes::{Bytes, IntoBuf};
 use futures::{future, Async, Future, Poll};
 use futures::future::Either;
@@ -11,15 +5,16 @@ use h2;
 use http;
 use hyper::{self, body::Payload};
 use hyper::client::connect as hyper_connect;
-use tokio_connect::Connect;
-use tower_service::{Service, NewService};
+use std::error::Error;
+use std::fmt;
 use tower_h2;
 
-use ctx::transport::{Server as ServerCtx};
 use drain;
 use proxy::http::h1;
 use proxy::http::upgrade::Http11Upgrade;
+use svc;
 use task::{BoxSendFuture, ErasedExecutor, Executor};
+use transport::Connect;
 
 /// Glue between `hyper::Body` and `tower_h2::RecvBody`.
 #[derive(Debug)]
@@ -43,7 +38,6 @@ pub(in proxy) struct BodyPayload<B> {
 #[derive(Debug)]
 pub(in proxy) struct HyperServerSvc<S, E> {
     service: S,
-    srv_ctx: Arc<ServerCtx>,
     /// Watch any spawned HTTP/1.1 upgrade tasks.
     upgrade_drain_signal: drain::Watch,
     /// Executor used to spawn HTTP/1.1 upgrade tasks, and TCP proxies
@@ -224,13 +218,11 @@ where
 impl<S, E> HyperServerSvc<S, E> {
     pub(in proxy) fn new(
         service: S,
-        srv_ctx: Arc<ServerCtx>,
         upgrade_drain_signal: drain::Watch,
         upgrade_executor: E,
     ) -> Self {
         HyperServerSvc {
             service,
-            srv_ctx,
             upgrade_drain_signal,
             upgrade_executor,
         }
@@ -239,7 +231,7 @@ impl<S, E> HyperServerSvc<S, E> {
 
 impl<S, E, B> hyper::service::Service for HyperServerSvc<S, E>
 where
-    S: Service<
+    S: svc::Service<
         Request=http::Request<HttpBody>,
         Response=http::Response<B>,
     >,
@@ -268,9 +260,6 @@ where
             *res.status_mut() = http::StatusCode::BAD_REQUEST;
             return Either::B(future::ok(res));
         }
-
-
-        req.extensions_mut().insert(self.srv_ctx.clone());
 
         let upgrade = if h1::wants_upgrade(&req) {
             trace!("server request wants HTTP/1.1 upgrade");
@@ -323,9 +312,9 @@ where
 // ==== impl HttpBodySvc ====
 
 
-impl<S> Service for HttpBodySvc<S>
+impl<S> svc::Service for HttpBodySvc<S>
 where
-    S: Service<
+    S: svc::Service<
         Request=http::Request<HttpBody>,
     >,
 {
@@ -345,7 +334,7 @@ where
 
 impl<N> HttpBodyNewSvc<N>
 where
-    N: NewService<Request=http::Request<HttpBody>>,
+    N: svc::NewService<Request=http::Request<HttpBody>>,
 {
     pub(in proxy) fn new(new_service: N) -> Self {
         HttpBodyNewSvc {
@@ -354,9 +343,9 @@ where
     }
 }
 
-impl<N> NewService for HttpBodyNewSvc<N>
+impl<N> svc::NewService for HttpBodyNewSvc<N>
 where
-    N: NewService<Request=http::Request<HttpBody>>,
+    N: svc::NewService<Request=http::Request<HttpBody>>,
 {
     type Request = http::Request<tower_h2::RecvBody>;
     type Response = N::Response;

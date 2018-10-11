@@ -1,9 +1,9 @@
 extern crate futures;
 extern crate indexmap;
-extern crate tower_service;
+extern crate linkerd2_stack as stack;
+extern crate tower_service as svc;
 
 use futures::{Future, Poll};
-use tower_service::Service;
 
 use std::{error, fmt, mem};
 use std::hash::Hash;
@@ -15,47 +15,27 @@ mod cache;
 use self::cache::Cache;
 
 /// Routes requests based on a configurable `Key`.
-pub struct Router<T>
-where T: Recognize,
+pub struct Router<Req, Rec, Stk>
+where
+    Rec: Recognize<Req>,
+    Stk: stack::Stack<Rec::Target>,
+    Stk::Value: svc::Service<Request = Req>,
 {
-    inner: Arc<Inner<T>>,
+    inner: Arc<Inner<Req, Rec, Stk>>,
 }
 
 /// Provides a strategy for routing a Request to a Service.
 ///
 /// Implementors must provide a `Key` type that identifies each unique route. The
-/// `recognize()` method is used to determine the key for a given request. This key is
+/// `recognize()` method is used to determine the target for a given request. This target is
 /// used to look up a route in a cache (i.e. in `Router`), or can be passed to
 /// `bind_service` to instantiate the identified route.
-pub trait Recognize {
-    /// Requests handled by the discovered services
-    type Request;
-
-    /// Responses given by the discovered services
-    type Response;
-
-    /// Errors produced by the discovered services
-    type Error;
-
+pub trait Recognize<Request> {
     /// Identifies a Route.
-    type Key: Clone + Eq + Hash;
+    type Target: Clone + Eq + Hash;
 
-    /// Error produced by failed routing
-    type RouteError;
-
-    /// A route.
-    type Service: Service<Request = Self::Request,
-                         Response = Self::Response,
-                            Error = Self::Error>;
-
-    /// Determines the key for a route to handle the given request.
-    fn recognize(&self, req: &Self::Request) -> Option<Self::Key>;
-
-    /// Return a `Service` to handle requests.
-    ///
-    /// The returned service must always be in the ready state (i.e.
-    /// `poll_ready` must always return `Ready` or `Err`).
-    fn bind_service(&self, key: &Self::Key) -> Result<Self::Service, Self::RouteError>;
+    /// Determines the target for a route to handle the given request.
+    fn recognize(&self, req: &Request) -> Option<Self::Target>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,24 +46,30 @@ pub enum Error<T, U> {
     NotRecognized,
 }
 
-pub struct ResponseFuture<T>
-where T: Recognize,
+pub struct ResponseFuture<F, E>
+where
+    F: Future,
 {
-    state: State<T>,
+    state: State<F, E>,
 }
 
-struct Inner<T>
-where T: Recognize,
+struct Inner<Req, Rec, Stk>
+where
+    Rec: Recognize<Req>,
+    Stk: stack::Stack<Rec::Target>,
+    Stk::Value: svc::Service<Request = Req>,
 {
-    recognize: T,
-    cache: Mutex<Cache<T::Key, T::Service>>,
+    recognize: Rec,
+    make: Stk,
+    cache: Mutex<Cache<Rec::Target, Stk::Value>>,
 }
 
-enum State<T>
-where T: Recognize,
+enum State<F, E>
+where
+    F: Future,
 {
-    Inner(<T::Service as Service>::Future),
-    RouteError(T::RouteError),
+    Inner(F),
+    RouteError(E),
     NoCapacity(usize),
     NotRecognized,
     Invalid,
@@ -91,26 +77,33 @@ where T: Recognize,
 
 // ===== impl Router =====
 
-impl<T> Router<T>
-where T: Recognize
+impl<Req, Rec, Stk> Router<Req, Rec, Stk>
+where
+    Rec: Recognize<Req>,
+    Stk: stack::Stack<Rec::Target>,
+    Stk::Value: svc::Service<Request = Req>,
 {
-    pub fn new(recognize: T, capacity: usize, max_idle_age: Duration) -> Self {
+    pub fn new(recognize: Rec, make: Stk, capacity: usize, max_idle_age: Duration) -> Self {
         Router {
             inner: Arc::new(Inner {
                 recognize,
+                make,
                 cache: Mutex::new(Cache::new(capacity, max_idle_age)),
             }),
         }
     }
 }
 
-impl<T> Service for Router<T>
-where T: Recognize,
+impl<Req, Rec, Stk> svc::Service for Router<Req, Rec, Stk>
+where
+    Rec: Recognize<Req>,
+    Stk: stack::Stack<Rec::Target>,
+    Stk::Value: svc::Service<Request = Req>,
 {
-    type Request = T::Request;
-    type Response = T::Response;
-    type Error = Error<T::Error, T::RouteError>;
-    type Future = ResponseFuture<T>;
+    type Request = <Stk::Value as svc::Service>::Request;
+    type Response = <Stk::Value as svc::Service>::Response;
+    type Error = Error<<Stk::Value as svc::Service>::Error, Stk::Error>;
+    type Future = ResponseFuture<<Stk::Value as svc::Service>::Future, Stk::Error>;
 
     /// Always ready to serve.
     ///
@@ -127,15 +120,15 @@ where T: Recognize,
     ///
     /// The response fails when the request cannot be routed.
     fn call(&mut self, request: Self::Request) -> Self::Future {
-        let key = match self.inner.recognize.recognize(&request) {
-            Some(key) => key,
+        let target = match self.inner.recognize.recognize(&request) {
+            Some(target) => target,
             None => return ResponseFuture::not_recognized(),
         };
 
         let cache = &mut *self.inner.cache.lock().expect("lock router cache");
 
-        // First, try to load a cached route for `key`.
-        if let Some(mut service) = cache.access(&key) {
+        // First, try to load a cached route for `target`.
+        if let Some(mut service) = cache.access(&target) {
             return ResponseFuture::new(service.call(request));
         }
 
@@ -149,20 +142,23 @@ where T: Recognize,
         };
 
         // Bind a new route, send the request on the route, and cache the route.
-        let mut service = match self.inner.recognize.bind_service(&key) {
+        let mut service = match self.inner.make.make(&target) {
             Ok(svc) => svc,
             Err(e) => return ResponseFuture { state: State::RouteError(e) },
         };
 
         let response = service.call(request);
-        reserve.store(key, service);
+        reserve.store(target, service);
 
         ResponseFuture::new(response)
     }
 }
 
-impl<T> Clone for Router<T>
-where T: Recognize,
+impl<Req, Rec, Stk> Clone for Router<Req, Rec, Stk>
+where
+    Rec: Recognize<Req>,
+    Stk: stack::Stack<Rec::Target>,
+    Stk::Value: svc::Service<Request = Req>,
 {
     fn clone(&self) -> Self {
         Router { inner: self.inner.clone() }
@@ -171,10 +167,11 @@ where T: Recognize,
 
 // ===== impl ResponseFuture =====
 
-impl<T> ResponseFuture<T>
-where T: Recognize,
+impl<F, E> ResponseFuture<F, E>
+where
+    F: Future,
 {
-    fn new(inner: <T::Service as Service>::Future) -> Self {
+    fn new(inner: F) -> Self {
         ResponseFuture { state: State::Inner(inner) }
     }
 
@@ -187,11 +184,12 @@ where T: Recognize,
     }
 }
 
-impl<T> Future for ResponseFuture<T>
-where T: Recognize,
+impl<F, E> Future for ResponseFuture<F, E>
+where
+    F: Future,
 {
-    type Item = T::Response;
-    type Error = Error<T::Error, T::RouteError>;
+    type Item = F::Item;
+    type Error = Error<F::Error, E>;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         use self::State::*;
@@ -206,7 +204,7 @@ where T: Recognize,
             }
             NotRecognized => Err(Error::NotRecognized),
             NoCapacity(capacity) => Err(Error::NoCapacity(capacity)),
-            Invalid => panic!(),
+            Invalid => panic!("response future polled after ready"),
         }
     }
 }
@@ -255,7 +253,8 @@ where
 #[cfg(test)]
 mod test_util {
     use futures::{Poll, future};
-    use tower_service::Service;
+    use stack::Stack;
+    use svc::Service;
 
     pub struct Recognize;
 
@@ -270,22 +269,22 @@ mod test_util {
 
     // ===== impl Recognize =====
 
-    impl super::Recognize for Recognize {
-        type Request = Request;
-        type Response = usize;
-        type Error = ();
-        type Key = usize;
-        type RouteError = ();
-        type Service = MultiplyAndAssign;
+    impl super::Recognize<Request> for Recognize {
+        type Target = usize;
 
-        fn recognize(&self, req: &Self::Request) -> Option<Self::Key> {
+        fn recognize(&self, req: &Request) -> Option<Self::Target> {
             match *req {
                 Request::NotRecognized => None,
                 Request::Recognized(n) => Some(n),
             }
         }
+    }
 
-        fn bind_service(&self, _: &Self::Key) -> Result<Self::Service, Self::RouteError> {
+    impl Stack<usize> for Recognize {
+        type Value = MultiplyAndAssign;
+        type Error = ();
+
+        fn make(&self, _: &usize) -> Result<Self::Value, Self::Error> {
             Ok(MultiplyAndAssign(1))
         }
     }
@@ -330,10 +329,10 @@ mod tests {
     use futures::Future;
     use std::time::Duration;
     use test_util::*;
-    use tower_service::Service;
+    use svc::Service;
     use super::{Error, Router};
 
-    impl Router<Recognize> {
+    impl Router<Request, Recognize, Recognize> {
         fn call_ok(&mut self, req: Request) -> usize {
             self.call(req).wait().expect("should route")
         }
@@ -345,7 +344,7 @@ mod tests {
 
     #[test]
     fn invalid() {
-        let mut router = Router::new(Recognize, 1, Duration::from_secs(0));
+        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(0));
 
         let rsp = router.call_err(Request::NotRecognized);
         assert_eq!(rsp, Error::NotRecognized);
@@ -353,7 +352,7 @@ mod tests {
 
     #[test]
     fn cache_limited_by_capacity() {
-        let mut router = Router::new(Recognize, 1, Duration::from_secs(1));
+        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(1));
 
         let rsp = router.call_ok(2.into());
         assert_eq!(rsp, 2);
@@ -364,7 +363,7 @@ mod tests {
 
     #[test]
     fn services_cached() {
-        let mut router = Router::new(Recognize, 1, Duration::from_secs(0));
+        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(0));
 
         let rsp = router.call_ok(2.into());
         assert_eq!(rsp, 2);

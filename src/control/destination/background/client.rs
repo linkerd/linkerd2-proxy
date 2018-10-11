@@ -12,17 +12,16 @@ use tokio::timer::Delay;
 
 use tower_h2::{self, BoxBody, RecvBody};
 use tower_add_origin::AddOrigin;
-use tower_service::Service;
 use tower_reconnect::{
     Reconnect,
     Error as ReconnectError,
     ResponseFuture as ReconnectFuture,
 };
-use conditional::Conditional;
+use Conditional;
 use dns;
+use svc;
 use timeout::{Timeout, Error as TimeoutError};
 use transport::{tls, HostAndPort, LookupAddressAndConnect};
-use watch_service::Rebind;
 
 /// Type of the client service stack used to make destination requests.
 pub(super) struct ClientService(AddOrigin<Backoff<LogErrors<Reconnect<
@@ -79,7 +78,7 @@ type LogError = ReconnectError<
 
 // ===== impl ClientService =====
 
-impl Service for ClientService {
+impl svc::Service for ClientService {
     type Request = http::Request<BoxBody>;
     type Response = http::Response<RecvBody>;
     type Error = LogError;
@@ -122,13 +121,12 @@ impl BindClient {
     }
 }
 
-impl Rebind<tls::ConditionalClientConfig> for BindClient {
-    type Service = ClientService;
-    fn rebind(
-        &mut self,
-        client_cfg: &tls::ConditionalClientConfig,
-    ) -> Self::Service {
-        let conn_cfg = match (&self.identity, client_cfg) {
+impl svc::Stack<tls::ConditionalClientConfig> for BindClient {
+    type Value = ClientService;
+    type Error = ();
+
+    fn make(&self, cfg: &tls::ConditionalClientConfig) -> Result<Self::Value, Self::Error> {
+        let conn_cfg = match (&self.identity, cfg) {
             (Conditional::Some(ref id), Conditional::Some(ref cfg)) =>
                 Conditional::Some(tls::ConnectionConfig {
                     server_identity: id.clone(),
@@ -155,7 +153,7 @@ impl Rebind<tls::ConditionalClientConfig> for BindClient {
         let reconnect = Reconnect::new(h2_client);
         let log_errors = LogErrors::new(reconnect);
         let backoff = Backoff::new(log_errors, self.backoff_delay);
-        ClientService(AddOrigin::new(backoff, scheme, authority))
+        Ok(ClientService(AddOrigin::new(backoff, scheme, authority)))
     }
 
 }
@@ -164,7 +162,7 @@ impl Rebind<tls::ConditionalClientConfig> for BindClient {
 
 impl<S> Backoff<S>
 where
-    S: Service,
+    S: svc::Service,
 {
     fn new(inner: S, wait_dur: Duration) -> Self {
         Backoff {
@@ -190,9 +188,9 @@ where
     }
 }
 
-impl<S> Service for Backoff<S>
+impl<S> svc::Service for Backoff<S>
 where
-    S: Service,
+    S: svc::Service,
     S::Error: fmt::Debug,
 {
     type Request = S::Request;
@@ -226,7 +224,7 @@ where
 
 impl<S> LogErrors<S>
 where
-    S: Service<Error=LogError>,
+    S: svc::Service<Error=LogError>,
 {
     fn new(service: S) -> Self {
         LogErrors {
@@ -235,9 +233,9 @@ where
     }
 }
 
-impl<S> Service for LogErrors<S>
+impl<S> svc::Service for LogErrors<S>
 where
-    S: Service<Error=LogError>,
+    S: svc::Service<Error=LogError>,
 {
     type Request = S::Request;
     type Response = S::Response;
@@ -281,6 +279,7 @@ impl<'a> fmt::Display for HumanError<'a> {
 mod tests {
     use super::*;
     use futures::future;
+    use svc::Service as _Service;
     use tokio::runtime::current_thread::Runtime;
 
     struct MockService {
@@ -288,7 +287,7 @@ mod tests {
         succeed_after: usize,
     }
 
-    impl Service for MockService {
+    impl svc::Service for MockService {
         type Request = ();
         type Response = ();
         type Error = ();

@@ -36,8 +36,8 @@ pub mod test_util {
 
     use ctx;
     use control::destination;
-    use tls;
-    use conditional::Conditional;
+    use Conditional;
+    use transport::tls;
 
     fn addr() -> SocketAddr {
         ([1, 2, 3, 4], 5678).into()
@@ -45,7 +45,7 @@ pub mod test_util {
 
     pub fn server(
         proxy: ctx::Proxy,
-        tls: ctx::transport::TlsStatus
+        tls: tls::Status
     ) -> Arc<ctx::transport::Server> {
         ctx::transport::Server::new(proxy, &addr(), &addr(), &Some(addr()), tls)
     }
@@ -53,7 +53,7 @@ pub mod test_util {
     pub fn client(
         proxy: ctx::Proxy,
         labels: IndexMap<String, String>,
-        tls: ctx::transport::TlsStatus,
+        tls: tls::Status,
     ) -> Arc<ctx::transport::Client> {
         let meta = destination::Metadata::new(
             labels,

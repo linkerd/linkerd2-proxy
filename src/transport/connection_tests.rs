@@ -14,9 +14,8 @@ use tokio::{
     prelude::*,
 };
 
-use conditional::Conditional;
-use config::Addr;
-use ctx::transport::TlsStatus;
+use app::config::Addr;
+use Conditional;
 
 use super::{
     connection::{self, Connection},
@@ -74,7 +73,7 @@ struct Transported<R> {
     /// The value of `Connection::tls_status()` for the established connection.
     ///
     /// This will be `None` if we never even get a `Connection`.
-    tls_status: Option<TlsStatus>,
+    tls_status: Option<tls::Status>,
 
     /// The connection's result.
     result: Result<R, io::Error>,

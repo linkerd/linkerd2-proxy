@@ -197,10 +197,6 @@ pub fn admin() -> Section {
     Section::Admin
 }
 
-pub fn proxy() -> Section {
-    Section::Proxy
-}
-
 #[derive(Copy, Clone)]
 pub enum Section {
     Proxy,
@@ -222,7 +218,7 @@ pub struct Client<C: fmt::Display, D: fmt::Display> {
     section: Section,
     client: C,
     dst: D,
-    protocol: Option<::bind::Protocol>,
+    settings: Option<::proxy::http::Settings>,
     remote: Option<SocketAddr>,
 }
 
@@ -255,7 +251,7 @@ impl Section {
             section: *self,
             client,
             dst,
-            protocol: None,
+            settings: None,
             remote: None,
         }
     }
@@ -276,8 +272,8 @@ pub type ServerExecutor = ContextualExecutor<Server>;
 pub type ServerFuture<F> = ContextualFuture<Server, F>;
 
 impl Server {
-    pub fn proxy(ctx: ::ctx::Proxy, listen: SocketAddr) -> Self {
-        Section::Proxy.server(ctx.as_str(), listen)
+    pub fn proxy(name: &'static str, listen: SocketAddr) -> Self {
+        Section::Proxy.server(name, listen)
     }
 
     pub fn with_remote(self, remote: SocketAddr) -> Self {
@@ -307,15 +303,15 @@ impl fmt::Display for Server {
 }
 
 impl<D: fmt::Display> Client<&'static str, D> {
-    pub fn proxy(ctx: ::ctx::Proxy, dst: D) -> Self {
-        Section::Proxy.client(ctx.as_str(), dst)
+    pub fn proxy(name: &'static str, dst: D) -> Self {
+        Section::Proxy.client(name, dst)
     }
 }
 
 impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
-    pub fn with_protocol(self, p: ::bind::Protocol) -> Self {
+    pub fn with_settings(self, p: ::proxy::http::Settings) -> Self {
         Self {
-            protocol: Some(p),
+            settings: Some(p),
             .. self
         }
     }
@@ -335,7 +331,7 @@ impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
 impl<C: fmt::Display, D: fmt::Display> fmt::Display for Client<C, D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}={{client={} dst={}", self.section, self.client, self.dst)?;
-        if let Some(ref proto) = self.protocol {
+        if let Some(ref proto) = self.settings {
             write!(f, " proto={:?}", proto)?;
         }
         if let Some(remote) = self.remote {

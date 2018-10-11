@@ -147,7 +147,8 @@ impl Drop for Inner {
                 .join(client_upgrade)
                 .and_then(|(server_conn, client_conn)| {
                     trace!("HTTP upgrade successful");
-                    tcp::duplex(server_conn, client_conn)
+                    tcp::Duplex::new(server_conn, client_conn)
+                        .map_err(|e| info!("tcp duplex error: {}", e))
                 });
 
             // There's nothing to do when drain is signaled, we just have to hope

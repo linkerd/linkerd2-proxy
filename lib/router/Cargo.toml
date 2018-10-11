@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-proxy-router"
+name = "linkerd2-router"
 version = "0.1.0"
 authors = [
     "Oliver Gould <ver@buoyant.io>",
@@ -10,4 +10,5 @@ publish = false
 [dependencies]
 futures = "0.1"
 indexmap = "1.0.0"
+linkerd2-stack  = { path = "../stack" }
 tower-service = { git = "https://github.com/tower-rs/tower" }

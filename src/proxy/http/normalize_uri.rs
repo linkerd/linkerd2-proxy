@@ -1,30 +1,104 @@
-use http;
 use futures::Poll;
+use http;
+use std::marker::PhantomData;
 
-use super::h1::normalize_our_view_of_uri;
+use super::h1;
 use svc;
 
-/// Rewrites HTTP/1.x requests so that their URIs are in a canonical form.
-///
-/// The following transformations are applied:
-/// - If an absolute-form URI is received, it must replace
-///   the host header (in accordance with RFC7230#section-5.4)
-/// - If the request URI is not in absolute form, it is rewritten to contain
-///   the authority given in the `Host:` header, or, failing that, from the
-///   request's original destination according to `SO_ORIGINAL_DST`.
+pub trait ShouldNormalizeUri {
+    fn should_normalize_uri(&self) -> bool;
+}
+
+pub struct Layer<T, M>(PhantomData<fn() -> (T, M)>);
+
+pub struct Stack<T, N: svc::Stack<T>> {
+    inner: N,
+    _p: PhantomData<T>,
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Service<S> {
     inner: S,
-    was_absolute_form: bool,
 }
 
-// ===== impl Service =====
+// === impl Layer ===
 
-impl<S> Service<S> {
-    pub fn new(inner: S, was_absolute_form: bool) -> Self {
-        Self { inner, was_absolute_form }
+impl<T, B, M> Layer<T, M>
+where
+    T: ShouldNormalizeUri,
+    M: svc::Stack<T>,
+    M::Value: svc::Service<Request = http::Request<B>>,
+{
+    pub fn new() -> Self {
+        Layer(PhantomData)
     }
 }
+
+impl<T, B, M> Clone for Layer<T, M>
+where
+    T: ShouldNormalizeUri,
+    M: svc::Stack<T>,
+    M::Value: svc::Service<Request = http::Request<B>>,
+{
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl<T, B, M> svc::Layer<T, T, M> for Layer<T, M>
+where
+    T: ShouldNormalizeUri,
+    M: svc::Stack<T>,
+    M::Value: svc::Service<Request = http::Request<B>>,
+{
+    type Value = <Stack<T, M> as svc::Stack<T>>::Value;
+    type Error = <Stack<T, M> as svc::Stack<T>>::Error;
+    type Stack = Stack<T, M>;
+
+    fn bind(&self, inner: M) -> Self::Stack {
+        Stack {
+            inner,
+            _p: PhantomData,
+        }
+    }
+}
+
+// === impl Stack ===
+
+impl<T, B, M> Clone for Stack<T, M>
+where
+    T: ShouldNormalizeUri,
+    M: svc::Stack<T> + Clone,
+    M::Value: svc::Service<Request = http::Request<B>>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<T, B, M> svc::Stack<T> for Stack<T, M>
+where
+    T: ShouldNormalizeUri,
+    M: svc::Stack<T>,
+    M::Value: svc::Service<Request = http::Request<B>>,
+{
+    type Value = svc::Either<Service<M::Value>, M::Value>;
+    type Error = M::Error;
+
+    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+        let inner = self.inner.make(&target)?;
+        if target.should_normalize_uri() {
+            Ok(svc::Either::A(Service { inner }))
+        } else {
+            Ok(svc::Either::B(inner))
+        }
+    }
+}
+
+// === impl Service ===
 
 impl<S, B> svc::Service for Service<S>
 where
@@ -40,13 +114,11 @@ where
     }
 
     fn call(&mut self, mut request: S::Request) -> Self::Future {
-        if request.version() != http::Version::HTTP_2 &&
-            // Skip normalizing the URI if it was received in
-            // absolute form.
-            !self.was_absolute_form
-        {
-            normalize_our_view_of_uri(&mut request);
-        }
+        debug_assert!(
+            request.version() != http::Version::HTTP_2,
+            "normalize_uri must only be applied to HTTP/1"
+        );
+        h1::normalize_our_view_of_uri(&mut request);
         self.inner.call(request)
     }
 }

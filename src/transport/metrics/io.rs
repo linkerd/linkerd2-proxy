@@ -1,10 +1,9 @@
 use bytes::Buf;
 use futures::{Async, Future, Poll};
 use std::io;
-use tokio_connect;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use transport::{Connection, Peek};
+use transport::{connect, Peek};
 
 use super::{NewSensor, Sensor, Eos};
 
@@ -24,7 +23,7 @@ pub struct Connect<C> {
 
 /// Adds telemetry to a pending client transport.
 #[derive(Clone, Debug)]
-pub struct Connecting<C: tokio_connect::Connect> {
+pub struct Connecting<C: connect::Connect> {
     underlying: C::Future,
     new_sensor: Option<NewSensor>,
 }
@@ -113,7 +112,7 @@ impl<T: AsyncRead + AsyncWrite + Peek> Peek for Io<T> {
 
 impl<C> Connect<C>
 where
-    C: tokio_connect::Connect<Connected = Connection>,
+    C: connect::Connect,
 {
     /// Returns a `Connect` to `addr` and `handle`.
     pub(super) fn new(underlying: C, new_sensor: NewSensor) -> Self {
@@ -121,9 +120,9 @@ where
     }
 }
 
-impl<C> tokio_connect::Connect for Connect<C>
+impl<C> connect::Connect for Connect<C>
 where
-    C: tokio_connect::Connect<Connected = Connection>,
+    C: connect::Connect,
 {
     type Connected = Io<C::Connected>;
     type Error = C::Error;
@@ -141,7 +140,7 @@ where
 
 impl<C> Future for Connecting<C>
 where
-    C: tokio_connect::Connect<Connected = Connection>,
+    C: connect::Connect,
 {
     type Item = Io<C::Connected>;
     type Error = C::Error;
