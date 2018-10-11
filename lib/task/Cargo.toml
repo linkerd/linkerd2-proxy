@@ -5,9 +5,10 @@ authors = ["Oliver Gould <ver@buoyant.io>"]
 
 [features]
 default = []
-test_util = []
+test_util = ["tokio-timer"]
 
 [dependencies]
 futures = "0.1"
 tokio = "0.1.7"
+tokio-timer = { version = "0.2", optional = true }
 log = "0.4"

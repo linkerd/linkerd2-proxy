@@ -54,7 +54,7 @@ regex = "1.0.0"
 # networking
 tokio = "0.1.7"
 tokio-signal = "0.2"
-tokio-timer = "0.2.4"   # for tokio_timer::clock
+tokio-timer = "0.2.6"   # for tokio_timer::clock
 tokio-connect         = { git = "https://github.com/carllerche/tokio-connect" }
 tower-add-origin      = { git = "https://github.com/tower-rs/tower-http" }
 tower-balance         = { git = "https://github.com/tower-rs/tower" }
@@ -69,7 +69,7 @@ tower-h2-balance      = { git = "https://github.com/tower-rs/tower-h2" }
 tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc" }
 
 # dns
-trust-dns-resolver = { default-features = false, git = "https://github.com/bluejekyll/trust-dns" }
+trust-dns-resolver = { version = "0.10.0-alpha.3", default-features = false }
 
 # tls
 ring = "0.13"

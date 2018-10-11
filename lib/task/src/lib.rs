@@ -305,13 +305,13 @@ impl StdError for Error {
 
 #[cfg(any(test, feature = "test_util"))]
 pub mod test_util {
-    use futures::Future;
-    use tokio::{
-        runtime::current_thread,
-        timer,
-    };
+    extern crate tokio_timer;
 
-    use std::time::{Duration, Instant};
+    use futures::Future;
+    use tokio::runtime::current_thread;
+    use self::tokio_timer as timer;
+
+    use std::time::Duration;
 
     /// A trait that allows an executor to execute a future for up to a given
     /// time limit, and then panics if the future has not finished.
@@ -335,7 +335,7 @@ pub mod test_util {
         where
             F: Future
         {
-            let f = timer::Deadline::new(f, Instant::now() + timeout);
+            let f = timer::Timeout::new(f, timeout);
             match self.block_on(f) {
                 Ok(item) => Ok(item),
                 Err(e) => if e.is_inner() {
