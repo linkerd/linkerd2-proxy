@@ -1,17 +1,23 @@
+extern crate tower_reconnect;
+
 use futures::{task, Async, Future, Poll};
 use std::fmt;
 use std::marker::PhantomData;
-use tower_reconnect;
+use std::time::Duration;
+pub use self::tower_reconnect::{Error, Reconnect};
+use tokio_timer::{clock, Delay};
 
 use svc;
 
 #[derive(Debug)]
 pub struct Layer<T, M> {
+    backoff: Backoff,
     _p: PhantomData<fn() -> (T, M)>,
 }
 
 #[derive(Debug)]
 pub struct Stack<T, M> {
+    backoff: Backoff,
     inner: M,
     _p: PhantomData<fn() -> T>,
 }
@@ -25,10 +31,13 @@ where
     T: fmt::Debug,
     N: svc::NewService,
 {
-    inner: tower_reconnect::Reconnect<N>,
+    inner: Reconnect<N>,
 
     /// The target, used for debug logging.
     target: T,
+
+    backoff: Backoff,
+    active_backoff: Option<Delay>,
 
     /// Prevents logging repeated connect errors.
     ///
@@ -36,8 +45,14 @@ where
     mute_connect_error_log: bool,
 }
 
+#[derive(Clone, Debug)]
+enum Backoff {
+    None,
+    Fixed(Duration),
+}
+
 pub struct ResponseFuture<N: svc::NewService> {
-    inner: <tower_reconnect::Reconnect<N> as svc::Service>::Future,
+    inner: <Reconnect<N> as svc::Service>::Future,
 }
 
 // === impl Layer ===
@@ -50,14 +65,25 @@ where
 {
     pub fn new() -> Self {
         Self {
+            backoff: Backoff::None,
             _p: PhantomData,
         }
     }
+
+    // TODO: once a stacked clients needs backoff...
+    //
+    // pub fn with_fixed_backoff(self, wait: Duration) -> Self {
+    //     Self {
+    //         backoff: Backoff::Fixed(wait),
+    //         .. self
+    //     }
+    // }
 }
 
 impl<T, M> Clone for Layer<T, M> {
     fn clone(&self) -> Self {
         Self {
+            backoff: self.backoff.clone(),
             _p: PhantomData,
         }
     }
@@ -76,6 +102,7 @@ where
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             inner,
+            backoff: self.backoff.clone(),
             _p: PhantomData,
         }
     }
@@ -86,6 +113,7 @@ where
 impl<T, M: Clone> Clone for Stack<T, M> {
     fn clone(&self) -> Self {
         Self {
+            backoff: self.backoff.clone(),
             inner: self.inner.clone(),
             _p: PhantomData,
         }
@@ -104,14 +132,40 @@ where
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
         let new_service = self.inner.make(target)?;
         Ok(Service {
-            inner: tower_reconnect::Reconnect::new(new_service),
+            inner: Reconnect::new(new_service),
             target: target.clone(),
+            backoff: self.backoff.clone(),
+            active_backoff: None,
             mute_connect_error_log: false,
         })
     }
 }
 
 // === impl Service ===
+
+impl<T, N> Service<T, N>
+where
+    T: fmt::Debug,
+    N: svc::NewService,
+    N::InitError: fmt::Display,
+{
+    pub fn new(target: T, new_service: N) -> Self {
+        Self {
+            inner: Reconnect::new(new_service),
+            target,
+            backoff: Backoff::None,
+            active_backoff: None,
+            mute_connect_error_log: false,
+        }
+    }
+
+    pub fn with_fixed_backoff(self, wait: Duration) -> Self {
+        Self {
+            backoff: Backoff::Fixed(wait),
+            .. self
+        }
+    }
+}
 
 impl<T, N> svc::Service for Service<T, N>
 where
@@ -125,6 +179,22 @@ where
     type Future = ResponseFuture<N>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        match  self.backoff {
+            Backoff::None => {}
+            Backoff::Fixed(_) => {
+                if let Some(delay) = self.active_backoff.as_mut() {
+                    match delay.poll() {
+                        Ok(Async::NotReady) => return Ok(Async::NotReady),
+                        Ok(Async::Ready(())) => {},
+                        Err(e) => {
+                            error!("timer failed; continuing without backoff: {}", e);
+                        }
+                    }
+                }
+            }
+        };
+        self.active_backoff = None;
+
         match self.inner.poll_ready() {
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Ok(ready) => {
@@ -132,12 +202,12 @@ where
                 Ok(ready)
             }
 
-            Err(tower_reconnect::Error::Inner(err)) => {
+            Err(Error::Inner(err)) => {
                 self.mute_connect_error_log = false;
                 Err(err)
             }
 
-            Err(tower_reconnect::Error::Connect(err)) => {
+            Err(Error::Connect(err)) => {
                 // A connection could not be established to the target.
 
                 // This is only logged as a warning at most once. Subsequent
@@ -148,6 +218,15 @@ where
                 } else {
                     debug!("connect error to {:?}: {}", self.target, err);
                 }
+
+                // Set a backoff if appropriate.
+                //
+                // This future need not be polled immediately because the
+                // task is notified below.
+                self.active_backoff = match self.backoff {
+                    Backoff::None => None,
+                    Backoff::Fixed(ref wait) => Some(Delay::new(clock::now() + *wait)),
+                };
 
                 // The inner service is now idle and will renew its internal
                 // state on the next poll. Instead of doing this immediately,
@@ -160,7 +239,7 @@ where
                 Ok(Async::NotReady)
             }
 
-            Err(tower_reconnect::Error::NotReady) => {
+            Err(Error::NotReady) => {
                 unreachable!("poll_ready can't fail with NotReady");
             }
         }
@@ -187,8 +266,97 @@ impl<N: svc::NewService> Future for ResponseFuture<N> {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         self.inner.poll().map_err(|e| match e {
-            tower_reconnect::Error::Inner(err) => err,
+            Error::Inner(err) => err,
             _ => unreachable!("response future must fail with inner error"),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::{future, Future};
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    use svc::Service as _Service;
+    use std::{error, fmt, time};
+    use tokio::runtime::current_thread::Runtime;
+
+    struct NewService {
+        fails: AtomicUsize,
+    }
+
+    struct Service {}
+
+    struct InitFuture {
+        should_fail: bool,
+    }
+
+    #[derive(Debug)]
+    struct InitErr {}
+
+    impl svc::NewService for NewService {
+        type Request = ();
+        type Response = ();
+        type Error = ();
+        type Service = Service;
+        type InitError = InitErr;
+        type Future = InitFuture;
+
+        fn new_service(&self) -> Self::Future {
+            InitFuture {
+                should_fail: self.fails.fetch_sub(1, Relaxed) > 0,
+            }
+        }
+    }
+
+    impl svc::Service for Service {
+        type Request = ();
+        type Response = ();
+        type Error = ();
+        type Future = future::FutureResult<(), ()>;
+
+        fn poll_ready(&mut self) -> Poll<(), ()> {
+            Ok(().into())
+        }
+
+        fn call(&mut self, _req: ()) -> Self::Future {
+            future::ok(())
+        }
+    }
+
+    impl Future for InitFuture {
+        type Item = Service;
+        type Error = InitErr;
+
+        fn poll(&mut self) -> Poll<Service, InitErr> {
+            if self.should_fail {
+                return Err(InitErr {})
+            }
+
+            Ok(Service{}.into())
+        }
+    }
+
+    impl fmt::Display for InitErr {
+        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
+            Ok(())
+        }
+    }
+    impl error::Error for InitErr {}
+
+    #[test]
+    fn reconnects_with_backoff() {
+        let mock = NewService { fails: 2.into() };
+        let mut backoff = super::Service::new("test", mock)
+            .with_fixed_backoff(Duration::from_millis(100));
+        let mut rt = Runtime::new().unwrap();
+
+        // Checks that, after the inner NewService fails to connect twice, it
+        // succeeds on a third attempt.
+        let t0 = time::Instant::now();
+        let f = future::poll_fn(|| backoff.poll_ready());
+        rt.block_on(f).unwrap();
+
+        assert!(t0.elapsed() >= Duration::from_millis(200))
     }
 }
