@@ -7,7 +7,7 @@
 # This reduces build time and produces binaries with debug symbols, at the expense of
 # runtime performance.
 
-ARG RUST_IMAGE=rust:1.28.0
+ARG RUST_IMAGE=rust:1.30.0
 ARG RUNTIME_IMAGE=gcr.io/linkerd-io/base:2017-10-30.01
 
 ## Builds the proxy as incrementally as possible.
