@@ -23,7 +23,7 @@ use proxy::{
     http::{
         balance, client, insert_target, metrics::timestamp_request_open, normalize_uri, router,
     },
-    limit, reconnect, timeout,
+    limit, reconnect, timeout
 };
 use svc::{self, Layer as _Layer, Stack as _Stack};
 use tap;
@@ -260,7 +260,7 @@ where
                     resolver,
                 )))
                 .and_then(outbound::orig_proto_upgrade::Layer::new())
-                .and_then(outbound::tls_config::Layer::new(tls_client_config))
+                .and_then(svc::watch::layer(tls_client_config))
                 .and_then(proxy::http::metrics::Layer::new(
                     http_metrics,
                     classify::Classify,

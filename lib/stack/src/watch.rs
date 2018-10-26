@@ -1,15 +1,35 @@
 extern crate futures_watch;
 
+use self::futures_watch::Watch;
 use futures::{future::MapErr, Async, Future, Poll, Stream};
 use std::{error, fmt};
 
 use svc;
 
+/// Implemented by targets that can be updated by a `Watch<U>`
+pub trait WithUpdate<U> {
+    type Updated;
+
+    fn with_update(&self, update: &U) -> Self::Updated;
+}
+
+#[derive(Debug)]
+pub struct Layer<U> {
+    watch: Watch<U>,
+}
+
+#[derive(Debug)]
+pub struct Stack<U, M> {
+    watch: Watch<U>,
+    inner: M,
+}
+
 /// A Service that updates itself as a Watch updates.
-#[derive(Clone, Debug)]
-pub struct Service<T, M: super::Stack<T>> {
-    watch: futures_watch::Watch<T>,
-    make: M,
+#[derive(Debug)]
+pub struct Service<T: WithUpdate<U>, U, M: super::Stack<T::Updated>> {
+    watch: Watch<U>,
+    target: T,
+    stack: M,
     inner: M::Value,
 }
 
@@ -19,23 +39,77 @@ pub enum Error<I, M> {
     Inner(I),
 }
 
-impl<T, M> Service<T, M>
+/// A special implemtation of WithUpdate that clones the observed update value.
+#[derive(Clone, Debug)]
+pub struct CloneUpdate {}
+
+// === impl Layer ===
+
+pub fn layer<U>(watch: Watch<U>) -> Layer<U> {
+    Layer { watch }
+}
+
+impl<U> Clone for Layer<U> {
+    fn clone(&self) -> Self {
+        Self {
+            watch: self.watch.clone(),
+        }
+    }
+}
+
+impl<T, U, M> super::Layer<T, T::Updated, M> for Layer<U>
 where
-    M: super::Stack<T>,
+    T: WithUpdate<U> + Clone,
+    M: super::Stack<T::Updated> + Clone,
 {
-    pub fn try(watch: futures_watch::Watch<T>, make: M) -> Result<Self, M::Error> {
-        let inner = make.make(&*watch.borrow())?;
-        Ok(Self {
-            watch,
-            make,
+    type Value = <Stack<U, M> as super::Stack<T>>::Value;
+    type Error = <Stack<U, M> as super::Stack<T>>::Error;
+    type Stack = Stack<U, M>;
+
+    fn bind(&self, inner: M) -> Self::Stack {
+        Stack {
             inner,
+            watch: self.watch.clone(),
+        }
+    }
+}
+
+// === impl Stack ===
+
+impl<U, M: Clone> Clone for Stack<U, M> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            watch: self.watch.clone(),
+        }
+    }
+}
+
+impl<T, U, M> super::Stack<T> for Stack<U, M>
+where
+    T: WithUpdate<U> + Clone,
+    M: super::Stack<T::Updated> + Clone,
+{
+    type Value = Service<T, U, M>;
+    type Error = M::Error;
+
+    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+        let inner = self.inner.make(&target.with_update(&*self.watch.borrow()))?;
+        Ok(Service {
+            inner,
+            watch: self.watch.clone(),
+            target: target.clone(),
+            stack: self.inner.clone(),
         })
     }
 }
 
-impl<T, M> svc::Service for Service<T, M>
+// === impl Service ===
+
+impl<T, U, M> svc::Service for Service<T, U, M>
 where
-    M: super::Stack<T>,
+    T: WithUpdate<U>,
+    M: super::Stack<T::Updated>,
     M::Value: svc::Service,
 {
     type Request = <M::Value as svc::Service>::Request;
@@ -51,11 +125,11 @@ where
         //
         // `watch.poll()` can't actually fail; so errors are not considered.
         while let Ok(Async::Ready(Some(()))) = self.watch.poll() {
-            let target = self.watch.borrow();
-            // `inner` is only updated if `target` is valid. The caller may
+            let updated = self.target.with_update(&*self.watch.borrow());
+            // `inner` is only updated if `updated` is valid. The caller may
             // choose to continue using the service or discard as is
             // appropriate.
-            self.inner = self.make.make(&*target).map_err(Error::Stack)?;
+            self.inner = self.stack.make(&updated).map_err(Error::Stack)?;
         }
 
         self.inner.poll_ready().map_err(Error::Inner)
@@ -65,6 +139,51 @@ where
         self.inner.call(req).map_err(Error::Inner)
     }
 }
+
+impl<U, M> Service<CloneUpdate, U, M>
+where
+    U: Clone,
+    M: super::Stack<U>,
+    M::Value: svc::Service,
+{
+    pub fn try(watch: Watch<U>, stack: M) -> Result<Self, M::Error> {
+        let inner = stack.make(&*watch.borrow())?;
+        Ok(Self {
+            inner,
+            watch,
+            stack,
+            target: CloneUpdate {},
+        })
+    }
+}
+
+impl<T, U, M> Clone for Service<T, U, M>
+where
+    T: WithUpdate<U> + Clone,
+    M: super::Stack<T::Updated> + Clone,
+    M::Value: svc::Service + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            watch: self.watch.clone(),
+            stack: self.stack.clone(),
+            target: self.target.clone(),
+        }
+    }
+}
+
+// === impl CloneUpdate ===
+
+impl<U: Clone> WithUpdate<U> for CloneUpdate {
+    type Updated = U;
+
+    fn with_update(&self, update: &U) -> U {
+        update.clone()
+    }
+}
+
+// === impl Error ===
 
 impl<I: fmt::Display, M: fmt::Display> fmt::Display for Error<I, M> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -82,11 +201,11 @@ mod tests {
     extern crate linkerd2_task as task;
     extern crate tokio;
 
-    use futures::future;
     use self::task::test_util::BlockOnFor;
     use self::tokio::runtime::current_thread::Runtime;
-    use std::time::Duration;
     use super::*;
+    use futures::future;
+    use std::time::Duration;
     use svc::Service as _Service;
 
     const TIMEOUT: Duration = Duration::from_secs(60);
@@ -116,8 +235,7 @@ mod tests {
         }
         macro_rules! call {
             ($svc:expr) => {
-                rt.block_on_for(TIMEOUT, $svc.call(()))
-                    .expect("call")
+                rt.block_on_for(TIMEOUT, $svc.call(())).expect("call")
             };
         }
 
@@ -130,7 +248,7 @@ mod tests {
             }
         }
 
-        let (watch, mut store) = futures_watch::Watch::new(1);
+        let (watch, mut store) = Watch::new(1);
         let mut svc = Service::try(watch, Stack).unwrap();
 
         assert_ready!(svc);
