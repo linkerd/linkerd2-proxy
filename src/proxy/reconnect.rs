@@ -179,7 +179,7 @@ where
     type Future = ResponseFuture<N>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        match  self.backoff {
+        match self.backoff {
             Backoff::None => {}
             Backoff::Fixed(_) => {
                 if let Some(delay) = self.active_backoff.as_mut() {
@@ -225,7 +225,7 @@ where
                 // task is notified below.
                 self.active_backoff = match self.backoff {
                     Backoff::None => None,
-                    Backoff::Fixed(ref wait) => Some(Delay::new(clock::now() + *wait)),
+                    Backoff::Fixed(wait) => Some(Delay::new(clock::now() + wait)),
                 };
 
                 // The inner service is now idle and will renew its internal
