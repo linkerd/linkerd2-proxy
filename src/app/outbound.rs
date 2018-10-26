@@ -4,9 +4,9 @@ use std::fmt;
 use app::Destination;
 use control::destination::{Metadata, ProtocolHint};
 use proxy::http::{client, router, normalize_uri::ShouldNormalizeUri};
-use svc::stack_per_request::ShouldStackPerRequest;
+use svc::{self, stack_per_request::ShouldStackPerRequest};
 use tap;
-use transport::connect;
+use transport::{connect, tls};
 
 #[derive(Clone, Debug)]
 pub struct Endpoint {
@@ -39,6 +39,21 @@ impl ShouldNormalizeUri for Endpoint {
 impl ShouldStackPerRequest for Endpoint {
     fn should_stack_per_request(&self) -> bool {
         !self.dst.settings.is_http2() && !self.dst.settings.can_reuse_clients()
+    }
+}
+
+impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Endpoint {
+    type Updated = Self;
+
+    fn with_update(&self, client_config: &tls::ConditionalClientConfig) -> Self::Updated {
+        let mut ep = self.clone();
+        ep.connect.tls = ep.metadata.tls_identity().and_then(|identity| {
+            client_config.as_ref().map(|config| tls::ConnectionConfig {
+                server_identity: identity.clone(),
+                config: config.clone(),
+            })
+        });
+        ep
     }
 }
 
@@ -239,94 +254,6 @@ pub mod orig_proto_upgrade {
             } else {
                 self.inner.make(&endpoint).map(svc::Either::B)
             }
-        }
-    }
-}
-
-pub mod tls_config {
-    use futures_watch::Watch;
-
-    use super::Endpoint;
-    use svc;
-    use transport::tls;
-
-    #[derive(Debug, Clone)]
-    pub struct Layer{
-        watch: Watch<tls::ConditionalClientConfig>,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct Stack<M: svc::Stack<Endpoint>> {
-        watch: Watch<tls::ConditionalClientConfig>,
-        inner: M,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct StackEndpointWithTls<M: svc::Stack<Endpoint>> {
-        endpoint: Endpoint,
-        inner: M,
-    }
-
-    impl Layer {
-        pub fn new(watch: Watch<tls::ConditionalClientConfig>) -> Self {
-            Layer {
-                watch,
-            }
-        }
-    }
-
-    impl<M> svc::Layer<Endpoint, Endpoint, M> for Layer
-    where
-        M: svc::Stack<Endpoint> + Clone,
-    {
-        type Value = <Stack<M> as svc::Stack<Endpoint>>::Value;
-        type Error = <Stack<M> as svc::Stack<Endpoint>>::Error;
-        type Stack = Stack<M>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack {
-                inner,
-                watch: self.watch.clone(),
-            }
-        }
-    }
-
-    impl<M> svc::Stack<Endpoint> for Stack<M>
-    where
-        M: svc::Stack<Endpoint> + Clone,
-    {
-        type Value = svc::watch::Service<tls::ConditionalClientConfig, StackEndpointWithTls<M>>;
-        type Error = M::Error;
-
-        fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
-            let inner = StackEndpointWithTls {
-                endpoint: endpoint.clone(),
-                inner: self.inner.clone(),
-            };
-            svc::watch::Service::try(self.watch.clone(), inner)
-        }
-    }
-
-    impl<M> svc::Stack<tls::ConditionalClientConfig> for StackEndpointWithTls<M>
-    where
-        M: svc::Stack<Endpoint>,
-    {
-        type Value = M::Value;
-        type Error = M::Error;
-
-        fn make(
-            &self,
-            client_config: &tls::ConditionalClientConfig,
-        ) -> Result<Self::Value, Self::Error> {
-            let mut endpoint = self.endpoint.clone();
-            endpoint.connect.tls = endpoint.metadata.tls_identity().and_then(|identity| {
-                client_config.as_ref().map(|config| tls::ConnectionConfig {
-                    server_identity: identity.clone(),
-                    config: config.clone(),
-                })
-            });
-
-            self.inner.make(&endpoint)
         }
     }
 }
