@@ -321,10 +321,18 @@ impl Future for Connecting {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let addr = &self.addr;
         loop {
             self.state = match &mut self.state {
                 ConnectingState::Plaintext { connect, tls } => {
-                    let plaintext_stream = try_ready!(connect.poll());
+                    let plaintext_stream = try_ready!(connect.poll().map_err(|e| {
+                        let details = format!(
+                            "{} (address: {})",
+                            e,
+                            addr,
+                        );
+                        io::Error::new(e.kind(), details)
+                    }));
                     trace!("Connecting: state=plaintext; tls={:?};",tls);
                     set_nodelay_or_warn(&plaintext_stream);
                     match tls.take().expect("Polled after ready") {
@@ -351,9 +359,9 @@ impl Future for Connecting {
                             debug!(
                                 "TLS handshake with {:?} failed: {}\
                                     -> falling back to plaintext",
-                                self.addr, e,
+                                addr, e,
                             );
-                            let connect = TcpStream::connect(&self.addr);
+                            let connect = TcpStream::connect(addr);
                             // TODO: emit a `HandshakeFailed` telemetry event.
                             let reason = tls::ReasonForNoTls::HandshakeFailed;
                             // Reset self to try the plaintext connection.
