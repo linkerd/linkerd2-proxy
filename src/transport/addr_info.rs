@@ -77,7 +77,7 @@ mod linux {
         );
         if ret != 0 {
             let e = io::Error::last_os_error();
-            error!("failed to read SO_ORIGINAL_DST: {:?}", e);
+            warn!("failed to read SO_ORIGINAL_DST: {:?}", e);
             return Err(e);
         }
 

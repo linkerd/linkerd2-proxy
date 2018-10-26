@@ -40,7 +40,6 @@ extern crate tokio_timer;
 extern crate tower_add_origin;
 extern crate tower_grpc;
 extern crate tower_h2;
-extern crate tower_reconnect;
 extern crate tower_util;
 extern crate trust_dns_resolver;
 extern crate try_lock;

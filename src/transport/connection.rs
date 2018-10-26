@@ -1,7 +1,7 @@
 /// Tokio-level (not Tower-level) proxy-specific networking.
 
 use bytes::{Buf, BytesMut};
-use futures::{*, future::Either};
+use futures::{Async, Future, IntoFuture, Poll, Stream, future::{self, Either}, stream};
 use std;
 use std::cmp;
 use std::io;
@@ -186,13 +186,15 @@ impl BoundPort {
             // background reactor if `listen_and_fold` is called before we've
             // initialized the runtime.
             TcpListener::from_std(inner, &Handle::current())
-        }).and_then(move |listener|
-            listener.incoming()
-                .take(connection_limit)
-                .and_then(move |socket| {
-                    let remote_addr = socket.peer_addr()
-                        .expect("couldn't get remote addr!");
+        }).and_then(move |mut listener| {
+            let incoming = stream::poll_fn(move || {
+                let ret = try_ready!(listener.poll_accept());
+                Ok(Async::Ready(Some(ret)))
+            });
 
+            incoming
+                .take(connection_limit)
+                .and_then(move |(socket, remote_addr)| {
                     // TODO: On Linux and most other platforms it would be better
                     // to set the `TCP_NODELAY` option on the bound socket and
                     // then have the listening sockets inherit it. However, that
@@ -225,7 +227,7 @@ impl BoundPort {
                 })
                 .filter_map(|x| x)
                 .fold(initial, f)
-        )
+        })
         .map(|_| ())
     }
 }
@@ -319,10 +321,18 @@ impl Future for Connecting {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let addr = &self.addr;
         loop {
             self.state = match &mut self.state {
                 ConnectingState::Plaintext { connect, tls } => {
-                    let plaintext_stream = try_ready!(connect.poll());
+                    let plaintext_stream = try_ready!(connect.poll().map_err(|e| {
+                        let details = format!(
+                            "{} (address: {})",
+                            e,
+                            addr,
+                        );
+                        io::Error::new(e.kind(), details)
+                    }));
                     trace!("Connecting: state=plaintext; tls={:?};",tls);
                     set_nodelay_or_warn(&plaintext_stream);
                     match tls.take().expect("Polled after ready") {
@@ -349,9 +359,9 @@ impl Future for Connecting {
                             debug!(
                                 "TLS handshake with {:?} failed: {}\
                                     -> falling back to plaintext",
-                                self.addr, e,
+                                addr, e,
                             );
-                            let connect = TcpStream::connect(&self.addr);
+                            let connect = TcpStream::connect(addr);
                             // TODO: emit a `HandshakeFailed` telemetry event.
                             let reason = tls::ReasonForNoTls::HandshakeFailed;
                             // Reset self to try the plaintext connection.

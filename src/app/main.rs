@@ -221,7 +221,7 @@ where
         let (drain_tx, drain_rx) = drain::channel();
 
         let outbound = {
-            use super::outbound::{discovery::Resolve, orig_proto_upgrade, tls_config, Recognize};
+            use super::outbound::{discovery::Resolve, orig_proto_upgrade, Recognize};
             use proxy::{
                 http::{balance, metrics},
                 resolve,
@@ -261,7 +261,7 @@ where
                 .and_then(balance::layer())
                 .and_then(resolve::layer(Resolve::new(resolver)))
                 .and_then(orig_proto_upgrade::Layer::new())
-                .and_then(tls_config::Layer::new(tls_client_config))
+                .and_then(svc::watch::layer(tls_client_config))
                 .and_then(metrics::Layer::new(http_metrics, classify::Classify))
                 .and_then(tap::Layer::new(tap_next_id.clone(), taps.clone()))
                 .and_then(normalize_uri::Layer::new())
