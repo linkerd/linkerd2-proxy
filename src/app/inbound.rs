@@ -130,10 +130,8 @@ pub mod orig_proto_downgrade {
 
     // === impl Layer ===
 
-    impl Layer {
-        pub fn new() -> Self {
-            Layer
-        }
+    pub fn layer() -> Layer {
+        Layer
     }
 
     impl<M, A, B> svc::Layer<Source, Source, M> for Layer

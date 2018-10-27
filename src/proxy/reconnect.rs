@@ -2,24 +2,21 @@ extern crate tower_reconnect;
 
 use futures::{task, Async, Future, Poll};
 use std::fmt;
-use std::marker::PhantomData;
 use std::time::Duration;
 pub use self::tower_reconnect::{Error, Reconnect};
 use tokio_timer::{clock, Delay};
 
 use svc;
 
-#[derive(Debug)]
-pub struct Layer<T, M> {
+#[derive(Clone, Debug)]
+pub struct Layer {
     backoff: Backoff,
-    _p: PhantomData<fn() -> (T, M)>,
 }
 
-#[derive(Debug)]
-pub struct Stack<T, M> {
+#[derive(Clone, Debug)]
+pub struct Stack<M> {
     backoff: Backoff,
     inner: M,
-    _p: PhantomData<fn() -> T>,
 }
 
 /// Wraps `tower_reconnect`, handling errors.
@@ -57,70 +54,43 @@ pub struct ResponseFuture<N: svc::NewService> {
 
 // === impl Layer ===
 
-impl<T, M> Layer<T, M>
-where
-    T: fmt::Debug,
-    M: svc::Stack<T>,
-    M::Value: svc::NewService,
-{
-    pub fn new() -> Self {
-        Self {
-            backoff: Backoff::None,
-            _p: PhantomData,
-        }
-    }
-
-    // TODO: once a stacked clients needs backoff...
-    //
-    // pub fn with_fixed_backoff(self, wait: Duration) -> Self {
-    //     Self {
-    //         backoff: Backoff::Fixed(wait),
-    //         .. self
-    //     }
-    // }
-}
-
-impl<T, M> Clone for Layer<T, M> {
-    fn clone(&self) -> Self {
-        Self {
-            backoff: self.backoff.clone(),
-            _p: PhantomData,
-        }
+pub fn layer() -> Layer {
+    Layer {
+        backoff: Backoff::None,
     }
 }
 
-impl<T, M> svc::Layer<T, T, M> for Layer<T, M>
+// TODO: once a stacked clients needs backoff...
+// impl Layer {
+//     pub fn with_fixed_backoff(self, wait: Duration) -> Self {
+//         Self {
+//             backoff: Backoff::Fixed(wait),
+//             .. self
+//         }
+//     }
+// }
+
+impl<T, M> svc::Layer<T, T, M> for Layer
 where
     T: Clone + fmt::Debug,
     M: svc::Stack<T>,
     M::Value: svc::NewService,
 {
-    type Value = <Stack<T, M> as svc::Stack<T>>::Value;
-    type Error = <Stack<T, M> as svc::Stack<T>>::Error;
-    type Stack = Stack<T, M>;
+    type Value = <Stack<M> as svc::Stack<T>>::Value;
+    type Error = <Stack<M> as svc::Stack<T>>::Error;
+    type Stack = Stack<M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             inner,
             backoff: self.backoff.clone(),
-            _p: PhantomData,
         }
     }
 }
 
 // === impl Stack ===
 
-impl<T, M: Clone> Clone for Stack<T, M> {
-    fn clone(&self) -> Self {
-        Self {
-            backoff: self.backoff.clone(),
-            inner: self.inner.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<T, M> svc::Stack<T> for Stack<T, M>
+impl<T, M> svc::Stack<T> for Stack<M>
 where
     T: Clone + fmt::Debug,
     M: svc::Stack<T>,

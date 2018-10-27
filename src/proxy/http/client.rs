@@ -154,16 +154,14 @@ impl Config {
 
 // === impl Layer ===
 
-impl<B> Layer<B>
+pub fn layer<B>(proxy_name: &'static str) -> Layer<B>
 where
     B: tower_h2::Body + Send + 'static,
     <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    pub fn new(proxy_name: &'static str) -> Self {
-        Self {
-            proxy_name,
-            _p: PhantomData,
-        }
+    Layer {
+        proxy_name,
+        _p: PhantomData,
     }
 }
 
@@ -180,9 +178,8 @@ where
     }
 }
 
-impl<T, C, B> svc::Layer<T, connect::Target, C> for Layer<B>
+impl<C, B> svc::Layer<Config, connect::Target, C> for Layer<B>
 where
-    T: Into<Config> + Clone,
     C: svc::Stack<connect::Target>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     <C::Value as connect::Connect>::Connected: Send,
@@ -191,8 +188,8 @@ where
     B: tower_h2::Body + Send + 'static,
     <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    type Value = <Stack<C, B> as svc::Stack<T>>::Value;
-    type Error = <Stack<C, B> as svc::Stack<T>>::Error;
+    type Value = <Stack<C, B> as svc::Stack<Config>>::Value;
+    type Error = <Stack<C, B> as svc::Stack<Config>>::Error;
     type Stack = Stack<C, B>;
 
     fn bind(&self, connect: C) -> Self::Stack {
@@ -222,9 +219,8 @@ where
     }
 }
 
-impl<T, C, B> svc::Stack<T> for Stack<C, B>
+impl<C, B> svc::Stack<Config> for Stack<C, B>
 where
-    T: Into<Config> + Clone,
     C: svc::Stack<connect::Target>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     <C::Value as connect::Connect>::Connected: Send,
@@ -236,13 +232,12 @@ where
     type Value = Client<C::Value, ::logging::ClientExecutor<&'static str, net::SocketAddr>, B>;
     type Error = C::Error;
 
-    fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
-        let config = t.clone().into();
+    fn make(&self, config: &Config) -> Result<Self::Value, Self::Error> {
+        debug!("building client={:?}", config);
         let connect = self.connect.make(&config.target)?;
         let executor = ::logging::Client::proxy(self.proxy_name, config.target.addr)
             .with_settings(config.settings.clone())
             .executor();
-        debug!("building client={:?}", config);
         Ok(Client::new(&config.settings, connect, executor))
     }
 }
@@ -261,7 +256,7 @@ where
     <B::Data as IntoBuf>::Buf: Send + 'static,
 {
     /// Create a new `Client`, bound to a specific protocol (HTTP/1 or HTTP/2).
-    fn new(settings: &Settings, connect: C, executor: E) -> Self {
+    pub fn new(settings: &Settings, connect: C, executor: E) -> Self {
         match settings {
             Settings::Http1 { was_absolute_form, .. } => {
                 let h1 = hyper::Client::builder()

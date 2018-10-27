@@ -2,9 +2,9 @@ extern crate tower_balance;
 extern crate tower_discover;
 extern crate tower_h2_balance;
 
-use self::tower_discover::Discover;
 use http;
 use std::time::Duration;
+use self::tower_discover::Discover;
 use tower_h2::Body;
 
 pub use self::tower_balance::{choose::PowerOfTwoChoices, load::WithPeakEwma, Balance};

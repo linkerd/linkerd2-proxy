@@ -14,14 +14,16 @@ pub trait WithUpdate<U> {
 }
 
 #[derive(Debug)]
-pub struct Layer<U> {
+pub struct Layer<T: WithUpdate<U>, U, M> {
     watch: Watch<U>,
+    _p: ::std::marker::PhantomData<(T, M)>,
 }
 
 #[derive(Debug)]
-pub struct Stack<U, M> {
+pub struct Stack<T: WithUpdate<U>, U, M> {
     watch: Watch<U>,
     inner: M,
+    _p: ::std::marker::PhantomData<T>,
 }
 
 /// A Service that updates itself as a Watch updates.
@@ -45,47 +47,58 @@ pub struct CloneUpdate {}
 
 // === impl Layer ===
 
-pub fn layer<U>(watch: Watch<U>) -> Layer<U> {
-    Layer { watch }
-}
-
-impl<U> Clone for Layer<U> {
-    fn clone(&self) -> Self {
-        Self {
-            watch: self.watch.clone(),
-        }
-    }
-}
-
-impl<T, U, M> super::Layer<T, T::Updated, M> for Layer<U>
+pub fn layer<T, U, M>(watch: Watch<U>) -> Layer<T, U, M>
 where
     T: WithUpdate<U> + Clone,
     M: super::Stack<T::Updated> + Clone,
 {
-    type Value = <Stack<U, M> as super::Stack<T>>::Value;
-    type Error = <Stack<U, M> as super::Stack<T>>::Error;
-    type Stack = Stack<U, M>;
+    Layer {
+        watch,
+        _p: ::std::marker::PhantomData,
+    }
+}
+
+impl<T, U, M> Clone for Layer<T, U, M>
+where
+    T: WithUpdate<U> + Clone,
+    M: super::Stack<T::Updated> + Clone,
+{
+    fn clone(&self) -> Self {
+        layer(self.watch.clone())
+    }
+}
+
+impl<T, U, M> super::Layer<T, T::Updated, M> for Layer<T, U, M>
+where
+    T: WithUpdate<U> + Clone,
+    M: super::Stack<T::Updated> + Clone,
+{
+    type Value = <Stack<T, U, M> as super::Stack<T>>::Value;
+    type Error = <Stack<T, U, M> as super::Stack<T>>::Error;
+    type Stack = Stack<T, U, M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             inner,
             watch: self.watch.clone(),
+            _p: ::std::marker::PhantomData,
         }
     }
 }
 
 // === impl Stack ===
 
-impl<U, M: Clone> Clone for Stack<U, M> {
+impl<T: WithUpdate<U>, U, M: Clone> Clone for Stack<T, U, M> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
             watch: self.watch.clone(),
+            _p: ::std::marker::PhantomData,
         }
     }
 }
 
-impl<T, U, M> super::Stack<T> for Stack<U, M>
+impl<T, U, M> super::Stack<T> for Stack<T, U, M>
 where
     T: WithUpdate<U> + Clone,
     M: super::Stack<T::Updated> + Clone,

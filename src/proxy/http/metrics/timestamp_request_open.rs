@@ -24,8 +24,8 @@ pub struct TimestampRequestOpen<S> {
 }
 
 /// Layers a `TimestampRequestOpen` middleware on an HTTP client.
-#[derive(Debug)]
-pub struct Layer<M>(::std::marker::PhantomData<fn() -> (M)>);
+#[derive(Clone, Debug)]
+pub struct Layer();
 
 /// Uses an `M`-typed `Stack` to build a `TimestampRequestOpen` service.
 #[derive(Clone, Debug)]
@@ -54,19 +54,11 @@ where
 
 // === impl Layer ===
 
-impl<M> Layer<M> {
-    pub fn new() -> Self {
-        Layer(::std::marker::PhantomData)
-    }
+pub fn layer() -> Layer {
+    Layer()
 }
 
-impl<M> Clone for Layer<M> {
-    fn clone(&self) -> Self {
-        Self::new()
-    }
-}
-
-impl<T, B, M> svc::Layer<T, T, M> for Layer<M>
+impl<T, B, M> svc::Layer<T, T, M> for Layer
 where
     M: svc::Stack<T>,
     M::Value: svc::Service<Request = http::Request<B>>,

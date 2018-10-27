@@ -91,30 +91,27 @@ where
 
 // ===== impl Stack =====
 
-impl<M, K, C> Layer<M, K, C>
+pub fn layer<M, K, C, T, A, B>(registry: Arc<Mutex<Registry<K, C::Class>>>, classify: C)
+    -> Layer<M, K, C>
 where
     K: Clone + Hash + Eq,
     C: Classify<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
     C::ClassifyResponse: Send + Sync + 'static,
+    T: Clone + Debug,
+    K: From<T>,
+    M: svc::Stack<T>,
+    M::Value: svc::Service<
+        Request = http::Request<RequestBody<A, C::Class>>,
+        Response = http::Response<B>,
+    >,
+    A: tower_h2::Body,
+    B: tower_h2::Body,
 {
-    pub fn new<T, A, B>(registry: Arc<Mutex<Registry<K, C::Class>>>, classify: C) -> Self
-    where
-        T: Clone + Debug,
-        K: From<T>,
-        M: svc::Stack<T>,
-        M::Value: svc::Service<
-            Request = http::Request<RequestBody<A, C::Class>>,
-            Response = http::Response<B>,
-        >,
-        A: tower_h2::Body,
-        B: tower_h2::Body,
-    {
-        Self {
-            classify,
-            registry,
-            _p: PhantomData,
-        }
+    Layer {
+        classify,
+        registry,
+        _p: PhantomData,
     }
 }
 

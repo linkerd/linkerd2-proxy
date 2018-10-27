@@ -2,7 +2,6 @@
 
 use futures::Poll;
 use std::fmt;
-use std::marker::PhantomData;
 
 use svc;
 
@@ -12,14 +11,13 @@ pub trait ShouldStackPerRequest {
 
 /// A `Layer` produces a `Service` `Stack` that creates a new service for each
 /// request.
-#[derive(Debug)]
-pub struct Layer<T, M>(PhantomData<fn() -> (T, M)>);
+#[derive(Clone, Debug)]
+pub struct Layer();
 
 /// A `Stack` that builds a new `Service` for each request it serves.
-#[derive(Debug)]
-pub struct Stack<T, M: super::Stack<T>> {
+#[derive(Clone, Debug)]
+pub struct Stack<M> {
     inner: M,
-    _p: PhantomData<fn() -> T>,
 }
 
 /// A `Service` that uses a new inner service for each request.
@@ -36,6 +34,7 @@ pub struct Service<T, M: super::Stack<T>> {
 
 /// A helper that asserts `M` can successfully build services for a specific
 /// value of `T`.
+#[derive(Clone, Debug)]
 struct StackValid<T, M: super::Stack<T>> {
     target: T,
     make: M,
@@ -43,63 +42,28 @@ struct StackValid<T, M: super::Stack<T>> {
 
 // === Layer ===
 
-impl<T, N> Layer<T, N>
-where
-    T: ShouldStackPerRequest + Clone,
-    N: super::Stack<T> + Clone,
-    N::Error: fmt::Debug,
-{
-    pub fn new() -> Self {
-        Layer(PhantomData)
-    }
+pub fn layer() -> Layer {
+    Layer()
 }
 
-impl<T, N> Clone for Layer<T, N>
+impl<T, N> super::Layer<T, T, N> for Layer
 where
     T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
     N::Error: fmt::Debug,
 {
-    fn clone(&self) -> Self {
-        Self::new()
-    }
-}
-
-impl<T, N> super::Layer<T, T, N> for Layer<T, N>
-where
-    T: ShouldStackPerRequest + Clone,
-    N: super::Stack<T> + Clone,
-    N::Error: fmt::Debug,
-{
-    type Value = <Stack<T, N> as super::Stack<T>>::Value;
-    type Error = <Stack<T, N> as super::Stack<T>>::Error;
-    type Stack = Stack<T, N>;
+    type Value = <Stack<N> as super::Stack<T>>::Value;
+    type Error = <Stack<N> as super::Stack<T>>::Error;
+    type Stack = Stack<N>;
 
     fn bind(&self, inner: N) -> Self::Stack {
-        Stack {
-            inner,
-            _p: PhantomData,
-        }
+        Stack { inner }
     }
 }
 
 // === Stack ===
 
-impl<T, N> Clone for Stack<T, N>
-where
-    T: ShouldStackPerRequest + Clone,
-    N: super::Stack<T> + Clone,
-    N::Error: fmt::Debug,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<T, N> super::Stack<T> for Stack<T, N>
+impl<T, N> super::Stack<T> for Stack<N>
 where
     T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
@@ -157,6 +121,19 @@ where
             .take()
             .unwrap_or_else(|| self.make.make_valid())
             .call(request)
+    }
+}
+
+impl<T, N> Clone for Service<T, N>
+where
+    T: ShouldStackPerRequest + Clone,
+    N: super::Stack<T> + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            next: None,
+            make: self.make.clone(),
+        }
     }
 }
 

@@ -1,67 +1,42 @@
 // TODO move to `timeout` crate.
 
-use std::marker::PhantomData;
 use std::time::Duration;
 
 use svc;
 pub use timeout::Timeout;
 
-#[derive(Debug)]
-pub struct Layer<T, M> {
+#[derive(Clone, Debug)]
+pub struct Layer {
     timeout: Duration,
-    _p: PhantomData<fn() -> (T, M)>
 }
 
-#[derive(Debug)]
-pub struct Stack<T, M> {
+#[derive(Clone, Debug)]
+pub struct Stack<M> {
     inner: M,
     timeout: Duration,
-    _p: PhantomData<fn() -> T>
 }
 
-impl<T, M> Layer<T, M> {
-    pub fn new(timeout: Duration) -> Self {
-        Self {
-            timeout,
-            _p: PhantomData
-        }
-    }
+pub fn layer(timeout: Duration) -> Layer {
+    Layer { timeout }
 }
 
-impl<T, M> Clone for Layer<T, M> {
-    fn clone(&self) -> Self {
-        Self::new(self.timeout)
-    }
-}
-
-impl<T, M> svc::Layer<T, T, M> for Layer<T, M>
+impl<T, M> svc::Layer<T, T, M> for Layer
 where
     M: svc::Stack<T>,
 {
-    type Value = <Stack<T, M> as svc::Stack<T>>::Value;
-    type Error = <Stack<T, M> as svc::Stack<T>>::Error;
-    type Stack = Stack<T, M>;
+    type Value = <Stack<M> as svc::Stack<T>>::Value;
+    type Error = <Stack<M> as svc::Stack<T>>::Error;
+    type Stack = Stack<M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             inner,
             timeout: self.timeout,
-            _p: PhantomData
         }
     }
 }
 
-impl<T, M: Clone> Clone for Stack<T, M> {
-    fn clone(&self) -> Self {
-        Stack {
-            inner: self.inner.clone(),
-            timeout: self.timeout,
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<T, M> svc::Stack<T> for Stack<T, M>
+impl<T, M> svc::Stack<T> for Stack<M>
 where
     M: svc::Stack<T>,
 {
