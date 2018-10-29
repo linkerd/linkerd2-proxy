@@ -11,6 +11,7 @@ pub struct ClassifyResponse {}
 
 #[derive(Clone, Debug, Default)]
 pub struct ClassifyEos {
+    class: Option<Class>,
     status: http::StatusCode,
 }
 
@@ -48,10 +49,12 @@ impl classify::ClassifyResponse for ClassifyResponse {
     type ClassifyEos = ClassifyEos;
 
     fn start<B>(self, rsp: &http::Response<B>) -> (ClassifyEos, Option<Class>) {
+        let class = grpc_class(rsp.headers());
         let eos = ClassifyEos {
+            class: class.clone(),
             status: rsp.status(),
         };
-        (eos, None)
+        (eos, class)
     }
 
     fn error(self, err: &h2::Error) -> Self::Class {
@@ -63,23 +66,17 @@ impl classify::ClassifyEos for ClassifyEos {
     type Class = Class;
     type Error = h2::Error;
 
-    fn eos(self, trailers: Option<&http::HeaderMap>) -> Self::Class {
-        if let Some(ref trailers) = trailers {
-            let grpc_status = trailers
-                .get("grpc-status")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.parse::<u32>().ok());
-            debug!("eos: grpc_status={:?}", grpc_status);
-            if let Some(grpc_status) = grpc_status {
-                return if grpc_status == 0 {
-                    Class::Grpc(SuccessOrFailure::Success, grpc_status)
-                } else {
-                    Class::Grpc(SuccessOrFailure::Failure, grpc_status)
-                };
-            }
+    fn eos(mut self, trailers: Option<&http::HeaderMap>) -> Self::Class {
+        // If the response headers already classified this stream, use that.
+        if let Some(class) = self.class.take() {
+            return class;
         }
 
-        debug!("eos: status={}", self.status);
+        // Otherwise, fall-back to the default classification logic.
+        if let Some(class) = trailers.and_then(grpc_class) {
+            return class;
+        }
+
         let result = if self.status.is_server_error() {
             SuccessOrFailure::Failure
         } else {
@@ -89,6 +86,19 @@ impl classify::ClassifyEos for ClassifyEos {
     }
 
     fn error(self, err: &h2::Error) -> Self::Class {
+        // Ignore the original classification when an error is encountered.
         Class::Stream(SuccessOrFailure::Failure, format!("{}", err))
     }
+}
+
+fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
+    headers
+        .get("grpc-status")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u32>().ok())
+        .map(|grpc_status| if grpc_status == 0 {
+            Class::Grpc(SuccessOrFailure::Success, grpc_status)
+        } else {
+            Class::Grpc(SuccessOrFailure::Failure, grpc_status)
+        })
 }
