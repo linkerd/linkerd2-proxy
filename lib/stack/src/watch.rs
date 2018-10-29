@@ -3,6 +3,7 @@ extern crate futures_watch;
 use self::futures_watch::Watch;
 use futures::{future::MapErr, Async, Future, Poll, Stream};
 use std::{error, fmt};
+use std::marker::PhantomData;
 
 use svc;
 
@@ -16,14 +17,14 @@ pub trait WithUpdate<U> {
 #[derive(Debug)]
 pub struct Layer<T: WithUpdate<U>, U, M> {
     watch: Watch<U>,
-    _p: ::std::marker::PhantomData<(T, M)>,
+    _p: PhantomData<fn() -> (T, M)>,
 }
 
 #[derive(Debug)]
 pub struct Stack<T: WithUpdate<U>, U, M> {
     watch: Watch<U>,
     inner: M,
-    _p: ::std::marker::PhantomData<T>,
+    _p: PhantomData<fn() -> T>,
 }
 
 /// A Service that updates itself as a Watch updates.
@@ -54,7 +55,7 @@ where
 {
     Layer {
         watch,
-        _p: ::std::marker::PhantomData,
+        _p: PhantomData,
     }
 }
 
@@ -81,7 +82,7 @@ where
         Stack {
             inner,
             watch: self.watch.clone(),
-            _p: ::std::marker::PhantomData,
+            _p: PhantomData,
         }
     }
 }
@@ -93,7 +94,7 @@ impl<T: WithUpdate<U>, U, M: Clone> Clone for Stack<T, U, M> {
         Self {
             inner: self.inner.clone(),
             watch: self.watch.clone(),
-            _p: ::std::marker::PhantomData,
+            _p: PhantomData,
         }
     }
 }
