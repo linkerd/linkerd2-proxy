@@ -12,7 +12,7 @@ mod service;
 pub mod timestamp_request_open;
 
 pub use self::report::Report;
-pub use self::service::Layer;
+pub use self::service::layer;
 
 pub fn new<T, C>(retain_idle: Duration) -> (Arc<Mutex<Registry<T, C>>>, Report<T, C>)
 where

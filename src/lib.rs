@@ -2,9 +2,6 @@
 #![cfg_attr(feature = "cargo-clippy", allow(new_without_default_derive))]
 #![deny(warnings)]
 
-// Stack type inference requires a deeper recursion limit
-#![recursion_limit="128"]
-
 extern crate bytes;
 extern crate env_logger;
 extern crate linkerd2_fs_watch as fs_watch;

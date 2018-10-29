@@ -1,6 +1,5 @@
 use futures::Poll;
 use http;
-use std::marker::PhantomData;
 
 use super::h1;
 use svc;
@@ -9,77 +8,43 @@ pub trait ShouldNormalizeUri {
     fn should_normalize_uri(&self) -> bool;
 }
 
-pub struct Layer<T, M>(PhantomData<fn() -> (T, M)>);
+#[derive(Clone, Debug)]
+pub struct Layer();
 
-pub struct Stack<T, N: svc::Stack<T>> {
+#[derive(Clone, Debug)]
+pub struct Stack<N> {
     inner: N,
-    _p: PhantomData<T>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Service<S> {
     inner: S,
 }
 
 // === impl Layer ===
 
-impl<T, B, M> Layer<T, M>
-where
-    T: ShouldNormalizeUri,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<B>>,
-{
-    pub fn new() -> Self {
-        Layer(PhantomData)
-    }
+pub fn layer() -> Layer {
+    Layer()
 }
 
-impl<T, B, M> Clone for Layer<T, M>
+impl<T, B, M> svc::Layer<T, T, M> for Layer
 where
     T: ShouldNormalizeUri,
     M: svc::Stack<T>,
     M::Value: svc::Service<Request = http::Request<B>>,
 {
-    fn clone(&self) -> Self {
-        Self::new()
-    }
-}
-
-impl<T, B, M> svc::Layer<T, T, M> for Layer<T, M>
-where
-    T: ShouldNormalizeUri,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<B>>,
-{
-    type Value = <Stack<T, M> as svc::Stack<T>>::Value;
-    type Error = <Stack<T, M> as svc::Stack<T>>::Error;
-    type Stack = Stack<T, M>;
+    type Value = <Stack<M> as svc::Stack<T>>::Value;
+    type Error = <Stack<M> as svc::Stack<T>>::Error;
+    type Stack = Stack<M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
-        Stack {
-            inner,
-            _p: PhantomData,
-        }
+        Stack { inner }
     }
 }
 
 // === impl Stack ===
 
-impl<T, B, M> Clone for Stack<T, M>
-where
-    T: ShouldNormalizeUri,
-    M: svc::Stack<T> + Clone,
-    M::Value: svc::Service<Request = http::Request<B>>,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<T, B, M> svc::Stack<T> for Stack<T, M>
+impl<T, B, M> svc::Stack<T> for Stack<M>
 where
     T: ShouldNormalizeUri,
     M: svc::Stack<T>,

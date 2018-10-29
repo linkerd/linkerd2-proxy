@@ -10,15 +10,15 @@ use std::marker::PhantomData;
 /// ```ignore
 /// impl<M: Stack<SocketAddr>> Layer<Authority, SocketAddr, M> for BalanceLayer<M> { ... }
 /// ```
-pub trait Layer<T, U, M: super::Stack<U>> {
+pub trait Layer<T, U, S: super::Stack<U>> {
     type Value;
     type Error;
     type Stack: super::Stack<T, Value = Self::Value, Error = Self::Error>;
 
-    /// Produce a `Stack` value from a `M` value.
-    fn bind(&self, next: M) -> Self::Stack;
+    /// Produces a `Stack` value from a `M` value.
+    fn bind(&self, next: S) -> Self::Stack;
 
-    /// Compose this `Layer` with another.
+    /// Produces a new Layer with this layer wrapping the provided inner layer.
     fn and_then<V, N, L>(self, inner: L)
         -> AndThen<U, Self, L>
     where
@@ -31,6 +31,42 @@ pub trait Layer<T, U, M: super::Stack<U>> {
             inner,
             _p: PhantomData,
         }
+    }
+
+    /// Produces a new Layer with another layer wrapping this one.
+    fn push<R, L>(self, outer: L)
+        -> AndThen<T, L, Self>
+    where
+        L: Layer<R, T, Self::Stack>,
+        Self: Sized,
+    {
+        AndThen {
+            outer,
+            inner: self,
+            _p: PhantomData,
+        }
+    }
+
+    /// Wraps this layer such that stack errors are modified by `map_err`.
+    fn map_err<M>(self, map_err: M)
+        -> AndThen<T, super::map_err::Layer<M>, Self>
+    where
+        Self: Sized,
+        M: super::map_err::MapErr<Self::Error>,
+        super::map_err::Layer<M>: Layer<T, T, Self::Stack>,
+    {
+        super::map_err::layer(map_err).and_then(self)
+    }
+}
+
+/// The identity layer.
+impl<T, M: super::Stack<T>> Layer<T, T, M> for () {
+    type Value = M::Value;
+    type Error = M::Error;
+    type Stack = M;
+
+    fn bind(&self, inner: M) -> M {
+        inner
     }
 }
 

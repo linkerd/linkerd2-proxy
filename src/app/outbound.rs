@@ -214,12 +214,9 @@ pub mod orig_proto_upgrade {
         inner: M,
     }
 
-    impl Layer {
-        pub fn new() -> Self {
-            Layer
-        }
+    pub fn layer() -> Layer {
+        Layer
     }
-
 
     impl<M, A, B> svc::Layer<Endpoint, Endpoint, M> for Layer
     where

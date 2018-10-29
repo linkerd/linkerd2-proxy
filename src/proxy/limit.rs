@@ -1,43 +1,31 @@
 extern crate tower_in_flight_limit;
 
 use std::fmt;
-use std::marker::PhantomData;
 
 pub use self::tower_in_flight_limit::InFlightLimit;
 
 use svc;
 
 /// Wraps `Service` stacks with an `InFlightLimit`.
-#[derive(Debug)]
-pub struct Layer<T, M> {
+#[derive(Clone, Debug)]
+pub struct Layer {
     max_in_flight: usize,
-    _p: PhantomData<fn() -> (T, M)>
 }
 
 /// Produces `Services` wrapped with an `InFlightLimit`.
-#[derive(Debug)]
-pub struct Stack<T, M> {
+#[derive(Clone, Debug)]
+pub struct Stack<M> {
     max_in_flight: usize,
     inner: M,
-    _p: PhantomData<fn() -> T>
 }
 
-impl<T, M> Layer<T, M> {
-    pub fn new(max_in_flight: usize) -> Self {
-        Layer {
-            max_in_flight,
-            _p: PhantomData
-        }
-    }
+// === impl Layer ===
+
+pub fn layer(max_in_flight: usize) -> Layer {
+    Layer { max_in_flight }
 }
 
-impl<T, M> Clone for Layer<T, M> {
-    fn clone(&self) -> Self {
-        Self::new(self.max_in_flight)
-    }
-}
-
-impl<T, M> svc::Layer<T, T, M> for Layer<T, M>
+impl<T, M> svc::Layer<T, T, M> for Layer
 where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
@@ -45,30 +33,21 @@ where
     <M::Value as svc::Service>::Request: Send,
     <M::Value as svc::Service>::Future: Send,
 {
-    type Value = <Stack<T, M> as svc::Stack<T>>::Value;
-    type Error = <Stack<T, M> as svc::Stack<T>>::Error;
-    type Stack = Stack<T, M>;
+    type Value = <Stack<M> as svc::Stack<T>>::Value;
+    type Error = <Stack<M> as svc::Stack<T>>::Error;
+    type Stack = Stack<M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             inner,
             max_in_flight: self.max_in_flight,
-            _p: PhantomData
         }
     }
 }
 
-impl<T, M: Clone> Clone for Stack<T, M> {
-    fn clone(&self) -> Self {
-        Self {
-            max_in_flight: self.max_in_flight,
-            inner: self.inner.clone(),
-            _p: PhantomData,
-        }
-    }
-}
+// === impl Stack ===
 
-impl<T, M> svc::Stack<T> for Stack<T, M>
+impl<T, M> svc::Stack<T> for Stack<M>
 where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Stack<T>,

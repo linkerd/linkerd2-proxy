@@ -21,10 +21,8 @@ pub struct Service<T, S> {
 
 // === impl Layer ===
 
-impl Layer {
-    pub fn new() -> Self {
-        Layer
-    }
+pub fn layer() -> Layer {
+    Layer
 }
 
 impl<T, M, B> svc::Layer<T, T, M> for Layer

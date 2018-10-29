@@ -1,15 +1,15 @@
 extern crate tower_buffer;
 
-use std::fmt;
+use std::{error, fmt};
 
-pub use self::tower_buffer::{Buffer, SpawnError};
+pub use self::tower_buffer::{Buffer, Error as ServiceError, SpawnError};
 
 use logging;
 use svc;
 
 /// Wraps `Service` stacks with a `Buffer`.
 #[derive(Debug, Clone)]
-pub struct Layer;
+pub struct Layer();
 
 /// Produces `Service`s wrapped with a `Buffer`
 #[derive(Debug, Clone)]
@@ -24,10 +24,8 @@ pub enum Error<M, S> {
 
 // === impl Layer ===
 
-impl Layer {
-    pub fn new() -> Self {
-        Layer
-    }
+pub fn layer() -> Layer {
+    Layer()
 }
 
 impl<T, M> svc::Layer<T, T, M> for Layer
@@ -43,14 +41,11 @@ where
     type Stack = Stack<M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
-        Stack {
-            inner,
-        }
+        Stack { inner }
     }
 }
 
 // === impl Stack ===
-
 
 impl<T, M> svc::Stack<T> for Stack<M>
 where
@@ -77,6 +72,24 @@ impl<M: fmt::Debug, S> fmt::Debug for Error<M, S> {
         match self {
             Error::Stack(e) => fmt.debug_tuple("buffer::Error::Stack").field(e).finish(),
             Error::Spawn(_) => fmt.debug_tuple("buffer::Error::Spawn").finish(),
+        }
+    }
+}
+
+impl<M: fmt::Display, S> fmt::Display for Error<M, S> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::Stack(e) => fmt::Display::fmt(e, fmt),
+            Error::Spawn(_) => write!(fmt, "Stack built without an executor"),
+        }
+    }
+}
+
+impl<M: error::Error, S> error::Error for Error<M, S> {
+    fn cause(&self) -> Option<&error::Error> {
+        match self {
+            Error::Stack(e) => e.cause(),
+            Error::Spawn(_) => None,
         }
     }
 }

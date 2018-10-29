@@ -4,7 +4,7 @@ use futures::Poll;
 use svc;
 
 /// Describes two alternate `Layer`s, `Stacks`s or `Service`s.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Either<A, B> {
     A(A),
     B(B),

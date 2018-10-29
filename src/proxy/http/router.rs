@@ -2,9 +2,9 @@ use futures::{Future, Poll};
 use h2;
 use http;
 use http::header::CONTENT_LENGTH;
-use std::{error, fmt};
 use std::marker::PhantomData;
 use std::time::Duration;
+use std::{error, fmt};
 
 use svc;
 
@@ -25,17 +25,14 @@ pub struct Config {
 /// A `Rec`-typed `Recognize` instance is used to produce a target for each
 /// `Req`-typed request. If the router doesn't already have a `Service` for this
 /// target, it uses a `Stk`-typed `Service` stack.
-#[derive(Debug)]
-pub struct Layer<Req, Rec, Stk> {
+#[derive(Clone, Debug)]
+pub struct Layer<Req, Rec: Recognize<Req>> {
     recognize: Rec,
-    _p: PhantomData<fn() -> (Req, Stk)>,
+    _p: PhantomData<fn() -> Req>,
 }
 
-pub struct Stack<Req, Rec, Stk>
-where
-    Rec: Recognize<Req>,
-    Stk: svc::Stack<Rec::Target> + Clone,
-{
+#[derive(Clone, Debug)]
+pub struct Stack<Req, Rec: Recognize<Req>, Stk> {
     recognize: Rec,
     inner: Stk,
     _p: PhantomData<fn() -> Req>,
@@ -76,27 +73,27 @@ impl fmt::Display for Config {
 
 // === impl Layer ===
 
-impl<Req, Rec, Stk> Layer<Req, Rec, Stk>
+pub fn layer<Rec, Req>(recognize: Rec) -> Layer<Req, Rec>
 where
-    Rec: Recognize<Req> + Clone,
+    Rec: Recognize<Req> + Clone + Send + Sync + 'static,
 {
-    pub fn new(recognize: Rec) -> Self {
-        Layer { recognize, _p: PhantomData }
+    Layer {
+        recognize,
+        _p: PhantomData,
     }
 }
 
-impl<T, Req, Rec, Stk, B> svc::Layer<T, Rec::Target, Stk> for Layer<Req, Rec, Stk>
+impl<Req, Rec, Stk, B> svc::Layer<Config, Rec::Target, Stk> for Layer<Req, Rec>
 where
-    Rec: Recognize<Req> + Clone,
+    Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
-    Stk::Value: svc::Service<Response = http::Response<B>>,
+    Stk::Value: svc::Service<Request = Req, Response = http::Response<B>>,
     <Stk::Value as svc::Service>::Error: error::Error,
     Stk::Error: fmt::Debug,
     B: Default + Send + 'static,
-    Stack<Req, Rec, Stk>: svc::Stack<T>,
 {
-    type Value = <Stack<Req, Rec, Stk> as svc::Stack<T>>::Value;
-    type Error = <Stack<Req, Rec, Stk> as svc::Stack<T>>::Error;
+    type Value = <Stack<Req, Rec, Stk> as svc::Stack<Config>>::Value;
+    type Error = <Stack<Req, Rec, Stk> as svc::Stack<Config>>::Error;
     type Stack = Stack<Req, Rec, Stk>;
 
     fn bind(&self, inner: Stk) -> Self::Stack {
@@ -109,20 +106,6 @@ where
 }
 
 // === impl Stack ===
-
-impl<Req, Rec, Stk> Clone for Stack<Req, Rec, Stk>
-where
-    Rec: Recognize<Req> + Clone,
-    Stk: svc::Stack<Rec::Target> + Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            recognize: self.recognize.clone(),
-            inner: self.inner.clone(),
-            _p: PhantomData
-        }
-    }
-}
 
 impl<Req, Rec, Stk, B> svc::Stack<Config> for Stack<Req, Rec, Stk>
 where

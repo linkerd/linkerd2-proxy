@@ -82,7 +82,7 @@ pub struct ResponseBody<B> {
 
 // === Layer ===
 
-impl<T, M, A, B> Layer<T, M>
+pub fn layer<T, M, A, B>(next_id: NextId, taps: Arc<Mutex<Taps>>) -> Layer<T, M>
 where
     T: Clone + Into<event::Endpoint>,
     M: svc::Stack<T>,
@@ -94,12 +94,10 @@ where
     A: Body,
     B: Body,
 {
-    pub fn new(next_id: NextId, taps: Arc<Mutex<Taps>>) -> Self {
-        Self {
-            next_id,
-            taps,
-            _p: PhantomData,
-        }
+    Layer {
+        next_id,
+        taps,
+        _p: PhantomData,
     }
 }
 
