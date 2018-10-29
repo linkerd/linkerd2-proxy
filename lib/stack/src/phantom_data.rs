@@ -13,7 +13,7 @@ pub struct Layer<T, M>(PhantomData<fn() -> (T, M)>);
 #[derive(Clone, Debug)]
 pub struct Stack<T, M> {
     inner: M,
-    _p: PhantomData<fn() -> (T, M)>,
+    _p: PhantomData<fn() -> T>,
 }
 
 impl<T, M: super::Stack<T>> super::Layer<T, T, M> for Layer<T, M> {
