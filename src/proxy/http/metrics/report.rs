@@ -23,13 +23,8 @@ where
 #[derive(Clone, Debug)]
 struct Scope {
     request_total_key: String,
-    request_total_help: String,
-
     response_total_key: String,
-    response_total_help: String,
-
     response_latency_ms_key: String,
-    response_latency_ms_help: String,
 }
 
 // ===== impl Report =====
@@ -156,9 +151,6 @@ impl Default for Scope {
             request_total_key: "request_total".to_owned(),
             response_total_key: "response_total".to_owned(),
             response_latency_ms_key: "response_latency_ms".to_owned(),
-            request_total_help: Self::REQUEST_TOTAL_HELP.to_owned(),
-            response_total_help: Self::RESPONSE_TOTAL_HELP.to_owned(),
-            response_latency_ms_help: Self::RESPONSE_LATENCY_MS_HELP.to_owned(),
         }
     }
 }
@@ -173,22 +165,19 @@ impl Scope {
             request_total_key: format!("{}_request_total", prefix),
             response_total_key: format!("{}_response_total", prefix),
             response_latency_ms_key: format!("{}_response_latency_ms", prefix),
-            request_total_help: Self::REQUEST_TOTAL_HELP.to_owned(),
-            response_total_help: Self::RESPONSE_TOTAL_HELP.to_owned(),
-            response_latency_ms_help: Self::RESPONSE_LATENCY_MS_HELP.to_owned(),
         }
     }
 
     fn request_total(&self) -> Metric<Counter> {
-        Metric::new(&self.request_total_key, &self.request_total_help)
+        Metric::new(&self.request_total_key, &Self::REQUEST_TOTAL_HELP)
     }
 
     fn response_total(&self) -> Metric<Counter> {
-        Metric::new(&self.response_total_key, &self.response_total_help)
+        Metric::new(&self.response_total_key, &Self::RESPONSE_TOTAL_HELP)
     }
 
     fn response_latency_ms(&self) -> Metric<Histogram<latency::Ms>> {
-        Metric::new(&self.response_latency_ms_key, &self.response_latency_ms_help)
+        Metric::new(&self.response_latency_ms_key, &Self::RESPONSE_LATENCY_MS_HELP)
     }
 
     const REQUEST_TOTAL_HELP: &'static str = "Total count of HTTP requests.";
