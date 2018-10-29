@@ -65,11 +65,12 @@ impl classify::ClassifyEos for ClassifyEos {
 
     fn eos(self, trailers: Option<&http::HeaderMap>) -> Self::Class {
         if let Some(ref trailers) = trailers {
-            let mut grpc_status = trailers
+            let grpc_status = trailers
                 .get("grpc-status")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|s| s.parse::<u32>().ok());
-            if let Some(grpc_status) = grpc_status.take() {
+            debug!("eos: grpc_status={:?}", grpc_status);
+            if let Some(grpc_status) = grpc_status {
                 return if grpc_status == 0 {
                     Class::Grpc(SuccessOrFailure::Success, grpc_status)
                 } else {
@@ -78,6 +79,7 @@ impl classify::ClassifyEos for ClassifyEos {
             }
         }
 
+        debug!("eos: status={}", self.status);
         let result = if self.status.is_server_error() {
             SuccessOrFailure::Failure
         } else {
