@@ -9,47 +9,46 @@ use std::time::Instant;
 use tokio_timer::clock;
 use tower_h2;
 
-use super::super::{Classify, ClassifyResponse};
-use super::{ClassMetrics, Metrics, Registry};
+use proxy::http::classify::{ClassifyEos, ClassifyResponse};
+use proxy::http::metrics::{ClassMetrics, Metrics, Registry};
 use svc;
 
 /// A stack module that wraps services to record metrics.
-#[derive(Debug, Clone)]
-pub struct Layer<M, K, C>
+#[derive(Debug)]
+pub struct Layer<K, C>
 where
     K: Clone + Hash + Eq,
-    C: Classify<Error = h2::Error> + Clone,
+    C: ClassifyResponse<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
 {
-    classify: C,
     registry: Arc<Mutex<Registry<K, C::Class>>>,
-    _p: PhantomData<fn() -> (M)>,
+    _p: PhantomData<fn() -> C>,
 }
 
 /// Wraps services to record metrics.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Stack<M, K, C>
 where
     K: Clone + Hash + Eq,
-    C: Classify<Error = h2::Error> + Clone,
+    C: ClassifyResponse<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
 {
-    classify: C,
     registry: Arc<Mutex<Registry<K, C::Class>>>,
     inner: M,
+    _p: PhantomData<fn() -> C>,
 }
 
 /// A middleware that records HTTP metrics.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Service<S, C>
 where
     S: svc::Service,
-    C: Classify<Error = h2::Error> + Clone,
+    C: ClassifyResponse<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
 {
-    classify: C,
     metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     inner: S,
+    _p: PhantomData<fn() -> C>,
 }
 
 pub struct ResponseFuture<S, C>
@@ -78,7 +77,7 @@ where
 pub struct ResponseBody<B, C>
 where
     B: tower_h2::Body,
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyEos<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     class_at_first_byte: Option<C::Class>,
@@ -89,33 +88,35 @@ where
     inner: B,
 }
 
-// ===== impl Stack =====
+// === impl Layer ===
 
-pub fn layer<M, K, C, T, A, B>(registry: Arc<Mutex<Registry<K, C::Class>>>, classify: C)
-    -> Layer<M, K, C>
+pub fn layer<K, C>(registry: Arc<Mutex<Registry<K, C::Class>>>) -> Layer<K, C>
 where
     K: Clone + Hash + Eq,
-    C: Classify<Error = h2::Error> + Clone,
+    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
-    C::ClassifyResponse: Send + Sync + 'static,
-    T: Clone + Debug,
-    K: From<T>,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A, C::Class>>,
-        Response = http::Response<B>,
-    >,
-    A: tower_h2::Body,
-    B: tower_h2::Body,
 {
     Layer {
-        classify,
         registry,
         _p: PhantomData,
     }
 }
 
-impl<T, M, K, C, A, B> svc::Layer<T, T, M> for Layer<M, K, C>
+impl<K, C> Clone for Layer<K, C>
+where
+    K: Clone + Hash + Eq,
+    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    C::Class: Hash + Eq,
+{
+    fn clone(&self) -> Self {
+        Self {
+            registry: self.registry.clone(),
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<T, M, K, C, A, B> svc::Layer<T, T, M> for Layer<K, C>
 where
     T: Clone + Debug,
     K: Clone + Hash + Eq + From<T>,
@@ -126,8 +127,7 @@ where
     >,
     A: tower_h2::Body,
     B: tower_h2::Body,
-    C: Classify<Error = h2::Error> + Clone,
-    C::ClassifyResponse: Debug + Send + Sync + 'static,
+    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     type Value = <Stack<M, K, C> as svc::Stack<T>>::Value;
@@ -136,14 +136,30 @@ where
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
-            classify: self.classify.clone(),
-            registry: self.registry.clone(),
             inner,
+            registry: self.registry.clone(),
+            _p: PhantomData,
         }
     }
 }
 
-// ===== impl Stack =====
+// === impl Stack ===
+
+impl<M, K, C> Clone for Stack<M, K, C>
+where
+    M: Clone,
+    K: Clone + Hash + Eq,
+    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    C::Class: Hash + Eq,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            registry: self.registry.clone(),
+            _p: PhantomData,
+        }
+    }
+}
 
 impl<T, M, K, C, A, B> svc::Stack<T> for Stack<M, K, C>
 where
@@ -156,9 +172,8 @@ where
     >,
     A: tower_h2::Body,
     B: tower_h2::Body,
-    C: Classify<Error = h2::Error> + Clone,
+    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
-    C::ClassifyResponse: Debug + Send + Sync + 'static,
 {
     type Value = Service<M::Value, C>;
     type Error = M::Error;
@@ -167,7 +182,6 @@ where
         debug!("make: target={:?}", target);
         let inner = self.inner.make(target)?;
 
-        let classify = self.classify.clone();
         let metrics = match self.registry.lock() {
             Ok(mut r) => Some(
                 r.by_target
@@ -179,11 +193,30 @@ where
         };
 
         debug!("make: metrics={}", metrics.is_some());
-        Ok(Service { classify, metrics, inner })
+        Ok(Service {
+            metrics,
+            inner,
+            _p: PhantomData,
+        })
     }
 }
 
-// ===== impl Service =====
+// === impl Service ===
+
+impl<S, C> Clone for Service<S, C>
+where
+    S: svc::Service + Clone,
+    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    C::Class: Hash + Eq,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            metrics: self.metrics.clone(),
+            _p: PhantomData,
+        }
+    }
+}
 
 impl<C, S, A, B> svc::Service for Service<S, C>
 where
@@ -193,14 +226,13 @@ where
     >,
     A: tower_h2::Body,
     B: tower_h2::Body,
-    C: Classify<Error = h2::Error> + Clone,
+    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
-    C::ClassifyResponse: Debug + Send + Sync + 'static,
 {
     type Request = http::Request<A>;
-    type Response = http::Response<ResponseBody<B, C::ClassifyResponse>>;
+    type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
     type Error = S::Error;
-    type Future = ResponseFuture<S, C::ClassifyResponse>;
+    type Future = ResponseFuture<S, C>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
@@ -228,8 +260,10 @@ where
             http::Request::from_parts(head, body)
         };
 
+        let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
+
         ResponseFuture {
-            classify: Some(self.classify.classify(&req)),
+            classify: Some(classify),
             metrics: self.metrics.clone(),
             stream_open_at: clock::now(),
             inner: self.inner.call(req),
@@ -241,17 +275,22 @@ impl<C, S, B> Future for ResponseFuture<S, C>
 where
     S: svc::Service<Response = http::Response<B>>,
     B: tower_h2::Body,
-    C: ClassifyResponse<Error = h2::Error> + Debug + Send + Sync + 'static,
+    C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Item = http::Response<ResponseBody<B, C>>;
+    type Item = http::Response<ResponseBody<B, C::ClassifyEos>>;
     type Error = S::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let rsp = try_ready!(self.inner.poll());
 
-        let mut classify = self.classify.take();
-        let class_at_first_byte = classify.as_mut().and_then(|c| c.start(&rsp));
+        let (classify, class_at_first_byte) = match self.classify.take() {
+            Some(c) => {
+                let (eos, class) = c.start(&rsp);
+                (Some(eos), class)
+            }
+            None => (None, None),
+        };
 
         let rsp = {
             let (head, inner) = rsp.into_parts();
@@ -303,7 +342,7 @@ where
 impl<B, C> Default for ResponseBody<B, C>
 where
     B: tower_h2::Body + Default,
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyEos<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     fn default() -> Self {
@@ -321,7 +360,7 @@ where
 impl<B, C> ResponseBody<B, C>
 where
     B: tower_h2::Body,
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyEos<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     fn record_class(&mut self, class: Option<C::Class>) {
@@ -352,8 +391,10 @@ where
     }
 
     fn measure_err(&mut self, err: C::Error) -> C::Error {
-        self.class_at_first_byte = None;
-        let c = self.classify.take().map(|mut c| c.error(&err));
+        let c = self
+            .class_at_first_byte
+            .take()
+            .or_else(|| self.classify.take().map(|c| c.error(&err)));
         self.record_class(c);
         err
     }
@@ -362,7 +403,7 @@ where
 impl<B, C> tower_h2::Body for ResponseBody<B, C>
 where
     B: tower_h2::Body,
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyEos<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     type Data = B::Data;
@@ -381,6 +422,7 @@ where
 
         if let c @ Some(_) = self.class_at_first_byte.take() {
             self.record_class(c);
+            self.classify = None;
         }
 
         Ok(Async::Ready(frame))
@@ -389,7 +431,7 @@ where
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
         let trls = try_ready!(self.inner.poll_trailers().map_err(|e| self.measure_err(e)));
 
-        let c = self.classify.take().map(|mut c| c.eos(trls.as_ref()));
+        let c = self.classify.take().map(|c| c.eos(trls.as_ref()));
         self.record_class(c);
 
         Ok(Async::Ready(trls))
@@ -399,11 +441,11 @@ where
 impl<B, C> Drop for ResponseBody<B, C>
 where
     B: tower_h2::Body,
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyEos<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     fn drop(&mut self) {
-        let c = self.classify.take().map(|mut c| c.eos(None));
+        let c = self.classify.take().map(|c| c.eos(None));
         self.record_class(c);
     }
 }

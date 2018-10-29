@@ -11,13 +11,14 @@ use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::runtime::current_thread;
 use tower_h2;
 
-use app::{classify, metric_labels::EndpointLabels};
+use app::classify::{Class, ClassifyResponse};
+use app::{metric_labels::EndpointLabels};
 use control;
 use dns;
 use drain;
 use futures;
 use logging;
-use metrics;
+use metrics::{self, FmtMetrics};
 use proxy::{
     self, buffer,
     http::{client, insert_target, metrics::timestamp_request_open, normalize_uri, router},
@@ -175,18 +176,16 @@ where
         let (taps, observe) = control::Observe::new(100);
         let (http_metrics, http_report) = proxy::http::metrics::new::<
             EndpointLabels,
-            classify::Class,
+            Class,
         >(config.metrics_retain_idle);
         let (transport_metrics, transport_report) = transport::metrics::new();
 
         let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
 
-        let report = telemetry::Report::new(
-            http_report,
-            transport_report,
-            tls_config_report,
-            telemetry::process::Report::new(start_time),
-        );
+        let report = http_report
+            .and_then(transport_report)
+            .and_then(tls_config_report)
+            .and_then(telemetry::process::Report::new(start_time));
 
         let tls_client_config = tls_config_watch.client.clone();
         let tls_cfg_bg = tls_config_watch.start(tls_config_sensor);
@@ -251,7 +250,7 @@ where
                 .push(normalize_uri::layer())
                 .push(orig_proto_upgrade::layer())
                 .push(tap::layer(tap_next_id.clone(), taps.clone()))
-                .push(metrics::layer(http_metrics, classify::Classify))
+                .push(metrics::layer::<_, ClassifyResponse>(http_metrics))
                 .push(svc::watch::layer(tls_client_config));
 
             let dst_router_stack = endpoint_stack
@@ -320,7 +319,7 @@ where
                 .push(svc::stack_per_request::layer())
                 .push(normalize_uri::layer())
                 .push(tap::layer(tap_next_id, taps))
-                .push(metrics::layer(http_metrics, classify::Classify))
+                .push(metrics::layer::<_, ClassifyResponse>(http_metrics))
                 .push(buffer::layer())
                 .push(limit::layer(MAX_IN_FLIGHT))
                 .push(router::layer(inbound::Recognize::new(default_fwd_addr)));
