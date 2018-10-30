@@ -8,10 +8,21 @@ pub trait FmtMetrics {
     fn as_display(&self) -> DisplayMetrics<&Self> where Self: Sized {
         DisplayMetrics(self)
     }
+
+    fn and_then<N>(self, next: N) -> AndThen<Self, N>
+    where
+        N: FmtMetrics,
+        Self: Sized,
+    {
+        AndThen(self, next)
+    }
 }
 
 /// Adapts `FmtMetrics` to `fmt::Display`.
 pub struct DisplayMetrics<F>(F);
+
+#[derive(Clone, Debug)]
+pub struct AndThen<A, B>(A, B);
 
 impl<F: FmtMetrics> fmt::Display for DisplayMetrics<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -55,6 +66,14 @@ pub struct Metric<'a, M: FmtMetric> {
 // ===== impl Metric =====
 
 impl<'a, M: FmtMetric> Metric<'a, M> {
+    pub fn new(name: &'a str, help: &'a str) -> Self {
+        Self {
+            name,
+            help,
+            _p: PhantomData,
+        }
+    }
+
     /// Formats help messages for this metric.
     pub fn fmt_help(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "# HELP {} {}", self.name, self.help)?;
@@ -137,3 +156,11 @@ impl<'a, A: FmtMetrics + 'a> FmtMetrics for &'a A {
     }
 }
 
+impl<A: FmtMetrics, B: FmtMetrics> FmtMetrics for AndThen<A, B> {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_metrics(f)?;
+        self.1.fmt_metrics(f)?;
+
+        Ok(())
+    }
+}
