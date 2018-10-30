@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(class, None);
 
         let mut trailers = HeaderMap::new();
-        trailers.insert("grpc-status", "0".parse().unwrap());
+        trailers.insert("grpc-status", 0.into());
 
         let class = ceos.eos(Some(&trailers));
         assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(class, None);
 
         let mut trailers = HeaderMap::new();
-        trailers.insert("grpc-status", "3".parse().unwrap());
+        trailers.insert("grpc-status", 3.into());
 
         let class = ceos.eos(Some(&trailers));
         assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 3));
