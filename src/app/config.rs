@@ -36,10 +36,10 @@ pub struct Config {
     /// Where to forward externally received connections.
     pub inbound_forward: Option<Addr>,
 
-    /// The maximum amount of time to wait for a connection to the public peer.
+    /// The maximum amount of time to wait for a connection to a local peer.
     pub inbound_connect_timeout: Duration,
 
-    /// The maximum amount of time to wait for a connection to the private peer.
+    /// The maximum amount of time to wait for a connection to a remote peer.
     pub outbound_connect_timeout: Duration,
 
     pub inbound_ports_disable_protocol_detection: IndexSet<u16>,
@@ -76,6 +76,8 @@ pub struct Config {
     /// Time to wait when encountering errors talking to control plane before
     /// a new connection.
     pub control_backoff_delay: Duration,
+
+    pub control_connect_timeout: Duration,
 
     /// Age after which metrics may be dropped.
     pub metrics_retain_idle: Duration,
@@ -215,6 +217,7 @@ pub const VAR_POD_NAMESPACE: &str = "$LINKERD2_PROXY_POD_NAMESPACE";
 
 pub const ENV_CONTROL_URL: &str = "LINKERD2_PROXY_CONTROL_URL";
 pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
+const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
 
 /// Configures a minimum value for the TTL of DNS lookups.
@@ -236,6 +239,7 @@ const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(20);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const DEFAULT_BIND_TIMEOUT: Duration = Duration::from_secs(10); // same as in Linkerd
 const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(5);
+const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 /// It's assumed that a typical proxy can serve inbound traffic for up to 100 pod-local
@@ -324,6 +328,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
 
         let control_backoff_delay = parse(strings, ENV_CONTROL_BACKOFF_DELAY, parse_duration)?
             .unwrap_or(DEFAULT_CONTROL_BACKOFF_DELAY);
+        let control_connect_timeout = parse(strings, ENV_CONTROL_CONNECT_TIMEOUT, parse_duration)?
+            .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT);
 
         let namespaces = Namespaces {
             pod: pod_namespace?,
@@ -444,6 +450,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
                 .into(),
             control_host_and_port,
             control_backoff_delay,
+            control_connect_timeout,
 
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
 
