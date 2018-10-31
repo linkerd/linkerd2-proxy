@@ -55,12 +55,14 @@ pub struct Resolver {
 }
 
 /// Requests that resolution updaes for `authority` be sent on `responder`.
+#[derive(Debug)]
 struct ResolveRequest {
     authority: DnsNameAndPort,
     responder: Responder,
 }
 
 /// A handle through which response updates may be sent.
+#[derive(Debug)]
 struct Responder {
     /// Sends updates from the controller to a `Resolution`.
     update_tx: mpsc::UnboundedSender<Update<Metadata>>,
@@ -69,6 +71,7 @@ struct Responder {
     active: Weak<()>,
 }
 
+#[derive(Debug)]
 pub struct Resolution {
     /// Receives updates from the controller.
     update_rx: mpsc::UnboundedReceiver<Update<Metadata>>,
