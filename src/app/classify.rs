@@ -3,22 +3,36 @@ use http;
 
 use proxy::http::classify;
 
-#[derive(Clone, Debug, Default)]
-pub struct Classify {}
+pub use proxy::http::classify::insert;
 
 #[derive(Clone, Debug, Default)]
-pub struct ClassifyResponse {}
+pub struct Request {}
 
-#[derive(Clone, Debug, Default)]
-pub struct ClassifyEos {
-    class: Option<Class>,
-    status: http::StatusCode,
+#[derive(Clone, Debug)]
+pub enum Response {
+    Grpc,
+    Http,
+}
+
+#[derive(Clone, Debug)]
+pub enum Eos {
+    Http(HttpEos),
+    Grpc(GrpcEos),
+}
+
+#[derive(Clone, Debug)]
+pub struct HttpEos(http::StatusCode);
+
+#[derive(Clone, Debug)]
+pub enum GrpcEos {
+    NoBody(Class),
+    Open,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Class {
     Grpc(SuccessOrFailure, u32),
-    Http(SuccessOrFailure, http::StatusCode),
+    Http(SuccessOrFailure),
     Stream(SuccessOrFailure, String),
 }
 
@@ -28,33 +42,51 @@ pub enum SuccessOrFailure {
     Failure,
 }
 
-// === impl Classify ===
+// === impl Request ===
 
-impl classify::Classify for Classify {
+impl classify::Classify for Request {
     type Class = Class;
     type Error = h2::Error;
-    type ClassifyResponse = ClassifyResponse;
-    type ClassifyEos = ClassifyEos;
+    type ClassifyResponse = Response;
+    type ClassifyEos = Eos;
 
-    fn classify<B>(&self, _: &http::Request<B>) -> Self::ClassifyResponse {
-        ClassifyResponse {}
+    fn classify<B>(&self, req: &http::Request<B>) -> Self::ClassifyResponse {
+        // Determine if the request is a gRPC request by checking the content-type.
+        if let Some(ref ct) = req
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+        {
+            if ct.starts_with("application/grpc+") {
+                return Response::Grpc;
+            }
+        }
+
+        Response::Http {}
     }
 }
 
-// === impl ClassifyResponse ===
+// === impl Response ===
 
-impl classify::ClassifyResponse for ClassifyResponse {
+impl Default for Response {
+    fn default() -> Self {
+        Response::Http
+    }
+}
+
+impl classify::ClassifyResponse for Response {
     type Class = Class;
     type Error = h2::Error;
-    type ClassifyEos = ClassifyEos;
+    type ClassifyEos = Eos;
 
-    fn start<B>(self, rsp: &http::Response<B>) -> (ClassifyEos, Option<Class>) {
-        let class = grpc_class(rsp.headers());
-        let eos = ClassifyEos {
-            class: class.clone(),
-            status: rsp.status(),
-        };
-        (eos, class)
+    fn start<B>(self, rsp: &http::Response<B>) -> Eos {
+        match self {
+            Response::Http => Eos::Http(HttpEos(rsp.status())),
+            Response::Grpc => Eos::Grpc(match grpc_class(rsp.headers()) {
+                None => GrpcEos::Open,
+                Some(class) => GrpcEos::NoBody(class.clone()),
+            }),
+        }
     }
 
     fn error(self, err: &h2::Error) -> Self::Class {
@@ -62,27 +94,54 @@ impl classify::ClassifyResponse for ClassifyResponse {
     }
 }
 
-impl classify::ClassifyEos for ClassifyEos {
+// === impl Eos ===
+
+impl classify::ClassifyEos for Eos {
     type Class = Class;
     type Error = h2::Error;
 
-    fn eos(mut self, trailers: Option<&http::HeaderMap>) -> Self::Class {
-        // If the response headers already classified this stream, use that.
-        if let Some(class) = self.class.take() {
-            return class;
+    fn eos(self, trailers: Option<&http::HeaderMap>) -> Self::Class {
+        match self {
+            Eos::Http(http) => http.eos(trailers),
+            Eos::Grpc(grpc) => grpc.eos(trailers),
         }
+    }
 
-        // Otherwise, fall-back to the default classification logic.
-        if let Some(class) = trailers.and_then(grpc_class) {
-            return class;
+    fn error(self, err: &h2::Error) -> Self::Class {
+        match self {
+            Eos::Http(http) => http.error(err),
+            Eos::Grpc(grpc) => grpc.error(err),
         }
+    }
+}
 
-        let result = if self.status.is_server_error() {
-            SuccessOrFailure::Failure
-        } else {
-            SuccessOrFailure::Success
-        };
-        Class::Http(result, self.status)
+impl classify::ClassifyEos for HttpEos {
+    type Class = Class;
+    type Error = h2::Error;
+
+    fn eos(self, _: Option<&http::HeaderMap>) -> Self::Class {
+        match self {
+            HttpEos(status) if status.is_server_error() => Class::Http(SuccessOrFailure::Failure),
+            HttpEos(_) => Class::Http(SuccessOrFailure::Success),
+        }
+    }
+
+    fn error(self, err: &h2::Error) -> Self::Class {
+        Class::Stream(SuccessOrFailure::Failure, format!("{}", err))
+    }
+}
+
+impl classify::ClassifyEos for GrpcEos {
+    type Class = Class;
+    type Error = h2::Error;
+
+    fn eos(self, trailers: Option<&http::HeaderMap>) -> Self::Class {
+        match self {
+            GrpcEos::NoBody(class) => class,
+            GrpcEos::Open => trailers
+                .and_then(grpc_class)
+                .unwrap_or_else(|| Class::Grpc(SuccessOrFailure::Success, 0)),
+        }
     }
 
     fn error(self, err: &h2::Error) -> Self::Class {
@@ -109,21 +168,16 @@ fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
 mod tests {
     use http::{HeaderMap, Response, StatusCode};
 
-    use super::*;
+    use super::{Class, SuccessOrFailure};
     use proxy::http::classify::{ClassifyEos as _CE, ClassifyResponse as _CR};
 
     #[test]
     fn http_response_status_ok() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
-        let crsp = ClassifyResponse {};
-        let (ceos, class) = crsp.start(&rsp);
-        assert_eq!(class, None);
-
+        let crsp = super::Response::default();
+        let ceos = crsp.start(&rsp);
         let class = ceos.eos(None);
-        assert_eq!(
-            class,
-            Class::Http(SuccessOrFailure::Success, StatusCode::OK)
-        );
+        assert_eq!(class, Class::Http(SuccessOrFailure::Success));
     }
 
     #[test]
@@ -132,15 +186,10 @@ mod tests {
             .status(StatusCode::BAD_REQUEST)
             .body(())
             .unwrap();
-        let crsp = ClassifyResponse {};
-        let (ceos, class) = crsp.start(&rsp);
-        assert_eq!(class, None);
-
+        let crsp = super::Response::default();
+        let ceos = crsp.start(&rsp);
         let class = ceos.eos(None);
-        assert_eq!(
-            class,
-            Class::Http(SuccessOrFailure::Success, StatusCode::BAD_REQUEST)
-        );
+        assert_eq!(class, Class::Http(SuccessOrFailure::Success));
     }
 
     #[test]
@@ -149,15 +198,10 @@ mod tests {
             .status(StatusCode::INTERNAL_SERVER_ERROR)
             .body(())
             .unwrap();
-        let crsp = ClassifyResponse {};
-        let (ceos, class) = crsp.start(&rsp);
-        assert_eq!(class, None);
-
+        let crsp = super::Response::default();
+        let ceos = crsp.start(&rsp);
         let class = ceos.eos(None);
-        assert_eq!(
-            class,
-            Class::Http(SuccessOrFailure::Failure, StatusCode::INTERNAL_SERVER_ERROR)
-        );
+        assert_eq!(class, Class::Http(SuccessOrFailure::Failure));
     }
 
     #[test]
@@ -167,10 +211,8 @@ mod tests {
             .status(StatusCode::OK)
             .body(())
             .unwrap();
-        let crsp = ClassifyResponse {};
-        let (ceos, class) = crsp.start(&rsp);
-        assert_eq!(class, Some(Class::Grpc(SuccessOrFailure::Success, 0)));
-
+        let crsp = super::Response::Grpc;
+        let ceos = crsp.start(&rsp);
         let class = ceos.eos(None);
         assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
     }
@@ -182,10 +224,8 @@ mod tests {
             .status(StatusCode::OK)
             .body(())
             .unwrap();
-        let crsp = ClassifyResponse {};
-        let (ceos, class) = crsp.start(&rsp);
-        assert_eq!(class, Some(Class::Grpc(SuccessOrFailure::Failure, 2)));
-
+        let crsp = super::Response::Grpc;
+        let ceos = crsp.start(&rsp);
         let class = ceos.eos(None);
         assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 2));
     }
@@ -193,9 +233,8 @@ mod tests {
     #[test]
     fn grpc_response_trailer_ok() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
-        let crsp = ClassifyResponse {};
-        let (ceos, class) = crsp.start(&rsp);
-        assert_eq!(class, None);
+        let crsp = super::Response::Grpc;
+        let ceos = crsp.start(&rsp);
 
         let mut trailers = HeaderMap::new();
         trailers.insert("grpc-status", 0.into());
@@ -207,9 +246,8 @@ mod tests {
     #[test]
     fn grpc_response_trailer_error() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
-        let crsp = ClassifyResponse {};
-        let (ceos, class) = crsp.start(&rsp);
-        assert_eq!(class, None);
+        let crsp = super::Response::Grpc;
+        let ceos = crsp.start(&rsp);
 
         let mut trailers = HeaderMap::new();
         trailers.insert("grpc-status", 3.into());

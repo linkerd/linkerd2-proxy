@@ -2,7 +2,9 @@ use http;
 use std::fmt;
 use std::net::SocketAddr;
 
-use proxy::http::{client, h1, normalize_uri::ShouldNormalizeUri, router, Settings};
+use proxy::http::{
+    classify::CanClassify, client, h1, normalize_uri::ShouldNormalizeUri, router, Settings,
+};
 use proxy::server::Source;
 use svc::stack_per_request::ShouldStackPerRequest;
 use tap;
@@ -35,6 +37,14 @@ impl ShouldNormalizeUri for Endpoint {
 impl ShouldStackPerRequest for Endpoint {
     fn should_stack_per_request(&self) -> bool {
         !self.settings.is_http2() && !self.settings.can_reuse_clients()
+    }
+}
+
+impl CanClassify for Endpoint {
+    type Classify = super::classify::Request;
+
+    fn classify(&self) -> super::classify::Request {
+        super::classify::Request::default()
     }
 }
 

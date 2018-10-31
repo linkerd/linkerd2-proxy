@@ -10,7 +10,7 @@ use tokio_timer::clock;
 use tower_h2;
 
 use proxy::http::classify::{ClassifyEos, ClassifyResponse};
-use proxy::http::metrics::{ClassMetrics, Metrics, Registry};
+use proxy::http::metrics::{ClassMetrics, Metrics, Registry, StatusMetrics};
 use svc;
 
 /// A stack module that wraps services to record metrics.
@@ -80,11 +80,11 @@ where
     C: ClassifyEos<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
-    class_at_first_byte: Option<C::Class>,
+    status: http::StatusCode,
     classify: Option<C>,
     metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     stream_open_at: Instant,
-    first_byte_at: Option<Instant>,
+    latency_recorded: bool,
     inner: B,
 }
 
@@ -284,22 +284,16 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let rsp = try_ready!(self.inner.poll());
 
-        let (classify, class_at_first_byte) = match self.classify.take() {
-            Some(c) => {
-                let (eos, class) = c.start(&rsp);
-                (Some(eos), class)
-            }
-            None => (None, None),
-        };
+        let classify = self.classify.take().map(|c| c.start(&rsp));
 
         let rsp = {
             let (head, inner) = rsp.into_parts();
             let body = ResponseBody {
+                status: head.status,
                 classify,
-                class_at_first_byte,
                 metrics: self.metrics.clone(),
                 stream_open_at: self.stream_open_at,
-                first_byte_at: None,
+                latency_recorded: false,
                 inner,
             };
             http::Response::from_parts(head, body)
@@ -347,12 +341,12 @@ where
 {
     fn default() -> Self {
         Self {
+            status: http::StatusCode::OK,
             inner: B::default(),
             stream_open_at: clock::now(),
             classify: None,
-            class_at_first_byte: None,
             metrics: None,
-            first_byte_at: None,
+            latency_recorded: false,
         }
     }
 }
@@ -363,7 +357,29 @@ where
     C: ClassifyEos<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
-    fn record_class(&mut self, class: Option<C::Class>) {
+    fn record_latency(&mut self) {
+        let now = clock::now();
+
+        let lock = match self.metrics.as_mut() {
+            Some(lock) => lock,
+            None => return,
+        };
+        let mut metrics = match lock.lock() {
+            Ok(m) => m,
+            Err(_) => return,
+        };
+
+        (*metrics).last_update = now;
+
+        let status_metrics = metrics
+            .by_status
+            .entry(self.status)
+            .or_insert_with(|| StatusMetrics::default());
+
+        status_metrics.latency.add(now - self.stream_open_at);
+    }
+
+    fn record_class(&mut self, class: C::Class) {
         let now = clock::now();
         let lock = match self.metrics.take() {
             Some(lock) => lock,
@@ -373,29 +389,26 @@ where
             Ok(m) => m,
             Err(_) => return,
         };
+
         (*metrics).last_update = now;
 
-        let first_byte_at = self.first_byte_at.unwrap_or_else(|| now);
-        let class_metrics = match class {
-            Some(c) => metrics
-                .by_class
-                .entry(c)
-                .or_insert_with(|| ClassMetrics::default()),
-            None => &mut metrics.unclassified,
-        };
+        let status_metrics = metrics
+            .by_status
+            .entry(self.status)
+            .or_insert_with(|| StatusMetrics::default());
+
+        let class_metrics = status_metrics
+            .by_class
+            .entry(class)
+            .or_insert_with(|| ClassMetrics::default());
 
         class_metrics.total.incr();
-        class_metrics
-            .latency
-            .add(first_byte_at - self.stream_open_at);
     }
 
     fn measure_err(&mut self, err: C::Error) -> C::Error {
-        let c = self
-            .class_at_first_byte
-            .take()
-            .or_else(|| self.classify.take().map(|c| c.error(&err)));
-        self.record_class(c);
+        if let Some(c) = self.classify.take().map(|c| c.error(&err)) {
+            self.record_class(c);
+        }
         err
     }
 }
@@ -413,16 +426,11 @@ where
     }
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, h2::Error> {
-        let poll = self.inner.poll_data().map_err(|e| self.measure_err(e));
-        let frame = try_ready!(poll);
+        let frame = try_ready!(self.inner.poll_data().map_err(|e| self.measure_err(e)));
 
-        if self.first_byte_at.is_none() {
-            self.first_byte_at = Some(clock::now());
-        }
-
-        if let c @ Some(_) = self.class_at_first_byte.take() {
-            self.record_class(c);
-            self.classify = None;
+        if !self.latency_recorded {
+            self.record_latency();
+            self.latency_recorded = true;
         }
 
         Ok(Async::Ready(frame))
@@ -431,8 +439,9 @@ where
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
         let trls = try_ready!(self.inner.poll_trailers().map_err(|e| self.measure_err(e)));
 
-        let c = self.classify.take().map(|c| c.eos(trls.as_ref()));
-        self.record_class(c);
+        if let Some(c) = self.classify.take().map(|c| c.eos(trls.as_ref())) {
+            self.record_class(c);
+        }
 
         Ok(Async::Ready(trls))
     }
@@ -445,7 +454,13 @@ where
     C::Class: Hash + Eq,
 {
     fn drop(&mut self) {
-        let c = self.classify.take().map(|c| c.eos(None));
-        self.record_class(c);
+        if !self.latency_recorded {
+            self.record_latency();
+            self.latency_recorded = true;
+        }
+
+        if let Some(c) = self.classify.take().map(|c| c.eos(None)) {
+            self.record_class(c);
+        }
     }
 }

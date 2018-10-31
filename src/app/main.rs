@@ -11,8 +11,8 @@ use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::runtime::current_thread;
 use tower_h2;
 
-use app::classify::{Class, ClassifyResponse};
-use app::{metric_labels::EndpointLabels};
+use app::classify::{self, Class};
+use app::metric_labels::EndpointLabels;
 use control;
 use dns;
 use drain;
@@ -250,7 +250,8 @@ where
                 .push(normalize_uri::layer())
                 .push(orig_proto_upgrade::layer())
                 .push(tap::layer(tap_next_id.clone(), taps.clone()))
-                .push(metrics::layer::<_, ClassifyResponse>(http_metrics))
+                .push(metrics::layer::<_, classify::Response>(http_metrics))
+                .push(classify::insert::layer())
                 .push(svc::watch::layer(tls_client_config));
 
             let dst_router_stack = endpoint_stack
@@ -319,7 +320,8 @@ where
                 .push(svc::stack_per_request::layer())
                 .push(normalize_uri::layer())
                 .push(tap::layer(tap_next_id, taps))
-                .push(metrics::layer::<_, ClassifyResponse>(http_metrics))
+                .push(metrics::layer::<_, classify::Response>(http_metrics))
+                .push(classify::insert::layer())
                 .push(buffer::layer())
                 .push(limit::layer(MAX_IN_FLIGHT))
                 .push(router::layer(inbound::Recognize::new(default_fwd_addr)));

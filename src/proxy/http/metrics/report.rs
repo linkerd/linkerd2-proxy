@@ -1,3 +1,4 @@
+use http;
 use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
@@ -6,7 +7,7 @@ use tokio_timer::clock;
 
 use metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 
-use super::{ClassMetrics, Metrics, Registry};
+use super::{ClassMetrics, Metrics, Registry, StatusMetrics};
 
 /// Reports HTTP metrics for prometheus.
 #[derive(Clone, Debug)]
@@ -19,6 +20,8 @@ where
     registry: Arc<Mutex<Registry<T, C>>>,
     retain_idle: Duration,
 }
+
+struct Status(http::StatusCode);
 
 #[derive(Clone, Debug)]
 struct Scope {
@@ -82,15 +85,11 @@ where
         self.scope.request_total().fmt_help(f)?;
         registry.fmt_by_target(f, self.scope.request_total(), |s| &s.total)?;
 
+        self.scope.response_latency_ms().fmt_help(f)?;
+        registry.fmt_by_status(f, self.scope.response_latency_ms(), |s| &s.latency)?;
+
         self.scope.response_total().fmt_help(f)?;
         registry.fmt_by_class(f, self.scope.response_total(), |s| &s.total)?;
-        //registry.fmt_by_target(f, response_total, |s| &s.unclassified.total)?;
-
-        self.scope.response_latency_ms().fmt_help(f)?;
-        registry.fmt_by_class(f, self.scope.response_latency_ms(), |s| &s.latency)?;
-        // registry.fmt_by_target(f, response_latency_ms, |s| {
-        //     &s.unclassified.latency
-        // })?;
 
         Ok(())
     }
@@ -120,6 +119,28 @@ where
         Ok(())
     }
 
+    fn fmt_by_status<M, F>(
+        &self,
+        f: &mut fmt::Formatter,
+        metric: Metric<M>,
+        get_metric: F,
+    ) -> fmt::Result
+    where
+        M: FmtMetric,
+        F: Fn(&StatusMetrics<C>) -> &M,
+    {
+        for (tgt, tm) in &self.by_target {
+            if let Ok(tm) = tm.lock() {
+                for (status, m) in &tm.by_status {
+                    let labels = (tgt, Status(*status));
+                    get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn fmt_by_class<M, F>(
         &self,
         f: &mut fmt::Formatter,
@@ -132,9 +153,11 @@ where
     {
         for (tgt, tm) in &self.by_target {
             if let Ok(tm) = tm.lock() {
-                for (cls, m) in &tm.by_class {
-                    let labels = (tgt, cls);
-                    get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
+                for (status, sm) in &tm.by_status {
+                    for (cls, m) in &sm.by_class {
+                        let labels = (tgt, (Status(*status), cls));
+                        get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
+                    }
                 }
             }
         }
@@ -187,4 +210,10 @@ impl Scope {
     const RESPONSE_LATENCY_MS_HELP: &'static str =
         "Elapsed times between a request's headers being received \
         and its response stream completing";
+}
+
+impl FmtLabels for Status {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "status_code=\"{}\"", self.0.as_u16())
+    }
 }
