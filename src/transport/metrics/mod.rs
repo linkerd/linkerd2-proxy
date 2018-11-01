@@ -569,7 +569,7 @@ impl FmtLabels for Peer {
 impl FmtLabels for Eos {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Eos::Clean => f.pad("errno=\"OK\""),
+            Eos::Clean => f.pad("errno=\"\""),
             Eos::Error(errno) => {
                 write!(f, "errno=\"{}\"", errno)
             }
