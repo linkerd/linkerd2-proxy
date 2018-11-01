@@ -24,6 +24,7 @@ pub enum IpAddrFuture {
     Fixed(IpAddr),
 }
 
+#[derive(Debug)]
 pub enum Error {
     NoAddressesFound,
     ResolutionFailed(ResolveError),

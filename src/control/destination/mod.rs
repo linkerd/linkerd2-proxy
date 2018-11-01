@@ -24,30 +24,32 @@
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
-use indexmap::IndexMap;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
-
 use futures::{
+    future,
     sync::mpsc,
     Async,
     Future,
     Poll,
     Stream
 };
+use indexmap::IndexMap;
+use std::fmt;
+use std::sync::{Arc, Weak};
+use tower_h2::{Body, BoxBody, Data, HttpService};
 
 use dns;
 use transport::tls;
 use proxy::resolve::{self, Resolve, Update};
-use transport::{DnsNameAndPort, HostAndPort};
+use transport::DnsNameAndPort;
 
 pub mod background;
 
 use app::config::Namespaces;
+use self::background::Background;
 use Conditional;
 
 /// A handle to request resolutions from the background discovery task.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Resolver {
     request_tx: mpsc::UnboundedSender<ResolveRequest>,
 }
@@ -109,26 +111,27 @@ pub enum ProtocolHint {
 /// The `Resolver` is used by a listener to request resolutions, while
 /// the background future is executed on the controller thread's executor
 /// to drive the background task.
-pub fn new(
+pub fn new<T>(
+    mut client: Option<T>,
     dns_resolver: dns::Resolver,
     namespaces: Namespaces,
-    host_and_port: Option<HostAndPort>,
-    controller_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
-    control_backoff_delay: Duration,
     concurrency_limit: usize,
-) -> (Resolver, impl Future<Item = (), Error = ()>) {
+) -> (Resolver, impl Future<Item = (), Error = ()>)
+where
+    T: HttpService<RequestBody = BoxBody>,
+    T::ResponseBody: Body<Data = Data>,
+    T::Error: fmt::Debug,
+{
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
-    let bg = background::task(
+    let mut bg = Background::new(
         rx,
         dns_resolver,
         namespaces,
-        host_and_port,
-        controller_tls,
-        control_backoff_delay,
         concurrency_limit,
     );
-    (disco, bg)
+    let task = future::poll_fn(move || bg.poll_rpc(&mut client));
+    (disco, task)
 }
 
 // ==== impl Resolver =====

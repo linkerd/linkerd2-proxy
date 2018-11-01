@@ -8,7 +8,7 @@ use std::{
 };
 
 use futures::{Async, Future, Stream,};
-use tower_h2::{BoxBody, HttpService, RecvBody};
+use tower_h2::{Body, Data, HttpService};
 
 use api::{
     destination::{
@@ -21,7 +21,7 @@ use api::{
 
 use control::{
     cache::{Cache, CacheChange, Exists},
-    destination::{Metadata, Responder, ProtocolHint, Update},
+    destination::{Metadata, ProtocolHint, Responder, Update},
     remote_stream::Remote,
 };
 use dns::{self, IpAddrListFuture};
@@ -31,7 +31,7 @@ use Conditional;
 use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
 /// Holds the state of a single resolution.
-pub(super) struct DestinationSet<T: HttpService<ResponseBody = RecvBody>> {
+pub(super) struct DestinationSet<T: HttpService> {
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
     pub query: DestinationServiceQuery<T>,
     pub dns_query: Option<IpAddrListFuture>,
@@ -42,7 +42,8 @@ pub(super) struct DestinationSet<T: HttpService<ResponseBody = RecvBody>> {
 
 impl<T> DestinationSet<T>
 where
-    T: HttpService<RequestBody = BoxBody, ResponseBody = RecvBody>,
+    T: HttpService,
+    T::ResponseBody: Body<Data = Data>,
     T::Error: fmt::Debug,
 {
     pub(super) fn reset_dns_query(
@@ -179,8 +180,11 @@ where
     }
 }
 
-impl<T: HttpService<ResponseBody = RecvBody>> DestinationSet<T> {
-
+impl<T> DestinationSet<T>
+where
+    T: HttpService,
+    T::ResponseBody: Body<Data = Data>,
+{
     /// Returns `true` if the authority that created this query _should_ query
     /// the Destination service, but was unable to due to insufficient capaacity.
     pub(super) fn needs_query_capacity(&self) -> bool {
