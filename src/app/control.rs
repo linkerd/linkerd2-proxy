@@ -315,7 +315,8 @@ pub mod resolve {
     impl<S: fmt::Display, I: fmt::Display> fmt::Display for Error<S, I> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                Error::Dns(_) => write!(f, "dns error"),
+                Error::Dns(dns::Error::NoAddressesFound) => write!(f, "no addresses found"),
+                Error::Dns(dns::Error::ResolutionFailed(e)) => fmt::Display::fmt(&e, f),
                 Error::Invalid(ref e) => fmt::Display::fmt(&e, f),
                 Error::Inner(ref e) => fmt::Display::fmt(&e, f),
             }
