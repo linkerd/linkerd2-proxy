@@ -197,14 +197,14 @@ pub fn admin() -> Section {
     Section::Admin
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Section {
     Proxy,
     Admin,
 }
 
 /// A utility for logging actions taken on behalf of a server task.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Server {
     section: Section,
     name: &'static str,
@@ -213,7 +213,7 @@ pub struct Server {
 }
 
 /// A utility for logging actions taken on behalf of a client task.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Client<C: fmt::Display, D: fmt::Display> {
     section: Section,
     client: C,

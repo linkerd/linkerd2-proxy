@@ -60,15 +60,14 @@ pub fn layer() -> Layer {
     }
 }
 
-// TODO: once a stacked clients needs backoff...
-// impl Layer {
-//     pub fn with_fixed_backoff(self, wait: Duration) -> Self {
-//         Self {
-//             backoff: Backoff::Fixed(wait),
-//             .. self
-//         }
-//     }
-// }
+impl Layer {
+    pub fn with_fixed_backoff(self, wait: Duration) -> Self {
+        Self {
+            backoff: Backoff::Fixed(wait),
+            .. self
+        }
+    }
+}
 
 impl<T, M> svc::Layer<T, T, M> for Layer
 where
@@ -113,23 +112,23 @@ where
 
 // === impl Service ===
 
-impl<T, N> Service<T, N>
+#[cfg(test)]
+impl<N> Service<&'static str, N>
 where
-    T: fmt::Debug,
     N: svc::NewService,
     N::InitError: fmt::Display,
 {
-    pub fn new(target: T, new_service: N) -> Self {
+    fn for_test(new_service: N) -> Self {
         Self {
             inner: Reconnect::new(new_service),
-            target,
+            target: "test",
             backoff: Backoff::None,
             active_backoff: None,
             mute_connect_error_log: false,
         }
     }
 
-    pub fn with_fixed_backoff(self, wait: Duration) -> Self {
+    fn with_fixed_backoff(self, wait: Duration) -> Self {
         Self {
             backoff: Backoff::Fixed(wait),
             .. self
@@ -195,7 +194,7 @@ where
                 // task is notified below.
                 self.active_backoff = match self.backoff {
                     Backoff::None => None,
-                    Backoff::Fixed(wait) => Some(Delay::new(clock::now() + wait)),
+                    Backoff::Fixed(ref wait) => Some(Delay::new(clock::now() + *wait)),
                 };
 
                 // The inner service is now idle and will renew its internal
@@ -317,7 +316,7 @@ mod tests {
     #[test]
     fn reconnects_with_backoff() {
         let mock = NewService { fails: 2.into() };
-        let mut backoff = super::Service::new("test", mock)
+        let mut backoff = super::Service::for_test(mock)
             .with_fixed_backoff(Duration::from_millis(100));
         let mut rt = Runtime::new().unwrap();
 

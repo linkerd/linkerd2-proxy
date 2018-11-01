@@ -36,7 +36,6 @@ extern crate regex;
 extern crate ring;
 extern crate tokio;
 extern crate tokio_timer;
-extern crate tower_add_origin;
 extern crate tower_grpc;
 extern crate tower_h2;
 extern crate tower_util;

@@ -5,6 +5,7 @@ use logging;
 
 mod classify;
 pub mod config;
+mod control;
 mod destination;
 mod inbound;
 mod main;
