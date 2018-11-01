@@ -1,9 +1,9 @@
 use http;
 use std::fmt;
 
-use app::Destination;
+use app::{classify, Destination};
 use control::destination::{Metadata, ProtocolHint};
-use proxy::http::{classify::CanClassify, client, normalize_uri::ShouldNormalizeUri, router};
+use proxy::http::{client, normalize_uri::ShouldNormalizeUri, router};
 use svc::{self, stack_per_request::ShouldStackPerRequest};
 use tap;
 use transport::{connect, tls};
@@ -42,11 +42,11 @@ impl ShouldStackPerRequest for Endpoint {
     }
 }
 
-impl CanClassify for Endpoint {
-    type Classify = super::classify::Request;
+impl classify::CanClassify for Endpoint {
+    type Classify = classify::Request;
 
-    fn classify(&self) -> super::classify::Request {
-        super::classify::Request::default()
+    fn classify(&self) -> classify::Request {
+        classify::Request
     }
 }
 

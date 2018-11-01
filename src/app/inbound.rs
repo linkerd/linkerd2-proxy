@@ -3,11 +3,12 @@ use std::fmt;
 use std::net::SocketAddr;
 
 use proxy::http::{
-    classify::CanClassify, client, h1, normalize_uri::ShouldNormalizeUri, router, Settings,
+    client, h1, normalize_uri::ShouldNormalizeUri, router, Settings,
 };
 use proxy::server::Source;
 use svc::stack_per_request::ShouldStackPerRequest;
 use tap;
+use super::classify;
 use transport::{connect, tls};
 use Conditional;
 
@@ -40,11 +41,11 @@ impl ShouldStackPerRequest for Endpoint {
     }
 }
 
-impl CanClassify for Endpoint {
-    type Classify = super::classify::Request;
+impl classify::CanClassify for Endpoint {
+    type Classify = classify::Request;
 
-    fn classify(&self) -> super::classify::Request {
-        super::classify::Request::default()
+    fn classify(&self) -> classify::Request {
+        classify::Request
     }
 }
 

@@ -1,4 +1,7 @@
+use futures::Poll;
 use http;
+
+use svc;
 
 /// Determines how a request's response should be classified.
 pub trait Classify {
@@ -62,80 +65,73 @@ pub trait CanClassify {
     fn classify(&self) -> Self::Classify;
 }
 
-pub mod insert {
-    use futures::Poll;
-    use http;
+#[derive(Debug, Clone)]
+pub struct Layer();
 
-    use svc;
+#[derive(Clone, Debug)]
+pub struct Stack<M> {
+    inner: M,
+}
 
-    #[derive(Debug, Clone)]
-    pub struct Layer();
+#[derive(Clone, Debug)]
+pub struct Service<C, S: svc::Service> {
+    classify: C,
+    inner: S,
+}
 
-    #[derive(Clone, Debug)]
-    pub struct Stack<M> {
-        inner: M,
+pub fn layer() -> Layer {
+    Layer()
+}
+
+impl<T, M, A, B> svc::Layer<T, T, M> for Layer
+where
+    T: CanClassify,
+    M: svc::Stack<T>,
+    M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+{
+    type Value = <Stack<M> as svc::Stack<T>>::Value;
+    type Error = <Stack<M> as svc::Stack<T>>::Error;
+    type Stack = Stack<M>;
+
+    fn bind(&self, inner: M) -> Self::Stack {
+        Stack { inner }
+    }
+}
+
+impl<T, M, A, B> svc::Stack<T> for Stack<M>
+where
+    T: CanClassify,
+    M: svc::Stack<T>,
+    M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+{
+    type Value = Service<T::Classify, M::Value>;
+    type Error = M::Error;
+
+    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+        let inner = self.inner.make(target)?;
+        let classify = target.classify();
+        Ok(Service { classify, inner })
+    }
+}
+
+impl<C, S, A, B> svc::Service for Service<C, S>
+where
+    C: Classify,
+    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+{
+    type Request = S::Request;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Service<C, S: svc::Service> {
-        classify: C,
-        inner: S,
-    }
+    fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
+        let classify_rsp = self.classify.classify(&req);
+        let _ = req.extensions_mut().insert(classify_rsp);
 
-    pub fn layer() -> Layer {
-        Layer()
-    }
-
-    impl<T, M, A, B> svc::Layer<T, T, M> for Layer
-    where
-        T: super::CanClassify,
-        M: svc::Stack<T>,
-        M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
-    {
-        type Value = <Stack<M> as svc::Stack<T>>::Value;
-        type Error = <Stack<M> as svc::Stack<T>>::Error;
-        type Stack = Stack<M>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack { inner }
-        }
-    }
-
-    impl<T, M, A, B> svc::Stack<T> for Stack<M>
-    where
-        T: super::CanClassify,
-        M: svc::Stack<T>,
-        M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
-    {
-        type Value = Service<T::Classify, M::Value>;
-        type Error = M::Error;
-
-        fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-            let inner = self.inner.make(target)?;
-            let classify = target.classify();
-            Ok(Service { classify, inner })
-        }
-    }
-
-    impl<C, S, A, B> svc::Service for Service<C, S>
-    where
-        C: super::Classify,
-        S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
-    {
-        type Request = S::Request;
-        type Response = S::Response;
-        type Error = S::Error;
-        type Future = S::Future;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
-        }
-
-        fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
-            let classify_rsp = self.classify.classify(&req);
-            let _ = req.extensions_mut().insert(classify_rsp);
-
-            self.inner.call(req)
-        }
+        self.inner.call(req)
     }
 }

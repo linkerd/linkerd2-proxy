@@ -1,12 +1,11 @@
 use h2;
 use http;
 
+pub use proxy::http::classify::{CanClassify, layer};
 use proxy::http::classify;
 
-pub use proxy::http::classify::insert;
-
 #[derive(Clone, Debug, Default)]
-pub struct Request {}
+pub struct Request;
 
 #[derive(Clone, Debug)]
 pub enum Response {

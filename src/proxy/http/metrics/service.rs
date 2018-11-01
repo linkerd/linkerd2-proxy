@@ -377,6 +377,8 @@ where
             .or_insert_with(|| StatusMetrics::default());
 
         status_metrics.latency.add(now - self.stream_open_at);
+
+        self.latency_recorded = true;
     }
 
     fn record_class(&mut self, class: C::Class) {
@@ -430,7 +432,6 @@ where
 
         if !self.latency_recorded {
             self.record_latency();
-            self.latency_recorded = true;
         }
 
         Ok(Async::Ready(frame))
@@ -456,7 +457,6 @@ where
     fn drop(&mut self) {
         if !self.latency_recorded {
             self.record_latency();
-            self.latency_recorded = true;
         }
 
         if let Some(c) = self.classify.take().map(|c| c.eos(None)) {

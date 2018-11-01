@@ -291,7 +291,7 @@ where
                     .push(orig_proto_upgrade::layer())
                     .push(tap::layer(tap_next_id.clone(), taps.clone()))
                     .push(metrics::layer::<_, classify::Response>(http_metrics))
-                    .push(classify::insert::layer())
+                    .push(classify::layer())
                     .push(svc::watch::layer(tls_client_config))
                     .push(buffer::layer());
 
@@ -362,7 +362,7 @@ where
                     .push(normalize_uri::layer())
                     .push(tap::layer(tap_next_id, taps))
                     .push(metrics::layer::<_, classify::Response>(http_metrics))
-                    .push(classify::insert::layer())
+                    .push(classify::layer())
                     .push(buffer::layer())
                     .push(limit::layer(MAX_IN_FLIGHT))
                     .push(router::layer(inbound::Recognize::new(default_fwd_addr)));
