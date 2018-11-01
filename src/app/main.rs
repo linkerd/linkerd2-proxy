@@ -232,14 +232,11 @@ where
             // lazily so that a default executor is available to spawn the
             // background buffering task.
             future::lazy(move || match control_config {
-                None => future::ok(None),
-                Some(config) => match stack.make(&config) {
-                    Ok(svc) => future::ok(Some(svc)),
-                    Err(e) => {
-                        error!("failed to build controller: {}", e);
-                        future::err(())
-                    }
-                },
+                None => Ok(None),
+                Some(config) => stack
+                    .make(&config)
+                    .map(Some)
+                    .map_err(|e| error!("failed to build controller: {}", e)),
             })
         };
 
