@@ -77,6 +77,7 @@ pub struct Config {
     /// a new connection.
     pub control_backoff_delay: Duration,
 
+    /// The maximum amount of time to wait for a connection to the controller.
     pub control_connect_timeout: Duration,
 
     /// Age after which metrics may be dropped.
