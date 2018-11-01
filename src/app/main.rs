@@ -244,6 +244,8 @@ where
             })
         };
 
+        // The resolver is created in the proxy core but runs on the admin core.
+        // This channel is used to move the task.
         let (resolver_bg_tx, resolver_bg_rx) = futures::sync::oneshot::channel();
 
         // Build the outbound and inbound proxies using the controller client.
