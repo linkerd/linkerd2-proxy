@@ -2,13 +2,10 @@ extern crate tokio_connect;
 
 pub use self::tokio_connect::Connect;
 
-use futures::Future;
-
+use http;
 use std::{error, fmt, io};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
-
-use http;
 
 use convert::TryFrom;
 use dns;
@@ -55,13 +52,6 @@ pub enum HostAndPortError {
 
     /// The port is missing.
     MissingPort,
-}
-
-#[derive(Debug, Clone)]
-pub struct LookupAddressAndConnect {
-    host_and_port: HostAndPort,
-    dns_resolver: dns::Resolver,
-    tls: tls::ConditionalConnectionConfig<tls::ClientConfig>,
 }
 
 // ===== impl HostAndPort =====
@@ -169,46 +159,6 @@ impl fmt::Display for InvalidTarget {
 }
 
 impl error::Error for InvalidTarget {}
-
-// ===== impl LookupAddressAndConnect =====
-
-impl LookupAddressAndConnect {
-    pub fn new(
-        host_and_port: HostAndPort,
-        dns_resolver: dns::Resolver,
-        tls: tls::ConditionalConnectionConfig<tls::ClientConfig>,
-    ) -> Self {
-        Self {
-            host_and_port,
-            dns_resolver,
-            tls,
-        }
-    }
-}
-
-impl tokio_connect::Connect for LookupAddressAndConnect {
-    type Connected = connection::Connection;
-    type Error = io::Error;
-    type Future = Box<Future<Item = connection::Connection, Error = io::Error> + Send>;
-
-    fn connect(&self) -> Self::Future {
-        let port = self.host_and_port.port;
-        let host = self.host_and_port.host.clone();
-        let tls = self.tls.clone();
-        let c = self.dns_resolver
-            .resolve_one_ip(&self.host_and_port.host)
-            .map_err(|_| {
-                io::Error::new(io::ErrorKind::NotFound, "DNS resolution failed")
-            })
-            .and_then(move |ip_addr: IpAddr| {
-                info!("DNS resolved {:?} to {}", host, ip_addr);
-                let addr = SocketAddr::from((ip_addr, port));
-                trace!("connect {}", addr);
-                connection::connect(&addr, tls)
-            });
-        Box::new(c)
-    }
-}
 
 #[cfg(test)]
 mod tests {

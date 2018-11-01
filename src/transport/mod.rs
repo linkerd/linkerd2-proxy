@@ -18,7 +18,6 @@ pub use self::{
     connect::{
         Connect,
         DnsNameAndPort, Host, HostAndPort, HostAndPortError,
-        LookupAddressAndConnect,
     },
     connection::{
         BoundPort,

@@ -2,14 +2,29 @@ use bytes::{BytesMut};
 
 use transport::DnsNameAndPort;
 
+pub trait NameNormalizer {
+    fn normalize(&self, authority: &DnsNameAndPort) -> Option<FullyQualifiedAuthority>;
+}
+
+#[derive(Clone, Debug)]
+pub struct KubernetesNormalizer {
+    default_namespace: String,
+}
+
 /// A normalized `Authority`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FullyQualifiedAuthority(String);
 
-impl FullyQualifiedAuthority {
+impl KubernetesNormalizer {
+    pub fn new(default_namespace: String) -> Self {
+        Self { default_namespace }
+    }
+}
+
+impl NameNormalizer for KubernetesNormalizer {
     /// Normalizes the name according to Kubernetes service naming conventions.
     /// Case folding is not done; that is done internally inside `Authority`.
-    pub fn normalize(authority: &DnsNameAndPort, default_namespace: &str) -> Option<Self> {
+    fn normalize(&self, authority: &DnsNameAndPort) -> Option<FullyQualifiedAuthority> {
         let name: &str = authority.host.as_ref();
 
         // parts should have a maximum 4 of pieces (name, namespace, svc, zone)
@@ -28,7 +43,7 @@ impl FullyQualifiedAuthority {
             None => false,
         };
         let namespace_to_append = if !has_explicit_namespace {
-            Some(default_namespace)
+            Some(&self.default_namespace)
         } else {
             None
         };
@@ -117,7 +132,9 @@ impl FullyQualifiedAuthority {
 
         Some(FullyQualifiedAuthority(String::from_utf8(normalized.freeze().to_vec()).unwrap()))
     }
+}
 
+impl FullyQualifiedAuthority {
     pub fn without_trailing_dot(&self) -> &str {
         &self.0
     }
@@ -128,6 +145,8 @@ mod tests {
     use transport::{DnsNameAndPort, Host, HostAndPort};
     use http::uri::Authority;
     use std::str::FromStr;
+
+    use super::NameNormalizer;
 
     #[test]
     fn test_normalized_authority() {
@@ -145,14 +164,14 @@ mod tests {
 
         fn local(input: &str, default_namespace: &str) -> String {
             let name = dns_name_and_port_from_str(input);
-            let output = super::FullyQualifiedAuthority::normalize(&name, default_namespace);
+            let output = super::KubernetesNormalizer::new(default_namespace.to_owned()).normalize(&name);
             assert!(output.is_some(), "input: {}", input);
             output.unwrap().without_trailing_dot().into()
         }
 
         fn external(input: &str, default_namespace: &str) {
             let name = dns_name_and_port_from_str(input);
-            let output = super::FullyQualifiedAuthority::normalize(&name, default_namespace);
+            let output = super::KubernetesNormalizer::new(default_namespace.to_owned()).normalize(&name);
             assert!(output.is_none(), "input: {}", input);
         }
 

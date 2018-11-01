@@ -45,7 +45,7 @@ impl classify::CanClassify for Endpoint {
     type Classify = classify::Request;
 
     fn classify(&self) -> classify::Request {
-        classify::Request
+        classify::Request::default()
     }
 }
 

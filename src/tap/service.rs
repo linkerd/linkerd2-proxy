@@ -11,7 +11,7 @@ use tower_h2::Body;
 use super::{event, NextId, Taps};
 use proxy::{
     self,
-    http::{client::Error, h1},
+    http::{h1, HasH2Reason},
 };
 use svc;
 
@@ -86,11 +86,8 @@ pub fn layer<T, M, A, B>(next_id: NextId, taps: Arc<Mutex<Taps>>) -> Layer<T, M>
 where
     T: Clone + Into<event::Endpoint>,
     M: svc::Stack<T>,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A>>,
-        Response = http::Response<B>,
-        Error = Error,
-    >,
+    M::Value: svc::Service<Request = http::Request<RequestBody<A>>, Response = http::Response<B>>,
+    <M::Value as svc::Service>::Error: HasH2Reason,
     A: Body,
     B: Body,
 {
@@ -108,8 +105,8 @@ where
     M::Value: svc::Service<
         Request = http::Request<RequestBody<A>>,
         Response = http::Response<B>,
-        Error = Error,
     >,
+    <M::Value as svc::Service>::Error: HasH2Reason,
     A: Body,
     B: Body,
 {
@@ -136,8 +133,8 @@ where
     M::Value: svc::Service<
         Request = http::Request<RequestBody<A>>,
         Response = http::Response<B>,
-        Error = Error,
     >,
+    <M::Value as svc::Service>::Error: HasH2Reason,
     A: Body,
     B: Body,
 {
@@ -162,8 +159,8 @@ where
     S: svc::Service<
         Request = http::Request<RequestBody<A>>,
         Response = http::Response<B>,
-        Error = Error,
     >,
+    S::Error: HasH2Reason,
     A: Body,
     B: Body,
 {
@@ -182,7 +179,9 @@ where
         // Only tap a request iff a `Source` is known.
         let meta = req.extensions().get::<proxy::Source>().map(|source| {
             let scheme = req.uri().scheme_part().cloned();
-            let authority = req.uri().authority_part()
+            let authority = req
+                .uri()
+                .authority_part()
                 .cloned()
                 .or_else(|| h1::authority_from_host(&req));
             let path = req.uri().path().into();
@@ -226,10 +225,11 @@ where
 impl<S, B> Future for ResponseFuture<S>
 where
     B: Body,
-    S: svc::Service<Response = http::Response<B>, Error = Error>,
+    S: svc::Service<Response = http::Response<B>>,
+    S::Error: HasH2Reason,
 {
     type Item = http::Response<ResponseBody<B>>;
-    type Error = Error;
+    type Error = S::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let rsp = try_ready!(self.inner.poll().map_err(|e| self.tap_err(e)));
@@ -266,9 +266,10 @@ where
 impl<S, B> ResponseFuture<S>
 where
     B: Body,
-    S: svc::Service<Response = http::Response<B>, Error = Error>,
+    S: svc::Service<Response = http::Response<B>>,
+    S::Error: HasH2Reason,
 {
-    fn tap_err(&mut self, e: Error) -> Error {
+    fn tap_err(&mut self, e: S::Error) -> S::Error {
         if let Some(request) = self.meta.take() {
             let meta = event::Response {
                 request,
@@ -285,7 +286,7 @@ where
                             response_open_at: now,
                             response_first_frame_at: None,
                             response_fail_at: now,
-                            error: e.reason().unwrap_or(h2::Reason::INTERNAL_ERROR),
+                            error: e.h2_reason().unwrap_or(h2::Reason::INTERNAL_ERROR),
                             bytes_sent: 0,
                         },
                     ));
