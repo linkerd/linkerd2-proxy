@@ -129,9 +129,7 @@ struct Metrics {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Eos {
     Clean,
-    Error {
-        errno: Option<Errno>,
-    },
+    Error(Errno),
 }
 
 /// Holds metrics for a class of end-of-stream.
@@ -571,13 +569,9 @@ impl FmtLabels for Peer {
 impl FmtLabels for Eos {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Eos::Clean => f.pad("classification=\"success\""),
-            Eos::Error { errno } => {
-                f.pad("classification=\"failure\"")?;
-                if let Some(e) = errno {
-                    write!(f, ",errno=\"{}\"", e)?;
-                }
-                Ok(())
+            Eos::Clean => f.pad("errno=\"\""),
+            Eos::Error(errno) => {
+                write!(f, "errno=\"{}\"", errno)
             }
         }
     }

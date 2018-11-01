@@ -105,7 +105,7 @@ impl FmtLabels for Authority {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             Some(ref a) => write!(f, "authority=\"{}\"", a),
-            None => write!(f, "authority=\"\"")
+            None => write!(f, "authority=\"\""),
         }
     }
 }
@@ -116,15 +116,12 @@ impl FmtLabels for classify::Class {
         match self {
             Class::Grpc(result, status) => write!(
                 f,
-                "classification=\"{}\",status_code=\"200\",grpc_status=\"{}\"",
+                "classification=\"{}\",grpc_status=\"{}\"",
                 result, status
             ),
-            Class::Http(result, status) => write!(
-                f,
-                "classification=\"{}\",status_code=\"{}\"",
-                result,
-                status.as_str()
-            ),
+            Class::Http(result) => {
+                write!(f, "classification=\"{}\"", result)
+            }
             Class::Stream(result, status) => {
                 write!(f, "classification=\"{}\",h2_err=\"{}\"", result, status)
             }

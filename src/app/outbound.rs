@@ -1,9 +1,9 @@
 use http;
 use std::fmt;
 
-use app::Destination;
+use app::{classify, Destination};
 use control::destination::{Metadata, ProtocolHint};
-use proxy::http::{client, router, normalize_uri::ShouldNormalizeUri};
+use proxy::http::{client, normalize_uri::ShouldNormalizeUri, router};
 use svc::{self, stack_per_request::ShouldStackPerRequest};
 use tap;
 use transport::{connect, tls};
@@ -39,6 +39,14 @@ impl ShouldNormalizeUri for Endpoint {
 impl ShouldStackPerRequest for Endpoint {
     fn should_stack_per_request(&self) -> bool {
         !self.dst.settings.is_http2() && !self.dst.settings.can_reuse_clients()
+    }
+}
+
+impl classify::CanClassify for Endpoint {
+    type Classify = classify::Request;
+
+    fn classify(&self) -> classify::Request {
+        classify::Request
     }
 }
 

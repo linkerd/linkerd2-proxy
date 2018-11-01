@@ -47,7 +47,9 @@ impl<T: AsyncRead + AsyncWrite> Io<T> {
             Ok(v) => Ok(v),
             Err(e) => {
                 if e.kind() != io::ErrorKind::WouldBlock {
-                    let eos = Eos::Error { errno: e.raw_os_error().map(|e| e.into()) };
+                    let eos = e.raw_os_error()
+                        .map(|e| Eos::Error(e.into()))
+                        .unwrap_or(Eos::Clean);
                     self.sensor.record_close(eos);
                 }
 

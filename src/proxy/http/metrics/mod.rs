@@ -1,3 +1,4 @@
+use http;
 use indexmap::IndexMap;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
@@ -39,14 +40,21 @@ where
 {
     last_update: Instant,
     total: Counter,
+    by_status: IndexMap<http::StatusCode, StatusMetrics<C>>,
+}
+
+#[derive(Debug)]
+struct StatusMetrics<C>
+where
+    C: Hash + Eq,
+{
+    latency: Histogram<latency::Ms>,
     by_class: IndexMap<C, ClassMetrics>,
-    unclassified: ClassMetrics,
 }
 
 #[derive(Debug, Default)]
 pub struct ClassMetrics {
     total: Counter,
-    latency: Histogram<latency::Ms>,
 }
 
 impl<T, C> Default for Registry<T, C>
@@ -79,8 +87,19 @@ where
         Self {
             last_update: clock::now(),
             total: Counter::default(),
+            by_status: IndexMap::default(),
+        }
+    }
+}
+
+impl<C> Default for StatusMetrics<C>
+where
+    C: Hash + Eq,
+{
+    fn default() -> Self {
+        Self {
+            latency: Histogram::default(),
             by_class: IndexMap::default(),
-            unclassified: ClassMetrics::default(),
         }
     }
 }
