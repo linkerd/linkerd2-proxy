@@ -69,7 +69,7 @@ tower-h2-balance      = { git = "https://github.com/tower-rs/tower-h2" }
 tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc" }
 
 # dns
-trust-dns-resolver = { version = "0.10.0-alpha.3", default-features = false }
+trust-dns-resolver = { version = "0.10.0", default-features = false }
 
 # tls
 ring = "0.13"
