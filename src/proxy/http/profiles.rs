@@ -36,7 +36,7 @@ pub enum Error {}
 #[derive(Clone, Debug, Default)]
 pub struct Route {
     labels: Arc<IndexMap<String, String>>,
-    response_classes: Arc<Vec<ResponseClass>>,
+    response_classes: ResponseClasses,
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +53,8 @@ pub struct ResponseClass {
     is_failure: bool,
     match_: ResponseMatch,
 }
+
+pub type ResponseClasses = Arc<Vec<ResponseClass>>;
 
 #[derive(Clone, Debug)]
 pub enum ResponseMatch {
@@ -73,7 +75,7 @@ impl Route {
         I: Iterator<Item = (String, String)>,
     {
         let labels = {
-            let mut pairs = label_iter.collect::<Vec<(String, String)>>();
+            let mut pairs = label_iter.collect::<Vec<_>>();
             pairs.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
             Arc::new(IndexMap::from_iter(pairs))
         };
@@ -88,7 +90,7 @@ impl Route {
         &self.labels
     }
 
-    pub fn response_classes(&self) -> &Arc<Vec<ResponseClass>> {
+    pub fn response_classes(&self) -> &ResponseClasses {
         &self.response_classes
     }
 }
@@ -101,22 +103,8 @@ impl RequestMatch {
             RequestMatch::Method(ref method) => req.method() == *method,
             RequestMatch::Path(ref re) => re.is_match(req.uri().path()),
             RequestMatch::Not(ref m) => !m.is_match(req),
-            RequestMatch::All(ref matches) => {
-                for ref m in matches {
-                    if !m.is_match(req) {
-                        return false;
-                    }
-                }
-                true
-            }
-            RequestMatch::Any(ref matches) => {
-                for ref m in matches {
-                    if m.is_match(req) {
-                        return true;
-                    }
-                }
-                false
-            }
+            RequestMatch::All(ref ms) => ms.iter().all(|m| m.is_match(req)),
+            RequestMatch::Any(ref ms) => ms.iter().any(|m| m.is_match(req)),
         }
     }
 }
@@ -146,22 +134,8 @@ impl ResponseMatch {
                 *min <= req.status() && req.status() <= *max
             }
             ResponseMatch::Not(ref m) => !m.is_match(req),
-            ResponseMatch::All(ref matches) => {
-                for ref m in matches {
-                    if !m.is_match(req) {
-                        return false;
-                    }
-                }
-                true
-            }
-            ResponseMatch::Any(ref matches) => {
-                for ref m in matches {
-                    if m.is_match(req) {
-                        return true;
-                    }
-                }
-                false
-            }
+            ResponseMatch::All(ref ms) => ms.iter().all(|m| m.is_match(req)),
+            ResponseMatch::Any(ref ms) => ms.iter().any(|m| m.is_match(req)),
         }
     }
 }

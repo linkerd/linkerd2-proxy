@@ -116,8 +116,8 @@ where
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(Some(profile))) => {
                         debug!("profile received: {:?}", profile);
-                        let routes = Self::convert_routes(profile);
-                        return Ok(Async::Ready(Some(routes)));
+                        let rs = profile.routes.into_iter().filter_map(convert_route);
+                        return Ok(Async::Ready(Some(rs.collect())));
                     }
                     Ok(Async::Ready(None)) => {
                         debug!("profile stream ended");
@@ -137,99 +137,83 @@ where
     }
 }
 
-impl<T: HttpService> Rx<T> {
-    fn convert_routes(
-        profile: api::DestinationProfile,
-    ) -> Vec<(profiles::RequestMatch, profiles::Route)> {
-        let mut routes = Vec::with_capacity(profile.routes.len());
+fn convert_route(orig: api::Route) -> Option<(profiles::RequestMatch, profiles::Route)> {
+    let req_match = orig.condition.and_then(convert_req_match)?;
+    let rsp_classes = orig
+        .response_classes
+        .into_iter()
+        .filter_map(convert_rsp_class)
+        .collect();
+    let route = profiles::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    Some((req_match, route))
+}
 
-        for r in profile.routes.into_iter() {
-            if let Some(r) = Self::convert_route(r) {
-                routes.push(r);
-            }
+fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> {
+    let m = match orig.match_? {
+        api::request_match::Match::All(ms) => {
+            let ms = ms.matches.into_iter().filter_map(convert_req_match);
+            profiles::RequestMatch::All(ms.collect())
         }
+        api::request_match::Match::Any(ms) => {
+            let ms = ms.matches.into_iter().filter_map(convert_req_match);
+            profiles::RequestMatch::Any(ms.collect())
+        }
+        api::request_match::Match::Not(m) => {
+            let m = convert_req_match(*m)?;
+            profiles::RequestMatch::Not(Box::new(m))
+        }
+        api::request_match::Match::Path(api::PathMatch { regex }) => {
+            let re = Regex::new(&regex).ok()?;
+            profiles::RequestMatch::Path(re)
+        }
+        api::request_match::Match::Method(mm) => {
+            let m = mm.type_.and_then(|m| m.try_as_http().ok())?;
+            profiles::RequestMatch::Method(m)
+        }
+    };
 
-        routes
-    }
+    Some(m)
+}
 
-    fn convert_route(orig: api::Route) -> Option<(profiles::RequestMatch, profiles::Route)> {
-        let req_match = orig.condition.and_then(Self::convert_req_match)?;
-        let rsp_classes = orig
-            .response_classes
-            .into_iter()
-            .filter_map(Self::convert_rsp_class)
-            .collect();
-        let route = profiles::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
-        Some((req_match, route))
-    }
+fn convert_rsp_class(orig: api::ResponseClass) -> Option<profiles::ResponseClass> {
+    let c = orig.condition.and_then(convert_rsp_match)?;
+    Some(profiles::ResponseClass::new(orig.is_failure, c))
+}
 
-    fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> {
-        let m = match orig.match_? {
-            api::request_match::Match::All(ms) => {
-                let ms = ms.matches.into_iter().filter_map(Self::convert_req_match);
-                profiles::RequestMatch::All(ms.collect())
+fn convert_rsp_match(orig: api::ResponseMatch) -> Option<profiles::ResponseMatch> {
+    let m = match orig.match_? {
+        api::response_match::Match::All(ms) => {
+            let ms = ms
+                .matches
+                .into_iter()
+                .filter_map(convert_rsp_match)
+                .collect::<Vec<_>>();
+            if ms.is_empty() {
+                return None;
             }
-            api::request_match::Match::Any(ms) => {
-                let ms = ms.matches.into_iter().filter_map(Self::convert_req_match);
-                profiles::RequestMatch::Any(ms.collect())
+            profiles::ResponseMatch::All(ms)
+        }
+        api::response_match::Match::Any(ms) => {
+            let ms = ms
+                .matches
+                .into_iter()
+                .filter_map(convert_rsp_match)
+                .collect::<Vec<_>>();
+            if ms.is_empty() {
+                return None;
             }
-            api::request_match::Match::Not(m) => {
-                let m = Self::convert_req_match(*m)?;
-                profiles::RequestMatch::Not(Box::new(m))
-            }
-            api::request_match::Match::Path(api::PathMatch { regex }) => {
-                let re = Regex::new(&regex).ok()?;
-                profiles::RequestMatch::Path(re)
-            }
-            api::request_match::Match::Method(mm) => {
-                let m = mm.type_.and_then(|m| m.try_as_http().ok())?;
-                profiles::RequestMatch::Method(m)
-            }
-        };
+            profiles::ResponseMatch::Any(ms)
+        }
+        api::response_match::Match::Not(m) => {
+            let m = convert_rsp_match(*m)?;
+            profiles::ResponseMatch::Not(Box::new(m))
+        }
+        api::response_match::Match::Status(range) => {
+            let min = http::StatusCode::from_u16(range.min as u16).ok()?;
+            let max = http::StatusCode::from_u16(range.max as u16).ok()?;
+            profiles::ResponseMatch::Status { min, max }
+        }
+    };
 
-        Some(m)
-    }
-
-    fn convert_rsp_class(orig: api::ResponseClass) -> Option<profiles::ResponseClass> {
-       let c = orig.condition.and_then(Self::convert_rsp_match)?;
-       Some(profiles::ResponseClass::new(orig.is_failure, c))
-    }
-
-    fn convert_rsp_match(orig: api::ResponseMatch) -> Option<profiles::ResponseMatch> {
-        let m = match orig.match_? {
-            api::response_match::Match::All(ms) => {
-                let ms = ms
-                    .matches
-                    .into_iter()
-                    .filter_map(Self::convert_rsp_match)
-                    .collect::<Vec<_>>();
-                if ms.is_empty() {
-                    return None;
-                }
-                profiles::ResponseMatch::All(ms)
-            }
-            api::response_match::Match::Any(ms) => {
-                let ms = ms
-                    .matches
-                    .into_iter()
-                    .filter_map(Self::convert_rsp_match)
-                    .collect::<Vec<_>>();
-                if ms.is_empty() {
-                    return None;
-                }
-                profiles::ResponseMatch::Any(ms)
-            }
-            api::response_match::Match::Not(m) => {
-                let m = Self::convert_rsp_match(*m)?;
-                profiles::ResponseMatch::Not(Box::new(m))
-            }
-            api::response_match::Match::Status(range) => {
-                let min = http::StatusCode::from_u16(range.min as u16).ok()?;
-                let max = http::StatusCode::from_u16(range.max as u16).ok()?;
-                profiles::ResponseMatch::Status { min, max }
-            }
-        };
-
-        Some(m)
-    }
+    Some(m)
 }

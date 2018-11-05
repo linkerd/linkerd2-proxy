@@ -440,7 +440,7 @@ where
                         metrics::Serve::new(report),
                     );
 
-                    // tap is already pushped in a logging Future
+                    // tap is already pushed in a logging Future.
                     rt.spawn(tap);
                     // metrics_server is already pushped in a logging Future.
                     rt.spawn(metrics);

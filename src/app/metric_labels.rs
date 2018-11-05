@@ -43,21 +43,10 @@ struct Dst(outbound::Destination);
 
 impl From<outbound::Route> for RouteLabels {
     fn from(r: outbound::Route) -> Self {
-        let mut label_iter = r.route.labels().as_ref().into_iter();
-        let labels = if let Some((k0, v0)) = label_iter.next() {
-            let mut s = format!("rt_{}=\"{}\"", k0, v0);
-            for (k, v) in label_iter {
-                write!(s, ",rt_{}=\"{}\"", k, v).expect("label concat must succeed");
-            }
-            Some(s)
-        } else {
-            None
-        };
-
         RouteLabels {
             dst: Dst(r.dst.clone()),
             direction: Direction::Out,
-            labels,
+            labels: prefix_labels("rt", r.route.labels().as_ref().into_iter()),
         }
     }
 }
@@ -88,21 +77,23 @@ impl From<inbound::Endpoint> for EndpointLabels {
     }
 }
 
+fn prefix_labels<'i, I>(prefix: &str, mut labels_iter: I) -> Option<String>
+where
+    I: Iterator<Item = (&'i String, &'i String)>,
+{
+    let (k0, v0) = labels_iter.next()?;
+    let mut out = format!("{}_{}=\"{}\"", prefix, k0, v0);
+
+    for (k, v) in labels_iter {
+        write!(out, ",{}_{}=\"{}\"", prefix, k, v).expect("label concat must succeed");
+    }
+    Some(out)
+}
+
 impl From<outbound::Endpoint> for EndpointLabels {
     fn from(ep: outbound::Endpoint) -> Self {
         use self::outbound::NameOrAddr;
         use transport::DnsNameAndPort;
-
-        let mut label_iter = ep.metadata.labels().into_iter();
-        let labels = if let Some((k0, v0)) = label_iter.next() {
-            let mut s = format!("dst_{}=\"{}\"", k0, v0);
-            for (k, v) in label_iter {
-                write!(s, ",dst_{}=\"{}\"", k, v).expect("label concat must succeed");
-            }
-            Some(s)
-        } else {
-            None
-        };
 
         let authority = {
             let a = match ep.dst.name_or_addr {
@@ -123,7 +114,7 @@ impl From<outbound::Endpoint> for EndpointLabels {
             authority,
             direction: Direction::Out,
             tls_status: ep.connect.tls_status(),
-            labels,
+            labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
         }
     }
 }
@@ -163,15 +154,15 @@ impl FmtLabels for Authority {
 
 impl FmtLabels for Dst {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "dst=\"{}\"", self.0.name_or_addr)?;
+        let proto = if self.0.settings.is_http2() {
+            "h2"
+        } else {
+            "h1"
+        };
         write!(
             f,
-            ",dst_protocol=\"{}\"",
-            if self.0.settings.is_http2() {
-                "h2"
-            } else {
-                "h1"
-            }
+            "dst=\"{}\",dst_protocol=\"{}\"",
+            self.0.name_or_addr, proto
         )?;
 
         Ok(())
