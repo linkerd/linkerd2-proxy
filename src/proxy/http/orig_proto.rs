@@ -85,19 +85,20 @@ where
 
         self.inner.call(req).map(|mut res| {
             debug_assert_eq!(res.version(), http::Version::HTTP_2);
-            if let Some(orig_proto) = res.headers().get(L5D_ORIG_PROTO) {
+            let version = if let Some(orig_proto) = res.headers().get(L5D_ORIG_PROTO) {
                 debug!("downgrading {} response: {:?}", L5D_ORIG_PROTO, orig_proto);
-                match orig_proto {
-                    "HTTP/1.1" => {
-                        *res.version_mut() = http::Version::HTTP_11;
-                    }
-                    "HTTP/1.0" => {
-                        *res.version_mut() = http::Version::HTTP_10;
-                    }
-                    _ => warn!("unknown {} header value: {:?}", L5D_ORIG_PROTO, orig_proto),
+                if orig_proto == "HTTP/1.1" {
+                    http::Version::HTTP_11
+                } else if orig_proto == "HTTP/1.0" {
+                    http::Version::HTTP_10
+                } else {
+                    warn!("unknown {} header value: {:?}", L5D_ORIG_PROTO, orig_proto);
+                    res.version()
                 }
-            }
-
+            } else {
+                res.version()
+            };
+            *res.version_mut() = version;
             res
         })
     }
