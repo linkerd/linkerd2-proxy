@@ -249,10 +249,7 @@ pub mod orig_proto_upgrade {
         type Error = M::Error;
 
         fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
-            if endpoint.can_use_orig_proto()
-                && !endpoint.dst.settings.is_http2()
-                && !endpoint.dst.settings.is_h1_upgrade()
-            {
+            if endpoint.can_use_orig_proto() {
                 let mut upgraded = endpoint.clone();
                 upgraded.dst.settings = Settings::Http2;
                 self.inner.make(&upgraded).map(|i| svc::Either::A(i.into()))
