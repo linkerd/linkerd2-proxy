@@ -269,7 +269,6 @@ where
                     discovery::Resolve, orig_proto_upgrade, Endpoint, Recognize,
                 };
                 use super::profiles::Client as ProfilesClient;
-                use control::KubernetesNormalizer;
                 use proxy::{
                     http::{balance, metrics, profiles},
                     resolve,
@@ -306,7 +305,7 @@ where
                 let profiles_client = ProfilesClient::new(
                     controller,
                     Duration::from_secs(3),
-                    KubernetesNormalizer::new(config.namespaces.pod.clone()),
+                    control::KubernetesNormalize::new(config.namespaces.pod.clone()),
                 );
 
                 let dst_route_stack = endpoint_stack

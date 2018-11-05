@@ -9,14 +9,14 @@ use tower_h2::{Body, BoxBody, Data, HttpService};
 
 use api::destination as api;
 
-use control::NameNormalizer;
+use control;
 use proxy::http::profiles;
 use transport::DnsNameAndPort;
 
 #[derive(Clone, Debug)]
 pub struct Client<T, N> {
     service: Option<T>,
-    normalizer: N,
+    normalize_name: N,
     backoff: Duration,
 }
 
@@ -41,13 +41,13 @@ where
     T: HttpService<RequestBody = BoxBody> + Clone,
     T::ResponseBody: Body<Data = Data>,
     T::Error: fmt::Debug,
-    N: NameNormalizer,
+    N: control::Normalize,
 {
-    pub fn new(service: Option<T>, backoff: Duration, normalizer: N) -> Self {
+    pub fn new(service: Option<T>, backoff: Duration, normalize_name: N) -> Self {
         Self {
             service,
             backoff,
-            normalizer,
+            normalize_name,
         }
     }
 }
@@ -57,12 +57,12 @@ where
     T: HttpService<RequestBody = BoxBody> + Clone,
     T::ResponseBody: Body<Data = Data>,
     T::Error: fmt::Debug,
-    N: NameNormalizer,
+    N: control::Normalize,
 {
     type Stream = Rx<T>;
 
     fn get_routes(&self, dst: &DnsNameAndPort) -> Option<Self::Stream> {
-        let fqa = self.normalizer.normalize(dst)?;
+        let fqa = self.normalize_name.normalize(dst)?;
         Some(Rx {
             dst: fqa.without_trailing_dot().to_owned(),
             state: State::Disconnected,

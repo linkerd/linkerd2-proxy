@@ -2,12 +2,12 @@ use bytes::{BytesMut};
 
 use transport::DnsNameAndPort;
 
-pub trait NameNormalizer {
+pub trait Normalize {
     fn normalize(&self, authority: &DnsNameAndPort) -> Option<FullyQualifiedAuthority>;
 }
 
 #[derive(Clone, Debug)]
-pub struct KubernetesNormalizer {
+pub struct KubernetesNormalize {
     default_namespace: String,
 }
 
@@ -15,13 +15,13 @@ pub struct KubernetesNormalizer {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FullyQualifiedAuthority(String);
 
-impl KubernetesNormalizer {
+impl KubernetesNormalize {
     pub fn new(default_namespace: String) -> Self {
         Self { default_namespace }
     }
 }
 
-impl NameNormalizer for KubernetesNormalizer {
+impl Normalize for KubernetesNormalize {
     /// Normalizes the name according to Kubernetes service naming conventions.
     /// Case folding is not done; that is done internally inside `Authority`.
     fn normalize(&self, authority: &DnsNameAndPort) -> Option<FullyQualifiedAuthority> {
@@ -146,7 +146,7 @@ mod tests {
     use http::uri::Authority;
     use std::str::FromStr;
 
-    use super::NameNormalizer;
+    use super::Normalize;
 
     #[test]
     fn test_normalized_authority() {
@@ -164,14 +164,14 @@ mod tests {
 
         fn local(input: &str, default_namespace: &str) -> String {
             let name = dns_name_and_port_from_str(input);
-            let output = super::KubernetesNormalizer::new(default_namespace.to_owned()).normalize(&name);
+            let output = super::KubernetesNormalize::new(default_namespace.to_owned()).normalize(&name);
             assert!(output.is_some(), "input: {}", input);
             output.unwrap().without_trailing_dot().into()
         }
 
         fn external(input: &str, default_namespace: &str) {
             let name = dns_name_and_port_from_str(input);
-            let output = super::KubernetesNormalizer::new(default_namespace.to_owned()).normalize(&name);
+            let output = super::KubernetesNormalize::new(default_namespace.to_owned()).normalize(&name);
             assert!(output.is_none(), "input: {}", input);
         }
 

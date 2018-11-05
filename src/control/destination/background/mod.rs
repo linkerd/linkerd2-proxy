@@ -25,7 +25,7 @@ use super::{ResolveRequest, Update};
 use app::config::Namespaces;
 use control::{
     cache::Exists,
-    fully_qualified_authority::{KubernetesNormalizer, NameNormalizer},
+    fully_qualified_authority::{KubernetesNormalize, Normalize as _Normalize},
     remote_stream::{Receiver, Remote},
 };
 use dns;
@@ -353,7 +353,7 @@ impl NewQuery {
         );
         let default_ns = self.namespaces.pod.clone();
         let client_and_authority = client.and_then(|client| {
-            KubernetesNormalizer::new(default_ns)
+            KubernetesNormalize::new(default_ns)
                 .normalize(auth)
                 .map(|auth| (auth, client))
         });
