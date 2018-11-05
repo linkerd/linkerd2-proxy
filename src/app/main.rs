@@ -439,9 +439,9 @@ where
                         metrics::Serve::new(report),
                     );
 
-                    // tap is already pushed in a logging Future.
+                    // tap is already wrapped in a logging Future.
                     rt.spawn(tap);
-                    // metrics_server is already pushped in a logging Future.
+                    // metrics_server is already wrapped in a logging Future.
                     rt.spawn(metrics);
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
                     rt.spawn(
