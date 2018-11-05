@@ -12,22 +12,29 @@ use std::{error, fmt};
 
 use transport::DnsNameAndPort;
 
-pub trait CanGetDestination {
-    fn get_destination(&self) -> Option<&DnsNameAndPort>;
-}
-
 pub type Routes = Vec<(RequestMatch, Route)>;
 
+/// Watches a destination's Routes.
+///
+/// The stream updates with all routes for the given destination. The stream
+/// never ends and cannot fail.
 pub trait GetRoutes {
     type Stream: Stream<Item = Routes, Error = Error>;
 
     fn get_routes(&self, dst: &DnsNameAndPort) -> Option<Self::Stream>;
 }
 
+/// Implemented by target types that may be combined with a Route.
 pub trait WithRoute {
     type Output;
 
     fn with_route(self, route: Route) -> Self::Output;
+}
+
+/// Implemented by target types that may have a `DnsNameAndPort` destination that
+/// can be discovered via `GetRoutes`.
+pub trait CanGetDestination {
+    fn get_destination(&self) -> Option<&DnsNameAndPort>;
 }
 
 #[derive(Debug)]
