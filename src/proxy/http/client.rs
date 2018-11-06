@@ -469,12 +469,10 @@ impl std::error::Error for Error {
     }
 }
 
-impl Error {
-    pub fn reason(&self) -> Option<h2::Reason> {
+impl super::HasH2Reason for Error {
+    fn h2_reason(&self) -> Option<h2::Reason> {
         match self {
-            // TODO: it would be good to provide better error
-            // details in metrics for HTTP/1...
-            Error::Http1(_) => Some(h2::Reason::INTERNAL_ERROR),
+            Error::Http1(_) => None,
             Error::Http2(e) => e.reason(),
         }
     }

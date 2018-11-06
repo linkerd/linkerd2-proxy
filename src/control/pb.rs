@@ -119,7 +119,7 @@ impl<'a> TryFrom<&'a Event> for tap::TapEvent {
                         stream: ctx.id as u64,
                     }),
                     method: Some((&ctx.method).into()),
-                    scheme: ctx.scheme.as_ref().map(tap::Scheme::from),
+                    scheme: ctx.scheme.as_ref().map(http_types::Scheme::from),
                     authority: ctx.authority.as_ref()
                         .map(|a| a.as_str())
                         .unwrap_or_default()

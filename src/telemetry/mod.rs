@@ -1,4 +1,4 @@
-use metrics as metrics;
+use metrics;
 
 mod errno;
 pub mod process;

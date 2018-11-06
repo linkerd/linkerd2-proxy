@@ -383,7 +383,7 @@ mod tests {
     use quickcheck::*;
 
     use super::*;
-    use api::tap;
+    use api::http_types;
 
     impl Arbitrary for LabelMatch {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {
@@ -488,7 +488,7 @@ mod tests {
                 Some(&http::Match::Method(ref m)) => {
                     match m.type_.as_ref() {
                         None => Some(InvalidMatch::Empty),
-                        Some(&tap::http_method::Type::Unregistered(ref m)) => if m.len() <= 15 {
+                        Some(&http_types::http_method::Type::Unregistered(ref m)) => if m.len() <= 15 {
                             let mut err = None;
                             if let Err(_) = ::http::Method::from_bytes(m.as_bytes()) {
                                 err = Some(InvalidMatch::InvalidHttpMethod);
@@ -497,7 +497,7 @@ mod tests {
                         } else {
                             Some(InvalidMatch::InvalidHttpMethod)
                         }
-                        Some(&tap::http_method::Type::Registered(m)) => if m < 9 {
+                        Some(&http_types::http_method::Type::Registered(m)) => if m < 9 {
                             None
                         } else {
                             Some(InvalidMatch::InvalidHttpMethod)
@@ -507,8 +507,8 @@ mod tests {
                 Some(&http::Match::Scheme(ref m)) => {
                     match m.type_.as_ref() {
                         None => Some(InvalidMatch::Empty),
-                        Some(&tap::scheme::Type::Unregistered(_)) => None,
-                        Some(&tap::scheme::Type::Registered(m)) => {
+                        Some(&http_types::scheme::Type::Unregistered(_)) => None,
+                        Some(&http_types::scheme::Type::Registered(m)) => {
                             if m < 2 {
                                 None
                             } else {

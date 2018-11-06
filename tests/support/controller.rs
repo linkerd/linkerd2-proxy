@@ -24,9 +24,16 @@ pub struct DstReceiver(sync::mpsc::UnboundedReceiver<pb::Update>);
 #[derive(Clone, Debug)]
 pub struct DstSender(sync::mpsc::UnboundedSender<pb::Update>);
 
+#[derive(Debug)]
+pub struct ProfileReceiver(sync::mpsc::UnboundedReceiver<pb::DestinationProfile>);
+
+#[derive(Clone, Debug)]
+pub struct ProfileSender(sync::mpsc::UnboundedSender<pb::DestinationProfile>);
+
 #[derive(Clone, Debug, Default)]
 pub struct Controller {
     expect_dst_calls: Arc<Mutex<VecDeque<(pb::GetDestination, DstReceiver)>>>,
+    expect_profile_calls: Arc<Mutex<VecDeque<(pb::GetDestination, ProfileReceiver)>>>,
 }
 
 pub struct Listening {
@@ -69,6 +76,19 @@ impl Controller {
         run(self, Some(Box::new(f.then(|_| Ok(())))))
     }
 
+    pub fn profile_tx(&self, dest: &str) -> ProfileSender {
+        let (tx, rx) = sync::mpsc::unbounded();
+        let dst = pb::GetDestination {
+            scheme: "k8s".into(),
+            path: dest.into(),
+        };
+        self.expect_profile_calls
+            .lock()
+            .unwrap()
+            .push_back((dst, ProfileReceiver(rx)));
+        ProfileSender(tx)
+    }
+
     pub fn run(self) -> Listening {
         run(self, None)
     }
@@ -100,6 +120,20 @@ impl DstSender {
     }
 }
 
+impl Stream for ProfileReceiver {
+    type Item = pb::DestinationProfile;
+    type Error = grpc::Error;
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        self.0.poll().map_err(|_| grpc::Error::Grpc(grpc::Status::INTERNAL, HeaderMap::new()))
+    }
+}
+
+impl ProfileSender {
+    pub fn send(&self, up: pb::DestinationProfile) {
+        self.0.unbounded_send(up).expect("send profile update")
+    }
+}
+
 impl pb::server::Destination for Controller {
     type GetStream = DstReceiver;
     type GetFuture = future::FutureResult<grpc::Response<Self::GetStream>, grpc::Error>;
@@ -112,6 +146,23 @@ impl pb::server::Destination for Controller {
                 }
 
                 calls.push_front((dst, updates));
+            }
+        }
+
+        future::err(grpc::Error::Grpc(grpc::Status::INTERNAL, HeaderMap::new()))
+    }
+
+    type GetProfileStream = ProfileReceiver;
+    type GetProfileFuture = future::FutureResult<grpc::Response<Self::GetProfileStream>, grpc::Error>;
+
+    fn get_profile(&mut self, req: grpc::Request<pb::GetDestination>) -> Self::GetProfileFuture {
+        if let Ok(mut calls) = self.expect_profile_calls.lock() {
+            if let Some((dst, profile)) = calls.pop_front() {
+                if &dst == req.get_ref() {
+                    return future::ok(grpc::Response::new(profile));
+                }
+
+                calls.push_front((dst, profile));
             }
         }
 

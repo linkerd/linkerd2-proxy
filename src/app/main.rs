@@ -5,14 +5,14 @@ use http;
 use indexmap::IndexSet;
 use std::net::SocketAddr;
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use std::{error, fmt, io};
 use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::runtime::current_thread;
 use tower_h2;
 
 use app::classify::{self, Class};
-use app::metric_labels::EndpointLabels;
+use app::metric_labels::{EndpointLabels, RouteLabels};
 use control;
 use dns;
 use drain;
@@ -183,14 +183,21 @@ where
         let tap_next_id = tap::NextId::default();
         let (taps, observe) = control::Observe::new(100);
 
-        let (http_metrics, http_report) =
+        let (endpoint_http_metrics, endpoint_http_report) =
             proxy::http::metrics::new::<EndpointLabels, Class>(config.metrics_retain_idle);
+
+        let (route_http_metrics, route_http_report) = {
+            let (m, r) =
+                proxy::http::metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
+            (m, r.with_prefix("route"))
+        };
 
         let (transport_metrics, transport_report) = transport::metrics::new();
 
         let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
 
-        let report = http_report
+        let report = endpoint_http_report
+            .and_then(route_http_report)
             .and_then(transport_report)
             .and_then(tls_config_report)
             .and_then(telemetry::process::Report::new(start_time));
@@ -261,12 +268,13 @@ where
                 use super::outbound::{
                     discovery::Resolve, orig_proto_upgrade, Endpoint, Recognize,
                 };
+                use super::profiles::Client as ProfilesClient;
                 use proxy::{
-                    http::{balance, metrics},
+                    http::{balance, metrics, profiles},
                     resolve,
                 };
 
-                let http_metrics = http_metrics.clone();
+                let endpoint_http_metrics = endpoint_http_metrics.clone();
 
                 // As the outbound proxy accepts connections, we don't do any
                 // special transport-level handling.
@@ -290,14 +298,26 @@ where
                     .push(normalize_uri::layer())
                     .push(orig_proto_upgrade::layer())
                     .push(tap::layer(tap_next_id.clone(), taps.clone()))
-                    .push(metrics::layer::<_, classify::Response>(http_metrics))
-                    .push(classify::layer())
+                    .push(metrics::layer::<_, classify::Response>(endpoint_http_metrics))
                     .push(svc::watch::layer(tls_client_config))
                     .push(buffer::layer());
 
-                let dst_router_stack = endpoint_stack
+                let profiles_client = ProfilesClient::new(
+                    controller,
+                    Duration::from_secs(3),
+                    control::KubernetesNormalize::new(config.namespaces.pod.clone()),
+                );
+
+                let dst_route_stack = endpoint_stack
                     .push(resolve::layer(Resolve::new(resolver)))
                     .push(balance::layer())
+                    .push(buffer::layer())
+                    .push(profiles::router::layer(
+                        profiles_client,
+                        svc::stack::phantom_data::layer()
+                            .push(metrics::layer::<_, classify::Response>(route_http_metrics))
+                            .push(classify::layer()),
+                    ))
                     .push(buffer::layer())
                     .push(timeout::layer(config.bind_timeout))
                     .push(limit::layer(MAX_IN_FLIGHT))
@@ -305,7 +325,7 @@ where
 
                 let capacity = config.outbound_router_capacity;
                 let max_idle_age = config.outbound_router_max_idle_age;
-                let router = dst_router_stack
+                let router = dst_route_stack
                     .make(&router::Config::new("out", capacity, max_idle_age))
                     .expect("outbound router");
 
@@ -361,7 +381,7 @@ where
                     .push(svc::stack_per_request::layer())
                     .push(normalize_uri::layer())
                     .push(tap::layer(tap_next_id, taps))
-                    .push(metrics::layer::<_, classify::Response>(http_metrics))
+                    .push(metrics::layer::<_, classify::Response>(endpoint_http_metrics))
                     .push(classify::layer())
                     .push(buffer::layer())
                     .push(limit::layer(MAX_IN_FLIGHT))
@@ -419,9 +439,9 @@ where
                         metrics::Serve::new(report),
                     );
 
-                    // tap is already pushped in a logging Future.
+                    // tap is already wrapped in a logging Future.
                     rt.spawn(tap);
-                    // metrics_server is already pushped in a logging Future.
+                    // metrics_server is already wrapped in a logging Future.
                     rt.spawn(metrics);
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
                     rt.spawn(

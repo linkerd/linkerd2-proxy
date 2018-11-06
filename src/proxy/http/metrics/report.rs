@@ -45,8 +45,6 @@ where
         }
     }
 
-    // FIXME This will be used for route_* metrics.
-    #[allow(dead_code)]
     pub fn with_prefix(self, prefix: &'static str) -> Self {
         if prefix.is_empty() {
             return self;
