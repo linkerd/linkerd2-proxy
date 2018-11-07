@@ -11,7 +11,7 @@ use api::destination as api;
 
 use control;
 use proxy::http::profiles;
-use transport::DnsNameAndPort;
+use NamePort;
 
 #[derive(Clone, Debug)]
 pub struct Client<T, N> {
@@ -61,7 +61,7 @@ where
 {
     type Stream = Rx<T>;
 
-    fn get_routes(&self, dst: &DnsNameAndPort) -> Option<Self::Stream> {
+    fn get_routes(&self, dst: &NamePort) -> Option<Self::Stream> {
         let fqa = self.normalize_name.normalize(dst)?;
         Some(Rx {
             dst: fqa.without_trailing_dot().to_owned(),

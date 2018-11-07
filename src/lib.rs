@@ -58,6 +58,7 @@ pub mod convert;
 pub mod ctx;
 mod dns;
 mod drain;
+mod host_port;
 mod logging;
 mod proxy;
 mod svc;
@@ -66,4 +67,5 @@ pub mod telemetry;
 pub mod transport;
 
 use self::conditional::Conditional;
+use self::host_port::{HostPort, NamePort};
 pub use self::transport::SoOriginalDst;

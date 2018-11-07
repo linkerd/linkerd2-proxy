@@ -40,13 +40,12 @@ use tower_h2::{Body, BoxBody, Data, HttpService};
 use dns;
 use transport::tls;
 use proxy::resolve::{self, Resolve, Update};
-use transport::DnsNameAndPort;
 
 pub mod background;
 
 use app::config::Namespaces;
 use self::background::Background;
-use Conditional;
+use {Conditional, NamePort};
 
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone)]
@@ -57,7 +56,7 @@ pub struct Resolver {
 /// Requests that resolution updaes for `authority` be sent on `responder`.
 #[derive(Debug)]
 struct ResolveRequest {
-    authority: DnsNameAndPort,
+    authority: NamePort,
     responder: Responder,
 }
 
@@ -136,12 +135,12 @@ where
 
 // ==== impl Resolver =====
 
-impl Resolve<DnsNameAndPort> for Resolver {
+impl Resolve<NamePort> for Resolver {
     type Endpoint = Metadata;
     type Resolution = Resolution;
 
     /// Start watching for address changes for a certain authority.
-    fn resolve(&self, authority: &DnsNameAndPort) -> Resolution {
+    fn resolve(&self, authority: &NamePort) -> Resolution {
         trace!("resolve; authority={:?}", authority);
         let (update_tx, update_rx) = mpsc::unbounded();
         let active = Arc::new(());

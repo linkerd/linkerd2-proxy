@@ -3,19 +3,19 @@ use std::fmt;
 use std::net::SocketAddr;
 
 use proxy::http::{
-    client, h1, normalize_uri::ShouldNormalizeUri, router, Settings,
+    client, normalize_uri::ShouldNormalizeUri, router, Settings,
 };
 use proxy::server::Source;
 use svc::stack_per_request::ShouldStackPerRequest;
 use tap;
 use super::classify;
 use transport::{connect, tls};
-use Conditional;
+use {Conditional, NamePort};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Endpoint {
     pub addr: SocketAddr,
-    pub authority: http::uri::Authority,
+    pub dst_name_port: Option<NamePort>,
     pub settings: Settings,
     pub source_tls_status: tls::Status,
 }
@@ -93,20 +93,12 @@ impl<A> router::Recognize<http::Request<A>> for Recognize {
             .and_then(|s| s.orig_dst_if_not_local())
             .or(self.default_addr)?;
 
-        let authority = req
-            .uri()
-            .authority_part()
-            .cloned()
-            .or_else(|| h1::authority_from_host(req))
-            .or_else(|| {
-                let a = format!("{}", addr);
-                http::uri::Authority::from_shared(a.into()).ok()
-            })?;
-        let settings = Settings::detect(req);
+        let dst_name_port = super::host_port(req).ok().and_then(|h| h.into_name());
+        let settings = Settings::from_request(req);
 
         let ep = Endpoint {
             addr,
-            authority,
+            dst_name_port,
             settings,
             source_tls_status,
         };
@@ -184,22 +176,21 @@ mod tests {
 
     use super::{Endpoint, Recognize};
     use proxy::http::router::Recognize as _Recognize;
-    use proxy::http::settings::{Host, Settings};
+    use proxy::http::settings::Settings;
     use proxy::server::Source;
     use transport::tls;
     use Conditional;
 
     fn make_h1_endpoint(addr: net::SocketAddr) -> Endpoint {
         let settings = Settings::Http1 {
-            host: Host::NoAuthority,
             is_h1_upgrade: false,
             was_absolute_form: false,
+            stack_per_request: true,
         };
-        let authority = http::uri::Authority::from_shared(format!("{}", addr).into()).unwrap();
         let source_tls_status = TLS_DISABLED;
         Endpoint {
             addr,
-            authority,
+            dst_name_port: None,
             settings,
             source_tls_status,
         }

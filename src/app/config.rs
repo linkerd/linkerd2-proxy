@@ -10,9 +10,10 @@ use http;
 use indexmap::IndexSet;
 use trust_dns_resolver::config::ResolverOpts;
 
-use transport::{Host, HostAndPort, HostAndPortError, tls};
 use convert::TryFrom;
-use Conditional;
+use transport::tls;
+use host_port::Error as HostPortError;
+use {Conditional, HostPort};
 
 // TODO:
 //
@@ -71,7 +72,7 @@ pub struct Config {
     ///
     /// This is optional to allow the proxy to work without the controller for
     /// experimental & testing purposes.
-    pub control_host_and_port: Option<HostAndPort>,
+    pub control_host_and_port: Option<HostPort>,
 
     /// Time to wait when encountering errors talking to control plane before
     /// a new connection.
@@ -145,7 +146,7 @@ pub enum UrlError {
     MissingAuthority,
 
     /// The URL is missing the authority part.
-    AuthorityError(HostAndPortError),
+    AuthorityError(HostPortError),
 
     /// The URL contains a path component that isn't "/", which isn't allowed.
     PathNotAllowed,
@@ -476,9 +477,8 @@ impl FromStr for Addr {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let a = parse_url(s)?;
-        if let Host::Ip(ip) = a.host {
-            return Ok(Addr(SocketAddr::from((ip, a.port))));
+        if let HostPort::Addr(a) = parse_url(s)? {
+            return Ok(Addr(a));
         }
         Err(ParseError::HostIsNotAnIpAddress)
     }
@@ -562,7 +562,7 @@ fn parse_path(s: &str) -> Result<PathBuf, ParseError> {
     Ok(PathBuf::from(s))
 }
 
-fn parse_url(s: &str) -> Result<HostAndPort, ParseError> {
+fn parse_url(s: &str) -> Result<HostPort, ParseError> {
     let url = s.parse::<http::Uri>().map_err(|_| ParseError::UrlError(UrlError::SyntaxError))?;
     if url.scheme_part().map(|s| s.as_str()) != Some("tcp") {
         return Err(ParseError::UrlError(UrlError::UnsupportedScheme));
@@ -577,7 +577,7 @@ fn parse_url(s: &str) -> Result<HostAndPort, ParseError> {
     // https://github.com/hyperium/http/issues/127. For now just ignore any
     // fragment that is there.
 
-    HostAndPort::normalize(authority, None)
+    HostPort::from_authority_with_port(authority)
         .map_err(|e| ParseError::UrlError(UrlError::AuthorityError(e)))
 }
 

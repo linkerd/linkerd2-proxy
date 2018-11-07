@@ -29,7 +29,7 @@ use control::{
     remote_stream::{Receiver, Remote},
 };
 use dns;
-use transport::DnsNameAndPort;
+use NamePort;
 
 mod destination_set;
 
@@ -59,9 +59,9 @@ pub(super) struct Background<T: HttpService> {
 /// which require reconnects.
 #[derive(Default)]
 struct DestinationCache<T: HttpService> {
-    destinations: HashMap<DnsNameAndPort, DestinationSet<T>>,
+    destinations: HashMap<NamePort, DestinationSet<T>>,
     /// A queue of authorities that need to be reconnected.
-    reconnects: VecDeque<DnsNameAndPort>,
+    reconnects: VecDeque<NamePort>,
 }
 
 /// The configurationn necessary to create a new Destination service
@@ -338,7 +338,7 @@ impl NewQuery {
     fn query_destination_service_if_relevant<T>(
         &self,
         client: Option<&mut T>,
-        auth: &DnsNameAndPort,
+        auth: &NamePort,
         connect_or_reconnect: &str,
     ) -> DestinationServiceQuery<T>
     where
@@ -415,7 +415,7 @@ where
     /// Returns true if `auth` is currently known to need a Destination
     /// service query, but was unable to query previously due to the query
     /// limit being reached.
-    fn needs_query_for(&self, auth: &DnsNameAndPort) -> bool {
+    fn needs_query_for(&self, auth: &NamePort) -> bool {
         self.destinations
             .get(auth)
             .map(|dst| dst.needs_query_capacity())

@@ -3,12 +3,12 @@ use std::fmt;
 use std::time::Duration;
 
 use svc;
-use transport::{tls, HostAndPort};
-use Conditional;
+use transport::tls;
+use {Conditional, HostPort};
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    host_and_port: HostAndPort,
+    host_and_port: HostPort,
     tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
     tls_config: tls::ConditionalClientConfig,
     backoff: Duration,
@@ -18,7 +18,7 @@ pub struct Config {
 
 impl Config {
     pub fn new(
-        host_and_port: HostAndPort,
+        host_and_port: HostPort,
         tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
         backoff: Duration,
         connect_timeout: Duration,
@@ -116,7 +116,7 @@ pub mod add_origin {
         fn make(&self, config: &super::Config) -> Result<Self::Value, Self::Error> {
             let inner = self.inner.make(config)?;
             let scheme = uri::Scheme::from_shared(Bytes::from_static(b"http")).unwrap();
-            let authority = uri::Authority::from(&config.host_and_port);
+            let authority = config.host_and_port.as_authority();
             Ok(AddOrigin::new(inner, scheme, authority))
         }
     }
@@ -254,7 +254,7 @@ pub mod resolve {
         fn new_service(&self) -> Self::Future {
             Init {
                 state: State::Resolve {
-                    future: self.dns.resolve_one_ip(&self.config.host_and_port.host),
+                    future: self.dns.resolve_one_ip(&self.config.host_and_port),
                     stack: self.stack.clone(),
                     config: self.config.clone(),
                 },
@@ -284,7 +284,7 @@ pub mod resolve {
                         ref stack,
                     } => {
                         let ip = try_ready!(future.poll().map_err(Error::Dns));
-                        let sa = SocketAddr::from((ip, config.host_and_port.port));
+                        let sa = SocketAddr::from((ip, config.host_and_port.port()));
 
                         let tls = config.tls_server_identity.as_ref().and_then(|id| {
                             config
@@ -333,13 +333,14 @@ pub mod client {
     use tower_h2::{client, BoxBody};
 
     use svc;
-    use transport::{connect, HostAndPort};
+    use transport::connect;
+    use HostPort;
 
     #[derive(Clone, Debug)]
     pub struct Target {
         pub(super) connect: connect::Target,
         pub(super) builder: h2::client::Builder,
-        pub(super) log_ctx: ::logging::Client<&'static str, HostAndPort>,
+        pub(super) log_ctx: ::logging::Client<&'static str, HostPort>,
     }
 
     #[derive(Debug)]
@@ -401,7 +402,7 @@ pub mod client {
     {
         type Value = client::Connect<
             C::Value,
-            ::logging::ClientExecutor<&'static str, HostAndPort>,
+            ::logging::ClientExecutor<&'static str, HostPort>,
             BoxBody,
         >;
         type Error = C::Error;

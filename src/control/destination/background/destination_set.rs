@@ -25,8 +25,8 @@ use control::{
     remote_stream::Remote,
 };
 use dns::{self, IpAddrListFuture};
-use transport::{tls, DnsNameAndPort};
-use Conditional;
+use transport::tls;
+use {Conditional, NamePort};
 
 use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
@@ -50,15 +50,15 @@ where
         &mut self,
         dns_resolver: &dns::Resolver,
         deadline: Instant,
-        authority: &DnsNameAndPort,
+        authority: &NamePort,
     ) {
         trace!(
             "resetting DNS query for {} at {:?}",
-            authority.host,
+            authority.name(),
             deadline
         );
         self.reset_on_next_modification();
-        self.dns_query = Some(dns_resolver.resolve_all_ips(deadline, &authority.host));
+        self.dns_query = Some(dns_resolver.resolve_all_ips(deadline, authority.name()));
     }
 
     // Processes Destination service updates from `request_rx`, returning the new query
@@ -67,7 +67,7 @@ where
     // "no change in existence" instead of "unknown".
     pub(super) fn poll_destination_service(
         &mut self,
-        auth: &DnsNameAndPort,
+        auth: &NamePort,
         mut rx: UpdateRx<T>,
         tls_controller_namespace: Option<&str>,
     ) -> (ActiveQuery<T>, Exists<()>) {
@@ -123,7 +123,7 @@ where
         }
     }
 
-    pub(super) fn poll_dns(&mut self, dns_resolver: &dns::Resolver, authority: &DnsNameAndPort) {
+    pub(super) fn poll_dns(&mut self, dns_resolver: &dns::Resolver, authority: &NamePort) {
         // Duration to wait before polling DNS again after an error
         // (or a NXDOMAIN response with no TTL).
         const DNS_ERROR_TTL: Duration = Duration::from_secs(5);
@@ -147,7 +147,7 @@ where
                         authority,
                         ips.iter().map(|ip| {
                             (
-                                SocketAddr::from((ip, authority.port)),
+                                SocketAddr::from((ip, authority.port())),
                                 Metadata::none(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery),
                             )
                         }),
@@ -169,7 +169,7 @@ where
                 Err(e) => {
                     // Do nothing so that the most recent non-error response is used until a
                     // non-error response is received
-                    trace!("DNS resolution failed for {}: {}", &authority.host, e);
+                    trace!("DNS resolution failed for {}: {}", authority.name(), e);
 
                     // Poll again after the default wait time.
                     Instant::now() + DNS_ERROR_TTL
@@ -200,7 +200,7 @@ where
         }
     }
 
-    fn add<A>(&mut self, authority_for_logging: &DnsNameAndPort, addrs_to_add: A)
+    fn add<A>(&mut self, authority_for_logging: &NamePort, addrs_to_add: A)
     where
         A: Iterator<Item = (SocketAddr, Metadata)>,
     {
@@ -214,7 +214,7 @@ where
         self.addrs = Exists::Yes(cache);
     }
 
-    fn remove<A>(&mut self, authority_for_logging: &DnsNameAndPort, addrs_to_remove: A)
+    fn remove<A>(&mut self, authority_for_logging: &NamePort, addrs_to_remove: A)
     where
         A: Iterator<Item = SocketAddr>,
     {
@@ -230,7 +230,7 @@ where
         self.addrs = Exists::Yes(cache);
     }
 
-    fn no_endpoints(&mut self, authority_for_logging: &DnsNameAndPort, exists: bool) {
+    fn no_endpoints(&mut self, authority_for_logging: &NamePort, exists: bool) {
         trace!(
             "no endpoints for {:?} that is known to {}",
             authority_for_logging,
@@ -253,7 +253,7 @@ where
 
     fn on_change(
         responders: &mut Vec<Responder>,
-        authority_for_logging: &DnsNameAndPort,
+        authority_for_logging: &NamePort,
         change: CacheChange<SocketAddr, Metadata>,
     ) {
         let (update_str, update, addr) = match change {
