@@ -10,7 +10,7 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 use std::{error, fmt};
 
-use NamePort;
+use NameAddr;
 
 pub type Routes = Vec<(RequestMatch, Route)>;
 
@@ -21,7 +21,7 @@ pub type Routes = Vec<(RequestMatch, Route)>;
 pub trait GetRoutes {
     type Stream: Stream<Item = Routes, Error = Error>;
 
-    fn get_routes(&self, dst: &NamePort) -> Option<Self::Stream>;
+    fn get_routes(&self, dst: &NameAddr) -> Option<Self::Stream>;
 }
 
 /// Implemented by target types that may be combined with a Route.
@@ -31,10 +31,10 @@ pub trait WithRoute {
     fn with_route(self, route: Route) -> Self::Output;
 }
 
-/// Implemented by target types that may have a `NamePort` destination that
+/// Implemented by target types that may have a `NameAddr` destination that
 /// can be discovered via `GetRoutes`.
 pub trait CanGetDestination {
-    fn get_destination(&self) -> Option<&NamePort>;
+    fn get_destination(&self) -> Option<&NameAddr>;
 }
 
 #[derive(Debug)]

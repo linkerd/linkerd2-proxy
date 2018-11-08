@@ -1,9 +1,9 @@
 use bytes::{BytesMut};
 
-use NamePort;
+use NameAddr;
 
 pub trait Normalize {
-    fn normalize(&self, authority: &NamePort) -> Option<FullyQualifiedAuthority>;
+    fn normalize(&self, authority: &NameAddr) -> Option<FullyQualifiedAuthority>;
 }
 
 #[derive(Clone, Debug)]
@@ -24,7 +24,7 @@ impl KubernetesNormalize {
 impl Normalize for KubernetesNormalize {
     /// Normalizes the name according to Kubernetes service naming conventions.
     /// Case folding is not done; that is done internally inside `Authority`.
-    fn normalize(&self, authority: &NamePort) -> Option<FullyQualifiedAuthority> {
+    fn normalize(&self, authority: &NameAddr) -> Option<FullyQualifiedAuthority> {
         let name: &str = authority.name().as_ref();
 
         // parts should have a maximum 4 of pieces (name, namespace, svc, zone)
@@ -145,15 +145,15 @@ mod tests {
     use http::uri::Authority;
     use std::str::FromStr;
 
-    use {HostPort, NamePort};
+    use {Addr, NameAddr};
     use super::Normalize;
 
     #[test]
     fn test_normalized_authority() {
-        fn dns_name_and_port_from_str(input: &str) -> NamePort {
+        fn dns_name_and_port_from_str(input: &str) -> NameAddr {
             let authority = Authority::from_str(input).unwrap();
-            match HostPort::from_authority_and_default_port(&authority, 80) {
-                Ok(HostPort::Name(name)) => name,
+            match Addr::from_authority_and_default_port(&authority, 80) {
+                Ok(Addr::Name(name)) => name,
                 Err(e) => {
                     unreachable!("{:?} when parsing {:?}", e, input)
                 },

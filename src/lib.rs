@@ -51,6 +51,7 @@ extern crate linkerd2_timeout as timeout;
 // `linkerd2_metrics` is needed to satisfy the macro, but this is nicer to use internally.
 use self::linkerd2_metrics as metrics;
 
+mod addr;
 pub mod app;
 mod conditional;
 pub mod control;
@@ -58,7 +59,6 @@ pub mod convert;
 pub mod ctx;
 mod dns;
 mod drain;
-mod host_port;
 mod logging;
 mod proxy;
 mod svc;
@@ -66,6 +66,6 @@ mod tap;
 pub mod telemetry;
 pub mod transport;
 
+use self::addr::{Addr, NameAddr};
 use self::conditional::Conditional;
-use self::host_port::{HostPort, NamePort};
 pub use self::transport::SoOriginalDst;

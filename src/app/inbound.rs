@@ -2,20 +2,18 @@ use http;
 use std::fmt;
 use std::net::SocketAddr;
 
-use proxy::http::{
-    client, normalize_uri::ShouldNormalizeUri, router, Settings,
-};
+use super::classify;
+use proxy::http::{client, normalize_uri::ShouldNormalizeUri, router, Settings};
 use proxy::server::Source;
 use svc::stack_per_request::ShouldStackPerRequest;
 use tap;
-use super::classify;
 use transport::{connect, tls};
-use {Conditional, NamePort};
+use {Conditional, NameAddr};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Endpoint {
     pub addr: SocketAddr,
-    pub dst_name_port: Option<NamePort>,
+    pub dst_name: Option<NameAddr>,
     pub settings: Settings,
     pub source_tls_status: tls::Status,
 }
@@ -93,12 +91,14 @@ impl<A> router::Recognize<http::Request<A>> for Recognize {
             .and_then(|s| s.orig_dst_if_not_local())
             .or(self.default_addr)?;
 
-        let dst_name_port = super::host_port(req).ok().and_then(|h| h.into_name());
+        let dst_name = super::http_request_addr(req)
+            .ok()
+            .and_then(|h| h.into_name_addr());
         let settings = Settings::from_request(req);
 
         let ep = Endpoint {
             addr,
-            dst_name_port,
+            dst_name,
             settings,
             source_tls_status,
         };
@@ -190,7 +190,7 @@ mod tests {
         let source_tls_status = TLS_DISABLED;
         Endpoint {
             addr,
-            dst_name_port: None,
+            dst_name: None,
             settings,
             source_tls_status,
         }

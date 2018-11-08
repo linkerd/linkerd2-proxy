@@ -26,7 +26,7 @@ use control::{
 };
 use dns::{self, IpAddrListFuture};
 use transport::tls;
-use {Conditional, NamePort};
+use {Conditional, NameAddr};
 
 use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
@@ -50,7 +50,7 @@ where
         &mut self,
         dns_resolver: &dns::Resolver,
         deadline: Instant,
-        authority: &NamePort,
+        authority: &NameAddr,
     ) {
         trace!(
             "resetting DNS query for {} at {:?}",
@@ -67,7 +67,7 @@ where
     // "no change in existence" instead of "unknown".
     pub(super) fn poll_destination_service(
         &mut self,
-        auth: &NamePort,
+        auth: &NameAddr,
         mut rx: UpdateRx<T>,
         tls_controller_namespace: Option<&str>,
     ) -> (ActiveQuery<T>, Exists<()>) {
@@ -123,7 +123,7 @@ where
         }
     }
 
-    pub(super) fn poll_dns(&mut self, dns_resolver: &dns::Resolver, authority: &NamePort) {
+    pub(super) fn poll_dns(&mut self, dns_resolver: &dns::Resolver, authority: &NameAddr) {
         // Duration to wait before polling DNS again after an error
         // (or a NXDOMAIN response with no TTL).
         const DNS_ERROR_TTL: Duration = Duration::from_secs(5);
@@ -200,7 +200,7 @@ where
         }
     }
 
-    fn add<A>(&mut self, authority_for_logging: &NamePort, addrs_to_add: A)
+    fn add<A>(&mut self, authority_for_logging: &NameAddr, addrs_to_add: A)
     where
         A: Iterator<Item = (SocketAddr, Metadata)>,
     {
@@ -214,7 +214,7 @@ where
         self.addrs = Exists::Yes(cache);
     }
 
-    fn remove<A>(&mut self, authority_for_logging: &NamePort, addrs_to_remove: A)
+    fn remove<A>(&mut self, authority_for_logging: &NameAddr, addrs_to_remove: A)
     where
         A: Iterator<Item = SocketAddr>,
     {
@@ -230,7 +230,7 @@ where
         self.addrs = Exists::Yes(cache);
     }
 
-    fn no_endpoints(&mut self, authority_for_logging: &NamePort, exists: bool) {
+    fn no_endpoints(&mut self, authority_for_logging: &NameAddr, exists: bool) {
         trace!(
             "no endpoints for {:?} that is known to {}",
             authority_for_logging,
@@ -253,7 +253,7 @@ where
 
     fn on_change(
         responders: &mut Vec<Responder>,
-        authority_for_logging: &NamePort,
+        authority_for_logging: &NameAddr,
         change: CacheChange<SocketAddr, Metadata>,
     ) {
         let (update_str, update, addr) = match change {

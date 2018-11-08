@@ -6,7 +6,7 @@ use std::{
 use metrics::FmtLabels;
 
 use transport::tls;
-use {Conditional, NamePort};
+use {Conditional, NameAddr};
 
 use super::{classify, inbound, outbound};
 
@@ -15,7 +15,7 @@ pub struct EndpointLabels {
     addr: net::SocketAddr,
     direction: Direction,
     tls_status: tls::Status,
-    dst_name_port: Option<NamePort>,
+    dst_name: Option<NameAddr>,
     labels: Option<String>,
 }
 
@@ -33,7 +33,7 @@ enum Direction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Authority<'a>(&'a NamePort);
+struct Authority<'a>(&'a NameAddr);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Dst(outbound::Destination);
@@ -68,7 +68,7 @@ impl From<inbound::Endpoint> for EndpointLabels {
     fn from(ep: inbound::Endpoint) -> Self {
         Self {
             addr: ep.addr,
-            dst_name_port: ep.dst_name_port,
+            dst_name: ep.dst_name,
             direction: Direction::In,
             tls_status: ep.source_tls_status,
             labels: None,
@@ -93,7 +93,7 @@ impl From<outbound::Endpoint> for EndpointLabels {
     fn from(ep: outbound::Endpoint) -> Self {
         Self {
             addr: ep.connect.addr,
-            dst_name_port: ep.dst.host_port.into_name(),
+            dst_name: ep.dst.addr.into_name_addr(),
             direction: Direction::Out,
             tls_status: ep.connect.tls_status(),
             labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
@@ -103,7 +103,7 @@ impl From<outbound::Endpoint> for EndpointLabels {
 
 impl FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let authority = self.dst_name_port.as_ref().map(Authority);
+        let authority = self.dst_name.as_ref().map(Authority);
         (authority, &self.direction).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
@@ -142,7 +142,7 @@ impl FmtLabels for Dst {
         } else {
             "h1"
         };
-        write!(f, "dst=\"{}\",dst_protocol=\"{}\"", self.0.host_port, proto)?;
+        write!(f, "dst=\"{}\",dst_protocol=\"{}\"", self.0.addr, proto)?;
 
         Ok(())
     }

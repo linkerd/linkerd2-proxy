@@ -4,11 +4,11 @@ use std::time::Duration;
 
 use svc;
 use transport::tls;
-use {Conditional, HostPort};
+use {Conditional, Addr};
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    host_and_port: HostPort,
+    host_and_port: Addr,
     tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
     tls_config: tls::ConditionalClientConfig,
     backoff: Duration,
@@ -18,7 +18,7 @@ pub struct Config {
 
 impl Config {
     pub fn new(
-        host_and_port: HostPort,
+        host_and_port: Addr,
         tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
         backoff: Duration,
         connect_timeout: Duration,
@@ -334,13 +334,13 @@ pub mod client {
 
     use svc;
     use transport::connect;
-    use HostPort;
+    use Addr;
 
     #[derive(Clone, Debug)]
     pub struct Target {
         pub(super) connect: connect::Target,
         pub(super) builder: h2::client::Builder,
-        pub(super) log_ctx: ::logging::Client<&'static str, HostPort>,
+        pub(super) log_ctx: ::logging::Client<&'static str, Addr>,
     }
 
     #[derive(Debug)]
@@ -402,7 +402,7 @@ pub mod client {
     {
         type Value = client::Connect<
             C::Value,
-            ::logging::ClientExecutor<&'static str, HostPort>,
+            ::logging::ClientExecutor<&'static str, Addr>,
             BoxBody,
         >;
         type Error = C::Error;

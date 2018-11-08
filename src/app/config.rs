@@ -10,10 +10,10 @@ use http;
 use indexmap::IndexSet;
 use trust_dns_resolver::config::ResolverOpts;
 
+use addr;
 use convert::TryFrom;
 use transport::tls;
-use host_port::Error as HostPortError;
-use {Conditional, HostPort};
+use {Conditional, Addr};
 
 // TODO:
 //
@@ -35,7 +35,7 @@ pub struct Config {
     pub metrics_listener: Listener,
 
     /// Where to forward externally received connections.
-    pub inbound_forward: Option<Addr>,
+    pub inbound_forward: Option<SocketAddr>,
 
     /// The maximum amount of time to wait for a connection to a local peer.
     pub inbound_connect_timeout: Duration,
@@ -72,7 +72,7 @@ pub struct Config {
     ///
     /// This is optional to allow the proxy to work without the controller for
     /// experimental & testing purposes.
-    pub control_host_and_port: Option<HostPort>,
+    pub control_host_and_port: Option<Addr>,
 
     /// Time to wait when encountering errors talking to control plane before
     /// a new connection.
@@ -110,13 +110,8 @@ pub struct Namespaces {
 #[derive(Clone, Debug)]
 pub struct Listener {
     /// The address to which the listener should bind.
-    pub addr: Addr,
+    pub addr: SocketAddr,
 }
-
-/// A logical address. This abstracts over the various strategies for cross
-/// process communication.
-#[derive(Clone, Copy, Debug)]
-pub struct Addr(SocketAddr);
 
 /// Errors produced when loading a `Config` struct.
 #[derive(Clone, Debug)]
@@ -146,7 +141,7 @@ pub enum UrlError {
     MissingAuthority,
 
     /// The URL is missing the authority part.
-    AuthorityError(HostPortError),
+    AuthorityError(addr::Error),
 
     /// The URL contains a path component that isn't "/", which isn't allowed.
     PathNotAllowed,
@@ -286,13 +281,13 @@ impl<'a> TryFrom<&'a Strings> for Config {
         // will log any errors so defer returning any errors until all of them
         // have been parsed.
         let outbound_listener_addr = parse_deprecated(
-            strings, ENV_OUTBOUND_LISTENER, DEPRECATED_ENV_PRIVATE_LISTENER, str::parse);
+            strings, ENV_OUTBOUND_LISTENER, DEPRECATED_ENV_PRIVATE_LISTENER, parse_addr);
         let inbound_listener_addr = parse_deprecated(
-            strings, ENV_INBOUND_LISTENER, DEPRECATED_ENV_PUBLIC_LISTENER, str::parse);
-        let control_listener_addr = parse(strings, ENV_CONTROL_LISTENER, str::parse);
-        let metrics_listener_addr = parse(strings, ENV_METRICS_LISTENER, str::parse);
+            strings, ENV_INBOUND_LISTENER, DEPRECATED_ENV_PUBLIC_LISTENER, parse_addr);
+        let control_listener_addr = parse(strings, ENV_CONTROL_LISTENER, parse_addr);
+        let metrics_listener_addr = parse(strings, ENV_METRICS_LISTENER, parse_addr);
         let inbound_forward = parse_deprecated(
-            strings, ENV_INBOUND_FORWARD, DEPRECATED_ENV_PRIVATE_FORWARD, str::parse);
+            strings, ENV_INBOUND_FORWARD, DEPRECATED_ENV_PRIVATE_FORWARD, parse_addr);
         let inbound_connect_timeout = parse_deprecated(
             strings, ENV_INBOUND_CONNECT_TIMEOUT, DEPRECATED_ENV_PRIVATE_CONNECT_TIMEOUT, parse_duration);
         let outbound_connect_timeout = parse_deprecated(
@@ -406,19 +401,19 @@ impl<'a> TryFrom<&'a Strings> for Config {
         Ok(Config {
             outbound_listener: Listener {
                 addr: outbound_listener_addr?
-                    .unwrap_or_else(|| Addr::from_str(DEFAULT_OUTBOUND_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_addr(DEFAULT_OUTBOUND_LISTENER).unwrap()),
             },
             inbound_listener: Listener {
                 addr: inbound_listener_addr?
-                    .unwrap_or_else(|| Addr::from_str(DEFAULT_INBOUND_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_addr(DEFAULT_INBOUND_LISTENER).unwrap()),
             },
             control_listener: Listener {
                 addr: control_listener_addr?
-                    .unwrap_or_else(|| Addr::from_str(DEFAULT_CONTROL_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_addr(DEFAULT_CONTROL_LISTENER).unwrap()),
             },
             metrics_listener: Listener {
                 addr: metrics_listener_addr?
-                    .unwrap_or_else(|| Addr::from_str(DEFAULT_METRICS_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_addr(DEFAULT_METRICS_LISTENER).unwrap()),
             },
             inbound_forward: inbound_forward?,
 
@@ -473,26 +468,10 @@ fn default_disable_ports_protocol_detection() -> IndexSet<u16> {
 
 // ===== impl Addr =====
 
-impl FromStr for Addr {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let HostPort::Addr(a) = parse_url(s)? {
-            return Ok(Addr(a));
-        }
-        Err(ParseError::HostIsNotAnIpAddress)
-    }
-}
-
-impl From<Addr> for SocketAddr {
-    fn from(addr: Addr) -> SocketAddr {
-        addr.0
-    }
-}
-
-impl From<SocketAddr> for Addr {
-    fn from(addr: SocketAddr) -> Self {
-        Addr(addr)
+fn parse_addr(s: &str) -> Result<SocketAddr, ParseError> {
+    match parse_url(s)? {
+        Addr::Socket(a) => Ok(a),
+        _ => Err(ParseError::HostIsNotAnIpAddress)
     }
 }
 
@@ -562,7 +541,7 @@ fn parse_path(s: &str) -> Result<PathBuf, ParseError> {
     Ok(PathBuf::from(s))
 }
 
-fn parse_url(s: &str) -> Result<HostPort, ParseError> {
+fn parse_url(s: &str) -> Result<Addr, ParseError> {
     let url = s.parse::<http::Uri>().map_err(|_| ParseError::UrlError(UrlError::SyntaxError))?;
     if url.scheme_part().map(|s| s.as_str()) != Some("tcp") {
         return Err(ParseError::UrlError(UrlError::UnsupportedScheme));
@@ -577,7 +556,7 @@ fn parse_url(s: &str) -> Result<HostPort, ParseError> {
     // https://github.com/hyperium/http/issues/127. For now just ignore any
     // fragment that is there.
 
-    HostPort::from_authority_with_port(authority)
+    Addr::from_authority_with_port(authority)
         .map_err(|e| ParseError::UrlError(UrlError::AuthorityError(e)))
 }
 

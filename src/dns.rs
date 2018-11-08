@@ -13,7 +13,7 @@ use trust_dns_resolver::{
 
 use app::config::Config;
 use transport::tls;
-use HostPort;
+use Addr;
 
 #[derive(Clone)]
 pub struct Resolver {
@@ -99,15 +99,15 @@ impl Resolver {
         (resolver, background)
     }
 
-    pub fn resolve_one_ip(&self, host: &HostPort) -> IpAddrFuture {
+    pub fn resolve_one_ip(&self, host: &Addr) -> IpAddrFuture {
         match host {
-            HostPort::Name(n) => {
+            Addr::Name(n) => {
                 let name = n.name();
                 let ctx = ResolveOneCtx(name.clone());
                 let f = ::logging::context_future(ctx, self.lookup_ip(name));
                 IpAddrFuture::DNS(Box::new(f))
             }
-            HostPort::Addr(addr) => IpAddrFuture::Fixed(addr.ip()),
+            Addr::Socket(addr) => IpAddrFuture::Fixed(addr.ip()),
         }
     }
 

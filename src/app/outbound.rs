@@ -3,19 +3,17 @@ use std::fmt;
 
 use app::classify;
 use control::destination::{Metadata, ProtocolHint};
-use proxy::{
-    http::{
-        classify::CanClassify,
-        client,
-        normalize_uri::ShouldNormalizeUri,
-        profiles::{self, CanGetDestination},
-        router, Settings,
-    },
+use proxy::http::{
+    classify::CanClassify,
+    client,
+    normalize_uri::ShouldNormalizeUri,
+    profiles::{self, CanGetDestination},
+    router, Settings,
 };
 use svc::{self, stack_per_request::ShouldStackPerRequest};
 use tap;
 use transport::{connect, tls};
-use {HostPort, NamePort};
+use {Addr, NameAddr};
 
 #[derive(Clone, Debug)]
 pub struct Endpoint {
@@ -26,7 +24,7 @@ pub struct Endpoint {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Destination {
-    pub host_port: HostPort,
+    pub addr: Addr,
     pub settings: Settings,
 }
 
@@ -123,9 +121,9 @@ impl<B> router::Recognize<http::Request<B>> for Recognize {
     type Target = Destination;
 
     fn recognize(&self, req: &http::Request<B>) -> Option<Self::Target> {
-        let host_port = super::host_port(req).ok()?;
+        let addr = super::http_request_addr(req).ok()?;
         let settings = Settings::from_request(req);
-        let dst = Destination::new(host_port, settings);
+        let dst = Destination::new(addr, settings);
         debug!("recognize: dst={:?}", dst);
         Some(dst)
     }
@@ -134,18 +132,15 @@ impl<B> router::Recognize<http::Request<B>> for Recognize {
 // === impl Destination ===
 
 impl Destination {
-    pub fn new(host_port: HostPort, settings: Settings) -> Self {
-        Self {
-            host_port,
-            settings,
-        }
+    pub fn new(addr: Addr, settings: Settings) -> Self {
+        Self { addr, settings }
     }
 }
 
 impl CanGetDestination for Destination {
-    fn get_destination(&self) -> Option<&NamePort> {
-        match self.host_port {
-            HostPort::Name(ref name) => Some(name),
+    fn get_destination(&self) -> Option<&NameAddr> {
+        match self.addr {
+            Addr::Name(ref name) => Some(name),
             _ => None,
         }
     }
@@ -153,7 +148,7 @@ impl CanGetDestination for Destination {
 
 impl fmt::Display for Destination {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.host_port.fmt(f)
+        self.addr.fmt(f)
     }
 }
 
@@ -173,10 +168,10 @@ pub mod discovery {
     use control::destination::Metadata;
     use proxy::resolve;
     use transport::{connect, tls};
-    use {Conditional, HostPort, NamePort};
+    use {Addr, Conditional, NameAddr};
 
     #[derive(Clone, Debug)]
-    pub struct Resolve<R: resolve::Resolve<NamePort>>(R);
+    pub struct Resolve<R: resolve::Resolve<NameAddr>>(R);
 
     #[derive(Debug)]
     pub enum Resolution<R: resolve::Resolution> {
@@ -188,7 +183,7 @@ pub mod discovery {
 
     impl<R> Resolve<R>
     where
-        R: resolve::Resolve<NamePort, Endpoint = Metadata>,
+        R: resolve::Resolve<NameAddr, Endpoint = Metadata>,
     {
         pub fn new(resolve: R) -> Self {
             Resolve(resolve)
@@ -197,15 +192,15 @@ pub mod discovery {
 
     impl<R> resolve::Resolve<Destination> for Resolve<R>
     where
-        R: resolve::Resolve<NamePort, Endpoint = Metadata>,
+        R: resolve::Resolve<NameAddr, Endpoint = Metadata>,
     {
         type Endpoint = Endpoint;
         type Resolution = Resolution<R::Resolution>;
 
         fn resolve(&self, dst: &Destination) -> Self::Resolution {
-            match dst.host_port {
-                HostPort::Name(ref name) => Resolution::Name(dst.clone(), self.0.resolve(&name)),
-                HostPort::Addr(ref addr) => Resolution::Addr(dst.clone(), Some(*addr)),
+            match dst.addr {
+                Addr::Name(ref name) => Resolution::Name(dst.clone(), self.0.resolve(&name)),
+                Addr::Socket(ref addr) => Resolution::Addr(dst.clone(), Some(*addr)),
             }
         }
     }

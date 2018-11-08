@@ -45,7 +45,7 @@ pub mod background;
 
 use app::config::Namespaces;
 use self::background::Background;
-use {Conditional, NamePort};
+use {Conditional, NameAddr};
 
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone)]
@@ -56,7 +56,7 @@ pub struct Resolver {
 /// Requests that resolution updaes for `authority` be sent on `responder`.
 #[derive(Debug)]
 struct ResolveRequest {
-    authority: NamePort,
+    authority: NameAddr,
     responder: Responder,
 }
 
@@ -135,12 +135,12 @@ where
 
 // ==== impl Resolver =====
 
-impl Resolve<NamePort> for Resolver {
+impl Resolve<NameAddr> for Resolver {
     type Endpoint = Metadata;
     type Resolution = Resolution;
 
     /// Start watching for address changes for a certain authority.
-    fn resolve(&self, authority: &NamePort) -> Resolution {
+    fn resolve(&self, authority: &NameAddr) -> Resolution {
         trace!("resolve; authority={:?}", authority);
         let (update_tx, update_rx) = mpsc::unbounded();
         let active = Arc::new(());
