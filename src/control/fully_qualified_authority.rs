@@ -1,9 +1,9 @@
 use bytes::{BytesMut};
 
-use transport::DnsNameAndPort;
+use NameAddr;
 
 pub trait Normalize {
-    fn normalize(&self, authority: &DnsNameAndPort) -> Option<FullyQualifiedAuthority>;
+    fn normalize(&self, authority: &NameAddr) -> Option<FullyQualifiedAuthority>;
 }
 
 #[derive(Clone, Debug)]
@@ -24,8 +24,8 @@ impl KubernetesNormalize {
 impl Normalize for KubernetesNormalize {
     /// Normalizes the name according to Kubernetes service naming conventions.
     /// Case folding is not done; that is done internally inside `Authority`.
-    fn normalize(&self, authority: &DnsNameAndPort) -> Option<FullyQualifiedAuthority> {
-        let name: &str = authority.host.as_ref();
+    fn normalize(&self, authority: &NameAddr) -> Option<FullyQualifiedAuthority> {
+        let name: &str = authority.name().as_ref();
 
         // parts should have a maximum 4 of pieces (name, namespace, svc, zone)
         let mut parts = name.splitn(4, '.');
@@ -95,7 +95,7 @@ impl Normalize for KubernetesNormalize {
             additional_len += 1 + zone.len(); // "." + zone
         }
 
-        let port_str_len = match authority.port {
+        let port_str_len = match authority.port() {
             80 => 0, // XXX: Assumes http://, which is all we support right now.
             p if p >= 10000 => 1 + 5,
             p if p >= 1000 => 1 + 4,
@@ -126,7 +126,7 @@ impl Normalize for KubernetesNormalize {
         // Append the port
         if port_str_len > 0 {
             normalized.extend_from_slice(b":");
-            let port = authority.port.to_string();
+            let port = authority.port().to_string();
             normalized.extend_from_slice(port.as_ref());
         }
 
@@ -142,19 +142,18 @@ impl FullyQualifiedAuthority {
 
 #[cfg(test)]
 mod tests {
-    use transport::{DnsNameAndPort, Host, HostAndPort};
     use http::uri::Authority;
     use std::str::FromStr;
 
+    use {Addr, NameAddr};
     use super::Normalize;
 
     #[test]
     fn test_normalized_authority() {
-        fn dns_name_and_port_from_str(input: &str) -> DnsNameAndPort {
+        fn dns_name_and_port_from_str(input: &str) -> NameAddr {
             let authority = Authority::from_str(input).unwrap();
-            match HostAndPort::normalize(&authority, Some(80)) {
-                Ok(HostAndPort { host: Host::DnsName(host), port }) =>
-                    DnsNameAndPort { host, port },
+            match Addr::from_authority_and_default_port(&authority, 80) {
+                Ok(Addr::Name(name)) => name,
                 Err(e) => {
                     unreachable!("{:?} when parsing {:?}", e, input)
                 },

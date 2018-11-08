@@ -15,10 +15,7 @@ pub use self::{
         GetOriginalDst,
         SoOriginalDst
     },
-    connect::{
-        Connect,
-        DnsNameAndPort, Host, HostAndPort, HostAndPortError,
-    },
+    connect::Connect,
     connection::{
         BoundPort,
         Connection,

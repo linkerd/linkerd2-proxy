@@ -12,7 +12,6 @@ use tokio::{
     reactor::Handle,
 };
 
-use app::config::Addr;
 use Conditional;
 use transport::{AddrInfo, BoxedIo, GetOriginalDst, tls};
 
@@ -114,10 +113,10 @@ pub struct PeekFuture<T> {
 // ===== impl BoundPort =====
 
 impl BoundPort {
-    pub fn new(addr: Addr, tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>)
+    pub fn new(addr: SocketAddr, tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>)
         -> Result<Self, io::Error>
     {
-        let inner = std::net::TcpListener::bind(SocketAddr::from(addr))?;
+        let inner = std::net::TcpListener::bind(addr)?;
         let local_addr = inner.local_addr()?;
         Ok(BoundPort {
             inner,

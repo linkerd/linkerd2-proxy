@@ -14,7 +14,6 @@ use tokio::{
     prelude::*,
 };
 
-use app::config::Addr;
 use Conditional;
 
 use super::{
@@ -119,7 +118,7 @@ fn run_test<C, CF, CR, S, SF, SR>(
         // tests to run at once, which wouldn't work if they all were bound on
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-        let server_bound = connection::BoundPort::new(Addr::from(addr), server_tls)
+        let server_bound = connection::BoundPort::new(addr, server_tls)
             .unwrap();
         let server_addr = server_bound.local_addr();
 

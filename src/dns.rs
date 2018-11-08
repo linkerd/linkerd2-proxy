@@ -12,7 +12,8 @@ use trust_dns_resolver::{
 };
 
 use app::config::Config;
-use transport::{self, tls};
+use transport::tls;
+use Addr;
 
 #[derive(Clone)]
 pub struct Resolver {
@@ -98,14 +99,15 @@ impl Resolver {
         (resolver, background)
     }
 
-    pub fn resolve_one_ip(&self, host: &transport::Host) -> IpAddrFuture {
-        match *host {
-            transport::Host::DnsName(ref name) => {
+    pub fn resolve_one_ip(&self, host: &Addr) -> IpAddrFuture {
+        match host {
+            Addr::Name(n) => {
+                let name = n.name();
                 let ctx = ResolveOneCtx(name.clone());
                 let f = ::logging::context_future(ctx, self.lookup_ip(name));
                 IpAddrFuture::DNS(Box::new(f))
             }
-            transport::Host::Ip(addr) => IpAddrFuture::Fixed(addr),
+            Addr::Socket(addr) => IpAddrFuture::Fixed(addr.ip()),
         }
     }
 
