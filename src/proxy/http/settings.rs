@@ -8,23 +8,23 @@ use http::{self, header::HOST};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Settings {
     Http1 {
-        /// Indicates whhether a new service must be created for each request.
+        /// Indicates whether a new service must be created for each request.
         stack_per_request: bool,
-         /// Whether the request wants to use HTTP/1.1's Upgrade mechanism.
+        /// Whether the request wants to use HTTP/1.1's Upgrade mechanism.
         ///
         /// Since these cannot be translated into orig-proto, it must be
         /// tracked here so as to allow those with `is_h1_upgrade: true` to
         /// use an explicitly HTTP/1 service, instead of one that might
         /// utilize orig-proto.
         is_h1_upgrade: bool,
-         /// Whether or not the request URI was in absolute form.
+        /// Whether or not the request URI was in absolute form.
         ///
         /// This is used to configure Hyper's behaviour at the connection
         /// level, so it's necessary that requests with and without
         /// absolute URIs be bound to separate service stacks. It is also
         /// used to determine what URI normalization will be necessary.
         was_absolute_form: bool,
-   },
+    },
     Http2,
 }
 
@@ -36,38 +36,40 @@ impl Settings {
             return Settings::Http2;
         }
 
-        let has_name = req
+        let is_missing_authority = req
             .uri()
             .authority_part()
-            .map(|_| true)
+            .map(|_| false)
             .or_else(|| {
                 req.headers()
                     .get(HOST)
                     .and_then(|h| h.to_str().ok())
-                    .map(|h| !h.is_empty())
+                    .map(|h| h.is_empty())
             })
-            .unwrap_or(false);
+            .unwrap_or(true);
 
-        let was_absolute_form = super::h1::is_absolute_form(req.uri());
-        let is_h1_upgrade = super::h1::wants_upgrade(req);
         Settings::Http1 {
-            was_absolute_form,
-            is_h1_upgrade,
-            stack_per_request: !has_name,
+            was_absolute_form: super::h1::is_absolute_form(req.uri()),
+            is_h1_upgrade: super::h1::wants_upgrade(req),
+            stack_per_request: is_missing_authority,
         }
     }
 
     /// Returns true if the request was originally received in absolute form.
     pub fn was_absolute_form(&self) -> bool {
         match self {
-            Settings::Http1 { was_absolute_form, .. } => *was_absolute_form,
+            Settings::Http1 {
+                was_absolute_form, ..
+            } => *was_absolute_form,
             Settings::Http2 => false,
         }
     }
 
     pub fn can_reuse_clients(&self) -> bool {
         match self {
-            Settings::Http1 { stack_per_request, .. } => !stack_per_request,
+            Settings::Http1 {
+                stack_per_request, ..
+            } => !stack_per_request,
             Settings::Http2 => true,
         }
     }
