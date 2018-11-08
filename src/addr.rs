@@ -64,8 +64,11 @@ impl Addr {
     }
 
     pub fn as_authority(&self) -> http::uri::Authority {
-        let s = format!("{}", self);
-        http::uri::Authority::from_str(&s).expect("Addr must render as valid authority")
+        match self {
+            Addr::Name(n) => n.as_authority(),
+            Addr::Socket(a) => http::uri::Authority::from_str(&format!("{}", a))
+                .expect("SocketAddr must be valid authority"),
+        }
     }
 
     pub fn socket_addr(&self) -> Option<SocketAddr> {
@@ -135,6 +138,11 @@ impl NameAddr {
 
     pub fn is_localhost(&self) -> bool {
         self.name.is_localhost()
+    }
+
+    pub fn as_authority(&self) -> http::uri::Authority {
+        http::uri::Authority::from_str(self.name.as_ref())
+            .expect("NameAddr must be valid authority")
     }
 }
 
