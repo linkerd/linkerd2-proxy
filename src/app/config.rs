@@ -255,6 +255,7 @@ const DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT: usize = 100;
 const DEFAULT_PORTS_DISABLE_PROTOCOL_DETECTION: &[u16] = &[
     25,   // SMTP
     3306, // MySQL
+    8086, // InfluxDB
 ];
 
 // ===== impl Config =====
