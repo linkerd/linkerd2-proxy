@@ -9,8 +9,8 @@ use std::time::Instant;
 use tokio_timer::clock;
 use tower_h2;
 
-use proxy::http::classify::{ClassifyEos, ClassifyResponse};
-use proxy::http::metrics::{ClassMetrics, Metrics, Registry, StatusMetrics};
+use super::classify::{ClassifyEos, ClassifyResponse};
+use super::{ClassMetrics, Metrics, Registry, StatusMetrics};
 use svc;
 
 /// A stack module that wraps services to record metrics.

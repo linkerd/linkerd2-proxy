@@ -4,7 +4,7 @@ use std::fmt;
 use app::classify;
 use control::destination::{Metadata, ProtocolHint};
 use proxy::http::{
-    classify::CanClassify,
+    metrics::classify::CanClassify,
     client,
     normalize_uri::ShouldNormalizeUri,
     profiles::{self, CanGetDestination},
