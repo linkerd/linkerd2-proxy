@@ -359,7 +359,8 @@ where
                 // Establishes connections to the local application.
                 let connect = connect::Stack::new()
                     .push(proxy::timeout::layer(config.inbound_connect_timeout))
-                    .push(transport_metrics.connect("inbound"));
+                    .push(transport_metrics.connect("inbound"))
+                    .push(inbound::rewrite_loopback_addr::layer());
 
                 // A stack configured by `router::Config`, responsible for building
                 // a router made of route stacks configured by `inbound::Endpoint`.
