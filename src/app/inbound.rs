@@ -88,7 +88,7 @@ impl<A> router::Recognize<http::Request<A>> for Recognize {
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled));
 
         let addr = src
-            .and_then(|s| s.orig_dst_if_not_local())
+            .and_then(Source::orig_dst_if_not_local)
             .or(self.default_addr)?;
 
         let dst_name = super::http_request_addr(req)
@@ -165,6 +165,62 @@ pub mod orig_proto_downgrade {
             info!("downgrading requests; source={:?}", target);
             let inner = self.inner.make(&target)?;
             Ok(inner.into())
+        }
+    }
+}
+
+/// Rewrites connect `Target`s IP address to the loopback address (`127.0.0.1`),
+/// with the same port still set.
+pub mod rewrite_loopback_addr {
+    use std::net::SocketAddr;
+    use svc;
+    use transport::connect::Target;
+
+    #[derive(Debug, Clone)]
+    pub struct Layer;
+
+    #[derive(Clone, Debug)]
+    pub struct Stack<M>
+    where
+        M: svc::Stack<Target>,
+    {
+        inner: M,
+    }
+
+    // === impl Layer ===
+
+    pub fn layer() -> Layer {
+        Layer
+    }
+
+    impl<M> svc::Layer<Target, Target, M> for Layer
+    where
+        M: svc::Stack<Target>,
+    {
+        type Value = <Stack<M> as svc::Stack<Target>>::Value;
+        type Error = <Stack<M> as svc::Stack<Target>>::Error;
+        type Stack = Stack<M>;
+
+        fn bind(&self, inner: M) -> Self::Stack {
+            Stack { inner }
+        }
+    }
+
+    // === impl Stack ===
+
+    impl<M> svc::Stack<Target> for Stack<M>
+    where
+        M: svc::Stack<Target>,
+    {
+        type Value = M::Value;
+        type Error = M::Error;
+
+        fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
+            debug!("rewriting inbound address to loopback; target={:?}", target);
+
+            let rewritten = SocketAddr::from(([127, 0, 0, 1], target.addr.port()));
+            let target = Target::new(rewritten, target.tls.clone());
+            self.inner.make(&target)
         }
     }
 }

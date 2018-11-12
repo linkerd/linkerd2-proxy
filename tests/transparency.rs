@@ -23,7 +23,7 @@ fn inbound_http1() {
 
     let srv = server::http1().route("/", "hello h1").run();
     let proxy = proxy::new()
-        .inbound(srv)
+        .inbound_fuzz_addr(srv)
         .run();
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -69,7 +69,7 @@ fn inbound_tcp() {
         })
         .run();
     let proxy = proxy::new()
-        .inbound(srv)
+        .inbound_fuzz_addr(srv)
         .run();
 
     let client = client::tcp(proxy.inbound);
