@@ -152,12 +152,12 @@ impl FmtLabels for classify::Class {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::classify::Class;
         match self {
+            Class::Default(result) => write!(f, "classification=\"{}\"", result),
             Class::Grpc(result, status) => write!(
                 f,
                 "classification=\"{}\",grpc_status=\"{}\"",
                 result, status
             ),
-            Class::Http(result) => write!(f, "classification=\"{}\"", result),
             Class::Stream(result, status) => {
                 write!(f, "classification=\"{}\",h2_err=\"{}\"", result, status)
             }
