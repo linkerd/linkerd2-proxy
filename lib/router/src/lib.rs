@@ -75,6 +75,20 @@ where
     Invalid,
 }
 
+// ===== impl Recognize =====
+
+impl<R, T, F> Recognize<R> for F
+where
+    T: Clone + Eq + Hash,
+    F: Fn(&R) -> Option<T>,
+ {
+    type Target = T;
+
+    fn recognize(&self, req: &R) -> Option<T> {
+        (self)(req)
+    }
+}
+
 // ===== impl Router =====
 
 impl<Req, Rec, Stk> Router<Req, Rec, Stk>
