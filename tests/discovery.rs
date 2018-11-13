@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![recursion_limit="128"]
 #[macro_use]
 mod support;
 use self::support::*;
@@ -196,16 +197,22 @@ macro_rules! generate_tests {
             })
         }
 
+        fn init_env() -> app::config::TestEnv {
+            let _ = env_logger::try_init();
+            let mut env = app::config::TestEnv::new();
+
+            // The bind timeout must be high enough to allow a DNS timeout.
+            env.put(app::config::ENV_BIND_TIMEOUT, "1s".to_owned());
+
+            env
+        }
+
         fn outbound_destinations_reset_on_reconnect<F>(f: F)
             where F: Fn() -> Option<pb::destination::Update> + Send + 'static
         {
             use std::thread;
-            let _ = env_logger::try_init();
-            let mut env = app::config::TestEnv::new();
 
-            // set the bind timeout to 100 ms.
-            env.put(app::config::ENV_BIND_TIMEOUT, "100ms".to_owned());
-
+            let env = init_env();
             let srv = $make_server().route("/", "hello").run();
             let ctrl = controller::new();
 
@@ -242,11 +249,7 @@ macro_rules! generate_tests {
         #[test]
         #[cfg_attr(not(feature = "flaky_tests"), ignore)]
         fn outbound_times_out() {
-            let _ = env_logger::try_init();
-            let mut env = app::config::TestEnv::new();
-
-            // set the bind timeout to 100 ms.
-            env.put(app::config::ENV_BIND_TIMEOUT, "100ms".to_owned());
+            let env = init_env();
 
             let srv = $make_server().route("/hi", "hello").run();
             let ctrl = controller::new();
@@ -268,7 +271,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_asks_controller_without_orig_dst() {
-            let _ = env_logger::try_init();
+            let _ = init_env();
 
             let srv = $make_server()
                 .route("/", "hello")
@@ -291,7 +294,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_error_reconnects_after_backoff() {
-            let _ = env_logger::try_init();
+            let mut env = init_env();
 
             let srv = $make_server()
                 .route("/", "hello")
@@ -306,9 +309,6 @@ macro_rules! generate_tests {
             dst_tx.send_addr(srv.addr);
             // but don't drop, to not trigger stream closing reconnects
 
-            let mut env = app::config::TestEnv::new();
-
-            // set the backoff timeout to 100 ms.
             env.put(app::config::ENV_CONTROL_BACKOFF_DELAY, "100ms".to_owned());
 
             let proxy = proxy::new()

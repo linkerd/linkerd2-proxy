@@ -95,12 +95,12 @@ impl Match {
 
             Match::Destination(ref dst) => match *ev {
                 Event::StreamRequestOpen(ref req) | Event::StreamRequestFail(ref req, _) => {
-                    dst.matches(&req.endpoint.client.target.addr)
+                    dst.matches(&req.endpoint.target.addr)
                 }
                 Event::StreamResponseOpen(ref rsp, _) |
                 Event::StreamResponseFail(ref rsp, _) |
                 Event::StreamResponseEnd(ref rsp, _) =>
-                    dst.matches(&rsp.request.endpoint.client.target.addr),
+                    dst.matches(&rsp.request.endpoint.target.addr),
                 _ => false,
             },
 

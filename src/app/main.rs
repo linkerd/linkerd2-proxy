@@ -21,17 +21,23 @@ use metrics::{self, FmtMetrics};
 use never::Never;
 use proxy::{
     self, buffer,
-    http::{client, insert_target, normalize_uri, router},
+    http::{client, insert_target, normalize_uri, profiles, router, settings},
     limit, reconnect, timeout,
 };
-use svc::{self, Layer as _Layer, Stack as _Stack};
+use svc::{
+    self, shared,
+    stack::{map_target, phantom_data},
+    Layer, Stack,
+};
 use tap;
 use task;
 use telemetry;
 use transport::{self, connect, tls, BoundPort, Connection, GetOriginalDst};
-use Conditional;
+use {Addr, Conditional};
 
 use super::config::Config;
+use super::dst::DstAddr;
+use super::profiles::Client as ProfilesClient;
 
 /// Runs a sidecar proxy.
 ///
@@ -77,7 +83,8 @@ where
         let control_listener = BoundPort::new(
             config.control_listener.addr,
             Conditional::None(tls::ReasonForNoIdentity::NotImplementedForTap.into()),
-        ).expect("controller listener bind");
+        )
+        .expect("controller listener bind");
 
         let inbound_listener = {
             let tls = config.tls_settings.as_ref().and_then(|settings| {
@@ -95,7 +102,8 @@ where
         let outbound_listener = BoundPort::new(
             config.outbound_listener.addr,
             Conditional::None(tls::ReasonForNoTls::InternalTraffic),
-        ).expect("private listener bind");
+        )
+        .expect("private listener bind");
 
         let runtime = runtime.into();
 
@@ -103,7 +111,8 @@ where
         let metrics_listener = BoundPort::new(
             config.metrics_listener.addr,
             Conditional::None(tls::ReasonForNoIdentity::NotImplementedForMetrics.into()),
-        ).expect("metrics listener bind");
+        )
+        .expect("metrics listener bind");
 
         Main {
             config,
@@ -230,7 +239,7 @@ where
                 .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
                 .push(proxy::timeout::layer(config.control_connect_timeout))
                 .push(svc::watch::layer(tls_client_config.clone()))
-                .push(svc::stack::phantom_data::layer())
+                .push(phantom_data::layer())
                 .push(control::add_origin::Layer::new())
                 .push(buffer::layer())
                 .push(limit::layer(config.destination_concurrency_limit));
@@ -258,6 +267,7 @@ where
                 controller.clone(),
                 dns_resolver.clone(),
                 config.namespaces.clone(),
+                config.destination_get_suffixes,
                 config.destination_concurrency_limit,
             );
             resolver_bg_tx
@@ -265,76 +275,146 @@ where
                 .ok()
                 .expect("admin thread must receive resolver task");
 
+            let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3));
+
             let outbound = {
-                use super::outbound::{
-                    discovery::Resolve, orig_proto_upgrade, Endpoint, Recognize,
-                };
-                use super::profiles::Client as ProfilesClient;
+                use super::outbound::{discovery::Resolve, orig_proto_upgrade, Endpoint};
                 use proxy::{
-                    http::{balance, metrics, profiles},
+                    canonicalize,
+                    http::{balance, header_from_target, metrics},
                     resolve,
                 };
 
+                let profiles_client = profiles_client.clone();
+                let capacity = config.outbound_router_capacity;
+                let max_idle_age = config.outbound_router_max_idle_age;
                 let endpoint_http_metrics = endpoint_http_metrics.clone();
+                let route_http_metrics = route_http_metrics.clone();
+                let profile_suffixes = config.destination_profile_suffixes.clone();
 
-                // As the outbound proxy accepts connections, we don't do any
-                // special transport-level handling.
-                let accept = transport_metrics.accept("outbound").bind(());
-
-                // Establishes connections to remote peers.
+                // Establishes connections to remote peers (for both TCP
+                // forwarding and HTTP proxying).
                 let connect = connect::Stack::new()
                     .push(proxy::timeout::layer(config.outbound_connect_timeout))
                     .push(transport_metrics.connect("outbound"));
 
+                // Instantiates an HTTP client for for a `client::Config`
                 let client_stack = connect
                     .clone()
                     .push(client::layer("out"))
-                    .push(svc::stack::map_target::layer(|ep: &Endpoint| {
-                        client::Config::from(ep.clone())
-                    }))
-                    .push(reconnect::layer());
-
-                let endpoint_stack = client_stack
+                    .push(reconnect::layer())
                     .push(svc::stack_per_request::layer())
-                    .push(normalize_uri::layer())
+                    .push(normalize_uri::layer());
+
+                // A per-`outbound::Endpoint`stack that uses profile data to configure
+                // a per-route layer.
+                let endpoint_stack = client_stack
+                    .push(buffer::layer())
+                    .push(settings::router::layer::<Endpoint>())
                     .push(orig_proto_upgrade::layer())
                     .push(tap::layer(tap_next_id.clone(), taps.clone()))
-                    .push(metrics::layer::<_, classify::Response>(endpoint_http_metrics))
-                    .push(svc::watch::layer(tls_client_config))
-                    .push(buffer::layer());
+                    .push(metrics::layer::<_, classify::Response>(
+                        endpoint_http_metrics,
+                    ))
+                    .push(svc::watch::layer(tls_client_config));
 
-                let profiles_client = ProfilesClient::new(
-                    controller,
-                    Duration::from_secs(3),
-                    control::KubernetesNormalize::new(config.namespaces.pod.clone()),
-                );
+                // A per-`dst::Route` layer that uses profile data to configure
+                // a per-route layer.
+                //
+                // The `classify` module installs a `classify::Response`
+                // extension into each request so that all lower metrics
+                // implementations can use the route-specific configuration.
+                let dst_route_layer = phantom_data::layer()
+                    .push(metrics::layer::<_, classify::Response>(route_http_metrics))
+                    .push(classify::layer());
 
-                let dst_route_stack = endpoint_stack
+                // A per-`DstAddr` stack that does the following:
+                //
+                // 1. Adds the `CANONICAL_DST_HEADER` from the `DstAddr`.
+                // 2. Determines the profile of the destination and applies
+                //    per-route policy.
+                // 3. Creates a load balancer , configured by resolving the
+                //   `DstAddr` with a resolver.
+                let dst_stack = endpoint_stack
                     .push(resolve::layer(Resolve::new(resolver)))
                     .push(balance::layer())
                     .push(buffer::layer())
                     .push(profiles::router::layer(
+                        profile_suffixes,
                         profiles_client,
-                        svc::stack::phantom_data::layer()
-                            .push(metrics::layer::<_, classify::Response>(route_http_metrics))
-                            .push(classify::layer()),
+                        dst_route_layer,
                     ))
+                    .push(header_from_target::layer(super::CANONICAL_DST_HEADER))
+                    .push(buffer::layer());
+
+                // Routes request using the `DstAddr` extension.
+                //
+                // This is shared across addr-stacks so that multiple addrs that
+                // canonicalize to the same DstAddr use the same dst-stack service.
+                //
+                // Note: This router could be replaced with a Stack-based
+                // router, since the `DstAddr` is known at construction-time.
+                // But for now it's more important to use the request router's
+                // caching logic.
+                let dst_router = dst_stack
+                    .push(router::layer(|req: &http::Request<_>| {
+                        let addr = req.extensions().get::<DstAddr>().cloned();
+                        debug!("outbound dst={:?}", addr);
+                        addr
+                    }))
+                    .make(&router::Config::new("out dst", capacity, max_idle_age))
+                    .map(shared::stack)
+                    .expect("outbound dst router");
+
+                // Canonicalizes the request-specified `Addr` via DNS, and
+                // annotates each request with a `DstAddr` so that it may be
+                // routed by teh dst_router.
+                let addr_stack = dst_router
+                    .push(phantom_data::layer())
+                    .push(insert_target::layer())
+                    .push(map_target::layer(|addr: &Addr| {
+                        DstAddr::outbound(addr.clone())
+                    }))
+                    .push(canonicalize::layer(dns_resolver))
                     .push(buffer::layer())
                     .push(timeout::layer(config.bind_timeout))
-                    .push(limit::layer(MAX_IN_FLIGHT))
-                    .push(router::layer(Recognize::new()));
+                    .push(limit::layer(MAX_IN_FLIGHT));
 
-                let capacity = config.outbound_router_capacity;
-                let max_idle_age = config.outbound_router_max_idle_age;
-                let router = dst_route_stack
-                    .make(&router::Config::new("out", capacity, max_idle_age))
-                    .expect("outbound router");
+                // Routes requests to an `Addr`:
+                //
+                // 1. If the request is HTTP/2 and has an :authority, this value
+                // is used.
+                //
+                // 2. If the request is absolute-form HTTP/1, the URI's
+                // authority is used.
+                //
+                // 3. If the requset has an HTTP/1 Host header, it is used.
+                //
+                // 4. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
+                // address is used.
+                let addr_router = addr_stack
+                    .push(router::layer(|req: &http::Request<_>| {
+                        let addr = super::http_request_authority_addr(req)
+                            .or_else(|_| super::http_request_host_addr(req))
+                            .or_else(|_| super::http_request_orig_dst_addr(req))
+                            .ok();
+                        debug!("outbound addr={:?}", addr);
+                        addr
+                    }))
+                    .make(&router::Config::new("out addr", capacity, max_idle_age))
+                    .map(shared::stack)
+                    .expect("outbound addr router");
 
-                // As HTTP requests are accepted, we add some request extensions
-                // including metadata about the request's origin.
-                let server_stack = svc::stack::phantom_data::layer()
-                    .push(insert_target::layer())
-                    .bind(svc::shared::stack(router));
+                // Instantiates an HTTP service for each `Source` using the
+                // shared `addr_router`. The `Source` is stored in the request's
+                // extensions so that it can be used by the `addr_router`.
+                let server_stack = addr_router
+                    .push(phantom_data::layer())
+                    .push(insert_target::layer());
+
+                // Instantiated for each TCP connection received from the local
+                // application (including HTTP connections).
+                let accept = transport_metrics.accept("outbound").bind(());
 
                 serve(
                     "out",
@@ -345,65 +425,127 @@ where
                     config.outbound_ports_disable_protocol_detection,
                     get_original_dst.clone(),
                     drain_rx.clone(),
-                ).map_err(|e| error!("outbound proxy background task failed: {}", e))
+                )
+                .map_err(|e| error!("outbound proxy background task failed: {}", e))
             };
 
             let inbound = {
-                use super::inbound::{self, Endpoint};
+                use super::inbound::{orig_proto_downgrade, Endpoint, RecognizeEndpoint};
                 use proxy::http::metrics;
 
-                // As the inbound proxy accepts connections, we don't do any
-                // special transport-level handling.
-                let accept = transport_metrics.accept("inbound").bind(());
+                let capacity = config.inbound_router_capacity;
+                let max_idle_age = config.inbound_router_max_idle_age;
+                let profile_suffixes = config.destination_profile_suffixes;
+                let default_fwd_addr = config.inbound_forward.map(|a| a.into());
 
-                // Establishes connections to the local application.
+                // Establishes connections to the local application (for both
+                // TCP forwarding and HTTP proxying).
                 let connect = connect::Stack::new()
                     .push(proxy::timeout::layer(config.inbound_connect_timeout))
                     .push(transport_metrics.connect("inbound"));
+
+                // Instantiates an HTTP client for for a `client::Config`
+                let client_stack = connect
+                    .clone()
+                    .push(client::layer("in"))
+                    .push(reconnect::layer())
+                    .push(svc::stack_per_request::layer())
+                    .push(normalize_uri::layer());
 
                 // A stack configured by `router::Config`, responsible for building
                 // a router made of route stacks configured by `inbound::Endpoint`.
                 //
                 // If there is no `SO_ORIGINAL_DST` for an inbound socket,
                 // `default_fwd_addr` may be used.
-                //
-                // `normalize_uri` and `stack_per_request` are applied on the stack
-                // selectively. For HTTP/2 stacks, for instance, neither service will be
-                // employed.
-                let default_fwd_addr = config.inbound_forward.map(|a| a.into());
-                let stack = connect
-                    .clone()
-                    .push(client::layer("in"))
-                    .push(svc::stack::map_target::layer(|ep: &Endpoint| {
-                        client::Config::from(ep.clone())
-                    }))
-                    .push(reconnect::layer())
-                    .push(svc::stack_per_request::layer())
-                    .push(normalize_uri::layer())
+                let endpoint_router = client_stack
+                    .push(buffer::layer())
+                    .push(settings::router::layer::<Endpoint>())
                     .push(tap::layer(tap_next_id, taps))
-                    .push(metrics::layer::<_, classify::Response>(endpoint_http_metrics))
-                    .push(classify::layer())
+                    .push(metrics::layer::<_, classify::Response>(
+                        endpoint_http_metrics,
+                    ))
+                    .push(buffer::layer())
+                    .push(router::layer(RecognizeEndpoint::new(default_fwd_addr)))
+                    .make(&router::Config::new("in endpoint", capacity, max_idle_age))
+                    .map(shared::stack)
+                    .expect("inbound endpoint router");
+
+                // A per-`dst::Route` layer that uses profile data to configure
+                // a per-route layer.
+                //
+                // The `classify` module installs a `classify::Response`
+                // extension into each request so that all lower metrics
+                // implementations can use the route-specific configuration.
+                let dst_route_stack = phantom_data::layer()
+                    .push(metrics::layer::<_, classify::Response>(route_http_metrics))
+                    .push(classify::layer());
+
+                // A per-`DstAddr` stack that does the following:
+                //
+                // 1. Determines the profile of the destination and applies
+                //    per-route policy.
+                // 2. Annotates the request with the `DstAddr` so that
+                //    `RecognizeEndpoint` can use the value.
+                let dst_stack = endpoint_router
+                    .push(phantom_data::layer())
+                    .push(insert_target::layer())
+                    .push(buffer::layer())
+                    .push(profiles::router::layer(
+                        profile_suffixes,
+                        profiles_client,
+                        dst_route_stack,
+                    ));
+
+                // Routes requests to a `DstAddr`.
+                //
+                // 1. If the CANONICAL_DST_HEADER is set by the remote peer,
+                // this value is used to construct a DstAddr.
+                //
+                // 2. If the request is HTTP/2 and has an :authority, this value
+                // is used.
+                //
+                // 3. If the request is absolute-form HTTP/1, the URI's
+                // authority is used.
+                //
+                // 4. If the requset has an HTTP/1 Host header, it is used.
+                //
+                // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
+                // address is used.
+                let dst_router = dst_stack
                     .push(buffer::layer())
                     .push(limit::layer(MAX_IN_FLIGHT))
-                    .push(router::layer(inbound::Recognize::new(default_fwd_addr)));
+                    .push(router::layer(|req: &http::Request<_>| {
+                        let canonical = req
+                            .headers()
+                            .get(super::CANONICAL_DST_HEADER)
+                            .and_then(|dst| dst.to_str().ok())
+                            .and_then(|d| Addr::from_str(d).ok());
+                        info!("inbound canonical={:?}", canonical);
 
-                // Build a router using the above policy
-                let capacity = config.inbound_router_capacity;
-                let max_idle_age = config.inbound_router_max_idle_age;
-                let router = stack
-                    .make(&router::Config::new("in", capacity, max_idle_age))
-                    .expect("inbound router");
+                        let dst = canonical
+                            .or_else(|| super::http_request_authority_addr(req).ok())
+                            .or_else(|| super::http_request_host_addr(req).ok())
+                            .or_else(|| super::http_request_orig_dst_addr(req).ok());
+                        info!("inbound dst={:?}", dst);
+                        dst.map(DstAddr::inbound)
+                    }))
+                    .make(&router::Config::new("in dst", capacity, max_idle_age))
+                    .map(shared::stack)
+                    .expect("inbound dst router");
 
-                // As HTTP requests are accepted, we add some request extensions
-                // including metadata about the request's origin.
+                // As HTTP requests are accepted, the `Source` connection
+                // metadata is stored on each request's extensions.
                 //
                 // Furthermore, HTTP/2 requests may be downgraded to HTTP/1.1 per
                 // `orig-proto` headers. This happens in the source stack so that
                 // the router need not detect whether a request _will be_ downgraded.
-                let source_stack = svc::stack::phantom_data::layer()
-                    .push(inbound::orig_proto_downgrade::layer())
-                    .push(insert_target::layer())
-                    .bind(svc::shared::stack(router));
+                let source_stack = dst_router
+                    .push(orig_proto_downgrade::layer())
+                    .push(insert_target::layer());
+
+                // As the inbound proxy accepts connections, we don't do any
+                // special transport-level handling.
+                let accept = transport_metrics.accept("inbound").bind(());
 
                 serve(
                     "in",
@@ -414,7 +556,8 @@ where
                     config.inbound_ports_disable_protocol_detection,
                     get_original_dst.clone(),
                     drain_rx.clone(),
-                ).map_err(|e| error!("inbound proxy background task failed: {}", e))
+                )
+                .map_err(|e| error!("inbound proxy background task failed: {}", e))
             };
 
             inbound.join(outbound).map(|_| {})

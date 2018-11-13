@@ -172,11 +172,13 @@ pub mod router {
     use http;
     use std::{error, fmt};
 
+    use dns;
     use svc;
 
     use super::*;
 
-    pub fn layer<T, G, M, R>(get_routes: G, route_layer: R) -> Layer<G, M, R>
+    pub fn layer<T, G, M, R>(suffixes: Vec<dns::Suffix>, get_routes: G, route_layer: R)
+        -> Layer<G, M, R>
     where
         T: CanGetDestination + WithRoute + Clone,
         M: svc::Stack<T>,
@@ -186,11 +188,11 @@ pub mod router {
                 <T as WithRoute>::Output,
                 <T as WithRoute>::Output,
                 svc::shared::Stack<M::Value>,
-            >
-            + Clone,
+            > + Clone,
         R::Value: svc::Service,
     {
         Layer {
+            suffixes,
             get_routes,
             route_layer,
             default_route: Route::default(),
@@ -203,6 +205,7 @@ pub mod router {
         get_routes: G,
         route_layer: R,
         default_route: Route,
+        suffixes: Vec<dns::Suffix>,
         _p: ::std::marker::PhantomData<fn() -> M>,
     }
 
@@ -212,6 +215,7 @@ pub mod router {
         get_routes: G,
         route_layer: R,
         default_route: Route,
+        suffixes: Vec<dns::Suffix>,
     }
 
     #[derive(Debug)]
@@ -254,8 +258,7 @@ pub mod router {
                 <T as WithRoute>::Output,
                 <T as WithRoute>::Output,
                 svc::shared::Stack<M::Value>,
-            >
-            + Clone,
+            > + Clone,
         R::Value: svc::Service,
     {
         type Value = <Stack<G, M, R> as svc::Stack<T>>::Value;
@@ -268,6 +271,7 @@ pub mod router {
                 get_routes: self.get_routes.clone(),
                 route_layer: self.route_layer.clone(),
                 default_route: self.default_route.clone(),
+                suffixes: self.suffixes.clone(),
             }
         }
     }
@@ -282,8 +286,7 @@ pub mod router {
                 <T as WithRoute>::Output,
                 <T as WithRoute>::Output,
                 svc::shared::Stack<M::Value>,
-            >
-            + Clone,
+            > + Clone,
         R::Value: svc::Service,
     {
         type Value = Service<G::Stream, T, R::Stack>;
@@ -298,9 +301,21 @@ pub mod router {
                 stack.make(&t).map_err(Error::Route)?
             };
 
-            let route_stream = target
-                .get_destination()
-                .and_then(|d| self.get_routes.get_routes(&d));
+            let route_stream = match target.get_destination() {
+                Some(ref dst) => {
+                    if self.suffixes.iter().any(|s| s.contains(dst.name())) {
+                        debug!("fetching routes for {:?}", dst);
+                        self.get_routes.get_routes(&dst)
+                    } else {
+                        debug!("skipping route discovery for dst={:?}", dst);
+                        None
+                    }
+                }
+                None => {
+                    debug!("no destination for routes");
+                    None
+                }
+            };
 
             Ok(Service {
                 target: target.clone(),
@@ -360,10 +375,12 @@ pub mod router {
         fn call(&mut self, req: Self::Request) -> Self::Future {
             for (ref condition, ref mut service) in &mut self.routes {
                 if condition.is_match(&req) {
+                    trace!("using configured route: {:?}", condition);
                     return service.call(req);
                 }
             }
 
+            trace!("using default route");
             self.default_route.call(req)
         }
     }

@@ -25,7 +25,6 @@ use super::{ResolveRequest, Update};
 use app::config::Namespaces;
 use control::{
     cache::Exists,
-    fully_qualified_authority::{KubernetesNormalize, Normalize as _Normalize},
     remote_stream::{Receiver, Remote},
 };
 use dns;
@@ -68,6 +67,7 @@ struct DestinationCache<T: HttpService> {
 /// query.
 struct NewQuery {
     namespaces: Namespaces,
+    suffixes: Vec<dns::Suffix>,
     /// Used for counting the number of currently-active queries.
     ///
     /// Each active query will hold a `Weak` reference back to this `Arc`, and
@@ -96,10 +96,11 @@ where
         request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
         dns_resolver: dns::Resolver,
         namespaces: Namespaces,
+        suffixes: Vec<dns::Suffix>,
         concurrency_limit: usize,
     ) -> Self {
         Self {
-            new_query: NewQuery::new(namespaces, concurrency_limit),
+            new_query: NewQuery::new(namespaces, suffixes, concurrency_limit),
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -305,9 +306,10 @@ where
 
 impl NewQuery {
 
-    fn new(namespaces: Namespaces, concurrency_limit: usize) -> Self {
+    fn new(namespaces: Namespaces, suffixes: Vec<dns::Suffix>, concurrency_limit: usize) -> Self {
         Self {
             namespaces,
+            suffixes,
             concurrency_limit,
             active_query_handle: Arc::new(()),
         }
@@ -338,7 +340,7 @@ impl NewQuery {
     fn query_destination_service_if_relevant<T>(
         &self,
         client: Option<&mut T>,
-        auth: &NameAddr,
+        dst: &NameAddr,
         connect_or_reconnect: &str,
     ) -> DestinationServiceQuery<T>
     where
@@ -346,36 +348,30 @@ impl NewQuery {
         T::ResponseBody: Body<Data = Data>,
         T::Error: fmt::Debug,
     {
-        trace!(
-            "DestinationServiceQuery {} {:?}",
-            connect_or_reconnect,
-            auth
-        );
-        let default_ns = self.namespaces.pod.clone();
-        let client_and_authority = client.and_then(|client| {
-            KubernetesNormalize::new(default_ns)
-                .normalize(auth)
-                .map(|auth| (auth, client))
-        });
-        match client_and_authority {
+        trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
+        if !self.suffixes.iter().any(|s| s.contains(dst.name())) {
+            debug!("dst={} not in suffixes", dst.name());
+            return DestinationServiceQuery::Inactive;
+        }
+        match client {
             // If we were able to normalize the authority (indicating we should
             // query the Destination service), but we're out of queries, return
             // None and set the "needs query" flag.
-            Some((ref auth, _)) if !self.has_more_queries() => {
+            Some(_) if !self.has_more_queries() => {
                 warn!(
                     "Can't query Destination service for {:?}, maximum \
                      number of queries ({}) reached.",
-                    auth,
+                    dst,
                     self.concurrency_limit,
                 );
                 DestinationServiceQuery::NoCapacity
             },
             // We should query the Destination service and there is sufficient
             // query capacity, so we're good to go!
-            Some((auth, client)) => {
+            Some(client) => {
                 let req = GetDestination {
                     scheme: "k8s".into(),
-                    path: auth.without_trailing_dot().to_owned(),
+                    path: format!("{}", dst),
                 };
                 let mut svc = Destination::new(client.lift_ref());
                 let response = svc.get(grpc::Request::new(req));
@@ -387,7 +383,7 @@ impl NewQuery {
             },
             // This authority should not query the Destination service. Return
             // None, but set the "needs query" flag to false.
-            None => DestinationServiceQuery::Inactive
+            _ => DestinationServiceQuery::Inactive
         }
     }
 

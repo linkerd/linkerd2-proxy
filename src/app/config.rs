@@ -11,6 +11,7 @@ use indexmap::IndexSet;
 use trust_dns_resolver::config::ResolverOpts;
 
 use addr;
+use dns;
 use convert::TryFrom;
 use transport::tls;
 use {Conditional, Addr};
@@ -58,6 +59,12 @@ pub struct Config {
     /// The maximum number of queries to the Destination service which may be
     /// active concurrently.
     pub destination_concurrency_limit: usize,
+
+    /// Configured by `ENV_DESTINATION_GET_SUFFIXES`.
+    pub destination_get_suffixes: Vec<dns::Suffix>,
+
+    /// Configured by `ENV_DESTINATION_PROFILE_SUFFIXES`.
+    pub destination_profile_suffixes: Vec<dns::Suffix>,
 
     pub tls_settings: Conditional<tls::CommonSettings, tls::ReasonForNoTls>,
 
@@ -123,6 +130,7 @@ pub enum Error {
 pub enum ParseError {
     EnvironmentUnsupported,
     NotADuration,
+    NotADomainSuffix,
     NotANumber,
     HostIsNotAnIpAddress,
     NotUnicode,
@@ -188,6 +196,28 @@ pub const ENV_OUTBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_C
 pub const ENV_INBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_INBOUND_ROUTER_MAX_IDLE_AGE";
 pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_MAX_IDLE_AGE";
 
+/// Constrains which destination names are resolved through the destination
+/// service.
+///
+/// The value is a comma-separated list of domain name suffixes that may be
+/// resolved via the destination service. A value of `.` indicates that all
+/// domains should be resolved via the service.
+///
+/// If specified and empty, the destination service is not used for resolution.
+///
+/// If unspecified, a default value is used.
+pub const ENV_DESTINATION_GET_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_GET_SUFFIXES";
+
+/// Constrains which destination names may be used for profile/route discovery.
+///
+/// The value is a comma-separated list of domain name suffixes that may be
+/// resolved via the destination service. A value of `.` indicates that all
+/// domains should be discovered via the service.
+///
+/// If specified and empty, the destination service is not used for route discovery.
+///
+/// If unspecified, a default value is used.
+pub const ENV_DESTINATION_PROFILE_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_PROFILE_SUFFIXES";
 
 /// Limits the maximum number of outbound Destination service queries.
 ///
@@ -249,6 +279,9 @@ const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 
 const DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT: usize = 100;
 
+const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
+const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
+
 // By default, we keep a list of known assigned ports of server-first protocols.
 //
 // https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt
@@ -300,6 +333,10 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let outbound_router_max_idle_age = parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
         let destination_concurrency_limit =
             parse(strings, ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT, parse_number);
+        let destination_get_suffixes =
+            parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
+        let destination_profile_suffixes =
+            parse(strings, ENV_DESTINATION_PROFILE_SUFFIXES, parse_dns_suffixes);
         let tls_trust_anchors = parse(strings, ENV_TLS_TRUST_ANCHORS, parse_path);
         let tls_end_entity_cert = parse(strings, ENV_TLS_CERT, parse_path);
         let tls_private_key = parse(strings, ENV_TLS_PRIVATE_KEY, parse_path);
@@ -439,6 +476,12 @@ impl<'a> TryFrom<&'a Strings> for Config {
 
             destination_concurrency_limit: destination_concurrency_limit?
                 .unwrap_or(DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT),
+
+            destination_get_suffixes: destination_get_suffixes?
+                .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
+
+            destination_profile_suffixes: destination_profile_suffixes?
+                .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
 
             tls_settings,
 
@@ -600,6 +643,28 @@ where
     }
  }
 
+fn parse_dns_suffixes(list: &str) -> Result<Vec<dns::Suffix>, ParseError> {
+    let mut suffixes = Vec::new();
+    for item in list.split(',') {
+        let item = item.trim();
+        if !item.is_empty() {
+            let sfx = parse_dns_suffix(item)?;
+            suffixes.push(sfx);
+        }
+    }
+
+    Ok(suffixes)
+}
+
+fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
+    if s == "." {
+        return Ok(dns::Suffix::Root);
+    }
+
+    dns::Name::try_from(s.as_bytes())
+        .map(dns::Suffix::Name)
+        .map_err(|_| ParseError::NotADomainSuffix)
+}
 
 #[cfg(test)]
 mod tests {
@@ -672,4 +737,37 @@ mod tests {
     fn parse_duration_number_without_unit_is_invalid() {
         assert_eq!(parse_duration("1"), Err(ParseError::NotADuration));
     }
+
+    #[test]
+    fn dns_suffixes() {
+        fn p(s: &str) -> Result<Vec<String>, ParseError> {
+            let sfxs = parse_dns_suffixes(s)?
+                .into_iter()
+                .map(|s| format!("{}", s))
+                .collect();
+
+            Ok(sfxs)
+        }
+
+        assert_eq!(p(""), Ok(vec![]), "empty string");
+        assert_eq!(p(",,,"), Ok(vec![]), "empty list components are ignored");
+        assert_eq!(p("."), Ok(vec![".".to_owned()]), "root is valid");
+        assert_eq!(p("a.b.c"), Ok(vec!["a.b.c".to_owned()]), "a name without trailing dot");
+        assert_eq!(p("a.b.c."), Ok(vec!["a.b.c.".to_owned()]), "a name with a trailing dot");
+        assert_eq!(
+            p(" a.b.c. , d.e.f. "),
+            Ok(vec!["a.b.c.".to_owned(), "d.e.f.".to_owned()]),
+            "whitespace is ignored"
+        );
+        assert_eq!(
+            p("a .b.c"),
+            Err(ParseError::NotADomainSuffix),
+            "whitespace not allowed within a name"
+        );
+        assert_eq!(
+            p("mUlti.CasE.nAmE"),
+            Ok(vec!["multi.case.name".to_owned()]),
+            "names are coerced to lowercase"
+        );
+     }
 }

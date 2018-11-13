@@ -9,14 +9,12 @@ use tower_h2::{Body, BoxBody, Data, HttpService};
 
 use api::destination as api;
 
-use control;
 use proxy::http::profiles;
 use NameAddr;
 
 #[derive(Clone, Debug)]
-pub struct Client<T, N> {
+pub struct Client<T> {
     service: Option<T>,
-    normalize_name: N,
     backoff: Duration,
 }
 
@@ -36,35 +34,31 @@ enum State<T: HttpService> {
 
 // === impl Client ===
 
-impl<T, N> Client<T, N>
+impl<T> Client<T>
 where
     T: HttpService<RequestBody = BoxBody> + Clone,
     T::ResponseBody: Body<Data = Data>,
     T::Error: fmt::Debug,
-    N: control::Normalize,
 {
-    pub fn new(service: Option<T>, backoff: Duration, normalize_name: N) -> Self {
+    pub fn new(service: Option<T>, backoff: Duration) -> Self {
         Self {
             service,
             backoff,
-            normalize_name,
         }
     }
 }
 
-impl<T, N> profiles::GetRoutes for Client<T, N>
+impl<T> profiles::GetRoutes for Client<T>
 where
     T: HttpService<RequestBody = BoxBody> + Clone,
     T::ResponseBody: Body<Data = Data>,
     T::Error: fmt::Debug,
-    N: control::Normalize,
 {
     type Stream = Rx<T>;
 
     fn get_routes(&self, dst: &NameAddr) -> Option<Self::Stream> {
-        let fqa = self.normalize_name.normalize(dst)?;
         Some(Rx {
-            dst: fqa.without_trailing_dot().to_owned(),
+            dst: format!("{}", dst),
             state: State::Disconnected,
             service: self.service.clone(),
             backoff: self.backoff,

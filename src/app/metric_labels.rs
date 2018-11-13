@@ -8,7 +8,7 @@ use metrics::FmtLabels;
 use transport::tls;
 use {Conditional, NameAddr};
 
-use super::{classify, inbound, outbound};
+use super::{classify, dst, inbound, outbound};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EndpointLabels {
@@ -21,8 +21,7 @@ pub struct EndpointLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RouteLabels {
-    direction: Direction,
-    dst: Dst,
+    dst: dst::DstAddr,
     labels: Option<String>,
 }
 
@@ -35,16 +34,12 @@ enum Direction {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Authority<'a>(&'a NameAddr);
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Dst(outbound::Destination);
-
 // === impl RouteLabels ===
 
-impl From<outbound::Route> for RouteLabels {
-    fn from(r: outbound::Route) -> Self {
+impl From<dst::Route> for RouteLabels {
+    fn from(r: dst::Route) -> Self {
         RouteLabels {
-            dst: Dst(r.dst.clone()),
-            direction: Direction::Out,
+            dst: r.dst_addr,
             labels: prefix_labels("rt", r.route.labels().as_ref().into_iter()),
         }
     }
@@ -52,7 +47,7 @@ impl From<outbound::Route> for RouteLabels {
 
 impl FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (&self.dst, &self.direction).fmt_labels(f)?;
+        self.dst.fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
             write!(f, ",{}", labels)?;
@@ -93,7 +88,7 @@ impl From<outbound::Endpoint> for EndpointLabels {
     fn from(ep: outbound::Endpoint) -> Self {
         Self {
             addr: ep.connect.addr,
-            dst_name: ep.dst.addr.into_name_addr(),
+            dst_name: ep.dst_name,
             direction: Direction::Out,
             tls_status: ep.connect.tls_status(),
             labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
@@ -128,23 +123,22 @@ impl FmtLabels for Direction {
 
 impl<'a> FmtLabels for Authority<'a> {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0.port() {
-            80 => write!(f, "authority=\"{}\"", self.0.name()),
-            _ => write!(f, "authority=\"{}\"", self.0),
+        if self.0.port() == 80 {
+            write!(f, "authority=\"{}\"", self.0.name().without_trailing_dot())
+        } else {
+            write!(f, "authority=\"{}\"", self.0)
         }
     }
 }
 
-impl FmtLabels for Dst {
+impl FmtLabels for dst::DstAddr {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let proto = if self.0.settings.is_http2() {
-            "h2"
-        } else {
-            "h1"
-        };
-        write!(f, "dst=\"{}\",dst_protocol=\"{}\"", self.0.addr, proto)?;
+        match self.direction() {
+            dst::Direction::In => Direction::In.fmt_labels(f)?,
+            dst::Direction::Out => Direction::Out.fmt_labels(f)?,
+        }
 
-        Ok(())
+        write!(f, ",dst=\"{}\"", self.as_ref())
     }
 }
 

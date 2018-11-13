@@ -8,7 +8,7 @@ use {Conditional, Addr};
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    host_and_port: Addr,
+    addr: Addr,
     tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
     tls_config: tls::ConditionalClientConfig,
     backoff: Duration,
@@ -18,13 +18,13 @@ pub struct Config {
 
 impl Config {
     pub fn new(
-        host_and_port: Addr,
+        addr: Addr,
         tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
         backoff: Duration,
         connect_timeout: Duration,
     ) -> Self {
         Self {
-            host_and_port,
+            addr,
             tls_server_identity,
             tls_config: Conditional::None(tls::ReasonForNoTls::Disabled),
             backoff,
@@ -46,7 +46,7 @@ impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Config {
 
 impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.host_and_port, f)
+        fmt::Display::fmt(&self.addr, f)
     }
 }
 
@@ -116,13 +116,13 @@ pub mod add_origin {
         fn make(&self, config: &super::Config) -> Result<Self::Value, Self::Error> {
             let inner = self.inner.make(config)?;
             let scheme = uri::Scheme::from_shared(Bytes::from_static(b"http")).unwrap();
-            let authority = config.host_and_port.as_authority();
+            let authority = config.addr.as_authority();
             Ok(AddOrigin::new(inner, scheme, authority))
         }
     }
 }
 
-/// Resolves the controller's `host_and_port` once before building a client.
+/// Resolves the controller's `addr` once before building a client.
 pub mod resolve {
     use futures::{Future, Poll};
     use std::marker::PhantomData;
@@ -133,6 +133,7 @@ pub mod resolve {
     use dns;
     use svc;
     use transport::{connect, tls};
+    use Addr;
 
     #[derive(Debug)]
     pub struct Layer<M> {
@@ -171,6 +172,7 @@ pub mod resolve {
             stack: M,
         },
         Inner(<M::Value as svc::NewService>::Future),
+        Invalid(Option<M::Error>),
     }
 
     #[derive(Debug)]
@@ -252,13 +254,16 @@ pub mod resolve {
         type Future = Init<M>;
 
         fn new_service(&self) -> Self::Future {
-            Init {
-                state: State::Resolve {
-                    future: self.dns.resolve_one_ip(&self.config.host_and_port),
+            let state = match self.config.addr {
+                Addr::Socket(sa) => State::make_inner(sa, &self.config, &self.stack),
+                Addr::Name(ref na) => State::Resolve {
+                    future: self.dns.resolve_one_ip(na.name()),
                     stack: self.stack.clone(),
                     config: self.config.clone(),
                 },
-            }
+            };
+
+            Init { state }
         }
     }
 
@@ -284,28 +289,42 @@ pub mod resolve {
                         ref stack,
                     } => {
                         let ip = try_ready!(future.poll().map_err(Error::Dns));
-                        let sa = SocketAddr::from((ip, config.host_and_port.port()));
-
-                        let tls = config.tls_server_identity.as_ref().and_then(|id| {
-                            config
-                                .tls_config
-                                .as_ref()
-                                .map(|config| tls::ConnectionConfig {
-                                    server_identity: id.clone(),
-                                    config: config.clone(),
-                                })
-                        });
-                        let target = client::Target {
-                            connect: connect::Target::new(sa, tls),
-                            builder: config.builder.clone(),
-                            log_ctx: ::logging::admin()
-                                .client("control", config.host_and_port.clone()),
-                        };
-
-                        let inner = stack.make(&target).map_err(Error::Invalid)?;
-                        State::Inner(svc::NewService::new_service(&inner))
+                        let sa = SocketAddr::from((ip, config.addr.port()));
+                        State::make_inner(sa, &config, &stack)
+                    }
+                    State::Invalid(ref mut e) => {
+                        return Err(Error::Invalid(e.take().expect("future polled after failure")));
                     }
                 };
+            }
+        }
+    }
+
+    impl<M> State<M>
+    where
+        M: svc::Stack<client::Target>,
+        M::Value: svc::NewService,
+    {
+        fn make_inner(addr: SocketAddr, config: &super::Config, stack: &M) -> Self {
+            let tls = config.tls_server_identity.as_ref().and_then(|id| {
+                config
+                    .tls_config
+                    .as_ref()
+                    .map(|config| tls::ConnectionConfig {
+                        server_identity: id.clone(),
+                        config: config.clone(),
+                    })
+            });
+
+            let target = client::Target {
+                connect: connect::Target::new(addr, tls),
+                builder: config.builder.clone(),
+                log_ctx: ::logging::admin().client("control", config.addr.clone()),
+            };
+
+            match stack.make(&target) {
+                Ok(n) => State::Inner(svc::NewService::new_service(&n)),
+                Err(e) => State::Invalid(Some(e)),
             }
         }
     }

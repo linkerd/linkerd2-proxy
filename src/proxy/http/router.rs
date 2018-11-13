@@ -182,6 +182,7 @@ where
     }
 
     fn call(&mut self, request: Self::Request) -> Self::Future {
+        trace!("routing...");
         let inner = self.inner.call(request);
         ResponseFuture { inner }
     }

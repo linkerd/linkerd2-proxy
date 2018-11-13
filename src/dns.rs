@@ -1,28 +1,24 @@
+use convert::TryFrom;
 use futures::prelude::*;
-use std::fmt;
-use std::net::IpAddr;
+use std::{fmt, net};
 use std::time::Instant;
 use tokio::timer::Delay;
 use trust_dns_resolver::{
-    self,
     config::{ResolverConfig, ResolverOpts},
-    error::{ResolveError, ResolveErrorKind},
-    lookup_ip::LookupIp,
+    lookup_ip::{LookupIp},
+    system_conf,
     AsyncResolver,
+    BackgroundLookupIp,
 };
+
+pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 
 use app::config::Config;
 use transport::tls;
-use Addr;
 
 #[derive(Clone)]
 pub struct Resolver {
     resolver: AsyncResolver,
-}
-
-pub enum IpAddrFuture {
-    DNS(Box<Future<Item = LookupIp, Error = ResolveError> + Send>),
-    Fixed(IpAddr),
 }
 
 #[derive(Debug)]
@@ -36,8 +32,11 @@ pub enum Response {
     DoesNotExist { retry_after: Option<Instant> },
 }
 
-// `Box<Future>` implements `Future` so it doesn't need to be implemented manually.
-pub type IpAddrListFuture = Box<Future<Item=Response, Error=ResolveError> + Send>;
+pub struct IpAddrFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
+
+pub struct RefineFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
+
+pub type IpAddrListFuture = Box<Future<Item = Response, Error = ResolveError> + Send>;
 
 /// A valid DNS name.
 ///
@@ -46,19 +45,70 @@ pub type IpAddrListFuture = Box<Future<Item=Response, Error=ResolveError> + Send
 /// valid certificate.
 pub type Name = tls::DnsName;
 
-struct ResolveAllCtx(Name);
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Suffix {
+    Root, // The `.` suffix.
+    Name(Name),
+}
 
-impl fmt::Display for ResolveAllCtx {
+struct Ctx(Name);
+
+pub struct Refine {
+    pub name: Name,
+    pub valid_until: Instant,
+}
+
+impl fmt::Display for Ctx {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "resolve_all_ips={}", self.0)
+        write!(f, "dns={}", self.0)
     }
 }
 
-struct ResolveOneCtx(Name);
+impl fmt::Display for Suffix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Suffix::Root => write!(f, "."),
+            Suffix::Name(n) => n.fmt(f),
+        }
+    }
+}
 
-impl fmt::Display for ResolveOneCtx {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "resolve_one_ip={}", self.0)
+impl From<Name> for Suffix {
+    fn from(n: Name) -> Self {
+        Suffix::Name(n)
+    }
+}
+
+impl<'s> TryFrom<&'s str> for Suffix {
+    type Err = <Name as TryFrom<&'s [u8]>>::Err;
+    fn try_from(s: &str) -> Result<Self, Self::Err> {
+        if s == "." {
+            Ok(Suffix::Root)
+        } else {
+            Name::try_from(s.as_bytes()).map(|n| n.into())
+        }
+    }
+}
+
+impl Suffix {
+    pub fn contains(&self, name: &Name) -> bool {
+        match self {
+            Suffix::Root => true,
+            Suffix::Name(ref sfx) => {
+                let name = name.without_trailing_dot();
+                let sfx = sfx.without_trailing_dot();
+                name.ends_with(sfx) && {
+                    name.len() == sfx.len() || {
+                        // foo.bar.bah (11)
+                        // bar.bah (7)
+                        let idx = name.len() - sfx.len();
+                        let (hd, _) = name.split_at(idx);
+                        hd.ends_with('.')
+                    }
+                }
+
+            }
+        }
     }
 }
 
@@ -76,7 +126,7 @@ impl Resolver {
     /// TODO: This should be infallible like it is in the `domain` crate.
     pub fn from_system_config_and_env(env_config: &Config)
         -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError> {
-        let (config, opts) = trust_dns_resolver::system_conf::read_system_conf()?;
+        let (config, opts) = system_conf::read_system_conf()?;
         let opts = env_config.configure_resolver_opts(opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
@@ -99,21 +149,10 @@ impl Resolver {
         (resolver, background)
     }
 
-    pub fn resolve_one_ip(&self, host: &Addr) -> IpAddrFuture {
-        match host {
-            Addr::Name(n) => {
-                let name = n.name();
-                let ctx = ResolveOneCtx(name.clone());
-                let f = ::logging::context_future(ctx, self.lookup_ip(name));
-                IpAddrFuture::DNS(Box::new(f))
-            }
-            Addr::Socket(addr) => IpAddrFuture::Fixed(addr.ip()),
-        }
-    }
+    pub fn resolve_all_ips(&self, deadline: Instant, name: &Name) -> IpAddrListFuture {
+        let lookup = self.resolver.lookup_ip(name.as_ref());
 
-    pub fn resolve_all_ips(&self, deadline: Instant, host: &Name) -> IpAddrListFuture {
-        let name = host.clone();
-        let lookup = self.lookup_ip(&name);
+        // FIXME this delay logic is really confusing...
         let f = Delay::new(deadline)
             .then(move |_| {
                 trace!("after delay");
@@ -121,24 +160,26 @@ impl Resolver {
             })
             .then(move |result| {
                 trace!("completed with {:?}", &result);
-                match result {
-                    Ok(ips) => Ok(Response::Exists(ips)),
-                    Err(e) => {
-                        if let &ResolveErrorKind::NoRecordsFound { valid_until, .. } = e.kind() {
-                            Ok(Response::DoesNotExist { retry_after: valid_until })
-                        } else {
-                            Err(e)
-                        }
+                result.map(Response::Exists).or_else(|e| {
+                    if let &ResolveErrorKind::NoRecordsFound { valid_until, .. } = e.kind() {
+                        Ok(Response::DoesNotExist { retry_after: valid_until })
+                    } else {
+                        Err(e)
                     }
-                }
+                })
             });
-        Box::new(::logging::context_future(ResolveAllCtx(name), f))
+
+        Box::new(::logging::context_future(Ctx(name.clone()), f))
     }
 
-    fn lookup_ip(&self, name: &Name)
-        -> impl Future<Item = LookupIp, Error = ResolveError>
-    {
-        self.resolver.lookup_ip(name.as_ref())
+    pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {
+        let f = self.resolver.lookup_ip(name.as_ref());
+        IpAddrFuture(::logging::context_future(Ctx(name.clone()), f))
+    }
+
+    pub fn refine(&self, name: &Name) -> RefineFuture {
+        let f = self.resolver.lookup_ip(name.as_ref());
+        RefineFuture(::logging::context_future(Ctx(name.clone()), f))
     }
 }
 
@@ -153,45 +194,45 @@ impl fmt::Debug for Resolver {
 }
 
 impl Future for IpAddrFuture {
-    type Item = IpAddr;
+    type Item = net::IpAddr;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match *self {
-            IpAddrFuture::DNS(ref mut inner) => match inner.poll() {
-                Ok(Async::NotReady) => {
-                    trace!("dns not ready");
-                    Ok(Async::NotReady)
-                } ,
-                Ok(Async::Ready(ips)) => {
-                    match ips.iter().next() {
-                        Some(ip) => {
-                            trace!("DNS resolution found: {:?}", ip);
-                            Ok(Async::Ready(ip))
-                        },
-                        None => {
-                            trace!("DNS resolution did not find anything");
-                            Err(Error::NoAddressesFound)
-                        }
-                    }
-                },
-                Err(e) => Err(Error::ResolutionFailed(e)),
-            },
-            IpAddrFuture::Fixed(addr) => Ok(Async::Ready(addr)),
-        }
+        let ips = try_ready!(self.0.poll().map_err(Error::ResolutionFailed));
+        ips.iter()
+            .next()
+            .map(Async::Ready)
+            .ok_or_else(|| Error::NoAddressesFound)
+    }
+}
+
+impl Future for RefineFuture {
+    type Item = Refine;
+    type Error = ResolveError;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let lookup = try_ready!(self.0.poll());
+        let valid_until = lookup.valid_until();
+
+        let n = lookup.query().name();
+        let name = Name::try_from(n.to_ascii().as_bytes())
+            .expect("Name returned from resolver must be valid");
+
+        let refine = Refine { name, valid_until };
+        Ok(Async::Ready(refine))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Name;
+    use super::{Name, Suffix};
+    use convert::TryFrom;
 
     #[test]
     fn test_dns_name_parsing() {
         // Stack sure `dns::Name`'s validation isn't too strict. It is
         // implemented in terms of `webpki::DNSName` which has many more tests
         // at https://github.com/briansmith/webpki/blob/master/tests/dns_name_tests.rs.
-        use convert::TryFrom;
 
         struct Case {
             input: &'static str,
@@ -231,5 +272,41 @@ mod tests {
         for case in INVALID {
             assert!(Name::try_from(case.as_bytes()).is_err());
         }
+    }
+
+    #[test]
+    fn suffix_valid() {
+        for (name, suffix) in &[
+            ("a", "."),
+            ("a.", "."),
+            ("a.b", "."),
+            ("a.b.", "."),
+            ("b.c", "b.c"),
+            ("b.c", "b.c"),
+            ("a.b.c", "b.c"),
+            ("a.b.c", "b.c."),
+            ("a.b.c.", "b.c"),
+            ("hacker.example.com", "example.com"),
+        ] {
+            let n = Name::try_from(name.as_bytes()).unwrap();
+            let s = Suffix::try_from(suffix).unwrap();
+            assert!(s.contains(&n), format!("{} should contain {}", suffix, name));
+        }
+    }
+
+    #[test]
+    fn suffix_invalid() {
+        for (name, suffix) in &[
+            ("a", "b"),
+            ("b", "a.b"),
+            ("b.a", "b"),
+            ("hackerexample.com", "example.com"),
+        ] {
+            let n = Name::try_from(name.as_bytes()).unwrap();
+            let s = Suffix::try_from(suffix).unwrap();
+            assert!(!s.contains(&n), format!("{} should not contain {}", suffix, name));
+        }
+
+        assert!(Suffix::try_from("").is_err(), "suffix must not be empty");
     }
 }
