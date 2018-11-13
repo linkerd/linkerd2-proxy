@@ -1,6 +1,7 @@
 extern crate futures;
 #[macro_use]
 extern crate log;
+extern crate linkerd2_never as never;
 extern crate tower_service as svc;
 
 pub mod either;
@@ -53,7 +54,7 @@ pub trait Stack<T> {
 
 /// Implements `Stack<T>` for any `T` by cloning a `V`-typed value.
 pub mod shared {
-    use std::{error, fmt};
+    use never::Never;
 
     pub fn stack<V: Clone>(v: V) -> Stack<V> {
         Stack(v)
@@ -62,23 +63,12 @@ pub mod shared {
     #[derive(Clone, Debug)]
     pub struct Stack<V: Clone>(V);
 
-    #[derive(Debug)]
-    pub enum Error {}
-
     impl<T, V: Clone> super::Stack<T> for Stack<V> {
         type Value = V;
-        type Error = Error;
+        type Error = Never;
 
-        fn make(&self, _: &T) -> Result<V, Error> {
+        fn make(&self, _: &T) -> Result<V, Never> {
             Ok(self.0.clone())
         }
     }
-
-    impl fmt::Display for Error {
-        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-            unreachable!()
-        }
-    }
-
-    impl error::Error for Error {}
 }

@@ -44,6 +44,7 @@ extern crate try_lock;
 
 #[macro_use]
 extern crate linkerd2_metrics;
+extern crate linkerd2_never as never;
 extern crate linkerd2_proxy_api as api;
 extern crate linkerd2_task as task;
 extern crate linkerd2_timeout as timeout;

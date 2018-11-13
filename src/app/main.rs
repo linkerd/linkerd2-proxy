@@ -18,6 +18,7 @@ use dns;
 use drain;
 use logging;
 use metrics::{self, FmtMetrics};
+use never::Never;
 use proxy::{
     self, buffer,
     http::{client, insert_target, metrics::timestamp_request_open, normalize_uri, router},
@@ -341,7 +342,7 @@ where
                     outbound_listener,
                     accept,
                     connect,
-                    server_stack.map_err(|_| {}),
+                    server_stack,
                     config.outbound_ports_disable_protocol_detection,
                     get_original_dst.clone(),
                     drain_rx.clone(),
@@ -411,7 +412,7 @@ where
                     inbound_listener,
                     accept,
                     connect,
-                    source_stack.map_err(|_| {}),
+                    source_stack,
                     config.inbound_ports_disable_protocol_detection,
                     get_original_dst.clone(),
                     drain_rx.clone(),
@@ -484,16 +485,15 @@ fn serve<A, C, R, B, G>(
     drain_rx: drain::Watch,
 ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
 where
-    A: svc::Stack<proxy::server::Source, Error = ()> + Send + Clone + 'static,
+    A: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     A::Value: proxy::Accept<Connection>,
     <A::Value as proxy::Accept<Connection>>::Io: Send + transport::Peek + 'static,
-    C: svc::Stack<connect::Target> + Send + Clone + 'static,
-    C::Error: error::Error + Send + 'static,
+    C: svc::Stack<connect::Target, Error = Never> + Send + Clone + 'static,
     C::Value: connect::Connect + Send,
     <C::Value as connect::Connect>::Connected: Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
-    R: svc::Stack<proxy::server::Source, Error = ()> + Send + Clone + 'static,
+    R: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     R::Value:
         svc::Service<Request = http::Request<proxy::http::Body>, Response = http::Response<B>>,
     R::Value: Send + 'static,

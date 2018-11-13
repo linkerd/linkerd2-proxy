@@ -25,6 +25,7 @@ flaky_tests = []
 futures-mpsc-lossy = { path = "lib/futures-mpsc-lossy" }
 linkerd2-fs-watch  = { path = "lib/fs-watch" }
 linkerd2-metrics   = { path = "lib/metrics" }
+linkerd2-never     = { path = "lib/never" }
 linkerd2-router    = { path = "lib/router" }
 linkerd2-stack     = { path = "lib/stack" }
 linkerd2-task      = { path = "lib/task" }

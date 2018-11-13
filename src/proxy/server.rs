@@ -1,4 +1,4 @@
-use futures::{future::{self, Either}, Future};
+use futures::{future::Either, Future};
 use h2;
 use http;
 use hyper;
@@ -9,6 +9,7 @@ use tower_h2;
 
 use Conditional;
 use drain;
+use never::Never;
 use svc::{Stack, Service, stack::StackNewService};
 use transport::{connect, tls, Connection, GetOriginalDst, Peek};
 use proxy::http::glue::{HttpBody, HttpBodyNewSvc, HyperServerSvc};
@@ -44,14 +45,13 @@ use super::Accept;
 pub struct Server<A, C, R, B, G>
 where
     // Prepares a server transport, e.g. with telemetry.
-    A: Stack<Source, Error = ()> + Clone,
+    A: Stack<Source, Error = Never> + Clone,
     A::Value: Accept<Connection>,
     // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
-    C: Stack<connect::Target> + Clone,
-    C::Error: error::Error,
+    C: Stack<connect::Target, Error = Never> + Clone,
     C::Value: connect::Connect,
     // Prepares a route for each accepted HTTP connection.
-    R: Stack<Source, Error = ()> + Clone,
+    R: Stack<Source, Error = Never> + Clone,
     R::Value: Service<
         Request = http::Request<HttpBody>,
         Response = http::Response<B>,
@@ -144,8 +144,7 @@ impl fmt::Display for Source {
 
 impl<C> Stack<Source> for ForwardConnect<C>
 where
-    C: Stack<connect::Target>,
-    C::Error: error::Error,
+    C: Stack<connect::Target, Error = Never>,
 {
     type Value = C::Value;
     type Error = NoOriginalDst;
@@ -157,10 +156,11 @@ where
         };
 
         let tls = Conditional::None(tls::ReasonForNoIdentity::NotHttp.into());
-        let c = self.0.make(&connect::Target::new(addr, tls))
-            .expect("target must be valid");
-
-        Ok(c)
+        match self.0.make(&connect::Target::new(addr, tls)) {
+            Ok(c) => Ok(c),
+            // Matching never allows LLVM to eliminate this entirely.
+            Err(never) => match never {},
+        }
     }
 }
 
@@ -175,24 +175,23 @@ impl fmt::Display for NoOriginalDst {
 // Allows `()` to be used for `Accept`.
 impl Stack<Source> for () {
     type Value = ();
-    type Error = ();
-    fn make(&self, _: &Source) -> Result<(), ()> {
+    type Error = Never;
+    fn make(&self, _: &Source) -> Result<(), Never> {
         Ok(())
     }
 }
 
 impl<A, C, R, B, G> Server<A, C, R, B, G>
 where
-    A: Stack<Source, Error = ()> + Clone,
+    A: Stack<Source, Error = Never> + Clone,
     A::Value: Accept<Connection>,
     <A::Value as Accept<Connection>>::Io: Send + Peek + 'static,
-    C: Stack<connect::Target> + Clone,
-    C::Error: error::Error,
+    C: Stack<connect::Target, Error = Never> + Clone,
     C::Value: connect::Connect,
     <C::Value as connect::Connect>::Connected: Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
-    R: Stack<Source, Error = ()> + Clone,
+    R: Stack<Source, Error = Never> + Clone,
     R::Value: Service<
         Request = http::Request<HttpBody>,
         Response = http::Response<B>,
@@ -259,9 +258,11 @@ where
             _p: (),
         };
 
-        let io = self.accept.make(&source)
-            .expect("source must be acceptable")
-            .accept(connection);
+        let io = match self.accept.make(&source) {
+            Ok(accept) => accept.accept(connection),
+            // Matching never allows LLVM to eliminate this entirely.
+            Err(never) => match never {},
+        };
 
         // We are using the port from the connection's SO_ORIGINAL_DST to
         // determine whether to skip protocol detection, not any port that
@@ -304,11 +305,8 @@ where
                     Protocol::Http1 => Either::A({
                         trace!("detected HTTP/1");
                         match route.make(&source) {
-                            Err(()) => Either::A({
-                                error!("failed to build HTTP/1 client");
-                                future::err(())
-                            }),
-                            Ok(s) => Either::B({
+                            Err(never) => match never {},
+                            Ok(s) => {
                                 let svc = HyperServerSvc::new(
                                     s,
                                     drain_signal.clone(),
@@ -324,7 +322,7 @@ where
                                     })
                                     .map(|_| ())
                                     .map_err(|e| trace!("http1 server error: {:?}", e))
-                            }),
+                            },
                         }
                     }),
                     Protocol::Http2 => Either::B({
