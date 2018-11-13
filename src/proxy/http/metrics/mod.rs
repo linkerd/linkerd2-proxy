@@ -10,7 +10,6 @@ use metrics::{latency, Counter, FmtLabels, Histogram};
 pub mod classify;
 mod report;
 mod service;
-pub mod timestamp_request_open;
 
 pub use self::report::Report;
 pub use self::service::layer;

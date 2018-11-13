@@ -21,7 +21,7 @@ use metrics::{self, FmtMetrics};
 use never::Never;
 use proxy::{
     self, buffer,
-    http::{client, insert_target, metrics::timestamp_request_open, normalize_uri, router},
+    http::{client, insert_target, normalize_uri, router},
     limit, reconnect, timeout,
 };
 use svc::{self, Layer as _Layer, Stack as _Stack};
@@ -334,7 +334,6 @@ where
                 // including metadata about the request's origin.
                 let server_stack = svc::stack::phantom_data::layer()
                     .push(insert_target::layer())
-                    .push(timestamp_request_open::layer())
                     .bind(svc::shared::stack(router));
 
                 serve(
@@ -404,7 +403,6 @@ where
                 let source_stack = svc::stack::phantom_data::layer()
                     .push(inbound::orig_proto_downgrade::layer())
                     .push(insert_target::layer())
-                    .push(timestamp_request_open::layer())
                     .bind(svc::shared::stack(router));
 
                 serve(
@@ -504,13 +502,6 @@ where
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
     G: GetOriginalDst + Send + 'static,
 {
-    // Install the request open timestamp module at the very top of the
-    // stack, in order to take the timestamp as close as possible to the
-    // beginning of the request's lifetime.
-    //
-    // TODO replace with a metrics module that is registered to the server
-    // transport.
-
     let listen_addr = bound_port.local_addr();
     let server = proxy::Server::new(
         proxy_name,
