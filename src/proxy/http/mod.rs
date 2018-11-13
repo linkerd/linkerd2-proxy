@@ -15,6 +15,8 @@ pub use self::client::{Client, Error as ClientError};
 pub use self::glue::HttpBody as Body;
 pub use self::settings::Settings;
 
+use svc::Either;
+
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
 }
@@ -24,6 +26,15 @@ impl<E: HasH2Reason> HasH2Reason for super::buffer::ServiceError<E> {
         match self {
             super::buffer::ServiceError::Inner(e) => e.h2_reason(),
             super::buffer::ServiceError::Closed => None,
+        }
+    }
+}
+
+impl<A: HasH2Reason, B: HasH2Reason> HasH2Reason for Either<A, B> {
+    fn h2_reason(&self) -> Option<::h2::Reason> {
+        match self {
+            Either::A(a) => a.h2_reason(),
+            Either::B(b) => b.h2_reason(),
         }
     }
 }

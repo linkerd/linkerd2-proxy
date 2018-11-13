@@ -1,5 +1,5 @@
-use futures::future::Either as EitherFuture;
-use futures::Poll;
+use futures::{Future, Poll, future};
+use std::{error, fmt};
 
 use svc;
 
@@ -34,12 +34,12 @@ where
     M: super::Stack<T, Error = N::Error>,
 {
     type Value = Either<N::Value, M::Value>;
-    type Error = N::Error;
+    type Error = Either<N::Error, M::Error>;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
         match self {
-            Either::A(ref a) => a.make(target).map(Either::A),
-            Either::B(ref b) => b.make(target).map(Either::B),
+            Either::A(ref a) => a.make(target).map(Either::A).map_err(Either::A),
+            Either::B(ref b) => b.make(target).map(Either::B).map_err(Either::B),
         }
     }
 }
@@ -47,24 +47,45 @@ where
 impl<A, B> svc::Service for Either<A, B>
 where
     A: svc::Service,
-    B: svc::Service<Request = A::Request, Response = A::Response, Error = A::Error>,
+    B: svc::Service<Request = A::Request, Response = A::Response>,
 {
     type Request = A::Request;
     type Response = A::Response;
-    type Error = A::Error;
-    type Future = EitherFuture<A::Future, B::Future>;
+    type Error = Either<A::Error, B::Error>;
+    type Future = future::Either<
+        future::MapErr<A::Future, fn(A::Error) -> Either<A::Error, B::Error>>,
+        future::MapErr<B::Future, fn(B::Error) -> Either<A::Error, B::Error>>,
+    >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match self {
-            Either::A(ref mut a) => a.poll_ready(),
-            Either::B(ref mut b) => b.poll_ready(),
+            Either::A(ref mut a) => a.poll_ready().map_err(Either::A),
+            Either::B(ref mut b) => b.poll_ready().map_err(Either::B),
         }
     }
 
     fn call(&mut self, req: Self::Request) -> Self::Future {
         match self {
-            Either::A(ref mut a) => EitherFuture::A(a.call(req)),
-            Either::B(ref mut b) => EitherFuture::B(b.call(req)),
+            Either::A(ref mut a) => future::Either::A(a.call(req).map_err(Either::A)),
+            Either::B(ref mut b) => future::Either::B(b.call(req).map_err(Either::B)),
+        }
+    }
+}
+
+impl<A: fmt::Display, B: fmt::Display> fmt::Display for Either<A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Either::A(a) => a.fmt(f),
+            Either::B(b) => b.fmt(f),
+        }
+    }
+}
+
+impl<A: error::Error, B: error::Error> error::Error for Either<A, B> {
+    fn cause(&self) -> Option<&error::Error> {
+        match self {
+            Either::A(a) => a.cause(),
+            Either::B(b) => b.cause(),
         }
     }
 }
