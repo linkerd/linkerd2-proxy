@@ -75,7 +75,9 @@ where
     C: Hash + Eq,
 {
     fn retain_since(&mut self, epoch: Instant) {
-        self.by_target.retain(|_, m| m.lock().map(|m| m.last_update >= epoch).unwrap_or(false))
+        self.by_target.retain(|_, m| {
+            Arc::strong_count(&m) > 1 || m.lock().map(|m| m.last_update >= epoch).unwrap_or(false)
+        })
     }
 }
 
@@ -101,5 +103,78 @@ where
             latency: Histogram::default(),
             by_class: IndexMap::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn expiry() {
+        use std::fmt;
+        use std::time::Duration;
+        use tokio_timer::clock;
+
+        use metrics::FmtLabels;
+
+        #[derive(Clone, Debug, Hash, Eq, PartialEq)]
+        struct Target(usize);
+        impl FmtLabels for Target {
+            fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "n=\"{}\"", self.0)
+            }
+        }
+
+        #[allow(dead_code)]
+        #[derive(Clone, Debug, Hash, Eq, PartialEq)]
+        enum Class {
+            Good,
+            Bad,
+        };
+        impl FmtLabels for Class {
+            fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                use std::fmt::Display;
+                match self {
+                    Class::Good => "class=\"good\"".fmt(f),
+                    Class::Bad => "class=\"bad\"".fmt(f),
+                }
+            }
+        }
+
+        let retain_idle_for = Duration::from_secs(1);
+        let (r, report) = super::new::<Target, Class>(retain_idle_for);
+        let mut registry = r.lock().unwrap();
+
+        let before_update = clock::now();
+        let metrics = registry
+            .by_target
+            .entry(Target(123))
+            .or_insert_with(|| Default::default())
+            .clone();
+        assert_eq!(registry.by_target.len(), 1, "target should be registered");
+        let after_update = clock::now();
+
+        registry.retain_since(after_update);
+        assert_eq!(
+            registry.by_target.len(),
+            1,
+            "target should not be evicted by time alone"
+        );
+
+        drop(metrics);
+        registry.retain_since(before_update);
+        assert_eq!(
+            registry.by_target.len(),
+            1,
+            "target should not be evicted by availability alone"
+        );
+
+        registry.retain_since(after_update);
+        assert_eq!(
+            registry.by_target.len(),
+            0,
+            "target should be evicted by time once the handle is dropped"
+        );
+
+        drop((registry, report));
     }
 }
