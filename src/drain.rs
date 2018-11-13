@@ -4,6 +4,8 @@ use futures::{Async, Future, Poll, Stream};
 use futures::future::Shared;
 use futures::sync::{mpsc, oneshot};
 
+use never::Never;
+
 /// Creates a drain channel.
 ///
 /// The `Signal` is used to start a drain, and the `Watch` will be notified
@@ -55,10 +57,6 @@ enum State<F> {
     Watch(F),
     Draining,
 }
-
-//TODO: in Rust 1.26, replace this with `!`.
-#[derive(Debug)]
-enum Never {}
 
 /// A future that resolves when all `Watch`ers have been dropped (drained).
 pub struct Drained {

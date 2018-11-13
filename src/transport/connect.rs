@@ -2,9 +2,10 @@ extern crate tokio_connect;
 
 pub use self::tokio_connect::Connect;
 
-use std::{error, fmt, io};
+use std::io;
 use std::net::SocketAddr;
 
+use never::Never;
 use svc;
 use transport::{connection, tls};
 
@@ -17,10 +18,6 @@ pub struct Target {
     pub tls: tls::ConditionalConnectionConfig<tls::ClientConfig>,
     _p: (),
 }
-
-/// Note: this isn't actually used, but is needed to satisfy Error.
-#[derive(Debug)]
-pub struct InvalidTarget;
 
 // ===== impl Target =====
 
@@ -61,17 +58,9 @@ where
     Target: From<T>,
 {
     type Value = Target;
-    type Error = InvalidTarget;
+    type Error = Never;
 
     fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
         Ok(t.clone().into())
     }
 }
-
-impl fmt::Display for InvalidTarget {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Invalid target")
-    }
-}
-
-impl error::Error for InvalidTarget {}

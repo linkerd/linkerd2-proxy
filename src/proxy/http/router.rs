@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 use std::time::Duration;
 use std::{error, fmt};
 
+use never::Never;
 use svc;
 
 extern crate linkerd2_router;
@@ -117,7 +118,7 @@ where
     B: Default + Send + 'static,
 {
     type Value = Service<Req, Rec, Stk>;
-    type Error = ();
+    type Error = Never;
 
     fn make(&self, config: &Config) -> Result<Self::Value, Self::Error> {
         let inner = Router::new(

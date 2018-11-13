@@ -506,6 +506,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-never"
+version = "0.1.0"
+
+[[package]]
 name = "linkerd2-proxy"
 version = "0.1.0"
 dependencies = [
@@ -525,6 +529,7 @@ dependencies = [
  "libc 0.2.40 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-fs-watch 0.1.0",
  "linkerd2-metrics 0.1.0",
+ "linkerd2-never 0.1.0",
  "linkerd2-proxy-api 0.1.3 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.3)",
  "linkerd2-router 0.1.0",
  "linkerd2-stack 0.1.0",
@@ -597,6 +602,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-watch 0.1.0 (git+https://github.com/carllerche/better-future)",
+ "linkerd2-never 0.1.0",
  "linkerd2-task 0.1.0",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
