@@ -74,6 +74,8 @@ where
     T: Hash + Eq,
     C: Hash + Eq,
 {
+    /// Retains metrics for all targets that (1) no longer have an active
+    /// reference to the `Metrics` structure and (2) have not been updated since `epoch`.
     fn retain_since(&mut self, epoch: Instant) {
         self.by_target.retain(|_, m| {
             Arc::strong_count(&m) > 1 || m.lock().map(|m| m.last_update >= epoch).unwrap_or(false)
