@@ -12,7 +12,7 @@ use tokio::runtime::current_thread;
 use tower_h2;
 
 use app::classify::{self, Class};
-use app::metric_labels::{EndpointLabels, RouteLabels};
+use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use control;
 use dns;
 use drain;
@@ -21,7 +21,9 @@ use metrics::{self, FmtMetrics};
 use never::Never;
 use proxy::{
     self, buffer,
-    http::{client, insert_target, normalize_uri, profiles, router, settings},
+    http::{
+        client, insert_target, metrics as http_metrics, normalize_uri, profiles, router, settings,
+    },
     limit, reconnect, timeout,
 };
 use svc::{
@@ -193,12 +195,16 @@ where
         let tap_next_id = tap::NextId::default();
         let (taps, observe) = control::Observe::new(100);
 
+        let (ctl_http_metrics, ctl_http_report) = {
+            let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
+            (m, r.with_prefix("control"))
+        };
+
         let (endpoint_http_metrics, endpoint_http_report) =
-            proxy::http::metrics::new::<EndpointLabels, Class>(config.metrics_retain_idle);
+            http_metrics::new::<EndpointLabels, Class>(config.metrics_retain_idle);
 
         let (route_http_metrics, route_http_report) = {
-            let (m, r) =
-                proxy::http::metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
+            let (m, r) = http_metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("route"))
         };
 
@@ -210,6 +216,7 @@ where
             .and_then(route_http_report)
             .and_then(transport_report)
             .and_then(tls_config_report)
+            .and_then(ctl_http_report)
             .and_then(telemetry::process::Report::new(start_time));
 
         let tls_client_config = tls_config_watch.client.clone();
@@ -232,15 +239,18 @@ where
                 )
             });
 
-            // TODO metrics
             let stack = connect::Stack::new()
-                .push(control::client::Layer::new())
-                .push(control::resolve::Layer::new(dns_resolver.clone()))
+                .push(control::client::layer())
+                .push(control::resolve::layer(dns_resolver.clone()))
                 .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
                 .push(proxy::timeout::layer(config.control_connect_timeout))
+                .push(control::box_request_body::layer())
+                .push(http_metrics::layer::<_, classify::Response>(
+                    ctl_http_metrics,
+                ))
                 .push(svc::watch::layer(tls_client_config.clone()))
                 .push(phantom_data::layer())
-                .push(control::add_origin::Layer::new())
+                .push(control::add_origin::layer())
                 .push(buffer::layer())
                 .push(limit::layer(config.destination_concurrency_limit));
 
@@ -415,8 +425,7 @@ where
                 // Instantiates an HTTP service for each `Source` using the
                 // shared `addr_router`. The `Source` is stored in the request's
                 // extensions so that it can be used by the `addr_router`.
-                let server_stack = addr_router
-                    .push(insert_target::layer());
+                let server_stack = addr_router.push(insert_target::layer());
 
                 // Instantiated for each TCP connection received from the local
                 // application (including HTTP connections).
@@ -436,8 +445,9 @@ where
             };
 
             let inbound = {
-                use super::inbound::{orig_proto_downgrade, rewrite_loopback_addr, Endpoint, RecognizeEndpoint};
-                use proxy::http::metrics;
+                use super::inbound::{
+                    orig_proto_downgrade, rewrite_loopback_addr, Endpoint, RecognizeEndpoint,
+                };
 
                 let capacity = config.inbound_router_capacity;
                 let max_idle_age = config.inbound_router_max_idle_age;
@@ -468,7 +478,7 @@ where
                     .push(buffer::layer())
                     .push(settings::router::layer::<Endpoint>())
                     .push(tap::layer(tap_next_id, taps))
-                    .push(metrics::layer::<_, classify::Response>(
+                    .push(http_metrics::layer::<_, classify::Response>(
                         endpoint_http_metrics,
                     ))
                     .push(buffer::layer())
@@ -484,7 +494,9 @@ where
                 // extension into each request so that all lower metrics
                 // implementations can use the route-specific configuration.
                 let dst_route_stack = phantom_data::layer()
-                    .push(metrics::layer::<_, classify::Response>(route_http_metrics))
+                    .push(http_metrics::layer::<_, classify::Response>(
+                        route_http_metrics,
+                    ))
                     .push(classify::layer());
 
                 // A per-`DstAddr` stack that does the following:
