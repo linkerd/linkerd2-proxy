@@ -306,8 +306,14 @@ where
                     .push(svc::stack_per_request::layer())
                     .push(normalize_uri::layer());
 
-                // A per-`outbound::Endpoint`stack that uses profile data to configure
-                // a per-route layer.
+                // A per-`outbound::Endpoint` stack that:
+                //
+                // 1. Records http metrics  with per-endpoint labels.
+                // 2. Instruments `tap` inspection.
+                // 3. Changes request/response versions when the endpoint
+                //    supports protocol upgrade (and the request may be upgraded).
+                // 4. Routes requests to the correct client (based on the
+                //    request version and headers).
                 let endpoint_stack = client_stack
                     .push(buffer::layer())
                     .push(settings::router::layer::<Endpoint>())
