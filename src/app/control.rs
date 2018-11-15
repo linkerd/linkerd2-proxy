@@ -32,6 +32,14 @@ impl Config {
             builder: h2::client::Builder::default(),
         }
     }
+
+    pub fn addr(&self) -> &Addr {
+        &self.addr
+    }
+
+    pub fn tls_status(&self) -> tls::Status {
+        self.tls_config.as_ref().map(|_| ())
+    }
 }
 
 impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Config {
@@ -52,7 +60,7 @@ impl fmt::Display for Config {
 
 /// Sets the request's URI from `Config`.
 pub mod add_origin {
-  extern crate tower_add_origin;
+    extern crate tower_add_origin;
 
     use self::tower_add_origin::AddOrigin;
     use bytes::Bytes;
@@ -73,13 +81,11 @@ pub mod add_origin {
 
     // === impl Layer ===
 
-    impl<M> Layer<M>
+    pub fn layer<M>() -> Layer<M>
     where
         M: svc::Stack<super::Config>,
     {
-        pub fn new() -> Self {
-            Self { _p: PhantomData }
-        }
+        Layer { _p: PhantomData }
     }
 
     impl<M> Clone for Layer<M>
@@ -87,7 +93,7 @@ pub mod add_origin {
         M: svc::Stack<super::Config>,
     {
         fn clone(&self) -> Self {
-            Self::new()
+            layer()
         }
     }
 
@@ -184,15 +190,13 @@ pub mod resolve {
 
     // === impl Layer ===
 
-    impl<M> Layer<M>
+    pub fn layer<M>(dns: dns::Resolver) -> Layer<M>
     where
         M: svc::Stack<client::Target> + Clone,
     {
-        pub fn new(dns: dns::Resolver) -> Self {
-            Self {
-                dns,
-                _p: PhantomData,
-            }
+        Layer {
+            dns,
+            _p: PhantomData,
         }
     }
 
@@ -201,7 +205,7 @@ pub mod resolve {
         M: svc::Stack<client::Target> + Clone,
     {
         fn clone(&self) -> Self {
-            Self::new(self.dns.clone())
+            layer(self.dns.clone())
         }
     }
 
@@ -374,15 +378,13 @@ pub mod client {
 
     // === impl Layer ===
 
-    impl<C> Layer<C>
+    pub fn layer<C>() -> Layer<C>
     where
         C: svc::Stack<connect::Target> + Clone,
         C::Value: connect::Connect,
         <C::Value as connect::Connect>::Connected: Send + 'static,
     {
-        pub fn new() -> Self {
-            Self { _p: PhantomData }
-        }
+        Layer { _p: PhantomData }
     }
 
     impl<C> Clone for Layer<C>
@@ -392,7 +394,7 @@ pub mod client {
         <C::Value as connect::Connect>::Connected: Send + 'static,
     {
         fn clone(&self) -> Self {
-            Self::new()
+            layer()
         }
     }
 
@@ -435,6 +437,109 @@ pub mod client {
                 .with_remote(target.connect.addr)
                 .executor();
             Ok(client::Connect::new(c, h2, e))
+        }
+    }
+}
+
+pub mod box_request_body {
+    use http;
+    use futures::Poll;
+    use std::marker::PhantomData;
+    use tower_h2::{Body, BoxBody};
+
+    use svc;
+
+    #[derive(Debug)]
+    pub struct Layer<B>(PhantomData<fn() -> B>);
+
+    #[derive(Debug)]
+    pub struct Stack<B, M> {
+        inner: M,
+        _p: PhantomData<fn() -> B>,
+    }
+
+    #[derive(Debug)]
+    pub struct Service<B, S> {
+        inner: S,
+        _p: PhantomData<fn() -> B>,
+    }
+
+    // === impl Layer ===
+
+    pub fn layer<B>() -> Layer<B>
+    where
+        B: Body + Send + 'static,
+    {
+        Layer(PhantomData)
+    }
+
+    impl<B> Clone for Layer<B> {
+        fn clone(&self) -> Self {
+            Layer(PhantomData)
+        }
+    }
+
+    impl<B, T, M> svc::Layer<T, T, M> for Layer<B>
+    where
+        B: Body + Send + 'static,
+        M: svc::Stack<T>,
+        M::Value: svc::Service<Request = http::Request<BoxBody<B::Data>>>,
+    {
+        type Value = <Stack<B, M> as svc::Stack<T>>::Value;
+        type Error = <Stack<B, M> as svc::Stack<T>>::Error;
+        type Stack = Stack<B, M>;
+
+        fn bind(&self, inner: M) -> Self::Stack {
+            Stack { inner, _p: PhantomData }
+        }
+    }
+
+    // === impl Stack ===
+
+    impl<B, M: Clone> Clone for Stack<B, M> {
+        fn clone(&self) -> Self {
+            Stack {
+                inner: self.inner.clone(),
+                _p: PhantomData,
+            }
+        }
+    }
+
+    impl<B, T, M> svc::Stack<T> for Stack<B, M>
+    where
+        B: Body + Send + 'static,
+        M: svc::Stack<T>,
+        M::Value: svc::Service<Request = http::Request<BoxBody<B::Data>>>,
+    {
+        type Value = Service<B, M::Value>;
+        type Error = M::Error;
+
+        fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+            let inner = self.inner.make(target)?;
+            Ok(Service { inner, _p: PhantomData })
+        }
+    }
+
+    // === impl Service ===
+
+    impl<B, S> svc::Service for Service<B, S>
+    where
+        B: Body + Send + 'static,
+        S: svc::Service<Request = http::Request<BoxBody<B::Data>>>,
+    {
+        type Request = http::Request<B>;
+        type Response = S::Response;
+        type Error = S::Error;
+        type Future = S::Future;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let (head, body) = req.into_parts();
+            let req = http::Request::from_parts(head, BoxBody::new(Box::new(body)));
+            self.inner.call(req)
         }
     }
 }

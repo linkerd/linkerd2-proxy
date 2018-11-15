@@ -6,9 +6,15 @@ use std::{
 use metrics::FmtLabels;
 
 use transport::tls;
-use {Conditional, NameAddr};
+use {Conditional, Addr, NameAddr};
 
-use super::{classify, dst, inbound, outbound};
+use super::{control, classify, dst, inbound, outbound};
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ControlLabels {
+    addr: Addr,
+    tls_status: tls::Status,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EndpointLabels {
@@ -33,6 +39,27 @@ enum Direction {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Authority<'a>(&'a NameAddr);
+
+// === impl CtlLabels ===
+
+impl From<control::Config> for ControlLabels {
+    fn from(c: control::Config) -> Self {
+        ControlLabels {
+            addr: c.addr().clone(),
+            tls_status: c.tls_status()
+        }
+    }
+}
+
+impl FmtLabels for ControlLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "addr=\"{}\",", self.addr)?;
+        self.tls_status.fmt_labels(f)?;
+
+        Ok(())
+    }
+}
+
 
 // === impl RouteLabels ===
 
