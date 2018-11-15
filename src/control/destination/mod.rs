@@ -114,6 +114,7 @@ pub fn new<T>(
     mut client: Option<T>,
     dns_resolver: dns::Resolver,
     namespaces: Namespaces,
+    suffixes: Vec<dns::Suffix>,
     concurrency_limit: usize,
 ) -> (Resolver, impl Future<Item = (), Error = ()>)
 where
@@ -127,6 +128,7 @@ where
         rx,
         dns_resolver,
         namespaces,
+        suffixes,
         concurrency_limit,
     );
     let task = future::poll_fn(move || bg.poll_rpc(&mut client));

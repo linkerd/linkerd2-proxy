@@ -3,22 +3,23 @@ use futures::{future, Async, Future, Poll};
 use h2;
 use http;
 use hyper;
-use std::{self, error, fmt, net};
+use std::{error, fmt, net};
 use std::marker::PhantomData;
 use tokio::executor::Executor;
 use tower_h2;
 
 use super::{h1, Settings};
 use super::glue::{BodyPayload, HttpBody, HyperConnect};
+use super::normalize_uri::ShouldNormalizeUri;
 use super::upgrade::{HttpConnect, Http11Upgrade};
-use svc;
+use svc::{self, stack_per_request::ShouldStackPerRequest};
 use task::BoxExecutor;
 use transport::connect;
 
 /// Configurs an HTTP Client `Service` `Stack`.
 ///
 /// `settings` determines whether an HTTP/1 or HTTP/2 client is used.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Config {
     pub target: connect::Target,
     pub settings: Settings,
@@ -151,6 +152,25 @@ impl Config {
         Config { target, settings, _p: () }
     }
 }
+
+impl ShouldNormalizeUri for Config {
+    fn should_normalize_uri(&self) -> bool {
+        !self.settings.is_http2() && !self.settings.was_absolute_form()
+    }
+}
+
+impl ShouldStackPerRequest for Config {
+    fn should_stack_per_request(&self) -> bool {
+        !self.settings.is_http2() && !self.settings.can_reuse_clients()
+    }
+}
+
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.target.addr.fmt(f)
+    }
+}
+
 
 // === impl Layer ===
 
@@ -460,8 +480,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {
-    fn cause(&self) -> Option<&std::error::Error> {
+impl error::Error for Error {
+    fn cause(&self) -> Option<&error::Error> {
         match self {
             Error::Http1(e) => e.cause(),
             Error::Http2(e) => e.cause(),

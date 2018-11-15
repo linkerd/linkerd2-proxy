@@ -12,6 +12,10 @@ impl DnsName {
     pub fn is_localhost(&self) -> bool {
         *self == DnsName::try_from("localhost.".as_bytes()).unwrap()
     }
+
+    pub fn without_trailing_dot(&self) -> &str {
+        self.as_ref().trim_end_matches('.')
+    }
 }
 
 impl fmt::Display for DnsName {
@@ -55,5 +59,21 @@ mod tests {
             let dns_name = DnsName::try_from(host.as_bytes()).unwrap();
             assert_eq!(dns_name.is_localhost(), *expected_result, "{:?}", dns_name)
         }
+    }
+
+    #[test]
+    fn test_without_trailing_dot() {
+        let cases = &[
+            ("localhost", "localhost"),
+            ("localhost.", "localhost"),
+            ("LocalhOsT.", "localhost"),
+            ("web.svc.local", "web.svc.local"),
+            ("web.svc.local.", "web.svc.local"),
+        ];
+        for (host, expected_result) in cases {
+            let dns_name = DnsName::try_from(host.as_bytes()).expect(&format!("'{}' was invalid", host));
+            assert_eq!(dns_name.without_trailing_dot(), *expected_result, "{:?}", dns_name)
+        }
+        assert!(DnsName::try_from(".".as_bytes()).is_err());
     }
 }

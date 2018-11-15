@@ -1,41 +1,18 @@
-use http;
 use std::fmt;
 
-use app::classify;
 use control::destination::{Metadata, ProtocolHint};
-use proxy::http::{
-    metrics::classify::CanClassify,
-    client,
-    normalize_uri::ShouldNormalizeUri,
-    profiles::{self, CanGetDestination},
-    router, Settings,
-};
-use svc::{self, stack_per_request::ShouldStackPerRequest};
+use proxy::http::settings;
+use svc;
 use tap;
 use transport::{connect, tls};
-use {Addr, NameAddr};
+use NameAddr;
 
 #[derive(Clone, Debug)]
 pub struct Endpoint {
-    pub dst: Destination,
+    pub dst_name: Option<NameAddr>,
     pub connect: connect::Target,
     pub metadata: Metadata,
 }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Destination {
-    pub addr: Addr,
-    pub settings: Settings,
-}
-
-#[derive(Clone, Debug)]
-pub struct Route {
-    pub dst: Destination,
-    pub route: profiles::Route,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Recognize;
 
 // === impl Endpoint ===
 
@@ -48,15 +25,9 @@ impl Endpoint {
     }
 }
 
-impl ShouldNormalizeUri for Endpoint {
-    fn should_normalize_uri(&self) -> bool {
-        !self.dst.settings.is_http2() && !self.dst.settings.was_absolute_form()
-    }
-}
-
-impl ShouldStackPerRequest for Endpoint {
-    fn should_stack_per_request(&self) -> bool {
-        !self.dst.settings.is_http2() && !self.dst.settings.can_reuse_clients()
+impl settings::router::HasConnect for Endpoint {
+    fn connect(&self) -> connect::Target {
+        self.connect.clone()
     }
 }
 
@@ -81,82 +52,14 @@ impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Endpoint {
     }
 }
 
-// Makes it possible to build a client::Stack<Endpoint>.
-impl From<Endpoint> for client::Config {
-    fn from(ep: Endpoint) -> Self {
-        client::Config::new(ep.connect, ep.dst.settings)
-    }
-}
-
 impl From<Endpoint> for tap::Endpoint {
     fn from(ep: Endpoint) -> Self {
         // TODO add route labels...
         tap::Endpoint {
             direction: tap::Direction::Out,
             labels: ep.metadata.labels().clone(),
-            client: ep.into(),
+            target: ep.connect.clone(),
         }
-    }
-}
-
-// === impl Route ===
-
-impl CanClassify for Route {
-    type Classify = classify::Request;
-
-    fn classify(&self) -> classify::Request {
-        self.route.response_classes().clone().into()
-    }
-}
-
-// === impl Recognize ===
-
-impl Recognize {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl<B> router::Recognize<http::Request<B>> for Recognize {
-    type Target = Destination;
-
-    fn recognize(&self, req: &http::Request<B>) -> Option<Self::Target> {
-        let addr = super::http_request_addr(req).ok()?;
-        let settings = Settings::from_request(req);
-        let dst = Destination::new(addr, settings);
-        debug!("recognize: dst={:?}", dst);
-        Some(dst)
-    }
-}
-
-// === impl Destination ===
-
-impl Destination {
-    pub fn new(addr: Addr, settings: Settings) -> Self {
-        Self { addr, settings }
-    }
-}
-
-impl CanGetDestination for Destination {
-    fn get_destination(&self) -> Option<&NameAddr> {
-        match self.addr {
-            Addr::Name(ref name) => Some(name),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for Destination {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.addr.fmt(f)
-    }
-}
-
-impl profiles::WithRoute for Destination {
-    type Output = Route;
-
-    fn with_route(self, route: profiles::Route) -> Self::Output {
-        Route { dst: self, route }
     }
 }
 
@@ -164,7 +67,8 @@ pub mod discovery {
     use futures::{Async, Poll};
     use std::net::SocketAddr;
 
-    use super::{Destination, Endpoint};
+    use super::super::dst::DstAddr;
+    use super::Endpoint;
     use control::destination::Metadata;
     use proxy::resolve;
     use transport::{connect, tls};
@@ -175,8 +79,8 @@ pub mod discovery {
 
     #[derive(Debug)]
     pub enum Resolution<R: resolve::Resolution> {
-        Name(Destination, R),
-        Addr(Destination, Option<SocketAddr>),
+        Name(NameAddr, R),
+        Addr(Option<SocketAddr>),
     }
 
     // === impl Resolve ===
@@ -190,17 +94,17 @@ pub mod discovery {
         }
     }
 
-    impl<R> resolve::Resolve<Destination> for Resolve<R>
+    impl<R> resolve::Resolve<DstAddr> for Resolve<R>
     where
         R: resolve::Resolve<NameAddr, Endpoint = Metadata>,
     {
         type Endpoint = Endpoint;
         type Resolution = Resolution<R::Resolution>;
 
-        fn resolve(&self, dst: &Destination) -> Self::Resolution {
-            match dst.addr {
-                Addr::Name(ref name) => Resolution::Name(dst.clone(), self.0.resolve(&name)),
-                Addr::Socket(ref addr) => Resolution::Addr(dst.clone(), Some(*addr)),
+        fn resolve(&self, dst: &DstAddr) -> Self::Resolution {
+            match dst.as_ref() {
+                Addr::Name(ref name) => Resolution::Name(name.clone(), self.0.resolve(&name)),
+                Addr::Socket(ref addr) => Resolution::Addr(Some(*addr)),
             }
         }
     }
@@ -216,7 +120,7 @@ pub mod discovery {
 
         fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
             match self {
-                Resolution::Name(ref dst, ref mut res) => match try_ready!(res.poll()) {
+                Resolution::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
                     resolve::Update::Remove(addr) => {
                         Ok(Async::Ready(resolve::Update::Remove(addr)))
                     }
@@ -230,23 +134,22 @@ pub mod discovery {
                             Conditional::Some(_) => tls::ReasonForNoTls::NoConfig,
                         };
                         let ep = Endpoint {
-                            dst: dst.clone(),
+                            dst_name: Some(name.clone()),
                             connect: connect::Target::new(addr, Conditional::None(tls)),
                             metadata,
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
                     }
                 },
-                Resolution::Addr(ref dst, ref mut addr) => match addr.take() {
+                Resolution::Addr(ref mut addr) => match addr.take() {
                     Some(addr) => {
                         let tls = tls::ReasonForNoIdentity::NoAuthorityInHttpRequest;
                         let ep = Endpoint {
-                            dst: dst.clone(),
+                            dst_name: None,
                             connect: connect::Target::new(addr, Conditional::None(tls.into())),
                             metadata: Metadata::none(tls),
                         };
-                        let up = resolve::Update::Add(addr, ep);
-                        Ok(Async::Ready(up))
+                        Ok(Async::Ready(resolve::Update::Add(addr, ep)))
                     }
                     None => Ok(Async::NotReady),
                 },
@@ -259,7 +162,7 @@ pub mod orig_proto_upgrade {
     use http;
 
     use super::Endpoint;
-    use proxy::http::{orig_proto, Settings};
+    use proxy::http::orig_proto;
     use svc;
 
     #[derive(Debug, Clone)]
@@ -302,13 +205,8 @@ pub mod orig_proto_upgrade {
         type Error = M::Error;
 
         fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
-            if endpoint.can_use_orig_proto()
-                && !endpoint.dst.settings.is_http2()
-                && !endpoint.dst.settings.is_h1_upgrade()
-            {
-                let mut upgraded = endpoint.clone();
-                upgraded.dst.settings = Settings::Http2;
-                self.inner.make(&upgraded).map(|i| svc::Either::A(i.into()))
+            if endpoint.can_use_orig_proto() {
+                self.inner.make(&endpoint).map(|i| svc::Either::A(i.into()))
             } else {
                 self.inner.make(&endpoint).map(svc::Either::B)
             }

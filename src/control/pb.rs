@@ -46,7 +46,7 @@ impl event::StreamResponseEnd {
             proxy_direction: ctx.endpoint.direction.as_pb().into(),
             source: Some((&ctx.source.remote).into()),
             source_meta: Some(ctx.source.src_meta()),
-            destination: Some((&ctx.endpoint.client.target.addr).into()),
+            destination: Some((&ctx.endpoint.target.addr).into()),
             destination_meta: Some(ctx.endpoint.dst_meta()),
             event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
                 event: Some(tap::tap_event::http::Event::ResponseEnd(end)),
@@ -72,7 +72,7 @@ impl event::StreamResponseFail {
             proxy_direction: ctx.endpoint.direction.as_pb().into(),
             source: Some((&ctx.source.remote).into()),
             source_meta: Some(ctx.source.src_meta()),
-            destination: Some((&ctx.endpoint.client.target.addr).into()),
+            destination: Some((&ctx.endpoint.target.addr).into()),
             destination_meta: Some(ctx.endpoint.dst_meta()),
             event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
                 event: Some(tap::tap_event::http::Event::ResponseEnd(end)),
@@ -98,7 +98,7 @@ impl event::StreamRequestFail {
             proxy_direction: ctx.endpoint.direction.as_pb().into(),
             source: Some((&ctx.source.remote).into()),
             source_meta: Some(ctx.source.src_meta()),
-            destination: Some((&ctx.endpoint.client.target.addr).into()),
+            destination: Some((&ctx.endpoint.target.addr).into()),
             destination_meta: Some(ctx.endpoint.dst_meta()),
             event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
                 event: Some(tap::tap_event::http::Event::ResponseEnd(end)),
@@ -131,7 +131,7 @@ impl<'a> TryFrom<&'a Event> for tap::TapEvent {
                     proxy_direction: ctx.endpoint.direction.as_pb().into(),
                     source: Some((&ctx.source.remote).into()),
                     source_meta: Some(ctx.source.src_meta()),
-                    destination: Some((&ctx.endpoint.client.target.addr).into()),
+                    destination: Some((&ctx.endpoint.target.addr).into()),
                     destination_meta: Some(ctx.endpoint.dst_meta()),
                     event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
                         event: Some(tap::tap_event::http::Event::RequestInit(init)),
@@ -154,7 +154,7 @@ impl<'a> TryFrom<&'a Event> for tap::TapEvent {
                     proxy_direction: ctx.request.endpoint.direction.as_pb().into(),
                     source: Some((&ctx.request.source.remote).into()),
                     source_meta: Some(ctx.request.source.src_meta()),
-                    destination: Some((&ctx.request.endpoint.client.target.addr).into()),
+                    destination: Some((&ctx.request.endpoint.target.addr).into()),
                     destination_meta: Some(ctx.request.endpoint.dst_meta()),
                     event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
                         event: Some(tap::tap_event::http::Event::ResponseInit(init)),
@@ -204,7 +204,7 @@ impl event::Endpoint {
     fn dst_meta(&self) -> tap::tap_event::EndpointMeta {
         let mut meta = tap::tap_event::EndpointMeta::default();
         meta.labels.extend(self.labels.clone());
-        meta.labels.insert("tls".to_owned(), format!("{}", self.client.target.tls_status()));
+        meta.labels.insert("tls".to_owned(), format!("{}", self.target.tls_status()));
         meta
     }
 }

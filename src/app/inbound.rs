@@ -3,9 +3,9 @@ use std::fmt;
 use std::net::SocketAddr;
 
 use super::classify;
-use proxy::http::{client, normalize_uri::ShouldNormalizeUri, router, Settings};
+use super::dst::DstAddr;
+use proxy::http::{router, settings};
 use proxy::server::Source;
-use svc::stack_per_request::ShouldStackPerRequest;
 use tap;
 use transport::{connect, tls};
 use {Conditional, NameAddr};
@@ -14,30 +14,15 @@ use {Conditional, NameAddr};
 pub struct Endpoint {
     pub addr: SocketAddr,
     pub dst_name: Option<NameAddr>,
-    pub settings: Settings,
     pub source_tls_status: tls::Status,
 }
 
-// === Recognize ===
-
 #[derive(Clone, Debug, Default)]
-pub struct Recognize {
+pub struct RecognizeEndpoint {
     default_addr: Option<SocketAddr>,
 }
 
 // === impl Endpoint ===
-
-impl ShouldNormalizeUri for Endpoint {
-    fn should_normalize_uri(&self) -> bool {
-        !self.settings.is_http2() && !self.settings.was_absolute_form()
-    }
-}
-
-impl ShouldStackPerRequest for Endpoint {
-    fn should_stack_per_request(&self) -> bool {
-        !self.settings.is_http2() && !self.settings.can_reuse_clients()
-    }
-}
 
 impl classify::CanClassify for Endpoint {
     type Classify = classify::Request;
@@ -47,12 +32,20 @@ impl classify::CanClassify for Endpoint {
     }
 }
 
-// Makes it possible to build a client::Stack<Endpoint>.
-impl From<Endpoint> for client::Config {
-    fn from(ep: Endpoint) -> Self {
+impl Endpoint {
+    pub fn dst_name(&self) -> Option<&NameAddr> {
+        self.dst_name.as_ref()
+    }
+
+    fn target(&self) -> connect::Target {
         let tls = Conditional::None(tls::ReasonForNoTls::InternalTraffic);
-        let connect = connect::Target::new(ep.addr, tls);
-        client::Config::new(connect, ep.settings)
+        connect::Target::new(self.addr, tls)
+    }
+}
+
+impl settings::router::HasConnect for Endpoint {
+    fn connect(&self) -> connect::Target {
+        self.target()
     }
 }
 
@@ -60,7 +53,7 @@ impl From<Endpoint> for tap::Endpoint {
     fn from(ep: Endpoint) -> Self {
         tap::Endpoint {
             direction: tap::Direction::In,
-            client: ep.into(),
+            target: ep.target(),
             labels: Default::default(),
         }
     }
@@ -72,44 +65,40 @@ impl fmt::Display for Endpoint {
     }
 }
 
-impl Recognize {
+// === impl RecognizeEndpoint ===
+
+impl RecognizeEndpoint {
     pub fn new(default_addr: Option<SocketAddr>) -> Self {
         Self { default_addr }
     }
 }
 
-impl<A> router::Recognize<http::Request<A>> for Recognize {
+impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
     type Target = Endpoint;
 
     fn recognize(&self, req: &http::Request<A>) -> Option<Self::Target> {
         let src = req.extensions().get::<Source>();
-        let source_tls_status = src
-            .map(|s| s.tls_status.clone())
-            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled));
-
+        debug!("inbound endpoint: src={:?}", src);
         let addr = src
             .and_then(Source::orig_dst_if_not_local)
             .or(self.default_addr)?;
 
-        let dst_name = super::http_request_addr(req)
-            .ok()
-            .and_then(|h| h.into_name_addr());
-        let settings = Settings::from_request(req);
+        let source_tls_status = src
+            .map(|s| s.tls_status.clone())
+            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled));
 
-        let ep = Endpoint {
+        let dst_name = req
+            .extensions()
+            .get::<DstAddr>()
+            .and_then(|a| a.as_ref().name_addr())
+            .cloned();
+        debug!("inbound endpoint: dst={:?}", dst_name);
+
+        Some(Endpoint {
             addr,
             dst_name,
-            settings,
             source_tls_status,
-        };
-        debug!("recognize: src={:?} ep={:?}", src, ep);
-        Some(ep)
-    }
-}
-
-impl fmt::Display for Recognize {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "in")
+        })
     }
 }
 
@@ -230,24 +219,17 @@ mod tests {
     use http;
     use std::net;
 
-    use super::{Endpoint, Recognize};
-    use proxy::http::router::Recognize as _Recognize;
-    use proxy::http::settings::Settings;
+    use super::{Endpoint, RecognizeEndpoint};
+    use proxy::http::router::Recognize;
     use proxy::server::Source;
     use transport::tls;
     use Conditional;
 
     fn make_h1_endpoint(addr: net::SocketAddr) -> Endpoint {
-        let settings = Settings::Http1 {
-            is_h1_upgrade: false,
-            was_absolute_form: false,
-            stack_per_request: true,
-        };
         let source_tls_status = TLS_DISABLED;
         Endpoint {
             addr,
             dst_name: None,
-            settings,
             source_tls_status,
         }
     }
@@ -267,7 +249,7 @@ mod tests {
             let mut req = http::Request::new(());
             req.extensions_mut().insert(src);
 
-            Recognize::default().recognize(&req) == rec
+            RecognizeEndpoint::default().recognize(&req) == rec
         }
 
         fn recognize_default_no_orig_dst(
@@ -279,12 +261,12 @@ mod tests {
             req.extensions_mut()
                 .insert(Source::for_test(remote, local, None, TLS_DISABLED));
 
-            Recognize::new(default).recognize(&req) == default.map(make_h1_endpoint)
+            RecognizeEndpoint::new(default).recognize(&req) == default.map(make_h1_endpoint)
         }
 
         fn recognize_default_no_ctx(default: Option<net::SocketAddr>) -> bool {
             let req = http::Request::new(());
-            Recognize::new(default).recognize(&req) == default.map(make_h1_endpoint)
+            RecognizeEndpoint::new(default).recognize(&req) == default.map(make_h1_endpoint)
         }
 
         fn recognize_default_no_loop(
@@ -296,7 +278,7 @@ mod tests {
             req.extensions_mut()
                 .insert(Source::for_test(remote, local, Some(local), TLS_DISABLED));
 
-            Recognize::new(default).recognize(&req) == default.map(make_h1_endpoint)
+            RecognizeEndpoint::new(default).recognize(&req) == default.map(make_h1_endpoint)
         }
     }
 }

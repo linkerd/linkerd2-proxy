@@ -48,9 +48,14 @@ impl Controller {
 
     pub fn destination_tx(&self, dest: &str) -> DstSender {
         let (tx, rx) = sync::mpsc::unbounded();
+        let path = if dest.contains(":") {
+            dest.to_owned()
+        } else {
+            format!("{}:80", dest)
+        };
         let dst = pb::GetDestination {
             scheme: "k8s".into(),
-            path: dest.into(),
+            path,
         };
         self.expect_dst_calls
             .lock()

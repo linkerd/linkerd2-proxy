@@ -40,4 +40,15 @@ where
     {
         self.and_then(|c| Conditional::Some(f(c)))
     }
+
+    pub fn is_none(&self) -> bool {
+        match self {
+            Conditional::None(_) => true,
+            Conditional::Some(_) => false,
+        }
+    }
+
+    pub fn is_some(&self) -> bool {
+        !self.is_none()
+    }
 }

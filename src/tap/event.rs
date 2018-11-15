@@ -3,7 +3,8 @@ use http;
 use indexmap::IndexMap;
 use std::time::Instant;
 
-use proxy::{http::client, Source};
+use proxy::Source;
+use transport::connect;
 
 // TODO this should be replaced with a string name.
 #[derive(Copy, Clone, Debug)]
@@ -12,7 +13,7 @@ pub enum Direction { In, Out }
 #[derive(Clone, Debug)]
 pub struct Endpoint {
     pub direction: Direction,
-    pub client: client::Config,
+    pub target: connect::Target,
     pub labels: IndexMap<String, String>,
 }
 

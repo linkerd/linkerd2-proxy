@@ -30,23 +30,29 @@ pub enum Error {
 // === impl Addr ===
 
 impl Addr {
-    pub fn new(host: &str, port: u16) -> Result<Self, Error> {
+    pub fn from_str(hostport: &str) -> Result<Self, Error> {
+        SocketAddr::from_str(hostport)
+            .map(Addr::Socket)
+            .or_else(|_| NameAddr::from_str(hostport).map(Addr::Name))
+    }
+
+    pub fn from_str_and_port(host: &str, port: u16) -> Result<Self, Error> {
         IpAddr::from_str(host)
             .map(|ip| Addr::Socket((ip, port).into()))
-            .or_else(|_| NameAddr::new(host, port).map(Addr::Name))
+            .or_else(|_| NameAddr::from_str_and_port(host, port).map(Addr::Name))
     }
 
     pub fn from_authority_and_default_port(
         a: &http::uri::Authority,
         default_port: u16,
     ) -> Result<Self, Error> {
-        Self::new(a.host(), a.port().unwrap_or(default_port))
+        Self::from_str_and_port(a.host(), a.port().unwrap_or(default_port))
     }
 
     pub fn from_authority_with_port(a: &http::uri::Authority) -> Result<Self, Error> {
         a.port()
             .ok_or(Error::MissingPort)
-            .and_then(|p| Self::new(a.host(), p))
+            .and_then(|p| Self::from_str_and_port(a.host(), p))
     }
 
     pub fn port(&self) -> u16 {
@@ -96,16 +102,36 @@ impl Addr {
 impl fmt::Display for Addr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Addr::Name(NameAddr { ref name, port }) => write!(f, "{}:{}", name, port),
-            Addr::Socket(addr) => write!(f, "{}", addr),
+            Addr::Name(name) => name.fmt(f),
+            Addr::Socket(addr) => addr.fmt(f),
         }
+    }
+}
+
+impl From<NameAddr> for Addr {
+    fn from(na: NameAddr) -> Self {
+        Addr::Name(na)
     }
 }
 
 // === impl NameAddr ===
 
 impl NameAddr {
-    pub fn new(host: &str, port: u16) -> Result<Self, Error> {
+    pub fn new(name: Name, port: u16) -> Self {
+        NameAddr { name, port }
+    }
+
+    pub fn from_str(hostport: &str) -> Result<Self, Error> {
+        let mut parts = hostport.rsplitn(2, ':');
+        let port = parts
+            .next()
+            .and_then(|p| p.parse::<u16>().ok())
+            .ok_or(Error::MissingPort)?;
+        let host = parts.next().ok_or(Error::InvalidHost)?;
+        Self::from_str_and_port(host, port)
+    }
+
+    pub fn from_str_and_port(host: &str, port: u16) -> Result<Self, Error> {
         if host.is_empty() {
             return Err(Error::InvalidHost);
         }
@@ -119,13 +145,13 @@ impl NameAddr {
         a: &http::uri::Authority,
         default_port: u16,
     ) -> Result<Self, Error> {
-        Self::new(a.host(), a.port().unwrap_or(default_port))
+        Self::from_str_and_port(a.host(), a.port().unwrap_or(default_port))
     }
 
     pub fn from_authority_with_port(a: &http::uri::Authority) -> Result<Self, Error> {
         a.port()
             .ok_or(Error::MissingPort)
-            .and_then(|p| Self::new(a.host(), p))
+            .and_then(|p| Self::from_str_and_port(a.host(), p))
     }
 
     pub fn name(&self) -> &Name {
@@ -141,37 +167,36 @@ impl NameAddr {
     }
 
     pub fn as_authority(&self) -> http::uri::Authority {
-        http::uri::Authority::from_str(self.name.as_ref())
+        http::uri::Authority::from_str(&format!("{}", self))
             .expect("NameAddr must be valid authority")
     }
 }
 
 impl fmt::Display for NameAddr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.name, self.port)
+
+    fn fmt(&self, f: &mut fmt::Formatter)  -> fmt::Result {
+        write!(f, "{}:{}", self.name.without_trailing_dot(), self.port)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use http::uri::Authority;
 
     #[test]
     fn test_is_loopback() {
         let cases = &[
-            ("localhost", false), // Not absolute
-            ("localhost.", true),
-            ("LocalhOsT.", true),   // Case-insensitive
-            ("mlocalhost.", false), // prefixed
-            ("localhost1.", false), // suffixed
-            ("127.0.0.1", true),    // IPv4
-            ("[::1]", true),        // IPv6
+            ("localhost:80", false), // Not absolute
+            ("localhost.:80", true),
+            ("LocalhOsT.:80", true),   // Case-insensitive
+            ("mlocalhost.:80", false), // prefixed
+            ("localhost1.:80", false), // suffixed
+            ("127.0.0.1:80", true),    // IPv4
+            ("[::1]:80", true),        // IPv6
         ];
         for (host, expected_result) in cases {
-            let authority = Authority::from_static(host);
-            let hp = Addr::from_authority_and_default_port(&authority, 80).unwrap();
-            assert_eq!(hp.is_loopback(), *expected_result, "{:?}", host)
+            let a = Addr::from_str(host).unwrap();
+            assert_eq!(a.is_loopback(), *expected_result, "{:?}", host)
         }
     }
 }

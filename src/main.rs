@@ -1,5 +1,7 @@
 #![deny(warnings)]
 
+#![recursion_limit="128"]
+
 extern crate linkerd2_proxy;
 
 #[macro_use] extern crate log;
