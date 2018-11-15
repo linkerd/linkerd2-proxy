@@ -326,7 +326,7 @@ where
                 //    request version and headers).
                 let endpoint_stack = client_stack
                     .push(buffer::layer())
-                    .push(settings::router::layer::<Endpoint>())
+                    .push(settings::router::layer::<Endpoint, _>())
                     .push(orig_proto_upgrade::layer())
                     .push(tap::layer(tap_next_id.clone(), taps.clone()))
                     .push(metrics::layer::<_, classify::Response>(
@@ -476,7 +476,7 @@ where
                 // `default_fwd_addr` may be used.
                 let endpoint_router = client_stack
                     .push(buffer::layer())
-                    .push(settings::router::layer::<Endpoint>())
+                    .push(settings::router::layer::<Endpoint, _>())
                     .push(tap::layer(tap_next_id, taps))
                     .push(http_metrics::layer::<_, classify::Response>(
                         endpoint_http_metrics,
@@ -655,10 +655,10 @@ where
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
     R: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     R::Value:
-        svc::Service<Request = http::Request<proxy::http::Body>, Response = http::Response<B>>,
+        svc::Service<http::Request<proxy::http::Body>, Response = http::Response<B>>,
     R::Value: Send + 'static,
-    <R::Value as svc::Service>::Error: error::Error + Send + Sync + 'static,
-    <R::Value as svc::Service>::Future: Send + 'static,
+    <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error: error::Error + Send + Sync + 'static,
+    <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
     B: tower_h2::Body + Default + Send + 'static,
     B::Data: Send,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
@@ -734,7 +734,7 @@ fn serve_tap<N, B>(
 where
     B: tower_h2::Body + Send + 'static,
     <B::Data as bytes::IntoBuf>::Buf: Send,
-    N: svc::NewService<Request = http::Request<tower_h2::RecvBody>, Response = http::Response<B>>
+    N: svc::MakeService<(), http::Request<tower_h2::RecvBody>, Response = http::Response<B>>
         + Send
         + 'static,
     tower_h2::server::Connection<Connection, N, ::logging::ServerExecutor, B, ()>:
@@ -748,7 +748,7 @@ where
         let log = log.clone();
         // TODO: serve over TLS.
         bound_port
-            .listen_and_fold(server, move |server, (session, remote)| {
+            .listen_and_fold(server, move |mut server, (session, remote)| {
                 let log = log.clone().with_remote(remote);
                 let serve = server.serve(session).map_err(|_| ());
 

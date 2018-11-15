@@ -99,11 +99,15 @@ impl Controller {
     }
 }
 
+fn grpc_internal_code() -> grpc::Error {
+    grpc::Error::Grpc(grpc::Status::with_code(grpc::Code::Internal), HeaderMap::new())
+}
+
 impl Stream for DstReceiver {
     type Item = pb::Update;
     type Error = grpc::Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.0.poll().map_err(|_| grpc::Error::Grpc(grpc::Status::INTERNAL, HeaderMap::new()))
+        self.0.poll().map_err(|_| grpc_internal_code())
     }
 }
 
@@ -129,7 +133,7 @@ impl Stream for ProfileReceiver {
     type Item = pb::DestinationProfile;
     type Error = grpc::Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.0.poll().map_err(|_| grpc::Error::Grpc(grpc::Status::INTERNAL, HeaderMap::new()))
+        self.0.poll().map_err(|_| grpc_internal_code())
     }
 }
 
@@ -154,7 +158,7 @@ impl pb::server::Destination for Controller {
             }
         }
 
-        future::err(grpc::Error::Grpc(grpc::Status::INTERNAL, HeaderMap::new()))
+        future::err(grpc_internal_code())
     }
 
     type GetProfileStream = ProfileReceiver;
@@ -171,7 +175,7 @@ impl pb::server::Destination for Controller {
             }
         }
 
-        future::err(grpc::Error::Grpc(grpc::Status::INTERNAL, HeaderMap::new()))
+        future::err(grpc_internal_code())
     }
 }
 
@@ -212,7 +216,7 @@ fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Sen
             }
 
             let serve = bind.incoming()
-                .fold(h2, |h2, sock| {
+                .fold(h2, |mut h2, sock| {
                     if let Err(e) = sock.set_nodelay(true) {
                         return Err(e);
                     }

@@ -22,20 +22,19 @@ pub struct Downgrade<S> {
 
 // ==== impl Upgrade =====
 
-impl<S, A, B> From<S> for Upgrade<S>
-where
-    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
-{
-    fn from(inner: S) -> Self {
+impl<S> Upgrade<S> {
+    pub fn new<A, B>(inner: S) -> Self
+    where
+        S: svc::Service<http::Request<A>, Response = http::Response<B>>,
+    {
         Self { inner }
     }
 }
 
-impl<S, A, B> svc::Service for Upgrade<S>
+impl<S, A, B> svc::Service<http::Request<A>> for Upgrade<S>
 where
-    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+    S: svc::Service<http::Request<A>, Response = http::Response<B>>,
 {
-    type Request = S::Request;
     type Response = S::Response;
     type Error = S::Error;
     type Future = future::Map<
@@ -47,7 +46,7 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut req: Self::Request) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
         if req.version() == http::Version::HTTP_2 || h1::wants_upgrade(&req) {
             // Just passing through...
             return self.inner.call(req).map(|res| res)
@@ -106,21 +105,20 @@ where
 
 // ===== impl Downgrade =====
 
-impl<S, A, B> From<S> for Downgrade<S>
-where
-    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
-{
-    fn from(inner: S) -> Self {
+impl<S> Downgrade<S> {
+    pub fn new<A, B>(inner: S) -> Self
+    where
+        S: svc::Service<http::Request<A>, Response = http::Response<B>>,
+    {
         Self { inner }
     }
 }
 
 
-impl<S, A, B> svc::Service for Downgrade<S>
+impl<S, A, B> svc::Service<http::Request<A>> for Downgrade<S>
 where
-    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+    S: svc::Service<http::Request<A>, Response = http::Response<B>>,
 {
-    type Request = S::Request;
     type Response = S::Response;
     type Error = S::Error;
     type Future = future::Map<
@@ -132,7 +130,7 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut req: Self::Request) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
         let mut upgrade_response = false;
 
         if req.version() == http::Version::HTTP_2 {

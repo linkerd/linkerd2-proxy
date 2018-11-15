@@ -27,11 +27,10 @@ pub fn layer() -> Layer {
     Layer()
 }
 
-impl<T, B, M> svc::Layer<T, T, M> for Layer
+impl<T, M> svc::Layer<T, T, M> for Layer
 where
     T: ShouldNormalizeUri,
     M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<B>>,
 {
     type Value = <Stack<M> as svc::Stack<T>>::Value;
     type Error = <Stack<M> as svc::Stack<T>>::Error;
@@ -44,11 +43,10 @@ where
 
 // === impl Stack ===
 
-impl<T, B, M> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Stack<T> for Stack<M>
 where
     T: ShouldNormalizeUri,
     M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<B>>,
 {
     type Value = svc::Either<Service<M::Value>, M::Value>;
     type Error = M::Error;
@@ -65,11 +63,10 @@ where
 
 // === impl Service ===
 
-impl<S, B> svc::Service for Service<S>
+impl<S, B> svc::Service<http::Request<B>> for Service<S>
 where
-    S: svc::Service<Request = http::Request<B>>,
+    S: svc::Service<http::Request<B>>,
 {
-    type Request = S::Request;
     type Response = S::Response;
     type Error = S::Error;
     type Future = S::Future;
@@ -78,7 +75,7 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut request: S::Request) -> Self::Future {
+    fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
         debug_assert!(
             request.version() != http::Version::HTTP_2,
             "normalize_uri must only be applied to HTTP/1"

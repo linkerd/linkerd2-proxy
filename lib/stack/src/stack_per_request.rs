@@ -90,17 +90,16 @@ where
 
 // === Service ===
 
-impl<T, N> svc::Service for Service<T, N>
+impl<T, N, R> svc::Service<R> for Service<T, N>
 where
     T: ShouldStackPerRequest + Clone,
     N: super::Stack<T> + Clone,
-    N::Value: svc::Service,
+    N::Value: svc::Service<R>,
     N::Error: fmt::Debug,
 {
-    type Request = <N::Value as svc::Service>::Request;
-    type Response = <N::Value as svc::Service>::Response;
-    type Error = <N::Value as svc::Service>::Error;
-    type Future = <N::Value as svc::Service>::Future;
+    type Response = <N::Value as svc::Service<R>>::Response;
+    type Error = <N::Value as svc::Service<R>>::Error;
+    type Future = <N::Value as svc::Service<R>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         if let Some(ref mut svc) = self.next {
@@ -114,7 +113,7 @@ where
         Ok(ready)
     }
 
-    fn call(&mut self, request: Self::Request) -> Self::Future {
+    fn call(&mut self, request: R) -> Self::Future {
         // If a service has already been bound in `poll_ready`, consume it.
         // Otherwise, bind a new service on-the-spot.
         self.next

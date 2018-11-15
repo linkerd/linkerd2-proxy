@@ -232,7 +232,7 @@ impl<S, E> HyperServerSvc<S, E> {
 impl<S, E, B> hyper::service::Service for HyperServerSvc<S, E>
 where
     S: svc::Service<
-        Request=http::Request<HttpBody>,
+        http::Request<HttpBody>,
         Response=http::Response<B>,
     >,
     S::Error: Error + Send + Sync + 'static,
@@ -312,13 +312,12 @@ where
 // ==== impl HttpBodySvc ====
 
 
-impl<S> svc::Service for HttpBodySvc<S>
+impl<S> svc::Service<http::Request<tower_h2::RecvBody>> for HttpBodySvc<S>
 where
     S: svc::Service<
-        Request=http::Request<HttpBody>,
+        http::Request<HttpBody>,
     >,
 {
-    type Request = http::Request<tower_h2::RecvBody>;
     type Response = S::Response;
     type Error = S::Error;
     type Future = S::Future;
@@ -327,14 +326,14 @@ where
         self.service.poll_ready()
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: http::Request<tower_h2::RecvBody>) -> Self::Future {
         self.service.call(req.map(|b| HttpBody::Http2(b)))
     }
 }
 
 impl<N> HttpBodyNewSvc<N>
 where
-    N: svc::NewService<Request=http::Request<HttpBody>>,
+    N: svc::MakeService<(), http::Request<HttpBody>>,
 {
     pub(in proxy) fn new(new_service: N) -> Self {
         HttpBodyNewSvc {
@@ -343,20 +342,21 @@ where
     }
 }
 
-impl<N> svc::NewService for HttpBodyNewSvc<N>
+impl<N> svc::Service<()> for HttpBodyNewSvc<N>
 where
-    N: svc::NewService<Request=http::Request<HttpBody>>,
+    N: svc::MakeService<(), http::Request<HttpBody>>,
 {
-    type Request = http::Request<tower_h2::RecvBody>;
-    type Response = N::Response;
-    type Error = N::Error;
-    type Service = HttpBodySvc<N::Service>;
-    type InitError = N::InitError;
+    type Response = HttpBodySvc<N::Service>;
+    type Error = N::MakeError;
     type Future = HttpBodyNewSvcFuture<N::Future>;
 
-    fn new_service(&self) -> Self::Future {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.new_service.poll_ready()
+    }
+
+    fn call(&mut self, target: ()) -> Self::Future {
         HttpBodyNewSvcFuture {
-            inner: self.new_service.new_service(),
+            inner: self.new_service.make_service(target),
         }
     }
 }

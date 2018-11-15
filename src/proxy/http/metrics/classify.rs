@@ -74,7 +74,7 @@ pub struct Stack<M> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<C, S: svc::Service> {
+pub struct Service<C, S> {
     classify: C,
     inner: S,
 }
@@ -83,11 +83,10 @@ pub fn layer() -> Layer {
     Layer()
 }
 
-impl<T, M, A, B> svc::Layer<T, T, M> for Layer
+impl<T, M> svc::Layer<T, T, M> for Layer
 where
     T: CanClassify,
     M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
 {
     type Value = <Stack<M> as svc::Stack<T>>::Value;
     type Error = <Stack<M> as svc::Stack<T>>::Error;
@@ -98,11 +97,10 @@ where
     }
 }
 
-impl<T, M, A, B> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Stack<T> for Stack<M>
 where
     T: CanClassify,
     M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
 {
     type Value = Service<T::Classify, M::Value>;
     type Error = M::Error;
@@ -114,12 +112,11 @@ where
     }
 }
 
-impl<C, S, A, B> svc::Service for Service<C, S>
+impl<C, S, A, B> svc::Service<http::Request<A>> for Service<C, S>
 where
     C: Classify,
-    S: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+    S: svc::Service<http::Request<A>, Response = http::Response<B>>,
 {
-    type Request = S::Request;
     type Response = S::Response;
     type Error = S::Error;
     type Future = S::Future;

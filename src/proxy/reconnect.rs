@@ -1,5 +1,6 @@
 extern crate tower_reconnect;
 
+
 use futures::{task, Async, Future, Poll};
 use std::fmt;
 use std::time::Duration;
@@ -26,9 +27,9 @@ pub struct Stack<M> {
 pub struct Service<T, N>
 where
     T: fmt::Debug,
-    N: svc::NewService,
+    N: svc::Service<()>,
 {
-    inner: Reconnect<N>,
+    inner: Reconnect<N, ()>,
 
     /// The target, used for debug logging.
     target: T,
@@ -48,8 +49,8 @@ enum Backoff {
     Fixed(Duration),
 }
 
-pub struct ResponseFuture<N: svc::NewService> {
-    inner: <Reconnect<N> as svc::Service>::Future,
+pub struct ResponseFuture<F> {
+    inner: F,
 }
 
 // === impl Layer ===
@@ -73,7 +74,7 @@ impl<T, M> svc::Layer<T, T, M> for Layer
 where
     T: Clone + fmt::Debug,
     M: svc::Stack<T>,
-    M::Value: svc::NewService,
+    M::Value: svc::Service<()>,
 {
     type Value = <Stack<M> as svc::Stack<T>>::Value;
     type Error = <Stack<M> as svc::Stack<T>>::Error;
@@ -93,7 +94,7 @@ impl<T, M> svc::Stack<T> for Stack<M>
 where
     T: Clone + fmt::Debug,
     M: svc::Stack<T>,
-    M::Value: svc::NewService,
+    M::Value: svc::Service<()>,
 {
     type Value = Service<T, M::Value>;
     type Error = M::Error;
@@ -101,7 +102,7 @@ where
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
         let new_service = self.inner.make(target)?;
         Ok(Service {
-            inner: Reconnect::new(new_service),
+            inner: Reconnect::new(new_service, ()),
             target: target.clone(),
             backoff: self.backoff.clone(),
             active_backoff: None,
@@ -115,12 +116,12 @@ where
 #[cfg(test)]
 impl<N> Service<&'static str, N>
 where
-    N: svc::NewService,
-    N::InitError: fmt::Display,
+    N: svc::Service<()>,
+    N::Error: fmt::Display,
 {
     fn for_test(new_service: N) -> Self {
         Self {
-            inner: Reconnect::new(new_service),
+            inner: Reconnect::new(new_service, ()),
             target: "test",
             backoff: Backoff::None,
             active_backoff: None,
@@ -136,16 +137,16 @@ where
     }
 }
 
-impl<T, N> svc::Service for Service<T, N>
+impl<T, N, S, Req> svc::Service<Req> for Service<T, N>
 where
     T: fmt::Debug,
-    N: svc::NewService,
-    N::InitError: fmt::Display,
+    N: svc::Service<(), Response=S>,
+    N::Error: fmt::Display,
+    S: svc::Service<Req>,
 {
-    type Request = N::Request;
-    type Response = N::Response;
-    type Error = N::Error;
-    type Future = ResponseFuture<N>;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = ResponseFuture<<Reconnect<N, ()> as svc::Service<Req>>::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match self.backoff {
@@ -171,7 +172,7 @@ where
                 Ok(ready)
             }
 
-            Err(Error::Inner(err)) => {
+            Err(Error::Service(err)) => {
                 self.mute_connect_error_log = false;
                 Err(err)
             }
@@ -214,14 +215,18 @@ where
         }
     }
 
-    fn call(&mut self, request: Self::Request) -> Self::Future {
+    fn call(&mut self, request: Req) -> Self::Future {
         ResponseFuture {
             inner: self.inner.call(request),
         }
     }
 }
 
-impl<T: fmt::Debug, N: svc::NewService> fmt::Debug for Service<T, N> {
+impl<T, N> fmt::Debug for Service<T, N>
+where
+    T: fmt::Debug,
+    N: svc::Service<()>,
+{
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Reconnect")
             .field("target", &self.target)
@@ -229,13 +234,16 @@ impl<T: fmt::Debug, N: svc::NewService> fmt::Debug for Service<T, N> {
     }
 }
 
-impl<N: svc::NewService> Future for ResponseFuture<N> {
-    type Item = N::Response;
-    type Error = N::Error;
+impl<F, E, Cant> Future for ResponseFuture<F>
+where
+    F: Future<Error = Error<E, Cant>>,
+{
+    type Item = F::Item;
+    type Error = E;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         self.inner.poll().map_err(|e| match e {
-            Error::Inner(err) => err,
+            Error::Service(err) => err,
             _ => unreachable!("response future must fail with inner error"),
         })
     }
@@ -263,23 +271,23 @@ mod tests {
     #[derive(Debug)]
     struct InitErr {}
 
-    impl svc::NewService for NewService {
-        type Request = ();
-        type Response = ();
-        type Error = ();
-        type Service = Service;
-        type InitError = InitErr;
+    impl svc::Service<()> for NewService {
+        type Response = Service;
+        type Error = InitErr;
         type Future = InitFuture;
 
-        fn new_service(&self) -> Self::Future {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            Ok(().into())
+        }
+
+        fn call(&mut self, _: ()) -> Self::Future {
             InitFuture {
                 should_fail: self.fails.fetch_sub(1, Relaxed) > 0,
             }
         }
     }
 
-    impl svc::Service for Service {
-        type Request = ();
+    impl svc::Service<()> for Service {
         type Response = ();
         type Error = ();
         type Future = future::FutureResult<(), ()>;

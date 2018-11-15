@@ -120,18 +120,17 @@ where
 
 // === impl Service ===
 
-impl<T, U, M> svc::Service for Service<T, U, M>
+impl<T, U, M, R> svc::Service<R> for Service<T, U, M>
 where
     T: WithUpdate<U>,
     M: super::Stack<T::Updated>,
-    M::Value: svc::Service,
+    M::Value: svc::Service<R>,
 {
-    type Request = <M::Value as svc::Service>::Request;
-    type Response = <M::Value as svc::Service>::Response;
-    type Error = Error<<M::Value as svc::Service>::Error, M::Error>;
+    type Response = <M::Value as svc::Service<R>>::Response;
+    type Error = Error<<M::Value as svc::Service<R>>::Error, M::Error>;
     type Future = MapErr<
-        <M::Value as svc::Service>::Future,
-        fn(<M::Value as svc::Service>::Error) -> Self::Error,
+        <M::Value as svc::Service<R>>::Future,
+        fn(<M::Value as svc::Service<R>>::Error) -> Self::Error,
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -149,7 +148,7 @@ where
         self.inner.poll_ready().map_err(Error::Inner)
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: R) -> Self::Future {
         self.inner.call(req).map_err(Error::Inner)
     }
 }
@@ -158,7 +157,6 @@ impl<U, M> Service<CloneUpdate, U, M>
 where
     U: Clone,
     M: super::Stack<U>,
-    M::Value: svc::Service,
 {
     pub fn try(watch: Watch<U>, stack: M) -> Result<Self, M::Error> {
         let inner = stack.make(&*watch.borrow())?;
@@ -175,7 +173,7 @@ impl<T, U, M> Clone for Service<T, U, M>
 where
     T: WithUpdate<U> + Clone,
     M: super::Stack<T::Updated> + Clone,
-    M::Value: svc::Service + Clone,
+    M::Value: Clone,
 {
     fn clone(&self) -> Self {
         Self {
@@ -227,8 +225,7 @@ mod tests {
     #[test]
     fn rebind() {
         struct Svc(usize);
-        impl svc::Service for Svc {
-            type Request = ();
+        impl svc::Service<()> for Svc {
             type Response = usize;
             type Error = ();
             type Future = future::FutureResult<usize, ()>;

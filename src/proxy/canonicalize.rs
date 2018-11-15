@@ -74,7 +74,6 @@ pub fn layer(resolver: dns::Resolver) -> Layer {
 impl<M> svc::Layer<Addr, Addr, M> for Layer
 where
     M: svc::Stack<Addr> + Clone,
-    M::Value: svc::Service,
 {
     type Value = <Stack<M> as svc::Stack<Addr>>::Value;
     type Error = <Stack<M> as svc::Stack<Addr>>::Error;
@@ -94,7 +93,6 @@ where
 impl<M> svc::Stack<Addr> for Stack<M>
 where
     M: svc::Stack<Addr> + Clone,
-    M::Value: svc::Service,
 {
     type Value = svc::Either<Service<M>, M::Value>;
     type Error = M::Error;
@@ -120,7 +118,7 @@ where
 impl<M> Service<M>
 where
     M: svc::Stack<Addr>,
-    M::Value: svc::Service,
+    //M::Value: svc::Service,
 {
     fn new(original: NameAddr, stack: M, resolver: dns::Resolver, timeout: Duration) -> Self {
         trace!("refining name={}", original.name());
@@ -205,17 +203,16 @@ where
     }
 }
 
-impl<M> svc::Service for Service<M>
+impl<M, Req> svc::Service<Req> for Service<M>
 where
     M: svc::Stack<Addr>,
-    M::Value: svc::Service,
+    M::Value: svc::Service<Req>,
 {
-    type Request = <M::Value as svc::Service>::Request;
-    type Response = <M::Value as svc::Service>::Response;
-    type Error = Error<M::Error, <M::Value as svc::Service>::Error>;
+    type Response = <M::Value as svc::Service<Req>>::Response;
+    type Error = Error<M::Error, <M::Value as svc::Service<Req>>::Error>;
     type Future = future::MapErr<
-        <M::Value as svc::Service>::Future,
-        fn(<M::Value as svc::Service>::Error) -> Self::Error,
+        <M::Value as svc::Service<Req>>::Future,
+        fn(<M::Value as svc::Service<Req>>::Error) -> Self::Error,
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -232,7 +229,7 @@ where
         }
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: Req) -> Self::Future {
         self.service
             .as_mut()
             .expect("poll_ready must be called first")

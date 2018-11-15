@@ -12,8 +12,8 @@ use futures::{
     sync::mpsc,
     Async, Poll, Stream,
 };
-use tower_grpc as grpc;
-use tower_h2::{Body, BoxBody, Data, HttpService};
+use tower_grpc::{self as grpc, Body, BoxBody};
+use tower_http::HttpService;
 
 use api::destination::client::Destination;
 use api::destination::{
@@ -43,7 +43,11 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 /// service is healthy, it reads requests from `request_rx`, determines how to resolve the
 /// provided authority to a set of addresses, and ensures that resolution updates are
 /// propagated to all requesters.
-pub(super) struct Background<T: HttpService> {
+pub(super) struct Background<T>
+where
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
+{
     new_query: NewQuery,
     dns_resolver: dns::Resolver,
     dsts: DestinationCache<T>,
@@ -57,7 +61,11 @@ pub(super) struct Background<T: HttpService> {
 /// Holds the currently active `DestinationSet`s and a list of any destinations
 /// which require reconnects.
 #[derive(Default)]
-struct DestinationCache<T: HttpService> {
+struct DestinationCache<T>
+where
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
+{
     destinations: HashMap<NameAddr, DestinationSet<T>>,
     /// A queue of authorities that need to be reconnected.
     reconnects: VecDeque<NameAddr>,
@@ -78,7 +86,11 @@ struct NewQuery {
     concurrency_limit: usize,
 }
 
-enum DestinationServiceQuery<T: HttpService> {
+enum DestinationServiceQuery<T>
+where
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
+{
     Inactive,
     Active(ActiveQuery<T>),
     NoCapacity,
@@ -88,8 +100,8 @@ enum DestinationServiceQuery<T: HttpService> {
 
 impl<T> Background<T>
 where
-    T: HttpService<RequestBody = BoxBody>,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
     T::Error: fmt::Debug,
 {
     pub(super) fn new(
@@ -344,8 +356,8 @@ impl NewQuery {
         connect_or_reconnect: &str,
     ) -> DestinationServiceQuery<T>
     where
-        T: HttpService<RequestBody = BoxBody>,
-        T::ResponseBody: Body<Data = Data>,
+        T: HttpService<BoxBody>,
+        T::ResponseBody: Body,
         T::Error: fmt::Debug,
     {
         trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
@@ -396,8 +408,8 @@ impl NewQuery {
 
 impl<T> DestinationCache<T>
 where
-    T: HttpService,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
     T::Error: fmt::Debug,
 {
 
@@ -433,8 +445,8 @@ where
 
 impl<T> DestinationServiceQuery<T>
 where
-    T: HttpService,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
 {
 
     pub fn is_active(&self) -> bool {
@@ -461,8 +473,8 @@ where
 
 impl<T> From<ActiveQuery<T>> for DestinationServiceQuery<T>
 where
-    T: HttpService,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
 {
     fn from(active: ActiveQuery<T>) -> Self {
         DestinationServiceQuery::Active(active)

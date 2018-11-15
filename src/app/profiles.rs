@@ -4,8 +4,8 @@ use regex::Regex;
 use std::fmt;
 use std::time::Duration;
 use tokio_timer::{clock, Delay};
-use tower_grpc as grpc;
-use tower_h2::{Body, BoxBody, Data, HttpService};
+use tower_grpc::{self as grpc, Body, BoxBody};
+use tower_http::HttpService;
 
 use api::destination as api;
 
@@ -18,14 +18,22 @@ pub struct Client<T> {
     backoff: Duration,
 }
 
-pub struct Rx<T: HttpService> {
+pub struct Rx<T>
+where
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
+{
     dst: String,
     backoff: Duration,
     service: Option<T>,
     state: State<T>,
 }
 
-enum State<T: HttpService> {
+enum State<T>
+where
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
+{
     Disconnected,
     Backoff(Delay),
     Waiting(grpc::client::server_streaming::ResponseFuture<api::DestinationProfile, T::Future>),
@@ -36,8 +44,8 @@ enum State<T: HttpService> {
 
 impl<T> Client<T>
 where
-    T: HttpService<RequestBody = BoxBody> + Clone,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody> + Clone,
+    T::ResponseBody: Body,
     T::Error: fmt::Debug,
 {
     pub fn new(service: Option<T>, backoff: Duration) -> Self {
@@ -50,8 +58,8 @@ where
 
 impl<T> profiles::GetRoutes for Client<T>
 where
-    T: HttpService<RequestBody = BoxBody> + Clone,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody> + Clone,
+    T::ResponseBody: Body,
     T::Error: fmt::Debug,
 {
     type Stream = Rx<T>;
@@ -70,8 +78,8 @@ where
 
 impl<T> Stream for Rx<T>
 where
-    T: HttpService<RequestBody = BoxBody> + Clone,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody> + Clone,
+    T::ResponseBody: Body,
     T::Error: fmt::Debug,
 {
     type Item = Vec<(profiles::RequestMatch, profiles::Route)>;

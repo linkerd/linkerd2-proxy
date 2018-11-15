@@ -65,7 +65,6 @@ where
     R: Resolve<T> + Clone,
     R::Endpoint: fmt::Debug,
     M: svc::Stack<R::Endpoint> + Clone,
-    M::Value: svc::Service,
 {
     type Value = <Stack<R, M> as svc::Stack<T>>::Value;
     type Error = <Stack<R, M> as svc::Stack<T>>::Error;
@@ -86,7 +85,6 @@ where
     R: Resolve<T>,
     R::Endpoint: fmt::Debug,
     M: svc::Stack<R::Endpoint> + Clone,
-    M::Value: svc::Service,
 {
     type Value = Discover<R::Resolution, M>;
     type Error = M::Error;
@@ -102,21 +100,17 @@ where
 
 // === impl Discover ===
 
-impl<R, M> tower_discover::Discover for Discover<R, M>
+impl<R, M>  tower_discover::Discover for Discover<R, M>
 where
     R: Resolution,
     R::Endpoint: fmt::Debug,
     M: svc::Stack<R::Endpoint>,
-    M::Value: svc::Service,
 {
     type Key = SocketAddr;
-    type Request = <M::Value as svc::Service>::Request;
-    type Response = <M::Value as svc::Service>::Response;
-    type Error = <M::Value as svc::Service>::Error;
     type Service = M::Value;
-    type DiscoverError = Error<R::Error, M::Error>;
+    type Error = Error<R::Error, M::Error>;
 
-    fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::DiscoverError> {
+    fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
         loop {
             let up = try_ready!(self.resolution.poll().map_err(Error::Resolve));
             trace!("watch: {:?}", up);

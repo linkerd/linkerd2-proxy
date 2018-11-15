@@ -46,7 +46,7 @@ impl server::Tap for Observe {
     fn observe(&mut self, req: grpc::Request<ObserveRequest>) -> Self::ObserveFuture {
         if self.next_id.load(Ordering::Acquire) == ::std::usize::MAX {
             return future::err(grpc::Error::Grpc(
-                grpc::Status::INTERNAL,
+                grpc::Status::with_code(grpc::Code::Internal),
                 HeaderMap::new(),
             ));
         }
@@ -58,7 +58,7 @@ impl server::Tap for Observe {
             Some(m) => m,
             None => {
                 return future::err(grpc::Error::Grpc(
-                    grpc::Status::INVALID_ARGUMENT,
+                    grpc::Status::with_code(grpc::Code::InvalidArgument),
                     HeaderMap::new(),
                 ));
             }
@@ -72,7 +72,7 @@ impl server::Tap for Observe {
             }
             Err(_) => {
                 return future::err(grpc::Error::Grpc(
-                    grpc::Status::INTERNAL,
+                    grpc::Status::with_code(grpc::Code::Internal),
                     HeaderMap::new(),
                 ));
             }

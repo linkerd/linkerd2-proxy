@@ -1,6 +1,6 @@
 extern crate tower_buffer;
 
-use std::{error, fmt};
+use std::{error, fmt, marker::PhantomData};
 
 pub use self::tower_buffer::{Buffer, Error as ServiceError, SpawnError};
 
@@ -8,13 +8,14 @@ use logging;
 use svc;
 
 /// Wraps `Service` stacks with a `Buffer`.
-#[derive(Debug, Clone)]
-pub struct Layer();
+#[derive(Debug)]
+pub struct Layer<Req>(PhantomData<fn(Req)>);
 
 /// Produces `Service`s wrapped with a `Buffer`
-#[derive(Debug, Clone)]
-pub struct Stack<M> {
+#[derive(Debug)]
+pub struct Stack<M, Req> {
     inner: M,
+    _marker: PhantomData<fn(Req)>,
 }
 
 pub enum Error<M, S> {
@@ -24,38 +25,56 @@ pub enum Error<M, S> {
 
 // === impl Layer ===
 
-pub fn layer() -> Layer {
-    Layer()
+pub fn layer<Req>() -> Layer<Req> {
+    Layer(PhantomData)
 }
 
-impl<T, M> svc::Layer<T, T, M> for Layer
+impl<Req> Clone for Layer<Req> {
+    fn clone(&self) -> Self {
+        Layer(PhantomData)
+    }
+}
+
+impl<T, M, Req> svc::Layer<T, T, M> for Layer<Req>
 where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
-    M::Value: svc::Service + Send + 'static,
-    <M::Value as svc::Service>::Request: Send,
-    <M::Value as svc::Service>::Future: Send,
+    M::Value: svc::Service<Req> + Send + 'static,
+    <M::Value as svc::Service<Req>>::Future: Send,
+    Req: Send + 'static,
 {
-    type Value = <Stack<M> as svc::Stack<T>>::Value;
-    type Error = <Stack<M> as svc::Stack<T>>::Error;
-    type Stack = Stack<M>;
+    type Value = <Stack<M, Req> as svc::Stack<T>>::Value;
+    type Error = <Stack<M, Req> as svc::Stack<T>>::Error;
+    type Stack = Stack<M, Req>;
 
     fn bind(&self, inner: M) -> Self::Stack {
-        Stack { inner }
+        Stack {
+            inner,
+            _marker: PhantomData,
+        }
     }
 }
 
 // === impl Stack ===
 
-impl<T, M> svc::Stack<T> for Stack<M>
+impl<M: Clone, Req> Clone for Stack<M, Req> {
+    fn clone(&self) -> Self {
+        Stack {
+            inner: self.inner.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T, M, Req> svc::Stack<T> for Stack<M, Req>
 where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
-    M::Value: svc::Service + Send + 'static,
-    <M::Value as svc::Service>::Request: Send,
-    <M::Value as svc::Service>::Future: Send,
+    M::Value: svc::Service<Req> + Send + 'static,
+    <M::Value as svc::Service<Req>>::Future: Send,
+    Req: Send + 'static,
 {
-    type Value = Buffer<M::Value>;
+    type Value = Buffer<M::Value, Req>;
     type Error = Error<M::Error, M::Value>;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {

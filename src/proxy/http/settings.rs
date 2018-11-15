@@ -95,16 +95,16 @@ pub mod router {
         fn connect(&self) -> connect::Target;
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Layer<T>(PhantomData<T>);
+    #[derive(Debug)]
+    pub struct Layer<T, B>(PhantomData<(T, fn(B))>);
 
-    #[derive(Clone, Debug)]
-    pub struct Stack<M>(M);
+    #[derive(Debug)]
+    pub struct Stack<B, M>(M, PhantomData<fn(B)>);
 
     pub struct Service<B, M>
     where
         M: svc::Stack<Config>,
-        M::Value: svc::Service<Request = http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>>,
     {
         router: Router<B, M>,
     }
@@ -112,9 +112,9 @@ pub mod router {
     pub struct ResponseFuture<B, M>
     where
         M: svc::Stack<Config>,
-        M::Value: svc::Service<Request = http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>>,
     {
-        inner: <Router<B, M> as svc::Service>::Future
+        inner: <Router<B, M> as svc::Service<http::Request<B>>>::Future
     }
 
     #[derive(Debug)]
@@ -127,30 +127,42 @@ pub mod router {
 
     type Router<B, M> = rt::Router<http::Request<B>, Recognize, M>;
 
-    pub fn layer<T: HasConnect>() -> Layer<T> {
+    pub fn layer<T: HasConnect, B>() -> Layer<T, B> {
         Layer(PhantomData)
     }
 
-    impl<B, T, M> svc::Layer<T, Config, M> for Layer<T>
-    where
-        T: HasConnect,
-        M: svc::Stack<Config> + Clone,
-        M::Value: svc::Service<Request = http::Request<B>>,
-    {
-        type Value = <Stack<M> as svc::Stack<T>>::Value;
-        type Error = <Stack<M> as svc::Stack<T>>::Error;
-        type Stack = Stack<M>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack(inner)
+    impl<T, B> Clone for Layer<T, B> {
+        fn clone(&self) -> Self {
+            Layer(PhantomData)
         }
     }
 
-    impl<B, T, M> svc::Stack<T> for Stack<M>
+    impl<B, T, M> svc::Layer<T, Config, M> for Layer<T, B>
     where
         T: HasConnect,
         M: svc::Stack<Config> + Clone,
-        M::Value: svc::Service<Request = http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>>,
+    {
+        type Value = <Stack<B, M> as svc::Stack<T>>::Value;
+        type Error = <Stack<B, M> as svc::Stack<T>>::Error;
+        type Stack = Stack<B, M>;
+
+        fn bind(&self, inner: M) -> Self::Stack {
+            Stack(inner, PhantomData)
+        }
+    }
+
+    impl<B, M: Clone> Clone for Stack<B, M> {
+        fn clone(&self) -> Self {
+            Stack(self.0.clone(), PhantomData)
+        }
+    }
+
+    impl<B, T, M> svc::Stack<T> for Stack<B, M>
+    where
+        T: HasConnect,
+        M: svc::Stack<Config> + Clone,
+        M::Value: svc::Service<http::Request<B>>,
     {
         type Value = Service<B, M>;
         type Error = M::Error;
@@ -179,14 +191,13 @@ pub mod router {
         }
     }
 
-    impl<B, M> svc::Service for Service<B, M>
+    impl<B, M> svc::Service<http::Request<B>> for Service<B, M>
     where
         M: svc::Stack<Config>,
-        M::Value: svc::Service<Request = http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>>,
     {
-        type Request = <Router<B, M> as svc::Service>::Request;
-        type Response = <Router<B, M> as svc::Service>::Response;
-        type Error = Error<<M::Value as svc::Service>::Error, M::Error>;
+        type Response = <Router<B, M> as svc::Service<http::Request<B>>>::Response;
+        type Error = Error<<M::Value as svc::Service<http::Request<B>>>::Error, M::Error>;
         type Future = ResponseFuture<B, M>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -200,7 +211,7 @@ pub mod router {
             }
         }
 
-        fn call(&mut self, req: Self::Request) -> Self::Future {
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
             ResponseFuture { inner: self.router.call(req) }
         }
     }
@@ -208,10 +219,10 @@ pub mod router {
     impl<B, M> Future for ResponseFuture<B, M>
     where
         M: svc::Stack<Config>,
-        M::Value: svc::Service<Request = http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>>,
     {
-        type Item = <Router<B, M> as svc::Service>::Response;
-        type Error = Error<<M::Value as svc::Service>::Error, M::Error>;
+        type Item = <Router<B, M> as svc::Service<http::Request<B>>>::Response;
+        type Error = Error<<M::Value as svc::Service<http::Request<B>>>::Error, M::Error>;
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             match self.inner.poll() {

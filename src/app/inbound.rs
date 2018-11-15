@@ -103,57 +103,75 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
 }
 
 pub mod orig_proto_downgrade {
+    use std::marker::PhantomData;
     use http;
-
     use proxy::http::orig_proto;
     use proxy::server::Source;
     use svc;
 
-    #[derive(Debug, Clone)]
-    pub struct Layer;
+    #[derive(Debug)]
+    pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
 
-    #[derive(Clone, Debug)]
-    pub struct Stack<M>
-    where
-        M: svc::Stack<Source>,
-    {
+    #[derive(Debug)]
+    pub struct Stack<M, A, B> {
         inner: M,
+        _marker: PhantomData<fn(A) -> B>,
     }
 
     // === impl Layer ===
 
-    pub fn layer() -> Layer {
-        Layer
+    pub fn layer<A, B>() -> Layer<A, B> {
+        Layer(PhantomData)
     }
 
-    impl<M, A, B> svc::Layer<Source, Source, M> for Layer
+    impl<A, B> Clone for Layer<A, B> {
+        fn clone(&self) -> Self {
+            Layer(PhantomData)
+        }
+    }
+
+    impl<M, A, B> svc::Layer<Source, Source, M> for Layer<A, B>
     where
         M: svc::Stack<Source>,
-        M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+        M::Value: svc::Service<http::Request<A>, Response = http::Response<B>>,
     {
-        type Value = <Stack<M> as svc::Stack<Source>>::Value;
-        type Error = <Stack<M> as svc::Stack<Source>>::Error;
-        type Stack = Stack<M>;
+        type Value = <Stack<M, A, B> as svc::Stack<Source>>::Value;
+        type Error = <Stack<M, A, B> as svc::Stack<Source>>::Error;
+        type Stack = Stack<M, A, B>;
 
         fn bind(&self, inner: M) -> Self::Stack {
-            Stack { inner }
+            Stack {
+                inner,
+                _marker: PhantomData,
+            }
         }
     }
 
     // === impl Stack ===
 
-    impl<M, A, B> svc::Stack<Source> for Stack<M>
+    impl<M: Clone, A, B> Clone for Stack<M, A, B> {
+        fn clone(&self) -> Self {
+            Stack {
+                inner: self.inner.clone(),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<M, A, B> svc::Stack<Source> for Stack<M, A, B>
     where
         M: svc::Stack<Source>,
-        M::Value: svc::Service<Request = http::Request<A>, Response = http::Response<B>>,
+        M::Value: svc::Service<http::Request<A>, Response = http::Response<B>>,
     {
         type Value = orig_proto::Downgrade<M::Value>;
         type Error = M::Error;
 
         fn make(&self, target: &Source) -> Result<Self::Value, Self::Error> {
             info!("downgrading requests; source={:?}", target);
-            let inner = self.inner.make(&target)?;
-            Ok(inner.into())
+            self
+                .inner
+                .make(&target)
+                .map(orig_proto::Downgrade::new)
         }
     }
 }

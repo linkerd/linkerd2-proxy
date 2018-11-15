@@ -19,7 +19,7 @@ pub struct Router<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
     Stk: stack::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Request = Req>,
+    Stk::Value: svc::Service<Req>,
 {
     inner: Arc<Inner<Req, Rec, Stk>>,
 }
@@ -57,7 +57,7 @@ struct Inner<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
     Stk: stack::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Request = Req>,
+    Stk::Value: svc::Service<Req>,
 {
     recognize: Rec,
     make: Stk,
@@ -95,7 +95,7 @@ impl<Req, Rec, Stk> Router<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
     Stk: stack::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Request = Req>,
+    Stk::Value: svc::Service<Req>,
 {
     pub fn new(recognize: Rec, make: Stk, capacity: usize, max_idle_age: Duration) -> Self {
         Router {
@@ -108,16 +108,15 @@ where
     }
 }
 
-impl<Req, Rec, Stk> svc::Service for Router<Req, Rec, Stk>
+impl<Req, Rec, Stk> svc::Service<Req> for Router<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
     Stk: stack::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Request = Req>,
+    Stk::Value: svc::Service<Req>,
 {
-    type Request = <Stk::Value as svc::Service>::Request;
-    type Response = <Stk::Value as svc::Service>::Response;
-    type Error = Error<<Stk::Value as svc::Service>::Error, Stk::Error>;
-    type Future = ResponseFuture<<Stk::Value as svc::Service>::Future, Stk::Error>;
+    type Response = <Stk::Value as svc::Service<Req>>::Response;
+    type Error = Error<<Stk::Value as svc::Service<Req>>::Error, Stk::Error>;
+    type Future = ResponseFuture<<Stk::Value as svc::Service<Req>>::Future, Stk::Error>;
 
     /// Always ready to serve.
     ///
@@ -133,7 +132,7 @@ where
     /// Routes the request through an underlying service.
     ///
     /// The response fails when the request cannot be routed.
-    fn call(&mut self, request: Self::Request) -> Self::Future {
+    fn call(&mut self, request: Req) -> Self::Future {
         let target = match self.inner.recognize.recognize(&request) {
             Some(target) => target,
             None => return ResponseFuture::not_recognized(),
@@ -172,7 +171,7 @@ impl<Req, Rec, Stk> Clone for Router<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
     Stk: stack::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Request = Req>,
+    Stk::Value: svc::Service<Req>,
 {
     fn clone(&self) -> Self {
         Router { inner: self.inner.clone() }
@@ -311,8 +310,7 @@ mod test_util {
         }
     }
 
-    impl Service for MultiplyAndAssign {
-        type Request = Request;
+    impl Service<Request> for MultiplyAndAssign {
         type Response = usize;
         type Error = ();
         type Future = future::FutureResult<usize, ()>;
@@ -321,7 +319,7 @@ mod test_util {
             unimplemented!()
         }
 
-        fn call(&mut self, req: Self::Request) -> Self::Future {
+        fn call(&mut self, req: Request) -> Self::Future {
             let n = match req {
                 Request::NotRecognized => unreachable!(),
                 Request::Recognized(n) => n,

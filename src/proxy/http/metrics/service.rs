@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio_timer::clock;
 use tower_h2;
+use tower_grpc;
 
 use super::classify::{ClassifyEos, ClassifyResponse};
 use super::{ClassMetrics, Metrics, Registry, StatusMetrics};
@@ -42,7 +43,6 @@ where
 #[derive(Debug)]
 pub struct Service<S, C>
 where
-    S: svc::Service,
     C: ClassifyResponse<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
 {
@@ -51,16 +51,15 @@ where
     _p: PhantomData<fn() -> C>,
 }
 
-pub struct ResponseFuture<S, C>
+pub struct ResponseFuture<F, C>
 where
-    S: svc::Service,
     C: ClassifyResponse<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     classify: Option<C>,
     metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     stream_open_at: Instant,
-    inner: S::Future,
+    inner: F,
 }
 
 #[derive(Debug)]
@@ -116,17 +115,11 @@ where
     }
 }
 
-impl<T, M, K, C, A, B> svc::Layer<T, T, M> for Layer<K, C>
+impl<T, M, K, C> svc::Layer<T, T, M> for Layer<K, C>
 where
     T: Clone + Debug,
     K: Clone + Hash + Eq + From<T>,
     M: svc::Stack<T>,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A, C::Class>>,
-        Response = http::Response<B>,
-    >,
-    A: tower_h2::Body,
-    B: tower_h2::Body,
     C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
@@ -161,17 +154,11 @@ where
     }
 }
 
-impl<T, M, K, C, A, B> svc::Stack<T> for Stack<M, K, C>
+impl<T, M, K, C> svc::Stack<T> for Stack<M, K, C>
 where
     T: Clone + Debug,
     K: Clone + Hash + Eq + From<T>,
     M: svc::Stack<T>,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A, C::Class>>,
-        Response = http::Response<B>,
-    >,
-    A: tower_h2::Body,
-    B: tower_h2::Body,
     C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
@@ -205,7 +192,7 @@ where
 
 impl<S, C> Clone for Service<S, C>
 where
-    S: svc::Service + Clone,
+    S: Clone,
     C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
@@ -218,10 +205,10 @@ where
     }
 }
 
-impl<C, S, A, B> svc::Service for Service<S, C>
+impl<C, S, A, B> svc::Service<http::Request<A>> for Service<S, C>
 where
     S: svc::Service<
-        Request = http::Request<RequestBody<A, C::Class>>,
+        http::Request<RequestBody<A, C::Class>>,
         Response = http::Response<B>,
     >,
     A: tower_h2::Body,
@@ -229,16 +216,15 @@ where
     C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Request = http::Request<A>;
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
     type Error = S::Error;
-    type Future = ResponseFuture<S, C>;
+    type Future = ResponseFuture<S::Future, C>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: http::Request<A>) -> Self::Future {
         let mut req_metrics = self.metrics.clone();
 
         if req.body().is_end_stream() {
@@ -271,15 +257,15 @@ where
     }
 }
 
-impl<C, S, B> Future for ResponseFuture<S, C>
+impl<C, F, B> Future for ResponseFuture<F, C>
 where
-    S: svc::Service<Response = http::Response<B>>,
+    F: Future<Item = http::Response<B>>,
     B: tower_h2::Body,
     C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     type Item = http::Response<ResponseBody<B, C::ClassifyEos>>;
-    type Error = S::Error;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let rsp = try_ready!(self.inner.poll());
@@ -330,6 +316,26 @@ where
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
         self.inner.poll_trailers()
+    }
+}
+
+impl<B, C> tower_grpc::Body for RequestBody<B, C>
+where
+    B: tower_h2::Body,
+    C: Hash + Eq,
+{
+    type Data = B::Data;
+
+    fn is_end_stream(&self) -> bool {
+        ::tower_h2::Body::is_end_stream(self)
+    }
+
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
+        ::tower_h2::Body::poll_data(self).map_err(From::from)
+    }
+
+    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
+        ::tower_h2::Body::poll_trailers(self).map_err(From::from)
     }
 }
 
@@ -445,6 +451,27 @@ where
         }
 
         Ok(Async::Ready(trls))
+    }
+}
+
+impl<B, C> tower_grpc::Body for ResponseBody<B, C>
+where
+    B: tower_h2::Body,
+    C: ClassifyEos<Error = h2::Error>,
+    C::Class: Hash + Eq,
+{
+    type Data = B::Data;
+
+    fn is_end_stream(&self) -> bool {
+        ::tower_h2::Body::is_end_stream(self)
+    }
+
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
+        ::tower_h2::Body::poll_data(self).map_err(From::from)
+    }
+
+    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
+        ::tower_h2::Body::poll_trailers(self).map_err(From::from)
     }
 }
 
