@@ -177,6 +177,13 @@ impl Resolver {
         IpAddrFuture(::logging::context_future(Ctx(name.clone()), f))
     }
 
+    /// Attempts to refine `name` to a fully-qualified name.
+    ///
+    /// This method does DNS resolution for `name` and ignores the IP address
+    /// result, instead returning the `Name` that was resolved.
+    ///
+    /// For example, a name like `web` may be refined to `web.example.com.`,
+    /// depending on the DNS search path.
     pub fn refine(&self, name: &Name) -> RefineFuture {
         let f = self.resolver.lookup_ip(name.as_ref());
         RefineFuture(::logging::context_future(Ctx(name.clone()), f))
