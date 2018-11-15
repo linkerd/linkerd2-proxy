@@ -154,8 +154,8 @@ where
                         // when the resolver should be consulted again.
                         let canonical = NameAddr::new(refine.name, self.original.port());
                         if self.canonical.as_ref() != Some(&canonical) {
-                            let sevice = self.stack.make(&canonical.clone().into())?;
-                            self.service = Some(sevice);
+                            let service = self.stack.make(&canonical.clone().into())?;
+                            self.service = Some(service);
                             self.canonical = Some(canonical);
                         }
 
