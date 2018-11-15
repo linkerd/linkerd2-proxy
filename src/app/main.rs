@@ -344,8 +344,7 @@ where
                         profiles_client,
                         dst_route_layer,
                     ))
-                    .push(header_from_target::layer(super::CANONICAL_DST_HEADER))
-                    .push(buffer::layer());
+                    .push(header_from_target::layer(super::CANONICAL_DST_HEADER));
 
                 // Routes request using the `DstAddr` extension.
                 //
@@ -357,6 +356,7 @@ where
                 // But for now it's more important to use the request router's
                 // caching logic.
                 let dst_router = dst_stack
+                    .push(buffer::layer())
                     .push(router::layer(|req: &http::Request<_>| {
                         let addr = req.extensions().get::<DstAddr>().cloned();
                         debug!("outbound dst={:?}", addr);
@@ -364,21 +364,18 @@ where
                     }))
                     .make(&router::Config::new("out dst", capacity, max_idle_age))
                     .map(shared::stack)
-                    .expect("outbound dst router");
+                    .expect("outbound dst router")
+                    .push(phantom_data::layer());
 
                 // Canonicalizes the request-specified `Addr` via DNS, and
                 // annotates each request with a `DstAddr` so that it may be
-                // routed by teh dst_router.
+                // routed by the dst_router.
                 let addr_stack = dst_router
-                    .push(phantom_data::layer())
                     .push(insert_target::layer())
                     .push(map_target::layer(|addr: &Addr| {
                         DstAddr::outbound(addr.clone())
                     }))
-                    .push(canonicalize::layer(dns_resolver))
-                    .push(buffer::layer())
-                    .push(timeout::layer(config.bind_timeout))
-                    .push(limit::layer(MAX_IN_FLIGHT));
+                    .push(canonicalize::layer(dns_resolver));
 
                 // Routes requests to an `Addr`:
                 //
@@ -388,11 +385,14 @@ where
                 // 2. If the request is absolute-form HTTP/1, the URI's
                 // authority is used.
                 //
-                // 3. If the requset has an HTTP/1 Host header, it is used.
+                // 3. If the request has an HTTP/1 Host header, it is used.
                 //
                 // 4. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
                 // address is used.
                 let addr_router = addr_stack
+                    .push(buffer::layer())
+                    .push(timeout::layer(config.bind_timeout))
+                    .push(limit::layer(MAX_IN_FLIGHT))
                     .push(router::layer(|req: &http::Request<_>| {
                         let addr = super::http_request_authority_addr(req)
                             .or_else(|_| super::http_request_host_addr(req))
@@ -403,13 +403,13 @@ where
                     }))
                     .make(&router::Config::new("out addr", capacity, max_idle_age))
                     .map(shared::stack)
-                    .expect("outbound addr router");
+                    .expect("outbound addr router")
+                    .push(phantom_data::layer());
 
                 // Instantiates an HTTP service for each `Source` using the
                 // shared `addr_router`. The `Source` is stored in the request's
                 // extensions so that it can be used by the `addr_router`.
                 let server_stack = addr_router
-                    .push(phantom_data::layer())
                     .push(insert_target::layer());
 
                 // Instantiated for each TCP connection received from the local
@@ -507,7 +507,7 @@ where
                 // 3. If the request is absolute-form HTTP/1, the URI's
                 // authority is used.
                 //
-                // 4. If the requset has an HTTP/1 Host header, it is used.
+                // 4. If the request has an HTTP/1 Host header, it is used.
                 //
                 // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
                 // address is used.
