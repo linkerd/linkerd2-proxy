@@ -442,7 +442,8 @@ where
                 // TCP forwarding and HTTP proxying).
                 let connect = connect::Stack::new()
                     .push(proxy::timeout::layer(config.inbound_connect_timeout))
-                    .push(transport_metrics.connect("inbound"));
+                    .push(transport_metrics.connect("inbound"))
+                    .push(inbound::rewrite_loopback_addr::layer());
 
                 // Instantiates an HTTP client for for a `client::Config`
                 let client_stack = connect
