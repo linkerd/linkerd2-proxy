@@ -12,7 +12,7 @@ macro_rules! generate_outbound_dns_limit_test {
     (server: $make_server:path, client: $make_client:path) => {
         #[test]
         fn outbound_dest_limit_does_not_limit_dns() {
-            let _ = env_logger::try_init();
+            let _ = env_logger_init();
             let srv = $make_server().route("/", "hello").run();
             let srv_addr = srv.addr;
 
@@ -72,7 +72,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_asks_controller_api() {
-            let _ = env_logger::try_init();
+            let _ = env_logger_init();
             let srv = $make_server().route("/", "hello").route("/bye", "bye").run();
 
             let ctrl = controller::new()
@@ -87,7 +87,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_dest_concurrency_limit() {
-            let _ = env_logger::try_init();
+            let _ = env_logger_init();
             let srv = $make_server().route("/", "hello").run();
             let srv_addr = srv.addr;
 
@@ -159,7 +159,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_reconnects_if_controller_stream_ends() {
-            let _ = env_logger::try_init();
+            let _ = env_logger_init();
 
             let srv = $make_server().route("/recon", "nect").run();
 
@@ -198,7 +198,7 @@ macro_rules! generate_tests {
         }
 
         fn init_env() -> app::config::TestEnv {
-            let _ = env_logger::try_init();
+            let _ = env_logger_init();
             let mut env = app::config::TestEnv::new();
 
             // The bind timeout must be high enough to allow a DNS timeout.
@@ -367,7 +367,7 @@ mod http1 {
 
 #[test]
 fn outbound_updates_newer_services() {
-    let _ = env_logger::try_init();
+    let _ = env_logger_init();
 
     let srv = server::http1().route("/h1", "hello h1").run();
 
@@ -402,7 +402,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn outbound_http1() {
-        let _ = env_logger::try_init();
+        let _ = env_logger_init();
 
         // Instead of a second proxy, this mocked h2 server will be the target.
         let srv = server::http2()
@@ -433,7 +433,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn inbound_http1() {
-        let _ = env_logger::try_init();
+        let _ = env_logger_init();
 
         let srv = server::http1()
             .route_fn("/h1", |req| {

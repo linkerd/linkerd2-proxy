@@ -430,7 +430,7 @@ where
             };
 
             let inbound = {
-                use super::inbound::{orig_proto_downgrade, Endpoint, RecognizeEndpoint};
+                use super::inbound::{orig_proto_downgrade, rewrite_loopback_addr, Endpoint, RecognizeEndpoint};
                 use proxy::http::metrics;
 
                 let capacity = config.inbound_router_capacity;
@@ -443,7 +443,7 @@ where
                 let connect = connect::Stack::new()
                     .push(proxy::timeout::layer(config.inbound_connect_timeout))
                     .push(transport_metrics.connect("inbound"))
-                    .push(inbound::rewrite_loopback_addr::layer());
+                    .push(rewrite_loopback_addr::layer());
 
                 // Instantiates an HTTP client for for a `client::Config`
                 let client_stack = connect

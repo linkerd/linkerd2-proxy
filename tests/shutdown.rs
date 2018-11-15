@@ -5,7 +5,7 @@ use self::support::*;
 
 #[test]
 fn h2_goaways_connections() {
-    let _ = env_logger::try_init();
+    let _ = env_logger_init();
 
     let (shdn, rx) = shutdown_signal();
 
@@ -25,7 +25,7 @@ fn h2_goaways_connections() {
 
 #[test]
 fn h2_exercise_goaways_connections() {
-    let _ = env_logger::try_init();
+    let _ = env_logger_init();
 
     const RESPONSE_SIZE: usize = 1024 * 16;
     const NUM_REQUESTS: usize = 50;
@@ -85,7 +85,7 @@ fn h2_exercise_goaways_connections() {
 #[test]
 fn http1_closes_idle_connections() {
     use std::cell::RefCell;
-    let _ = env_logger::try_init();
+    let _ = env_logger_init();
 
     let (shdn, rx) = shutdown_signal();
 
@@ -120,7 +120,7 @@ fn http1_closes_idle_connections() {
 
 #[test]
 fn tcp_waits_for_proxies_to_close() {
-    let _ = env_logger::try_init();
+    let _ = env_logger_init();
 
     let (shdn, rx) = shutdown_signal();
     let msg1 = "custom tcp hello";

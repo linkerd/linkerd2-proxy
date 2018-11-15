@@ -22,7 +22,7 @@ extern crate tower_h2;
 extern crate tower_grpc;
 extern crate tower_service;
 extern crate log;
-pub extern crate env_logger;
+extern crate env_logger;
 
 use std::fmt;
 pub use std::collections::HashMap;
@@ -49,6 +49,25 @@ use self::tower_service::{NewService, Service};
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";
 pub const DEFAULT_TEST_PATIENCE: Duration = Duration::from_millis(15);
+
+/// By default, disable logging in modules that are expected to error in tests.
+const DEFAULT_LOG: &'static str =
+    "error,\
+    linkerd2_proxy::proxy::canonicalize=off,\
+    linkerd2_proxy::proxy::http::router=off,\
+    linkerd2_proxy::proxy::tcp=off";
+
+pub fn env_logger_init() {
+    use std::env;
+
+    let log = env::var("LINKERD2_PROXY_LOG").unwrap_or_else(|_| DEFAULT_LOG.to_owned());
+    env::set_var("RUST_LOG", &log);
+    env::set_var("LINKERD2_PROXY_LOG", &log);
+
+    if let Err(e) = env_logger::try_init() {
+        eprintln!("Failed to initialize logger: {}", e);
+    }
+}
 
 /// Retry an assertion up to a specified number of times, waiting
 /// `RUST_TEST_PATIENCE_MS` between retries.
