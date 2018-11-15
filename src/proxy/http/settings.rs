@@ -25,7 +25,7 @@ pub enum Settings {
 
 impl Settings {
     // The router need only have enough capacity for each `Settings` variant.
-    const ROUTER_CAPACITY: usize = 3;
+    const ROUTER_CAPACITY: usize = 5;
 
     pub fn from_request<B>(req: &http::Request<B>) -> Self {
         if req.version() == http::Version::HTTP_2 {
