@@ -167,7 +167,7 @@ pub mod orig_proto_downgrade {
         type Error = M::Error;
 
         fn make(&self, target: &Source) -> Result<Self::Value, Self::Error> {
-            info!("downgrading requests; source={:?}", target);
+            debug!("downgrading requests; source={:?}", target);
             self
                 .inner
                 .make(&target)
