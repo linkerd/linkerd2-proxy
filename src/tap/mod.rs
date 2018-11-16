@@ -6,11 +6,14 @@ use api::tap::observe_request;
 
 pub mod event;
 mod match_;
+mod observe;
+mod pb;
 mod service;
 
 pub use self::event::{Direction, Endpoint, Event};
 pub use self::match_::InvalidMatch;
 use self::match_::*;
+pub use self::observe::Observe;
 pub use self::service::layer;
 
 #[derive(Clone, Debug, Default)]

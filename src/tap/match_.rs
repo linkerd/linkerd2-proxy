@@ -28,7 +28,6 @@ pub enum InvalidMatch {
     InvalidNetwork,
     InvalidHttpMethod,
     InvalidScheme,
-    Unimplemented,
 }
 
 #[derive(Clone, Debug)]

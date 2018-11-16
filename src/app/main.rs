@@ -193,7 +193,7 @@ where
             });
 
         let tap_next_id = tap::NextId::default();
-        let (taps, observe) = control::Observe::new(100);
+        let (taps, observe) = tap::Observe::new(100);
 
         let (ctl_http_metrics, ctl_http_report) = {
             let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
