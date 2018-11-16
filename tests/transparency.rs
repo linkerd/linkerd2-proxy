@@ -369,6 +369,27 @@ macro_rules! http1_tests {
         }
 
         #[test]
+        fn l5d_orig_proto_header_isnt_leaked() {
+            let _ = env_logger::try_init();
+
+            let srv = server::http1()
+                .route_fn("/", |req| {
+                    assert_eq!(req.headers().get("l5d-orig-proto"), None, "request");
+                    Response::new(Default::default())
+                })
+                .run();
+            let proxy = $proxy(srv);
+
+            let host = "transparency.test.svc.cluster.local";
+            let client = client::http1(proxy.inbound, host);
+
+
+            let res = client.request(&mut client.request_builder("/"));
+            assert_eq!(res.status(), 200);
+            assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
+        }
+
+        #[test]
         fn http11_upgrade_h2_stripped() {
             let _ = env_logger_init();
 

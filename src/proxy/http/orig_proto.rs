@@ -84,7 +84,7 @@ where
 
         self.inner.call(req).map(|mut res| {
             debug_assert_eq!(res.version(), http::Version::HTTP_2);
-            let version = if let Some(orig_proto) = res.headers().get(L5D_ORIG_PROTO) {
+            let version = if let Some(orig_proto) = res.headers_mut().remove(L5D_ORIG_PROTO) {
                 debug!("downgrading {} response: {:?}", L5D_ORIG_PROTO, orig_proto);
                 if orig_proto == "HTTP/1.1" {
                     http::Version::HTTP_11
