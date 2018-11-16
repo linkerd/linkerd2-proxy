@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use futures::Poll;
 use std::fmt;
 

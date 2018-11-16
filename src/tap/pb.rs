@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy))]
 
 use std::error::Error;

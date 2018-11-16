@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 extern crate tower_discover;
 
 use futures::Stream;
