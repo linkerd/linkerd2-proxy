@@ -1,6 +1,9 @@
 use futures_mpsc_lossy;
 use indexmap::IndexMap;
-use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use api::tap::observe_request;
 

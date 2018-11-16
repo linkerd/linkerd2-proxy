@@ -136,10 +136,7 @@ where
 
 impl<S, A, B> svc::Service<http::Request<A>> for Service<S>
 where
-    S: svc::Service<
-        http::Request<RequestBody<A>>,
-        Response = http::Response<B>,
-    >,
+    S: svc::Service<http::Request<RequestBody<A>>, Response = http::Response<B>>,
     S::Error: HasH2Reason,
     A: Body,
     B: Body,

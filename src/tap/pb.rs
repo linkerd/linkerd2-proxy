@@ -26,9 +26,7 @@ impl Error for UnknownEvent {
 
 impl event::StreamResponseEnd {
     fn to_tap_event(&self, ctx: &event::Request) -> tap::TapEvent {
-        let eos = self.grpc_status
-            .map(tap::Eos::from_grpc_status)
-            ;
+        let eos = self.grpc_status.map(tap::Eos::from_grpc_status);
 
         let end = tap::tap_event::http::ResponseEnd {
             id: Some(tap::tap_event::http::StreamId {
@@ -119,7 +117,9 @@ impl<'a> TryFrom<&'a Event> for tap::TapEvent {
                     }),
                     method: Some((&ctx.method).into()),
                     scheme: ctx.scheme.as_ref().map(http_types::Scheme::from),
-                    authority: ctx.authority.as_ref()
+                    authority: ctx
+                        .authority
+                        .as_ref()
                         .map(|a| a.as_str())
                         .unwrap_or_default()
                         .into(),
@@ -161,17 +161,11 @@ impl<'a> TryFrom<&'a Event> for tap::TapEvent {
                 }
             }
 
-            Event::StreamRequestFail(ref ctx, ref fail) => {
-                fail.to_tap_event(&ctx)
-            }
+            Event::StreamRequestFail(ref ctx, ref fail) => fail.to_tap_event(&ctx),
 
-            Event::StreamResponseEnd(ref ctx, ref end) => {
-                end.to_tap_event(&ctx.request)
-            }
+            Event::StreamResponseEnd(ref ctx, ref end) => end.to_tap_event(&ctx.request),
 
-            Event::StreamResponseFail(ref ctx, ref fail) => {
-                fail.to_tap_event(&ctx.request)
-            }
+            Event::StreamResponseFail(ref ctx, ref fail) => fail.to_tap_event(&ctx.request),
 
             _ => return Err(UnknownEvent),
         };
@@ -184,7 +178,8 @@ impl proxy::Source {
     fn src_meta(&self) -> tap::tap_event::EndpointMeta {
         let mut meta = tap::tap_event::EndpointMeta::default();
 
-        meta.labels.insert("tls".to_owned(), format!("{}", self.tls_status));
+        meta.labels
+            .insert("tls".to_owned(), format!("{}", self.tls_status));
 
         meta
     }
@@ -203,7 +198,8 @@ impl event::Endpoint {
     fn dst_meta(&self) -> tap::tap_event::EndpointMeta {
         let mut meta = tap::tap_event::EndpointMeta::default();
         meta.labels.extend(self.labels.clone());
-        meta.labels.insert("tls".to_owned(), format!("{}", self.target.tls_status()));
+        meta.labels
+            .insert("tls".to_owned(), format!("{}", self.target.tls_status()));
         meta
     }
 }

@@ -2,8 +2,8 @@ use futures::{future, Poll, Stream};
 use futures_mpsc_lossy;
 use http::HeaderMap;
 use indexmap::IndexMap;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use tower_grpc::{self as grpc, Response};
 
 use api::tap::{server, ObserveRequest, TapEvent};
@@ -52,7 +52,8 @@ impl server::Tap for Observe {
         }
 
         let req = req.into_inner();
-        let (tap, rx) = match req.match_
+        let (tap, rx) = match req
+            .match_
             .and_then(|m| Tap::new(&m, self.tap_capacity).ok())
         {
             Some(m) => m,
@@ -140,8 +141,8 @@ impl Stream for TapEvents {
                                 continue;
                             }
                         }
-                        Event::StreamResponseFail(ref rsp, _) |
-                        Event::StreamResponseEnd(ref rsp, _) => {
+                        Event::StreamResponseFail(ref rsp, _)
+                        | Event::StreamResponseEnd(ref rsp, _) => {
                             trace!("end req={}", rsp.request.id);
                             if self.current.remove(&rsp.request.id).is_none() {
                                 warn!("did not exist req={}", rsp.request.id);
@@ -150,7 +151,7 @@ impl Stream for TapEvents {
                         }
                         ev => {
                             trace!("ignoring event: {:?}", ev);
-                            continue
+                            continue;
                         }
                     }
 

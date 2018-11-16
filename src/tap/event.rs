@@ -8,7 +8,10 @@ use transport::connect;
 
 // TODO this should be replaced with a string name.
 #[derive(Copy, Clone, Debug)]
-pub enum Direction { In, Out }
+pub enum Direction {
+    In,
+    Out,
+}
 
 #[derive(Clone, Debug)]
 pub struct Endpoint {

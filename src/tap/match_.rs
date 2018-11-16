@@ -70,9 +70,9 @@ impl Match {
                 Event::StreamRequestOpen(ref req) | Event::StreamRequestFail(ref req, _) => {
                     src.matches(&req.source.remote)
                 }
-                Event::StreamResponseOpen(ref rsp, _) |
-                Event::StreamResponseFail(ref rsp, _) |
-                Event::StreamResponseEnd(ref rsp, _) => src.matches(&rsp.request.source.remote),
+                Event::StreamResponseOpen(ref rsp, _)
+                | Event::StreamResponseFail(ref rsp, _)
+                | Event::StreamResponseEnd(ref rsp, _) => src.matches(&rsp.request.source.remote),
                 _ => false,
             },
 
@@ -80,10 +80,11 @@ impl Match {
                 Event::StreamRequestOpen(ref req) | Event::StreamRequestFail(ref req, _) => {
                     dst.matches(&req.endpoint.target.addr)
                 }
-                Event::StreamResponseOpen(ref rsp, _) |
-                Event::StreamResponseFail(ref rsp, _) |
-                Event::StreamResponseEnd(ref rsp, _) =>
-                    dst.matches(&rsp.request.endpoint.target.addr),
+                Event::StreamResponseOpen(ref rsp, _)
+                | Event::StreamResponseFail(ref rsp, _)
+                | Event::StreamResponseEnd(ref rsp, _) => {
+                    dst.matches(&rsp.request.endpoint.target.addr)
+                }
                 _ => false,
             },
 
@@ -92,23 +93,23 @@ impl Match {
                     label.matches(&req.endpoint.labels)
                 }
 
-                Event::StreamResponseOpen(ref rsp, _) |
-                Event::StreamResponseFail(ref rsp, _) |
-                Event::StreamResponseEnd(ref rsp, _) => {
+                Event::StreamResponseOpen(ref rsp, _)
+                | Event::StreamResponseFail(ref rsp, _)
+                | Event::StreamResponseEnd(ref rsp, _) => {
                     label.matches(&rsp.request.endpoint.labels)
                 }
 
                 _ => false,
-            }
+            },
 
             Match::Http(ref http) => match *ev {
                 Event::StreamRequestOpen(ref req) | Event::StreamRequestFail(ref req, _) => {
                     http.matches(req)
                 }
 
-                Event::StreamResponseOpen(ref rsp, _) |
-                Event::StreamResponseFail(ref rsp, _) |
-                Event::StreamResponseEnd(ref rsp, _) => http.matches(&rsp.request),
+                Event::StreamResponseOpen(ref rsp, _)
+                | Event::StreamResponseFail(ref rsp, _)
+                | Event::StreamResponseEnd(ref rsp, _) => http.matches(&rsp.request),
 
                 _ => false,
             },
@@ -278,7 +279,8 @@ impl<'a> TryFrom<&'a observe_request::match_::tcp::Netmask> for NetMatch {
                 NetMatch::Net4(net)
             }
             ip_address::Ip::Ipv6(ref ip6) => {
-                let net = Ipv6Net::new(ip6.into(), mask).map_err(|_| InvalidMatch::InvalidNetwork)?;
+                let net =
+                    Ipv6Net::new(ip6.into(), mask).map_err(|_| InvalidMatch::InvalidNetwork)?;
                 NetMatch::Net6(net)
             }
         };
@@ -292,13 +294,17 @@ impl<'a> TryFrom<&'a observe_request::match_::tcp::Netmask> for NetMatch {
 impl HttpMatch {
     fn matches(&self, req: &event::Request) -> bool {
         match *self {
-            HttpMatch::Scheme(ref m) => req.scheme.as_ref()
+            HttpMatch::Scheme(ref m) => req
+                .scheme
+                .as_ref()
                 .map(|s| m == s.as_ref())
                 .unwrap_or(false),
 
             HttpMatch::Method(ref m) => *m == req.method,
 
-            HttpMatch::Authority(ref m) => req.authority.as_ref()
+            HttpMatch::Authority(ref m) => req
+                .authority
+                .as_ref()
                 .map(|a| Self::matches_string(m, a.as_str()))
                 .unwrap_or(false),
 
@@ -328,7 +334,8 @@ impl<'a> TryFrom<&'a observe_request::match_::Http> for HttpMatch {
             .as_ref()
             .ok_or_else(|| InvalidMatch::Empty)
             .and_then(|m| match *m {
-                Pb::Scheme(ref s) => s.type_
+                Pb::Scheme(ref s) => s
+                    .type_
                     .as_ref()
                     .ok_or_else(|| InvalidMatch::Empty)
                     .and_then(|s| {
@@ -337,7 +344,8 @@ impl<'a> TryFrom<&'a observe_request::match_::Http> for HttpMatch {
                             .map_err(|_| InvalidMatch::InvalidScheme)
                     }),
 
-                Pb::Method(ref m) => m.type_
+                Pb::Method(ref m) => m
+                    .type_
                     .as_ref()
                     .ok_or_else(|| InvalidMatch::Empty)
                     .and_then(|m| {
@@ -346,12 +354,14 @@ impl<'a> TryFrom<&'a observe_request::match_::Http> for HttpMatch {
                             .map_err(|_| InvalidMatch::InvalidHttpMethod)
                     }),
 
-                Pb::Authority(ref a) => a.match_
+                Pb::Authority(ref a) => a
+                    .match_
                     .as_ref()
                     .ok_or_else(|| InvalidMatch::Empty)
                     .map(|a| HttpMatch::Authority(a.clone())),
 
-                Pb::Path(ref p) => p.match_
+                Pb::Path(ref p) => p
+                    .match_
                     .as_ref()
                     .ok_or_else(|| InvalidMatch::Empty)
                     .map(|p| HttpMatch::Path(p.clone())),
@@ -361,9 +371,9 @@ impl<'a> TryFrom<&'a observe_request::match_::Http> for HttpMatch {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use ipnet::{Contains, Ipv4Net, Ipv6Net};
     use quickcheck::*;
+    use std::collections::HashMap;
 
     use super::*;
     use api::http_types;
