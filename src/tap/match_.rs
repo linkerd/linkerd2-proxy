@@ -63,24 +63,8 @@ pub(super) enum HttpMatch {
 impl Match {
     pub(super) fn matches(&self, ev: &Event) -> bool {
         match *self {
-            Match::Any(ref any) => {
-                for m in any {
-                    if m.matches(ev) {
-                        return true;
-                    }
-                }
-                false
-            }
-
-            Match::All(ref all) => {
-                for m in all {
-                    if !m.matches(ev) {
-                        return false;
-                    }
-                }
-                true
-            }
-
+            Match::Any(ref ms) => ms.iter().any(|m| m.matches(ev)),
+            Match::All(ref ms) => ms.iter().all(|m| m.matches(ev)),
             Match::Not(ref not) => !not.matches(ev),
 
             Match::Source(ref src) => match *ev {
@@ -472,12 +456,10 @@ mod tests {
         }
 
         fn label_matches(l: LabelMatch, labels: HashMap<String, String>) -> bool {
+            use std::iter::FromIterator;
+
             let matches = labels.get(&l.key) == Some(&l.value);
-            let mut ilabels = IndexMap::with_capacity(labels.len());
-            for (k, v) in &labels {
-                ilabels.insert(k.clone(), v.clone());
-            }
-            l.matches(&ilabels) == matches
+            l.matches(&IndexMap::from_iter(labels.into_iter())) == matches
         }
 
         fn http_from_proto(http: observe_request::match_::Http) -> bool {
