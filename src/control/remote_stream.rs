@@ -5,9 +5,11 @@ use std::{
     fmt,
     sync::Weak,
 };
-use tower_h2::{HttpService, Body, Data};
+use tower_http::{HttpService};
 use tower_grpc::{
     self as grpc,
+    Body,
+    BoxBody,
     Streaming,
     client::server_streaming::ResponseFuture,
 };
@@ -16,7 +18,11 @@ use tower_grpc::{
 ///
 /// A remote may hold a `Receiver` that can be used to read `M`-typed messages from the
 /// remote stream.
-pub enum Remote<M, S: HttpService> {
+pub enum Remote<M, S>
+where
+    S: HttpService<BoxBody>,
+    S::ResponseBody: Body,
+{
     NeedsReconnect,
     ConnectedOrConnecting {
         rx: Receiver<M, S>,
@@ -28,7 +34,11 @@ pub enum Remote<M, S: HttpService> {
 /// Streaming gRPC endpoints return a `ResponseFuture` whose item is a `Response<Stream>`.
 /// A `Receiver` holds the state of that RPC call, exposing a `Stream` that drives both
 /// the gRPC response and its streaming body.
-pub struct Receiver<M, S: HttpService> {
+pub struct Receiver<M, S>
+where
+    S: HttpService<BoxBody>,
+    S::ResponseBody: Body,
+{
     rx: Rx<M, S>,
 
     /// Used by `background::NewQuery` for counting the number of currently
@@ -36,16 +46,20 @@ pub struct Receiver<M, S: HttpService> {
     _active: Weak<()>,
 }
 
-enum Rx<M, S: HttpService> {
+enum Rx<M, S>
+where
+    S: HttpService<BoxBody>,
+    S::ResponseBody: Body,
+{
     Waiting(ResponseFuture<M, S::Future>),
     Streaming(Streaming<M, S::ResponseBody>),
 }
 
 // ===== impl Receiver =====
 
-impl<M: Message + Default, S: HttpService> Receiver<M, S>
+impl<M: Message + Default, S: HttpService<BoxBody>> Receiver<M, S>
 where
-    S::ResponseBody: Body<Data = Data>,
+    S::ResponseBody: Body,
     S::Error: fmt::Debug,
 {
     pub fn new(future: ResponseFuture<M, S::Future>, active: Weak<()>) -> Self {
@@ -66,15 +80,15 @@ where
                 // some reason does, we report this as an unknown error.
                 warn!("unexpected gRPC stream error");
                 debug_assert!(false);
-                grpc::Error::Grpc(grpc::Status::UNKNOWN, HeaderMap::new())
+                grpc::Error::Grpc(grpc::Status::with_code(grpc::Code::Unknown), HeaderMap::new())
             }
         }
     }
 }
 
-impl<M: Message + Default, S: HttpService> Stream for Receiver<M, S>
+impl<M: Message + Default, S: HttpService<BoxBody>> Stream for Receiver<M, S>
 where
-    S::ResponseBody: Body<Data = Data>,
+    S::ResponseBody: Body,
     S::Error: fmt::Debug,
 {
     type Item = M;

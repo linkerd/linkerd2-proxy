@@ -171,13 +171,13 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
                     .map_err(|e| println!("client error: {:?}", e)))
             },
             Run::Http2 => {
-                let connect = tower_h2::client::Connect::new(
+                let mut connect = tower_h2::client::Connect::new(
                     conn,
                     Default::default(),
                     LazyExecutor,
                 );
 
-                Box::new(connect.new_service()
+                Box::new(connect.call(())
                     .map_err(move |err| println!("connect error ({:?}): {:?}", addr, err))
                     .and_then(move |mut h2| {
                         rx.for_each(move |(req, cb)| {

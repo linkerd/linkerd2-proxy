@@ -43,7 +43,7 @@ pub struct Service<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
     Stk: svc::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Request = Req>,
+    Stk::Value: svc::Service<Req>,
 {
     inner: Router<Req, Rec, Stk>,
 }
@@ -88,8 +88,8 @@ impl<Req, Rec, Stk, B> svc::Layer<Config, Rec::Target, Stk> for Layer<Req, Rec>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
-    Stk::Value: svc::Service<Request = Req, Response = http::Response<B>>,
-    <Stk::Value as svc::Service>::Error: error::Error,
+    Stk::Value: svc::Service<Req, Response = http::Response<B>>,
+    <Stk::Value as svc::Service<Req>>::Error: error::Error,
     Stk::Error: fmt::Debug,
     B: Default + Send + 'static,
 {
@@ -112,8 +112,8 @@ impl<Req, Rec, Stk, B> svc::Stack<Config> for Stack<Req, Rec, Stk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
-    Stk::Value: svc::Service<Request = Req, Response = http::Response<B>>,
-    <Stk::Value as svc::Service>::Error: error::Error,
+    Stk::Value: svc::Service<Req, Response = http::Response<B>>,
+    <Stk::Value as svc::Service<Req>>::Error: error::Error,
     Stk::Error: fmt::Debug,
     B: Default + Send + 'static,
 {
@@ -160,19 +160,18 @@ where
 
 // === impl Service ===
 
-impl<Req, Rec, Stk, B> svc::Service for Service<Req, Rec, Stk>
+impl<Req, Rec, Stk, B> svc::Service<Req> for Service<Req, Rec, Stk>
 where
     Rec: Recognize<Req> + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Send + Sync + 'static,
-    Stk::Value: svc::Service<Request = Req, Response = http::Response<B>>,
-    <Stk::Value as svc::Service>::Error: error::Error,
+    Stk::Value: svc::Service<Req, Response = http::Response<B>>,
+    <Stk::Value as svc::Service<Req>>::Error: error::Error,
     Stk::Error: fmt::Debug,
     B: Default + Send + 'static,
 {
-    type Request = <Router<Req, Rec, Stk> as svc::Service>::Request;
-    type Response = <Router<Req, Rec, Stk> as svc::Service>::Response;
+    type Response = <Router<Req, Rec, Stk> as svc::Service<Req>>::Response;
     type Error = h2::Error;
-    type Future = ResponseFuture<<Router<Req, Rec, Stk> as svc::Service>::Future>;
+    type Future = ResponseFuture<<Router<Req, Rec, Stk> as svc::Service<Req>>::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready().map_err(|e| {
@@ -181,7 +180,7 @@ where
         })
     }
 
-    fn call(&mut self, request: Self::Request) -> Self::Future {
+    fn call(&mut self, request: Req) -> Self::Future {
         trace!("routing...");
         let inner = self.inner.call(request);
         ResponseFuture { inner }
@@ -192,7 +191,7 @@ impl<Req, Rec, Stk> Clone for Service<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
     Stk: svc::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Request = Req>,
+    Stk::Value: svc::Service<Req>,
     Router<Req, Rec, Stk>: Clone,
 {
     fn clone(&self) -> Self {

@@ -8,7 +8,8 @@ use std::{
 };
 
 use futures::{Async, Future, Stream,};
-use tower_h2::{Body, Data, HttpService};
+use tower_http::HttpService;
+use tower_grpc::{Body, BoxBody};
 
 use api::{
     destination::{
@@ -31,7 +32,11 @@ use {Conditional, NameAddr};
 use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
 /// Holds the state of a single resolution.
-pub(super) struct DestinationSet<T: HttpService> {
+pub(super) struct DestinationSet<T>
+where
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
+{
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
     pub query: DestinationServiceQuery<T>,
     pub dns_query: Option<IpAddrListFuture>,
@@ -42,8 +47,8 @@ pub(super) struct DestinationSet<T: HttpService> {
 
 impl<T> DestinationSet<T>
 where
-    T: HttpService,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
     T::Error: fmt::Debug,
 {
     pub(super) fn reset_dns_query(
@@ -182,8 +187,8 @@ where
 
 impl<T> DestinationSet<T>
 where
-    T: HttpService,
-    T::ResponseBody: Body<Data = Data>,
+    T: HttpService<BoxBody>,
+    T::ResponseBody: Body,
 {
     /// Returns `true` if the authority that created this query _should_ query
     /// the Destination service, but was unable to due to insufficient capaacity.

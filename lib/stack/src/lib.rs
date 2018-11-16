@@ -9,13 +9,13 @@ pub mod layer;
 mod map_err;
 pub mod map_target;
 pub mod phantom_data;
-pub mod stack_new_service;
+pub mod stack_make_service;
 pub mod stack_per_request;
 pub mod watch;
 
 pub use self::either::Either;
 pub use self::layer::Layer;
-pub use self::stack_new_service::StackNewService;
+pub use self::stack_make_service::StackMakeService;
 
 /// A composable builder.
 ///

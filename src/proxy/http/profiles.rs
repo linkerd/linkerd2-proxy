@@ -189,7 +189,6 @@ pub mod router {
                 <T as WithRoute>::Output,
                 svc::shared::Stack<M::Value>,
             > + Clone,
-        R::Value: svc::Service,
     {
         Layer {
             suffixes,
@@ -228,7 +227,6 @@ pub mod router {
     where
         T: WithRoute,
         R: svc::Stack<T::Output>,
-        R::Value: svc::Service,
     {
         target: T,
         stack: R,
@@ -259,7 +257,6 @@ pub mod router {
                 <T as WithRoute>::Output,
                 svc::shared::Stack<M::Value>,
             > + Clone,
-        R::Value: svc::Service,
     {
         type Value = <Stack<G, M, R> as svc::Stack<T>>::Value;
         type Error = <Stack<G, M, R> as svc::Stack<T>>::Error;
@@ -287,7 +284,6 @@ pub mod router {
                 <T as WithRoute>::Output,
                 svc::shared::Stack<M::Value>,
             > + Clone,
-        R::Value: svc::Service,
     {
         type Value = Service<G::Stream, T, R::Stack>;
         type Error = Error<M::Error, R::Error>;
@@ -332,7 +328,6 @@ pub mod router {
         G: Stream<Item = Routes, Error = super::Error>,
         T: WithRoute + Clone,
         R: svc::Stack<T::Output> + Clone,
-        R::Value: svc::Service,
     {
         fn update_routes(&mut self, mut routes: Routes) {
             self.routes = Vec::with_capacity(routes.len());
@@ -352,17 +347,16 @@ pub mod router {
         }
     }
 
-    impl<G, T, R, B> svc::Service for Service<G, T, R>
+    impl<G, T, R, B> svc::Service<http::Request<B>> for Service<G, T, R>
     where
         G: Stream<Item = Routes, Error = super::Error>,
         T: WithRoute + Clone,
         R: svc::Stack<T::Output> + Clone,
-        R::Value: svc::Service<Request = http::Request<B>>,
+        R::Value: svc::Service<http::Request<B>>,
     {
-        type Request = <R::Value as svc::Service>::Request;
-        type Response = <R::Value as svc::Service>::Response;
-        type Error = <R::Value as svc::Service>::Error;
-        type Future = <R::Value as svc::Service>::Future;
+        type Response = <R::Value as svc::Service<http::Request<B>>>::Response;
+        type Error = <R::Value as svc::Service<http::Request<B>>>::Error;
+        type Future = <R::Value as svc::Service<http::Request<B>>>::Future;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             while let Some(Async::Ready(Some(routes))) = self.poll_route_stream() {
@@ -372,7 +366,7 @@ pub mod router {
             Ok(Async::Ready(()))
         }
 
-        fn call(&mut self, req: Self::Request) -> Self::Future {
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
             for (ref condition, ref mut service) in &mut self.routes {
                 if condition.is_match(&req) {
                     trace!("using configured route: {:?}", condition);

@@ -152,9 +152,9 @@ impl Server {
                 let mut runtime = runtime::current_thread::Runtime::new()
                     .expect("initialize support server runtime");
 
-                let new_svc = NewSvc(Arc::new(self.routes));
+                let mut new_svc = NewSvc(Arc::new(self.routes));
 
-                let srv: Box<Fn(TcpStream) -> Box<Future<Item=(), Error=()>>> = match self.version {
+                let srv: Box<FnMut(TcpStream) -> Box<Future<Item=(), Error=()>>> = match self.version {
                     Run::Http1 => {
                         let mut h1 = hyper::server::conn::Http::new();
                         h1.http1_only(true);
@@ -162,7 +162,7 @@ impl Server {
                         Box::new(move |sock| {
                             let h1_clone = h1.clone();
                             let srv_conn_count = Arc::clone(&srv_conn_count);
-                            let conn = new_svc.new_service()
+                            let conn = new_svc.call(())
                                 .inspect(move |_| {
                                     srv_conn_count.fetch_add(1, Ordering::Release);
                                 })
@@ -176,7 +176,7 @@ impl Server {
                         })
                     },
                     Run::Http2 => {
-                        let h2 = tower_h2::Server::new(
+                        let mut h2 = tower_h2::Server::new(
                             new_svc,
                             Default::default(),
                             LazyExecutor,
@@ -203,7 +203,7 @@ impl Server {
                 }
 
                 let serve = bind.incoming()
-                    .fold(srv, move |srv, sock| {
+                    .fold(srv, move |mut srv, sock| {
                         if let Err(e) = sock.set_nodelay(true) {
                             return Err(e);
                         }
@@ -322,8 +322,7 @@ impl Svc {
     }
 }
 
-impl Service for Svc {
-    type Request = Request<RecvBody>;
+impl Service<Request<RecvBody>> for Svc {
     type Response = Response<RspBody>;
     type Error = h2::Error;
     type Future = Box<Future<Item=Self::Response, Error=Self::Error> + Send>;
@@ -332,7 +331,7 @@ impl Service for Svc {
         Ok(Async::Ready(()))
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: Request<RecvBody>) -> Self::Future {
         let req = req.map(|body| {
             assert!(body.is_end_stream(), "h2 test server doesn't support request bodies yet");
             Box::new(futures::stream::empty()) as ReqBody
@@ -373,15 +372,16 @@ impl hyper::service::Service for Svc {
 #[derive(Debug)]
 struct NewSvc(Arc<HashMap<String, Route>>);
 
-impl NewService for NewSvc {
-    type Request = Request<RecvBody>;
-    type Response = Response<RspBody>;
-    type Error = h2::Error;
-    type InitError = ::std::io::Error;
-    type Service = Svc;
-    type Future = future::FutureResult<Svc, Self::InitError>;
+impl Service<()> for NewSvc {
+    type Response = Svc;
+    type Error = ::std::io::Error;
+    type Future = future::FutureResult<Svc, Self::Error>;
 
-    fn new_service(&self) -> Self::Future {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        Ok(Async::Ready(()))
+    }
+
+    fn call(&mut self, _: ()) -> Self::Future {
         future::ok(Svc(Arc::clone(&self.0)))
     }
 }

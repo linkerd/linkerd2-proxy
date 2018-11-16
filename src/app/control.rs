@@ -162,7 +162,7 @@ pub mod resolve {
     pub struct Init<M>
     where
         M: svc::Stack<client::Target>,
-        M::Value: svc::NewService,
+        M::Value: svc::Service<()>,
     {
         state: State<M>,
     }
@@ -170,14 +170,14 @@ pub mod resolve {
     enum State<M>
     where
         M: svc::Stack<client::Target>,
-        M::Value: svc::NewService,
+        M::Value: svc::Service<()>,
     {
         Resolve {
             future: dns::IpAddrFuture,
             config: super::Config,
             stack: M,
         },
-        Inner(<M::Value as svc::NewService>::Future),
+        Inner(<M::Value as svc::Service<()>>::Future),
         Invalid(Option<M::Error>),
     }
 
@@ -245,19 +245,20 @@ pub mod resolve {
 
     // === impl NewService ===
 
-    impl<M> svc::NewService for NewService<M>
+    impl<M> svc::Service<()> for NewService<M>
     where
         M: svc::Stack<client::Target> + Clone,
-        M::Value: svc::NewService,
+        M::Value: svc::Service<()>,
     {
-        type Request = <M::Value as svc::NewService>::Request;
-        type Response = <M::Value as svc::NewService>::Response;
-        type Error = <M::Value as svc::NewService>::Error;
-        type Service = <M::Value as svc::NewService>::Service;
-        type InitError = <Init<M> as Future>::Error;
+        type Response = <M::Value as svc::Service<()>>::Response;
+        type Error = <Init<M> as Future>::Error;
         type Future = Init<M>;
 
-        fn new_service(&self) -> Self::Future {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            Ok(().into())
+        }
+
+        fn call(&mut self, _target: ()) -> Self::Future {
             let state = match self.config.addr {
                 Addr::Socket(sa) => State::make_inner(sa, &self.config, &self.stack),
                 Addr::Name(ref na) => State::Resolve {
@@ -276,10 +277,10 @@ pub mod resolve {
     impl<M> Future for Init<M>
     where
         M: svc::Stack<client::Target>,
-        M::Value: svc::NewService,
+        M::Value: svc::Service<()>,
     {
-        type Item = <M::Value as svc::NewService>::Service;
-        type Error = Error<M::Error, <M::Value as svc::NewService>::InitError>;
+        type Item = <M::Value as svc::Service<()>>::Response;
+        type Error = Error<M::Error, <M::Value as svc::Service<()>>::Error>;
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             loop {
@@ -307,7 +308,7 @@ pub mod resolve {
     impl<M> State<M>
     where
         M: svc::Stack<client::Target>,
-        M::Value: svc::NewService,
+        M::Value: svc::Service<()>,
     {
         fn make_inner(addr: SocketAddr, config: &super::Config, stack: &M) -> Self {
             let tls = config.tls_server_identity.as_ref().and_then(|id| {
@@ -327,7 +328,7 @@ pub mod resolve {
             };
 
             match stack.make(&target) {
-                Ok(n) => State::Inner(svc::NewService::new_service(&n)),
+                Ok(mut n) => State::Inner(svc::Service::call(&mut n, ())),
                 Err(e) => State::Invalid(Some(e)),
             }
         }
@@ -353,7 +354,8 @@ pub mod resolve {
 pub mod client {
     use h2;
     use std::marker::PhantomData;
-    use tower_h2::{client, BoxBody};
+    use tower_h2::client;
+    use tower_grpc::BoxBody;
 
     use svc;
     use transport::connect;
@@ -442,10 +444,11 @@ pub mod client {
 }
 
 pub mod box_request_body {
+    use bytes::Bytes;
     use http;
     use futures::Poll;
     use std::marker::PhantomData;
-    use tower_h2::{Body, BoxBody};
+    use tower_grpc::{Body, BoxBody};
 
     use svc;
 
@@ -481,9 +484,9 @@ pub mod box_request_body {
 
     impl<B, T, M> svc::Layer<T, T, M> for Layer<B>
     where
-        B: Body + Send + 'static,
+        B: Body<Data = Bytes> + Send + 'static,
         M: svc::Stack<T>,
-        M::Value: svc::Service<Request = http::Request<BoxBody<B::Data>>>,
+        M::Value: svc::Service<http::Request<BoxBody>>,
     {
         type Value = <Stack<B, M> as svc::Stack<T>>::Value;
         type Error = <Stack<B, M> as svc::Stack<T>>::Error;
@@ -507,9 +510,9 @@ pub mod box_request_body {
 
     impl<B, T, M> svc::Stack<T> for Stack<B, M>
     where
-        B: Body + Send + 'static,
+        B: Body<Data = Bytes> + Send + 'static,
         M: svc::Stack<T>,
-        M::Value: svc::Service<Request = http::Request<BoxBody<B::Data>>>,
+        M::Value: svc::Service<http::Request<BoxBody>>,
     {
         type Value = Service<B, M::Value>;
         type Error = M::Error;
@@ -522,12 +525,11 @@ pub mod box_request_body {
 
     // === impl Service ===
 
-    impl<B, S> svc::Service for Service<B, S>
+    impl<B, S> svc::Service<http::Request<B>> for Service<B, S>
     where
-        B: Body + Send + 'static,
-        S: svc::Service<Request = http::Request<BoxBody<B::Data>>>,
+        B: Body<Data = Bytes> + Send + 'static,
+        S: svc::Service<http::Request<BoxBody>>,
     {
-        type Request = http::Request<B>;
         type Response = S::Response;
         type Error = S::Error;
         type Future = S::Future;

@@ -69,11 +69,10 @@ impl<T> Timeout<T> {
     }
 }
 
-impl<S, T, E> svc::Service for Timeout<S>
+impl<S, T, E, Req> svc::Service<Req> for Timeout<S>
 where
-    S: svc::Service<Response=T, Error=E>,
+    S: svc::Service<Req, Response=T, Error=E>,
 {
-    type Request = S::Request;
     type Response = T;
     type Error = Error<E>;
     type Future = Timeout<timer::Timeout<S::Future>>;
@@ -82,7 +81,7 @@ where
         self.inner.poll_ready().map_err(|e| self.error(e))
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: Req) -> Self::Future {
         let inner = timer::Timeout::new(self.inner.call(req), self.duration);
         Timeout {
             inner,

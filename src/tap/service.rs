@@ -37,10 +37,7 @@ where
 
 /// A middleware that records HTTP taps.
 #[derive(Clone, Debug)]
-pub struct Service<S>
-where
-    S: svc::Service,
-{
+pub struct Service<S> {
     endpoint: event::Endpoint,
     next_id: NextId,
     taps: Arc<Mutex<Taps>>,
@@ -48,11 +45,8 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct ResponseFuture<S>
-where
-    S: svc::Service,
-{
-    inner: S::Future,
+pub struct ResponseFuture<F> {
+    inner: F,
     meta: Option<event::Request>,
     taps: Option<Arc<Mutex<Taps>>>,
     request_open_at: Instant,
@@ -86,8 +80,8 @@ pub fn layer<T, M, A, B>(next_id: NextId, taps: Arc<Mutex<Taps>>) -> Layer<T, M>
 where
     T: Clone + Into<event::Endpoint>,
     M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<RequestBody<A>>, Response = http::Response<B>>,
-    <M::Value as svc::Service>::Error: HasH2Reason,
+    M::Value: svc::Service<http::Request<RequestBody<A>>, Response = http::Response<B>>,
+    <M::Value as svc::Service<http::Request<RequestBody<A>>>>::Error: HasH2Reason,
     A: Body,
     B: Body,
 {
@@ -98,17 +92,10 @@ where
     }
 }
 
-impl<T, M, A, B> svc::Layer<T, T, M> for Layer<T, M>
+impl<T, M> svc::Layer<T, T, M> for Layer<T, M>
 where
     T: Clone + Into<event::Endpoint>,
     M: svc::Stack<T>,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A>>,
-        Response = http::Response<B>,
-    >,
-    <M::Value as svc::Service>::Error: HasH2Reason,
-    A: Body,
-    B: Body,
 {
     type Value = <Stack<T, M> as svc::Stack<T>>::Value;
     type Error = M::Error;
@@ -126,17 +113,10 @@ where
 
 // === Stack ===
 
-impl<T, M, A, B> svc::Stack<T> for Stack<T, M>
+impl<T, M> svc::Stack<T> for Stack<T, M>
 where
     T: Clone + Into<event::Endpoint>,
     M: svc::Stack<T>,
-    M::Value: svc::Service<
-        Request = http::Request<RequestBody<A>>,
-        Response = http::Response<B>,
-    >,
-    <M::Value as svc::Service>::Error: HasH2Reason,
-    A: Body,
-    B: Body,
 {
     type Value = Service<M::Value>;
     type Error = M::Error;
@@ -154,26 +134,25 @@ where
 
 // === Service ===
 
-impl<S, A, B> svc::Service for Service<S>
+impl<S, A, B> svc::Service<http::Request<A>> for Service<S>
 where
     S: svc::Service<
-        Request = http::Request<RequestBody<A>>,
+        http::Request<RequestBody<A>>,
         Response = http::Response<B>,
     >,
     S::Error: HasH2Reason,
     A: Body,
     B: Body,
 {
-    type Request = http::Request<A>;
     type Response = http::Response<ResponseBody<B>>;
     type Error = S::Error;
-    type Future = ResponseFuture<S>;
+    type Future = ResponseFuture<S::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: http::Request<A>) -> Self::Future {
         let request_open_at = clock::now();
 
         // Only tap a request iff a `Source` is known.
@@ -222,14 +201,14 @@ where
     }
 }
 
-impl<S, B> Future for ResponseFuture<S>
+impl<F, B> Future for ResponseFuture<F>
 where
     B: Body,
-    S: svc::Service<Response = http::Response<B>>,
-    S::Error: HasH2Reason,
+    F: Future<Item = http::Response<B>>,
+    F::Error: HasH2Reason,
 {
     type Item = http::Response<ResponseBody<B>>;
-    type Error = S::Error;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let rsp = try_ready!(self.inner.poll().map_err(|e| self.tap_err(e)));
@@ -263,13 +242,13 @@ where
     }
 }
 
-impl<S, B> ResponseFuture<S>
+impl<F, B> ResponseFuture<F>
 where
     B: Body,
-    S: svc::Service<Response = http::Response<B>>,
-    S::Error: HasH2Reason,
+    F: Future<Item = http::Response<B>>,
+    F::Error: HasH2Reason,
 {
-    fn tap_err(&mut self, e: S::Error) -> S::Error {
+    fn tap_err(&mut self, e: F::Error) -> F::Error {
         if let Some(request) = self.meta.take() {
             let meta = event::Response {
                 request,

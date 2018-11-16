@@ -304,7 +304,7 @@ where
     }
 }
 
-impl<C, E, B> svc::NewService for Client<C, E, B>
+impl<C, E, B> svc::Service<()> for Client<C, E, B>
 where
     C: connect::Connect + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
@@ -315,20 +315,28 @@ where
     B: tower_h2::Body + Send + 'static,
    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    type Request = <Self::Service as svc::Service>::Request;
-    type Response = <Self::Service as svc::Service>::Response;
-    type Error = <Self::Service as svc::Service>::Error;
-    type InitError = tower_h2::client::ConnectError<C::Error>;
-    type Service = ClientService<C, E, B>;
+    type Response = ClientService<C, E, B>;
+    type Error = tower_h2::client::ConnectError<C::Error>;
     type Future = ClientNewServiceFuture<C, E, B>;
 
-    fn new_service(&self) -> Self::Future {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        match self.inner {
+            ClientInner::Http1(_) => {
+                Ok(().into())
+            },
+            ClientInner::Http2(ref mut h2) => {
+                h2.poll_ready()
+            },
+        }
+    }
+
+    fn call(&mut self, _target: ()) -> Self::Future {
         let inner = match self.inner {
             ClientInner::Http1(ref h1) => {
                 ClientNewServiceFutureInner::Http1(Some(h1.clone()))
             },
-            ClientInner::Http2(ref h2) => {
-                ClientNewServiceFutureInner::Http2(h2.new_service())
+            ClientInner::Http2(ref mut h2) => {
+                ClientNewServiceFutureInner::Http2(h2.call(()))
             },
         };
         ClientNewServiceFuture {
@@ -370,7 +378,7 @@ where
 
 // === impl ClientService ===
 
-impl<C, E, B> svc::Service for ClientService<C, E, B>
+impl<C, E, B> svc::Service<http::Request<B>> for ClientService<C, E, B>
 where
     C: connect::Connect + Send + Sync + 'static,
     C::Connected: Send,
@@ -381,7 +389,6 @@ where
     B: tower_h2::Body + Send + 'static,
    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    type Request = http::Request<B>;
     type Response = http::Response<HttpBody>;
     type Error = Error;
     type Future = ClientServiceFuture;
@@ -393,7 +400,7 @@ where
         }
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
         debug!("client request: method={} uri={} version={:?} headers={:?}",
             req.method(), req.uri(), req.version(), req.headers());
         match self.inner {

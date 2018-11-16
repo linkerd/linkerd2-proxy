@@ -25,11 +25,10 @@ pub fn layer() -> Layer {
     Layer
 }
 
-impl<T, M, B> svc::Layer<T, T, M> for Layer
+impl<T, M> svc::Layer<T, T, M> for Layer
 where
     T: Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<B>>,
 {
     type Value = <Stack<M> as svc::Stack<T>>::Value;
     type Error = <Stack<M> as svc::Stack<T>>::Error;
@@ -42,11 +41,10 @@ where
 
 // === impl Stack ===
 
-impl<T, M, B> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Stack<T> for Stack<M>
 where
     T: Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
-    M::Value: svc::Service<Request = http::Request<B>>,
 {
     type Value = Service<T, M::Value>;
     type Error = M::Error;
@@ -60,12 +58,11 @@ where
 
 // === impl Service ===
 
-impl<T, S, B> svc::Service for Service<T, S>
+impl<T, S, B> svc::Service<http::Request<B>> for Service<T, S>
 where
     T: Clone + Send + Sync + 'static,
-    S: svc::Service<Request = http::Request<B>>,
+    S: svc::Service<http::Request<B>>,
 {
-    type Request = S::Request;
     type Response = S::Response;
     type Error = S::Error;
     type Future = S::Future;
@@ -74,7 +71,7 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut req: Self::Request) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         req.extensions_mut().insert(self.target.clone());
         self.inner.call(req)
     }

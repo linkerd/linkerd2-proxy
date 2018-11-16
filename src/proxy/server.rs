@@ -10,7 +10,7 @@ use tower_h2;
 use Conditional;
 use drain;
 use never::Never;
-use svc::{Stack, Service, stack::StackNewService};
+use svc::{Stack, Service, stack::StackMakeService};
 use transport::{connect, tls, Connection, GetOriginalDst, Peek};
 use proxy::http::glue::{HttpBody, HttpBodyNewSvc, HyperServerSvc};
 use proxy::protocol::Protocol;
@@ -53,7 +53,7 @@ where
     // Prepares a route for each accepted HTTP connection.
     R: Stack<Source, Error = Never> + Clone,
     R::Value: Service<
-        Request = http::Request<HttpBody>,
+        http::Request<HttpBody>,
         Response = http::Response<B>,
     >,
     B: tower_h2::Body,
@@ -193,12 +193,12 @@ where
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
     R: Stack<Source, Error = Never> + Clone,
     R::Value: Service<
-        Request = http::Request<HttpBody>,
+        http::Request<HttpBody>,
         Response = http::Response<B>,
     >,
     R::Value: 'static,
-    <R::Value as Service>::Error: error::Error + Send + Sync + 'static,
-    <R::Value as Service>::Future: Send + 'static,
+    <R::Value as Service<http::Request<HttpBody>>>::Error: error::Error + Send + Sync + 'static,
+    <R::Value as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: tower_h2::Body + Default + Send + 'static,
     B::Data: Send,
     <B::Data as ::bytes::IntoBuf>::Buf: Send,
@@ -327,8 +327,8 @@ where
                     }),
                     Protocol::Http2 => Either::B({
                         trace!("detected HTTP/2");
-                        let new_service = StackNewService::new(route, source.clone());
-                        let h2 = tower_h2::Server::new(
+                        let new_service = StackMakeService::new(route, source.clone());
+                        let mut h2 = tower_h2::Server::new(
                             HttpBodyNewSvc::new(new_service),
                             h2_settings,
                             log_clone.executor(),

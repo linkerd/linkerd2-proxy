@@ -44,12 +44,11 @@ where
     }
 }
 
-impl<A, B> svc::Service for Either<A, B>
+impl<A, B, R> svc::Service<R> for Either<A, B>
 where
-    A: svc::Service,
-    B: svc::Service<Request = A::Request, Response = A::Response>,
+    A: svc::Service<R>,
+    B: svc::Service<R, Response = A::Response>,
 {
-    type Request = A::Request;
     type Response = A::Response;
     type Error = Either<A::Error, B::Error>;
     type Future = future::Either<
@@ -64,7 +63,7 @@ where
         }
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&mut self, req: R) -> Self::Future {
         match self {
             Either::A(ref mut a) => future::Either::A(a.call(req).map_err(Either::A)),
             Either::B(ref mut b) => future::Either::B(b.call(req).map_err(Either::B)),
