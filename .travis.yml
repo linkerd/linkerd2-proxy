@@ -1,6 +1,5 @@
 ---
-dist: trusty
-sudo: false
+dist: xenial
 
 language: rust
 cache: cargo
