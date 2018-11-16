@@ -58,7 +58,6 @@ pub mod app;
 mod conditional;
 pub mod control;
 pub mod convert;
-pub mod ctx;
 mod dns;
 mod drain;
 mod logging;
