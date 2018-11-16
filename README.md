@@ -106,5 +106,5 @@ specific language governing permissions and limitations under the License.
 [prom]: https://prometheus.io/
 [rust]: https://www.rust-lang.org/
 [slack-badge]: https://slack.linkerd.io/badge.svg
-[slack]: https//slack.linkerd.io
+[slack]: https://slack.linkerd.io
 [twitter]: https://twitter.com/linkerd/
