@@ -11,13 +11,13 @@ use convert::*;
 use tap::{event, Event, Tap, Taps};
 
 #[derive(Clone, Debug)]
-pub struct Observe {
+pub struct Grpc {
     next_id: Arc<AtomicUsize>,
     taps: Arc<Mutex<Taps>>,
     tap_capacity: usize,
 }
 
-pub struct TapEvents {
+pub struct ResponseStream {
     rx: futures_mpsc_lossy::Receiver<Event>,
     remaining: usize,
     current: IndexMap<usize, event::Request>,
@@ -25,22 +25,22 @@ pub struct TapEvents {
     taps: Arc<Mutex<Taps>>,
 }
 
-impl Observe {
-    pub fn new(tap_capacity: usize) -> (Arc<Mutex<Taps>>, Observe) {
+impl Grpc {
+    pub fn new(tap_capacity: usize) -> (Arc<Mutex<Taps>>, Self) {
         let taps = Arc::new(Mutex::new(Taps::default()));
 
-        let observe = Observe {
+        let grpc = Grpc {
             next_id: Arc::new(AtomicUsize::new(0)),
             tap_capacity,
             taps: taps.clone(),
         };
 
-        (taps, observe)
+        (taps, grpc)
     }
 }
 
-impl server::Tap for Observe {
-    type ObserveStream = TapEvents;
+impl server::Tap for Grpc {
+    type ObserveStream = ResponseStream;
     type ObserveFuture = future::FutureResult<Response<Self::ObserveStream>, grpc::Error>;
 
     fn observe(&mut self, req: grpc::Request<ObserveRequest>) -> Self::ObserveFuture {
@@ -50,8 +50,8 @@ impl server::Tap for Observe {
                 HeaderMap::new(),
             ));
         }
-
         let req = req.into_inner();
+
         let (tap, rx) = match req
             .match_
             .and_then(|m| Tap::new(&m, self.tap_capacity).ok())
@@ -79,7 +79,7 @@ impl server::Tap for Observe {
             }
         };
 
-        let events = TapEvents {
+        let events = ResponseStream {
             rx,
             tap_id,
             current: IndexMap::default(),
@@ -91,7 +91,7 @@ impl server::Tap for Observe {
     }
 }
 
-impl Stream for TapEvents {
+impl Stream for ResponseStream {
     type Item = TapEvent;
     type Error = grpc::Error;
 
@@ -170,7 +170,7 @@ impl Stream for TapEvents {
     }
 }
 
-impl Drop for TapEvents {
+impl Drop for ResponseStream {
     fn drop(&mut self) {
         if let Ok(mut taps) = self.taps.lock() {
             let _ = (*taps).remove(self.tap_id);

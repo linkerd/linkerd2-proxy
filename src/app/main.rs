@@ -193,7 +193,7 @@ where
             });
 
         let tap_next_id = tap::NextId::default();
-        let (taps, observe) = tap::Observe::new(100);
+        let (taps, tap_grpc) = tap::Grpc::new(100);
 
         let (ctl_http_metrics, ctl_http_report) = {
             let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
@@ -592,7 +592,7 @@ where
                     let mut rt =
                         current_thread::Runtime::new().expect("initialize admin thread runtime");
 
-                    let tap = serve_tap(control_listener, TapServer::new(observe));
+                    let tap = serve_tap(control_listener, TapServer::new(tap_grpc));
 
                     let metrics = control::serve_http(
                         "metrics",
