@@ -1,70 +1,81 @@
 use std::fmt::{self, Display};
-use std::num::Wrapping;
 use std::ops;
 
-use super::prom::{FmtMetric, FmtLabels};
+use super::prom::{FmtLabels, FmtMetric};
 
-/// A Prometheus counter is represented by a `Wrapping` unsigned 64-bit int.
+/// A Prometheus counter is represented by a `Wrapping` unsigned 52-bit integer.
 ///
-/// Counters always explicitly wrap on overflows rather than panicking in
-/// debug builds. Prometheus' [`rate()`] and [`irate()`] queries handle breaks
-/// in monotonicity gracefully  (see also [`resets()`]), so wrapping is less
-/// problematic than panicking in this case.
-///
-/// Note, however, that Prometheus represents counters using 64-bit
-/// floating-point numbers. The correct semantics are to ensure the counter
-/// always gets reset to zero after Prometheus reads it, before it would ever
-/// overflow a 52-bit `f64` mantissa.
+/// Counters always explicitly wrap to zero when value overflows 2^53.
+/// This behavior is dictated by the fact that Prometheus represents counters
+/// using 64-bit floating-point numbers, whose mantissa is 52-bit wide.
+/// Prometheus' [`rate()`] and [`irate()`] queries handle breaks
+/// in monotonicity gracefully  (see also [`resets()`]), so derived metrics
+/// are still reliable on overflows.
 ///
 /// [`rate()`]: https://prometheus.io/docs/prometheus/latest/querying/functions/#rate()
 /// [`irate()`]: https://prometheus.io/docs/prometheus/latest/querying/functions/#irate()
 /// [`resets()`]: https://prometheus.io/docs/prometheus/latest/querying/functions/#resets
-///
-// TODO: Implement Prometheus reset semantics correctly, taking into
-//       consideration that Prometheus models counters as `f64` and so
-//       there are only 52 significant bits.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct Counter(Wrapping<u64>);
+pub struct Counter(u64);
+
+/// Largest `u64` that can fit without loss of precision in `f64` (2^53).
+pub(crate) const MAX_PRECISE_COUNTER: u64 = 0x20_0000_0000_0000;
 
 // ===== impl Counter =====
 
 impl Counter {
     /// Increment the counter by one.
     ///
-    /// This function wraps on overflows.
+    /// This function wraps on 52-bit overflows.
     pub fn incr(&mut self) {
-        (*self).0 += Wrapping(1);
+        *self += 1;
+    }
+
+    /// Return current counter value.
+    pub fn value(&self) -> u64 {
+        self.0
     }
 }
 
 impl Into<u64> for Counter {
     fn into(self) -> u64 {
-        (self.0).0
+        self.0
     }
 }
 
 impl From<u64> for Counter {
     fn from(value: u64) -> Self {
-        Counter(Wrapping(value))
+        Counter(0) + value
     }
 }
 
-impl ops::Add for Counter {
+impl ops::Add<u64> for Counter {
+    type Output = Self;
+    fn add(self, rhs: u64) -> Self::Output {
+        let wrapped = self
+            .0
+            .wrapping_add(rhs)
+            .wrapping_rem(MAX_PRECISE_COUNTER + 1);
+        Counter(wrapped)
+    }
+}
+
+impl ops::Add<Self> for Counter {
     type Output = Self;
     fn add(self, Counter(rhs): Self) -> Self::Output {
-        Counter(self.0 + rhs)
+        self + rhs
     }
 }
 
 impl ops::AddAssign<u64> for Counter {
     fn add_assign(&mut self, rhs: u64) {
-        (*self).0 += Wrapping(rhs)
+        *self = *self + rhs
     }
 }
 
 impl ops::AddAssign<Self> for Counter {
     fn add_assign(&mut self, Counter(rhs): Self) {
-        (*self).0 += rhs
+        *self += rhs
     }
 }
 
@@ -83,5 +94,39 @@ impl FmtMetric for Counter {
         write!(f, "{}{{", name)?;
         labels.fmt_labels(f)?;
         writeln!(f, "}} {}", self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_simple() {
+        let mut cnt = Counter::from(0);
+        assert_eq!(cnt.value(), 0);
+        cnt.incr();
+        assert_eq!(cnt.value(), 1);
+        cnt += 41;
+        assert_eq!(cnt.value(), 42);
+        cnt += 0;
+        assert_eq!(cnt.value(), 42);
+    }
+
+    #[test]
+    fn count_wrapping() {
+        let mut cnt = Counter::from(MAX_PRECISE_COUNTER - 1);
+        assert_eq!(cnt.value(), MAX_PRECISE_COUNTER - 1);
+        cnt.incr();
+        assert_eq!(cnt.value(), MAX_PRECISE_COUNTER);
+        assert_eq!(cnt + 1, Counter::from(0));
+        cnt.incr();
+        assert_eq!(cnt.value(), 0);
+
+        let max = Counter::from(MAX_PRECISE_COUNTER);
+        assert_eq!(max.value(), MAX_PRECISE_COUNTER);
+
+        let over = Counter::from(MAX_PRECISE_COUNTER + 1);
+        assert_eq!(over.value(), 0);
     }
 }
