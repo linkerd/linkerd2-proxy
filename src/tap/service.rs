@@ -1,12 +1,12 @@
 use bytes::{Buf, IntoBuf};
 use futures::{Async, Future, Poll};
-use h2;
 use http;
+use h2;
+use hyper::body::Payload;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio_timer::clock;
-use tower_h2::Body;
 
 use super::{event, NextId, Taps};
 use proxy::{
@@ -82,8 +82,8 @@ where
     M: svc::Stack<T>,
     M::Value: svc::Service<http::Request<RequestBody<A>>, Response = http::Response<B>>,
     <M::Value as svc::Service<http::Request<RequestBody<A>>>>::Error: HasH2Reason,
-    A: Body,
-    B: Body,
+    A: Payload<Error = h2::Error>,
+    B: Payload<Error = h2::Error>,
 {
     Layer {
         next_id,
@@ -141,8 +141,8 @@ where
         Response = http::Response<B>,
     >,
     S::Error: HasH2Reason,
-    A: Body,
-    B: Body,
+    A: Payload<Error = h2::Error>,
+    B: Payload<Error = h2::Error>,
 {
     type Response = http::Response<ResponseBody<B>>;
     type Error = S::Error;
@@ -203,7 +203,7 @@ where
 
 impl<F, B> Future for ResponseFuture<F>
 where
-    B: Body,
+    B: Payload<Error = h2::Error>,
     F: Future<Item = http::Response<B>>,
     F::Error: HasH2Reason,
 {
@@ -244,7 +244,7 @@ where
 
 impl<F, B> ResponseFuture<F>
 where
-    B: Body,
+    B: Payload,
     F: Future<Item = http::Response<B>>,
     F::Error: HasH2Reason,
 {
@@ -279,14 +279,15 @@ where
 
 // === RequestBody ===
 
-impl<B: Body> Body for RequestBody<B> {
-    type Data = <B::Data as IntoBuf>::Buf;
+impl<B: Payload<Error = h2::Error>> Payload for RequestBody<B> {
+    type Data = B::Data;
+    type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, h2::Error> {
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
         let poll_frame = self.inner.poll_data().map_err(|e| self.tap_err(e));
         let frame = try_ready!(poll_frame).map(|f| f.into_buf());
 
@@ -304,7 +305,7 @@ impl<B: Body> Body for RequestBody<B> {
         Ok(Async::Ready(frame))
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
         let trailers = try_ready!(self.inner.poll_trailers().map_err(|e| self.tap_err(e)));
         self.tap_eos(trailers.as_ref());
         Ok(Async::Ready(trailers))
@@ -369,7 +370,7 @@ impl<B> Drop for RequestBody<B> {
 
 // === ResponseBody ===
 
-impl<B: Body + Default> Default for ResponseBody<B> {
+impl<B: Payload + Default> Default for ResponseBody<B> {
     fn default() -> Self {
         let now = clock::now();
         Self {
@@ -385,14 +386,15 @@ impl<B: Body + Default> Default for ResponseBody<B> {
     }
 }
 
-impl<B: Body> Body for ResponseBody<B> {
-    type Data = <B::Data as IntoBuf>::Buf;
+impl<B: Payload<Error = h2::Error>> Payload for ResponseBody<B> {
+    type Data = B::Data;
+    type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, h2::Error> {
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
         trace!("ResponseBody::poll_data");
         let poll_frame = self.inner.poll_data().map_err(|e| self.tap_err(e));
         let frame = try_ready!(poll_frame).map(|f| f.into_buf());
@@ -414,7 +416,7 @@ impl<B: Body> Body for ResponseBody<B> {
         Ok(Async::Ready(frame))
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
         trace!("ResponseBody::poll_trailers");
         let trailers = try_ready!(self.inner.poll_trailers().map_err(|e| self.tap_err(e)));
         self.tap_eos(trailers.as_ref());
@@ -470,7 +472,7 @@ impl<B> ResponseBody<B> {
     }
 
     fn tap_err(&mut self, e: h2::Error) -> h2::Error {
-        trace!("ResponseBody::tap_err: {:?}", e);
+        trace!("ResponseBody::tap_err {:?}", e);
 
         if let Some(meta) = self.meta.take() {
             if let Some(t) = self.taps.take() {

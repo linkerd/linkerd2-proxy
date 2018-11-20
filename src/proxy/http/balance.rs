@@ -1,17 +1,17 @@
 extern crate tower_balance;
 extern crate tower_discover;
-extern crate tower_h2_balance;
+extern crate hyper_balance;
 
 use std::marker::PhantomData;
 use std::time::Duration;
+use hyper::body::Payload;
 use self::tower_discover::Discover;
 
 pub use self::tower_balance::{choose::PowerOfTwoChoices, load::WithPeakEwma, Balance};
-pub use self::tower_h2_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
+pub use self::hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
 
 use http;
 use svc;
-use tower_h2::Body;
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
 /// `M`-typed endpoint stacks.
@@ -63,8 +63,8 @@ where
     M: svc::Stack<T> + Clone,
     M::Value: Discover,
     <M::Value as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
-    A: Body,
-    B: Body,
+    A: Payload,
+    B: Payload,
 {
     type Value = <Stack<M, A, B> as svc::Stack<T>>::Value;
     type Error = <Stack<M, A, B> as svc::Stack<T>>::Error;
@@ -96,8 +96,8 @@ where
     M: svc::Stack<T> + Clone,
     M::Value: Discover,
     <M::Value as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
-    A: Body,
-    B: Body,
+    A: Payload,
+    B: Payload,
 {
     type Value = Balance<WithPeakEwma<M::Value, PendingUntilFirstData>, PowerOfTwoChoices>;
     type Error = M::Error;

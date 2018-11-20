@@ -1,0 +1,13 @@
+[package]
+name = "hyper-balance"
+version = "0.1.0"
+authors = ["Oliver Gould <ver@buoyant.io>"]
+publish = false
+
+[dependencies]
+futures = "0.1"
+http = "0.1"
+hyper = "0.12"
+
+tower-balance = { git = "https://github.com/tower-rs/tower" }
+tower-service = { git = "https://github.com/tower-rs/tower" }

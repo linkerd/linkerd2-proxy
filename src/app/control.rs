@@ -1,4 +1,3 @@
-use h2;
 use std::fmt;
 use std::time::Duration;
 
@@ -13,7 +12,6 @@ pub struct Config {
     tls_config: tls::ConditionalClientConfig,
     backoff: Duration,
     connect_timeout: Duration,
-    builder: h2::client::Builder,
 }
 
 impl Config {
@@ -29,7 +27,6 @@ impl Config {
             tls_config: Conditional::None(tls::ReasonForNoTls::Disabled),
             backoff,
             connect_timeout,
-            builder: h2::client::Builder::default(),
         }
     }
 
@@ -323,7 +320,6 @@ pub mod resolve {
 
             let target = client::Target {
                 connect: connect::Target::new(addr, tls),
-                builder: config.builder.clone(),
                 log_ctx: ::logging::admin().client("control", config.addr.clone()),
             };
 
@@ -352,11 +348,10 @@ pub mod resolve {
 
 /// Creates a client suitable for gRPC.
 pub mod client {
-    use h2;
+    use hyper::body::Payload;
     use std::marker::PhantomData;
-    use tower_h2::client;
-    use tower_grpc::BoxBody;
 
+    use proxy::http;
     use svc;
     use transport::connect;
     use Addr;
@@ -364,92 +359,110 @@ pub mod client {
     #[derive(Clone, Debug)]
     pub struct Target {
         pub(super) connect: connect::Target,
-        pub(super) builder: h2::client::Builder,
         pub(super) log_ctx: ::logging::Client<&'static str, Addr>,
     }
 
     #[derive(Debug)]
-    pub struct Layer<C> {
-        _p: PhantomData<fn() -> C>,
+    pub struct Layer<C, B> {
+        _p: PhantomData<(fn() -> C, fn() -> B)>,
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Stack<C> {
+    #[derive(Debug)]
+    pub struct Stack<C, B> {
         connect: C,
+        _p: PhantomData<fn() -> B>,
     }
 
     // === impl Layer ===
 
-    pub fn layer<C>() -> Layer<C>
+    pub fn layer<C, B>() -> Layer<C, B>
     where
         C: svc::Stack<connect::Target> + Clone,
-        C::Value: connect::Connect,
+        C::Value: connect::Connect + Clone + Send + Sync  + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
+        <C::Value as connect::Connect>::Future: Send + 'static,
+        <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
+        B: Payload,
     {
         Layer { _p: PhantomData }
     }
 
-    impl<C> Clone for Layer<C>
-    where
-        C: svc::Stack<connect::Target> + Clone,
-        C::Value: connect::Connect,
-        <C::Value as connect::Connect>::Connected: Send + 'static,
-    {
+    impl<C, B> Clone for Layer<C, B> {
         fn clone(&self) -> Self {
-            layer()
+            Layer { _p: PhantomData }
         }
     }
 
-    impl<C> svc::Layer<Target, connect::Target, C> for Layer<C>
+    impl<C, B> svc::Layer<Target, connect::Target, C> for Layer<C, B>
     where
         C: svc::Stack<connect::Target> + Clone,
-        C::Value: connect::Connect,
+        C::Value: connect::Connect + Clone + Send + Sync  + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
+        <C::Value as connect::Connect>::Future: Send + 'static,
+        <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
+        B: Payload,
     {
-        type Value = <Stack<C> as svc::Stack<Target>>::Value;
-        type Error = <Stack<C> as svc::Stack<Target>>::Error;
-        type Stack = Stack<C>;
+        type Value = <Stack<C, B> as svc::Stack<Target>>::Value;
+        type Error = <Stack<C, B> as svc::Stack<Target>>::Error;
+        type Stack = Stack<C, B>;
 
         fn bind(&self, connect: C) -> Self::Stack {
-            Stack { connect }
+            Stack {
+                connect,
+                _p: PhantomData,
+            }
         }
     }
 
     // === impl Stack ===
 
-    impl<C> svc::Stack<Target> for Stack<C>
+    impl<C, B> Clone for Stack<C, B>
+    where
+        C: Clone,
+    {
+        fn clone(&self) -> Self {
+            Stack {
+                connect: self.connect.clone(),
+                _p: PhantomData,
+            }
+        }
+    }
+
+    impl<C, B> svc::Stack<Target> for Stack<C, B>
     where
         C: svc::Stack<connect::Target> + Clone,
-        C::Value: connect::Connect,
+        C::Value: connect::Connect  + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
+        <C::Value as connect::Connect>::Future: Send + 'static,
+        <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
+        B: Payload,
     {
-        type Value = client::Connect<
+        type Value = http::h2::Connect<
             C::Value,
-            ::logging::ClientExecutor<&'static str, Addr>,
-            BoxBody,
+            B,
         >;
         type Error = C::Error;
 
         fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
             let c = self.connect.make(&target.connect)?;
-            let h2 = target.builder.clone();
             let e = target
                 .log_ctx
                 .clone()
                 .with_remote(target.connect.addr)
                 .executor();
-            Ok(client::Connect::new(c, h2, e))
+            Ok(http::h2::Connect::new(c, e))
         }
     }
 }
 
-pub mod box_request_body {
+pub mod grpc_request_payload {
     use bytes::Bytes;
     use http;
     use futures::Poll;
     use std::marker::PhantomData;
-    use tower_grpc::{Body, BoxBody};
+    use tower_grpc::{Body};
 
+    use proxy::http::GrpcBody as GlueBody;
     use svc;
 
     #[derive(Debug)]
@@ -486,7 +499,7 @@ pub mod box_request_body {
     where
         B: Body<Data = Bytes> + Send + 'static,
         M: svc::Stack<T>,
-        M::Value: svc::Service<http::Request<BoxBody>>,
+        M::Value: svc::Service<http::Request<GlueBody<B>>>,
     {
         type Value = <Stack<B, M> as svc::Stack<T>>::Value;
         type Error = <Stack<B, M> as svc::Stack<T>>::Error;
@@ -512,7 +525,7 @@ pub mod box_request_body {
     where
         B: Body<Data = Bytes> + Send + 'static,
         M: svc::Stack<T>,
-        M::Value: svc::Service<http::Request<BoxBody>>,
+        M::Value: svc::Service<http::Request<GlueBody<B>>>,
     {
         type Value = Service<B, M::Value>;
         type Error = M::Error;
@@ -528,7 +541,7 @@ pub mod box_request_body {
     impl<B, S> svc::Service<http::Request<B>> for Service<B, S>
     where
         B: Body<Data = Bytes> + Send + 'static,
-        S: svc::Service<http::Request<BoxBody>>,
+        S: svc::Service<http::Request<GlueBody<B>>>,
     {
         type Response = S::Response;
         type Error = S::Error;
@@ -539,9 +552,7 @@ pub mod box_request_body {
         }
 
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            let (head, body) = req.into_parts();
-            let req = http::Request::from_parts(head, BoxBody::new(Box::new(body)));
-            self.inner.call(req)
+            self.inner.call(req.map(GlueBody::new))
         }
     }
 }

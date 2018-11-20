@@ -3,6 +3,7 @@ members = [
     ".",
     "lib/fs-watch",
     "lib/futures-mpsc-lossy",
+    "lib/hyper-balance",
     "lib/metrics",
     "lib/router",
     "lib/stack",
@@ -23,6 +24,7 @@ flaky_tests = []
 
 [dependencies]
 futures-mpsc-lossy = { path = "lib/futures-mpsc-lossy" }
+hyper-balance      = { path = "lib/hyper-balance" }
 linkerd2-fs-watch  = { path = "lib/fs-watch" }
 linkerd2-metrics   = { path = "lib/metrics" }
 linkerd2-never     = { path = "lib/never" }
@@ -67,7 +69,6 @@ tower-service         = { git = "https://github.com/tower-rs/tower" }
 tower-util            = { git = "https://github.com/tower-rs/tower" }
 tower-http            = { git = "https://github.com/tower-rs/tower-http" }
 tower-h2              = { git = "https://github.com/tower-rs/tower-h2" }
-tower-h2-balance      = { git = "https://github.com/tower-rs/tower-h2" }
 tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc" }
 
 # FIXME update to a release when available (>0.10)

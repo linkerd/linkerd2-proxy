@@ -153,44 +153,10 @@ impl Server {
                     .expect("initialize support server runtime");
 
                 let mut new_svc = NewSvc(Arc::new(self.routes));
-
-                let srv: Box<FnMut(TcpStream) -> Box<Future<Item=(), Error=()>>> = match self.version {
-                    Run::Http1 => {
-                        let mut h1 = hyper::server::conn::Http::new();
-                        h1.http1_only(true);
-
-                        Box::new(move |sock| {
-                            let h1_clone = h1.clone();
-                            let srv_conn_count = Arc::clone(&srv_conn_count);
-                            let conn = new_svc.call(())
-                                .inspect(move |_| {
-                                    srv_conn_count.fetch_add(1, Ordering::Release);
-                                })
-                                .map_err(|e| println!("server new_service error: {}", e))
-                                .and_then(move |svc|
-                                    h1_clone.serve_connection(sock, svc)
-                                        .map_err(|e| println!("server h1 error: {}", e))
-                                )
-                                .map(|_| ());
-                            Box::new(conn)
-                        })
-                    },
-                    Run::Http2 => {
-                        let mut h2 = tower_h2::Server::new(
-                            new_svc,
-                            Default::default(),
-                            LazyExecutor,
-                        );
-                        Box::new(move |sock| {
-                            let srv_conn_count = Arc::clone(&srv_conn_count);
-                            let conn = h2.serve(sock)
-                                .map_err(|e| println!("server h2 error: {:?}", e))
-                                .inspect(move |_| {
-                                    srv_conn_count.fetch_add(1, Ordering::Release);
-                                });
-                            Box::new(conn)
-                        })
-                    },
+                let mut http = hyper::server::conn::Http::new();
+                match self.version {
+                    Run::Http1 => http.http1_only(true),
+                    Run::Http2 => http.http2_only(true),
                 };
 
                 let bind = TcpListener::from_std(
@@ -203,24 +169,35 @@ impl Server {
                 }
 
                 let serve = bind.incoming()
-                    .fold(srv, move |mut srv, sock| {
+                    .for_each(move |sock| {
                         if let Err(e) = sock.set_nodelay(true) {
                             return Err(e);
                         }
+
+                        let http_clone = http.clone();
+                        let srv_conn_count = Arc::clone(&srv_conn_count);
+                        let fut = new_svc.call(())
+                            .inspect(move |_| {
+                                srv_conn_count.fetch_add(1, Ordering::Release);
+                            })
+                            .map_err(|e| println!("server new_service error: {}", e))
+                            .and_then(move |svc|
+                                http_clone.serve_connection(sock, svc)
+                                    .map_err(|e| println!("server h1 error: {}", e))
+                            )
+                            .map(|_| ());
                         current_thread::TaskExecutor::current()
-                            .execute(srv(sock))
+                            .execute(fut)
                             .map_err(|e| {
                                 println!("server execute error: {:?}", e);
                                 io::Error::from(io::ErrorKind::Other)
                             })
-                            .map(|_| srv)
                     });
 
                 runtime.spawn(
-                    Box::new(serve
+                    serve
                         .map(|_| ())
                         .map_err(|e| println!("server error: {}", e))
-                    )
                 );
 
                 runtime.block_on(rx).expect("block on");
@@ -247,34 +224,6 @@ impl Server {
 enum Run {
     Http1,
     Http2,
-}
-
-struct RspBody(Option<Bytes>);
-
-impl RspBody {
-    fn new(body: Bytes) -> Self {
-        RspBody(Some(body))
-    }
-
-    fn empty() -> Self {
-        RspBody(None)
-    }
-}
-
-
-impl Body for RspBody {
-    type Data = Bytes;
-
-    fn is_end_stream(&self) -> bool {
-        self.0.as_ref().map(|b| b.is_empty()).unwrap_or(false)
-    }
-
-    fn poll_data(&mut self) -> Poll<Option<Bytes>, h2::Error> {
-        let data = self.0
-            .take()
-            .and_then(|b| if b.is_empty() { None } else { Some(b) });
-        Ok(Async::Ready(data))
-    }
 }
 
 struct Route(Box<
@@ -319,30 +268,6 @@ impl Svc {
                 Box::new(future::ok(res))
             }
         }
-    }
-}
-
-impl Service<Request<RecvBody>> for Svc {
-    type Response = Response<RspBody>;
-    type Error = h2::Error;
-    type Future = Box<Future<Item=Self::Response, Error=Self::Error> + Send>;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(Async::Ready(()))
-    }
-
-    fn call(&mut self, req: Request<RecvBody>) -> Self::Future {
-        let req = req.map(|body| {
-            assert!(body.is_end_stream(), "h2 test server doesn't support request bodies yet");
-            Box::new(futures::stream::empty()) as ReqBody
-        });
-        Box::new(self.route(req)
-            .map(|res| {
-                res.map(|s| RspBody::new(s))
-            })
-            .map_err(|()| {
-                panic!("test route handler errored")
-            }))
     }
 }
 
