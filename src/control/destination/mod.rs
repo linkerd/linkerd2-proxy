@@ -222,4 +222,8 @@ impl Metadata {
     pub fn tls_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoIdentity> {
         self.tls_identity.as_ref()
     }
+
+    pub fn tls_status(&self) -> tls::Status {
+        self.tls_identity().map(|_| ())
+    }
 }

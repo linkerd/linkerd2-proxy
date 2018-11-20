@@ -1,388 +1,310 @@
-use bytes::{Buf, IntoBuf};
-use futures::{Async, Future, Poll};
+use bytes::IntoBuf;
+use futures::{future, Async, Future, Poll, Stream};
 use h2;
 use http;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
-use tokio_timer::clock;
-use tower_h2::Body;
+use std::collections::VecDeque;
+use tower_h2::Body as Payload;
 
-use super::{event, NextId, Taps};
-use proxy::{
-    self,
-    http::{h1, HasH2Reason},
-};
+use super::iface::{Register, Tap, TapBody, TapRequest, TapResponse};
+use super::Inspect;
+use proxy::http::HasH2Reason;
 use svc;
+
+pub trait Register {
+    type Tap: Tap;
+    type Taps: Stream<Item = Weak<Self::Tap>>;
+
+    fn register(&mut self) -> Self::Taps;
+}
+
+pub trait Tap {
+    type TapRequestBody: TapBody;
+    type TapResponse: TapResponse<TapBody = Self::TapResponseBody>;
+    type TapResponseBody: TapBody;
+
+    fn tap<B: Payload>(&self, req: &http::Request<B>)
+        -> Option<(Self::TapRequestBody, Self::TapResponse)>;
+}
+
+pub trait TapBody {
+    fn data<D: IntoBuf>(&mut self, data: &D::Buf);
+
+    fn end(self, headers: Option<&http::HeaderMap>);
+
+    fn fail(self, error: &h2::Error);
+}
+
+pub trait TapResponse {
+    type TapBody: TapBody;
+
+    fn tap<B: Payload>(self, rsp: &http::Response<B>) -> Self::TapBody;
+
+    fn fail<E: HasH2Reason>(self, error: &E);
+}
 
 /// A stack module that wraps services to record taps.
 #[derive(Clone, Debug)]
-pub struct Layer<T, M> {
-    next_id: NextId,
-    taps: Arc<Mutex<Taps>>,
-    _p: PhantomData<fn() -> (T, M)>,
+pub struct Layer<R: Register> {
+    registry: R,
 }
 
 /// Wraps services to record taps.
 #[derive(Clone, Debug)]
-pub struct Stack<T, N>
-where
-    N: svc::Stack<T>,
-{
-    next_id: NextId,
-    taps: Arc<Mutex<Taps>>,
-    inner: N,
-    _p: PhantomData<fn() -> (T)>,
+pub struct Stack<R: Register, T> {
+    registry: R,
+    inner: T,
 }
 
 /// A middleware that records HTTP taps.
 #[derive(Clone, Debug)]
-pub struct Service<S> {
-    endpoint: event::Endpoint,
-    next_id: NextId,
-    taps: Arc<Mutex<Taps>>,
+pub struct Service<I, R, T, S> {
+    tap_rx: R,
+    taps: VecDeque<T>,
     inner: S,
+    inspect: I,
 }
 
-#[derive(Debug, Clone)]
-pub struct ResponseFuture<F> {
-    inner: F,
-    meta: Option<event::Request>,
-    taps: Option<Arc<Mutex<Taps>>>,
-    request_open_at: Instant,
+/// Fetches `TapRequest`s, instruments messages to be tapped, and executes a
+/// request.
+pub struct ResponseFuture<I, T, A, S>
+where
+    I: Inspect,
+    T: Tap,
+    A: Payload,
+    S: svc::Service<http::Request<Body<A, T::TapRequestBody>>>,
+{
+    state: FutState<I, T, A, S>,
 }
 
+enum FutState<
+    I: Inspect,
+    T: Tap,
+    A: Payload,
+    S: svc::Service<http::Request<Body<A, T::TapRequestBody>>>,
+> {
+    Taps {
+        taps: future::JoinAll<VecDeque<T::Future>>,
+        inspect: I,
+        request: Option<http::Request<A>>,
+        service: S,
+    },
+    Call {
+        taps: VecDeque<T::TapResponse>,
+        call: S::Future,
+    },
+}
+
+// A `Payload` instrumented with taps.
 #[derive(Debug)]
-pub struct RequestBody<B> {
+pub struct Body<B: Payload, T: TapBody> {
     inner: B,
-    meta: Option<event::Request>,
-    taps: Option<Arc<Mutex<Taps>>>,
-    request_open_at: Instant,
-    byte_count: usize,
-    frame_count: usize,
-}
-
-#[derive(Debug)]
-pub struct ResponseBody<B> {
-    inner: B,
-    meta: Option<event::Response>,
-    taps: Option<Arc<Mutex<Taps>>>,
-    request_open_at: Instant,
-    response_open_at: Instant,
-    response_first_frame_at: Option<Instant>,
-    byte_count: usize,
-    frame_count: usize,
+    taps: VecDeque<T>,
 }
 
 // === Layer ===
 
-pub fn layer<T, M, A, B>(next_id: NextId, taps: Arc<Mutex<Taps>>) -> Layer<T, M>
+impl<R> Layer<R>
 where
-    T: Clone + Into<event::Endpoint>,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<http::Request<RequestBody<A>>, Response = http::Response<B>>,
-    <M::Value as svc::Service<http::Request<RequestBody<A>>>>::Error: HasH2Reason,
-    A: Body,
-    B: Body,
+    R: Register + Clone,
 {
-    Layer {
-        next_id,
-        taps,
-        _p: PhantomData,
+    pub(super) fn new(registry: R) -> Self {
+        Self { registry }
     }
 }
 
-impl<T, M> svc::Layer<T, T, M> for Layer<T, M>
+impl<R, T, M> svc::Layer<T, T, M> for Layer<R>
 where
-    T: Clone + Into<event::Endpoint>,
+    T: Inspect + Clone,
+    R: Register + Clone,
     M: svc::Stack<T>,
 {
-    type Value = <Stack<T, M> as svc::Stack<T>>::Value;
+    type Value = <Stack<R, M> as svc::Stack<T>>::Value;
     type Error = M::Error;
-    type Stack = Stack<T, M>;
+    type Stack = Stack<R, M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
-            next_id: self.next_id.clone(),
-            taps: self.taps.clone(),
             inner,
-            _p: PhantomData,
+            registry: self.registry.clone(),
         }
     }
 }
 
 // === Stack ===
 
-impl<T, M> svc::Stack<T> for Stack<T, M>
+impl<R, T, M> svc::Stack<T> for Stack<R, M>
 where
-    T: Clone + Into<event::Endpoint>,
+    T: Inspect + Clone,
+    R: Register + Clone,
     M: svc::Stack<T>,
 {
-    type Value = Service<M::Value>;
+    type Value = Service<T, R::Taps, R::Tap, M::Value>;
     type Error = M::Error;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
         let inner = self.inner.make(&target)?;
+        let tap_rx = self.registry.clone().register();
         Ok(Service {
-            next_id: self.next_id.clone(),
-            endpoint: target.clone().into(),
-            taps: self.taps.clone(),
             inner,
+            tap_rx,
+            taps: VecDeque::default(),
+            inspect: target.clone(),
         })
     }
 }
 
 // === Service ===
 
-impl<S, A, B> svc::Service<http::Request<A>> for Service<S>
+impl<I, R, S, T, A, B> svc::Service<http::Request<A>> for Service<I, R, T, S>
 where
-    S: svc::Service<http::Request<RequestBody<A>>, Response = http::Response<B>>,
+    I: Inspect + Clone,
+    R: Stream<Item = T>,
+    T: Tap,
+    S: svc::Service<http::Request<Body<A, T::TapRequestBody>>, Response = http::Response<B>>
+        + Clone,
     S::Error: HasH2Reason,
-    A: Body,
-    B: Body,
+    A: Payload,
+    B: Payload,
 {
-    type Response = http::Response<ResponseBody<B>>;
+    type Response = http::Response<Body<B, T::TapResponseBody>>;
     type Error = S::Error;
-    type Future = ResponseFuture<S::Future>;
+    type Future = ResponseFuture<I, T, A, S>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        // Load new taps from the tap server.
+        while let Ok(Async::Ready(Some(t))) = self.tap_rx.poll() {
+            self.taps.push_back(t);
+        }
+        // Drop taps that have been canceled or completed.
+        self.taps.retain(|t| t.can_tap_more());
+
         self.inner.poll_ready()
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
-        let request_open_at = clock::now();
-
-        // Only tap a request iff a `Source` is known.
-        let meta = req.extensions().get::<proxy::Source>().map(|source| {
-            let scheme = req.uri().scheme_part().cloned();
-            let authority = req
-                .uri()
-                .authority_part()
-                .cloned()
-                .or_else(|| h1::authority_from_host(&req));
-            let path = req.uri().path().into();
-
-            event::Request {
-                id: self.next_id.next_id(),
-                endpoint: self.endpoint.clone(),
-                source: source.clone(),
-                method: req.method().clone(),
-                scheme,
-                authority,
-                path,
+        // Determine which active taps match the request and collect all of the
+        // futures requesting TapRequests from the tap server.
+        let mut tap_futs = VecDeque::with_capacity(self.taps.len());
+        for t in self.taps.iter_mut() {
+            if t.should_tap(&req, &self.inspect) {
+                tap_futs.push_back(t.tap());
             }
-        });
-
-        let (head, inner) = req.into_parts();
-        let mut body = RequestBody {
-            inner,
-            meta: meta.clone(),
-            taps: Some(self.taps.clone()),
-            request_open_at,
-            byte_count: 0,
-            frame_count: 0,
-        };
-
-        body.tap_open();
-        if body.is_end_stream() {
-            body.tap_eos(Some(&head.headers));
         }
 
-        let req = http::Request::from_parts(head, body);
         ResponseFuture {
-            inner: self.inner.call(req),
-            meta,
-            taps: Some(self.taps.clone()),
-            request_open_at,
+            state: FutState::Taps {
+                taps: future::join_all(tap_futs),
+                request: Some(req),
+                service: self.inner.clone(),
+                inspect: self.inspect.clone(),
+            },
         }
     }
 }
 
-impl<F, B> Future for ResponseFuture<F>
+impl<A, B, I, T, S> Future for ResponseFuture<I, T, A, S>
 where
-    B: Body,
-    F: Future<Item = http::Response<B>>,
-    F::Error: HasH2Reason,
+    A: Payload,
+    B: Payload,
+    I: Inspect,
+    T: Tap,
+    S: svc::Service<http::Request<Body<A, T::TapRequestBody>>, Response = http::Response<B>>,
+    S::Error: HasH2Reason,
 {
-    type Item = http::Response<ResponseBody<B>>;
-    type Error = F::Error;
+    type Item = http::Response<Body<B, T::TapResponseBody>>;
+    type Error = S::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let rsp = try_ready!(self.inner.poll().map_err(|e| self.tap_err(e)));
-        let response_open_at = clock::now();
+        // Drive the state machine from FutState::Taps to FutState::Call to Ready.
+        loop {
+            self.state = match self.state {
+                FutState::Taps {
+                    ref mut request,
+                    ref mut service,
+                    ref mut taps,
+                    ref inspect,
+                } => {
+                    // Get all the tap requests. If there's any sort of error,
+                    // continue without taps.
+                    let mut taps = match taps.poll() {
+                        Ok(Async::NotReady) => return Ok(Async::NotReady),
+                        Ok(Async::Ready(taps)) => taps,
+                        Err(_) => Vec::new(),
+                    };
 
-        let meta = self.meta.take().map(|request| event::Response {
-            request,
-            status: rsp.status(),
-        });
+                    let req = request.take().expect("request must be set");
 
-        let (head, inner) = rsp.into_parts();
-        let mut body = ResponseBody {
-            inner,
-            meta,
-            taps: self.taps.take(),
-            request_open_at: self.request_open_at,
-            response_open_at,
-            response_first_frame_at: None,
-            byte_count: 0,
-            frame_count: 0,
-        };
+                    // Record the request as being opened in all TapRequests
+                    // and then
+                    let mut req_taps = VecDeque::with_capacity(taps.len());
+                    let mut rsp_taps = VecDeque::with_capacity(taps.len());
+                    for tap in taps.drain(..).filter_map(|t| t) {
+                        let (req, rsp) = tap.open(&req, inspect);
+                        req_taps.push_back(req);
+                        rsp_taps.push_back(rsp);
+                    }
 
-        body.tap_open();
-        if body.is_end_stream() {
-            trace!("ResponseFuture::poll: eos");
-            body.tap_eos(Some(&head.headers));
-        }
+                    // Install the request taps into the request body.
+                    let req = {
+                        let (head, inner) = req.into_parts();
+                        let body = Body {
+                            inner,
+                            taps: req_taps,
+                        };
+                        http::Request::from_parts(head, body)
+                    };
 
-        let rsp = http::Response::from_parts(head, body);
-        Ok(rsp.into())
-    }
-}
-
-impl<F, B> ResponseFuture<F>
-where
-    B: Body,
-    F: Future<Item = http::Response<B>>,
-    F::Error: HasH2Reason,
-{
-    fn tap_err(&mut self, e: F::Error) -> F::Error {
-        if let Some(request) = self.meta.take() {
-            let meta = event::Response {
-                request,
-                status: http::StatusCode::INTERNAL_SERVER_ERROR,
+                    // Call the service with the decorated request and save the
+                    // response taps for when the call completes.
+                    let call = service.call(req);
+                    FutState::Call {
+                        call,
+                        taps: rsp_taps,
+                    }
+                }
+                FutState::Call {
+                    ref mut call,
+                    ref mut taps,
+                } => {
+                    return match call.poll() {
+                        Ok(Async::NotReady) => Ok(Async::NotReady),
+                        Ok(Async::Ready(rsp)) => {
+                            // Tap the response headers and use the response
+                            // body taps to decorate the response body.
+                            let taps = taps.drain(..).map(|t| t.tap(&rsp)).collect();
+                            let (head, inner) = rsp.into_parts();
+                            let mut body = Body { inner, taps };
+                            if body.is_end_stream() {
+                                body.eos(None);
+                            }
+                            Ok(Async::Ready(http::Response::from_parts(head, body)))
+                        }
+                        Err(e) => {
+                            for tap in taps.drain(..) {
+                                tap.fail(&e);
+                            }
+                            Err(e)
+                        }
+                    };
+                }
             };
-
-            if let Some(t) = self.taps.take() {
-                let now = clock::now();
-                if let Ok(mut taps) = t.lock() {
-                    taps.inspect(&event::Event::StreamResponseFail(
-                        meta,
-                        event::StreamResponseFail {
-                            request_open_at: self.request_open_at,
-                            response_open_at: now,
-                            response_first_frame_at: None,
-                            response_fail_at: now,
-                            error: e.h2_reason().unwrap_or(h2::Reason::INTERNAL_ERROR),
-                            bytes_sent: 0,
-                        },
-                    ));
-                }
-            }
         }
-
-        e
     }
 }
 
-// === RequestBody ===
+// === Body ===
 
-impl<B: Body> Body for RequestBody<B> {
-    type Data = <B::Data as IntoBuf>::Buf;
-
-    fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
-    }
-
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, h2::Error> {
-        let poll_frame = self.inner.poll_data().map_err(|e| self.tap_err(e));
-        let frame = try_ready!(poll_frame).map(|f| f.into_buf());
-
-        if self.meta.is_some() {
-            if let Some(ref f) = frame {
-                self.frame_count += 1;
-                self.byte_count += f.remaining();
-            }
-        }
-
-        if self.inner.is_end_stream() {
-            self.tap_eos(None);
-        }
-
-        Ok(Async::Ready(frame))
-    }
-
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
-        let trailers = try_ready!(self.inner.poll_trailers().map_err(|e| self.tap_err(e)));
-        self.tap_eos(trailers.as_ref());
-        Ok(Async::Ready(trailers))
-    }
-}
-
-impl<B> RequestBody<B> {
-    fn tap_open(&mut self) {
-        if let Some(meta) = self.meta.as_ref() {
-            if let Some(taps) = self.taps.as_ref() {
-                if let Ok(mut taps) = taps.lock() {
-                    taps.inspect(&event::Event::StreamRequestOpen(meta.clone()));
-                }
-            }
-        }
-    }
-
-    fn tap_eos(&mut self, _: Option<&http::HeaderMap>) {
-        if let Some(meta) = self.meta.take() {
-            if let Some(t) = self.taps.take() {
-                let now = clock::now();
-                if let Ok(mut taps) = t.lock() {
-                    taps.inspect(&event::Event::StreamRequestEnd(
-                        meta,
-                        event::StreamRequestEnd {
-                            request_open_at: self.request_open_at,
-                            request_end_at: now,
-                        },
-                    ));
-                }
-            }
-        }
-    }
-
-    fn tap_err(&mut self, e: h2::Error) -> h2::Error {
-        if let Some(meta) = self.meta.take() {
-            if let Some(t) = self.taps.take() {
-                let now = clock::now();
-                if let Ok(mut taps) = t.lock() {
-                    taps.inspect(&event::Event::StreamRequestFail(
-                        meta,
-                        event::StreamRequestFail {
-                            request_open_at: self.request_open_at,
-                            request_fail_at: now,
-                            error: e.reason().unwrap_or(h2::Reason::INTERNAL_ERROR),
-                        },
-                    ));
-                }
-            }
-        }
-
-        e
-    }
-}
-
-impl<B> Drop for RequestBody<B> {
-    fn drop(&mut self) {
-        // TODO this should be recorded as a cancelation if the stream didn't end.
-        self.tap_eos(None);
-    }
-}
-
-// === ResponseBody ===
-
-impl<B: Body + Default> Default for ResponseBody<B> {
+// `T` need not implement Default.
+impl<B: Payload + Default, T: TapBody> Default for Body<B, T> {
     fn default() -> Self {
-        let now = clock::now();
         Self {
             inner: B::default(),
-            meta: None,
-            taps: None,
-            request_open_at: now,
-            response_open_at: now,
-            response_first_frame_at: None,
-            byte_count: 0,
-            frame_count: 0,
+            taps: VecDeque::default(),
         }
     }
 }
 
-impl<B: Body> Body for ResponseBody<B> {
+impl<B: Payload, T: TapBody> Payload for Body<B, T> {
     type Data = <B::Data as IntoBuf>::Buf;
 
     fn is_end_stream(&self) -> bool {
@@ -390,111 +312,49 @@ impl<B: Body> Body for ResponseBody<B> {
     }
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, h2::Error> {
-        trace!("ResponseBody::poll_data");
-        let poll_frame = self.inner.poll_data().map_err(|e| self.tap_err(e));
+        let poll_frame = self.inner.poll_data().map_err(|e| self.err(e));
         let frame = try_ready!(poll_frame).map(|f| f.into_buf());
-
-        if self.meta.is_some() {
-            if self.response_first_frame_at.is_none() {
-                self.response_first_frame_at = Some(clock::now());
-            }
-            if let Some(ref f) = frame {
-                self.frame_count += 1;
-                self.byte_count += f.remaining();
-            }
-        }
-
-        if self.inner.is_end_stream() {
-            self.tap_eos(None);
-        }
-
+        self.data(frame.as_ref());
         Ok(Async::Ready(frame))
     }
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
-        trace!("ResponseBody::poll_trailers");
-        let trailers = try_ready!(self.inner.poll_trailers().map_err(|e| self.tap_err(e)));
-        self.tap_eos(trailers.as_ref());
+        let trailers = try_ready!(self.inner.poll_trailers().map_err(|e| self.err(e)));
+        self.eos(trailers.as_ref());
         Ok(Async::Ready(trailers))
     }
 }
 
-impl<B> ResponseBody<B> {
-    fn tap_open(&mut self) {
-        if let Some(meta) = self.meta.as_ref() {
-            if let Some(taps) = self.taps.as_ref() {
-                if let Ok(mut taps) = taps.lock() {
-                    taps.inspect(&event::Event::StreamResponseOpen(
-                        meta.clone(),
-                        event::StreamResponseOpen {
-                            request_open_at: self.request_open_at,
-                            response_open_at: clock::now(),
-                        },
-                    ));
-                }
-            }
-        }
-    }
-
-    fn tap_eos(&mut self, trailers: Option<&http::HeaderMap>) {
-        trace!("ResponseBody::tap_eos: trailers={}", trailers.is_some());
-        if let Some(meta) = self.meta.take() {
-            if let Some(t) = self.taps.take() {
-                let response_end_at = clock::now();
-                if let Ok(mut taps) = t.lock() {
-                    taps.inspect(&event::Event::StreamResponseEnd(
-                        meta,
-                        event::StreamResponseEnd {
-                            request_open_at: self.request_open_at,
-                            response_open_at: self.response_open_at,
-                            response_first_frame_at: self
-                                .response_first_frame_at
-                                .unwrap_or(response_end_at),
-                            response_end_at,
-                            grpc_status: trailers.and_then(Self::grpc_status),
-                            bytes_sent: self.byte_count as u64,
-                        },
-                    ));
-                }
-            }
-        }
-    }
-
-    fn grpc_status(t: &http::HeaderMap) -> Option<u32> {
-        t.get("grpc-status")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-    }
-
-    fn tap_err(&mut self, e: h2::Error) -> h2::Error {
-        trace!("ResponseBody::tap_err: {:?}", e);
-
-        if let Some(meta) = self.meta.take() {
-            if let Some(t) = self.taps.take() {
-                if let Ok(mut taps) = t.lock() {
-                    taps.inspect(&event::Event::StreamResponseFail(
-                        meta,
-                        event::StreamResponseFail {
-                            request_open_at: self.request_open_at,
-                            response_open_at: self.response_open_at,
-                            response_first_frame_at: self.response_first_frame_at,
-                            response_fail_at: clock::now(),
-                            error: e.reason().unwrap_or(h2::Reason::INTERNAL_ERROR),
-                            bytes_sent: self.byte_count as u64,
-                        },
-                    ));
-                }
+impl<B: Payload, T: TapBody> Body<B, T> {
+    fn data(&mut self, frame: Option<&<B::Data as IntoBuf>::Buf>) {
+        if let Some(ref f) = frame {
+            for ref mut tap in self.taps.iter_mut() {
+                tap.data::<<B::Data as IntoBuf>::Buf>(f);
             }
         }
 
-        e
+        if self.inner.is_end_stream() {
+            self.eos(None);
+        }
+    }
+
+    fn eos(&mut self, trailers: Option<&http::HeaderMap>) {
+        for tap in self.taps.drain(..) {
+            tap.eos(trailers);
+        }
+    }
+
+    fn err(&mut self, error: h2::Error) -> h2::Error {
+        for tap in self.taps.drain(..) {
+            tap.fail(&error);
+        }
+
+        error
     }
 }
 
-impl<B> Drop for ResponseBody<B> {
+impl<B: Payload, T: TapBody> Drop for Body<B, T> {
     fn drop(&mut self) {
-        trace!("ResponseHandle::drop");
-        // TODO this should be recorded as a cancelation if the stream didn't end.
-        self.tap_eos(None);
+        self.eos(None);
     }
 }

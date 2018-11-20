@@ -1,11 +1,12 @@
-use std::fmt;
+use indexmap::IndexMap;
+use std::{fmt, net};
 
 use control::destination::{Metadata, ProtocolHint};
 use proxy::http::settings;
 use svc;
 use tap;
 use transport::{connect, tls};
-use NameAddr;
+use {Conditional, NameAddr};
 
 #[derive(Clone, Debug)]
 pub struct Endpoint {
@@ -52,14 +53,32 @@ impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Endpoint {
     }
 }
 
-impl From<Endpoint> for tap::Endpoint {
-    fn from(ep: Endpoint) -> Self {
-        // TODO add route labels...
-        tap::Endpoint {
-            direction: tap::Direction::Out,
-            labels: ep.metadata.labels().clone(),
-            target: ep.connect.clone(),
-        }
+impl tap::Inspect for Endpoint {
+
+    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr> {
+        use proxy::server::Source;
+
+        req.extensions().get::<Source>().map(|s| s.remote)
+    }
+
+    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::Status {
+        Conditional::None(tls::ReasonForNoTls::InternalTraffic)
+    }
+
+    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<net::SocketAddr> {
+        Some(self.connect.addr)
+    }
+
+    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
+        Some(self.metadata.labels())
+    }
+
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::Status {
+        self.metadata.tls_status()
+    }
+
+    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
+        true
     }
 }
 

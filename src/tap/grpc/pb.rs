@@ -3,10 +3,11 @@
 use std::error::Error;
 use std::fmt;
 
-use api::*;
+use super::event::{self, Event};
+use api::pb_elapsed;
+use api::tap as api;
 use convert::*;
 use proxy;
-use tap::event::{self, Event};
 
 #[derive(Debug, Clone)]
 pub struct UnknownEvent;
@@ -25,11 +26,11 @@ impl Error for UnknownEvent {
 }
 
 impl event::StreamResponseEnd {
-    fn to_tap_event(&self, ctx: &event::Request) -> tap::TapEvent {
-        let eos = self.grpc_status.map(tap::Eos::from_grpc_status);
+    fn to_tap_event(&self, ctx: &event::Request) -> api::TapEvent {
+        let eos = self.grpc_status.map(api::Eos::from_grpc_status);
 
-        let end = tap::tap_event::http::ResponseEnd {
-            id: Some(tap::tap_event::http::StreamId {
+        let end = api::tap_event::http::ResponseEnd {
+            id: Some(api::tap_event::http::StreamId {
                 base: 0, // TODO FIXME
                 stream: ctx.id as u64,
             }),
@@ -39,23 +40,23 @@ impl event::StreamResponseEnd {
             eos,
         };
 
-        tap::TapEvent {
+        api::TapEvent {
             proxy_direction: ctx.endpoint.direction.as_pb().into(),
             source: Some((&ctx.source.remote).into()),
             source_meta: Some(ctx.source.src_meta()),
             destination: Some((&ctx.endpoint.target.addr).into()),
             destination_meta: Some(ctx.endpoint.dst_meta()),
-            event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
-                event: Some(tap::tap_event::http::Event::ResponseEnd(end)),
+            event: Some(api::tap_event::Event::Http(api::tap_event::Http {
+                event: Some(api::tap_event::http::Event::ResponseEnd(end)),
             })),
         }
     }
 }
 
 impl event::StreamResponseFail {
-    fn to_tap_event(&self, ctx: &event::Request) -> tap::TapEvent {
-        let end = tap::tap_event::http::ResponseEnd {
-            id: Some(tap::tap_event::http::StreamId {
+    fn to_tap_event(&self, ctx: &event::Request) -> api::TapEvent {
+        let end = api::tap_event::http::ResponseEnd {
+            id: Some(api::tap_event::http::StreamId {
                 base: 0, // TODO FIXME
                 stream: ctx.id as u64,
             }),
@@ -65,23 +66,23 @@ impl event::StreamResponseFail {
             eos: Some(self.error.into()),
         };
 
-        tap::TapEvent {
+        api::TapEvent {
             proxy_direction: ctx.endpoint.direction.as_pb().into(),
             source: Some((&ctx.source.remote).into()),
             source_meta: Some(ctx.source.src_meta()),
             destination: Some((&ctx.endpoint.target.addr).into()),
             destination_meta: Some(ctx.endpoint.dst_meta()),
-            event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
-                event: Some(tap::tap_event::http::Event::ResponseEnd(end)),
+            event: Some(api::tap_event::Event::Http(api::tap_event::Http {
+                event: Some(api::tap_event::http::Event::ResponseEnd(end)),
             })),
         }
     }
 }
 
 impl event::StreamRequestFail {
-    fn to_tap_event(&self, ctx: &event::Request) -> tap::TapEvent {
-        let end = tap::tap_event::http::ResponseEnd {
-            id: Some(tap::tap_event::http::StreamId {
+    fn to_tap_event(&self, ctx: &event::Request) -> api::TapEvent {
+        let end = api::tap_event::http::ResponseEnd {
+            id: Some(api::tap_event::http::StreamId {
                 base: 0, // TODO FIXME
                 stream: ctx.id as u64,
             }),
@@ -91,26 +92,28 @@ impl event::StreamRequestFail {
             eos: Some(self.error.into()),
         };
 
-        tap::TapEvent {
+        api::TapEvent {
             proxy_direction: ctx.endpoint.direction.as_pb().into(),
             source: Some((&ctx.source.remote).into()),
             source_meta: Some(ctx.source.src_meta()),
             destination: Some((&ctx.endpoint.target.addr).into()),
             destination_meta: Some(ctx.endpoint.dst_meta()),
-            event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
-                event: Some(tap::tap_event::http::Event::ResponseEnd(end)),
+            event: Some(api::tap_event::Event::Http(api::tap_event::Http {
+                event: Some(api::tap_event::http::Event::ResponseEnd(end)),
             })),
         }
     }
 }
 
-impl<'a> TryFrom<&'a Event> for tap::TapEvent {
+impl<'a> TryFrom<&'a Event> for api::TapEvent {
     type Err = UnknownEvent;
     fn try_from(ev: &'a Event) -> Result<Self, Self::Err> {
+        use api::http_types;
+
         let tap_ev = match *ev {
             Event::StreamRequestOpen(ref ctx) => {
-                let init = tap::tap_event::http::RequestInit {
-                    id: Some(tap::tap_event::http::StreamId {
+                let init = api::tap_event::http::RequestInit {
+                    id: Some(api::tap_event::http::StreamId {
                         base: 0,
                         // TODO FIXME
                         stream: ctx.id as u64,
@@ -126,21 +129,21 @@ impl<'a> TryFrom<&'a Event> for tap::TapEvent {
                     path: ctx.path.clone(),
                 };
 
-                tap::TapEvent {
+                api::TapEvent {
                     proxy_direction: ctx.endpoint.direction.as_pb().into(),
                     source: Some((&ctx.source.remote).into()),
                     source_meta: Some(ctx.source.src_meta()),
                     destination: Some((&ctx.endpoint.target.addr).into()),
                     destination_meta: Some(ctx.endpoint.dst_meta()),
-                    event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
-                        event: Some(tap::tap_event::http::Event::RequestInit(init)),
+                    event: Some(api::tap_event::Event::Http(api::tap_event::Http {
+                        event: Some(api::tap_event::http::Event::RequestInit(init)),
                     })),
                 }
             }
 
             Event::StreamResponseOpen(ref ctx, ref rsp) => {
-                let init = tap::tap_event::http::ResponseInit {
-                    id: Some(tap::tap_event::http::StreamId {
+                let init = api::tap_event::http::ResponseInit {
+                    id: Some(api::tap_event::http::StreamId {
                         base: 0,
                         // TODO FIXME
                         stream: ctx.request.id as u64,
@@ -149,14 +152,14 @@ impl<'a> TryFrom<&'a Event> for tap::TapEvent {
                     http_status: u32::from(ctx.status.as_u16()),
                 };
 
-                tap::TapEvent {
+                api::TapEvent {
                     proxy_direction: ctx.request.endpoint.direction.as_pb().into(),
                     source: Some((&ctx.request.source.remote).into()),
                     source_meta: Some(ctx.request.source.src_meta()),
                     destination: Some((&ctx.request.endpoint.target.addr).into()),
                     destination_meta: Some(ctx.request.endpoint.dst_meta()),
-                    event: Some(tap::tap_event::Event::Http(tap::tap_event::Http {
-                        event: Some(tap::tap_event::http::Event::ResponseInit(init)),
+                    event: Some(api::tap_event::Event::Http(api::tap_event::Http {
+                        event: Some(api::tap_event::http::Event::ResponseInit(init)),
                     })),
                 }
             }
@@ -175,8 +178,8 @@ impl<'a> TryFrom<&'a Event> for tap::TapEvent {
 }
 
 impl proxy::Source {
-    fn src_meta(&self) -> tap::tap_event::EndpointMeta {
-        let mut meta = tap::tap_event::EndpointMeta::default();
+    fn src_meta(&self) -> api::tap_event::EndpointMeta {
+        let mut meta = api::tap_event::EndpointMeta::default();
 
         meta.labels
             .insert("tls".to_owned(), format!("{}", self.tls_status));
@@ -186,17 +189,17 @@ impl proxy::Source {
 }
 
 impl event::Direction {
-    fn as_pb(&self) -> tap::tap_event::ProxyDirection {
+    fn as_pb(&self) -> api::tap_event::ProxyDirection {
         match self {
-            event::Direction::Out => tap::tap_event::ProxyDirection::Outbound,
-            event::Direction::In => tap::tap_event::ProxyDirection::Inbound,
+            event::Direction::Out => api::tap_event::ProxyDirection::Outbound,
+            event::Direction::In => api::tap_event::ProxyDirection::Inbound,
         }
     }
 }
 
 impl event::Endpoint {
-    fn dst_meta(&self) -> tap::tap_event::EndpointMeta {
-        let mut meta = tap::tap_event::EndpointMeta::default();
+    fn dst_meta(&self) -> api::tap_event::EndpointMeta {
+        let mut meta = api::tap_event::EndpointMeta::default();
         meta.labels.extend(self.labels.clone());
         meta.labels
             .insert("tls".to_owned(), format!("{}", self.target.tls_status()));

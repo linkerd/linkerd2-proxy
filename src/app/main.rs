@@ -192,8 +192,7 @@ where
                 panic!("invalid DNS configuration: {:?}", e);
             });
 
-        let tap_next_id = tap::NextId::default();
-        let (taps, tap_grpc) = tap::Grpc::new(100);
+        let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
         let (ctl_http_metrics, ctl_http_report) = {
             let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
@@ -328,7 +327,7 @@ where
                     .push(buffer::layer())
                     .push(settings::router::layer::<Endpoint, _>())
                     .push(orig_proto_upgrade::layer())
-                    .push(tap::layer(tap_next_id.clone(), taps.clone()))
+                    .push(tap_layer.clone())
                     .push(metrics::layer::<_, classify::Response>(
                         endpoint_http_metrics,
                     ))
@@ -477,7 +476,8 @@ where
                 let endpoint_router = client_stack
                     .push(buffer::layer())
                     .push(settings::router::layer::<Endpoint, _>())
-                    .push(tap::layer(tap_next_id, taps))
+                    .push(phantom_data::layer())
+                    .push(tap_layer)
                     .push(http_metrics::layer::<_, classify::Response>(
                         endpoint_http_metrics,
                     ))
@@ -592,19 +592,19 @@ where
                     let mut rt =
                         current_thread::Runtime::new().expect("initialize admin thread runtime");
 
-                    let tap = serve_tap(control_listener, TapServer::new(tap_grpc));
-
                     let metrics = control::serve_http(
                         "metrics",
                         metrics_listener,
                         metrics::Serve::new(report),
                     );
 
-                    // tap is already wrapped in a logging Future.
-                    rt.spawn(tap);
-                    // metrics_server is already wrapped in a logging Future.
+                    rt.spawn(tap_daemon.map_err(|_| ()));
+                    rt.spawn(serve_tap(control_listener, TapServer::new(tap_grpc)));
+
                     rt.spawn(metrics);
+
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
+
                     rt.spawn(
                         ::logging::admin()
                             .bg("resolver")
