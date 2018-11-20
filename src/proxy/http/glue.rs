@@ -1,38 +1,30 @@
-use bytes::{Bytes, IntoBuf};
+use bytes::IntoBuf;
 use futures::{future, Async, Future, Poll};
 use futures::future::Either;
-use h2;
 use http;
+use h2;
 use hyper::{self, body::Payload};
 use hyper::client::connect as hyper_connect;
-use std::error::Error;
-use std::fmt;
-use tower_h2;
+use std::{error::Error as StdError, fmt};
+use tower_grpc as grpc;
 
 use drain;
-use proxy::http::h1;
-use proxy::http::upgrade::Http11Upgrade;
+use proxy::http::{HasH2Reason, h1, upgrade::Http11Upgrade};
 use svc;
 use task::{BoxSendFuture, ErasedExecutor, Executor};
 use transport::Connect;
 
-/// Glue between `hyper::Body` and `tower_h2::RecvBody`.
+/// Provides optional HTTP/1.1 upgrade support on the body.
 #[derive(Debug)]
-pub enum HttpBody {
-    Http1 {
-        /// In HttpBody::drop, if this was an HTTP upgrade, the body is taken
-        /// to be inserted into the Http11Upgrade half.
-        body: Option<hyper::Body>,
-        upgrade: Option<Http11Upgrade>
-    },
-    Http2(tower_h2::RecvBody),
+pub struct HttpBody {
+    /// In HttpBody::drop, if this was an HTTP upgrade, the body is taken
+    /// to be inserted into the Http11Upgrade half.
+    pub(super) body: Option<hyper::Body>,
+    pub(super) upgrade: Option<Http11Upgrade>
 }
 
-/// Glue for `tower_h2::Body`s to be used in hyper.
-#[derive(Debug, Default)]
-pub(in proxy) struct BodyPayload<B> {
-    body: B,
-}
+#[derive(Debug)]
+pub struct GrpcBody<B>(B);
 
 /// Glue for a `tower::Service` to used as a `hyper::server::Service`.
 #[derive(Debug)]
@@ -45,172 +37,138 @@ pub(in proxy) struct HyperServerSvc<S, E> {
     upgrade_executor: E,
 }
 
-/// Future returned by `HyperServerSvc`.
-pub(in proxy) struct HyperServerSvcFuture<F> {
-    inner: F,
-}
-
-/// Glue for any `Service` taking an h2 body to receive an `HttpBody`.
-#[derive(Debug)]
-pub(in proxy) struct HttpBodySvc<S> {
-    service: S,
-}
-
-/// Glue for any `NewService` taking an h2 body to receive an `HttpBody`.
-#[derive(Clone)]
-pub(in proxy) struct HttpBodyNewSvc<N> {
-    new_service: N,
-}
-
-/// Future returned by `HttpBodyNewSvc`.
-pub(in proxy) struct HttpBodyNewSvcFuture<F> {
-    inner: F,
-}
-
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
 #[derive(Debug, Clone)]
-pub(in proxy) struct HyperConnect<C> {
+pub struct HyperConnect<C> {
     connect: C,
     absolute_form: bool,
 }
 
 /// Future returned by `HyperConnect`.
-pub(in proxy) struct HyperConnectFuture<F> {
+pub struct HyperConnectFuture<F> {
     inner: F,
     absolute_form: bool,
 }
 
+/// Wrapper of hyper::Error so we can add methods.
+pub struct Error(hyper::Error);
+
 // ===== impl HttpBody =====
 
-impl tower_h2::Body for HttpBody {
-    type Data = Bytes;
-
-    fn is_end_stream(&self) -> bool {
-        match self {
-            HttpBody::Http1 { body, .. } => {
-                body
-                    .as_ref()
-                    .expect("only taken in drop")
-                    .is_end_stream()
-            },
-            HttpBody::Http2(b) => b.is_end_stream(),
-        }
-    }
-
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, h2::Error> {
-        match self {
-            HttpBody::Http1 { body, .. } => {
-                match body.as_mut().expect("only taken in drop").poll_data() {
-                    Ok(Async::Ready(Some(chunk))) => Ok(Async::Ready(Some(chunk.into()))),
-                    Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
-                    Ok(Async::NotReady) => Ok(Async::NotReady),
-                    Err(e) => {
-                        debug!("http/1 body error: {}", e);
-                        Err(h2::Reason::INTERNAL_ERROR.into())
-                    }
-                }
-            },
-            HttpBody::Http2(b) => b.poll_data()
-                .map(|async| {
-                    async.map(|opt| {
-                        opt.map(Bytes::from)
-                    })
-                })
-        }
-    }
-
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
-        match self {
-            HttpBody::Http1 { .. } => Ok(Async::Ready(None)),
-            HttpBody::Http2(b) => b.poll_trailers(),
-        }
-    }
-}
-
-impl hyper::body::Payload for HttpBody {
-    type Data = <Bytes as IntoBuf>::Buf;
+impl Payload for HttpBody {
+    type Data = hyper::body::Chunk;
     type Error = h2::Error;
 
     fn is_end_stream(&self) -> bool {
-        tower_h2::Body::is_end_stream(self)
+        self
+            .body
+            .as_ref()
+            .expect("only taken in drop")
+            .is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, h2::Error> {
-        tower_h2::Body::poll_data(self).map(|async| {
-            async.map(|opt|
-                opt.map(Bytes::into_buf)
-            )
-        })
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+        self
+            .body
+            .as_mut()
+            .expect("only taken in drop")
+            .poll_data()
+            .map_err(|e| {
+                debug!("http body error: {}", e);
+                Error(e)
+                    .h2_reason()
+                    .unwrap_or(h2::Reason::INTERNAL_ERROR)
+                    .into()
+            })
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
-        tower_h2::Body::poll_trailers(self)
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+        self
+            .body
+            .as_mut()
+            .expect("only taken in drop")
+            .poll_trailers()
+            .map_err(|e| {
+                debug!("http trailers error: {}", e);
+                Error(e)
+                    .h2_reason()
+                    .unwrap_or(h2::Reason::INTERNAL_ERROR)
+                    .into()
+            })
     }
 }
 
-
 impl Default for HttpBody {
     fn default() -> HttpBody {
-        HttpBody::Http2(Default::default())
+        HttpBody {
+            body: Some(hyper::Body::empty()),
+            upgrade: None,
+        }
     }
 }
 
 impl Drop for HttpBody {
     fn drop(&mut self) {
-        // If HTTP/1, and an upgrade was wanted, send the upgrade future.
-        match self {
-            HttpBody::Http1 { body, upgrade } => {
-                if let Some(upgrade) = upgrade.take() {
-                    let on_upgrade = body
-                        .take()
-                        .expect("take only on drop")
-                        .on_upgrade();
-                    upgrade.insert_half(on_upgrade);
-                }
-            },
-            HttpBody::Http2(_) => (),
+        // If an HTTP/1 upgrade was wanted, send the upgrade future.
+        if let Some(upgrade) = self.upgrade.take() {
+            let on_upgrade = self
+                .body
+                .take()
+                .expect("take only on drop")
+                .on_upgrade();
+            upgrade.insert_half(on_upgrade);
         }
     }
 }
 
-// ===== impl BodyPayload =====
+// ===== impl GrpcBody =====
 
-impl<B> BodyPayload<B> {
-    /// Wrap a `tower_h2::Body` into a `Stream` hyper can understand.
-    pub(in proxy) fn new(body: B) -> Self {
-        BodyPayload {
-            body,
-        }
+impl<B> GrpcBody<B> {
+    pub fn new(inner: B) -> Self {
+        GrpcBody(inner)
     }
 }
 
-impl<B> hyper::body::Payload for BodyPayload<B>
+impl<B> Payload for GrpcBody<B>
 where
-    B: tower_h2::Body + Send + 'static,
-    <B::Data as IntoBuf>::Buf: Send,
+    B: grpc::Body + Send + 'static,
+    B::Data: Send + 'static,
+    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
     type Data = <B::Data as IntoBuf>::Buf;
     type Error = h2::Error;
 
-    #[inline]
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        self.body.poll_data().map(|async| {
-            async.map(|opt|
-                opt.map(B::Data::into_buf)
-            )
-        })
-    }
-
-    #[inline]
     fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
+        grpc::Body::is_end_stream(&self.0)
     }
 
-    #[inline]
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+        let data = try_ready!(grpc::Body::poll_data(&mut self.0));
+        Ok(data.map(IntoBuf::into_buf).into())
+    }
+
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
-        self.body.poll_trailers()
+        grpc::Body::poll_metadata(&mut self.0).map_err(From::from)
+    }
+}
+
+impl<B> grpc::Body for GrpcBody<B>
+where
+    B: grpc::Body,
+{
+    type Data = B::Data;
+
+    fn is_end_stream(&self) -> bool {
+        grpc::Body::is_end_stream(&self.0)
     }
 
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, grpc::Error> {
+        grpc::Body::poll_data(&mut self.0)
+    }
+
+    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, grpc::Error> {
+        grpc::Body::poll_metadata(&mut self.0)
+    }
 }
 
 // ===== impl HyperServerSvc =====
@@ -235,16 +193,15 @@ where
         http::Request<HttpBody>,
         Response=http::Response<B>,
     >,
-    S::Error: Error + Send + Sync + 'static,
-    B: tower_h2::Body + Default + Send + 'static,
-    <B::Data as ::bytes::IntoBuf>::Buf: Send,
+    S::Error: StdError + Send + Sync + 'static,
+    B: Payload + Default + Send + 'static,
     E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
 {
     type ReqBody = hyper::Body;
-    type ResBody = BodyPayload<B>;
+    type ResBody = B;
     type Error = S::Error;
     type Future = Either<
-        HyperServerSvcFuture<S::Future>,
+        S::Future,
         future::FutureResult<http::Response<Self::ResBody>, Self::Error>,
     >;
 
@@ -280,99 +237,11 @@ where
         };
 
 
-        let req = req.map(move |b| HttpBody::Http1 {
+        let req = req.map(move |b| HttpBody {
             body: Some(b),
             upgrade,
         });
-        let f = HyperServerSvcFuture {
-            inner: self.service.call(req),
-        };
-        Either::A(f)
-    }
-}
-
-impl<F, B> Future for HyperServerSvcFuture<F>
-where
-    F: Future<Item=http::Response<B>>,
-    F::Error: Error + fmt::Debug + Send + Sync + 'static,
-{
-    type Item = http::Response<BodyPayload<B>>;
-    type Error = F::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let res = try_ready!(self.inner.poll().map_err(|e| {
-            debug!("HTTP/1 error: {}", e);
-            e
-        }));
-
-        Ok(Async::Ready(res.map(BodyPayload::new)))
-    }
-}
-
-// ==== impl HttpBodySvc ====
-
-
-impl<S> svc::Service<http::Request<tower_h2::RecvBody>> for HttpBodySvc<S>
-where
-    S: svc::Service<
-        http::Request<HttpBody>,
-    >,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready()
-    }
-
-    fn call(&mut self, req: http::Request<tower_h2::RecvBody>) -> Self::Future {
-        self.service.call(req.map(|b| HttpBody::Http2(b)))
-    }
-}
-
-impl<N> HttpBodyNewSvc<N>
-where
-    N: svc::MakeService<(), http::Request<HttpBody>>,
-{
-    pub(in proxy) fn new(new_service: N) -> Self {
-        HttpBodyNewSvc {
-            new_service,
-        }
-    }
-}
-
-impl<N> svc::Service<()> for HttpBodyNewSvc<N>
-where
-    N: svc::MakeService<(), http::Request<HttpBody>>,
-{
-    type Response = HttpBodySvc<N::Service>;
-    type Error = N::MakeError;
-    type Future = HttpBodyNewSvcFuture<N::Future>;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.new_service.poll_ready()
-    }
-
-    fn call(&mut self, target: ()) -> Self::Future {
-        HttpBodyNewSvcFuture {
-            inner: self.new_service.make_service(target),
-        }
-    }
-}
-
-impl<F> Future for HttpBodyNewSvcFuture<F>
-where
-    F: Future,
-{
-    type Item = HttpBodySvc<F::Item>;
-    type Error = F::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let s = try_ready!(self.inner.poll());
-        Ok(Async::Ready(HttpBodySvc {
-            service: s,
-        }))
+        Either::A(self.service.call(req))
     }
 }
 
@@ -395,7 +264,7 @@ impl<C> hyper_connect::Connect for HyperConnect<C>
 where
     C: Connect + Send + Sync,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: Error + Send + Sync + 'static,
+    <C::Future as Future>::Error: StdError + Send + Sync + 'static,
     C::Connected: Send + 'static,
 {
     type Transport = C::Connected;
@@ -413,7 +282,7 @@ where
 impl<F> Future for HyperConnectFuture<F>
 where
     F: Future + 'static,
-    F::Error: Error + Send + Sync,
+    F::Error: StdError + Send + Sync,
 {
     type Item = (F::Item, hyper_connect::Connected);
     type Error = F::Error;
@@ -425,3 +294,40 @@ where
         Ok(Async::Ready((transport, connected)))
     }
 }
+
+// === impl Error ===
+
+impl HasH2Reason for Error {
+    fn h2_reason(&self) -> Option<h2::Reason> {
+        self
+            .0
+            .cause2()
+            .and_then(|cause| cause.downcast_ref::<h2::Error>())
+            .and_then(|err| err.reason())
+    }
+}
+
+impl From<hyper::Error> for Error {
+    fn from(err: hyper::Error) -> Error {
+        Error(err)
+    }
+}
+
+impl fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl StdError for Error {
+    fn cause(&self) -> Option<&StdError> {
+        self.0.cause()
+    }
+}
+

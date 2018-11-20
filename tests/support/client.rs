@@ -146,61 +146,34 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
             absolute_uris,
         };
 
-        let work: Box<Future<Item=(), Error=()>> = match version {
-            Run::Http1 { .. } => {
-                let client = hyper::Client::builder()
-                    .build::<Conn, hyper::Body>(conn);
-                Box::new(rx.for_each(move |(req, cb)| {
-                    let req = req.map(hyper::Body::from);
-                    let fut = client.request(req).then(move |result| {
-                        let result = result
-                            .map(|res| {
-                                let res = http::Response::from(res);
-                                res.map(|body| -> BodyStream {
-                                    Box::new(body.map(|chunk| chunk.into())
-                                        .map_err(|e| e.to_string()))
-                                })
-                            })
-                            .map_err(|e| e.to_string());
-                        let _ = cb.send(result);
-                        Ok(())
-                    });
-                    current_thread::TaskExecutor::current().execute(fut)
-                        .map_err(|e| println!("client spawn error: {:?}", e))
-                })
-                    .map_err(|e| println!("client error: {:?}", e)))
-            },
-            Run::Http2 => {
-                let mut connect = tower_h2::client::Connect::new(
-                    conn,
-                    Default::default(),
-                    LazyExecutor,
-                );
+        let http2_only = match version {
+            Run::Http1 { .. } => false,
+            Run::Http2 => true,
+        };
 
-                Box::new(connect.call(())
-                    .map_err(move |err| println!("connect error ({:?}): {:?}", addr, err))
-                    .and_then(move |mut h2| {
-                        rx.for_each(move |(req, cb)| {
-                            let req = req.map(|s| assert!(s.is_empty(), "h2 test client doesn't support bodies yet"));
-                            let fut = h2.call(req).then(|result| {
-                                let result = result
-                                    .map(|res| {
-                                        res.map(|body| -> BodyStream {
-                                            Box::new(RecvBodyStream(body).map_err(|e| format!("{:?}", e)))
-                                        })
-                                    })
-                                    .map_err(|e| format!("{:?}", e));
-                                let _ = cb.send(result);
-                                Ok(())
-                            });
-                            current_thread::TaskExecutor::current().execute(fut)
-                                .map_err(|e| println!("client spawn error: {:?}", e))
+        let client = hyper::Client::builder()
+            .http2_only(http2_only)
+            .build::<Conn, hyper::Body>(conn);
+
+        let work = rx.for_each(move |(req, cb)| {
+            let req = req.map(hyper::Body::from);
+            let fut = client.request(req).then(move |result| {
+                let result = result
+                    .map(|res| {
+                        let res = http::Response::from(res);
+                        res.map(|body| -> BodyStream {
+                            Box::new(body.map(|chunk| chunk.into())
+                                .map_err(|e| e.to_string()))
                         })
                     })
-                    .map(|_| ())
-                    .map_err(|e| println!("client error: {:?}", e)))
-            }
-        };
+                    .map_err(|e| e.to_string());
+                let _ = cb.send(result);
+                Ok(())
+            });
+            current_thread::TaskExecutor::current().execute(fut)
+                .map_err(|e| println!("client spawn error: {:?}", e))
+        })
+            .map_err(|e| println!("client error: {:?}", e));
 
         runtime.block_on(work).expect("support client runtime");
     }).unwrap();

@@ -25,6 +25,7 @@ use std::{
     error::Error as StdError,
     fmt,
     io,
+    sync::Arc,
 };
 
 pub type BoxSendFuture = Box<Future<Item = (), Error = ()> + Send>;
@@ -50,6 +51,10 @@ pub struct BoxExecutor<E: TokioExecutor>(E);
 /// This is useful when some code cannot be generic over any executor,
 /// and instead needs a trait object. An example is `Http11Upgrade`.
 pub struct ErasedExecutor(Box<Executor<BoxSendFuture> + Send + Sync>);
+
+/// A `futures::executor::Executor` with any generics erased.
+#[derive(Clone)]
+pub struct ArcExecutor(Arc<Executor<BoxSendFuture> + Send + Sync>);
 
 /// Indicates which Tokio `Runtime` should be used for the main proxy.
 ///
@@ -193,6 +198,29 @@ impl fmt::Debug for ErasedExecutor {
     }
 }
 
+// ===== impl ArcExecutor =====;
+
+impl ArcExecutor {
+    pub fn new<E: Executor<BoxSendFuture> + Send + Sync + 'static>(exe: E) -> ArcExecutor {
+        ArcExecutor(Arc::new(exe))
+    }
+}
+
+impl<F> Executor<F> for ArcExecutor
+where
+    F: Future<Item = (), Error = ()> + 'static + Send,
+{
+    fn execute(&self, future: F) -> Result<(), ExecuteError<F>> {
+        self.0.execute(Box::new(future))
+            .map_err(|_| panic!("erased executor error"))
+    }
+}
+
+impl fmt::Debug for ArcExecutor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.pad("ArcExecutor")
+    }
+}
 // ===== impl MainRuntime =====
 
 impl MainRuntime {

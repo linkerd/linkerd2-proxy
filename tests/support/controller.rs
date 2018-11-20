@@ -1,11 +1,11 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 
 use support::*;
-use support::futures::future::Executor;
+use support::bytes::IntoBuf;
+use support::hyper::body::Payload;
 // use support::tokio::executor::Executor as _TokioExecutor;
 
 use std::collections::{HashMap, VecDeque};
-use std::io;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 
@@ -197,13 +197,9 @@ fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Sen
                 let _ = listening_tx.take().unwrap().send(());
                 delay.wait().expect("support server delay wait");
             }
-            let new = pb::server::DestinationServer::new(controller);
+            let dst_svc = pb::server::DestinationServer::new(controller);
             let mut runtime = runtime::current_thread::Runtime::new()
                 .expect("support controller runtime");
-            let h2 = tower_h2::Server::new(new,
-                Default::default(),
-                LazyExecutor,
-            );
 
             let listener = listener.listen(1024).expect("Tcp::listen");
             let bind = TcpListener::from_std(
@@ -215,28 +211,26 @@ fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Sen
                 let _ = listening_tx.send(());
             }
 
-            let serve = bind.incoming()
-                .fold(h2, |mut h2, sock| {
-                    if let Err(e) = sock.set_nodelay(true) {
-                        return Err(e);
-                    }
+            let serve = hyper::Server::builder(bind.incoming())
+                .http2_only(true)
+                .serve(move || {
+                    let dst_svc = Mutex::new(dst_svc.clone());
+                    hyper::service::service_fn(move |req| {
+                        let req = req.map(|body| {
+                            tower_grpc::BoxBody::new(Box::new(PayloadToGrpc(body)))
+                        });
+                        dst_svc
+                            .lock()
+                            .expect("dst_svc lock")
+                            .call(req)
+                            .map(|res| {
+                                res.map(GrpcToPayload)
+                            })
+                    })
+                })
+                .map_err(|e| println!("controller error: {:?}", e));
 
-                    let serve = h2.serve(sock);
-                    current_thread::TaskExecutor::current()
-                        .execute(serve.map_err(|e| println!("controller error: {:?}", e)))
-                        .map_err(|e| {
-                            println!("controller execute error: {:?}", e);
-                            io::Error::from(io::ErrorKind::Other)
-                        })
-                        .map(|_| h2)
-                });
-
-
-            runtime.spawn(Box::new(
-                serve
-                    .map(|_| ())
-                    .map_err(|e| println!("controller error: {}", e)),
-            ));
+            runtime.spawn(serve);
             runtime.block_on(rx).expect("support controller run");
         }).unwrap();
 
@@ -353,3 +347,49 @@ fn octets_to_u64s(octets: [u8; 16]) -> (u64, u64) {
         + (u64::from(octets[14]) << 8) + u64::from(octets[15]);
     (first, last)
 }
+
+struct PayloadToGrpc(hyper::Body);
+
+impl tower_grpc::Body for PayloadToGrpc {
+    type Data = Bytes;
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
+        let data = try_ready!(self.0.poll_data().map_err(|_| tower_grpc::Error::Inner(())));
+        Ok(data.map(Bytes::from).into())
+    }
+
+    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
+        self.0.poll_trailers().map_err(|_| tower_grpc::Error::Inner(()))
+    }
+}
+
+struct GrpcToPayload<B>(B);
+
+impl<B> Payload for GrpcToPayload<B>
+where
+    B: tower_grpc::Body + Send + 'static,
+    B::Data: Send + 'static,
+    <B::Data as IntoBuf>::Buf: Send + 'static,
+{
+    type Data = <B::Data as IntoBuf>::Buf;
+    type Error = tower_grpc::Error;
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
+        let data = try_ready!(self.0.poll_data());
+        Ok(data.map(IntoBuf::into_buf).into())
+    }
+
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
+        self.0.poll_metadata()
+    }
+}
+
+
