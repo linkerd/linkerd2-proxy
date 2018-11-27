@@ -82,6 +82,7 @@ impl tap::Inspect for Endpoint {
     }
 }
 
+
 pub mod discovery {
     use futures::{Async, Poll};
     use std::net::SocketAddr;

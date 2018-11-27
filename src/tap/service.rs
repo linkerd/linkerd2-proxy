@@ -10,38 +10,6 @@ use super::Inspect;
 use proxy::http::HasH2Reason;
 use svc;
 
-pub trait Register {
-    type Tap: Tap;
-    type Taps: Stream<Item = Weak<Self::Tap>>;
-
-    fn register(&mut self) -> Self::Taps;
-}
-
-pub trait Tap {
-    type TapRequestBody: TapBody;
-    type TapResponse: TapResponse<TapBody = Self::TapResponseBody>;
-    type TapResponseBody: TapBody;
-
-    fn tap<B: Payload>(&self, req: &http::Request<B>)
-        -> Option<(Self::TapRequestBody, Self::TapResponse)>;
-}
-
-pub trait TapBody {
-    fn data<D: IntoBuf>(&mut self, data: &D::Buf);
-
-    fn end(self, headers: Option<&http::HeaderMap>);
-
-    fn fail(self, error: &h2::Error);
-}
-
-pub trait TapResponse {
-    type TapBody: TapBody;
-
-    fn tap<B: Payload>(self, rsp: &http::Response<B>) -> Self::TapBody;
-
-    fn fail<E: HasH2Reason>(self, error: &E);
-}
-
 /// A stack module that wraps services to record taps.
 #[derive(Clone, Debug)]
 pub struct Layer<R: Register> {
