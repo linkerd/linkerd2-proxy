@@ -199,7 +199,7 @@ mod response_classification {
                 let grpc_status = parse_header(headers, REQ_GRPC_STATUS_HEADER);
                 let mut rsp = if let Some(_grpc_status) = grpc_status {
                     // TODO: tests for grpc statuses
-                    unimplemented!()
+                    unreachable!("not called in test")
                 } else {
                     Response::new("".into())
                 };

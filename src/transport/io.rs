@@ -110,7 +110,7 @@ mod tests {
 
     impl io::Read for WriteBufDetector {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-            unimplemented!()
+            unreachable!("not called in test")
         }
     }
 
@@ -119,7 +119,7 @@ mod tests {
             panic!("BoxedIo called wrong write_buf method");
         }
         fn flush(&mut self) -> io::Result<()> {
-            unimplemented!()
+            unreachable!("not called in test")
         }
     }
 
@@ -127,7 +127,7 @@ mod tests {
 
     impl AsyncWrite for WriteBufDetector {
         fn shutdown(&mut self) -> Poll<(), io::Error> {
-            unimplemented!()
+            unreachable!("not called in test")
         }
 
         fn write_buf<B: Buf>(&mut self, _: &mut B) -> Poll<usize, io::Error> {
@@ -137,17 +137,17 @@ mod tests {
 
     impl AddrInfo for WriteBufDetector {
         fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-            unimplemented!()
+            unreachable!("not called in test")
         }
 
         fn get_original_dst(&self) -> Option<SocketAddr> {
-            unimplemented!()
+            unreachable!("not called in test")
         }
     }
 
     impl Io for WriteBufDetector {
         fn shutdown_write(&mut self) -> Result<(), io::Error> {
-            unimplemented!()
+            unreachable!("not called in test")
         }
 
         fn write_buf_erased(&mut self, mut buf: &mut Buf) -> Poll<usize, io::Error> {

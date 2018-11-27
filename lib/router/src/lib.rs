@@ -316,7 +316,7 @@ mod test_util {
         type Future = future::FutureResult<usize, ()>;
 
         fn poll_ready(&mut self) -> Poll<(), ()> {
-            unimplemented!()
+            unreachable!("not called in test")
         }
 
         fn call(&mut self, req: Request) -> Self::Future {
