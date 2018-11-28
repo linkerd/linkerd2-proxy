@@ -216,8 +216,7 @@ where
 
                     let req = request.take().expect("request must be set");
 
-                    // Record the request as being opened in all TapRequests
-                    // and then
+                    // Record the request and obtain request-body and response taps.
                     let mut req_taps = Vec::with_capacity(taps.len());
                     let mut rsp_taps = Vec::with_capacity(taps.len());
                     for tap in taps.drain(..).filter_map(|t| t) {
