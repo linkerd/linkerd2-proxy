@@ -1,10 +1,9 @@
 use bytes::IntoBuf;
 use futures::{future, Async, Future, Poll, Stream};
-use h2;
 use http;
-use tower_h2::Body as Payload;
+use hyper::body::Payload as HyperPayload;
 
-use super::iface::{Register, Tap, TapBody, TapRequest, TapResponse};
+use super::iface::{Register, Tap, TapPayload, TapRequest, TapResponse};
 use super::Inspect;
 use proxy::http::HasH2Reason;
 use svc;
@@ -37,18 +36,21 @@ pub struct ResponseFuture<I, T, A, S>
 where
     I: Inspect,
     T: Tap,
-    A: Payload,
-    S: svc::Service<http::Request<Body<A, T::TapRequestBody>>>,
+    A: HyperPayload,
+    A::Error: HasH2Reason,
+    S: svc::Service<http::Request<Payload<A, T::TapRequestPayload>>>,
 {
     state: FutState<I, T, A, S>,
 }
 
-enum FutState<
+enum FutState<I, T, A, S>
+where
     I: Inspect,
     T: Tap,
-    A: Payload,
-    S: svc::Service<http::Request<Body<A, T::TapRequestBody>>>,
-> {
+    A: HyperPayload,
+    A::Error: HasH2Reason,
+    S: svc::Service<http::Request<Payload<A, T::TapRequestPayload>>>,
+{
     Taps {
         taps: future::JoinAll<Vec<T::Future>>,
         inspect: I,
@@ -63,7 +65,12 @@ enum FutState<
 
 // A `Payload` instrumented with taps.
 #[derive(Debug)]
-pub struct Body<B: Payload, T: TapBody> {
+pub struct Payload<B, T>
+where
+    B: HyperPayload,
+    B::Error: HasH2Reason,
+    T: TapPayload,
+{
     inner: B,
     taps: Vec<T>,
 }
@@ -127,13 +134,17 @@ where
     I: Inspect + Clone,
     R: Stream<Item = T>,
     T: Tap,
-    S: svc::Service<http::Request<Body<A, T::TapRequestBody>>, Response = http::Response<B>>
+    T::TapRequestPayload: Send + 'static,
+    T::TapResponsePayload: Send + 'static,
+    S: svc::Service<http::Request<Payload<A, T::TapRequestPayload>>, Response = http::Response<B>>
         + Clone,
     S::Error: HasH2Reason,
-    A: Payload,
-    B: Payload,
+    A: HyperPayload,
+    A::Error: HasH2Reason,
+    B: HyperPayload,
+    B::Error: HasH2Reason,
 {
-    type Response = http::Response<Body<B, T::TapResponseBody>>;
+    type Response = http::Response<Payload<B, T::TapResponsePayload>>;
     type Error = S::Error;
     type Future = ResponseFuture<I, T, A, S>;
 
@@ -171,14 +182,18 @@ where
 
 impl<A, B, I, T, S> Future for ResponseFuture<I, T, A, S>
 where
-    A: Payload,
-    B: Payload,
     I: Inspect,
     T: Tap,
-    S: svc::Service<http::Request<Body<A, T::TapRequestBody>>, Response = http::Response<B>>,
+    T::TapRequestPayload: Send + 'static,
+    T::TapResponsePayload: Send + 'static,
+    S: svc::Service<http::Request<Payload<A, T::TapRequestPayload>>, Response = http::Response<B>>,
     S::Error: HasH2Reason,
+    A: HyperPayload,
+    A::Error: HasH2Reason,
+    B: HyperPayload,
+    B::Error: HasH2Reason,
 {
-    type Item = http::Response<Body<B, T::TapResponseBody>>;
+    type Item = http::Response<Payload<B, T::TapResponsePayload>>;
     type Error = S::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -214,7 +229,7 @@ where
                     // Install the request taps into the request body.
                     let req = {
                         let (head, inner) = req.into_parts();
-                        let body = Body {
+                        let body = Payload {
                             inner,
                             taps: req_taps,
                         };
@@ -240,7 +255,7 @@ where
                             // body taps to decorate the response body.
                             let taps = taps.drain(..).map(|t| t.tap(&rsp)).collect();
                             let (head, inner) = rsp.into_parts();
-                            let mut body = Body { inner, taps };
+                            let mut body = Payload { inner, taps };
                             if body.is_end_stream() {
                                 body.eos(None);
                             }
@@ -259,10 +274,15 @@ where
     }
 }
 
-// === Body ===
+// === Payload ===
 
 // `T` need not implement Default.
-impl<B: Payload + Default, T: TapBody> Default for Body<B, T> {
+impl<B, T> Default for Payload<B, T>
+where
+    B: HyperPayload + Default,
+    B::Error: HasH2Reason,
+    T: TapPayload,
+{
     fn default() -> Self {
         Self {
             inner: B::default(),
@@ -271,28 +291,39 @@ impl<B: Payload + Default, T: TapBody> Default for Body<B, T> {
     }
 }
 
-impl<B: Payload, T: TapBody> Payload for Body<B, T> {
+impl<B, T> HyperPayload for Payload<B, T>
+where
+    B: HyperPayload,
+    B::Error: HasH2Reason,
+    T: TapPayload + Send + 'static,
+{
     type Data = <B::Data as IntoBuf>::Buf;
+    type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, h2::Error> {
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, B::Error> {
         let poll_frame = self.inner.poll_data().map_err(|e| self.err(e));
         let frame = try_ready!(poll_frame).map(|f| f.into_buf());
         self.data(frame.as_ref());
         Ok(Async::Ready(frame))
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, h2::Error> {
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, B::Error> {
         let trailers = try_ready!(self.inner.poll_trailers().map_err(|e| self.err(e)));
         self.eos(trailers.as_ref());
         Ok(Async::Ready(trailers))
     }
 }
 
-impl<B: Payload, T: TapBody> Body<B, T> {
+impl<B, T> Payload<B, T>
+where
+    B: HyperPayload,
+    B::Error: HasH2Reason,
+    T: TapPayload,
+{
     fn data(&mut self, frame: Option<&<B::Data as IntoBuf>::Buf>) {
         if let Some(ref f) = frame {
             for ref mut tap in self.taps.iter_mut() {
@@ -311,7 +342,7 @@ impl<B: Payload, T: TapBody> Body<B, T> {
         }
     }
 
-    fn err(&mut self, error: h2::Error) -> h2::Error {
+    fn err(&mut self, error: B::Error) -> B::Error {
         for tap in self.taps.drain(..) {
             tap.fail(&error);
         }
@@ -320,7 +351,12 @@ impl<B: Payload, T: TapBody> Body<B, T> {
     }
 }
 
-impl<B: Payload, T: TapBody> Drop for Body<B, T> {
+impl<B, T> Drop for Payload<B, T>
+where
+    B: HyperPayload,
+    B::Error: HasH2Reason,
+    T: TapPayload,
+{
     fn drop(&mut self) {
         self.eos(None);
     }

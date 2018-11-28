@@ -2,13 +2,13 @@ use bytes::Buf;
 use futures::sync::{mpsc, oneshot};
 use futures::{future, Async, Future, Poll, Stream};
 use http::HeaderMap;
+use hyper::body::Payload;
 use never::Never;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
 use tokio_timer::clock;
 use tower_grpc::{self as grpc, Response};
-use tower_h2::Body as Payload;
 
 use api::{http_types, pb_duration, tap as api};
 
@@ -86,13 +86,13 @@ pub struct TapResponse {
 }
 
 #[derive(Debug)]
-pub struct TapRequestBody {
+pub struct TapRequestPayload {
     base_event: api::TapEvent,
     tap: TapTx,
 }
 
 #[derive(Debug)]
-pub struct TapResponseBody {
+pub struct TapResponsePayload {
     base_event: api::TapEvent,
     request_init_at: Instant,
     response_init_at: Instant,
@@ -296,9 +296,9 @@ impl Tap {
 
 impl iface::Tap for Tap {
     type TapRequest = TapRequest;
-    type TapRequestBody = TapRequestBody;
+    type TapRequestPayload = TapRequestPayload;
     type TapResponse = TapResponse;
-    type TapResponseBody = TapResponseBody;
+    type TapResponsePayload = TapResponsePayload;
     type Future = TapFuture;
 
     fn can_tap_more(&self) -> bool {
@@ -372,15 +372,15 @@ impl Future for TapFuture {
 // === impl TapRequest ===
 
 impl iface::TapRequest for TapRequest {
-    type TapBody = TapRequestBody;
+    type TapPayload = TapRequestPayload;
     type TapResponse = TapResponse;
-    type TapResponseBody = TapResponseBody;
+    type TapResponsePayload = TapResponsePayload;
 
     fn open<B: Payload, I: Inspect>(
         mut self,
         req: &http::Request<B>,
         inspect: &I,
-    ) -> (TapRequestBody, TapResponse) {
+    ) -> (TapRequestPayload, TapResponse) {
         let base_event = base_event(req, inspect);
 
         let init = api::tap_event::http::RequestInit {
@@ -399,7 +399,7 @@ impl iface::TapRequest for TapRequest {
         };
         let _ = self.tap.tx.try_send(event);
 
-        let req = TapRequestBody {
+        let req = TapRequestPayload {
             tap: self.tap.clone(),
             base_event: base_event.clone(),
         };
@@ -415,9 +415,9 @@ impl iface::TapRequest for TapRequest {
 // === impl TapResponse ===
 
 impl iface::TapResponse for TapResponse {
-    type TapBody = TapResponseBody;
+    type TapPayload = TapResponsePayload;
 
-    fn tap<B: Payload>(mut self, rsp: &http::Response<B>) -> TapResponseBody {
+    fn tap<B: Payload>(mut self, rsp: &http::Response<B>) -> TapResponsePayload {
         let response_init_at = clock::now();
         let init = api::tap_event::http::Event::ResponseInit(api::tap_event::http::ResponseInit {
             id: Some(self.tap.id.clone()),
@@ -433,7 +433,7 @@ impl iface::TapResponse for TapResponse {
         };
         let _ = self.tap.tx.try_send(event);
 
-        TapResponseBody {
+        TapResponsePayload {
             base_event: self.base_event,
             request_init_at: self.request_init_at,
             response_init_at,
@@ -465,19 +465,19 @@ impl iface::TapResponse for TapResponse {
     }
 }
 
-// === impl TapRequestBody ===
+// === impl TapRequestPayload ===
 
-impl iface::TapBody for TapRequestBody {
+impl iface::TapPayload for TapRequestPayload {
     fn data<B: Buf>(&mut self, _: &B) {}
 
     fn eos(self, _: Option<&http::HeaderMap>) {}
 
-    fn fail(self, _: &h2::Error) {}
+    fn fail<E: HasH2Reason>(self, _: &E) {}
 }
 
-// === impl TapResponseBody ===
+// === impl TapResponsePayload ===
 
-impl iface::TapBody for TapResponseBody {
+impl iface::TapPayload for TapResponsePayload {
     fn data<B: Buf>(&mut self, data: &B) {
         self.response_bytes += data.remaining();
     }
@@ -492,13 +492,13 @@ impl iface::TapBody for TapResponseBody {
         self.send(end);
     }
 
-    fn fail(self, e: &h2::Error) {
-        let end = e.reason().map(|r| api::eos::End::ResetErrorCode(r.into()));
+    fn fail<E: HasH2Reason>(self, e: &E) {
+        let end = e.h2_reason().map(|r| api::eos::End::ResetErrorCode(r.into()));
         self.send(end);
     }
 }
 
-impl TapResponseBody {
+impl TapResponsePayload {
     fn send(mut self, end: Option<api::eos::End>) {
         let response_end_at = clock::now();
         let end = api::tap_event::http::ResponseEnd {

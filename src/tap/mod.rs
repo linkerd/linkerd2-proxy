@@ -79,8 +79,8 @@ mod iface {
     use bytes::Buf;
     use futures::{Future, Stream};
     use http;
+    use hyper::body::Payload;
     use never::Never;
-    use tower_h2::Body as Payload;
 
     use proxy::http::HasH2Reason;
 
@@ -105,13 +105,13 @@ mod iface {
     ///
     pub trait Tap: Clone {
         type TapRequest: TapRequest<
-            TapBody = Self::TapRequestBody,
+            TapPayload = Self::TapRequestPayload,
             TapResponse = Self::TapResponse,
-            TapResponseBody = Self::TapResponseBody,
+            TapResponsePayload = Self::TapResponsePayload,
         >;
-        type TapRequestBody: TapBody;
-        type TapResponse: TapResponse<TapBody = Self::TapResponseBody>;
-        type TapResponseBody: TapBody;
+        type TapRequestPayload: TapPayload;
+        type TapResponse: TapResponse<TapPayload = Self::TapResponsePayload>;
+        type TapResponsePayload: TapPayload;
         type Future: Future<Item = Option<Self::TapRequest>, Error = Never>;
 
         /// Returns `true` as l
@@ -132,31 +132,31 @@ mod iface {
     }
 
     pub trait TapRequest {
-        type TapBody: TapBody;
-        type TapResponse: TapResponse<TapBody = Self::TapResponseBody>;
-        type TapResponseBody: TapBody;
+        type TapPayload: TapPayload;
+        type TapResponse: TapResponse<TapPayload = Self::TapResponsePayload>;
+        type TapResponsePayload: TapPayload;
 
         /// Start tapping a request, obtaining handles to tap its body and response.
         fn open<B: Payload, I: super::Inspect>(
             self,
             req: &http::Request<B>,
             inspect: &I,
-        ) -> (Self::TapBody, Self::TapResponse);
+        ) -> (Self::TapPayload, Self::TapResponse);
     }
 
-    pub trait TapBody {
+    pub trait TapPayload {
         fn data<B: Buf>(&mut self, data: &B);
 
         fn eos(self, headers: Option<&http::HeaderMap>);
 
-        fn fail(self, error: &h2::Error);
+        fn fail<E: HasH2Reason>(self, error: &E);
     }
 
     pub trait TapResponse {
-        type TapBody: TapBody;
+        type TapPayload: TapPayload;
 
         /// Record a response and obtain a handle to tap its body.
-        fn tap<B: Payload>(self, rsp: &http::Response<B>) -> Self::TapBody;
+        fn tap<B: Payload>(self, rsp: &http::Response<B>) -> Self::TapPayload;
 
         /// Record a service failure.
         fn fail<E: HasH2Reason>(self, error: &E);

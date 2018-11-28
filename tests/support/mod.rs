@@ -18,7 +18,6 @@ extern crate prost;
 extern crate tokio;
 extern crate tokio_connect;
 pub extern crate tokio_io;
-extern crate tower_h2;
 extern crate tower_grpc;
 extern crate tower_service;
 extern crate log;
@@ -37,12 +36,11 @@ pub use self::futures::sync::oneshot;
 pub use self::http::{HeaderMap, Request, Response, StatusCode};
 use self::tokio::{
     executor::current_thread,
-    net::{TcpListener, TcpStream},
+    net::{TcpListener},
     runtime,
     reactor,
 };
 use self::tokio_connect::Connect;
-use self::tower_h2::{Body, RecvBody};
 use self::tower_grpc as grpc;
 use self::tower_service::{Service};
 
@@ -177,18 +175,6 @@ pub fn running() -> (oneshot::Sender<()>, Running) {
 }
 
 pub type Running = Box<Future<Item=(), Error=()> + Send>;
-
-struct RecvBodyStream(tower_h2::RecvBody);
-
-impl Stream for RecvBodyStream {
-    type Item = Bytes;
-    type Error = h2::Error;
-
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let data = try_ready!(self.0.poll_data());
-        Ok(Async::Ready(data.map(From::from)))
-    }
-}
 
 pub fn s(bytes: &[u8]) -> &str {
     ::std::str::from_utf8(bytes.as_ref()).unwrap()

@@ -2,6 +2,7 @@ use bytes;
 use futures::{self, future, Future, Poll};
 use h2;
 use http;
+use hyper;
 use indexmap::IndexSet;
 use std::net::SocketAddr;
 use std::thread;
@@ -243,10 +244,10 @@ where
                 .push(control::resolve::layer(dns_resolver.clone()))
                 .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
                 .push(proxy::timeout::layer(config.control_connect_timeout))
-                .push(control::box_request_body::layer())
                 .push(http_metrics::layer::<_, classify::Response>(
                     ctl_http_metrics,
                 ))
+                .push(control::grpc_request_payload::layer())
                 .push(svc::watch::layer(tls_client_config.clone()))
                 .push(phantom_data::layer())
                 .push(control::add_origin::layer())
@@ -659,9 +660,7 @@ where
     R::Value: Send + 'static,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error: error::Error + Send + Sync + 'static,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
-    B: tower_h2::Body + Default + Send + 'static,
-    B::Data: Send,
-    <B::Data as ::bytes::IntoBuf>::Buf: Send,
+    B: hyper::body::Payload + Default + Send + 'static,
     G: GetOriginalDst + Send + 'static,
 {
     let listen_addr = bound_port.local_addr();
@@ -674,7 +673,6 @@ where
         router,
         disable_protocol_detection_ports,
         drain_rx.clone(),
-        h2::server::Builder::default(),
     );
     let log = server.log().clone();
 
