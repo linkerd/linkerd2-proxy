@@ -1,7 +1,6 @@
 use futures::sync::{mpsc, oneshot};
 use futures::{Async, Future, Poll, Stream};
 use never::Never;
-use std::collections::VecDeque;
 
 use super::iface::Tap;
 
@@ -11,10 +10,10 @@ pub fn new<T>() -> (Daemon<T>, Register<T>, Subscribe<T>) {
 
     let daemon = Daemon {
         svc_rx,
-        svcs: VecDeque::default(),
+        svcs: Vec::default(),
 
         tap_rx,
-        taps: VecDeque::default(),
+        taps: Vec::default(),
     };
 
     (daemon, Register(svc_tx), Subscribe(tap_tx))
@@ -29,10 +28,10 @@ pub fn new<T>() -> (Daemon<T>, Register<T>, Subscribe<T>) {
 #[derive(Debug)]
 pub struct Daemon<T> {
     svc_rx: mpsc::Receiver<mpsc::Sender<T>>,
-    svcs: VecDeque<mpsc::Sender<T>>,
+    svcs: Vec<mpsc::Sender<T>>,
 
     tap_rx: mpsc::Receiver<(T, oneshot::Sender<()>)>,
-    taps: VecDeque<T>,
+    taps: Vec<T>,
 }
 
 #[derive(Debug)]
@@ -41,8 +40,10 @@ pub struct Register<T>(mpsc::Sender<mpsc::Sender<T>>);
 #[derive(Debug)]
 pub struct Subscribe<T>(mpsc::Sender<(T, oneshot::Sender<()>)>);
 
+#[derive(Debug)]
 pub struct SubscribeFuture<T>(FutState<T>);
 
+#[derive(Debug)]
 enum FutState<T> {
     Subscribe {
         tap: Option<T>,
@@ -62,15 +63,14 @@ impl<T: Tap> Future for Daemon<T> {
         self.taps.retain(|t| t.can_tap_more());
         trace!("retained {} of {} taps", self.taps.len(), tap_count);
 
-        // Drop services that are no longer active (i.e. the response stream has
-        // been droped).
+        // Drop services that are no longer active.
         for idx in (0..self.svcs.len()).rev() {
             // It's "okay" if a service isn't ready to receive taps. We just
             // fall back to being lossy rather than dropping the service
             // entirely.
             if self.svcs[idx].poll_ready().is_err() {
                 trace!("removing a service");
-                self.svcs.swap_remove_back(idx);
+                self.svcs.swap_remove(idx);
             }
         }
 
@@ -78,20 +78,24 @@ impl<T: Tap> Future for Daemon<T> {
         while let Ok(Async::Ready(Some(mut svc))) = self.svc_rx.poll() {
             trace!("registering a service");
 
-            // Notify the service of all active taps. If the service has been
-            // dropped, it wll not be added.
-            let mut is_ok = true;
+            // Notify the service of all active taps.
+            let mut dropped = false;
             for tap in &self.taps {
-                debug_assert!(is_ok);
-                let t = tap.clone();
-                is_ok = svc.try_send(t).err().map(|e| e.is_full()).unwrap_or(true);
-                if !is_ok {
+                debug_assert!(!dropped);
+
+                let err = svc.try_send(tap.clone()).err();
+
+                // If the service has been dropped, make sure that it's not added.
+                dropped = err.as_ref().map(|e| e.is_disconnected()).unwrap_or(false);
+
+                // If service can't receive any more taps, stop trying.
+                if err.is_some() {
                     break;
                 }
             }
 
-            if is_ok {
-                self.svcs.push_back(svc);
+            if !dropped {
+                self.svcs.push(svc);
                 trace!("service registered");
             }
         }
@@ -110,18 +114,18 @@ impl<T: Tap> Future for Daemon<T> {
                 continue;
             }
 
-            // Notify services of the new tap. If the tap can't be sent to a
-            // given service, it's assumed that the service has been dropped, so
-            // it is removed from the registry.
+            // Notify services of the new tap. If the service has been dropped,
+            // it's removed from the registry. If it's full, it isn't notified
+            // of the tap.
             for idx in (0..self.svcs.len()).rev() {
                 let err = self.svcs[idx].try_send(tap.clone()).err();
                 if err.map(|e| e.is_disconnected()).unwrap_or(false) {
                     trace!("removing a service");
-                    self.svcs.swap_remove_back(idx);
+                    self.svcs.swap_remove(idx);
                 }
             }
 
-            self.taps.push_back(tap);
+            self.taps.push(tap);
             let _ = ack.send(());
             trace!("tap subscribed");
         }

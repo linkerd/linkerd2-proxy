@@ -2,7 +2,6 @@ use bytes::IntoBuf;
 use futures::{future, Async, Future, Poll, Stream};
 use h2;
 use http;
-use std::collections::VecDeque;
 use tower_h2::Body as Payload;
 
 use super::iface::{Register, Tap, TapBody, TapRequest, TapResponse};
@@ -27,7 +26,7 @@ pub struct Stack<R: Register, T> {
 #[derive(Clone, Debug)]
 pub struct Service<I, R, T, S> {
     tap_rx: R,
-    taps: VecDeque<T>,
+    taps: Vec<T>,
     inner: S,
     inspect: I,
 }
@@ -51,13 +50,13 @@ enum FutState<
     S: svc::Service<http::Request<Body<A, T::TapRequestBody>>>,
 > {
     Taps {
-        taps: future::JoinAll<VecDeque<T::Future>>,
+        taps: future::JoinAll<Vec<T::Future>>,
         inspect: I,
         request: Option<http::Request<A>>,
         service: S,
     },
     Call {
-        taps: VecDeque<T::TapResponse>,
+        taps: Vec<T::TapResponse>,
         call: S::Future,
     },
 }
@@ -66,7 +65,7 @@ enum FutState<
 #[derive(Debug)]
 pub struct Body<B: Payload, T: TapBody> {
     inner: B,
-    taps: VecDeque<T>,
+    taps: Vec<T>,
 }
 
 // === Layer ===
@@ -115,7 +114,7 @@ where
         Ok(Service {
             inner,
             tap_rx,
-            taps: VecDeque::default(),
+            taps: Vec::default(),
             inspect: target.clone(),
         })
     }
@@ -141,7 +140,7 @@ where
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         // Load new taps from the tap server.
         while let Ok(Async::Ready(Some(t))) = self.tap_rx.poll() {
-            self.taps.push_back(t);
+            self.taps.push(t);
         }
         // Drop taps that have been canceled or completed.
         self.taps.retain(|t| t.can_tap_more());
@@ -152,10 +151,10 @@ where
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         // Determine which active taps match the request and collect all of the
         // futures requesting TapRequests from the tap server.
-        let mut tap_futs = VecDeque::with_capacity(self.taps.len());
+        let mut tap_futs = Vec::with_capacity(self.taps.len());
         for t in self.taps.iter_mut() {
             if t.should_tap(&req, &self.inspect) {
-                tap_futs.push_back(t.tap());
+                tap_futs.push(t.tap());
             }
         }
 
@@ -204,12 +203,12 @@ where
 
                     // Record the request as being opened in all TapRequests
                     // and then
-                    let mut req_taps = VecDeque::with_capacity(taps.len());
-                    let mut rsp_taps = VecDeque::with_capacity(taps.len());
+                    let mut req_taps = Vec::new();
+                    let mut rsp_taps = Vec::new();
                     for tap in taps.drain(..).filter_map(|t| t) {
                         let (req, rsp) = tap.open(&req, inspect);
-                        req_taps.push_back(req);
-                        rsp_taps.push_back(rsp);
+                        req_taps.push(req);
+                        rsp_taps.push(rsp);
                     }
 
                     // Install the request taps into the request body.
@@ -267,7 +266,7 @@ impl<B: Payload + Default, T: TapBody> Default for Body<B, T> {
     fn default() -> Self {
         Self {
             inner: B::default(),
-            taps: VecDeque::default(),
+            taps: Vec::default(),
         }
     }
 }
