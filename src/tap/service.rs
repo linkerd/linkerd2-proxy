@@ -151,7 +151,7 @@ where
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         // Determine which active taps match the request and collect all of the
         // futures requesting TapRequests from the tap server.
-        let mut tap_futs = Vec::with_capacity(self.taps.len());
+        let mut tap_futs = Vec::new();
         for t in self.taps.iter_mut() {
             if t.should_tap(&req, &self.inspect) {
                 tap_futs.push(t.tap());
@@ -203,12 +203,12 @@ where
 
                     // Record the request as being opened in all TapRequests
                     // and then
-                    let mut req_taps = Vec::new();
-                    let mut rsp_taps = Vec::new();
+                    let mut req_taps = Vec::with_capacity(taps.len());
+                    let mut rsp_taps = Vec::with_capacity(taps.len());
                     for tap in taps.drain(..).filter_map(|t| t) {
-                        let (req, rsp) = tap.open(&req, inspect);
-                        req_taps.push(req);
-                        rsp_taps.push(rsp);
+                        let (req_tap, rsp_tap) = tap.open(&req, inspect);
+                        req_taps.push(req_tap);
+                        rsp_taps.push(rsp_tap);
                     }
 
                     // Install the request taps into the request body.
