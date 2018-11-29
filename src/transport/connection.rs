@@ -181,7 +181,7 @@ impl BoundPort {
         future::lazy(move || {
             // Create the TCP listener lazily, so that it's not bound to a
             // reactor until the future is run. This will avoid
-            // `Handle::current()` creating a mew thread for the global
+            // `Handle::current()` creating a new thread for the global
             // background reactor if `listen_and_fold` is called before we've
             // initialized the runtime.
             TcpListener::from_std(inner, &Handle::current())
