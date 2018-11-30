@@ -191,6 +191,16 @@ pub mod router {
         }
     }
 
+    impl<B, M> Clone for Service<B, M>
+    where
+        M: svc::Stack<Config>,
+        M::Value: svc::Service<http::Request<B>>,
+    {
+        fn clone(&self) -> Self {
+            Self { router: self.router.clone() }
+        }
+    }
+
     impl<B, M> svc::Service<http::Request<B>> for Service<B, M>
     where
         M: svc::Stack<Config>,
@@ -212,7 +222,8 @@ pub mod router {
         }
 
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            ResponseFuture { inner: self.router.call(req) }
+            let inner = self.router.call(req);
+            ResponseFuture { inner }
         }
     }
 
