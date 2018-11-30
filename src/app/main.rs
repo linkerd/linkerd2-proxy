@@ -13,7 +13,7 @@ use tokio::runtime::current_thread;
 use tower_h2;
 
 use app::classify::{self, Class};
-use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
+use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels, TapLabels};
 use control;
 use dns;
 use drain;
@@ -194,6 +194,14 @@ where
             });
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
+        let (tap_http_metrics, tap_http_report) =
+            http_metrics::new::<TapLabels, Class>(config.metrics_retain_idle);
+        let tap_http_server = shared::stack(::api::tap::server::TapServer::new(tap_grpc))
+            .push(http_metrics::layer::<_, classify::Response>(
+                tap_http_metrics,
+            ))
+            .make(&TapLabels)
+            .expect("must be able to build tap server");
 
         let (ctl_http_metrics, ctl_http_report) = {
             let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
@@ -588,8 +596,6 @@ where
             thread::Builder::new()
                 .name("admin".into())
                 .spawn(move || {
-                    use api::tap::server::TapServer;
-
                     let mut rt =
                         current_thread::Runtime::new().expect("initialize admin thread runtime");
 
@@ -600,7 +606,7 @@ where
                     );
 
                     rt.spawn(tap_daemon.map_err(|_| ()));
-                    rt.spawn(serve_tap(control_listener, TapServer::new(tap_grpc)));
+                    rt.spawn(serve_tap(control_listener, tap_http_server));
 
                     rt.spawn(metrics);
 
@@ -655,10 +661,10 @@ where
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
     R: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
-    R::Value:
-        svc::Service<http::Request<proxy::http::Body>, Response = http::Response<B>>,
+    R::Value: svc::Service<http::Request<proxy::http::Body>, Response = http::Response<B>>,
     R::Value: Send + 'static,
-    <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error: error::Error + Send + Sync + 'static,
+    <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error:
+        error::Error + Send + Sync + 'static,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
     G: GetOriginalDst + Send + 'static,

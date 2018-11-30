@@ -31,6 +31,9 @@ pub struct RouteLabels {
     labels: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TapLabels;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum Direction {
     In,
@@ -40,7 +43,7 @@ enum Direction {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Authority<'a>(&'a NameAddr);
 
-// === impl CtlLabels ===
+// === impl ControlLabels ===
 
 impl From<control::Config> for ControlLabels {
     fn from(c: control::Config) -> Self {
@@ -60,6 +63,13 @@ impl FmtLabels for ControlLabels {
     }
 }
 
+// === impl TapLabels ===
+
+impl FmtLabels for TapLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "srv=\"tap\"")
+    }
+}
 
 // === impl RouteLabels ===
 
