@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use std::{fmt, net};
+use std::sync::Arc;
 
 use control::destination::{Metadata, ProtocolHint};
 use proxy::http::settings;
@@ -75,6 +76,10 @@ impl tap::Inspect for Endpoint {
 
     fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::Status {
         self.metadata.tls_status()
+    }
+
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+        req.extensions().get::<super::dst::Route>().map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {

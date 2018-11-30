@@ -544,6 +544,11 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
             m.labels.insert("tls".to_owned(), tls);
             m
         }),
+        route_meta: inspect.route_labels(req).map(|labels| {
+            let mut m = api::tap_event::RouteMeta::default();
+            m.labels.extend(labels.as_ref().clone());
+            m
+        }),
         event: None,
     }
 }

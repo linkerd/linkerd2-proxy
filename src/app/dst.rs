@@ -1,5 +1,7 @@
 use http;
+use indexmap::IndexMap;
 use std::fmt;
+use std::sync::Arc;
 
 use proxy::http::{metrics::classify::CanClassify, profiles};
 use {Addr, NameAddr};
@@ -83,5 +85,13 @@ impl profiles::WithRoute for DstAddr {
             dst_addr: self,
             route,
         }
+    }
+}
+
+// === impl Route ===
+
+impl Route {
+    pub fn labels(&self) -> &Arc<IndexMap<String, String>> {
+        self.route.labels()
     }
 }

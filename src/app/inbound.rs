@@ -2,6 +2,7 @@ use http;
 use indexmap::IndexMap;
 use std::fmt;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use super::classify;
 use super::dst::DstAddr;
@@ -68,6 +69,10 @@ impl tap::Inspect for Endpoint {
 
     fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::Status {
         Conditional::None(tls::ReasonForNoTls::InternalTraffic)
+    }
+
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+        req.extensions().get::<super::dst::Route>().map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
