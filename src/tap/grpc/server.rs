@@ -539,14 +539,14 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
         destination: inspect.dst_addr(req).as_ref().map(|a| a.into()),
         destination_meta: inspect.dst_labels(req).map(|labels| {
             let mut m = api::tap_event::EndpointMeta::default();
-            m.labels.extend(labels.clone());
+            m.labels.extend(labels.iter().map(|(k, v)| (k.clone(), v.clone())));
             let tls = format!("{}", inspect.dst_tls(req));
             m.labels.insert("tls".to_owned(), tls);
             m
         }),
         route_meta: inspect.route_labels(req).map(|labels| {
             let mut m = api::tap_event::RouteMeta::default();
-            m.labels.extend(labels.as_ref().clone());
+            m.labels.extend(labels.as_ref().iter().map(|(k, v)| (k.clone(), v.clone())));
             m
         }),
         event: None,
