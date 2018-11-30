@@ -109,12 +109,14 @@ where
             Addr::Name(na) => {
                 let (tx, rx) = mpsc::channel(2);
 
-                DefaultExecutor::current().spawn(Box::new(Task::new(
-                    na.clone(),
-                    self.resolver.clone(),
-                    self.timeout,
-                    tx,
-                ))).expect("must be able to spawn");
+                DefaultExecutor::current()
+                    .spawn(Box::new(Task::new(
+                        na.clone(),
+                        self.resolver.clone(),
+                        self.timeout,
+                        tx,
+                    )))
+                    .expect("must be able to spawn");
 
                 let svc = Service {
                     rx,
@@ -156,15 +158,12 @@ impl Future for Task {
         loop {
             self.state = match self.state {
                 State::Init => {
-                    trace!("refine");
                     let f = self.resolver.refine(self.original.name());
                     State::Pending(Timeout::new(f, self.timeout))
                 }
                 State::Pending(ref mut fut) => {
-                    trace!("poll refine");
                     match fut.poll() {
                         Ok(Async::NotReady) => {
-                            trace!("refine not ready");
                             return Ok(Async::NotReady);
                         }
                         Ok(Async::Ready(refine)) => {
@@ -212,12 +211,10 @@ impl Future for Task {
                 }
 
                 State::ValidUntil(ref mut f) => {
-                    trace!("poll expiry");
                     match f.poll().expect("timer must not fail") {
                         Async::NotReady => return Ok(Async::NotReady),
                         Async::Ready(()) => {
                             // The last resolution's TTL expired, so issue a new DNS query.
-                            trace!("expired");
                             State::Init
                         }
                     }
@@ -242,7 +239,6 @@ where
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        trace!("poll ready");
         while let Ok(Async::Ready(Some(addr))) = self.rx.poll() {
             debug!("refined: {}", addr);
             let svc = self.stack.make(&addr.into()).map_err(Error::Stack)?;
@@ -250,10 +246,7 @@ where
         }
 
         match self.service.as_mut() {
-            Some(ref mut svc) => {
-                trace!("checking service readiness");
-                svc.poll_ready().map_err(Error::Service)
-            }
+            Some(ref mut svc) => svc.poll_ready().map_err(Error::Service),
             None => {
                 trace!("resolution has not completed");
                 Ok(Async::NotReady)
