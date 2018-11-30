@@ -9,9 +9,10 @@
 //! DNS TTLs are honored and, if the resolution changes, the inner stack is
 //! rebuilt with the updated value.
 
-use futures::{future, Async, Future, Poll};
+use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
 use std::time::Duration;
 use std::{error, fmt};
+use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay, Timeout};
 
 use dns;
@@ -40,16 +41,22 @@ pub struct Stack<M: svc::Stack<Addr>> {
 }
 
 pub struct Service<M: svc::Stack<Addr>> {
-    original: NameAddr,
-    canonical: Option<NameAddr>,
-    resolver: dns::Resolver,
-    service: Option<M::Value>,
+    rx: mpsc::Receiver<NameAddr>,
     stack: M,
+    service: Option<M::Value>,
+}
+
+struct Task {
+    original: NameAddr,
+    resolved: Option<NameAddr>,
+    resolver: dns::Resolver,
     state: State,
     timeout: Duration,
+    tx: mpsc::Sender<NameAddr>,
 }
 
 enum State {
+    Init,
     Pending(Timeout<dns::RefineFuture>),
     ValidUntil(Delay),
 }
@@ -100,12 +107,20 @@ where
     fn make(&self, addr: &Addr) -> Result<Self::Value, Self::Error> {
         match addr {
             Addr::Name(na) => {
-                let svc = Service::new(
+                let (tx, rx) = mpsc::channel(2);
+
+                DefaultExecutor::current().spawn(Box::new(Task::new(
                     na.clone(),
-                    self.inner.clone(),
                     self.resolver.clone(),
                     self.timeout,
-                );
+                    tx,
+                ))).expect("must be able to spawn");
+
+                let svc = Service {
+                    rx,
+                    stack: self.inner.clone(),
+                    service: None,
+                };
                 Ok(svc::Either::A(svc))
             }
             Addr::Socket(_) => self.inner.make(&addr).map(svc::Either::B),
@@ -113,95 +128,106 @@ where
     }
 }
 
-// === impl Service ===
+// === impl Task ===
 
-impl<M> Service<M>
-where
-    M: svc::Stack<Addr>,
-    //M::Value: svc::Service,
-{
-    fn new(original: NameAddr, stack: M, resolver: dns::Resolver, timeout: Duration) -> Self {
-        trace!("refining name={}", original.name());
-        let f = resolver.refine(original.name());
-        let state = State::Pending(Timeout::new(f, timeout));
-
+impl Task {
+    fn new(
+        original: NameAddr,
+        resolver: dns::Resolver,
+        timeout: Duration,
+        tx: mpsc::Sender<NameAddr>,
+    ) -> Self {
         Self {
             original,
-            canonical: None,
-            stack,
-            service: None,
+            resolved: None,
             resolver,
-            state,
+            state: State::Init,
             timeout,
+            tx,
         }
     }
+}
 
-    fn poll_state(&mut self) -> Poll<(), M::Error> {
+impl Future for Task {
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<(), ()> {
         loop {
             self.state = match self.state {
-                State::Pending(ref mut fut) => match fut.poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Ok(Async::Ready(refine)) => {
-                        trace!(
-                            "update name={}, refined={}",
-                            self.original.name(),
-                            refine.name
-                        );
-                        // If the resolved name is a new name, bind a
-                        // service with it and set a delay that will notify
-                        // when the resolver should be consulted again.
-                        let canonical = NameAddr::new(refine.name, self.original.port());
-                        if self.canonical.as_ref() != Some(&canonical) {
-                            let service = self.stack.make(&canonical.clone().into())?;
-                            self.service = Some(service);
-                            self.canonical = Some(canonical);
+                State::Init => {
+                    trace!("refine");
+                    let f = self.resolver.refine(self.original.name());
+                    State::Pending(Timeout::new(f, self.timeout))
+                }
+                State::Pending(ref mut fut) => {
+                    trace!("poll refine");
+                    match fut.poll() {
+                        Ok(Async::NotReady) => {
+                            trace!("refine not ready");
+                            return Ok(Async::NotReady);
                         }
-
-                        State::ValidUntil(Delay::new(refine.valid_until))
-                    }
-                    Err(e) => {
-                        error!("failed to resolve {}: {:?}", self.original.name(), e);
-
-                        // If there was an error and there was no
-                        // previously-built service, create one using the
-                        // original name.
-                        if self.service.is_none() {
-                            let addr = self.original.clone().into();
-                            let service = self.stack.make(&addr)?;
-                            self.service = Some(service);
-
-                            // self.canonical is NOT set here, because a
-                            // canonical name has not been determined.
-                            debug_assert!(self.canonical.is_none());
-                        }
-
-                        let valid_until = e
-                            .into_inner()
-                            .and_then(|e| match e.kind() {
-                                dns::ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
-                                    *valid_until
+                        Ok(Async::Ready(refine)) => {
+                            // If the resolved name is a new name, bind a
+                            // service with it and set a delay that will notify
+                            // when the resolver should be consulted again.
+                            let resolved = NameAddr::new(refine.name, self.original.port());
+                            if self.resolved.as_ref() != Some(&resolved) {
+                                let err = self.tx.try_send(resolved.clone()).err();
+                                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
+                                    return Ok(().into());
                                 }
-                                _ => None,
-                            })
-                            .unwrap_or_else(|| clock::now() + DNS_ERROR_TTL);
 
-                        State::ValidUntil(Delay::new(valid_until))
-                    }
-                },
+                                self.resolved = Some(resolved);
+                            }
 
-                State::ValidUntil(ref mut f) => match f.poll().expect("timer must not fail") {
-                    Async::NotReady => return Ok(Async::NotReady),
-                    Async::Ready(()) => {
-                        trace!("refresh name={}", self.original.name());
-                        // The last resolution's TTL expired, so issue a new DNS query.
-                        let f = self.resolver.refine(self.original.name());
-                        State::Pending(Timeout::new(f, self.timeout))
+                            State::ValidUntil(Delay::new(refine.valid_until))
+                        }
+                        Err(e) => {
+                            error!("failed to refine {}: {}", self.original.name(), e);
+                            if self.resolved.is_none() {
+                                let err = self.tx.try_send(self.original.clone()).err();
+                                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
+                                    return Ok(().into());
+                                }
+
+                                // Pretend the original name was resolved so
+                                // that we don't re-publish on subsequent errors.
+                                self.resolved = Some(self.original.clone());
+                            }
+
+                            let valid_until = e
+                                .into_inner()
+                                .and_then(|e| match e.kind() {
+                                    dns::ResolveErrorKind::NoRecordsFound {
+                                        valid_until, ..
+                                    } => *valid_until,
+                                    _ => None,
+                                })
+                                .unwrap_or_else(|| clock::now() + DNS_ERROR_TTL);
+
+                            State::ValidUntil(Delay::new(valid_until))
+                        }
                     }
-                },
+                }
+
+                State::ValidUntil(ref mut f) => {
+                    trace!("poll expiry");
+                    match f.poll().expect("timer must not fail") {
+                        Async::NotReady => return Ok(Async::NotReady),
+                        Async::Ready(()) => {
+                            // The last resolution's TTL expired, so issue a new DNS query.
+                            trace!("expired");
+                            State::Init
+                        }
+                    }
+                }
             };
         }
     }
 }
+
+// === impl Service ===
 
 impl<M, Req> svc::Service<Req> for Service<M>
 where
@@ -216,7 +242,13 @@ where
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.poll_state().map_err(Error::Stack)?;
+        trace!("poll ready");
+        while let Ok(Async::Ready(Some(addr))) = self.rx.poll() {
+            debug!("refined: {}", addr);
+            let svc = self.stack.make(&addr.into()).map_err(Error::Stack)?;
+            self.service = Some(svc);
+        }
+
         match self.service.as_mut() {
             Some(ref mut svc) => {
                 trace!("checking service readiness");
