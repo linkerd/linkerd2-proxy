@@ -23,6 +23,12 @@ pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
 }
 
+impl HasH2Reason for ::h2::Error {
+    fn h2_reason(&self) -> Option<::h2::Reason> {
+        self.reason()
+    }
+}
+
 impl<E: HasH2Reason> HasH2Reason for super::buffer::ServiceError<E> {
     fn h2_reason(&self) -> Option<::h2::Reason> {
         match self {
