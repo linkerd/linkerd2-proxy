@@ -542,7 +542,7 @@ dependencies = [
  "linkerd2-fs-watch 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",
- "linkerd2-proxy-api 0.1.3 (git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/tap-routes)",
+ "linkerd2-proxy-api 0.1.4 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.4)",
  "linkerd2-router 0.1.0",
  "linkerd2-stack 0.1.0",
  "linkerd2-task 0.1.0",
@@ -582,8 +582,8 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.3"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/tap-routes#de20a798ba70fcc27f91054088786b68fe0d9dcc"
+version = "0.1.4"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.4#bb4861389d504dfea7b616df8cf6329b1c6f5e50"
 dependencies = [
  "bytes 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1707,7 +1707,7 @@ dependencies = [
 "checksum lazycell 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a6f08839bc70ef4a3fe1d566d5350f519c5912ea86be0df1740a7d247c7fc0ef"
 "checksum libc 0.2.40 (registry+https://github.com/rust-lang/crates.io-index)" = "6fd41f331ac7c5b8ac259b8bf82c75c0fb2e469bbf37d2becbba9a6a2221965b"
 "checksum linked-hash-map 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7860ec297f7008ff7a1e3382d7f7e1dcd69efc94751a2284bafc3d013c2aa939"
-"checksum linkerd2-proxy-api 0.1.3 (git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/tap-routes)" = "<none>"
+"checksum linkerd2-proxy-api 0.1.4 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.4)" = "<none>"
 "checksum log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "89f010e843f2b1a31dbd316b3b8d443758bc634bed37aabade59c686d644e0a2"
 "checksum lru-cache 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "4d06ff7ff06f729ce5f4e227876cb88d10bc59cd4ae1e09fbb2bde15c850dc21"
 "checksum matches 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "100aabe6b8ff4e4a7e32c1c13523379802df0772b82466207ac25b013f193376"
