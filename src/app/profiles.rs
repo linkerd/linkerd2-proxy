@@ -165,7 +165,16 @@ fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> 
             profiles::RequestMatch::Not(Box::new(m))
         }
         api::request_match::Match::Path(api::PathMatch { regex }) => {
-            let re = Regex::new(&regex).ok()?;
+            let regex = regex.trim();
+            let re = match (regex.starts_with('^'), regex.ends_with('$')) {
+                (true, true) => Regex::new(regex).ok()?,
+                (hd_anchor, tl_anchor) => {
+                    let hd = if hd_anchor { "" } else { "^" };
+                    let tl = if tl_anchor { "" } else { "$" };
+                    let re = format!("{}{}{}", hd, regex, tl);
+                    Regex::new(&re).ok()?
+                }
+            };
             profiles::RequestMatch::Path(re)
         }
         api::request_match::Match::Method(mm) => {
