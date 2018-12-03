@@ -98,6 +98,8 @@ pub struct TapResponsePayload {
     response_init_at: Instant,
     response_bytes: usize,
     tap: TapTx,
+    // Response-headers may include grpc-status when there is no response body.
+    grpc_status: Option<u32>,
 }
 
 // === impl Server ===
@@ -439,6 +441,11 @@ impl iface::TapResponse for TapResponse {
             response_init_at,
             response_bytes: 0,
             tap: self.tap,
+            grpc_status: rsp
+                .headers()
+                .get("grpc-status")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u32>().ok()),
         }
     }
 
@@ -483,13 +490,15 @@ impl iface::TapPayload for TapResponsePayload {
     }
 
     fn eos(self, trls: Option<&http::HeaderMap>) {
-        let end = trls
-            .and_then(|t| t.get("grpc-status"))
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .map(api::eos::End::GrpcStatusCode);
+        let status = match trls {
+            None => self.grpc_status,
+            Some(t) => t
+                .get("grpc-status")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u32>().ok()),
+        };
 
-        self.send(end);
+        self.send(status.map(api::eos::End::GrpcStatusCode));
     }
 
     fn fail<E: HasH2Reason>(self, e: &E) {
