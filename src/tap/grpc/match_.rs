@@ -19,6 +19,7 @@ pub enum Match {
     Source(TcpMatch),
     Destination(TcpMatch),
     DestinationLabel(LabelMatch),
+    RouteLabel(LabelMatch),
     Http(HttpMatch),
 }
 
@@ -87,6 +88,10 @@ impl Match {
                 .dst_labels(req)
                 .map(|l| lbl.matches(l))
                 .unwrap_or(false),
+            Match::RouteLabel(ref lbl) => inspect
+                .route_labels(req)
+                .map(|l| lbl.matches(l.as_ref()))
+                .unwrap_or(false),
             Match::Http(ref http) => http.matches(req, inspect),
         }
     }
@@ -120,6 +125,7 @@ impl TryFrom<observe_request::match_::Match> for Match {
             match_::Match::DestinationLabel(l) => {
                 LabelMatch::try_from(l).map(Match::DestinationLabel)
             }
+            match_::Match::RouteLabel(l) => LabelMatch::try_from(l).map(Match::RouteLabel),
             match_::Match::Http(http) => HttpMatch::try_from(http).map(Match::Http),
         }
     }

@@ -341,6 +341,7 @@ where
                 // extension into each request so that all lower metrics
                 // implementations can use the route-specific configuration.
                 let dst_route_layer = phantom_data::layer()
+                    .push(insert_target::layer())
                     .push(metrics::layer::<_, classify::Response>(route_http_metrics))
                     .push(classify::layer());
 
@@ -495,6 +496,7 @@ where
                 // extension into each request so that all lower metrics
                 // implementations can use the route-specific configuration.
                 let dst_route_stack = phantom_data::layer()
+                    .push(insert_target::layer())
                     .push(http_metrics::layer::<_, classify::Response>(
                         route_http_metrics,
                     ))

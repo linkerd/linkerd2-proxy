@@ -1,6 +1,7 @@
 use http;
 use indexmap::IndexMap;
 use std::net;
+use std::sync::Arc;
 
 use transport::tls;
 
@@ -46,6 +47,8 @@ pub trait Inspect {
     fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
     fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<&IndexMap<String, String>>;
     fn dst_tls<B>(&self, req: &http::Request<B>) -> tls::Status;
+
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>>;
 
     fn is_outbound<B>(&self, req: &http::Request<B>) -> bool;
 
