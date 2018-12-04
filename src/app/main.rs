@@ -542,13 +542,13 @@ where
                             .get(super::CANONICAL_DST_HEADER)
                             .and_then(|dst| dst.to_str().ok())
                             .and_then(|d| Addr::from_str(d).ok());
-                        info!("inbound canonical={:?}", canonical);
+                        debug!("inbound canonical={:?}", canonical);
 
                         let dst = canonical
                             .or_else(|| super::http_request_authority_addr(req).ok())
                             .or_else(|| super::http_request_host_addr(req).ok())
                             .or_else(|| super::http_request_orig_dst_addr(req).ok());
-                        info!("inbound dst={:?}", dst);
+                        debug!("inbound dst={:?}", dst);
                         dst.map(DstAddr::inbound)
                     }))
                     .make(&router::Config::new("in dst", capacity, max_idle_age))
