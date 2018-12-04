@@ -147,9 +147,11 @@ pub mod discovery {
             match self {
                 Resolution::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
                     resolve::Update::Remove(addr) => {
+                        debug!("removing {} from {}", addr, name);
                         Ok(Async::Ready(resolve::Update::Remove(addr)))
                     }
                     resolve::Update::Add(addr, metadata) => {
+                        debug!("adding {} to {}", addr, name);
                         // If the endpoint does not have TLS, note the reason.
                         // Otherwise, indicate that we don't (yet) have a TLS
                         // config. This value may be changed by a stack layer that
