@@ -6,7 +6,8 @@ use indexmap::IndexMap;
 use regex::Regex;
 use std::iter::FromIterator;
 use std::sync::Arc;
-use std::{error, fmt};
+
+use never::Never;
 
 use NameAddr;
 
@@ -17,7 +18,7 @@ pub type Routes = Vec<(RequestMatch, Route)>;
 /// The stream updates with all routes for the given destination. The stream
 /// never ends and cannot fail.
 pub trait GetRoutes {
-    type Stream: Stream<Item = Routes, Error = Error>;
+    type Stream: Stream<Item = Routes, Error = Never>;
 
     fn get_routes(&self, dst: &NameAddr) -> Option<Self::Stream>;
 }
@@ -34,9 +35,6 @@ pub trait WithRoute {
 pub trait CanGetDestination {
     fn get_destination(&self) -> Option<&NameAddr>;
 }
-
-#[derive(Debug)]
-pub enum Error {}
 
 #[derive(Clone, Debug, Default)]
 pub struct Route {
@@ -145,16 +143,6 @@ impl ResponseMatch {
     }
 }
 
-// === impl Error ===
-
-impl fmt::Display for Error {
-    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-        unreachable!()
-    }
-}
-
-impl error::Error for Error {}
-
 /// A stack module that produces a Service that routes requests through alternate
 /// middleware configurations
 ///
@@ -169,6 +157,8 @@ pub mod router {
     use futures::{Async, Poll, Stream};
     use http;
     use std::{error, fmt};
+
+    use never::Never;
 
     use dns;
     use svc;
@@ -323,7 +313,7 @@ pub mod router {
 
     impl<G, T, R> Service<G, T, R>
     where
-        G: Stream<Item = Routes, Error = super::Error>,
+        G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
         R: svc::Stack<T::Output> + Clone,
     {
@@ -347,7 +337,7 @@ pub mod router {
 
     impl<G, T, R, B> svc::Service<http::Request<B>> for Service<G, T, R>
     where
-        G: Stream<Item = Routes, Error = super::Error>,
+        G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
         R: svc::Stack<T::Output> + Clone,
         R::Value: svc::Service<http::Request<B>>,
