@@ -148,6 +148,7 @@ pub mod client;
 pub mod controller;
 pub mod proxy;
 pub mod server;
+pub mod tap;
 pub mod tcp;
 
 pub fn shutdown_signal() -> (Shutdown, ShutdownRx) {
