@@ -120,6 +120,87 @@ fn tcp_server_first() {
 }
 
 #[test]
+fn tcp_server_first_tls() {
+    use std::{
+        path::PathBuf,
+        sync::mpsc,
+    };
+
+    let _ = env_logger_init();
+
+    let msg1 = "custom tcp server starts";
+    let msg2 = "custom tcp client second";
+
+    let (tx, rx) = mpsc::channel();
+
+    let srv = server::tcp()
+        .accept_fut(move |sock| {
+            tokio_io::io::write_all(sock, msg1.as_bytes())
+                .and_then(move |(sock, _)| {
+                    tokio_io::io::read(sock, vec![0; 512])
+                })
+                .map(move |(_sock, vec, n)| {
+                    assert_eq!(&vec[..n], msg2.as_bytes());
+                    tx.send(()).unwrap();
+                })
+                .map_err(|e| panic!("tcp server error: {}", e))
+        })
+        .run();
+
+    let (cert, key, trust_anchors) = {
+        let path_to_string = |path: &PathBuf| {
+            path
+                .as_path()
+                .to_owned()
+                .into_os_string()
+                .into_string()
+                .unwrap()
+        };
+        let mut tls = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tls.push("src");
+        tls.push("transport");
+        tls.push("tls");
+        tls.push("testdata");
+
+        tls.push("foo-ns1-ca1.crt");
+        let cert = path_to_string(&tls);
+
+        tls.set_file_name("foo-ns1-ca1.p8");
+        let key = path_to_string(&tls);
+
+        tls.set_file_name("ca1.pem");
+        let trust_anchors = path_to_string(&tls);
+        (cert, key, trust_anchors)
+    };
+
+    let mut env = app::config::TestEnv::new();
+
+    env.put(app::config::ENV_TLS_CERT, cert);
+    env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
+    env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
+    env.put(
+        app::config::ENV_TLS_POD_IDENTITY,
+        "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local"
+            .to_string(),
+    );
+    env.put(app::config::ENV_CONTROLLER_NAMESPACE, "linkerd".to_string());
+    env.put(app::config::ENV_POD_NAMESPACE, "ns1".to_string());
+
+    let proxy = proxy::new()
+        .disable_inbound_ports_protocol_detection(vec![srv.addr.port()])
+        .inbound(srv)
+        .run_with_test_env(env);
+
+    let client = client::tcp(proxy.inbound);
+
+    let tcp_client = client.connect();
+
+    assert_eventually!(tcp_client.read_timeout(Duration::from_secs(5)) == msg1.as_bytes());
+    tcp_client.write(msg2);
+    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+}
+
+#[test]
 fn tcp_with_no_orig_dst() {
     let _ = env_logger_init();
 
