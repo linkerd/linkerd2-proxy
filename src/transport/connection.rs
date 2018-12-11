@@ -84,9 +84,11 @@ pub struct Connection {
     /// Whether or not the connection is secured with TLS.
     tls_status: tls::Status,
 
-    /// Whether or not protocol detection should be attempted for this
-    /// connection.
-    detect_protocol: bool,
+    /// If true, protocol detection should be disabled for this connection.
+    disable_protocol_detection: bool,
+
+    /// The connection's original destination address, if there was one.
+    orig_dst: Option<SocketAddr>,
 }
 
 /// A trait describing that a type can peek bytes.
@@ -150,7 +152,7 @@ impl BoundPort {
 
 impl<G> BoundPort<G> {
 
-    pub fn with_disabled_ports(self, disable_protocol_detection_ports: IndexSet<u16>) -> Self {
+    pub fn without_protocol_detection_for(self, disable_protocol_detection_ports: IndexSet<u16>) -> Self {
         Self {
             disable_protocol_detection_ports,
             ..self
@@ -264,23 +266,25 @@ impl<G> BoundPort<G> {
         Self: GetOriginalDst,
     {
         let original_dst = self.get_original_dst(&socket);
-        if original_dst
+        let f = if original_dst
             .map(|addr| self.disable_protocol_detection_ports.contains(&addr.port()))
             .unwrap_or(false)
         {
-            return Either::A(future::ok(Connection::without_protocol_detection(socket)));
-        }
-        match &self.tls {
-            Conditional::Some(tls) => {
-                let tls = tls::ConnectionConfig {
-                    server_identity: tls.server_identity.clone(),
-                    config: tls.config.borrow().clone(),
-                };
-                Either::B(Either::A(ConditionallyUpgradeServerToTls::new(socket, tls)))
-            },
-            Conditional::None(why_no_tls) =>
-                Either::B(Either::B(future::ok(Connection::plain(socket, *why_no_tls)))),
-        }
+            Either::A(future::ok(Connection::without_protocol_detection(socket)))
+        } else {
+            match &self.tls {
+                Conditional::Some(tls) => {
+                    let tls = tls::ConnectionConfig {
+                        server_identity: tls.server_identity.clone(),
+                        config: tls.config.borrow().clone(),
+                    };
+                    Either::B(Either::A(ConditionallyUpgradeServerToTls::new(socket, tls)))
+                },
+                Conditional::None(why_no_tls) =>
+                    Either::B(Either::B(future::ok(Connection::plain(socket, *why_no_tls)))),
+            }
+        };
+        f.map(move |c| c.with_original_dst(original_dst))
     }
 }
 
@@ -458,7 +462,8 @@ impl Connection {
             io: BoxedIo::new(io),
             peek_buf: BytesMut::new(),
             tls_status: Conditional::None(reason),
-            detect_protocol: false,
+            disable_protocol_detection: true,
+            orig_dst: None,
         }
     }
 
@@ -469,7 +474,8 @@ impl Connection {
             io: BoxedIo::new(io),
             peek_buf,
             tls_status: Conditional::None(why_no_tls),
-            detect_protocol: true,
+            disable_protocol_detection: false,
+            orig_dst: None,
         }
     }
 
@@ -478,12 +484,20 @@ impl Connection {
             io: io,
             peek_buf: BytesMut::new(),
             tls_status: Conditional::Some(()),
-            detect_protocol: true,
+            disable_protocol_detection: false,
+            orig_dst: None,
         }
     }
 
-    pub fn original_dst_addr<T: GetOriginalDst>(&self, get: &T) -> Option<SocketAddr> {
-        get.get_original_dst(&self.io)
+    fn with_original_dst(self, orig_dst: Option<SocketAddr>) -> Self {
+        Self {
+            orig_dst,
+            ..self
+        }
+    }
+
+    pub fn original_dst_addr(&self) -> Option<SocketAddr> {
+        self.orig_dst
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, std::io::Error> {
@@ -494,8 +508,8 @@ impl Connection {
         self.tls_status
     }
 
-    pub fn should_detect_protocol(&self) -> bool {
-        self.detect_protocol
+    pub fn disable_protocol_detection(&self) -> bool {
+        self.disable_protocol_detection
     }
 }
 
