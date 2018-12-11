@@ -23,11 +23,7 @@ endif
 
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
 
-TEST_FLAGS =
-ifndef TEST_FLAKEY
-	TEST_FLAGS = --no-default-features
-endif
-CARGO_TEST = $(CARGO) test --all --frozen $(RELEASE) $(TEST_FLAGS)
+CARGO_TEST = $(CARGO) test --all --frozen $(RELEASE)
 
 DOCKER = docker
 DOCKER_BUILD = docker build
@@ -57,6 +53,10 @@ build: $(TARGET_BIN)
 
 .PHONY: test
 test: fetch
+	$(CARGO_TEST) --no-default-features
+
+.PHONY: test-flakey
+test-flakey:
 	$(CARGO_TEST)
 
 .PHONY: package
