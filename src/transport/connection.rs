@@ -152,7 +152,10 @@ impl BoundPort {
 
 impl<G> BoundPort<G> {
 
-    pub fn without_protocol_detection_for(self, disable_protocol_detection_ports: IndexSet<u16>) -> Self {
+    pub fn without_protocol_detection_for(
+        self,
+        disable_protocol_detection_ports: IndexSet<u16>,
+    ) -> Self {
         Self {
             disable_protocol_detection_ports,
             ..self
@@ -217,7 +220,7 @@ impl<G> BoundPort<G> {
         Self: GetOriginalDst,
     {
         let inner = self.inner.take()
-            .expect("listener shouldn't ever be taken twice");
+            .expect("listener shouldn't be taken twice");
         future::lazy(move || {
             // Create the TCP listener lazily, so that it's not bound to a
             // reactor until the future is run. This will avoid
@@ -242,8 +245,7 @@ impl<G> BoundPort<G> {
                     // do it here.
                     set_nodelay_or_warn(&socket);
 
-                    let conn = self.new_conn(socket);
-                    conn.map(move |conn| (conn, remote_addr))
+                    self.new_conn(socket).map(move |conn| (conn, remote_addr))
                 })
                 .then(|r| {
                     future::ok(match r {
@@ -265,26 +267,35 @@ impl<G> BoundPort<G> {
     where
         Self: GetOriginalDst,
     {
+        // We are using the port from the connection's SO_ORIGINAL_DST to
+        // determine whether to skip protocol detection, not any port that
+        // would be found after doing discovery.
         let original_dst = self.get_original_dst(&socket);
-        let f = if original_dst
-            .map(|addr| self.disable_protocol_detection_ports.contains(&addr.port()))
-            .unwrap_or(false)
-        {
-            Either::A(future::ok(Connection::without_protocol_detection(socket)))
-        } else {
-            match &self.tls {
-                Conditional::Some(tls) => {
-                    let tls = tls::ConnectionConfig {
-                        server_identity: tls.server_identity.clone(),
-                        config: tls.config.borrow().clone(),
-                    };
-                    Either::B(Either::A(ConditionallyUpgradeServerToTls::new(socket, tls)))
-                },
-                Conditional::None(why_no_tls) =>
-                    Either::B(Either::B(future::ok(Connection::plain(socket, *why_no_tls)))),
-            }
-        };
-        f.map(move |c| c.with_original_dst(original_dst))
+        match (original_dst, &self.tls) {
+            // Protocol detection is disabled for the original port. Return a
+            // new connection without protocol detection.
+            (Some(addr), _) if self.disable_protocol_detection_ports.contains(&addr.port()) => {
+                let conn = Connection::without_protocol_detection(socket)
+                    .with_original_dst(Some(addr));
+                Either::A(future::ok(conn))
+            },
+            // TLS is enabled. Try to accept a TLS handshake.
+            (dst, Conditional::Some(tls)) => {
+                let tls = tls::ConnectionConfig {
+                    server_identity: tls.server_identity.clone(),
+                    config: tls.config.borrow().clone(),
+                };
+                let handshake = ConditionallyUpgradeServerToTls::new(socket, tls)
+                    .map(move |c| c.with_original_dst(dst));
+                Either::B(Either::A(handshake))
+            },
+            // TLS is disabled. Return a new plaintext connection.
+            (dst, Conditional::None(why_no_tls)) => {
+                let conn = Connection::plain(socket, *why_no_tls)
+                    .with_original_dst(dst);
+                Either::B(Either::B(future::ok(conn)))
+            },
+        }
     }
 }
 

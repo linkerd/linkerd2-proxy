@@ -249,9 +249,6 @@ where
             Err(never) => match never {},
         };
 
-        // We are using the port from the connection's SO_ORIGINAL_DST to
-        // determine whether to skip protocol detection, not any port that
-        // would be found after doing discovery.
         if disable_protocol_detection {
             trace!("protocol detection disabled for {:?}", orig_dst);
             let fwd = tcp::forward(io, &self.connect, &source);
