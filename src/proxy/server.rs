@@ -229,7 +229,7 @@ where
         -> impl Future<Item=(), Error=()>
     {
         let orig_dst = connection.original_dst_addr();
-        let disable_protocol_detection = connection.disable_protocol_detection();
+        let disable_protocol_detection = connection.is_protocol_detection_disabled();
 
         let log = self.log.clone()
             .with_remote(remote_addr);
@@ -241,7 +241,6 @@ where
             tls_status: connection.tls_status(),
             _p: (),
         };
-
 
         let io = match self.accept.make(&source) {
             Ok(accept) => accept.accept(connection),

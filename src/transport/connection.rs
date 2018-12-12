@@ -519,7 +519,7 @@ impl Connection {
         self.tls_status
     }
 
-    pub fn disable_protocol_detection(&self) -> bool {
+    pub fn is_protocol_detection_disabled(&self) -> bool {
         self.disable_protocol_detection
     }
 }
