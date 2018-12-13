@@ -84,8 +84,9 @@ pub struct Connection {
     /// Whether or not the connection is secured with TLS.
     tls_status: tls::Status,
 
-    /// If true, protocol detection should be disabled for this connection.
-    disable_protocol_detection: bool,
+    /// If true, the proxy should attempt to detect the protocol for this
+    /// connection. If false, protocol detection should be skipped.
+    detect_protocol: bool,
 
     /// The connection's original destination address, if there was one.
     orig_dst: Option<SocketAddr>,
@@ -473,7 +474,7 @@ impl Connection {
             io: BoxedIo::new(io),
             peek_buf: BytesMut::new(),
             tls_status: Conditional::None(reason),
-            disable_protocol_detection: true,
+            detect_protocol: false,
             orig_dst: None,
         }
     }
@@ -485,7 +486,7 @@ impl Connection {
             io: BoxedIo::new(io),
             peek_buf,
             tls_status: Conditional::None(why_no_tls),
-            disable_protocol_detection: false,
+            detect_protocol: true,
             orig_dst: None,
         }
     }
@@ -495,7 +496,7 @@ impl Connection {
             io: io,
             peek_buf: BytesMut::new(),
             tls_status: Conditional::Some(()),
-            disable_protocol_detection: false,
+            detect_protocol: true,
             orig_dst: None,
         }
     }
@@ -519,8 +520,8 @@ impl Connection {
         self.tls_status
     }
 
-    pub fn is_protocol_detection_disabled(&self) -> bool {
-        self.disable_protocol_detection
+    pub fn should_detect_protocol(&self) -> bool {
+        self.detect_protocol
     }
 }
 
