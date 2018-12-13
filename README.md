@@ -36,6 +36,7 @@ A `Makefile` is provided to automate most build tasks. It provides the
 following targets:
 
 * `make build` -- Compiles the proxy on your local system using `cargo`
+* `make-clean` -- Cleans the build target on the local system using `cargo clean`
 * `make test` -- Runs unit and integration tests on your local system using `cargo`
 * `make test-flakey` -- Runs _all_ tests, including those that may fail spuriously
 * `make package` -- Builds a tarball at
