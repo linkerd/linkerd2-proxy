@@ -520,7 +520,7 @@ impl Connection {
         self.tls_status
     }
 
-    pub fn is_detect_prot(&self) -> bool {
+    pub fn aaaaabbbbbcccccdddddeeeeefffffgggggh(&self) -> bool {
         self.detect_protocol
     }
 }
