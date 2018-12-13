@@ -229,7 +229,7 @@ where
         -> impl Future<Item=(), Error=()>
     {
         let orig_dst = connection.original_dst_addr();
-        let disable_protocol_detection = !connection.should_detect_protocol();
+        let disable_protocol_detection = !connection.is_detect_prot();
 
         let log = self.log.clone()
             .with_remote(remote_addr);
