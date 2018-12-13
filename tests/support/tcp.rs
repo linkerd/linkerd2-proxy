@@ -110,14 +110,29 @@ impl TcpConn {
             })
     }
 
-    pub fn try_read(&self) -> io::Result<Vec<u8>> {
+    pub fn read_timeout(&self, timeout: Duration) -> Vec<u8> {
+        use self::linkerd2_task::test_util::BlockOnFor;
+        use self::tokio::runtime::current_thread;
+        current_thread::Runtime::new()
+            .unwrap()
+            .block_on_for(timeout, self.read_future())
+            .unwrap_or_else(|e| {
+                panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e)
+            })
+    }
+
+    fn read_future(&self) -> impl Future<Item = Vec<u8>, Error = io::Error> {
         println!("tcp client (addr={}): read", self.addr);
         let (tx, rx) = oneshot::channel();
         let _ = self.tx.unbounded_send((None, tx));
-        rx.map_err(|_| panic!("tcp read dropped"))
-            .map(|res| res.map(|opt| opt.unwrap()))
+        rx
+            .map_err(|_| panic!("tcp read dropped"))
+            .and_then(|res| res.map(|opt| opt.unwrap()))
+    }
+
+    pub fn try_read(&self) -> io::Result<Vec<u8>> {
+        self.read_future()
             .wait()
-            .unwrap()
     }
 
     pub fn write<T: Into<Vec<u8>>>(&self, buf: T) {

@@ -14,11 +14,14 @@ use tokio::{
 
 use Conditional;
 use transport::{AddrInfo, BoxedIo, GetOriginalDst, tls};
+use indexmap::IndexSet;
 
-pub struct BoundPort {
-    inner: std::net::TcpListener,
+pub struct BoundPort<G = ()> {
+    inner: Option<std::net::TcpListener>,
     local_addr: SocketAddr,
     tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>,
+    disable_protocol_detection_ports: IndexSet<u16>,
+    get_original_dst: G,
 }
 
 /// Initiates a client connection to the given address.
@@ -80,6 +83,13 @@ pub struct Connection {
 
     /// Whether or not the connection is secured with TLS.
     tls_status: tls::Status,
+
+    /// If true, the proxy should attempt to detect the protocol for this
+    /// connection. If false, protocol detection should be skipped.
+    detect_protocol: bool,
+
+    /// The connection's original destination address, if there was one.
+    orig_dst: Option<SocketAddr>,
 }
 
 /// A trait describing that a type can peek bytes.
@@ -119,10 +129,38 @@ impl BoundPort {
         let inner = std::net::TcpListener::bind(addr)?;
         let local_addr = inner.local_addr()?;
         Ok(BoundPort {
-            inner,
+            inner: Some(inner),
             local_addr,
             tls,
+            disable_protocol_detection_ports: IndexSet::new(),
+            get_original_dst: (),
         })
+    }
+
+    pub fn with_original_dst<G>(self, get_original_dst: G) -> BoundPort<G>
+    where
+        G: GetOriginalDst,
+    {
+        BoundPort {
+            inner: self.inner,
+            local_addr: self.local_addr,
+            tls: self.tls,
+            disable_protocol_detection_ports: self.disable_protocol_detection_ports,
+            get_original_dst,
+        }
+    }
+}
+
+impl<G> BoundPort<G> {
+
+    pub fn without_protocol_detection_for(
+        self,
+        disable_protocol_detection_ports: IndexSet<u16>,
+    ) -> Self {
+        Self {
+            disable_protocol_detection_ports,
+            ..self
+        }
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -142,8 +180,10 @@ impl BoundPort {
         where
             F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
             T: Send + 'static,
+            G: Send + 'static,
             Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
             <Fut as IntoFuture>::Future: Send,
+            Self: GetOriginalDst + Send + 'static,
     {
         self.listen_and_fold_inner(std::u64::MAX, initial, f)
     }
@@ -158,14 +198,16 @@ impl BoundPort {
         where
             F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
             T: Send + 'static,
+            G: Send + 'static,
             Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
             <Fut as IntoFuture>::Future: Send,
+            Self: GetOriginalDst,
     {
         self.listen_and_fold_inner(connection_limit, initial, f)
     }
 
     fn listen_and_fold_inner<T, F, Fut>(
-        self,
+        mut self,
         connection_limit: u64,
         initial: T,
         f: F)
@@ -173,11 +215,13 @@ impl BoundPort {
     where
         F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
         T: Send + 'static,
+        G: Send + 'static,
         Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
         <Fut as IntoFuture>::Future: Send,
+        Self: GetOriginalDst,
     {
-        let inner = self.inner;
-        let tls = self.tls;
+        let inner = self.inner.take()
+            .expect("listener shouldn't be taken twice");
         future::lazy(move || {
             // Create the TCP listener lazily, so that it's not bound to a
             // reactor until the future is run. This will avoid
@@ -202,18 +246,7 @@ impl BoundPort {
                     // do it here.
                     set_nodelay_or_warn(&socket);
 
-                    let conn = match &tls {
-                        Conditional::Some(tls) => {
-                            let tls = tls::ConnectionConfig {
-                                server_identity: tls.server_identity.clone(),
-                                config: tls.config.borrow().clone(),
-                            };
-                            Either::A(ConditionallyUpgradeServerToTls::new(socket, tls))
-                        },
-                        Conditional::None(why_no_tls) =>
-                            Either::B(future::ok(Connection::plain(socket, *why_no_tls))),
-                    };
-                    conn.map(move |conn| (conn, remote_addr))
+                    self.new_conn(socket).map(move |conn| (conn, remote_addr))
                 })
                 .then(|r| {
                     future::ok(match r {
@@ -228,6 +261,57 @@ impl BoundPort {
                 .fold(initial, f)
         })
         .map(|_| ())
+    }
+
+    fn new_conn(&self, socket: TcpStream)
+        -> impl Future<Item = Connection, Error = io::Error> + Send + 'static
+    where
+        Self: GetOriginalDst,
+    {
+        // We are using the port from the connection's SO_ORIGINAL_DST to
+        // determine whether to skip protocol detection, not any port that
+        // would be found after doing discovery.
+        let original_dst = self.get_original_dst(&socket);
+        match (original_dst, &self.tls) {
+            // Protocol detection is disabled for the original port. Return a
+            // new connection without protocol detection.
+            (Some(addr), _) if self.disable_protocol_detection_ports.contains(&addr.port()) => {
+                let conn = Connection::without_protocol_detection(socket)
+                    .with_original_dst(Some(addr));
+                Either::A(future::ok(conn))
+            },
+            // TLS is enabled. Try to accept a TLS handshake.
+            (dst, Conditional::Some(tls)) => {
+                let tls = tls::ConnectionConfig {
+                    server_identity: tls.server_identity.clone(),
+                    config: tls.config.borrow().clone(),
+                };
+                let handshake = ConditionallyUpgradeServerToTls::new(socket, tls)
+                    .map(move |c| c.with_original_dst(dst));
+                Either::B(Either::A(handshake))
+            },
+            // TLS is disabled. Return a new plaintext connection.
+            (dst, Conditional::None(why_no_tls)) => {
+                let conn = Connection::plain(socket, *why_no_tls)
+                    .with_original_dst(dst);
+                Either::B(Either::B(future::ok(conn)))
+            },
+        }
+    }
+}
+
+impl GetOriginalDst for BoundPort<()> {
+    fn get_original_dst(&self, _socket: &AddrInfo) -> Option<SocketAddr> {
+        None
+    }
+}
+
+impl<G> GetOriginalDst for BoundPort<G>
+where
+    G: GetOriginalDst,
+{
+    fn get_original_dst(&self, socket: &AddrInfo) -> Option<SocketAddr> {
+        self.get_original_dst.get_original_dst(socket)
     }
 }
 
@@ -383,6 +467,18 @@ impl Connection {
         Self::plain_with_peek_buf(io, BytesMut::new(), why_no_tls)
     }
 
+    fn without_protocol_detection(io: TcpStream) -> Self {
+        use self::tls::{ReasonForNoIdentity, ReasonForNoTls};
+        let reason = ReasonForNoTls::NoIdentity(ReasonForNoIdentity::NotHttp);
+        Connection {
+            io: BoxedIo::new(io),
+            peek_buf: BytesMut::new(),
+            tls_status: Conditional::None(reason),
+            detect_protocol: false,
+            orig_dst: None,
+        }
+    }
+
     fn plain_with_peek_buf(io: TcpStream, peek_buf: BytesMut, why_no_tls: tls::ReasonForNoTls)
         -> Self
     {
@@ -390,6 +486,8 @@ impl Connection {
             io: BoxedIo::new(io),
             peek_buf,
             tls_status: Conditional::None(why_no_tls),
+            detect_protocol: true,
+            orig_dst: None,
         }
     }
 
@@ -398,11 +496,20 @@ impl Connection {
             io: io,
             peek_buf: BytesMut::new(),
             tls_status: Conditional::Some(()),
+            detect_protocol: true,
+            orig_dst: None,
         }
     }
 
-    pub fn original_dst_addr<T: GetOriginalDst>(&self, get: &T) -> Option<SocketAddr> {
-        get.get_original_dst(&self.io)
+    fn with_original_dst(self, orig_dst: Option<SocketAddr>) -> Self {
+        Self {
+            orig_dst,
+            ..self
+        }
+    }
+
+    pub fn original_dst_addr(&self) -> Option<SocketAddr> {
+        self.orig_dst
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, std::io::Error> {
@@ -411,6 +518,10 @@ impl Connection {
 
     pub fn tls_status(&self) -> tls::Status {
         self.tls_status
+    }
+
+    pub fn should_detect_protocol(&self) -> bool {
+        self.detect_protocol
     }
 }
 

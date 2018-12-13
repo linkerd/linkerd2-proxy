@@ -669,16 +669,17 @@ where
     let server = proxy::Server::new(
         proxy_name,
         listen_addr,
-        get_orig_dst,
         accept,
         connect,
         router,
-        disable_protocol_detection_ports,
         drain_rx.clone(),
     );
     let log = server.log().clone();
 
     let accept = {
+        let bound_port = bound_port
+            .without_protocol_detection_for(disable_protocol_detection_ports)
+            .with_original_dst(get_orig_dst);
         let fut = bound_port.listen_and_fold((), move |(), (connection, remote_addr)| {
             let s = server.serve(connection, remote_addr);
             // Logging context is configured by the server.
