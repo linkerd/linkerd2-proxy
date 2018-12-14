@@ -22,11 +22,11 @@ jobs:
     # build.l5d.io/linkerd2-proxy/latest.txt is updated to reference the latest
     # uploaded binary.
     - if: type != pull_request
-      install: export CARGO_RELEASE=1
+      # Verbose is enabled so that the build doesn't timeout.
+      install: export CARGO_RELEASE=1 CARGO_VERBOSE=1
       script:
-        # travis-wait is used so that the build doesn't timeout.
-        - travis_wait 30 make clean-package package
-        - travis_wait 30 make test
+        - make clean-package package
+        - make test
       rust: stable
       deploy:
         on:
