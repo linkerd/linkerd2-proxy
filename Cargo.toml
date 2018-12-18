@@ -68,8 +68,7 @@ tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
 tower-service         = { git = "https://github.com/tower-rs/tower" }
 tower-util            = { git = "https://github.com/tower-rs/tower" }
 tower-http            = { git = "https://github.com/tower-rs/tower-http" }
-tower-h2              = { git = "https://github.com/tower-rs/tower-h2" }
-tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc" }
+tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
 
 # FIXME update to a release when available (>0.10)
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "c017c114", default-features = false }

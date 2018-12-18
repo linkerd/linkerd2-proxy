@@ -14,7 +14,7 @@ pub mod settings;
 pub mod upgrade;
 
 pub use self::client::Client;
-pub use self::glue::{Error, HttpBody as Body, GrpcBody};
+pub use self::glue::{Error, HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
 
 use svc::Either;
