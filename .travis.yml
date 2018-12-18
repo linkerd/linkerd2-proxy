@@ -4,6 +4,8 @@ sudo: false
 
 language: rust
 cache: cargo
+env:
+  - RUSTFLAGS="-C debuginfo=0"
 
 branches:
   only:

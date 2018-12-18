@@ -4,11 +4,13 @@ use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use http;
 use regex::Regex;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, Body, BoxBody};
 use tower_http::HttpService;
+use tower_retry::budget::Budget;
 
 use api::destination as api;
 use never::Never;
@@ -129,8 +131,14 @@ where
                 Ok(Async::Ready(None)) => return StreamState::RecvDone.into(),
                 Ok(Async::Ready(Some(profile))) => {
                     debug!("profile received: {:?}", profile);
-                    let rs = profile.routes.into_iter().filter_map(convert_route);
-                    match tx.start_send(rs.collect()) {
+                    let retry_budget = profile.retry_budget.and_then(convert_retry_budget);
+                    let routes = profile
+                        .routes
+                        .into_iter()
+                        .filter_map(move |orig| {
+                            convert_route(orig, retry_budget.as_ref())
+                        });
+                    match tx.start_send(routes.collect()) {
                         Ok(AsyncSink::Ready) => {} // continue
                         Ok(AsyncSink::NotReady(_)) => {
                             info!("dropping profile update due to a full buffer");
@@ -205,15 +213,30 @@ where
     }
 }
 
-fn convert_route(orig: api::Route) -> Option<(profiles::RequestMatch, profiles::Route)> {
+fn convert_route(orig: api::Route, retry_budget: Option<&Arc<Budget>>) -> Option<(profiles::RequestMatch, profiles::Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
         .response_classes
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let route = profiles::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    let mut route = profiles::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    if orig.is_retryable {
+        set_route_retry(&mut route, retry_budget);
+    }
     Some((req_match, route))
+}
+
+fn set_route_retry(route: &mut profiles::Route, retry_budget: Option<&Arc<Budget>>) {
+    let budget = match retry_budget {
+        Some(budget) => budget.clone(),
+        None => {
+            warn!("retry_budget is missing: {:?}", route);
+            return;
+        },
+    };
+
+    route.set_retries(budget);
 }
 
 fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> {
@@ -294,3 +317,57 @@ fn convert_rsp_match(orig: api::ResponseMatch) -> Option<profiles::ResponseMatch
 
     Some(m)
 }
+
+fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
+    let min_retries = if orig.min_retries_per_second <= ::std::i32::MAX as u32 {
+        orig.min_retries_per_second
+    } else {
+        warn!("retry_budget min_retries_per_second overflow: {:?}", orig.min_retries_per_second);
+        return None;
+    };
+    let retry_ratio = orig.retry_ratio;
+    if retry_ratio > 1000.0 || retry_ratio < 0.0 {
+        warn!("retry_budget retry_ratio invalid: {:?}", retry_ratio);
+        return None;
+    }
+    let ttl = match orig.ttl?.into() {
+        Ok(dur) => {
+            if dur > Duration::from_secs(60) || dur < Duration::from_secs(1) {
+                warn!("retry_budget ttl invalid: {:?}", dur);
+                return None;
+            }
+            dur
+        },
+        Err(_) => return None,
+    };
+
+    Some(Arc::new(Budget::new(ttl, min_retries, retry_ratio)))
+}
+
+#[cfg(test)]
+mod tests {
+    use quickcheck::*;
+    use super::*;
+
+    quickcheck! {
+        fn retry_budget_from_proto(
+            min_retries_per_second: u32,
+            retry_ratio: f32,
+            seconds: i64,
+            nanos: i32
+        ) -> bool {
+            let proto = api::RetryBudget {
+                min_retries_per_second,
+                retry_ratio,
+                ttl: Some(::prost_types::Duration {
+                    seconds,
+                    nanos,
+                }),
+            };
+            convert_retry_budget(proto);
+            // simply not panicking is good enough
+            true
+        }
+    }
+}
+

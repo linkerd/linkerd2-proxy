@@ -7,7 +7,7 @@ use tokio_timer::clock;
 
 use metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 
-use super::{ClassMetrics, Metrics, Registry, StatusMetrics};
+use super::{ClassMetrics, RequestMetrics, Registry, RetrySkipped, StatusMetrics};
 
 /// Reports HTTP metrics for prometheus.
 #[derive(Clone, Debug)]
@@ -28,6 +28,7 @@ struct Scope {
     request_total_key: String,
     response_total_key: String,
     response_latency_ms_key: String,
+    retry_skipped_total_key: String,
 }
 
 // ===== impl Report =====
@@ -89,6 +90,9 @@ where
         self.scope.response_total().fmt_help(f)?;
         registry.fmt_by_class(f, self.scope.response_total(), |s| &s.total)?;
 
+        self.scope.retry_skipped_total().fmt_help(f)?;
+        registry.fmt_by_retry(f, self.scope.retry_skipped_total())?;
+
         Ok(())
     }
 }
@@ -106,11 +110,31 @@ where
     ) -> fmt::Result
     where
         M: FmtMetric,
-        F: Fn(&Metrics<C>) -> &M,
+        F: Fn(&RequestMetrics<C>) -> &M,
     {
         for (tgt, tm) in &self.by_target {
             if let Ok(m) = tm.lock() {
                 get_metric(&*m).fmt_metric_labeled(f, metric.name, tgt)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn fmt_by_retry<M>(
+        &self,
+        f: &mut fmt::Formatter,
+        metric: Metric<M>,
+    ) -> fmt::Result
+    where
+        M: FmtMetric,
+    {
+        for (tgt, tm) in &self.by_target {
+            if let Ok(tm) = tm.lock() {
+                for (retry, m) in &tm.by_retry_skipped {
+                    let labels = (tgt, retry);
+                    m.fmt_metric_labeled(f, metric.name, labels)?;
+                }
             }
         }
 
@@ -172,6 +196,7 @@ impl Default for Scope {
             request_total_key: "request_total".to_owned(),
             response_total_key: "response_total".to_owned(),
             response_latency_ms_key: "response_latency_ms".to_owned(),
+            retry_skipped_total_key: "retry_skipped_total".to_owned(),
         }
     }
 }
@@ -186,6 +211,7 @@ impl Scope {
             request_total_key: format!("{}_request_total", prefix),
             response_total_key: format!("{}_response_total", prefix),
             response_latency_ms_key: format!("{}_response_latency_ms", prefix),
+            retry_skipped_total_key: format!("{}_retry_skipped_total", prefix),
         }
     }
 
@@ -201,6 +227,10 @@ impl Scope {
         Metric::new(&self.response_latency_ms_key, &Self::RESPONSE_LATENCY_MS_HELP)
     }
 
+    fn retry_skipped_total(&self) -> Metric<Counter> {
+        Metric::new(&self.retry_skipped_total_key, &Self::RETRY_SKIPPED_TOTAL_HELP)
+    }
+
     const REQUEST_TOTAL_HELP: &'static str = "Total count of HTTP requests.";
 
     const RESPONSE_TOTAL_HELP: &'static str = "Total count of HTTP responses.";
@@ -208,10 +238,20 @@ impl Scope {
     const RESPONSE_LATENCY_MS_HELP: &'static str =
         "Elapsed times between a request's headers being received \
         and its response stream completing";
+
+    const RETRY_SKIPPED_TOTAL_HELP: &'static str = "Total count of retryable HTTP responses that were not retried.";
 }
 
 impl FmtLabels for Status {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "status_code=\"{}\"", self.0.as_u16())
+    }
+}
+
+impl FmtLabels for RetrySkipped {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "skipped=\"{}\"", match self {
+            RetrySkipped::Budget => "budget",
+        })
     }
 }

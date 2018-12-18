@@ -7,6 +7,7 @@ use support::hyper::body::Payload;
 
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
+use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex};
 
 use linkerd2_proxy_api::destination as pb;
@@ -39,6 +40,11 @@ pub struct Controller {
 pub struct Listening {
     pub addr: SocketAddr,
     shutdown: Shutdown,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RouteBuilder {
+    route: pb::Route,
 }
 
 impl Controller {
@@ -83,9 +89,14 @@ impl Controller {
 
     pub fn profile_tx(&self, dest: &str) -> ProfileSender {
         let (tx, rx) = sync::mpsc::unbounded();
+        let path = if dest.contains(":") {
+            dest.to_owned()
+        } else {
+            format!("{}:80", dest)
+        };
         let dst = pb::GetDestination {
             scheme: "k8s".into(),
-            path: dest.into(),
+            path,
         };
         self.expect_profile_calls
             .lock()
@@ -316,6 +327,96 @@ pub fn destination_exists_with_no_endpoints() -> pb::Update {
         update: Some(pb::update::Update::NoEndpoints(
             pb::NoEndpoints { exists: true }
         )),
+    }
+}
+
+pub fn profile<I>(routes: I, retry_budget: Option<pb::RetryBudget>) -> pb::DestinationProfile
+where
+    I: IntoIterator,
+    I::Item: Into<pb::Route>,
+{
+    let routes = routes.into_iter().map(Into::into).collect();
+    pb::DestinationProfile {
+        routes,
+        retry_budget,
+    }
+}
+
+pub fn retry_budget(ttl: Duration, retry_ratio: f32, min_retries_per_second: u32) -> pb::RetryBudget {
+    pb::RetryBudget {
+        ttl: Some(ttl.into()),
+        retry_ratio,
+        min_retries_per_second,
+    }
+}
+
+pub fn route() -> RouteBuilder {
+    RouteBuilder::default()
+}
+
+impl RouteBuilder {
+    pub fn request_any(self) -> Self {
+        self.request_path(".*")
+    }
+
+    pub fn request_path(mut self, path: &str) -> Self {
+        let path_match = pb::PathMatch {
+            regex: String::from(path)
+        };
+        self.route.condition = Some(pb::RequestMatch {
+            match_: Some(pb::request_match::Match::Path(path_match)),
+        });
+        self
+    }
+
+    fn response_class(mut self, condition: pb::ResponseMatch, is_failure: bool) -> Self {
+        self.route.response_classes.push(pb::ResponseClass {
+            condition: Some(condition),
+            is_failure,
+        });
+        self
+    }
+
+    fn response_class_status(self, status_range: impl RangeBounds<u16>, is_failure: bool) -> Self {
+        let min = match status_range.start_bound() {
+            Bound::Included(&min) => min,
+            Bound::Excluded(&min) => min + 1,
+            Bound::Unbounded => 100,
+        }.into();
+        let max = match status_range.end_bound() {
+            Bound::Included(&max) => max,
+            Bound::Excluded(&max) => max - 1,
+            Bound::Unbounded => 599,
+        }.into();
+        assert!(min >= 100 && min <= max);
+        assert!(max <= 599);
+        let range = pb::HttpStatusRange {
+            min,
+            max,
+        };
+        let condition = pb::ResponseMatch {
+            match_: Some(pb::response_match::Match::Status(range)),
+        };
+        self.response_class(condition, is_failure)
+    }
+
+    pub fn response_success(self, status_range: impl RangeBounds<u16>) -> Self {
+        self.response_class_status(status_range, false)
+    }
+
+    pub fn response_failure(self, status_range: impl RangeBounds<u16>) -> Self {
+        self.response_class_status(status_range, true)
+    }
+
+    pub fn retryable(mut self, is: bool) -> Self {
+        self.route.is_retryable = is;
+        self
+    }
+}
+
+impl From<RouteBuilder> for pb::Route {
+    fn from(rb: RouteBuilder) -> Self {
+        rb.route
     }
 }
 

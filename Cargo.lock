@@ -571,6 +571,7 @@ dependencies = [
  "tower-http 0.1.0 (git+https://github.com/tower-rs/tower-http)",
  "tower-in-flight-limit 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tower-reconnect 0.1.0 (git+https://github.com/tower-rs/tower)",
+ "tower-retry 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tower-service 0.2.0 (git+https://github.com/tower-rs/tower)",
  "tower-util 0.1.0 (git+https://github.com/tower-rs/tower)",
  "trust-dns-resolver 0.10.0 (git+https://github.com/bluejekyll/trust-dns?rev=c017c114)",
@@ -1422,6 +1423,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tower-retry"
+version = "0.1.0"
+source = "git+https://github.com/tower-rs/tower#075ffb372556d05a7db02ce49db34cfb22850dba"
+dependencies = [
+ "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-timer 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-service 0.2.0 (git+https://github.com/tower-rs/tower)",
+]
+
+[[package]]
 name = "tower-service"
 version = "0.2.0"
 source = "git+https://github.com/tower-rs/tower#bdecb3377543e00e445c4dd7177e8041e942eb5e"
@@ -1790,6 +1801,7 @@ dependencies = [
 "checksum tower-http 0.1.0 (git+https://github.com/tower-rs/tower-http)" = "<none>"
 "checksum tower-in-flight-limit 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
 "checksum tower-reconnect 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
+"checksum tower-retry 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
 "checksum tower-service 0.2.0 (git+https://github.com/tower-rs/tower)" = "<none>"
 "checksum tower-util 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
 "checksum trust-dns-proto 0.5.0 (git+https://github.com/bluejekyll/trust-dns?rev=c017c114)" = "<none>"
