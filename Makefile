@@ -51,6 +51,10 @@ fetch: Cargo.lock
 .PHONY: build
 build: $(TARGET_BIN)
 
+.PHONY: clean
+clean:
+	$(CARGO) clean --target-dir $(TARGET)
+
 .PHONY: test
 test: fetch
 	$(CARGO_TEST) --no-default-features
