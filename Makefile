@@ -60,7 +60,7 @@ test: fetch
 	$(CARGO_TEST) --no-default-features
 
 .PHONY: test-flakey
-test-flakey:
+test-flakey: fetch
 	$(CARGO_TEST)
 
 .PHONY: package
