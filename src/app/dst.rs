@@ -2,8 +2,13 @@ use http;
 use indexmap::IndexMap;
 use std::fmt;
 use std::sync::Arc;
+use tower_retry::budget::Budget;
 
-use proxy::http::{metrics::classify::CanClassify, profiles};
+use proxy::http::{
+    metrics::classify::{CanClassify, Classify, ClassifyResponse, ClassifyEos},
+    profiles,
+    retry,
+};
 use {Addr, NameAddr};
 
 use super::classify;
@@ -20,6 +25,12 @@ pub struct Route {
     pub route: profiles::Route,
 }
 
+#[derive(Clone, Debug)]
+pub struct Retry {
+    budget: Arc<Budget>,
+    response_classes: profiles::ResponseClasses,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DstAddr {
     addr: Addr,
@@ -33,6 +44,51 @@ impl CanClassify for Route {
 
     fn classify(&self) -> classify::Request {
         self.route.response_classes().clone().into()
+    }
+}
+
+impl retry::CanRetry for Route {
+    type Retry = Retry;
+
+    fn can_retry(&self) -> Option<Self::Retry> {
+        self
+            .route
+            .retries()
+            .map(|retries| Retry {
+                budget: retries.budget().clone(),
+                response_classes: self.route.response_classes().clone(),
+            })
+    }
+}
+
+// === impl Retry ===
+
+impl retry::Retry for Retry {
+    fn retry<B1, B2>(&self, req: &http::Request<B1>, res: &http::Response<B2>) -> Result<(), retry::NoRetry> {
+        let class = classify::Request::from(self.response_classes.clone())
+            .classify(req)
+            .start(res)
+            .eos(None);
+
+        if class.is_failure() {
+            return self
+                .budget
+                .withdraw()
+                .map_err(|_overdrawn| retry::NoRetry::Budget);
+        }
+
+        self.budget.deposit();
+        Err(retry::NoRetry::Success)
+    }
+
+    fn clone_request<B: retry::TryClone>(&self, req: &http::Request<B>) -> Option<http::Request<B>> {
+        retry::TryClone::try_clone(req)
+            .map(|mut clone| {
+                if let Some(ext) = req.extensions().get::<classify::Response>() {
+                    clone.extensions_mut().insert(ext.clone());
+                }
+                clone
+            })
     }
 }
 

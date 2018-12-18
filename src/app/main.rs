@@ -206,12 +206,18 @@ where
             (m, r.with_prefix("route"))
         };
 
+        let (retry_http_metrics, retry_http_report) = {
+            let (m, r) = http_metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
+            (m, r.with_prefix("route_actual"))
+        };
+
         let (transport_metrics, transport_report) = transport::metrics::new();
 
         let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
 
         let report = endpoint_http_report
             .and_then(route_http_report)
+            .and_then(retry_http_report)
             .and_then(transport_report)
             .and_then(tls_config_report)
             .and_then(ctl_http_report)
@@ -289,7 +295,7 @@ where
                 use super::outbound::{discovery::Resolve, orig_proto_upgrade, Endpoint};
                 use proxy::{
                     canonicalize,
-                    http::{balance, header_from_target, metrics},
+                    http::{balance, header_from_target, metrics, retry},
                     resolve,
                 };
 
@@ -340,6 +346,8 @@ where
                 // implementations can use the route-specific configuration.
                 let dst_route_layer = phantom_data::layer()
                     .push(insert_target::layer())
+                    .push(metrics::layer::<_, classify::Response>(retry_http_metrics.clone()))
+                    .push(retry::layer(retry_http_metrics))
                     .push(metrics::layer::<_, classify::Response>(route_http_metrics))
                     .push(classify::layer());
 

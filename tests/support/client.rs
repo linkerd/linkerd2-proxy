@@ -72,10 +72,9 @@ impl Client {
     pub fn get(&self, path: &str) -> String {
         let mut req = self.request_builder(path);
         let res = self.request(req.method("GET"));
-        assert_eq!(
-            res.status(),
-            StatusCode::OK,
-            "client.get({:?}) expects 200 OK, got \"{}\"",
+        assert!(
+            res.status().is_success(),
+            "client.get({:?}) expects 2xx, got \"{}\"",
             path,
             res.status(),
         );
