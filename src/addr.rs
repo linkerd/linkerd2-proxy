@@ -46,11 +46,12 @@ impl Addr {
         a: &http::uri::Authority,
         default_port: u16,
     ) -> Result<Self, Error> {
-        Self::from_str_and_port(a.host(), a.port().unwrap_or(default_port))
+        Self::from_str_and_port(a.host(), a.port_part().map(|p| p.as_u16()).unwrap_or(default_port))
     }
 
     pub fn from_authority_with_port(a: &http::uri::Authority) -> Result<Self, Error> {
-        a.port()
+        a.port_part()
+            .map(|p| p.as_u16())
             .ok_or(Error::MissingPort)
             .and_then(|p| Self::from_str_and_port(a.host(), p))
     }
@@ -145,11 +146,12 @@ impl NameAddr {
         a: &http::uri::Authority,
         default_port: u16,
     ) -> Result<Self, Error> {
-        Self::from_str_and_port(a.host(), a.port().unwrap_or(default_port))
+        Self::from_str_and_port(a.host(), a.port_part().map(|p| p.as_u16()).unwrap_or(default_port))
     }
 
     pub fn from_authority_with_port(a: &http::uri::Authority) -> Result<Self, Error> {
-        a.port()
+        a.port_part()
+            .map(|p| p.as_u16())
             .ok_or(Error::MissingPort)
             .and_then(|p| Self::from_str_and_port(a.host(), p))
     }
