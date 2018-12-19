@@ -1,7 +1,6 @@
 use bytes::Buf;
 use futures::sync::{mpsc, oneshot};
 use futures::{future, Async, Future, Poll, Stream};
-use http::HeaderMap;
 use hyper::body::Payload;
 use never::Never;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -110,11 +109,9 @@ impl<T: iface::Subscribe<Tap>> Server<T> {
         Self { base_id, subscribe }
     }
 
-    fn invalid_arg(event: http::header::HeaderValue) -> grpc::Error {
-        let status = grpc::Status::with_code(grpc::Code::InvalidArgument);
-        let mut headers = HeaderMap::new();
-        headers.insert("grpc-message", event);
-        grpc::Error::Grpc(status, headers)
+    fn invalid_arg(message: String) -> grpc::Error {
+        let status = grpc::Status::with_code_and_message(grpc::Code::InvalidArgument, message);
+        grpc::Error::Grpc(status)
     }
 }
 
@@ -133,8 +130,8 @@ where
 
         let limit = req.limit as usize;
         if limit == 0 {
-            let v = http::header::HeaderValue::from_static("limit must be positive");
-            return future::Either::A(future::err(Self::invalid_arg(v)));
+            let err = Self::invalid_arg("limit must be positive".into());
+            return future::Either::A(future::err(err));
         };
         trace!("tap: limit={}", limit);
 
@@ -147,10 +144,8 @@ where
             Ok(m) => Arc::new(m),
             Err(e) => {
                 warn!("invalid tap request: {} ", e);
-                let v = format!("{}", e)
-                    .parse()
-                    .unwrap_or_else(|_| http::header::HeaderValue::from_static("invalid message"));
-                return future::Either::A(future::err(Self::invalid_arg(v)));
+                let err = Self::invalid_arg(e.to_string());
+                return future::Either::A(future::err(err));
             }
         };
 
@@ -213,10 +208,11 @@ impl<F: Future<Item = ()>> Future for ResponseFuture<F> {
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(())) => {}
             Err(_) => {
-                let status = grpc::Status::with_code(grpc::Code::ResourceExhausted);
-                let mut headers = HeaderMap::new();
-                headers.insert("grpc-message", "Too many active taps".parse().unwrap());
-                return Err(grpc::Error::Grpc(status, headers));
+                let status = grpc::Status::with_code_and_message(
+                    grpc::Code::ResourceExhausted,
+                    "Too many active taps".into(),
+                );
+                return Err(grpc::Error::Grpc(status));
             }
         }
 

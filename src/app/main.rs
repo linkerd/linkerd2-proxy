@@ -249,7 +249,7 @@ where
                 .push(svc::watch::layer(tls_client_config.clone()))
                 .push(phantom_data::layer())
                 .push(control::add_origin::layer())
-                .push(buffer::layer())
+                .push(buffer::layer(config.destination_concurrency_limit))
                 .push(limit::layer(config.destination_concurrency_limit));
 
             // Because the control client is buffered, we need to be able to
@@ -323,7 +323,7 @@ where
                 // 4. Routes requests to the correct client (based on the
                 //    request version and headers).
                 let endpoint_stack = client_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(settings::router::layer::<Endpoint, _>())
                     .push(orig_proto_upgrade::layer())
                     .push(tap_layer.clone())
@@ -353,7 +353,7 @@ where
                 let dst_stack = endpoint_stack
                     .push(resolve::layer(Resolve::new(resolver)))
                     .push(balance::layer())
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(profiles::router::layer(
                         profile_suffixes,
                         profiles_client,
@@ -371,7 +371,7 @@ where
                 // But for now it's more important to use the request router's
                 // caching logic.
                 let dst_router = dst_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(router::layer(|req: &http::Request<_>| {
                         let addr = req.extensions().get::<DstAddr>().cloned();
                         debug!("outbound dst={:?}", addr);
@@ -405,7 +405,7 @@ where
                 // 4. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
                 // address is used.
                 let addr_router = addr_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(timeout::layer(config.bind_timeout))
                     .push(limit::layer(MAX_IN_FLIGHT))
                     .push(router::layer(|req: &http::Request<_>| {
@@ -474,14 +474,14 @@ where
                 // If there is no `SO_ORIGINAL_DST` for an inbound socket,
                 // `default_fwd_addr` may be used.
                 let endpoint_router = client_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(settings::router::layer::<Endpoint, _>())
                     .push(phantom_data::layer())
                     .push(tap_layer)
                     .push(http_metrics::layer::<_, classify::Response>(
                         endpoint_http_metrics,
                     ))
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(router::layer(RecognizeEndpoint::new(default_fwd_addr)))
                     .make(&router::Config::new("in endpoint", capacity, max_idle_age))
                     .map(shared::stack)
@@ -509,7 +509,7 @@ where
                 let dst_stack = endpoint_router
                     .push(phantom_data::layer())
                     .push(insert_target::layer())
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(profiles::router::layer(
                         profile_suffixes,
                         profiles_client,
@@ -532,7 +532,7 @@ where
                 // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
                 // address is used.
                 let dst_router = dst_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(limit::layer(MAX_IN_FLIGHT))
                     .push(router::layer(|req: &http::Request<_>| {
                         let canonical = req

@@ -100,7 +100,7 @@ impl Controller {
 }
 
 fn grpc_internal_code() -> grpc::Error {
-    grpc::Error::Grpc(grpc::Status::with_code(grpc::Code::Internal), HeaderMap::new())
+    grpc::Error::Grpc(grpc::Status::with_code(grpc::Code::Internal))
 }
 
 impl Stream for DstReceiver {
