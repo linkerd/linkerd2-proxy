@@ -18,6 +18,7 @@ use svc;
 #[derive(Debug)]
 pub struct Layer<A, B> {
     decay: Duration,
+    default_rtt: Duration,
     _marker: PhantomData<fn(A) -> B>,
 }
 
@@ -25,34 +26,26 @@ pub struct Layer<A, B> {
 #[derive(Debug)]
 pub struct Stack<M, A, B> {
     decay: Duration,
+    default_rtt: Duration,
     inner: M,
     _marker: PhantomData<fn(A) -> B>,
 }
 
 // === impl Layer ===
 
-pub fn layer<A, B>() -> Layer<A, B> {
+pub fn layer<A, B>(default_rtt: Duration, decay: Duration) -> Layer<A, B> {
     Layer {
-        decay: Layer::DEFAULT_DECAY,
+        decay,
+        default_rtt,
         _marker: PhantomData,
     }
-}
-
-impl Layer<(), ()> {
-    const DEFAULT_DECAY: Duration = Duration::from_secs(10);
-
-    // pub fn with_decay(self, decay: Duration) -> Self {
-    //     Self {
-    //         decay,
-    //         .. self
-    //     }
-    // }
 }
 
 impl<A, B> Clone for Layer<A, B> {
     fn clone(&self) -> Self {
         Layer {
             decay: self.decay,
+            default_rtt: self.default_rtt,
             _marker: PhantomData,
         }
     }
@@ -73,6 +66,7 @@ where
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             decay: self.decay,
+            default_rtt: self.default_rtt,
             inner,
             _marker: PhantomData,
         }
@@ -85,6 +79,7 @@ impl<M: Clone, A, B> Clone for Stack<M, A, B> {
     fn clone(&self) -> Self {
         Stack {
             decay: self.decay,
+            default_rtt: self.default_rtt,
             inner: self.inner.clone(),
             _marker: PhantomData,
         }
@@ -105,7 +100,7 @@ where
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
         let discover = self.inner.make(target)?;
         let instrument = PendingUntilFirstData::default();
-        let loaded = WithPeakEwma::new(discover, self.decay, instrument);
+        let loaded = WithPeakEwma::new(discover, self.default_rtt, self.decay, instrument);
         Ok(Balance::p2c(loaded))
     }
 }
