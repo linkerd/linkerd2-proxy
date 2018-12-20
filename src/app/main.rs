@@ -161,6 +161,10 @@ where
         } = self;
 
         const MAX_IN_FLIGHT: usize = 10_000;
+
+        const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
+        const EWMA_DECAY: Duration = Duration::from_secs(10);
+
         let control_host_and_port = config.control_host_and_port.clone();
 
         info!("using controller at {:?}", control_host_and_port);
@@ -352,7 +356,7 @@ where
                 //   `DstAddr` with a resolver.
                 let dst_stack = endpoint_stack
                     .push(resolve::layer(Resolve::new(resolver)))
-                    .push(balance::layer())
+                    .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(profiles::router::layer(
                         profile_suffixes,
