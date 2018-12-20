@@ -3,13 +3,15 @@ use std::fmt;
 use std::mem;
 use std::sync::Arc;
 
-use futures::Future;
+use futures::{Future, Poll, future::{self, Either}};
 use hyper::upgrade::OnUpgrade;
 use try_lock::TryLock;
 
 use drain;
 use proxy::tcp;
-use task::{ErasedExecutor, Executor};
+use super::{h1, glue::HttpBody};
+use svc;
+use task::{BoxSendFuture, ErasedExecutor, Executor};
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
 ///
@@ -58,6 +60,16 @@ struct Inner {
 enum Half {
     Server,
     Client,
+}
+
+#[derive(Debug)]
+pub struct Service<S, E> {
+    service: S,
+    /// Watch any spawned HTTP/1.1 upgrade tasks.
+    upgrade_drain_signal: drain::Watch,
+    /// Executor used to spawn HTTP/1.1 upgrade tasks, and TCP proxies
+    /// after they succeed.
+    upgrade_executor: E,
 }
 
 
@@ -169,3 +181,74 @@ impl Drop for Inner {
     }
 }
 
+// ===== impl Service =====
+impl<S, E> Service<S, E> {
+    pub(in proxy) fn new(
+        service: S,
+        upgrade_drain_signal: drain::Watch,
+        upgrade_executor: E,
+    ) -> Self {
+        Service {
+            service,
+            upgrade_drain_signal,
+            upgrade_executor,
+        }
+    }
+}
+
+impl<S, E, B> svc::Service<http::Request<HttpBody>> for Service<S, E>
+where
+    S: svc::Service<
+        http::Request<HttpBody>,
+        Response = http::Response<B>,
+    >,
+    E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
+    B: Default,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = Either<
+        S::Future,
+        future::FutureResult<http::Response<B>, Self::Error>,
+    >;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.service.poll_ready()
+    }
+
+    fn call(&mut self, mut req: http::Request<HttpBody>) -> Self::Future {
+        // Should this rejection happen later in the Service stack?
+        //
+        // Rejecting here means telemetry doesn't record anything about it...
+        //
+        // At the same time, this stuff is specifically HTTP1, so it feels
+        // proper to not have the HTTP2 requests going through it...
+        if h1::is_bad_request(&req) {
+            let mut res = http::Response::default();
+            *res.status_mut() = http::StatusCode::BAD_REQUEST;
+            return Either::B(future::ok(res));
+        }
+
+        let upgrade = if h1::wants_upgrade(&req) {
+            trace!("server request wants HTTP/1.1 upgrade");
+            // Upgrade requests include several "connection" headers that
+            // cannot be removed.
+
+            // Setup HTTP Upgrade machinery.
+            let halves = Http11Upgrade::new(
+                self.upgrade_drain_signal.clone(),
+                ErasedExecutor::erase(self.upgrade_executor.clone()),
+            );
+            req.extensions_mut().insert(halves.client);
+
+            Some(halves.server)
+        } else {
+            h1::strip_connection_headers(req.headers_mut());
+            None
+        };
+
+        req.body_mut().upgrade = upgrade;
+
+        Either::A(self.service.call(req))
+    }
+}

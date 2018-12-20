@@ -1,6 +1,5 @@
-use bytes::IntoBuf;
-use futures::{future, Async, Future, Poll};
-use futures::future::Either;
+use bytes::{Bytes};
+use futures::{Async, Future, Poll};
 use http;
 use h2;
 use hyper::{self, body::Payload};
@@ -8,10 +7,8 @@ use hyper::client::connect as hyper_connect;
 use std::{error::Error as StdError, fmt};
 use tower_grpc as grpc;
 
-use drain;
-use proxy::http::{HasH2Reason, h1, upgrade::Http11Upgrade};
+use proxy::http::{HasH2Reason, upgrade::Http11Upgrade};
 use svc;
-use task::{BoxSendFuture, ErasedExecutor, Executor};
 use transport::Connect;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
@@ -23,18 +20,10 @@ pub struct HttpBody {
     pub(super) upgrade: Option<Http11Upgrade>
 }
 
-#[derive(Debug)]
-pub struct GrpcBody<B>(B);
-
 /// Glue for a `tower::Service` to used as a `hyper::server::Service`.
 #[derive(Debug)]
-pub(in proxy) struct HyperServerSvc<S, E> {
+pub struct HyperServerSvc<S> {
     service: S,
-    /// Watch any spawned HTTP/1.1 upgrade tasks.
-    upgrade_drain_signal: drain::Watch,
-    /// Executor used to spawn HTTP/1.1 upgrade tasks, and TCP proxies
-    /// after they succeed.
-    upgrade_executor: E,
 }
 
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
@@ -98,11 +87,43 @@ impl Payload for HttpBody {
     }
 }
 
+impl grpc::Body for HttpBody {
+    type Data = Bytes;
+
+    fn is_end_stream(&self) -> bool {
+        Payload::is_end_stream(self)
+    }
+
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, grpc::Error> {
+        match Payload::poll_data(self) {
+            Ok(Async::Ready(Some(chunk))) => Ok(Async::Ready(Some(chunk.into()))),
+            Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, grpc::Error> {
+        Payload::poll_trailers(self)
+            .map_err(From::from)
+    }
+}
+
 impl Default for HttpBody {
     fn default() -> HttpBody {
         HttpBody {
             body: Some(hyper::Body::empty()),
             upgrade: None,
+        }
+    }
+}
+
+impl super::retry::TryClone for HttpBody {
+    fn try_clone(&self) -> Option<Self> {
+        if self.is_end_stream() {
+            Some(HttpBody::default())
+        } else {
+            None
         }
     }
 }
@@ -121,127 +142,35 @@ impl Drop for HttpBody {
     }
 }
 
-// ===== impl GrpcBody =====
-
-impl<B> GrpcBody<B> {
-    pub fn new(inner: B) -> Self {
-        GrpcBody(inner)
-    }
-}
-
-impl<B> Payload for GrpcBody<B>
-where
-    B: grpc::Body + Send + 'static,
-    B::Data: Send + 'static,
-    <B::Data as IntoBuf>::Buf: Send + 'static,
-{
-    type Data = <B::Data as IntoBuf>::Buf;
-    type Error = h2::Error;
-
-    fn is_end_stream(&self) -> bool {
-        grpc::Body::is_end_stream(&self.0)
-    }
-
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        let data = try_ready!(grpc::Body::poll_data(&mut self.0));
-        Ok(data.map(IntoBuf::into_buf).into())
-    }
-
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
-        grpc::Body::poll_metadata(&mut self.0).map_err(From::from)
-    }
-}
-
-impl<B> grpc::Body for GrpcBody<B>
-where
-    B: grpc::Body,
-{
-    type Data = B::Data;
-
-    fn is_end_stream(&self) -> bool {
-        grpc::Body::is_end_stream(&self.0)
-    }
-
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, grpc::Error> {
-        grpc::Body::poll_data(&mut self.0)
-    }
-
-    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, grpc::Error> {
-        grpc::Body::poll_metadata(&mut self.0)
-    }
-}
-
 // ===== impl HyperServerSvc =====
 
-impl<S, E> HyperServerSvc<S, E> {
-    pub(in proxy) fn new(
-        service: S,
-        upgrade_drain_signal: drain::Watch,
-        upgrade_executor: E,
-    ) -> Self {
+impl<S> HyperServerSvc<S> {
+    pub fn new(service: S) -> Self {
         HyperServerSvc {
             service,
-            upgrade_drain_signal,
-            upgrade_executor,
         }
     }
 }
 
-impl<S, E, B> hyper::service::Service for HyperServerSvc<S, E>
+impl<S, B> hyper::service::Service for HyperServerSvc<S>
 where
     S: svc::Service<
         http::Request<HttpBody>,
         Response=http::Response<B>,
     >,
     S::Error: StdError + Send + Sync + 'static,
-    B: Payload + Default + Send + 'static,
-    E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
+    B: Payload,
 {
     type ReqBody = hyper::Body;
     type ResBody = B;
     type Error = S::Error;
-    type Future = Either<
-        S::Future,
-        future::FutureResult<http::Response<Self::ResBody>, Self::Error>,
-    >;
+    type Future = S::Future;
 
-    fn call(&mut self, mut req: http::Request<Self::ReqBody>) -> Self::Future {
-        // Should this rejection happen later in the Service stack?
-        //
-        // Rejecting here means telemetry doesn't record anything about it...
-        //
-        // At the same time, this stuff is specifically HTTP1, so it feels
-        // proper to not have the HTTP2 requests going through it...
-        if h1::is_bad_request(&req) {
-            let mut res = http::Response::default();
-            *res.status_mut() = http::StatusCode::BAD_REQUEST;
-            return Either::B(future::ok(res));
-        }
-
-        let upgrade = if h1::wants_upgrade(&req) {
-            trace!("server request wants HTTP/1.1 upgrade");
-            // Upgrade requests include several "connection" headers that
-            // cannot be removed.
-
-            // Setup HTTP Upgrade machinery.
-            let halves = Http11Upgrade::new(
-                self.upgrade_drain_signal.clone(),
-                ErasedExecutor::erase(self.upgrade_executor.clone()),
-            );
-            req.extensions_mut().insert(halves.client);
-
-            Some(halves.server)
-        } else {
-            h1::strip_connection_headers(req.headers_mut());
-            None
-        };
-
-
-        let req = req.map(move |b| HttpBody {
+    fn call(&mut self, req: http::Request<Self::ReqBody>) -> Self::Future {
+        self.service.call(req.map(|b| HttpBody {
             body: Some(b),
-            upgrade,
-        });
-        Either::A(self.service.call(req))
+            upgrade: None,
+        }))
     }
 }
 

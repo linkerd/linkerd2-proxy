@@ -1,7 +1,6 @@
 use futures::{future::Either, Future};
 use http;
 use hyper;
-use indexmap::IndexSet;
 use std::{error, fmt};
 use std::net::SocketAddr;
 
@@ -9,8 +8,8 @@ use Conditional;
 use drain;
 use never::Never;
 use svc::{Stack, Service};
-use transport::{connect, tls, Connection, GetOriginalDst, Peek};
-use proxy::http::glue::{HttpBody, HyperServerSvc};
+use transport::{connect, tls, Connection, Peek};
+use proxy::http::{glue::{HttpBody, HyperServerSvc}, upgrade};
 use proxy::protocol::Protocol;
 use proxy::tcp;
 use super::Accept;
@@ -40,7 +39,7 @@ use super::Accept;
 ///
 /// 6. Otherwise, an `R`-typed `Service` `Stack` is used to build a service that
 ///    can routeHTTP  requests for the `Source`.
-pub struct Server<A, C, R, B, G>
+pub struct Server<A, C, R, B>
 where
     // Prepares a server transport, e.g. with telemetry.
     A: Stack<Source, Error = Never> + Clone,
@@ -55,12 +54,8 @@ where
         Response = http::Response<B>,
     >,
     B: hyper::body::Payload,
-    // Determines the original destination of an intercepted server socket.
-    G: GetOriginalDst,
 {
-    disable_protocol_detection_ports: IndexSet<u16>,
     drain_signal: drain::Watch,
-    get_orig_dst: G,
     http: hyper::server::conn::Http,
     listen_addr: SocketAddr,
     accept: A,
@@ -178,7 +173,7 @@ impl Stack<Source> for () {
     }
 }
 
-impl<A, C, R, B, G> Server<A, C, R, B, G>
+impl<A, C, R, B> Server<A, C, R, B>
 where
     A: Stack<Source, Error = Never> + Clone,
     A::Value: Accept<Connection>,
@@ -197,25 +192,20 @@ where
     <R::Value as Service<http::Request<HttpBody>>>::Error: error::Error + Send + Sync + 'static,
     <R::Value as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
-    G: GetOriginalDst,
 {
 
     /// Creates a new `Server`.
     pub fn new(
         proxy_name: &'static str,
         listen_addr: SocketAddr,
-        get_orig_dst: G,
         accept: A,
         connect: C,
         route: R,
-        disable_protocol_detection_ports: IndexSet<u16>,
         drain_signal: drain::Watch,
     ) -> Self {
         let log = ::logging::Server::proxy(proxy_name, listen_addr);
         Server {
-            disable_protocol_detection_ports,
             drain_signal,
-            get_orig_dst,
             http: hyper::server::conn::Http::new(),
             listen_addr,
             accept,
@@ -238,7 +228,8 @@ where
     pub fn serve(&self, connection: Connection, remote_addr: SocketAddr)
         -> impl Future<Item=(), Error=()>
     {
-        let orig_dst = connection.original_dst_addr(&self.get_orig_dst);
+        let orig_dst = connection.original_dst_addr();
+        let disable_protocol_detection = !connection.should_detect_protocol();
 
         let log = self.log.clone()
             .with_remote(remote_addr);
@@ -257,15 +248,6 @@ where
             Err(never) => match never {},
         };
 
-        // We are using the port from the connection's SO_ORIGINAL_DST to
-        // determine whether to skip protocol detection, not any port that
-        // would be found after doing discovery.
-        let disable_protocol_detection = orig_dst
-            .map(|addr| {
-                self.disable_protocol_detection_ports.contains(&addr.port())
-            })
-            .unwrap_or(false);
-
         if disable_protocol_detection {
             trace!("protocol detection disabled for {:?}", orig_dst);
             let fwd = tcp::forward(io, &self.connect, &source);
@@ -280,7 +262,7 @@ where
                 (p, io)
             });
 
-        let http = self.http.clone();
+        let mut http = self.http.clone();
         let route = self.route.clone();
         let connect = self.connect.clone();
         let drain_signal = self.drain_signal.clone();
@@ -299,13 +281,15 @@ where
                         match route.make(&source) {
                             Err(never) => match never {},
                             Ok(s) => {
-                                let svc = HyperServerSvc::new(
+                                // Enable support for HTTP upgrades (CONNECT and websockets).
+                                let svc = upgrade::Service::new(
                                     s,
                                     drain_signal.clone(),
                                     log_clone.executor(),
                                 );
-                                // Enable support for HTTP upgrades (CONNECT and websockets).
+                                let svc = HyperServerSvc::new(svc);
                                 let conn = http
+                                    .http1_only(true)
                                     .serve_connection(io, svc)
                                     .with_upgrades();
                                 drain_signal
@@ -322,12 +306,10 @@ where
                         match route.make(&source) {
                             Err(never) => match never {},
                             Ok(s) => {
-                                let svc = HyperServerSvc::new(
-                                    s,
-                                    drain_signal.clone(),
-                                    log_clone.executor(),
-                                );
+                                let svc = HyperServerSvc::new(s);
                                 let conn = http
+                                    .with_executor(log_clone.executor())
+                                    .http2_only(true)
                                     .serve_connection(io, svc);
                                 drain_signal
                                     .watch(conn, |conn| {

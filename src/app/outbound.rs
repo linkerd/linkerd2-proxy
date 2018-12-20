@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use std::{fmt, net};
+use std::sync::Arc;
 
 use control::destination::{Metadata, ProtocolHint};
 use proxy::http::settings;
@@ -77,6 +78,10 @@ impl tap::Inspect for Endpoint {
         self.metadata.tls_status()
     }
 
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+        req.extensions().get::<super::dst::Route>().map(|r| r.labels().clone())
+    }
+
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
         true
     }
@@ -142,9 +147,11 @@ pub mod discovery {
             match self {
                 Resolution::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
                     resolve::Update::Remove(addr) => {
+                        debug!("removing {}", addr);
                         Ok(Async::Ready(resolve::Update::Remove(addr)))
                     }
                     resolve::Update::Add(addr, metadata) => {
+                        debug!("adding {}", addr);
                         // If the endpoint does not have TLS, note the reason.
                         // Otherwise, indicate that we don't (yet) have a TLS
                         // config. This value may be changed by a stack layer that

@@ -29,16 +29,26 @@ where
     T: Hash + Eq,
     C: Hash + Eq,
 {
-    by_target: IndexMap<T, Arc<Mutex<Metrics<C>>>>,
+    by_target: IndexMap<T, Arc<Mutex<RequestMetrics<C>>>>,
+}
+
+pub trait Scoped<T> {
+    type Scope: Stats;
+    fn scoped(&self, index: T) -> Self::Scope;
+}
+
+pub trait Stats {
+    fn incr_retry_skipped_budget(&self);
 }
 
 #[derive(Debug)]
-struct Metrics<C>
+pub struct RequestMetrics<C>
 where
     C: Hash + Eq,
 {
     last_update: Instant,
     total: Counter,
+    by_retry_skipped: IndexMap<RetrySkipped, Counter>,
     by_status: IndexMap<http::StatusCode, StatusMetrics<C>>,
 }
 
@@ -54,6 +64,11 @@ where
 #[derive(Debug, Default)]
 pub struct ClassMetrics {
     total: Counter,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum RetrySkipped {
+    Budget,
 }
 
 impl<T, C> Default for Registry<T, C>
@@ -74,7 +89,7 @@ where
     C: Hash + Eq,
 {
     /// Retains metrics for all targets that (1) no longer have an active
-    /// reference to the `Metrics` structure and (2) have not been updated since `epoch`.
+    /// reference to the `RequestMetrics` structure and (2) have not been updated since `epoch`.
     fn retain_since(&mut self, epoch: Instant) {
         self.by_target.retain(|_, m| {
             Arc::strong_count(&m) > 1 || m.lock().map(|m| m.last_update >= epoch).unwrap_or(false)
@@ -82,7 +97,38 @@ where
     }
 }
 
-impl<C> Default for Metrics<C>
+impl<T, C> Scoped<T> for Arc<Mutex<Registry<T, C>>>
+where
+    T: Hash + Eq,
+    C: Hash + Eq,
+{
+    type Scope = Arc<Mutex<RequestMetrics<C>>>;
+
+    fn scoped(&self, target: T) -> Self::Scope {
+        self
+            .lock()
+            .expect("metrics Registry lock")
+            .by_target
+            .entry(target)
+            .or_insert_with(|| Arc::new(Mutex::new(RequestMetrics::default())))
+            .clone()
+    }
+}
+
+impl<C> RequestMetrics<C>
+where
+    C: Hash + Eq,
+{
+    fn incr_retry_skipped(&mut self, reason: RetrySkipped) {
+        self
+            .by_retry_skipped
+            .entry(reason)
+            .or_insert_with(Counter::default)
+            .incr();
+    }
+}
+
+impl<C> Default for RequestMetrics<C>
 where
     C: Hash + Eq,
 {
@@ -90,7 +136,20 @@ where
         Self {
             last_update: clock::now(),
             total: Counter::default(),
+            by_retry_skipped: IndexMap::default(),
             by_status: IndexMap::default(),
+        }
+    }
+}
+
+impl<C> Stats for Arc<Mutex<RequestMetrics<C>>>
+where
+    C: Hash + Eq,
+{
+    fn incr_retry_skipped_budget(&self) {
+        if let Ok(mut metrics) = self.lock() {
+            metrics.last_update = clock::now();
+            metrics.incr_retry_skipped(RetrySkipped::Budget);
         }
     }
 }

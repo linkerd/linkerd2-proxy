@@ -9,12 +9,13 @@ pub mod metrics;
 pub mod normalize_uri;
 pub mod orig_proto;
 pub mod profiles;
+pub mod retry;
 pub mod router;
 pub mod settings;
 pub mod upgrade;
 
 pub use self::client::Client;
-pub use self::glue::{Error, HttpBody as Body, GrpcBody};
+pub use self::glue::{Error, HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
 
 use svc::Either;

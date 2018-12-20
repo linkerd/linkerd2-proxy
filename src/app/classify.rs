@@ -188,6 +188,19 @@ fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
         })
 }
 
+// === impl Class ===
+
+impl Class {
+    pub(super) fn is_failure(&self) -> bool {
+        match self {
+            Class::Default(SuccessOrFailure::Failure) |
+            Class::Grpc(SuccessOrFailure::Failure, _) |
+            Class::Stream(SuccessOrFailure::Failure, _) => true,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use http::{HeaderMap, Response, StatusCode};

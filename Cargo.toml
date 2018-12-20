@@ -33,13 +33,13 @@ linkerd2-stack     = { path = "lib/stack" }
 linkerd2-task      = { path = "lib/task" }
 linkerd2-timeout   = { path = "lib/timeout" }
 
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.3", version = "0.1.3" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "1ad7018", version = "0.1.4" }
 
 bytes = "0.4"
 env_logger = { version = "0.5", default-features = false }
 futures = "0.1"
 futures-watch = { git = "https://github.com/carllerche/better-future" }
-h2 = "0.1.11"
+h2 = "0.1.14"
 http = "0.1"
 httparse = "1.2"
 hyper = "0.12.3"
@@ -65,11 +65,11 @@ tower-buffer          = { git = "https://github.com/tower-rs/tower" }
 tower-discover        = { git = "https://github.com/tower-rs/tower" }
 tower-in-flight-limit = { git = "https://github.com/tower-rs/tower" }
 tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
+tower-retry           = { git = "https://github.com/tower-rs/tower" }
 tower-service         = { git = "https://github.com/tower-rs/tower" }
 tower-util            = { git = "https://github.com/tower-rs/tower" }
 tower-http            = { git = "https://github.com/tower-rs/tower-http" }
-tower-h2              = { git = "https://github.com/tower-rs/tower-h2" }
-tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc" }
+tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
 
 # FIXME update to a release when available (>0.10)
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "c017c114", default-features = false }
@@ -91,7 +91,7 @@ net2 = "0.2"
 quickcheck = { version = "0.6", default-features = false }
 linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
 linkerd2-task    = { path = "lib/task", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.3", version = "0.1.3", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "1ad7018", version = "0.1.4", features = ["arbitrary"] }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.

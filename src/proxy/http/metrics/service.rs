@@ -11,7 +11,8 @@ use tokio_timer::clock;
 use tower_grpc;
 
 use super::classify::{ClassifyEos, ClassifyResponse};
-use super::{ClassMetrics, Metrics, Registry, StatusMetrics};
+use super::{ClassMetrics, RequestMetrics, Registry, StatusMetrics};
+use super::super::retry::TryClone;
 use svc;
 
 /// A stack module that wraps services to record metrics.
@@ -46,7 +47,7 @@ where
     C: ClassifyResponse<Error = h2::Error> + Clone,
     C::Class: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
     inner: S,
     _p: PhantomData<fn() -> C>,
 }
@@ -57,7 +58,7 @@ where
     C::Class: Hash + Eq,
 {
     classify: Option<C>,
-    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
     stream_open_at: Instant,
     inner: F,
 }
@@ -68,7 +69,7 @@ where
     B: Payload,
     C: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<Metrics<C>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<C>>>>,
     inner: B,
 }
 
@@ -81,7 +82,7 @@ where
 {
     status: http::StatusCode,
     classify: Option<C>,
-    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
     stream_open_at: Instant,
     latency_recorded: bool,
     inner: B,
@@ -173,7 +174,7 @@ where
             Ok(mut r) => Some(
                 r.by_target
                     .entry(target.clone().into())
-                    .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
+                    .or_insert_with(|| Arc::new(Mutex::new(RequestMetrics::default())))
                     .clone(),
             ),
             Err(_) => None,
@@ -240,7 +241,7 @@ where
     A: Payload,
     B: Payload,
     C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
-    C::Class: Hash + Eq,
+    C::Class: Hash + Eq + Send + Sync,
 {
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
     type Error = S::Error;
@@ -288,7 +289,7 @@ where
     F: Future<Item = http::Response<B>>,
     B: Payload,
     C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
-    C::Class: Hash + Eq,
+    C::Class: Hash + Eq + Send + Sync,
 {
     type Item = http::Response<ResponseBody<B, C::ClassifyEos>>;
     type Error = F::Error;
@@ -363,6 +364,24 @@ where
 
     fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
         Payload::poll_trailers(self).map_err(From::from)
+    }
+}
+
+impl<B, C> TryClone for RequestBody<B, C>
+where
+    B: Payload<Error=h2::Error> + TryClone,
+    C: Eq + Hash
+{
+    fn try_clone(&self) -> Option<Self> {
+        self
+            .inner
+            .try_clone()
+            .map(|inner| {
+                RequestBody {
+                    inner,
+                    metrics: self.metrics.clone(),
+                }
+            })
     }
 }
 

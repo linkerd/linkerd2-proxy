@@ -55,16 +55,17 @@ const DEFAULT_LOG: &'static str =
     linkerd2_proxy::proxy::http::router=off,\
     linkerd2_proxy::proxy::tcp=off";
 
-pub fn env_logger_init() {
+pub fn env_logger_init() -> Result<(), String> {
     use std::env;
 
-    let log = env::var("LINKERD2_PROXY_LOG").unwrap_or_else(|_| DEFAULT_LOG.to_owned());
+    let log = env::var("LINKERD2_PROXY_LOG")
+        .or_else(|_| env::var("RUST_LOG"))
+        .unwrap_or_else(|_| DEFAULT_LOG.to_owned());
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    if let Err(e) = env_logger::try_init() {
-        eprintln!("Failed to initialize logger: {}", e);
-    }
+    env_logger::try_init()
+        .map_err(|e| e.to_string())
 }
 
 /// Retry an assertion up to a specified number of times, waiting
@@ -148,6 +149,7 @@ pub mod client;
 pub mod controller;
 pub mod proxy;
 pub mod server;
+pub mod tap;
 pub mod tcp;
 
 pub fn shutdown_signal() -> (Shutdown, ShutdownRx) {

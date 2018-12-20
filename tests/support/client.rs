@@ -11,11 +11,14 @@ use self::tokio::{
     net::TcpStream,
     io::{AsyncRead, AsyncWrite},
 };
+use support::hyper::body::Payload;
 
 type Request = http::Request<Bytes>;
-type Response = http::Response<BodyStream>;
-type BodyStream = Box<Stream<Item=Bytes, Error=String> + Send>;
+type Response = http::Response<BytesBody>;
 type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, String>>)>;
+
+#[derive(Debug)]
+pub struct BytesBody(hyper::Body);
 
 pub fn new<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
     http2(addr, auth.into())
@@ -69,10 +72,9 @@ impl Client {
     pub fn get(&self, path: &str) -> String {
         let mut req = self.request_builder(path);
         let res = self.request(req.method("GET"));
-        assert_eq!(
-            res.status(),
-            StatusCode::OK,
-            "client.get({:?}) expects 200 OK, got \"{}\"",
+        assert!(
+            res.status().is_success(),
+            "client.get({:?}) expects 2xx, got \"{}\"",
             path,
             res.status(),
         );
@@ -84,9 +86,7 @@ impl Client {
     }
 
     pub fn request_async(&self, builder: &mut http::request::Builder) -> Box<Future<Item=Response, Error=String> + Send> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send((builder.body(Bytes::new()).unwrap(), tx));
-        Box::new(rx.then(|oneshot_result| oneshot_result.expect("request canceled")))
+        self.send_req(builder.body(Bytes::new()).unwrap())
     }
 
     pub fn request(&self, builder: &mut http::request::Builder) -> Response {
@@ -96,12 +96,13 @@ impl Client {
     }
 
     pub fn request_body(&self, req: Request) -> Response {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send((req, tx));
-        rx
-            .then(|oneshot_result| oneshot_result.expect("request canceled"))
+        self.send_req(req)
             .wait()
             .expect("response")
+    }
+
+    pub fn request_body_async(&self, req: Request) -> Box<Future<Item=Response, Error=String> + Send> {
+        self.send_req(req)
     }
 
     pub fn request_builder(&self, path: &str) -> http::request::Builder {
@@ -109,6 +110,16 @@ impl Client {
         b.uri(format!("http://{}{}", self.authority, path).as_str())
             .version(self.version);
         b
+    }
+
+    fn send_req(&self, mut req: Request) -> Box<Future<Item=Response, Error=String> + Send> {
+        if req.uri().scheme_part().is_none() {
+            let absolute = format!("http://{}{}", self.authority, req.uri().path()).parse().unwrap();
+            *req.uri_mut() = absolute;
+        }
+        let (tx, rx) = oneshot::channel();
+        let _ = self.tx.unbounded_send((req, tx));
+        Box::new(rx.then(|oneshot_result| oneshot_result.expect("request canceled")))
     }
 
     pub fn wait_for_closed(self) {
@@ -159,13 +170,7 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
             let req = req.map(hyper::Body::from);
             let fut = client.request(req).then(move |result| {
                 let result = result
-                    .map(|res| {
-                        let res = http::Response::from(res);
-                        res.map(|body| -> BodyStream {
-                            Box::new(body.map(|chunk| chunk.into())
-                                .map_err(|e| e.to_string()))
-                        })
-                    })
+                    .map(|resp| resp.map(BytesBody))
                     .map_err(|e| e.to_string());
                 let _ = cb.send(result);
                 Ok(())
@@ -260,6 +265,28 @@ impl AsyncRead for RunningIo {}
 impl AsyncWrite for RunningIo {
     fn shutdown(&mut self) -> Poll<(), io::Error> {
         AsyncWrite::shutdown(&mut self.inner)
+    }
+}
+
+impl BytesBody {
+    pub fn poll_data(&mut self) -> Poll<Option<Bytes>, hyper::Error> {
+        match try_ready!(self.0.poll_data()) {
+            Some(chunk) => Ok(Async::Ready(Some(chunk.into()))),
+            None => Ok(Async::Ready(None)),
+        }
+    }
+
+    pub fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, hyper::Error> {
+        self.0.poll_trailers()
+    }
+}
+
+impl Stream for BytesBody {
+    type Item = Bytes;
+    type Error = hyper::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        self.poll_data()
     }
 }
 

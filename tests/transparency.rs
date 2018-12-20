@@ -3,6 +3,7 @@
 #[macro_use]
 mod support;
 use self::support::*;
+use std::sync::mpsc;
 
 #[test]
 fn outbound_http1() {
@@ -81,9 +82,8 @@ fn inbound_tcp() {
     assert_eq!(tcp_client.read(), msg2.as_bytes());
 }
 
-#[test]
-fn tcp_server_first() {
-    use std::sync::mpsc;
+fn test_server_speaks_first(env: app::config::TestEnv) {
+    const TIMEOUT: Duration = Duration::from_secs(5);
 
     let _ = env_logger_init();
 
@@ -91,7 +91,6 @@ fn tcp_server_first() {
     let msg2 = "custom tcp client second";
 
     let (tx, rx) = mpsc::channel();
-
     let srv = server::tcp()
         .accept_fut(move |sock| {
             tokio_io::io::write_all(sock, msg1.as_bytes())
@@ -105,18 +104,70 @@ fn tcp_server_first() {
                 .map_err(|e| panic!("tcp server error: {}", e))
         })
         .run();
+
     let proxy = proxy::new()
         .disable_inbound_ports_protocol_detection(vec![srv.addr.port()])
         .inbound(srv)
-        .run();
+        .run_with_test_env(env);
 
     let client = client::tcp(proxy.inbound);
 
     let tcp_client = client.connect();
 
-    assert_eq!(tcp_client.read(), msg1.as_bytes());
+    assert_eq!(tcp_client.read_timeout(TIMEOUT), msg1.as_bytes());
     tcp_client.write(msg2);
-    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    rx.recv_timeout(TIMEOUT).unwrap();
+}
+
+#[test]
+fn tcp_server_first() {
+    test_server_speaks_first(app::config::TestEnv::new());
+}
+
+#[test]
+fn tcp_server_first_tls() {
+    use std::path::PathBuf;
+
+    let (cert, key, trust_anchors) = {
+        let path_to_string = |path: &PathBuf| {
+            path
+                .as_path()
+                .to_owned()
+                .into_os_string()
+                .into_string()
+                .unwrap()
+        };
+        let mut tls = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tls.push("src");
+        tls.push("transport");
+        tls.push("tls");
+        tls.push("testdata");
+
+        tls.push("foo-ns1-ca1.crt");
+        let cert = path_to_string(&tls);
+
+        tls.set_file_name("foo-ns1-ca1.p8");
+        let key = path_to_string(&tls);
+
+        tls.set_file_name("ca1.pem");
+        let trust_anchors = path_to_string(&tls);
+        (cert, key, trust_anchors)
+    };
+
+    let mut env = app::config::TestEnv::new();
+
+    env.put(app::config::ENV_TLS_CERT, cert);
+    env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
+    env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
+    env.put(
+        app::config::ENV_TLS_POD_IDENTITY,
+        "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local"
+            .to_string(),
+    );
+    env.put(app::config::ENV_CONTROLLER_NAMESPACE, "linkerd".to_string());
+    env.put(app::config::ENV_POD_NAMESPACE, "ns1".to_string());
+
+    test_server_speaks_first(env)
 }
 
 #[test]

@@ -1,6 +1,4 @@
-use bytes;
 use futures::{self, future, Future, Poll};
-use h2;
 use http;
 use hyper;
 use indexmap::IndexSet;
@@ -10,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use std::{error, fmt, io};
 use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::runtime::current_thread;
-use tower_h2;
+use tower_grpc as grpc;
 
 use app::classify::{self, Class};
 use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels, TapLabels};
@@ -163,6 +161,10 @@ where
         } = self;
 
         const MAX_IN_FLIGHT: usize = 10_000;
+
+        const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
+        const EWMA_DECAY: Duration = Duration::from_secs(10);
+
         let control_host_and_port = config.control_host_and_port.clone();
 
         info!("using controller at {:?}", control_host_and_port);
@@ -216,12 +218,18 @@ where
             (m, r.with_prefix("route"))
         };
 
+        let (retry_http_metrics, retry_http_report) = {
+            let (m, r) = http_metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
+            (m, r.with_prefix("route_actual"))
+        };
+
         let (transport_metrics, transport_report) = transport::metrics::new();
 
         let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
 
         let report = endpoint_http_report
             .and_then(route_http_report)
+            .and_then(retry_http_report)
             .and_then(transport_report)
             .and_then(tls_config_report)
             .and_then(ctl_http_report)
@@ -255,11 +263,11 @@ where
                 .push(http_metrics::layer::<_, classify::Response>(
                     ctl_http_metrics,
                 ))
-                .push(control::grpc_request_payload::layer())
+                .push(proxy::grpc::req_body_as_payload::layer())
                 .push(svc::watch::layer(tls_client_config.clone()))
                 .push(phantom_data::layer())
                 .push(control::add_origin::layer())
-                .push(buffer::layer())
+                .push(buffer::layer(config.destination_concurrency_limit))
                 .push(limit::layer(config.destination_concurrency_limit));
 
             // Because the control client is buffered, we need to be able to
@@ -299,7 +307,7 @@ where
                 use super::outbound::{discovery::Resolve, orig_proto_upgrade, Endpoint};
                 use proxy::{
                     canonicalize,
-                    http::{balance, header_from_target, metrics},
+                    http::{balance, header_from_target, metrics, retry},
                     resolve,
                 };
 
@@ -333,7 +341,7 @@ where
                 // 4. Routes requests to the correct client (based on the
                 //    request version and headers).
                 let endpoint_stack = client_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(settings::router::layer::<Endpoint, _>())
                     .push(orig_proto_upgrade::layer())
                     .push(tap_layer.clone())
@@ -349,6 +357,9 @@ where
                 // extension into each request so that all lower metrics
                 // implementations can use the route-specific configuration.
                 let dst_route_layer = phantom_data::layer()
+                    .push(insert_target::layer())
+                    .push(metrics::layer::<_, classify::Response>(retry_http_metrics.clone()))
+                    .push(retry::layer(retry_http_metrics))
                     .push(metrics::layer::<_, classify::Response>(route_http_metrics))
                     .push(classify::layer());
 
@@ -361,8 +372,8 @@ where
                 //   `DstAddr` with a resolver.
                 let dst_stack = endpoint_stack
                     .push(resolve::layer(Resolve::new(resolver)))
-                    .push(balance::layer())
-                    .push(buffer::layer())
+                    .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(profiles::router::layer(
                         profile_suffixes,
                         profiles_client,
@@ -380,7 +391,7 @@ where
                 // But for now it's more important to use the request router's
                 // caching logic.
                 let dst_router = dst_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(router::layer(|req: &http::Request<_>| {
                         let addr = req.extensions().get::<DstAddr>().cloned();
                         debug!("outbound dst={:?}", addr);
@@ -414,7 +425,7 @@ where
                 // 4. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
                 // address is used.
                 let addr_router = addr_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(timeout::layer(config.bind_timeout))
                     .push(limit::layer(MAX_IN_FLIGHT))
                     .push(router::layer(|req: &http::Request<_>| {
@@ -483,14 +494,14 @@ where
                 // If there is no `SO_ORIGINAL_DST` for an inbound socket,
                 // `default_fwd_addr` may be used.
                 let endpoint_router = client_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(settings::router::layer::<Endpoint, _>())
                     .push(phantom_data::layer())
                     .push(tap_layer)
                     .push(http_metrics::layer::<_, classify::Response>(
                         endpoint_http_metrics,
                     ))
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(router::layer(RecognizeEndpoint::new(default_fwd_addr)))
                     .make(&router::Config::new("in endpoint", capacity, max_idle_age))
                     .map(shared::stack)
@@ -503,6 +514,7 @@ where
                 // extension into each request so that all lower metrics
                 // implementations can use the route-specific configuration.
                 let dst_route_stack = phantom_data::layer()
+                    .push(insert_target::layer())
                     .push(http_metrics::layer::<_, classify::Response>(
                         route_http_metrics,
                     ))
@@ -517,7 +529,7 @@ where
                 let dst_stack = endpoint_router
                     .push(phantom_data::layer())
                     .push(insert_target::layer())
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(profiles::router::layer(
                         profile_suffixes,
                         profiles_client,
@@ -540,7 +552,7 @@ where
                 // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
                 // address is used.
                 let dst_router = dst_stack
-                    .push(buffer::layer())
+                    .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(limit::layer(MAX_IN_FLIGHT))
                     .push(router::layer(|req: &http::Request<_>| {
                         let canonical = req
@@ -548,13 +560,13 @@ where
                             .get(super::CANONICAL_DST_HEADER)
                             .and_then(|dst| dst.to_str().ok())
                             .and_then(|d| Addr::from_str(d).ok());
-                        info!("inbound canonical={:?}", canonical);
+                        debug!("inbound canonical={:?}", canonical);
 
                         let dst = canonical
                             .or_else(|| super::http_request_authority_addr(req).ok())
                             .or_else(|| super::http_request_host_addr(req).ok())
                             .or_else(|| super::http_request_orig_dst_addr(req).ok());
-                        info!("inbound dst={:?}", dst);
+                        debug!("inbound dst={:?}", dst);
                         dst.map(DstAddr::inbound)
                     }))
                     .make(&router::Config::new("in dst", capacity, max_idle_age))
@@ -673,16 +685,17 @@ where
     let server = proxy::Server::new(
         proxy_name,
         listen_addr,
-        get_orig_dst,
         accept,
         connect,
         router,
-        disable_protocol_detection_ports,
         drain_rx.clone(),
     );
     let log = server.log().clone();
 
     let accept = {
+        let bound_port = bound_port
+            .without_protocol_detection_for(disable_protocol_detection_ports)
+            .with_original_dst(get_orig_dst);
         let fut = bound_port.listen_and_fold((), move |(), (connection, remote_addr)| {
             let s = server.serve(connection, remote_addr);
             // Logging context is configured by the server.
@@ -736,29 +749,42 @@ fn serve_tap<N, B>(
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where
-    B: tower_h2::Body + Send + 'static,
-    <B::Data as bytes::IntoBuf>::Buf: Send,
-    N: svc::MakeService<(), http::Request<tower_h2::RecvBody>, Response = http::Response<B>>
+    B: tower_grpc::Body + Send + 'static,
+    B::Data: Send + 'static,
+    <B::Data as bytes::IntoBuf>::Buf: Send + 'static,
+    N: svc::MakeService<(), http::Request<grpc::BoxBody>, Response = http::Response<B>>
         + Send
         + 'static,
-    tower_h2::server::Connection<Connection, N, ::logging::ServerExecutor, B, ()>:
-        Future<Item = ()>,
+    N::Error: error::Error + Send + Sync,
+    N::MakeError: error::Error,
+    <N::Service as svc::Service<http::Request<grpc::BoxBody>>>::Future: Send + 'static,
 {
     let log = logging::admin().server("tap", bound_port.local_addr());
 
-    let h2_builder = h2::server::Builder::default();
-    let server = tower_h2::Server::new(new_service, h2_builder, log.clone().executor());
     let fut = {
         let log = log.clone();
         // TODO: serve over TLS.
         bound_port
-            .listen_and_fold(server, move |mut server, (session, remote)| {
+            .listen_and_fold(new_service, move |mut new_service, (session, remote)| {
                 let log = log.clone().with_remote(remote);
-                let serve = server.serve(session).map_err(|_| ());
+                let log_clone = log.clone();
+                let serve = new_service
+                    .make_service(())
+                    .map_err(|err| error!("tap MakeService error: {}", err))
+                    .and_then(move |svc| {
+                        let svc = proxy::grpc::req_box_body::Service::new(svc);
+                        let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
+                        let svc = proxy::http::HyperServerSvc::new(svc);
+                        hyper::server::conn::Http::new()
+                            .with_executor(log_clone.executor())
+                            .http2_only(true)
+                            .serve_connection(session, svc)
+                            .map_err(|err| debug!("tap connection error: {}", err))
+                    });
 
                 let r = executor::current_thread::TaskExecutor::current()
                     .spawn_local(Box::new(log.future(serve)))
-                    .map(move |_| server)
+                    .map(|()| new_service)
                     .map_err(task::Error::into_io);
                 future::result(r)
             })
@@ -767,3 +793,5 @@ where
 
     log.future(fut)
 }
+
+

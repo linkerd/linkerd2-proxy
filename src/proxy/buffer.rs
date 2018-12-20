@@ -9,11 +9,15 @@ use svc;
 
 /// Wraps `Service` stacks with a `Buffer`.
 #[derive(Debug)]
-pub struct Layer<Req>(PhantomData<fn(Req)>);
+pub struct Layer<Req> {
+    capacity: usize,
+    _marker: PhantomData<fn(Req)>,
+}
 
 /// Produces `Service`s wrapped with a `Buffer`
 #[derive(Debug)]
 pub struct Stack<M, Req> {
+    capacity: usize,
     inner: M,
     _marker: PhantomData<fn(Req)>,
 }
@@ -25,13 +29,19 @@ pub enum Error<M, S> {
 
 // === impl Layer ===
 
-pub fn layer<Req>() -> Layer<Req> {
-    Layer(PhantomData)
+pub fn layer<Req>(capacity: usize) -> Layer<Req> {
+    Layer {
+        capacity,
+        _marker: PhantomData,
+    }
 }
 
 impl<Req> Clone for Layer<Req> {
     fn clone(&self) -> Self {
-        Layer(PhantomData)
+        Layer {
+            capacity: self.capacity,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -49,6 +59,7 @@ where
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
+            capacity: self.capacity,
             inner,
             _marker: PhantomData,
         }
@@ -60,6 +71,7 @@ where
 impl<M: Clone, Req> Clone for Stack<M, Req> {
     fn clone(&self) -> Self {
         Stack {
+            capacity: self.capacity,
             inner: self.inner.clone(),
             _marker: PhantomData,
         }
@@ -80,7 +92,7 @@ where
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
         let inner = self.inner.make(&target).map_err(Error::Stack)?;
         let executor = logging::context_executor(target.clone());
-        Buffer::new(inner, &executor).map_err(Error::Spawn)
+        Buffer::with_executor(inner, self.capacity, &executor).map_err(Error::Spawn)
     }
 }
 
