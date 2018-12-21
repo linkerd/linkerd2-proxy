@@ -8,7 +8,6 @@ use std::time::{Duration, SystemTime};
 use std::{error, fmt, io};
 use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::runtime::current_thread;
-use tower_grpc as grpc;
 
 use app::classify::{self, Class};
 use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels, TapLabels};
@@ -198,12 +197,20 @@ where
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
         let (tap_http_metrics, tap_http_report) =
             http_metrics::new::<TapLabels, Class>(config.metrics_retain_idle);
+
+
         let tap_http_server = shared::stack(::api::tap::server::TapServer::new(tap_grpc))
+            .push(phantom_data::layer())
+            .push(proxy::grpc::server::layer())
             .push(http_metrics::layer::<_, classify::Response>(
                 tap_http_metrics,
             ))
             .make(&TapLabels)
-            .expect("must be able to build tap server");
+            .map(shared::stack)
+            .expect("must be able to build tap server")
+            .push(phantom_data::layer())
+            .push(svc::stack_make_service::layer());
+
 
         let (ctl_http_metrics, ctl_http_report) = {
             let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
@@ -233,6 +240,7 @@ where
             .and_then(transport_report)
             .and_then(tls_config_report)
             .and_then(ctl_http_report)
+            .and_then(tap_http_report)
             .and_then(telemetry::process::Report::new(start_time));
 
         let tls_client_config = tls_config_watch.client.clone();
@@ -749,15 +757,13 @@ fn serve_tap<N, B>(
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where
-    B: tower_grpc::Body + Send + 'static,
-    B::Data: Send + 'static,
-    <B::Data as bytes::IntoBuf>::Buf: Send + 'static,
-    N: svc::MakeService<(), http::Request<grpc::BoxBody>, Response = http::Response<B>>
+    B: hyper::body::Payload,
+    N: svc::MakeService<(), http::Request<proxy::http::Body>, Response = http::Response<B>>
         + Send
         + 'static,
     N::Error: error::Error + Send + Sync,
     N::MakeError: error::Error,
-    <N::Service as svc::Service<http::Request<grpc::BoxBody>>>::Future: Send + 'static,
+    <N::Service as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
 {
     let log = logging::admin().server("tap", bound_port.local_addr());
 
@@ -772,8 +778,6 @@ where
                     .make_service(())
                     .map_err(|err| error!("tap MakeService error: {}", err))
                     .and_then(move |svc| {
-                        let svc = proxy::grpc::req_box_body::Service::new(svc);
-                        let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
                         let svc = proxy::http::HyperServerSvc::new(svc);
                         hyper::server::conn::Http::new()
                             .with_executor(log_clone.executor())

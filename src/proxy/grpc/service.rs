@@ -1,3 +1,49 @@
+macro_rules! gen_layer {
+    ($Service:ident) => (
+        #[derive(Clone, Debug)]
+        pub struct Layer;
+
+        #[derive(Clone, Debug)]
+        pub struct Stack<M> {
+            inner: M,
+        }
+
+        // === impl Layer ===
+
+        pub fn layer() -> Layer {
+            Layer
+        }
+
+        impl<Target, M> svc::Layer<Target, Target, M> for Layer
+        where
+            M: svc::Stack<Target>,
+        {
+            type Value = <Stack<M> as svc::Stack<Target>>::Value;
+            type Error = <Stack<M> as svc::Stack<Target>>::Error;
+            type Stack = Stack<M>;
+
+            fn bind(&self, inner: M) -> Self::Stack {
+                Stack { inner }
+            }
+        }
+
+        // === impl Stack ===
+
+        impl<Target, M> svc::Stack<Target> for Stack<M>
+        where
+            M: svc::Stack<Target>,
+        {
+            type Value = $Service<M::Value>;
+            type Error = M::Error;
+
+            fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
+                let inner = self.inner.make(target)?;
+                Ok($Service(inner))
+            }
+        }
+    );
+}
+
 pub mod req_body_as_payload {
     use bytes::Bytes;
     use http;
@@ -7,51 +53,10 @@ pub mod req_body_as_payload {
     use super::super::GrpcBody;
     use svc;
 
-
     #[derive(Clone, Debug)]
-    pub struct Layer;
-
-    #[derive(Clone, Debug)]
-    pub struct Stack<M> {
-        inner: M,
-    }
-
-    #[derive(Debug)]
     pub struct Service<S>(S);
 
-    // === impl Layer ===
-
-    pub fn layer() -> Layer {
-        Layer
-    }
-
-    impl<T, M> svc::Layer<T, T, M> for Layer
-    where
-        M: svc::Stack<T>,
-    {
-        type Value = <Stack<M> as svc::Stack<T>>::Value;
-        type Error = <Stack<M> as svc::Stack<T>>::Error;
-        type Stack = Stack<M>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack { inner }
-        }
-    }
-
-    // === impl Stack ===
-
-    impl<T, M> svc::Stack<T> for Stack<M>
-    where
-        M: svc::Stack<T>,
-    {
-        type Value = Service<M::Value>;
-        type Error = M::Error;
-
-        fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-            let inner = self.inner.make(target)?;
-            Ok(Service(inner))
-        }
-    }
+    gen_layer!(Service);
 
     // === impl Service ===
 
@@ -74,62 +79,29 @@ pub mod req_body_as_payload {
     }
 }
 
-pub mod req_box_body {
+pub mod server {
     use bytes::Bytes;
     use http;
-    use futures::Poll;
-    use tower_grpc::{Body, BoxBody};
-
-    use svc;
-
-    pub struct Service<S>(S);
-
-    impl<S> Service<S> {
-        pub fn new(service: S) -> Self {
-            Service(service)
-        }
-    }
-
-    impl<B, S> svc::Service<http::Request<B>> for Service<S>
-    where
-        B: Body<Data = Bytes> + Send + 'static,
-        S: svc::Service<http::Request<BoxBody>>,
-    {
-        type Response = S::Response;
-        type Error = S::Error;
-        type Future = S::Future;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.0.poll_ready()
-        }
-
-        fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            self.0.call(req.map(|b| BoxBody::new(Box::new(b))))
-        }
-    }
-}
-
-pub mod res_body_as_payload {
-    use http;
     use futures::{future, Future, Poll};
-    use tower_grpc::Body;
+    use tower_grpc::{Body, BoxBody};
 
     use super::super::GrpcBody;
     use svc;
 
+    #[derive(Clone, Debug)]
     pub struct Service<S>(S);
 
-    impl<S> Service<S> {
-        pub fn new(service: S) -> Self {
-            Service(service)
-        }
-    }
+    gen_layer!(Service);
+
+    // === impl Service ===
 
     impl<B1, B2, S> svc::Service<http::Request<B1>> for Service<S>
     where
+        B1: Body + Send + 'static,
+        B1::Data: Into<Bytes>,
         B2: Body,
         S: svc::Service<
-            http::Request<B1>,
+            http::Request<BoxBody>,
             Response = http::Response<B2>,
         >,
     {
@@ -142,6 +114,7 @@ pub mod res_body_as_payload {
         }
 
         fn call(&mut self, req: http::Request<B1>) -> Self::Future {
+            let req = req.map(|b| BoxBody::new(Box::new(GrpcBody::new(b))));
             self.0.call(req)
                 .map(|res| {
                     res.map(GrpcBody::new)

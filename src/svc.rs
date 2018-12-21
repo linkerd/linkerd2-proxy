@@ -7,6 +7,7 @@ pub use self::tower_util::MakeService;
 
 pub use self::stack::{
     shared,
+    stack_make_service,
     stack_per_request,
     watch,
     Either,

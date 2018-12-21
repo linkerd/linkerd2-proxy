@@ -206,32 +206,6 @@ where
     }
 }
 
-impl<C, S> svc::Service<()> for Service<S, C>
-where
-    S: svc::Service<()>,
-    S::Future: 'static,
-    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
-    C::Class: Hash + Eq,
-{
-    type Response = Service<S::Response, C>;
-    type Error = S::Error;
-    type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
-
-    fn call(&mut self, _: ()) -> Self::Future {
-        let metrics = self.metrics.clone();
-        let f = self.inner.call(()).map(|inner| Service {
-            inner,
-            metrics,
-            _p: PhantomData,
-        });
-        Box::new(f)
-    }
-}
-
 impl<C, S, A, B> svc::Service<http::Request<A>> for Service<S, C>
 where
     S: svc::Service<

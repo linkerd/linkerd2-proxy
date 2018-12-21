@@ -1,27 +1,51 @@
 use futures::{future, Poll};
 use svc;
 
-use super::Stack;
-
-/// Implements `MakeService` using a `Stack` of `Service`.
+/// Creates a stack layer that also implements `Service<T>`.
 #[derive(Clone, Debug)]
-pub struct StackMakeService<T, M: Stack<T>> {
-    make: M,
-    target: T,
+pub struct Layer;
+
+#[derive(Clone, Debug)]
+pub struct Stack<M> {
+    inner: M,
 }
 
-impl<T, M> StackMakeService<T, M>
+// === impl Layer ===
+
+pub fn layer() -> Layer {
+    Layer
+}
+
+impl<T, M> super::Layer<T, T, M> for Layer
 where
-    M: Stack<T>,
+    M: super::Stack<T>,
 {
-    pub fn new(make: M, target: T) -> Self {
-        Self { make, target }
+    type Value = <Stack<M> as super::Stack<T>>::Value;
+    type Error = <Stack<M> as super::Stack<T>>::Error;
+    type Stack = Stack<M>;
+
+    fn bind(&self, inner: M) -> Self::Stack {
+        Stack { inner }
     }
 }
 
-impl<T, M> svc::Service<()> for StackMakeService<T, M>
+// === impl Stack ===
+
+impl<T, M> super::Stack<T> for Stack<M>
 where
-    M: Stack<T>,
+    M: super::Stack<T>
+{
+    type Value = M::Value;
+    type Error = M::Error;
+
+    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+        self.inner.make(target)
+    }
+}
+
+impl<T, M> svc::Service<T> for Stack<M>
+where
+    M: super::Stack<T>,
 {
     type Response = M::Value;
     type Error = M::Error;
@@ -31,7 +55,7 @@ where
         Ok(().into())
     }
 
-    fn call(&mut self, _target: ()) -> Self::Future {
-        future::result(self.make.make(&self.target))
+    fn call(&mut self, target: T) -> Self::Future {
+        future::result(self.inner.make(&target))
     }
 }

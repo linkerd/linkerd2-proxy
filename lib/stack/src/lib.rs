@@ -15,7 +15,6 @@ pub mod watch;
 
 pub use self::either::Either;
 pub use self::layer::Layer;
-pub use self::stack_make_service::StackMakeService;
 
 /// A composable builder.
 ///

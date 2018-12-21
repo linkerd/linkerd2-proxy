@@ -1,4 +1,4 @@
-use bytes::IntoBuf;
+use bytes::{Bytes, IntoBuf};
 use futures::{Poll};
 use http;
 use hyper::body::Payload;
@@ -41,18 +41,21 @@ where
 impl<B> grpc::Body for GrpcBody<B>
 where
     B: grpc::Body,
+    B::Data: Into<Bytes>,
 {
-    type Data = B::Data;
+    type Data = Bytes;
 
     fn is_end_stream(&self) -> bool {
         grpc::Body::is_end_stream(&self.0)
     }
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, grpc::Error> {
-        grpc::Body::poll_data(&mut self.0)
+        let data = try_ready!(grpc::Body::poll_data(&mut self.0));
+        Ok(data.map(Into::into).into())
     }
 
     fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, grpc::Error> {
         grpc::Body::poll_metadata(&mut self.0)
     }
 }
+
