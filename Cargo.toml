@@ -48,7 +48,7 @@ log = "0.4.1"
 indexmap = "1.0.0"
 prost = "0.4.0"
 prost-types = "0.4.0"
-rand = "0.6"
+rand = "0.6.3"
 try-lock = "0.2"
 
 # for config parsing
