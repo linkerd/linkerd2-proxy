@@ -105,5 +105,5 @@ debug = false
 [profile.test]
 debug = false
 
-[patch.'https://github.com/tower-rs/tower-grpc']
+[patch.crates-io]
 prost-build = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
