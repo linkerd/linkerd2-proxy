@@ -22,6 +22,4 @@ procinfo = "0.4.2"
 [dev-dependencies]
 tokio = "0.1.7"
 linkerd2-task = { path = "../task", features = ["test_util"] }
-# We should switch from `tempdir` to `tempfile` once `prost-build` switches to
-# it.`
-tempdir = "0.3"
+tempfile = "3"
