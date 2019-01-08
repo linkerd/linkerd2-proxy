@@ -8,7 +8,7 @@ use std::io;
 use std::net::SocketAddr;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    net::{TcpListener, TcpStream, ConnectFuture},
+    net::{TcpListener, TcpStream, tcp::ConnectFuture},
     reactor::Handle,
 };
 

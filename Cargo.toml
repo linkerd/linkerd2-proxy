@@ -55,7 +55,7 @@ try-lock = "0.2"
 regex = "1.0.0"
 
 # networking
-tokio = "0.1.7"
+tokio = "0.1.14"
 tokio-signal = "0.2"
 tokio-timer = "0.2.6"   # for tokio_timer::clock
 tokio-connect         = { git = "https://github.com/carllerche/tokio-connect" }
@@ -96,6 +96,7 @@ flate2 = { version = "1.0.1", default-features = false, features = ["rust_backen
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.
 tokio-io = "0.1.6"
+tokio-current-thread = "0.1.4"
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.

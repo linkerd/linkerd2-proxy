@@ -313,7 +313,6 @@ impl TryFrom<observe_request::match_::Http> for HttpMatch {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
     use ipnet::{Contains, Ipv4Net, Ipv6Net};
     use quickcheck::*;
     use rand::Rng;
