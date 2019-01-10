@@ -174,7 +174,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "flaky_tests"), ignore)]
         fn outbound_destinations_reset_on_reconnect_followed_by_no_endpoints_exists() {
             outbound_destinations_reset_on_reconnect(move || {
                 Some(controller::destination_exists_with_no_endpoints())
@@ -182,7 +181,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "flaky_tests"), ignore)]
         fn outbound_destinations_reset_on_reconnect_followed_by_add_none() {
             outbound_destinations_reset_on_reconnect(move || {
                 Some(controller::destination_add_none())
@@ -190,7 +188,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "flaky_tests"), ignore)]
         fn outbound_destinations_reset_on_reconnect_followed_by_remove_none() {
             outbound_destinations_reset_on_reconnect(move || {
                 Some(controller::destination_remove_none())
@@ -247,7 +244,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "flaky_tests"), ignore)]
         fn outbound_times_out() {
             let env = init_env();
 
