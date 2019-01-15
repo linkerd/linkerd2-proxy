@@ -329,6 +329,186 @@ macro_rules! generate_tests {
 
             assert_eq!(client.get("/"), "hello");
         }
+
+        mod override_header {
+            use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+            use super::super::*;
+
+            const OVERRIDE_HEADER: &'static str = "l5d-dst-override";
+            const FOO: &'static str = "foo.test.svc.cluster.local";
+            const BAR: &'static str = "bar.test.svc.cluster.local";
+
+            struct Fixture {
+                foo_reqs: Arc<AtomicUsize>,
+                bar_reqs: Arc<AtomicUsize>,
+                foo: Option<server::Listening>,
+                _bar: server::Listening,
+                ctrl: Option<controller::Controller>,
+
+            }
+
+            impl Fixture {
+                fn new() -> Fixture {
+                    let _ = env_logger_init();
+
+                    let foo_reqs = Arc::new(AtomicUsize::new(0));
+                    let foo_reqs2 = foo_reqs.clone();
+                    let foo = $make_server().route_fn("/", move |req| {
+                        assert!(
+                            !req.headers().contains_key(OVERRIDE_HEADER),
+                            "dst override header should be stripped before forwarding request",
+                        );
+                        foo_reqs2.clone().fetch_add(1, Ordering::Release);
+                        Response::builder().status(200)
+                            .body(Bytes::from_static(&b"hello from foo"[..]))
+                            .unwrap()
+                    }).run();
+
+                    let bar_reqs = Arc::new(AtomicUsize::new(0));
+                    let bar_reqs2 = bar_reqs.clone();
+                    let bar = $make_server().route_fn("/", move |req| {
+                        assert!(
+                            !req.headers().contains_key(OVERRIDE_HEADER),
+                            "dst override header should be stripped before forwarding request",
+                        );
+                        bar_reqs2.clone().fetch_add(1, Ordering::Release);
+                        Response::builder().status(200)
+                            .body(Bytes::from_static(&b"hello from bar"[..]))
+                            .unwrap()
+                    }).run();
+
+                    let ctrl = controller::new()
+                        .destination_and_close(FOO, foo.addr)
+                        .destination_and_close(BAR, bar.addr);
+                    Fixture {
+                        foo_reqs, bar_reqs,
+                        foo: Some(foo),
+                        _bar: bar,
+                        ctrl: Some(ctrl)
+                    }
+                }
+
+                fn foo(&mut self) -> server::Listening {
+                    self.foo.take().unwrap()
+                }
+
+                fn foo_reqs(&self) -> usize {
+                    self.foo_reqs.load(Ordering::Acquire)
+                }
+
+                fn bar_reqs(&self) -> usize {
+                    self.bar_reqs.load(Ordering::Acquire)
+                }
+
+                fn proxy(&mut self) -> proxy::Proxy {
+                    let ctrl = self.ctrl.take().unwrap();
+                    proxy::new().controller(ctrl.run())
+                }
+            }
+
+            fn override_req(client: &client::Client) -> http::Response<client::BytesBody> {
+                client.request(
+                    client.request_builder("/")
+                        .header(OVERRIDE_HEADER, BAR)
+                        .method("GET")
+                )
+            }
+
+            #[test]
+            fn outbound_honors_override_header() {
+                let mut fixture = Fixture::new();
+                let proxy = fixture.proxy().run();
+
+                let client = $make_client(proxy.outbound, FOO);
+
+                // Request 1 --- without override header.
+                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(fixture.foo_reqs(), 1);
+                assert_eq!(fixture.bar_reqs(), 0);
+
+                // Request 2 --- with override header
+                let res = override_req(&client);
+                assert_eq!(res.status(), http::StatusCode::OK);
+                let stream = res.into_parts().1;
+                let body = stream.concat2()
+                    .map(|body| ::std::str::from_utf8(&body).unwrap().to_string())
+                    .wait()
+                    .expect("response 2 body");
+                assert_eq!(body, "hello from bar");
+                assert_eq!(fixture.foo_reqs(), 1);
+                assert_eq!(fixture.bar_reqs(), 1);
+
+                // Request 3 --- without override header again.
+                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(fixture.foo_reqs(), 2);
+                assert_eq!(fixture.bar_reqs(), 1);
+            }
+
+            #[test]
+            fn outbound_honors_override_header_with_orig_dst() {
+                let mut fixture = Fixture::new();
+                let proxy = fixture.proxy()
+                    .outbound(fixture.foo())
+                    .run();
+
+                let client = $make_client(proxy.outbound, "foo.test.svc.cluster.local");
+
+                // Request 1 --- without override header.
+                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(fixture.foo_reqs(), 1);
+                assert_eq!(fixture.bar_reqs(), 0);
+
+                // Request 2 --- with override header
+                let res = override_req(&client);
+                assert_eq!(res.status(), http::StatusCode::OK);
+                let stream = res.into_parts().1;
+                let body = stream.concat2()
+                    .map(|body| ::std::str::from_utf8(&body).unwrap().to_string())
+                    .wait()
+                    .expect("response 2 body");
+                assert_eq!(body, "hello from bar");
+                assert_eq!(fixture.foo_reqs(), 1);
+                assert_eq!(fixture.bar_reqs(), 1);
+
+                // Request 3 --- without override header again.
+                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(fixture.foo_reqs(), 2);
+                assert_eq!(fixture.bar_reqs(), 1);
+            }
+
+            #[test]
+            fn inbound_does_not_honor_override_header() {
+                let mut fixture = Fixture::new();
+                let proxy = fixture.proxy()
+                    .inbound(fixture.foo())
+                    .run();
+
+                let client = $make_client(proxy.inbound, "foo.test.svc.cluster.local");
+
+                // Request 1 --- without override header.
+                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(fixture.foo_reqs(), 1);
+                assert_eq!(fixture.bar_reqs(), 0);
+
+                // Request 2 --- with override header
+                let res = override_req(&client);
+                assert_eq!(res.status(), http::StatusCode::OK);
+                let stream = res.into_parts().1;
+                let body = stream.concat2()
+                    .map(|body| ::std::str::from_utf8(&body).unwrap().to_string())
+                    .wait()
+                    .expect("response 2 body");
+                assert_eq!(body, "hello from foo");
+                assert_eq!(fixture.foo_reqs(), 2);
+                assert_eq!(fixture.bar_reqs(), 0);
+
+                // Request 3 --- without override header again.
+                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(fixture.foo_reqs(), 3);
+                assert_eq!(fixture.bar_reqs(), 0);
+            }
+
+        }
     }
 }
 
