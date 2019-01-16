@@ -421,7 +421,8 @@ where
                     .push(timeout::layer(config.bind_timeout))
                     .push(limit::layer(MAX_IN_FLIGHT))
                     .push(router::layer(|req: &http::Request<_>| {
-                        let addr = super::http_request_authority_addr(req)
+                        let addr = super::http_request_l5d_override_dst_addr(req)
+                            .or_else(|_| super::http_request_authority_addr(req))
                             .or_else(|_| super::http_request_host_addr(req))
                             .or_else(|_| super::http_request_orig_dst_addr(req))
                             .ok();

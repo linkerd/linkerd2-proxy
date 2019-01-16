@@ -49,17 +49,7 @@ pub fn set_origin_form(uri: &mut Uri) {
 
 /// Returns an Authority from a request's Host header.
 pub fn authority_from_host<B>(req: &http::Request<B>) -> Option<Authority> {
-    req.headers().get(HOST)
-        .and_then(|host| {
-             host.to_str().ok()
-                .and_then(|s| {
-                    if s.is_empty() {
-                        None
-                    } else {
-                        s.parse::<Authority>().ok()
-                    }
-                })
-        })
+    super::authority_from_header(req, HOST)
 }
 
 fn set_authority(uri: &mut http::Uri, auth: Authority) {
