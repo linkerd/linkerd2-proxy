@@ -432,13 +432,11 @@ where
                         super::http_request_l5d_override_dst_addr(req)
                             .ok()
                             .map(|override_addr| {
-                                if log_enabled!(log::Level::Debug) {
-                                    debug!(
-                                        "outbound addr={:?}; dst-override={:?}",
-                                        addr(),
-                                        override_addr
-                                    );
-                                }
+                                debug!(
+                                    "outbound addr={:?}; dst-override={:?}",
+                                    addr(),
+                                    override_addr
+                                );
                                 override_addr
                             })
                             .or_else(|| {
