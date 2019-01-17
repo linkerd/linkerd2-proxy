@@ -423,13 +423,18 @@ where
                     .push(limit::layer(MAX_IN_FLIGHT))
                     .push(strip_header::layer(super::DST_OVERRIDE_HEADER))
                     .push(router::layer(|req: &http::Request<_>| {
-                        let addr = super::http_request_l5d_override_dst_addr(req)
-                            .or_else(|_| super::http_request_authority_addr(req))
+                        let addr = super::http_request_authority_addr(req)
                             .or_else(|_| super::http_request_host_addr(req))
                             .or_else(|_| super::http_request_orig_dst_addr(req))
                             .ok();
                         debug!("outbound addr={:?}", addr);
-                        addr
+                        super::http_request_l5d_override_dst_addr(req)
+                            .ok()
+                            .map(|override_addr| {
+                                debug!("outbound dst-override={:?}", override_addr);
+                                override_addr
+                            })
+                            .or(addr)
                     }))
                     .make(&router::Config::new("out addr", capacity, max_idle_age))
                     .map(shared::stack)
