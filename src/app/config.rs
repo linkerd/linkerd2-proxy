@@ -101,6 +101,8 @@ pub struct Config {
 
     /// Optional maximum TTL for DNS lookups.
     pub dns_max_ttl: Option<Duration>,
+
+    pub dns_canonicalize_timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -256,6 +258,10 @@ const ENV_DNS_MIN_TTL: &str = "LINKERD2_PROXY_DNS_MIN_TTL";
 /// Lookups with TTLs above this value will use this value instead.
 const ENV_DNS_MAX_TTL: &str = "LINKERD2_PROXY_DNS_MAX_TTL";
 
+/// The amount of time to wait for a DNS query to succeed before falling back to
+/// an uncanonicalized address.
+const ENV_DNS_CANONICALIZE_TIMEOUT: &str = "LINKERD2_PROXY_DNS_CANONICALIZE_TIMEOUT";
+
 // Default values for various configuration fields
 const DEFAULT_OUTBOUND_LISTENER: &str = "tcp://127.0.0.1:4140";
 const DEFAULT_INBOUND_LISTENER: &str = "tcp://0.0.0.0:4143";
@@ -267,6 +273,7 @@ const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const DEFAULT_BIND_TIMEOUT: Duration = Duration::from_secs(10); // same as in Linkerd
 const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(5);
 const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 /// It's assumed that a typical proxy can serve inbound traffic for up to 100 pod-local
@@ -347,6 +354,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
         let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
         let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
+        let dns_canonicalize_timeout = parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration)?
+            .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT);
         let pod_namespace = strings.get(ENV_POD_NAMESPACE).and_then(|maybe_value| {
             // There cannot be a default pod namespace, and the pod namespace is required.
             maybe_value.ok_or_else(|| {
@@ -501,6 +510,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
             dns_min_ttl: dns_min_ttl?,
 
             dns_max_ttl: dns_max_ttl?,
+
+            dns_canonicalize_timeout,
         })
     }
 }
