@@ -13,6 +13,7 @@ pub mod retry;
 pub mod router;
 pub mod settings;
 pub mod upgrade;
+pub mod strip_header;
 
 pub use self::client::Client;
 pub use self::glue::{Error, HttpBody as Body, HyperServerSvc};

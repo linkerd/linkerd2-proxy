@@ -22,6 +22,7 @@ use proxy::{
     self, buffer,
     http::{
         client, insert_target, metrics as http_metrics, normalize_uri, profiles, router, settings,
+        strip_header,
     },
     limit, reconnect, timeout,
 };
@@ -420,6 +421,7 @@ where
                     .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(timeout::layer(config.bind_timeout))
                     .push(limit::layer(MAX_IN_FLIGHT))
+                    .push(strip_header::layer(super::DST_OVERRIDE_HEADER))
                     .push(router::layer(|req: &http::Request<_>| {
                         let addr = super::http_request_l5d_override_dst_addr(req)
                             .or_else(|_| super::http_request_authority_addr(req))
@@ -574,7 +576,8 @@ where
                 // the router need not detect whether a request _will be_ downgraded.
                 let source_stack = dst_router
                     .push(orig_proto_downgrade::layer())
-                    .push(insert_target::layer());
+                    .push(insert_target::layer())
+                    .push(strip_header::layer(super::DST_OVERRIDE_HEADER));
 
                 // As the inbound proxy accepts connections, we don't do any
                 // special transport-level handling.

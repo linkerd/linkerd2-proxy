@@ -16,7 +16,7 @@ pub use self::main::Main;
 use addr::{self, Addr};
 
 const CANONICAL_DST_HEADER: &'static str = "l5d-dst-canonical";
-const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";
+pub const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";
 
 pub fn init() -> Result<config::Config, config::Error> {
     use convert::TryFrom;
