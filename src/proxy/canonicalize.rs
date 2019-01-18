@@ -19,10 +19,6 @@ use dns;
 use svc;
 use {Addr, NameAddr};
 
-/// The amount of time to wait for a DNS query to succeed before falling back to
-/// an uncanonicalized address.
-const DEFAULT_TIMEOUT: Duration = Duration::from_millis(100);
-
 /// Duration to wait before polling DNS again after an error (or a NXDOMAIN
 /// response with no TTL).
 const DNS_ERROR_TTL: Duration = Duration::from_secs(3);
@@ -71,10 +67,10 @@ pub enum Error<M, S> {
 
 // FIXME the resolver should be abstracted to a trait so that this can be tested
 // without a real DNS service.
-pub fn layer(resolver: dns::Resolver) -> Layer {
+pub fn layer(resolver: dns::Resolver, timeout: Duration) -> Layer {
     Layer {
         resolver,
-        timeout: DEFAULT_TIMEOUT,
+        timeout,
     }
 }
 

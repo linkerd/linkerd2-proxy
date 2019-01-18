@@ -309,6 +309,7 @@ where
                 let endpoint_http_metrics = endpoint_http_metrics.clone();
                 let route_http_metrics = route_http_metrics.clone();
                 let profile_suffixes = config.destination_profile_suffixes.clone();
+                let canonicalize_timeout = config.dns_canonicalize_timeout;
 
                 // Establishes connections to remote peers (for both TCP
                 // forwarding and HTTP proxying).
@@ -402,7 +403,7 @@ where
                     .push(map_target::layer(|addr: &Addr| {
                         DstAddr::outbound(addr.clone())
                     }))
-                    .push(canonicalize::layer(dns_resolver));
+                    .push(canonicalize::layer(dns_resolver, canonicalize_timeout));
 
                 // Routes requests to an `Addr`:
                 //
