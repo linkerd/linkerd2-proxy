@@ -179,8 +179,8 @@ impl Future for Task {
                             State::ValidUntil(Delay::new(refine.valid_until))
                         }
                         Err(e) => {
-                            error!("failed to refine {}: {}", self.original.name(), e);
                             if self.resolved.is_none() {
+                                error!("failed to refine {}: {}", self.original.name(), e);
                                 let err = self.tx.try_send(self.original.clone()).err();
                                 if err.map(|e| e.is_disconnected()).unwrap_or(false) {
                                     return Ok(().into());
@@ -189,6 +189,8 @@ impl Future for Task {
                                 // Pretend the original name was resolved so
                                 // that we don't re-publish on subsequent errors.
                                 self.resolved = Some(self.original.clone());
+                            } else {
+                                warn!("failed to refine {}: {}, falling back", self.original.name(), e);
                             }
 
                             let valid_until = e
