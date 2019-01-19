@@ -13,11 +13,14 @@ pub mod retry;
 pub mod router;
 pub mod settings;
 pub mod upgrade;
+pub mod strip_header;
 
 pub use self::client::Client;
 pub use self::glue::{Error, HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
 
+use http::header::AsHeaderName;
+use http::uri::Authority;
 use svc::Either;
 
 pub trait HasH2Reason {
@@ -46,4 +49,20 @@ impl<A: HasH2Reason, B: HasH2Reason> HasH2Reason for Either<A, B> {
             Either::B(b) => b.h2_reason(),
         }
     }
+}
+
+/// Returns an Authority from the value of `header`.
+pub fn authority_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<Authority>
+where
+    K: AsHeaderName,
+{
+    req.headers().get(header).and_then(|value| {
+        value.to_str().ok().and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                s.parse::<Authority>().ok()
+            }
+        })
+    })
 }
