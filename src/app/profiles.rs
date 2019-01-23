@@ -224,6 +224,9 @@ fn convert_route(orig: api::Route, retry_budget: Option<&Arc<Budget>>) -> Option
     if orig.is_retryable {
         set_route_retry(&mut route, retry_budget);
     }
+    if let Some(timeout) = orig.timeout {
+        set_route_timeout(&mut route, timeout.into());
+    }
     Some((req_match, route))
 }
 
@@ -237,6 +240,17 @@ fn set_route_retry(route: &mut profiles::Route, retry_budget: Option<&Arc<Budget
     };
 
     route.set_retries(budget);
+}
+
+fn set_route_timeout(route: &mut profiles::Route, timeout: Result<Duration, Duration>) {
+    match timeout {
+        Ok(dur) => {
+            route.set_timeout(dur);
+        },
+        Err(_) => {
+            warn!("route timeout is negative: {:?}", route);
+        },
+    }
 }
 
 fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> {
@@ -330,15 +344,24 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
         warn!("retry_budget retry_ratio invalid: {:?}", retry_ratio);
         return None;
     }
-    let ttl = match orig.ttl?.into() {
-        Ok(dur) => {
-            if dur > Duration::from_secs(60) || dur < Duration::from_secs(1) {
-                warn!("retry_budget ttl invalid: {:?}", dur);
+    let ttl = match orig.ttl {
+        Some(pb_dur) => match pb_dur.into() {
+            Ok(dur) => {
+                if dur > Duration::from_secs(60) || dur < Duration::from_secs(1) {
+                    warn!("retry_budget ttl invalid: {:?}", dur);
+                    return None;
+                }
+                dur
+            },
+            Err(negative) => {
+                warn!("retry_budget ttl negative: {:?}", negative);
                 return None;
-            }
-            dur
+            },
         },
-        Err(_) => return None,
+        None => {
+            warn!("retry_budget ttl missing");
+            return None;
+        },
     };
 
     Some(Arc::new(Budget::new(ttl, min_retries, retry_ratio)))

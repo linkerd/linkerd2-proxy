@@ -114,6 +114,20 @@ fn grpc_internal_code() -> grpc::Error {
     grpc::Error::Grpc(grpc::Status::with_code(grpc::Code::Internal))
 }
 
+fn grpc_no_results() -> grpc::Error {
+    grpc::Error::Grpc(grpc::Status::with_code_and_message(
+        grpc::Code::Unavailable,
+        "unit test controller has no results".into()
+    ))
+}
+
+fn grpc_unexpected_request() -> grpc::Error {
+    grpc::Error::Grpc(grpc::Status::with_code_and_message(
+        grpc::Code::InvalidArgument,
+        "unit test controller expected different request".into()
+    ))
+}
+
 impl Stream for DstReceiver {
     type Item = pb::Update;
     type Error = grpc::Error;
@@ -166,10 +180,11 @@ impl pb::server::Destination for Controller {
                 }
 
                 calls.push_front((dst, updates));
+                return future::err(grpc_unexpected_request());
             }
         }
 
-        future::err(grpc_internal_code())
+        future::err(grpc_no_results())
     }
 
     type GetProfileStream = ProfileReceiver;
@@ -183,10 +198,11 @@ impl pb::server::Destination for Controller {
                 }
 
                 calls.push_front((dst, profile));
+                return future::err(grpc_unexpected_request());
             }
         }
 
-        future::err(grpc_internal_code())
+        future::err(grpc_no_results())
     }
 }
 
@@ -339,6 +355,7 @@ where
     pb::DestinationProfile {
         routes,
         retry_budget,
+        ..Default::default()
     }
 }
 
@@ -415,6 +432,11 @@ impl RouteBuilder {
 
     pub fn retryable(mut self, is: bool) -> Self {
         self.route.is_retryable = is;
+        self
+    }
+
+    pub fn timeout(mut self, dur: Duration) -> Self {
+        self.route.timeout = Some(dur.into());
         self
     }
 }

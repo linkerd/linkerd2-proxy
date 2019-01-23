@@ -1,8 +1,11 @@
+use std::borrow::Cow;
+
 use h2;
 use http;
 
 pub use proxy::http::metrics::classify::{self, layer, CanClassify};
 use proxy::http::profiles;
+use proxy::http::timeout;
 
 #[derive(Clone, Debug)]
 pub enum Request {
@@ -22,6 +25,7 @@ pub enum Eos {
     Default(http::StatusCode),
     Grpc(GrpcEos),
     Profile(Class),
+    Error(&'static str),
 }
 
 #[derive(Clone, Debug)]
@@ -34,7 +38,7 @@ pub enum GrpcEos {
 pub enum Class {
     Default(SuccessOrFailure),
     Grpc(SuccessOrFailure, u32),
-    Stream(SuccessOrFailure, String),
+    Stream(SuccessOrFailure, Cow<'static, str>),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -124,6 +128,10 @@ impl classify::ClassifyResponse for Response {
     type ClassifyEos = Eos;
 
     fn start<B>(self, rsp: &http::Response<B>) -> Eos {
+        if rsp.extensions().get::<timeout::ProxyTimedOut>().is_some() {
+            return Eos::Error("timeout");
+        }
+
         match self {
             Response::Default => grpc_class(rsp.headers())
                 .map(|c| Eos::Grpc(GrpcEos::NoBody(c)))
@@ -142,7 +150,7 @@ impl classify::ClassifyResponse for Response {
     }
 
     fn error(self, err: &h2::Error) -> Self::Class {
-        Class::Stream(SuccessOrFailure::Failure, format!("{}", err))
+        Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
     }
 }
 
@@ -165,11 +173,12 @@ impl classify::ClassifyEos for Eos {
                 .and_then(grpc_class)
                 .unwrap_or_else(|| Class::Grpc(SuccessOrFailure::Failure, 0)),
             Eos::Profile(class) => class,
+            Eos::Error(msg) => Class::Stream(SuccessOrFailure::Failure, msg.into())
         }
     }
 
     fn error(self, err: &h2::Error) -> Self::Class {
-        Class::Stream(SuccessOrFailure::Failure, format!("{}", err))
+        Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
     }
 }
 
@@ -186,6 +195,16 @@ fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
             };
             Class::Grpc(ok, grpc_status)
         })
+}
+
+fn h2_error(err: &h2::Error) -> String {
+    if let Some(reason) = err.reason() {
+        // This should output the error code in the same format as the spec,
+        // for example: PROTOCOL_ERROR
+        format!("h2({:?})", reason)
+    } else {
+        format!("h2({})", err)
+    }
 }
 
 // === impl Class ===

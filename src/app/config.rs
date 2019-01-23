@@ -91,9 +91,6 @@ pub struct Config {
     /// Age after which metrics may be dropped.
     pub metrics_retain_idle: Duration,
 
-    /// Timeout after which to cancel binding a request.
-    pub bind_timeout: Duration,
-
     pub namespaces: Namespaces,
 
     /// Optional minimum TTL for DNS lookups.
@@ -181,7 +178,6 @@ pub const ENV_METRICS_LISTENER: &str = "LINKERD2_PROXY_METRICS_LISTENER";
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
-pub const ENV_BIND_TIMEOUT: &str = "LINKERD2_PROXY_BIND_TIMEOUT";
 
 pub const DEPRECATED_ENV_PRIVATE_LISTENER: &str = "LINKERD2_PROXY_PRIVATE_LISTENER";
 pub const DEPRECATED_ENV_PRIVATE_FORWARD: &str = "LINKERD2_PROXY_PRIVATE_FORWARD";
@@ -270,7 +266,6 @@ const DEFAULT_METRICS_LISTENER: &str = "tcp://127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(20);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
-const DEFAULT_BIND_TIMEOUT: Duration = Duration::from_secs(10); // same as in Linkerd
 const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(5);
 const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
@@ -349,7 +344,6 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let tls_private_key = parse(strings, ENV_TLS_PRIVATE_KEY, parse_path);
         let tls_pod_identity_template = strings.get(ENV_TLS_POD_IDENTITY);
         let tls_controller_identity = strings.get(ENV_TLS_CONTROLLER_IDENTITY);
-        let bind_timeout = parse(strings, ENV_BIND_TIMEOUT, parse_duration);
         let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
         let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
         let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
@@ -502,8 +496,6 @@ impl<'a> TryFrom<&'a Strings> for Config {
             control_connect_timeout,
 
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
-
-            bind_timeout: bind_timeout?.unwrap_or(DEFAULT_BIND_TIMEOUT),
 
             namespaces,
 

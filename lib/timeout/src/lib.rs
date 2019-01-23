@@ -1,4 +1,5 @@
 extern crate futures;
+extern crate linkerd2_stack;
 extern crate tokio_connect;
 extern crate tokio_timer;
 extern crate tower_service as svc;
@@ -9,6 +10,8 @@ use tokio_timer as timer;
 use std::{error, fmt};
 use std::time::Duration;
 
+pub mod stack;
+
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]
 pub struct Timeout<T> {
@@ -16,17 +19,11 @@ pub struct Timeout<T> {
     duration: Duration,
 }
 
-
 /// An error representing that an operation timed out.
 #[derive(Debug)]
-pub struct Error<E> {
-    kind: ErrorKind<E>,
-}
-
-#[derive(Debug)]
-enum ErrorKind<E> {
+pub enum Error<E> {
     /// Indicates the underlying operation timed out.
-    Timeout (Duration),
+    Timeout(Duration),
     /// Indicates that the underlying operation failed.
     Error(E),
     // Indicates that the timer returned an error.
@@ -50,22 +47,19 @@ impl<T> Timeout<T> {
     }
 
     fn error<E>(&self, error: E) -> Error<E> {
-        Error {
-            kind: ErrorKind::Error(error),
-        }
+        Error::Error(error)
     }
 
     fn timeout_error<E>(&self, error: timer::timeout::Error<E>) -> Error<E> {
-        let kind = match error {
+        match error {
             _ if error.is_timer() =>
-                ErrorKind::Timer(error.into_timer()
+                Error::Timer(error.into_timer()
                     .expect("error.into_timer() must succeed if error.is_timer()")),
             _ if error.is_elapsed() =>
-                ErrorKind::Timeout(self.duration),
-            _ => ErrorKind::Error(error.into_inner()
+                Error::Timeout(self.duration),
+            _ => Error::Error(error.into_inner()
                 .expect("if error is not elapsed or timer, must be inner")),
-        };
-        Error { kind }
+        }
     }
 }
 
@@ -127,11 +121,11 @@ where
     E: fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.kind {
-            ErrorKind::Timeout(ref d) =>
+        match *self {
+            Error::Timeout(ref d) =>
                 write!(f, "operation timed out after {}", HumanDuration(*d)),
-            ErrorKind::Timer(ref err) => write!(f, "timer failed: {}", err),
-            ErrorKind::Error(ref err) => fmt::Display::fmt(err, f),
+            Error::Timer(ref err) => write!(f, "timer failed: {}", err),
+            Error::Error(ref err) => fmt::Display::fmt(err, f),
         }
     }
 }
@@ -141,18 +135,18 @@ where
     E: error::Error
 {
     fn cause(&self) -> Option<&error::Error> {
-        match self.kind {
-            ErrorKind::Error(ref err) => Some(err),
-            ErrorKind::Timer(ref err) => Some(err),
+        match *self {
+            Error::Error(ref err) => Some(err),
+            Error::Timer(ref err) => Some(err),
             _ => None,
         }
     }
 
     fn description(&self) -> &str {
-        match self.kind {
-            ErrorKind::Timeout(_) => "operation timed out",
-            ErrorKind::Error(ref err) => err.description(),
-            ErrorKind::Timer(ref err) => err.description(),
+        match *self {
+            Error::Timeout(_) => "operation timed out",
+            Error::Error(ref err) => err.description(),
+            Error::Timer(ref err) => err.description(),
         }
     }
 }
@@ -172,7 +166,6 @@ impl fmt::Display for HumanDuration {
 }
 
 impl From<Duration> for HumanDuration {
-
     #[inline]
     fn from(d: Duration) -> Self {
         HumanDuration(d)

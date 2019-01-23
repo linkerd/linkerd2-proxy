@@ -547,7 +547,7 @@ dependencies = [
  "linkerd2-fs-watch 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",
- "linkerd2-proxy-api 0.1.4 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=1ad7018)",
+ "linkerd2-proxy-api 0.1.4 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.5)",
  "linkerd2-router 0.1.0",
  "linkerd2-stack 0.1.0",
  "linkerd2-task 0.1.0",
@@ -557,8 +557,8 @@ dependencies = [
  "procinfo 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "prost 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "prost-types 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "quickcheck 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quickcheck 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ring 0.13.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -588,7 +588,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.4"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=1ad7018#1ad70188f9a6d94e2865413713a50390456fa6b6"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.5#d0ea16ababae239a9ac7d7d39a1e159e69e3d80e"
 dependencies = [
  "bytes 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -597,7 +597,8 @@ dependencies = [
  "prost 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "prost-derive 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "prost-types 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "quickcheck 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quickcheck 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-grpc 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
  "tower-grpc-build 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
 ]
@@ -640,6 +641,7 @@ name = "linkerd2-timeout"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-stack 0.1.0",
  "tokio-connect 0.1.0 (git+https://github.com/carllerche/tokio-connect)",
  "tokio-timer 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-service 0.2.0 (git+https://github.com/tower-rs/tower)",
@@ -902,6 +904,15 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "rand 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "quickcheck"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "rand 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand_core 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1797,7 +1808,7 @@ dependencies = [
 "checksum lazycell 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a6f08839bc70ef4a3fe1d566d5350f519c5912ea86be0df1740a7d247c7fc0ef"
 "checksum libc 0.2.40 (registry+https://github.com/rust-lang/crates.io-index)" = "6fd41f331ac7c5b8ac259b8bf82c75c0fb2e469bbf37d2becbba9a6a2221965b"
 "checksum linked-hash-map 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7860ec297f7008ff7a1e3382d7f7e1dcd69efc94751a2284bafc3d013c2aa939"
-"checksum linkerd2-proxy-api 0.1.4 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=1ad7018)" = "<none>"
+"checksum linkerd2-proxy-api 0.1.4 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.5)" = "<none>"
 "checksum log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "89f010e843f2b1a31dbd316b3b8d443758bc634bed37aabade59c686d644e0a2"
 "checksum lru-cache 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "4d06ff7ff06f729ce5f4e227876cb88d10bc59cd4ae1e09fbb2bde15c850dc21"
 "checksum matches 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "100aabe6b8ff4e4a7e32c1c13523379802df0772b82466207ac25b013f193376"
@@ -1828,6 +1839,7 @@ dependencies = [
 "checksum prost-types 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "5644c57d56bc085f9570e113495c1f08d7185beca700dcc296cb4672f380a679"
 "checksum quick-error 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "eda5fe9b71976e62bc81b781206aaa076401769b2143379d3eb2118388babac4"
 "checksum quickcheck 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "13f4460d3daa06eb1c4b9a3c55dffe65cb030dd70cf1bfdd482532f48ab24f74"
+"checksum quickcheck 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)" = "dd69f633f796e091acd9a53e093bf01745b2c10ba44d22ea788f5fcbb862b720"
 "checksum quote 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)" = "7a6e920b65c65f10b2ae65c831a81a073a89edd28c7cce89475bff467ab4167a"
 "checksum quote 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)" = "e44651a0dc4cdd99f71c83b561e221f714912d11af1a4dff0631f923d53af035"
 "checksum rand 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "eba5f8cb59cc50ed56be8880a5c7b496bfd9bd26394e176bc67884094145c2c5"

@@ -180,7 +180,7 @@ impl FmtLabels for classify::Class {
                 result, status
             ),
             Class::Stream(result, status) => {
-                write!(f, "classification=\"{}\",h2_err=\"{}\"", result, status)
+                write!(f, "classification=\"{}\",error=\"{}\"", result, status)
             }
         }
     }

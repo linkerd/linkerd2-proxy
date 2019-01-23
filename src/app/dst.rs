@@ -2,12 +2,14 @@ use http;
 use indexmap::IndexMap;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 use tower_retry::budget::Budget;
 
 use proxy::http::{
     metrics::classify::{CanClassify, Classify, ClassifyResponse, ClassifyEos},
     profiles,
     retry,
+    timeout,
 };
 use {Addr, NameAddr};
 
@@ -39,6 +41,7 @@ pub struct DstAddr {
 
 // === impl Route ===
 
+
 impl CanClassify for Route {
     type Classify = classify::Request;
 
@@ -58,6 +61,12 @@ impl retry::CanRetry for Route {
                 budget: retries.budget().clone(),
                 response_classes: self.route.response_classes().clone(),
             })
+    }
+}
+
+impl timeout::HasTimeout for Route {
+    fn timeout(&self) -> Option<Duration> {
+        self.route.timeout()
     }
 }
 

@@ -33,7 +33,7 @@ linkerd2-stack     = { path = "lib/stack" }
 linkerd2-task      = { path = "lib/task" }
 linkerd2-timeout   = { path = "lib/timeout" }
 
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "1ad7018", version = "0.1.4" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.5" }
 
 bytes = "0.4"
 env_logger = { version = "0.5", default-features = false }
@@ -48,7 +48,7 @@ log = "0.4.1"
 indexmap = "1.0.0"
 prost = "0.4.0"
 prost-types = "0.4.0"
-rand = "0.5.1"
+rand = "0.6"
 try-lock = "0.2"
 
 # for config parsing
@@ -88,10 +88,10 @@ procinfo = "0.4.2"
 
 [dev-dependencies]
 net2 = "0.2"
-quickcheck = { version = "0.6", default-features = false }
+quickcheck = { version = "0.8", default-features = false }
 linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
 linkerd2-task    = { path = "lib/task", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "1ad7018", version = "0.1.4", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.5" }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.
@@ -99,5 +99,8 @@ tokio-io = "0.1.6"
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.
+
+[profile.dev]
+debug = false
 [profile.test]
 debug = false
