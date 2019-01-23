@@ -5,7 +5,7 @@ use http::header::{TRANSFER_ENCODING, HeaderValue};
 use super::h1;
 use svc;
 
-const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
+pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 
 /// Upgrades HTTP requests from their original protocol to HTTP2.
 #[derive(Clone, Debug)]

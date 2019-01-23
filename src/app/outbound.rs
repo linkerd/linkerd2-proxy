@@ -251,6 +251,11 @@ pub mod orig_proto_upgrade {
 
         fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
             if endpoint.can_use_orig_proto() {
+                trace!(
+                    "supporting {} upgrades for endpoint={:?}",
+                    orig_proto::L5D_ORIG_PROTO,
+                    endpoint,
+                );
                 self.inner.make(&endpoint).map(|i| svc::Either::A(orig_proto::Upgrade::new(i)))
             } else {
                 self.inner.make(&endpoint).map(svc::Either::B)

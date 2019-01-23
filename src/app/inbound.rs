@@ -188,7 +188,11 @@ pub mod orig_proto_downgrade {
         type Error = M::Error;
 
         fn make(&self, target: &Source) -> Result<Self::Value, Self::Error> {
-            debug!("downgrading requests; source={:?}", target);
+            trace!(
+                "supporting {} downgrades for source={:?}",
+                orig_proto::L5D_ORIG_PROTO,
+                target,
+            );
             self.inner.make(&target).map(orig_proto::Downgrade::new)
         }
     }
