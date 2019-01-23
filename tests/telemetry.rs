@@ -896,6 +896,7 @@ mod transport {
 
     // linkerd/linkerd2#831
     #[test]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_duration() {
         let _ = env_logger_init();
         let TcpFixture { client, metrics, proxy: _proxy } =
@@ -1025,6 +1026,7 @@ mod transport {
     }
 
     #[test]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn outbound_tcp_duration() {
         let _ = env_logger_init();
         let TcpFixture { client, metrics, proxy: _proxy } =
