@@ -167,7 +167,7 @@ where
     type Error = M::Error;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        debug!("make: target={:?}", target);
+        trace!("make: target={:?}", target);
         let inner = self.inner.make(target)?;
 
         let metrics = match self.registry.lock() {
@@ -180,7 +180,7 @@ where
             Err(_) => None,
         };
 
-        debug!("make: metrics={}", metrics.is_some());
+        trace!("make: metrics={}", metrics.is_some());
         Ok(Service {
             metrics,
             inner,

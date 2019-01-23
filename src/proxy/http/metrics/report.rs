@@ -64,7 +64,7 @@ where
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        debug!("fmt_metrics");
+        trace!("fmt_metrics");
         let mut registry = match self.registry.lock() {
             Err(_) => return Ok(()),
             Ok(r) => r,
@@ -72,11 +72,11 @@ where
 
         let now = clock::now();
         let since = now - self.retain_idle;
-        debug!("fmt_metrics: retain_since: now={:?} since={:?}", now, since);
+        trace!("fmt_metrics: retain_since: now={:?} since={:?}", now, since);
         registry.retain_since(since);
 
         let registry = registry;
-        debug!("fmt_metrics: by_target={}", registry.by_target.len());
+        trace!("fmt_metrics: by_target={}", registry.by_target.len());
         if registry.by_target.is_empty() {
             return Ok(());
         }
