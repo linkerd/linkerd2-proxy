@@ -369,6 +369,11 @@ impl RouteBuilder {
         self
     }
 
+    pub fn label(mut self, key: &str, val: &str) -> Self {
+        self.route.metrics_labels.insert(key.into(), val.into());
+        self
+    }
+
     fn response_class(mut self, condition: pb::ResponseMatch, is_failure: bool) -> Self {
         self.route.response_classes.push(pb::ResponseClass {
             condition: Some(condition),

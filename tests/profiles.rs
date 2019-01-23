@@ -32,6 +32,8 @@ macro_rules! profile_test {
         let host = "profiles.test.svc.cluster.local";
 
         let srv = server::$http()
+            // This route is just called by the test setup, to trigger the proxy
+            // to start fetching the ServiceProfile.
             .route_fn("/load-profile", |_| {
                 Response::builder()
                     .status(201)
@@ -85,9 +87,16 @@ macro_rules! profile_test {
         dst_tx.send_addr(srv.addr);
 
         let profile_tx = ctrl.profile_tx(host);
-        let routes = vec![$(
-            $route,
-        ),+];
+        let routes = vec![
+            // This route is used to get the proxy to start fetching the
+            // ServiceProfile. We'll keep GETting this route and checking
+            // the metrics for the labels, to know that the other route
+            // rules are now in place and the test can proceed.
+            controller::route()
+                .request_path("/load-profile")
+                .label("load_profile", "test"),
+            $($route,),+
+        ];
         profile_tx.send(controller::profile(routes, $budget));
 
         let ctrl = ctrl.run();
@@ -97,11 +106,22 @@ macro_rules! profile_test {
             .run();
 
         let client = client::$http(proxy.outbound, host);
-        assert_eq!(client.get("/load-profile"), "");
+
+        let metrics = client::http1(proxy.metrics, "localhost");
+
+        // Poll metrics until we recognize the profile is loaded...
+        loop {
+            assert_eq!(client.get("/load-profile"), "");
+            let m = metrics.get("/metrics");
+            if m.contains("rt_load_profile=\"test\"") {
+                break;
+            }
+
+            ::std::thread::sleep(::std::time::Duration::from_millis(200));
+        }
 
         $with_client(client);
 
-        let metrics = client::http1(proxy.metrics, "localhost");
         $with_metrics(metrics);
     }
 }
