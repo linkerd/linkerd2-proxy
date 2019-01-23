@@ -214,3 +214,80 @@ impl fmt::Display for HumanDuration {
         }
     }
 }
+
+pub trait FutureWaitExt: Future {
+    fn wait_timeout(self, dur: Duration) -> Result<Self::Item, Waited<Self::Error>>
+    where
+        Self: Sized,
+    {
+        use std::sync::Arc;
+        use std::time::Instant;
+        use std::thread;
+
+        struct ThreadNotify(thread::Thread);
+
+        impl futures::executor::Notify for ThreadNotify {
+            fn notify(&self, _id: usize) {
+                self.0.unpark();
+            }
+        }
+
+        let deadline = Instant::now() + dur;
+        let mut task = futures::executor::spawn(self);
+        let notify = Arc::new(ThreadNotify(thread::current()));
+
+        loop {
+            match task.poll_future_notify(&notify, 0)? {
+                Async::Ready(val) => return Ok(val),
+                Async::NotReady => {
+                    let now = Instant::now();
+                    if now >= deadline {
+                        return Err(Waited::TimedOut);
+                    }
+
+                    thread::park_timeout(deadline - now);
+                },
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Waited<E> {
+    Error(E),
+    TimedOut,
+}
+
+impl<E> From<E> for Waited<E> {
+    fn from(err: E) -> Waited<E> {
+        Waited::Error(err)
+    }
+}
+
+impl<E: fmt::Display> fmt::Display for Waited<E> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Waited::Error(ref e) => fmt::Display::fmt(e, fmt),
+            Waited::TimedOut => fmt.write_str("wait timed out"),
+        }
+    }
+}
+
+impl<T: Future> FutureWaitExt for T {}
+
+pub trait ResultWaitedExt {
+    fn expect_timedout(self, msg: &str);
+}
+
+
+impl<T: fmt::Debug, E: fmt::Debug> ResultWaitedExt for Result<T, Waited<E>> {
+    fn expect_timedout(self, msg: &str) {
+        match self {
+            Ok(val) => panic!("{}; expected TimedOut, was Ok({:?})", msg, val),
+            Err(Waited::Error(err)) => {
+                panic!("{}; expected TimedOut, was Error({:?})", msg, err);
+            }
+            Err(Waited::TimedOut) => (),
+        }
+    }
+}

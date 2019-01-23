@@ -1,4 +1,5 @@
 pub extern crate linkerd2_stack as stack;
+pub extern crate linkerd2_timeout;
 extern crate tower_service;
 extern crate tower_util;
 
@@ -13,3 +14,5 @@ pub use self::stack::{
     Layer,
     Stack,
 };
+
+pub use self::linkerd2_timeout::stack as timeout;

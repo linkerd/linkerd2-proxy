@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use regex::Regex;
 use std::iter::FromIterator;
 use std::sync::Arc;
+use std::time::Duration;
 use tower_retry::budget::Budget;
 
 use never::Never;
@@ -42,6 +43,7 @@ pub struct Route {
     labels: Arc<IndexMap<String, String>>,
     response_classes: ResponseClasses,
     retries: Option<Retries>,
+    timeout: Option<Duration>,
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +96,7 @@ impl Route {
             labels,
             response_classes: response_classes.into(),
             retries: None,
+            timeout: None,
         }
     }
 
@@ -109,10 +112,18 @@ impl Route {
         self.retries.as_ref()
     }
 
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+
     pub fn set_retries(&mut self, budget: Arc<Budget>) {
         self.retries = Some(Retries {
             budget,
         });
+    }
+
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = Some(timeout);
     }
 }
 

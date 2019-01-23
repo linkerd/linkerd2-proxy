@@ -49,9 +49,10 @@ macro_rules! generate_outbound_dns_limit_test {
             let client = $make_client(proxy.outbound, "disco3.test.svc.cluster.local");
             println!("trying 3rd destination...");
             let mut req = client.request_builder("/");
-            let rsp = client.request(req.method("GET"));
-            // The request should fail.
-            assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+            client
+                .request_async(req.method("GET"))
+                .wait_timeout(Duration::from_secs(1))
+                .expect_timedout("request should wait for destination capacity");
 
             // However, a request for a DNS name that _doesn't_ go through the
             // Destination service should not be affected by the limit.
@@ -97,12 +98,13 @@ macro_rules! generate_tests {
             // lower than the total router capacity, so we can reach the
             // maximum number of destinations before we start evicting
             // routes.
-            env.put(app::config::ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT, "10".to_owned());
-            env.put(app::config::ENV_OUTBOUND_ROUTER_CAPACITY, "11".to_owned());
+            let num_dests = 4;
+            env.put(app::config::ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT, (num_dests - 1).to_string());
+            env.put(app::config::ENV_OUTBOUND_ROUTER_CAPACITY, num_dests.to_string());
             env.put(app::config::ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, "1s".to_owned());
 
             let ctrl = controller::new();
-            let _txs = (1..=11).map(|n| {
+            let _txs = (1..=num_dests).map(|n| {
                 let disco_n = format!("disco{}.test.svc.cluster.local", n);
                 let tx = ctrl.destination_tx(&disco_n);
                 tx.send_addr(srv_addr);
@@ -114,9 +116,9 @@ macro_rules! generate_tests {
                 .outbound(srv)
                 .run_with_test_env(env);
 
-            // Make ten requests that go through service discovery, to reach the
+            // Make requests that go through service discovery, to reach the
             // maximum number of Destination resolutions.
-            for n in 1..=10 {
+            for n in 1..num_dests {
                 let route = format!("disco{}.test.svc.cluster.local", n);
                 let client = $make_client(proxy.outbound, route);
                 println!("trying {}th destination...", n);
@@ -128,12 +130,14 @@ macro_rules! generate_tests {
             // route cache capacity, so we won't start evicting inactive
             // routes yet, and their Destination resolutions will remain
             // active.
-            let client = $make_client(proxy.outbound, "disco11.test.svc.cluster.local");
-            println!("trying 11th destination...");
+            let nth_host = format!("disco{}.test.svc.cluster.local", num_dests);
+            let client = $make_client(proxy.outbound, &*nth_host);
+            println!("trying {}th destination...", num_dests);
             let mut req = client.request_builder("/");
-            let rsp = client.request(req.method("GET"));
-            // The request should fail.
-            assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+            client
+                .request_async(req.method("GET"))
+                .wait_timeout(Duration::from_secs(1))
+                .expect_timedout("request should wait for destination capacity");
 
             // TODO: The controller should also assert the proxy doesn't make
             // requests when it has hit the maximum number of resolutions.
@@ -152,8 +156,8 @@ macro_rules! generate_tests {
             // requests that add a new route will evict an inactive route. This
             // should drop their Destination resolutions, so we should now be
             // able to open a new one.
-            println!("trying 11th destination again...");
-            let client = $make_client(proxy.outbound, "disco11.test.svc.cluster.local");
+            println!("trying {}th destination again...", num_dests);
+            let client = $make_client(proxy.outbound, &*nth_host);
             assert_eq!(client.get("/"), "hello");
         }
 
@@ -175,38 +179,31 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_destinations_reset_on_reconnect_followed_by_no_endpoints_exists() {
-            outbound_destinations_reset_on_reconnect(move || {
-                Some(controller::destination_exists_with_no_endpoints())
-            })
+            outbound_destinations_reset_on_reconnect(
+                controller::destination_exists_with_no_endpoints()
+            )
         }
 
         #[test]
         fn outbound_destinations_reset_on_reconnect_followed_by_add_none() {
-            outbound_destinations_reset_on_reconnect(move || {
-                Some(controller::destination_add_none())
-            })
+            outbound_destinations_reset_on_reconnect(
+                controller::destination_add_none()
+            )
         }
 
         #[test]
         fn outbound_destinations_reset_on_reconnect_followed_by_remove_none() {
-            outbound_destinations_reset_on_reconnect(move || {
-                Some(controller::destination_remove_none())
-            })
+            outbound_destinations_reset_on_reconnect(
+                controller::destination_remove_none()
+            )
         }
 
         fn init_env() -> app::config::TestEnv {
             let _ = env_logger_init();
-            let mut env = app::config::TestEnv::new();
-
-            // The bind timeout must be high enough to allow a DNS timeout.
-            env.put(app::config::ENV_BIND_TIMEOUT, "1s".to_owned());
-
-            env
+            app::config::TestEnv::new()
         }
 
-        fn outbound_destinations_reset_on_reconnect<F>(f: F)
-            where F: Fn() -> Option<pb::destination::Update> + Send + 'static
-        {
+        fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update) {
             use std::thread;
 
             let env = init_env();
@@ -228,22 +225,22 @@ macro_rules! generate_tests {
             assert_eq!(initially_exists.get("/"), "hello");
 
             drop(dst_tx0); // trigger reconnect
-            match f() {
-                None => drop(dst_tx1),
-                Some(up) => dst_tx1.send(up),
-            }
+            dst_tx1.send(up);
 
             // Wait for the reconnect to happen. TODO: Replace this flaky logic.
             thread::sleep(Duration::from_millis(1000));
 
-            // This will time out since there are no endpoints.
+
+            // This would wait since there are no endpoints.
             let mut req = initially_exists.request_builder("/");
-            let rsp = initially_exists.request(req.method("GET"));
-            // the request should time out
-            assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+            initially_exists
+                .request_async(req.method("GET"))
+                .wait_timeout(Duration::from_secs(1))
+                .expect_timedout("request should wait for destination capacity");
         }
 
         #[test]
+        #[ignore] //TODO: there's currently no destination-acquisition timeout...
         fn outbound_times_out() {
             let env = init_env();
 

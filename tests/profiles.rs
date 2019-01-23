@@ -40,6 +40,13 @@ macro_rules! profile_test {
                     .body("".into())
                     .unwrap()
             })
+            .route_fn("/1.0/sleep",  move |_req| {
+                ::std::thread::sleep(Duration::from_secs(1));
+                Response::builder()
+                    .status(200)
+                    .body("slept".into())
+                    .unwrap()
+            })
             .route_fn("/0.5",  move |_req| {
                 if counter.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
                     Response::builder()
@@ -309,5 +316,27 @@ fn http2_failures_dont_leak_connection_window() {
             assert_eq!(client.get("/0.5/100KB"), "retried");
         },
         with_metrics: |_m| {}
+    }
+}
+
+#[test]
+fn timeout() {
+    profile_test! {
+        routes: [
+            controller::route()
+                .request_any()
+                .timeout(Duration::from_millis(100))
+        ],
+        budget: None,
+        with_client: |client: client::Client| {
+            let res = client.request(&mut client.request_builder("/1.0/sleep"));
+            assert_eq!(res.status(), 504);
+        },
+        with_metrics: |metrics: client::Client| {
+            assert_eventually_contains!(
+                metrics.get("/metrics"),
+                "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",status_code=\"504\",classification=\"failure\",error=\"timeout\"} 1"
+            );
+        }
     }
 }

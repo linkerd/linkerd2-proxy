@@ -315,6 +315,7 @@ impl TryFrom<observe_request::match_::Http> for HttpMatch {
 mod tests {
     use ipnet::{Contains, Ipv4Net, Ipv6Net};
     use quickcheck::*;
+    use rand::Rng;
     use std::collections::HashMap;
 
     use super::*;

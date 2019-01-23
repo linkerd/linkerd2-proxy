@@ -4,7 +4,6 @@ use std::io;
 use std::sync::Mutex;
 
 use self::futures::{
-    future::Executor,
     sync::{mpsc, oneshot},
 };
 use self::tokio::{
@@ -129,6 +128,7 @@ impl Client {
     }
 }
 
+#[derive(Debug)]
 enum Run {
     Http1 {
         absolute_uris: bool,
@@ -140,9 +140,13 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
     let (tx, rx) = mpsc::unbounded::<(Request, oneshot::Sender<Result<Response, String>>)>();
     let (running_tx, running_rx) = running();
 
-    ::std::thread::Builder::new()
-        .name("support client".into())
-        .spawn(move || {
+    let tname = format!(
+        "support {:?} server (test={})",
+        version,
+        thread_name(),
+    );
+
+    ::std::thread::Builder::new().name(tname).spawn(move || {
         let mut runtime = runtime::current_thread::Runtime::new()
             .expect("initialize support client runtime");
 
@@ -175,13 +179,13 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
                 let _ = cb.send(result);
                 Ok(())
             });
-            current_thread::TaskExecutor::current().execute(fut)
-                .map_err(|e| println!("client spawn error: {:?}", e))
+            tokio::spawn(fut);
+            Ok(())
         })
             .map_err(|e| println!("client error: {:?}", e));
 
         runtime.block_on(work).expect("support client runtime");
-    }).unwrap();
+    }).expect("thread spawn");
     (tx, running_rx)
 }
 

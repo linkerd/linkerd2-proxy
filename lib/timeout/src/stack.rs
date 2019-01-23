@@ -1,9 +1,15 @@
-// TODO move to `timeout` crate.
-
 use std::time::Duration;
 
-use svc;
-pub use timeout::Timeout;
+use linkerd2_stack as svc;
+use super::Timeout;
+
+/// Creates a layer that *always* applies the timeout to every request.
+///
+/// As this is protocol-agnostic, timeouts are signaled via an error on
+/// the future.
+pub fn layer(timeout: Duration) -> Layer {
+    Layer { timeout }
+}
 
 #[derive(Clone, Debug)]
 pub struct Layer {
@@ -14,10 +20,6 @@ pub struct Layer {
 pub struct Stack<M> {
     inner: M,
     timeout: Duration,
-}
-
-pub fn layer(timeout: Duration) -> Layer {
-    Layer { timeout }
 }
 
 impl<T, M> svc::Layer<T, T, M> for Layer
@@ -44,7 +46,7 @@ where
     type Error = M::Error;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(&target)?;
+        let inner = self.inner.make(target)?;
         Ok(Timeout::new(inner, self.timeout))
     }
 }
