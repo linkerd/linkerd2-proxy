@@ -193,12 +193,10 @@ pub mod inotify {
 
     impl WatchStream {
         pub fn new(paths: Vec<PathBuf>) -> Result<Self, io::Error> {
-            // XXX: this is unfortunately now necessary due to
-            // https://github.com/inotify-rs/inotify/issues/120
-            static mut BUF: [u8; 32] = [0; 32];
+            let mut buf = Box::new([0u8; 32]);
 
             let mut inotify = Inotify::init()?;
-            let stream = inotify.event_stream(unsafe { &mut BUF });
+            let stream = inotify.event_stream(&mut buf[..]);
 
             let mut watch_stream = WatchStream {
                 inotify,
