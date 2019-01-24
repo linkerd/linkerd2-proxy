@@ -182,7 +182,7 @@ pub mod inotify {
 
     pub struct WatchStream {
         inotify: Inotify,
-        stream: EventStream<'static>,
+        stream: EventStream<[u8; 32]>,
         paths: Vec<PathBuf>,
     }
 
@@ -193,10 +193,8 @@ pub mod inotify {
 
     impl WatchStream {
         pub fn new(paths: Vec<PathBuf>) -> Result<Self, io::Error> {
-            let mut buf = Box::new([0u8; 32]);
-
             let mut inotify = Inotify::init()?;
-            let stream = inotify.event_stream(&mut buf[..]);
+            let stream = inotify.event_stream([0; 32]);
 
             let mut watch_stream = WatchStream {
                 inotify,
