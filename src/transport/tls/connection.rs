@@ -11,7 +11,7 @@ use transport::{AddrInfo, io::internal::Io, prefixed::Prefixed};
 use super::{
     identity::Identity,
     rustls,
-    tokio_rustls::{self, ClientConfigExt, ServerConfigExt, TlsStream},
+    tokio_rustls::{self, TlsAcceptor, TlsConnector, TlsStream},
 
     ClientConfig,
     ServerConfig,
@@ -46,19 +46,19 @@ impl<C, S, F> Future for UpgradeToTls<S, C, F>
 }
 
 pub type UpgradeClientToTls =
-    UpgradeToTls<TcpStream, rustls::ClientSession, tokio_rustls::ConnectAsync<TcpStream>>;
+    UpgradeToTls<TcpStream, rustls::ClientSession, tokio_rustls::Connect<TcpStream>>;
 
 pub type UpgradeServerToTls =
     UpgradeToTls<
         Prefixed<TcpStream>,
         rustls::ServerSession,
-        tokio_rustls::AcceptAsync<Prefixed<TcpStream>>>;
+        tokio_rustls::Accept<Prefixed<TcpStream>>>;
 
 impl Connection<TcpStream, rustls::ClientSession> {
     pub fn connect(socket: TcpStream, identity: &Identity, ClientConfig(config): ClientConfig)
         -> UpgradeClientToTls
     {
-        UpgradeToTls(config.connect_async(identity.as_dns_name_ref(), socket))
+        UpgradeToTls(TlsConnector::from(config).connect(identity.as_dns_name_ref(), socket))
     }
 }
 
@@ -66,7 +66,7 @@ impl Connection<Prefixed<TcpStream>, rustls::ServerSession> {
     pub fn accept(socket: TcpStream, prefix: Bytes, ServerConfig(config): ServerConfig)
                   -> UpgradeServerToTls
     {
-        UpgradeToTls(config.accept_async(Prefixed::new(prefix, socket)))
+        UpgradeToTls(TlsAcceptor::from(config).accept(Prefixed::new(prefix, socket)))
     }
 }
 
