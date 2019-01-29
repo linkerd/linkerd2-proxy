@@ -280,6 +280,11 @@ where
         // This channel is used to move the task.
         let (resolver_bg_tx, resolver_bg_rx) = futures::sync::oneshot::channel();
 
+        let proxy_id = match config.tls_settings {
+            Conditional::Some(ref settings) => settings.pod_identity.as_ref().to_string(),
+            Conditional::None(_) => String::new(),
+        };
+
         // Build the outbound and inbound proxies using the controller client.
         let main_fut = controller_fut.and_then(move |controller| {
             let (resolver, resolver_bg) = control::destination::new(
@@ -288,13 +293,15 @@ where
                 config.namespaces.clone(),
                 config.destination_get_suffixes,
                 config.destination_concurrency_limit,
+                proxy_id.clone(),
             );
             resolver_bg_tx
                 .send(resolver_bg)
                 .ok()
                 .expect("admin thread must receive resolver task");
 
-            let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3));
+
+            let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3), proxy_id);
 
             let outbound = {
                 use super::outbound::{discovery::Resolve, orig_proto_upgrade, server_id, Endpoint};
