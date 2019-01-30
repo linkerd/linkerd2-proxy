@@ -316,6 +316,37 @@ pub fn destination_add_labeled(
     }
 }
 
+pub fn destination_add_tls(
+    addr: SocketAddr,
+    pod: &str,
+    controller_ns: &str,
+) -> pb::Update {
+    pb::Update {
+        update: Some(pb::update::Update::Add(
+            pb::WeightedAddrSet {
+                addrs: vec![
+                    pb::WeightedAddr {
+                        addr: Some(net::TcpAddress {
+                            ip: Some(ip_conv(addr.ip())),
+                            port: u32::from(addr.port()),
+                        }),
+                        tls_identity: Some(pb::TlsIdentity {
+                            strategy: Some(pb::tls_identity::Strategy::K8sPodIdentity(
+                                pb::tls_identity::K8sPodIdentity {
+                                    pod_identity: pod.into(),
+                                    controller_ns: controller_ns.into(),
+                                }
+                            )),
+                        }),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        )),
+    }
+}
+
 pub fn destination_add_none() -> pb::Update {
     pb::Update {
         update: Some(pb::update::Update::Add(

@@ -72,3 +72,7 @@ impl fmt::Display for Status {
     }
 }
 
+/// Fetch the `tls::Status` of this type.
+pub trait HasStatus {
+    fn tls_status(&self) -> Status;
+}

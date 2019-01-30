@@ -263,3 +263,167 @@ pub mod orig_proto_upgrade {
         }
     }
 }
+
+/// Adds `l5d-server-id` headers to http::Responses derived from the
+/// TlsIdentity of an `Endpoint`.
+pub mod server_id {
+    use std::marker::PhantomData;
+
+    use futures::{Future, Poll};
+    use http::{self, header::HeaderValue};
+
+    use super::Endpoint;
+    use Conditional;
+    use proxy::http::ClientUsedTls;
+    use svc;
+
+    #[derive(Debug)]
+    pub struct Layer<B>(PhantomData<fn() -> B>);
+
+    #[derive(Debug)]
+    pub struct Stack<M, B> {
+        inner: M,
+        _marker: PhantomData<fn() -> B>,
+    }
+
+    #[derive(Debug)]
+    pub struct Service<S, B> {
+        inner: S,
+        value: HeaderValue,
+        _marker: PhantomData<fn() -> B>,
+    }
+
+    pub struct ResponseFuture<F> {
+        inner: F,
+        value: HeaderValue,
+    }
+
+
+    pub fn layer<B>() -> Layer<B> {
+        Layer(PhantomData)
+    }
+
+    impl<B> Clone for Layer<B> {
+        fn clone(&self) -> Self {
+            Layer(PhantomData)
+        }
+    }
+
+    impl<M, B> svc::Layer<Endpoint, Endpoint, M> for Layer<B>
+    where
+        M: svc::Stack<Endpoint>,
+    {
+        type Value = <Stack<M, B> as svc::Stack<Endpoint>>::Value;
+        type Error = <Stack<M, B> as svc::Stack<Endpoint>>::Error;
+        type Stack = Stack<M, B>;
+
+        fn bind(&self, inner: M) -> Self::Stack {
+            Stack {
+                inner,
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    // === impl Stack ===
+
+    impl<M: Clone, B> Clone for Stack<M, B> {
+        fn clone(&self) -> Self {
+            Stack {
+                inner: self.inner.clone(),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<M, B> svc::Stack<Endpoint> for Stack<M, B>
+    where
+        M: svc::Stack<Endpoint>,
+    {
+        type Value = svc::Either<Service<M::Value, B>, M::Value>;
+        type Error = M::Error;
+
+        fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
+            let svc = self.inner.make(endpoint)?;
+
+            if endpoint.connect.tls.is_some() {
+                match endpoint.metadata.tls_identity() {
+                    Conditional::Some(id) => match HeaderValue::from_str(id.as_ref()) {
+                        Ok(value) => {
+                            debug!("l5d-server-id enabled for {:?}", endpoint);
+                            return Ok(svc::Either::A(Service {
+                                inner: svc,
+                                value,
+                                _marker: PhantomData,
+                            }));
+                        },
+                        Err(_err) => {
+                            warn!("l5d-server-id identity header is invalid: {:?}", endpoint);
+                        }
+                    },
+                    Conditional::None(why) => {
+                        error!("endpoint tls is some, but no identity ({:?}): {:?}", why, endpoint);
+
+                        // This is a bug, so panic in tests!
+                        if cfg!(debug_assertions) {
+                            panic!("endpoint tls is some, but no identity ({:?}): {:?}", why, endpoint);
+                        }
+                    },
+                }
+            }
+
+            trace!("l5d-server-id not enabled for {:?}", endpoint);
+            Ok(svc::Either::B(svc))
+        }
+    }
+
+    // === impl Service ===
+
+    impl<S: Clone, B> Clone for Service<S, B> {
+        fn clone(&self) -> Self {
+            Service {
+                inner: self.inner.clone(),
+                value: self.value.clone(),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<S, B, Req> svc::Service<Req> for Service<S, B>
+    where
+        S: svc::Service<Req, Response = http::Response<B>>,
+    {
+        type Response = S::Response;
+        type Error = S::Error;
+        type Future = ResponseFuture<S::Future>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, req: Req) -> Self::Future {
+            let fut = self.inner.call(req);
+
+            ResponseFuture {
+                inner: fut,
+                value: self.value.clone(),
+            }
+        }
+    }
+
+    impl<F, B> Future for ResponseFuture<F>
+    where
+        F: Future<Item = http::Response<B>>,
+    {
+        type Item = F::Item;
+        type Error = F::Error;
+
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            let mut res = try_ready!(self.inner.poll());
+            if res.extensions().get::<ClientUsedTls>().is_some() {
+                res.headers_mut().insert(super::super::L5D_SERVER_ID, self.value.clone());
+            }
+            Ok(res.into())
+        }
+    }
+}
