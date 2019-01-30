@@ -62,7 +62,6 @@ impl fmt::Display for Status {
         let s = match *self {
             Conditional::Some(()) => "true",
             Conditional::None(ReasonForNoTls::NoConfig) => "no_config",
-            Conditional::None(ReasonForNoTls::HandshakeFailed) => "handshake_failed",
             Conditional::None(ReasonForNoTls::Disabled) => "disabled",
             Conditional::None(ReasonForNoTls::InternalTraffic) => "internal_traffic",
             Conditional::None(ReasonForNoTls::NoIdentity(_)) => "no_identity",
