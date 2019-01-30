@@ -108,4 +108,4 @@ debug = false
 
 [patch.crates-io]
 prost-build = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
-inotify = { git = "https://github.com/hawkw/inotify", branch = "eliza/more-flexible-event-stream", rev = "a2d73d61ba61e993b71053e06b9dfe6bc848ef61" }
+inotify = { git = "https://github.com/hawkw/inotify", rev = "a2d73d61ba61e993b71053e06b9dfe6bc848ef61" }

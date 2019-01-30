@@ -1873,7 +1873,7 @@ dependencies = [
 [[patch.unused]]
 name = "inotify"
 version = "0.6.2-dev"
-source = "git+https://github.com/hawkw/inotify?branch=eliza/more-flexible-event-stream#a2d73d61ba61e993b71053e06b9dfe6bc848ef61"
+source = "git+https://github.com/hawkw/inotify?rev=a2d73d61ba61e993b71053e06b9dfe6bc848ef61#a2d73d61ba61e993b71053e06b9dfe6bc848ef61"
 
 [metadata]
 "checksum adler32 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "6cbd0b9af8587c72beadc9f72d35b9fbb070982c9e6203e46e93f10df25f8f45"
