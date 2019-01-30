@@ -119,7 +119,7 @@ impl From<tls::ConfigError> for Status {
             },
             tls::ConfigError::FailedToParseTrustAnchors(_) => Status::InvalidTrustAnchors,
             tls::ConfigError::EndEntityCertIsNotValid(_) => Status::InvalidEndEntityCert,
-            tls::ConfigError::InvalidPrivateKey => Status::InvalidPrivateKey,
+            tls::ConfigError::InvalidPrivateKey(_) => Status::InvalidPrivateKey,
         }
     }
 }

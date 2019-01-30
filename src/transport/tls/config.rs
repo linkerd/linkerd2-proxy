@@ -114,9 +114,6 @@ pub enum ReasonForNoTls {
     /// The connection isn't TLS or it is TLS but not intended to be handled
     /// by the proxy.
     NotProxyTls,
-
-    /// We fell back to plaintext because the TLS handshake failed.
-    HandshakeFailed,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -181,7 +178,7 @@ pub enum Error {
     Io(PathBuf, Option<i32>),
     FailedToParseTrustAnchors(Option<webpki::Error>),
     EndEntityCertIsNotValid(rustls::TLSError),
-    InvalidPrivateKey,
+    InvalidPrivateKey(ring::error::KeyRejected),
 }
 
 impl CommonSettings {
@@ -494,7 +491,7 @@ fn set_common_settings(versions: &mut Vec<rustls::ProtocolVersion>) {
 }
 
 // Keep these in sync.
-pub(super) static SIGNATURE_ALG_RING_SIGNING: &signature::SigningAlgorithm =
+pub(super) static SIGNATURE_ALG_RING_SIGNING: &signature::EcdsaSigningAlgorithm =
     &signature::ECDSA_P256_SHA256_ASN1_SIGNING;
 pub(super) const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
     rustls::SignatureScheme::ECDSA_NISTP256_SHA256;

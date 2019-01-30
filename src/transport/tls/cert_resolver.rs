@@ -33,7 +33,7 @@ struct SigningKey {
 
 #[derive(Clone)]
 struct Signer {
-    private_key: Arc<signature::KeyPair>,
+    private_key: Arc<signature::EcdsaKeyPair>,
 }
 
 impl CertResolver {
@@ -53,8 +53,8 @@ impl CertResolver {
         -> Result<Self, config::Error>
     {
         let private_key =
-                signature::key_pair_from_pkcs8(config::SIGNATURE_ALG_RING_SIGNING, private_key)
-            .map_err(|ring::error::Unspecified| config::Error::InvalidPrivateKey)?;
+                signature::EcdsaKeyPair::from_pkcs8(config::SIGNATURE_ALG_RING_SIGNING, private_key)
+            .map_err(config::Error::InvalidPrivateKey)?;
 
         let signer = Signer { private_key: Arc::new(private_key) };
         let signing_key = SigningKey { signer };
@@ -149,7 +149,7 @@ impl rustls::sign::SigningKey for SigningKey {
 impl rustls::sign::Signer for Signer {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::TLSError> {
         let rng = rand::SystemRandom::new();
-        signature::sign(&self.private_key, &rng, untrusted::Input::from(message))
+        self.private_key.sign(&rng, untrusted::Input::from(message))
             .map(|signature| signature.as_ref().to_owned())
             .map_err(|ring::error::Unspecified|
                 rustls::TLSError::General("Signing Failed".to_owned()))
