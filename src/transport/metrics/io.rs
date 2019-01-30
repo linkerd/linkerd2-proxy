@@ -3,7 +3,7 @@ use futures::{Async, Future, Poll};
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use transport::{connect, Peek};
+use transport::{connect, Peek, tls};
 
 use super::{NewSensor, Sensor, Eos};
 
@@ -107,6 +107,12 @@ impl<T: AsyncRead + AsyncWrite + Peek> Peek for Io<T> {
 
     fn peeked(&self) -> &[u8] {
         self.io.peeked()
+    }
+}
+
+impl<T: tls::HasStatus> tls::HasStatus for Io<T> {
+    fn tls_status(&self) -> tls::Status {
+        self.io.tls_status()
     }
 }
 

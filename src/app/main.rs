@@ -297,7 +297,7 @@ where
             let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3));
 
             let outbound = {
-                use super::outbound::{discovery::Resolve, orig_proto_upgrade, Endpoint};
+                use super::outbound::{discovery::Resolve, orig_proto_upgrade, server_id, Endpoint};
                 use proxy::{
                     canonicalize,
                     http::{balance, header_from_target, metrics, retry},
@@ -332,11 +332,17 @@ where
                 // 2. Instruments `tap` inspection.
                 // 3. Changes request/response versions when the endpoint
                 //    supports protocol upgrade (and the request may be upgraded).
-                // 4. Routes requests to the correct client (based on the
+                // 4. Appends `l5d-server-id` to responses coming back iff meshed
+                //    TLS was used on the connection.
+                // 5. Routes requests to the correct client (based on the
                 //    request version and headers).
+                // 6. Strips any `l5d-server-id` that may have been received from
+                //    the server, before we apply our own.
                 let endpoint_stack = client_stack
                     .push(buffer::layer(MAX_IN_FLIGHT))
+                    .push(strip_header::response::layer(super::L5D_SERVER_ID))
                     .push(settings::router::layer::<Endpoint, _>())
+                    .push(server_id::layer())
                     .push(orig_proto_upgrade::layer())
                     .push(tap_layer.clone())
                     .push(metrics::layer::<_, classify::Response>(
@@ -427,7 +433,7 @@ where
                 let addr_router = addr_stack
                     .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(limit::layer(MAX_IN_FLIGHT))
-                    .push(strip_header::layer(super::DST_OVERRIDE_HEADER))
+                    .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                     .push(router::layer(|req: &http::Request<_>| {
                         super::http_request_l5d_override_dst_addr(req)
                             .map(|override_addr| {
@@ -589,7 +595,8 @@ where
                 let source_stack = dst_router
                     .push(orig_proto_downgrade::layer())
                     .push(insert_target::layer())
-                    .push(strip_header::layer(super::DST_OVERRIDE_HEADER));
+                    .push(strip_header::response::layer(super::L5D_SERVER_ID))
+                    .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER));
 
                 // As the inbound proxy accepts connections, we don't do any
                 // special transport-level handling.

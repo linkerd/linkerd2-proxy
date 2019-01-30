@@ -637,4 +637,155 @@ mod proxy_to_proxy {
         assert_eq!(res.status(), 200);
         assert_eq!(res.version(), http::Version::HTTP_2);
     }
+
+    #[test]
+    fn inbound_should_strip_l5d_server_id() {
+        let _ = env_logger_init();
+
+        let srv = server::http1()
+            .route_fn("/strip-me", |_req| {
+                Response::builder()
+                    .header("l5d-server-id", "i'm not from the proxy!")
+                    .body(Default::default())
+                    .unwrap()
+            })
+            .run();
+
+        let proxy = proxy::new()
+            .inbound(srv)
+            .run();
+
+        let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
+
+        let res = client.request(
+            &mut client.request_builder("/strip-me")
+        );
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.headers().get("l5d-server-id"), None);
+    }
+
+    #[test]
+    fn outbound_should_strip_l5d_server_id() {
+        let _ = env_logger_init();
+
+        let srv = server::http1()
+            .route_fn("/strip-me", |_req| {
+                Response::builder()
+                    .header("l5d-server-id", "i'm not from the proxy!")
+                    .body(Default::default())
+                    .unwrap()
+            })
+            .run();
+
+        let ctrl = controller::new()
+            .destination_and_close("disco.test.svc.cluster.local", srv.addr)
+            .run();
+        let proxy = proxy::new()
+            .controller(ctrl)
+            .run();
+
+        let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
+
+        let res = client.request(
+            &mut client.request_builder("/strip-me")
+        );
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.headers().get("l5d-server-id"), None);
+    }
+
+    macro_rules! generate_l5d_server_id_test {
+        (server: $make_server:path, client: $make_client:path) => {
+            let _ = env_logger_init();
+
+            let srv = $make_server()
+                .route("/hallo", "world")
+                .run();
+
+            let in_proxy = proxy::new()
+                .inbound(srv)
+                .run_with_test_env(tls_env());
+
+            let ctrl = controller::new();
+            let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
+            let id = "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local";
+            dst.send(controller::destination_add_tls(
+                in_proxy.inbound,
+                id,
+                "linkerd",
+            ));
+
+            let out_proxy = proxy::new()
+                .controller(ctrl.run())
+                .run_with_test_env(tls_env());
+
+            let client = $make_client(out_proxy.outbound, "disco.test.svc.cluster.local");
+
+            let res = client.request(
+                &mut client.request_builder("/hallo")
+            );
+            assert_eq!(res.status(), 200);
+            assert_eq!(res.headers()["l5d-server-id"], id);
+        }
+    }
+
+    #[test]
+    fn outbound_http1_l5d_server_id() {
+        generate_l5d_server_id_test! {
+            server: server::http1,
+            client: client::http1
+        }
+    }
+
+    #[test]
+    fn outbound_http2_l5d_server_id() {
+        generate_l5d_server_id_test! {
+            server: server::http2,
+            client: client::http2
+        }
+    }
+
+    fn tls_env() -> app::config::TestEnv {
+        use std::path::PathBuf;
+
+        let (cert, key, trust_anchors) = {
+            let path_to_string = |path: &PathBuf| {
+                path
+                    .as_path()
+                    .to_owned()
+                    .into_os_string()
+                    .into_string()
+                    .unwrap()
+            };
+            let mut tls = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            tls.push("src");
+            tls.push("transport");
+            tls.push("tls");
+            tls.push("testdata");
+
+            tls.push("foo-ns1-ca1.crt");
+            let cert = path_to_string(&tls);
+
+            tls.set_file_name("foo-ns1-ca1.p8");
+            let key = path_to_string(&tls);
+
+            tls.set_file_name("ca1.pem");
+            let trust_anchors = path_to_string(&tls);
+            (cert, key, trust_anchors)
+        };
+
+        let mut env = app::config::TestEnv::new();
+
+        env.put(app::config::ENV_TLS_CERT, cert);
+        env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
+        env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
+        env.put(
+            app::config::ENV_TLS_POD_IDENTITY,
+            "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local"
+                .to_string(),
+        );
+        env.put(app::config::ENV_CONTROLLER_NAMESPACE, "linkerd".to_string());
+        env.put(app::config::ENV_POD_NAMESPACE, "ns1".to_string());
+
+        env
+    }
 }

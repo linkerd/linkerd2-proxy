@@ -5,10 +5,10 @@ use futures::{Future, Poll};
 use http;
 use hyper::{body::Payload, client::conn::{self, Handshake, SendRequest}};
 
-use super::{Body, Error};
+use super::{Body, ClientUsedTls, Error};
 use svc;
 use task::{ArcExecutor, BoxSendFuture, Executor};
-use transport::connect;
+use transport::{connect, tls::HasStatus as HasTlsStatus};
 
 #[derive(Debug)]
 pub struct Connect<C, B> {
@@ -19,6 +19,7 @@ pub struct Connect<C, B> {
 
 #[derive(Debug)]
 pub struct Connection<B> {
+    client_used_tls: bool,
     tx: SendRequest<B>,
 }
 
@@ -29,10 +30,16 @@ pub struct ConnectFuture<C: connect::Connect, B> {
 
 enum ConnectState<C: connect::Connect, B> {
     Connect(C::Future),
-    Handshake(Handshake<C::Connected, B>)
+    Handshake {
+        client_used_tls: bool,
+        hs: Handshake<C::Connected, B>,
+    }
 }
 
-pub struct ResponseFuture(conn::ResponseFuture);
+pub struct ResponseFuture{
+    client_used_tls: bool,
+    inner: conn::ResponseFuture,
+}
 
 #[derive(Debug)]
 pub enum ConnectError<E> {
@@ -58,7 +65,7 @@ impl<C, B> Connect<C, B> {
 impl<C, B> svc::Service<()> for Connect<C, B>
 where
     C: connect::Connect,
-    C::Connected: Send + 'static,
+    C::Connected: HasTlsStatus + Send + 'static,
     B: Payload,
 {
     type Response = Connection<B>;
@@ -82,7 +89,7 @@ where
 impl<C, B> Future for ConnectFuture<C, B>
 where
     C: connect::Connect,
-    C::Connected: Send + 'static,
+    C::Connected: HasTlsStatus + Send + 'static,
     B: Payload,
 {
     type Item = Connection<B>;
@@ -94,21 +101,29 @@ where
                 ConnectState::Connect(ref mut fut) => {
                     try_ready!(fut.poll().map_err(ConnectError::Connect))
                 },
-                ConnectState::Handshake(ref mut fut) => {
-                    let (tx, conn) = try_ready!(fut.poll().map_err(|err| ConnectError::Handshake(err.into())));
+                ConnectState::Handshake { ref mut hs, client_used_tls } => {
+                    let (tx, conn) = try_ready!(hs.poll().map_err(|err| ConnectError::Handshake(err.into())));
                     let _ = self
                         .executor
                         .execute(conn.map_err(|err| debug!("http2 conn error: {}", err)));
 
-                    return Ok(Connection { tx }.into());
+                    return Ok(Connection {
+                        client_used_tls,
+                        tx,
+                    }.into());
                 }
             };
 
-            let handshake = conn::Builder::new()
+            let client_used_tls = io.tls_status().is_some();
+
+            let hs = conn::Builder::new()
                 .executor(self.executor.clone())
                 .http2_only(true)
                 .handshake(io);
-            self.state = ConnectState::Handshake(handshake);
+            self.state = ConnectState::Handshake {
+                client_used_tls,
+                hs,
+            }
         }
     }
 }
@@ -128,7 +143,10 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        ResponseFuture(self.tx.send_request(req))
+        ResponseFuture {
+            client_used_tls: self.client_used_tls,
+            inner: self.tx.send_request(req),
+        }
     }
 }
 
@@ -139,11 +157,14 @@ impl Future for ResponseFuture {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let res = try_ready!(self.0.poll());
-        let res = res.map(|body| Body {
+        let res = try_ready!(self.inner.poll());
+        let mut res = res.map(|body| Body {
             body: Some(body),
             upgrade: None,
         });
+        if self.client_used_tls {
+            res.extensions_mut().insert(ClientUsedTls(()));
+        }
         Ok(res.into())
     }
 }

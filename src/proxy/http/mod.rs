@@ -17,7 +17,7 @@ pub mod strip_header;
 pub mod timeout;
 
 pub use self::client::Client;
-pub use self::glue::{Error, HttpBody as Body, HyperServerSvc};
+pub use self::glue::{ClientUsedTls, Error, HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
 
 use http::header::AsHeaderName;

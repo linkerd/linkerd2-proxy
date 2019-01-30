@@ -10,7 +10,7 @@ use super::glue::{Error, HttpBody, HyperConnect};
 use super::normalize_uri::ShouldNormalizeUri;
 use super::upgrade::{HttpConnect, Http11Upgrade};
 use svc::{self, stack_per_request::ShouldStackPerRequest};
-use transport::connect;
+use transport::{connect, tls};
 
 /// Configurs an HTTP Client `Service` `Stack`.
 ///
@@ -147,7 +147,7 @@ impl<C, B> svc::Layer<Config, connect::Target, C> for Layer<B>
 where
     C: svc::Stack<connect::Target>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
-    <C::Value as connect::Connect>::Connected: Send,
+    <C::Value as connect::Connect>::Connected: tls::HasStatus + Send,
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: error::Error + Send + Sync,
     B: hyper::body::Payload + Send + 'static,
@@ -186,7 +186,7 @@ impl<C, B> svc::Stack<Config> for Stack<C, B>
 where
     C: svc::Stack<connect::Target>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
-    <C::Value as connect::Connect>::Connected: Send,
+    <C::Value as connect::Connect>::Connected: tls::HasStatus + Send,
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: error::Error + Send + Sync,
     B: hyper::body::Payload + Send + 'static,
@@ -211,7 +211,7 @@ where
     C: connect::Connect + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
     C::Error: error::Error + Send + Sync,
-    C::Connected: Send,
+    C::Connected: tls::HasStatus + Send,
     B: hyper::body::Payload + 'static,
 {
     /// Create a new `Client`, bound to a specific protocol (HTTP/1 or HTTP/2).
@@ -247,7 +247,7 @@ where
     C: connect::Connect + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: error::Error + Send + Sync,
-    C::Connected: Send,
+    C::Connected: tls::HasStatus + Send,
     B: hyper::body::Payload + 'static,
 {
     type Response = ClientService<C, B>;
@@ -275,7 +275,7 @@ where
 impl<C, B> Future for ClientNewServiceFuture<C, B>
 where
     C: connect::Connect + Send + 'static,
-    C::Connected: Send,
+    C::Connected: tls::HasStatus + Send,
     C::Future: Send + 'static,
     B: hyper::body::Payload + 'static,
 {
@@ -301,7 +301,7 @@ where
 impl<C, B> svc::Service<http::Request<B>> for ClientService<C, B>
 where
     C: connect::Connect + Send + Sync + 'static,
-    C::Connected: Send,
+    C::Connected: tls::HasStatus + Send,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: error::Error + Send + Sync,
     B: hyper::body::Payload + 'static,

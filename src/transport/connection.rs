@@ -572,6 +572,12 @@ impl Peek for Connection {
     }
 }
 
+impl tls::HasStatus for Connection {
+    fn tls_status(&self) -> tls::Status {
+        Connection::tls_status(self)
+    }
+}
+
 // impl PeekFuture
 
 impl<T: Peek> Future for PeekFuture<T> {

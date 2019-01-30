@@ -1,10 +1,11 @@
 use api;
 use convert::TryFrom;
 use super::{DnsName, InvalidDnsName, webpki};
+use std::fmt;
 use std::sync::Arc;
 
 /// An endpoint's identity.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Identity(pub(super) Arc<DnsName>);
 
 impl Identity {
@@ -49,5 +50,17 @@ impl Identity {
 
     pub(super) fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
         (self.0).0.as_ref()
+    }
+}
+
+impl AsRef<str> for Identity {
+    fn as_ref(&self) -> &str {
+        (*self.0).as_ref()
+    }
+}
+
+impl fmt::Debug for Identity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        self.as_ref().fmt(f)
     }
 }

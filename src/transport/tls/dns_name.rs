@@ -5,7 +5,7 @@ use convert::TryFrom;
 /// A `DnsName` is guaranteed to be syntactically valid. The validity rules
 /// are specified in [RFC 5280 Section 7.2], except that underscores are also
 /// allowed.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct DnsName(pub(super) webpki::DNSName);
 
 impl DnsName {
@@ -15,6 +15,12 @@ impl DnsName {
 
     pub fn without_trailing_dot(&self) -> &str {
         self.as_ref().trim_end_matches('.')
+    }
+}
+
+impl fmt::Debug for DnsName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        self.as_ref().fmt(f)
     }
 }
 

@@ -7,9 +7,10 @@ use hyper::client::connect as hyper_connect;
 use std::{error::Error as StdError, fmt};
 use tower_grpc as grpc;
 
+use Conditional;
 use proxy::http::{HasH2Reason, upgrade::Http11Upgrade};
 use svc;
-use transport::Connect;
+use transport::{Connect, tls::HasStatus as HasTlsStatus};
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[derive(Debug)]
@@ -41,6 +42,10 @@ pub struct HyperConnectFuture<F> {
 
 /// Wrapper of hyper::Error so we can add methods.
 pub struct Error(hyper::Error);
+
+/// Marker in `Response` extensions if the connection used TLS.
+#[derive(Clone, Debug)]
+pub struct ClientUsedTls(pub(super) ());
 
 // ===== impl HttpBody =====
 
@@ -194,7 +199,7 @@ where
     C: Connect + Send + Sync,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: StdError + Send + Sync + 'static,
-    C::Connected: Send + 'static,
+    C::Connected: HasTlsStatus + Send + 'static,
 {
     type Transport = C::Connected;
     type Error = <C::Future as Future>::Error;
@@ -211,6 +216,7 @@ where
 impl<F> Future for HyperConnectFuture<F>
 where
     F: Future + 'static,
+    F::Item: HasTlsStatus,
     F::Error: StdError + Send + Sync,
 {
     type Item = (F::Item, hyper_connect::Connected);
@@ -220,6 +226,11 @@ where
         let transport = try_ready!(self.inner.poll());
         let connected = hyper_connect::Connected::new()
             .proxy(self.absolute_form);
+        let connected = if let Conditional::Some(()) = transport.tls_status() {
+            connected.extra(ClientUsedTls(()))
+        } else {
+            connected
+        };
         Ok(Async::Ready((transport, connected)))
     }
 }
