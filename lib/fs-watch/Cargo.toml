@@ -16,13 +16,10 @@ tokio-timer = "0.2.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
-inotify = "0.6"
+inotify = { git = "https://github.com/hawkw/inotify", rev = "a2d73d61ba61e993b71053e06b9dfe6bc848ef61" }
 procinfo = "0.4.2"
 
 [dev-dependencies]
 tokio = "0.1.7"
 linkerd2-task = { path = "../task", features = ["test_util"] }
 tempfile = "3"
-
-[patch.crates-io]
-inotify = { git = "https://github.com/hawkw/inotify", rev = "a2d73d61ba61e993b71053e06b9dfe6bc848ef61" }

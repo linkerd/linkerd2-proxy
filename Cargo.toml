@@ -83,7 +83,7 @@ untrusted = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
-inotify = "0.6"
+inotify = { git = "https://github.com/hawkw/inotify", rev = "a2d73d61ba61e993b71053e06b9dfe6bc848ef61" }
 procinfo = "0.4.2"
 
 [dev-dependencies]
@@ -110,5 +110,4 @@ debug = false
 prost = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
 prost-derive = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
 prost-build = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
-prost-types = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
 inotify = { git = "https://github.com/hawkw/inotify", rev = "a2d73d61ba61e993b71053e06b9dfe6bc848ef61" }
