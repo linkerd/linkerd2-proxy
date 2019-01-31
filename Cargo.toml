@@ -97,9 +97,11 @@ flate2 = { version = "1.0.1", default-features = false, features = ["rust_backen
 # the `read` function.
 tokio-io = "0.1.6"
 
+[patch.crates-io]
+webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }
+
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.
-
 [profile.dev]
 debug = false
 [profile.test]

@@ -639,6 +639,57 @@ mod proxy_to_proxy {
     }
 
     #[test]
+    fn inbound_should_strip_l5d_client_id() {
+        let _ = env_logger_init();
+
+        let srv = server::http1()
+            .route_fn("/stripped", |req| {
+                assert_eq!(req.headers().get("l5d-client-id"), None);
+                Response::default()
+            })
+            .run();
+
+        let proxy = proxy::new()
+            .inbound(srv)
+            .run();
+
+        let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
+
+        let res = client.request(
+            client.request_builder("/stripped")
+                .header("l5d-client-id", "sneaky.sneaky")
+        );
+        assert_eq!(res.status(), 200);
+    }
+
+    #[test]
+    fn outbound_should_strip_l5d_client_id() {
+        let _ = env_logger_init();
+
+        let srv = server::http1()
+            .route_fn("/stripped", |req| {
+                assert_eq!(req.headers().get("l5d-client-id"), None);
+                Response::default()
+            })
+            .run();
+
+        let ctrl = controller::new()
+            .destination_and_close("disco.test.svc.cluster.local", srv.addr)
+            .run();
+        let proxy = proxy::new()
+            .controller(ctrl)
+            .run();
+
+        let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
+
+        let res = client.request(
+            client.request_builder("/stripped")
+                .header("l5d-client-id", "sneaky.sneaky")
+        );
+        assert_eq!(res.status(), 200);
+    }
+
+    #[test]
     fn inbound_should_strip_l5d_server_id() {
         let _ = env_logger_init();
 
@@ -693,12 +744,16 @@ mod proxy_to_proxy {
         assert_eq!(res.headers().get("l5d-server-id"), None);
     }
 
-    macro_rules! generate_l5d_server_id_test {
+    macro_rules! generate_l5d_tls_id_test {
         (server: $make_server:path, client: $make_client:path) => {
             let _ = env_logger_init();
+            let id = "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local";
 
             let srv = $make_server()
-                .route("/hallo", "world")
+                .route_fn("/hallo", move |req| {
+                    assert_eq!(req.headers()["l5d-client-id"], id);
+                    Response::default()
+                })
                 .run();
 
             let in_proxy = proxy::new()
@@ -707,7 +762,6 @@ mod proxy_to_proxy {
 
             let ctrl = controller::new();
             let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
-            let id = "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local";
             dst.send(controller::destination_add_tls(
                 in_proxy.inbound,
                 id,
@@ -729,16 +783,16 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    fn outbound_http1_l5d_server_id() {
-        generate_l5d_server_id_test! {
+    fn outbound_http1_l5d_server_id_l5d_client_id() {
+        generate_l5d_tls_id_test! {
             server: server::http1,
             client: client::http1
         }
     }
 
     #[test]
-    fn outbound_http2_l5d_server_id() {
-        generate_l5d_server_id_test! {
+    fn outbound_http2_l5d_server_id_l5d_client_id() {
+        generate_l5d_tls_id_test! {
             server: server::http2,
             client: client::http2
         }

@@ -581,7 +581,7 @@ dependencies = [
  "trust-dns-resolver 0.10.2 (git+https://github.com/bluejekyll/trust-dns?rev=7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060)",
  "try-lock 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "untrusted 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "webpki 0.19.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "webpki 0.19.1 (git+https://github.com/seanmonstar/webpki?branch=cert-dns-names)",
 ]
 
 [[package]]
@@ -1114,7 +1114,7 @@ dependencies = [
  "ring 0.14.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "sct 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "untrusted 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "webpki 0.19.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "webpki 0.19.1 (git+https://github.com/seanmonstar/webpki?branch=cert-dns-names)",
 ]
 
 [[package]]
@@ -1330,7 +1330,7 @@ dependencies = [
  "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls 0.15.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-io 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "webpki 0.19.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "webpki 0.19.1 (git+https://github.com/seanmonstar/webpki?branch=cert-dns-names)",
 ]
 
 [[package]]
@@ -1663,7 +1663,7 @@ dependencies = [
 [[package]]
 name = "webpki"
 version = "0.19.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/seanmonstar/webpki?branch=cert-dns-names#aae34c01a75495620767ee1fed40ac4c0a34fe74"
 dependencies = [
  "ring 0.14.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "untrusted 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1916,7 +1916,7 @@ dependencies = [
 "checksum utf8-ranges 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "662fab6525a98beff2921d7f61a39e7d59e0b425ebc7d0d9e66d316e55124122"
 "checksum void 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 "checksum want 0.0.6 (registry+https://github.com/rust-lang/crates.io-index)" = "797464475f30ddb8830cc529aaaae648d581f99e2036a928877dfde027ddf6b3"
-"checksum webpki 0.19.1 (registry+https://github.com/rust-lang/crates.io-index)" = "4f7e1cd7900a3a6b65a3e8780c51a3e6b59c0e2c55c6dc69578c288d69f7d082"
+"checksum webpki 0.19.1 (git+https://github.com/seanmonstar/webpki?branch=cert-dns-names)" = "<none>"
 "checksum which 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "49c4f580e93079b70ac522e7bdebbe1568c8afa7d8d05ee534ee737ca37d2f51"
 "checksum widestring 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7157704c2e12e3d2189c507b7482c52820a16dfa4465ba91add92f266667cadb"
 "checksum winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"

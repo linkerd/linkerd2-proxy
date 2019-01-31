@@ -18,6 +18,7 @@ use addr::{self, Addr};
 const CANONICAL_DST_HEADER: &'static str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";
 const L5D_SERVER_ID: &'static str = "l5d-server-id";
+const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 
 pub fn init() -> Result<config::Config, config::Error> {
     use convert::TryFrom;

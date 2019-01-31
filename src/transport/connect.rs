@@ -5,6 +5,7 @@ pub use self::tokio_connect::Connect;
 use std::net::SocketAddr;
 use std::{hash, io};
 
+use Conditional;
 use never::Never;
 use svc;
 use transport::{connection, tls};
@@ -32,6 +33,10 @@ impl Target {
 
     pub fn tls_status(&self) -> tls::Status {
         self.tls.as_ref().map(|_| {})
+    }
+
+    pub fn tls_server_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
+        self.tls.as_ref().map(|config| &config.server_identity)
     }
 }
 

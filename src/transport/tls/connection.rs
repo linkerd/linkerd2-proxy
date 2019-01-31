@@ -68,6 +68,15 @@ impl Connection<Prefixed<TcpStream>, rustls::ServerSession> {
     {
         UpgradeToTls(TlsAcceptor::from(config).accept(Prefixed::new(prefix, socket)))
     }
+
+    pub fn client_identity(&self) -> Option<Identity> {
+        let (_io, session) = self.0.get_ref();
+        let certs = session.get_peer_certificates()?;
+        let end_cert = super::parse_end_entity_cert(&certs).ok()?;
+        let dns_names = end_cert.dns_names().ok()?;
+
+        dns_names.first().map(Identity::from_client_cert)
+    }
 }
 
 impl<S, C> io::Read for Connection<S, C>

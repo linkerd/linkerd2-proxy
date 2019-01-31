@@ -44,6 +44,8 @@ pub use self::{
 #[cfg(test)]
 pub use self::config::test_util as config_test_util;
 
+pub type ConditionalIdentity = Conditional<Identity, ReasonForNoTls>;
+
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.
 pub type Status = Conditional<(), ReasonForNoTls>;
@@ -75,4 +77,13 @@ impl fmt::Display for Status {
 /// Fetch the `tls::Status` of this type.
 pub trait HasStatus {
     fn tls_status(&self) -> Status;
+}
+
+fn parse_end_entity_cert<'a>(cert_chain: &'a[rustls::Certificate])
+    -> Result<webpki::EndEntityCert<'a>, webpki::Error>
+{
+    let cert = cert_chain.first()
+        .map(rustls::Certificate::as_ref)
+        .unwrap_or(&[]); // An empty input fill fail to parse.
+    webpki::EndEntityCert::from(untrusted::Input::from(cert))
 }

@@ -48,6 +48,10 @@ impl Identity {
             })
     }
 
+    pub fn from_client_cert(name: &webpki::DNSNameRef) -> Self {
+        Identity(Arc::new(DnsName(name.to_owned())))
+    }
+
     pub(super) fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
         (self.0).0.as_ref()
     }

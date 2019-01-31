@@ -55,7 +55,7 @@ impl tap::Inspect for Endpoint {
     fn src_tls<B>(&self, req: &http::Request<B>) -> tls::Status {
         req.extensions()
             .get::<Source>()
-            .map(|s| s.tls_status)
+            .map(|s| tls::Status::from(&s.tls_peer))
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled))
     }
 
@@ -105,7 +105,7 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
             .or(self.default_addr)?;
 
         let source_tls_status = src
-            .map(|s| s.tls_status.clone())
+            .map(|s| tls::Status::from(&s.tls_peer))
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled));
 
         let dst_name = req
@@ -254,6 +254,137 @@ pub mod rewrite_loopback_addr {
     }
 }
 
+/// Adds `l5d-client-id` headers to http::Requests derived from the
+/// TlsIdentity of a `Source`.
+pub mod client_id {
+    use std::marker::PhantomData;
+
+    use futures::Poll;
+    use http::{self, header::HeaderValue};
+
+    use proxy::server::Source;
+    use Conditional;
+    use svc;
+
+    #[derive(Debug)]
+    pub struct Layer<B>(PhantomData<fn() -> B>);
+
+    #[derive(Debug)]
+    pub struct Stack<M, B> {
+        inner: M,
+        _marker: PhantomData<fn() -> B>,
+    }
+
+    #[derive(Debug)]
+    pub struct Service<S, B> {
+        inner: S,
+        value: HeaderValue,
+        _marker: PhantomData<fn() -> B>,
+    }
+
+    pub fn layer<B>() -> Layer<B> {
+        Layer(PhantomData)
+    }
+
+    impl<B> Clone for Layer<B> {
+        fn clone(&self) -> Self {
+            Layer(PhantomData)
+        }
+    }
+
+    impl<M, B> svc::Layer<Source, Source, M> for Layer<B>
+    where
+        M: svc::Stack<Source>,
+    {
+        type Value = <Stack<M, B> as svc::Stack<Source>>::Value;
+        type Error = <Stack<M, B> as svc::Stack<Source>>::Error;
+        type Stack = Stack<M, B>;
+
+        fn bind(&self, inner: M) -> Self::Stack {
+            Stack {
+                inner,
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    // === impl Stack ===
+
+    impl<M: Clone, B> Clone for Stack<M, B> {
+        fn clone(&self) -> Self {
+            Stack {
+                inner: self.inner.clone(),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<M, B> svc::Stack<Source> for Stack<M, B>
+    where
+        M: svc::Stack<Source>,
+    {
+        type Value = svc::Either<Service<M::Value, B>, M::Value>;
+        type Error = M::Error;
+
+        fn make(&self, source: &Source) -> Result<Self::Value, Self::Error> {
+            let svc = self.inner.make(source)?;
+
+            if let Conditional::Some(ref id) = source.tls_peer {
+                match HeaderValue::from_str(id.as_ref()) {
+                    Ok(value) => {
+                        debug!("l5d-client-id enabled for {:?}", source);
+                        return Ok(svc::Either::A(Service {
+                            inner: svc,
+                            value,
+                            _marker: PhantomData,
+                        }));
+                    },
+                    Err(_err) => {
+                        warn!("l5d-client-id identity header is invalid: {:?}", source);
+                    }
+                }
+            }
+
+            trace!("l5d-client-id not enabled for {:?}", source);
+            Ok(svc::Either::B(svc))
+        }
+    }
+
+    // === impl Service ===
+
+    impl<S: Clone, B> Clone for Service<S, B> {
+        fn clone(&self) -> Self {
+            Service {
+                inner: self.inner.clone(),
+                value: self.value.clone(),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<S, B> svc::Service<http::Request<B>> for Service<S, B>
+    where
+        S: svc::Service<http::Request<B>>,
+    {
+        type Response = S::Response;
+        type Error = S::Error;
+        type Future = S::Future;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+            req.headers_mut().insert(
+                super::super::L5D_CLIENT_ID,
+                self.value.clone()
+            );
+
+            self.inner.call(req)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use http;
@@ -274,7 +405,7 @@ mod tests {
         }
     }
 
-    const TLS_DISABLED: Conditional<(), tls::ReasonForNoTls> =
+    const TLS_DISABLED: tls::ConditionalIdentity =
         Conditional::None(tls::ReasonForNoTls::Disabled);
 
     quickcheck! {
