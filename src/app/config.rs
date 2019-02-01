@@ -546,8 +546,10 @@ impl Strings for Env {
 
 impl TestEnv {
     pub fn new() -> Self {
+        let mut values: HashMap<&'static str, String> = Default::default();
+        values.insert(ENV_PROXY_ID, "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into());
         Self {
-            values: Default::default(),
+            values: values,
         }
     }
 
