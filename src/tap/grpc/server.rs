@@ -11,9 +11,11 @@ use tower_grpc::{self as grpc, Response};
 
 use api::{http_types, pb_duration, tap as api};
 
+use Conditional;
 use super::match_::Match;
 use proxy::http::HasH2Reason;
 use tap::{iface, Inspect};
+use transport::tls;
 
 #[derive(Clone, Debug)]
 pub struct Server<T> {
@@ -537,16 +539,22 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
         source: inspect.src_addr(req).as_ref().map(|a| a.into()),
         source_meta: {
             let mut m = api::tap_event::EndpointMeta::default();
-            let tls = format!("{}", inspect.src_tls(req));
-            m.labels.insert("tls".to_owned(), tls);
+            let tls = inspect.src_tls(req);
+            m.labels.insert("tls".to_owned(), tls::Status::from(&tls).to_string());
+            if let Conditional::Some(id) = tls {
+                m.labels.insert("client_id".to_owned(), id.as_ref().to_owned());
+            }
             Some(m)
         },
         destination: inspect.dst_addr(req).as_ref().map(|a| a.into()),
         destination_meta: inspect.dst_labels(req).map(|labels| {
             let mut m = api::tap_event::EndpointMeta::default();
             m.labels.extend(labels.iter().map(|(k, v)| (k.clone(), v.clone())));
-            let tls = format!("{}", inspect.dst_tls(req));
-            m.labels.insert("tls".to_owned(), tls);
+            let tls = inspect.dst_tls(req);
+            m.labels.insert("tls".to_owned(), tls::Status::from(&tls).to_string());
+            if let Conditional::Some(id) = tls {
+                m.labels.insert("server_id".to_owned(), id.as_ref().to_owned());
+            }
             m
         }),
         route_meta: inspect.route_labels(req).map(|labels| {

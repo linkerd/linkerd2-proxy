@@ -52,10 +52,10 @@ impl tap::Inspect for Endpoint {
         req.extensions().get::<Source>().map(|s| s.remote)
     }
 
-    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::Status {
+    fn src_tls<'a, B>(&self, req: &'a http::Request<B>) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
         req.extensions()
             .get::<Source>()
-            .map(|s| tls::Status::from(&s.tls_peer))
+            .map(|s| s.tls_peer.as_ref())
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled))
     }
 
@@ -67,7 +67,7 @@ impl tap::Inspect for Endpoint {
         None
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::Status {
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
         Conditional::None(tls::ReasonForNoTls::InternalTraffic)
     }
 
