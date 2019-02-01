@@ -75,7 +75,7 @@ pub struct Connection {
     peek_buf: BytesMut,
 
     /// Whether or not the connection is secured with TLS.
-    tls_peer_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
+    tls_peer_identity: tls::ConditionalIdentity,
 
     /// If true, the proxy should attempt to detect the protocol for this
     /// connection. If false, protocol detection should be skipped.
