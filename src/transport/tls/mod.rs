@@ -84,6 +84,6 @@ fn parse_end_entity_cert<'a>(cert_chain: &'a[rustls::Certificate])
 {
     let cert = cert_chain.first()
         .map(rustls::Certificate::as_ref)
-        .unwrap_or(&[]); // An empty input fill fail to parse.
+        .unwrap_or(&[]); // An empty input will fail to parse.
     webpki::EndEntityCert::from(untrusted::Input::from(cert))
 }
