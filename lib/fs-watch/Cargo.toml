@@ -16,7 +16,7 @@ tokio-timer = "0.2.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
-inotify = { git = "https://github.com/hawkw/inotify", rev = "a2d73d61ba61e993b71053e06b9dfe6bc848ef61" }
+inotify = { git = "https://github.com/inotify-rs/inotify", rev = "f78ed9788d437a78ff253ef3b8fafc61932692d5" }
 procinfo = "0.4.2"
 
 [dev-dependencies]
