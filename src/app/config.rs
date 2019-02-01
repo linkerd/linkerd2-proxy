@@ -93,6 +93,8 @@ pub struct Config {
 
     pub namespaces: Namespaces,
 
+    pub proxy_id: String,
+
     /// Optional minimum TTL for DNS lookups.
     pub dns_min_ttl: Option<Duration>,
 
@@ -239,6 +241,7 @@ pub const ENV_TLS_CONTROLLER_IDENTITY: &str = "LINKERD2_PROXY_TLS_CONTROLLER_IDE
 pub const ENV_CONTROLLER_NAMESPACE: &str = "LINKERD2_PROXY_CONTROLLER_NAMESPACE";
 pub const ENV_POD_NAMESPACE: &str = "LINKERD2_PROXY_POD_NAMESPACE";
 pub const VAR_POD_NAMESPACE: &str = "$LINKERD2_PROXY_POD_NAMESPACE";
+pub const ENV_PROXY_ID: &str = "LINKERD2_PROXY_ID";
 
 pub const ENV_CONTROL_URL: &str = "LINKERD2_PROXY_CONTROL_URL";
 pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
@@ -358,6 +361,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
             })
         });
         let controller_namespace = strings.get(ENV_CONTROLLER_NAMESPACE);
+        let proxy_id = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
 
         // There is no default controller URL because a default would make it
         // too easy to connect to the wrong controller, which would be dangerous.
@@ -498,6 +502,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
 
             namespaces,
+
+            proxy_id,
 
             dns_min_ttl: dns_min_ttl?,
 
