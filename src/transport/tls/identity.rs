@@ -5,7 +5,7 @@ use std::fmt;
 use std::sync::Arc;
 
 /// An endpoint's identity.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Identity(pub(super) Arc<DnsName>);
 
 impl Identity {

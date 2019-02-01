@@ -20,7 +20,7 @@ pub struct ControlLabels {
 pub struct EndpointLabels {
     addr: net::SocketAddr,
     direction: Direction,
-    tls_status: tls::Status,
+    tls_id: Conditional<TlsId, tls::ReasonForNoTls>,
     dst_name: Option<NameAddr>,
     labels: Option<String>,
 }
@@ -35,6 +35,12 @@ pub struct RouteLabels {
 enum Direction {
     In,
     Out,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum TlsId {
+    ClientId(tls::Identity),
+    ServerId(tls::Identity),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -92,7 +98,7 @@ impl From<inbound::Endpoint> for EndpointLabels {
             addr: ep.addr,
             dst_name: ep.dst_name,
             direction: Direction::In,
-            tls_status: ep.source_tls_status,
+            tls_id: ep.tls_client_id.map(TlsId::ClientId),
             labels: None,
         }
     }
@@ -117,7 +123,7 @@ impl From<outbound::Endpoint> for EndpointLabels {
             addr: ep.connect.addr,
             dst_name: ep.dst_name,
             direction: Direction::Out,
-            tls_status: ep.connect.tls_status(),
+            tls_id: ep.connect.tls_server_identity().map(|id| TlsId::ServerId(id.clone())),
             labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
         }
     }
@@ -133,7 +139,12 @@ impl FmtLabels for EndpointLabels {
         }
 
         write!(f, ",")?;
-        self.tls_status.fmt_labels(f)?;
+        tls::Status::from(&self.tls_id).fmt_labels(f)?;
+
+        if let Conditional::Some(ref id) = self.tls_id {
+            write!(f, ",")?;
+            id.fmt_labels(f)?;
+        }
 
         Ok(())
     }
@@ -203,6 +214,19 @@ impl FmtLabels for tls::Status {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
             status => write!(f, "tls=\"{}\"", status),
+        }
+    }
+}
+
+impl FmtLabels for TlsId {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TlsId::ClientId(ref id) => {
+                write!(f, "client_id=\"{}\"", id.as_ref())
+            },
+            TlsId::ServerId(ref id) => {
+                write!(f, "server_id=\"{}\"", id.as_ref())
+            },
         }
     }
 }

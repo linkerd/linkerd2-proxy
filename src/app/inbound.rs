@@ -16,7 +16,7 @@ use {Conditional, NameAddr};
 pub struct Endpoint {
     pub addr: SocketAddr,
     pub dst_name: Option<NameAddr>,
-    pub source_tls_status: tls::Status,
+    pub tls_client_id: tls::ConditionalIdentity,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -104,8 +104,8 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
             .and_then(Source::orig_dst_if_not_local)
             .or(self.default_addr)?;
 
-        let source_tls_status = src
-            .map(|s| tls::Status::from(&s.tls_peer))
+        let tls_client_id = src
+            .map(|s| s.tls_peer.clone())
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled));
 
         let dst_name = req
@@ -118,7 +118,7 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
         Some(Endpoint {
             addr,
             dst_name,
-            source_tls_status,
+            tls_client_id,
         })
     }
 }
@@ -397,11 +397,11 @@ mod tests {
     use Conditional;
 
     fn make_h1_endpoint(addr: net::SocketAddr) -> Endpoint {
-        let source_tls_status = TLS_DISABLED;
+        let tls_client_id = TLS_DISABLED;
         Endpoint {
             addr,
             dst_name: None,
-            source_tls_status,
+            tls_client_id,
         }
     }
 
