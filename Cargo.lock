@@ -547,7 +547,6 @@ dependencies = [
  "hyper 0.12.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper-balance 0.1.0",
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "inotify 0.6.2-dev (git+https://github.com/inotify-rs/inotify?rev=f78ed9788d437a78ff253ef3b8fafc61932692d5)",
  "ipnet 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.48 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-fs-watch 0.1.0",
