@@ -128,13 +128,14 @@ where
         // shutdown, we finished in a previous poll, so don't even enter into
         // the copy loop.
         if dst.is_shutdown {
+            trace!("already shutdown {:?}", dst.io);
             return Ok(Async::Ready(()));
         }
         loop {
             try_ready!(self.read());
             try_ready!(self.write_into(dst));
             if self.buf.is_none() {
-                trace!("shutting down {:?} <-> {:?}", self.io, dst.io);
+                trace!("shutting down {:?}", dst.io);
                 debug_assert!(!dst.is_shutdown,
                     "attempted to shut down destination twice");
                 try_ready!(dst.io.shutdown());
@@ -151,15 +152,15 @@ where
             if !buf.has_remaining() {
                 buf.reset();
 
-                trace!("reading {:?}", self.io);
+                trace!("reading");
                 let n = try_ready!(self.io.read_buf(buf));
-                trace!("read {}B {:?}", n, self.io);
+                trace!("read {}B", n);
 
                 is_eof = n == 0;
             }
         }
         if is_eof {
-            trace!("eof from {:?}", self.io);
+            trace!("eof");
             self.buf = None;
         }
 
@@ -172,9 +173,9 @@ where
     {
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
-                trace!("writing {}B from {:?} -> {:?}", buf.remaining(), self.io, dst.io);
+                trace!("writing {}B", buf.remaining());
                 let n = try_ready!(dst.io.write_buf(buf));
-                trace!("wrote {}B from {:?} -> {:?}", n, self.io, dst.io);
+                trace!("wrote {}B", n);
                 if n == 0 {
                     return Err(write_zero());
                 }

@@ -4,8 +4,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 pub mod buffer;
 pub mod canonicalize;
-pub mod http;
 pub mod grpc;
+pub mod http;
 pub mod limit;
 mod protocol;
 pub mod reconnect;

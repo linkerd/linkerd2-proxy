@@ -5,7 +5,7 @@ use bytes::Buf;
 use futures::Poll;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use super::AddrInfo;
+use super::{AddrInfo, SetKeepalive};
 use self::internal::Io;
 
 /// A public wrapper around a `Box<Io>`.
@@ -72,18 +72,28 @@ impl AddrInfo for BoxedIo {
     }
 }
 
+impl SetKeepalive for BoxedIo {
+    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
+        self.0.keepalive()
+    }
+
+    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
+        self.0.set_keepalive(ka)
+    }
+}
+
 pub(super) mod internal {
     use std::io;
     use tokio::net::TcpStream;
-    use super::{AddrInfo, AsyncRead, AsyncWrite, Buf, Poll, Shutdown};
+    use super::{AddrInfo, AsyncRead, AsyncWrite, Buf, Poll, SetKeepalive, Shutdown};
 
     /// This trait is private, since it's purpose is for creating a dynamic
     /// trait object, but doing so without care can lead not getting vectored
     /// writes.
     ///
     /// Instead, used the concrete `BoxedIo` type.
-    pub trait Io: AddrInfo + AsyncRead + AsyncWrite + Send {
-        fn shutdown_write(&mut self) -> Result<(), io::Error>;
+    pub trait Io: AddrInfo + AsyncRead + AsyncWrite + SetKeepalive + Send {
+        fn shutdown_write(&mut self) -> io::Result<()>;
 
         /// This method is to allow using `Async::write_buf` even through a
         /// trait object.
@@ -91,7 +101,7 @@ pub(super) mod internal {
     }
 
     impl Io for TcpStream {
-        fn shutdown_write(&mut self) -> Result<(), io::Error> {
+        fn shutdown_write(&mut self) -> io::Result<()> {
             TcpStream::shutdown(self, Shutdown::Write)
         }
 
@@ -141,6 +151,16 @@ mod tests {
         }
 
         fn get_original_dst(&self) -> Option<SocketAddr> {
+            unreachable!("not called in test")
+        }
+    }
+
+    impl SetKeepalive for WriteBufDetector {
+        fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
+            unreachable!("not called in test")
+        }
+
+        fn set_keepalive(&mut self, _: Option<::std::time::Duration>) -> io::Result<()> {
             unreachable!("not called in test")
         }
     }

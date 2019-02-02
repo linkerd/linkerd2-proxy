@@ -34,7 +34,7 @@ use svc::{
 use tap;
 use task;
 use telemetry;
-use transport::{self, connect, tls, BoundPort, Connection, GetOriginalDst};
+use transport::{self, connect, keepalive, tls, BoundPort, Connection, GetOriginalDst};
 use {Addr, Conditional};
 
 use super::config::Config;
@@ -249,6 +249,7 @@ where
             });
 
             let stack = connect::Stack::new()
+                .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
                 .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
@@ -297,7 +298,9 @@ where
             let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3));
 
             let outbound = {
-                use super::outbound::{discovery::Resolve, orig_proto_upgrade, server_id, Endpoint};
+                use super::outbound::{
+                    discovery::Resolve, orig_proto_upgrade, server_id, Endpoint,
+                };
                 use proxy::{
                     canonicalize,
                     http::{balance, header_from_target, metrics, retry},
@@ -315,6 +318,7 @@ where
                 // Establishes connections to remote peers (for both TCP
                 // forwarding and HTTP proxying).
                 let connect = connect::Stack::new()
+                    .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                     .push(svc::timeout::layer(config.outbound_connect_timeout))
                     .push(transport_metrics.connect("outbound"));
 
@@ -363,7 +367,9 @@ where
                 //    is retryable.
                 let dst_route_layer = phantom_data::layer()
                     .push(insert_target::layer())
-                    .push(metrics::layer::<_, classify::Response>(retry_http_metrics.clone()))
+                    .push(metrics::layer::<_, classify::Response>(
+                        retry_http_metrics.clone(),
+                    ))
                     .push(retry::layer(retry_http_metrics))
                     .push(proxy::http::timeout::layer())
                     .push(metrics::layer::<_, classify::Response>(route_http_metrics))
@@ -461,7 +467,11 @@ where
 
                 // Instantiated for each TCP connection received from the local
                 // application (including HTTP connections).
-                let accept = transport_metrics.accept("outbound").bind(());
+                let accept = 
+                    phantom_data::layer()
+                    .push(keepalive::accept::layer(config.outbound_accept_keepalive))
+                    .push(transport_metrics.accept("outbound"))
+                    .bind(());
 
                 serve(
                     "out",
@@ -489,6 +499,7 @@ where
                 // Establishes connections to the local application (for both
                 // TCP forwarding and HTTP proxying).
                 let connect = connect::Stack::new()
+                    .push(keepalive::connect::layer(config.inbound_connect_keepalive))
                     .push(svc::timeout::layer(config.inbound_connect_timeout))
                     .push(transport_metrics.connect("inbound"))
                     .push(rewrite_loopback_addr::layer());
@@ -600,7 +611,10 @@ where
 
                 // As the inbound proxy accepts connections, we don't do any
                 // special transport-level handling.
-                let accept = transport_metrics.accept("inbound").bind(());
+                let accept =
+                    keepalive::accept::layer(config.inbound_accept_keepalive)
+                        .push(transport_metrics.accept("inbound"))
+                        .bind(());
 
                 serve(
                     "in",
@@ -690,10 +704,10 @@ where
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
     R: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
-    R::Value:
-        svc::Service<http::Request<proxy::http::Body>, Response = http::Response<B>>,
+    R::Value: svc::Service<http::Request<proxy::http::Body>, Response = http::Response<B>>,
     R::Value: Send + 'static,
-    <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error: error::Error + Send + Sync + 'static,
+    <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error:
+        error::Error + Send + Sync + 'static,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
     G: GetOriginalDst + Send + 'static,
