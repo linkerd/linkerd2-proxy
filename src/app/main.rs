@@ -683,10 +683,10 @@ fn serve<A, C, R, B, G>(
 where
     A: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     A::Value: proxy::Accept<Connection>,
-    <A::Value as proxy::Accept<Connection>>::Io: Send + transport::Peek + 'static,
+    <A::Value as proxy::Accept<Connection>>::Io: fmt::Debug + Send + transport::Peek + 'static,
     C: svc::Stack<connect::Target, Error = Never> + Send + Clone + 'static,
     C::Value: connect::Connect + Send,
-    <C::Value as connect::Connect>::Connected: Send + 'static,
+    <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
     R: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
