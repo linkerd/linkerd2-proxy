@@ -239,17 +239,18 @@ where
                 .as_ref()
                 .and_then(|s| s.controller_identity.clone().map(|id| id));
 
-            let control_config = control_host_and_port.map(|host_and_port| {
-                control::Config::new(
-                    host_and_port,
-                    tls_server_identity,
-                    config.control_backoff_delay,
-                    config.control_connect_timeout,
-                )
+            // If the controller is on localhost, use the inbound keepalive.
+            // If the controller is remote, use the outbound keepalive.
+            let keepalive = control_host_and_port.as_ref().and_then(|a| {
+                if a.is_loopback() {
+                    config.inbound_connect_keepalive
+                } else {
+                    config.outbound_connect_keepalive
+                }
             });
 
             let stack = connect::Stack::new()
-                .push(keepalive::connect::layer(config.outbound_connect_keepalive))
+                .push(keepalive::connect::layer(keepalive))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
                 .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
@@ -268,10 +269,10 @@ where
             // spawn a task on an executor when `make` is called. This is done
             // lazily so that a default executor is available to spawn the
             // background buffering task.
-            future::lazy(move || match control_config {
+            future::lazy(move || match control_host_and_port {
                 None => Ok(None),
-                Some(config) => stack
-                    .make(&config)
+                Some(addr) => stack
+                    .make(&control::Config::new(addr, tls_server_identity))
                     .map(Some)
                     .map_err(|e| error!("failed to build controller: {}", e)),
             })

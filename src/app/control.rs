@@ -1,5 +1,4 @@
 use std::fmt;
-use std::time::Duration;
 
 use svc;
 use transport::tls;
@@ -10,23 +9,17 @@ pub struct Config {
     addr: Addr,
     tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
     tls_config: tls::ConditionalClientConfig,
-    backoff: Duration,
-    connect_timeout: Duration,
 }
 
 impl Config {
     pub fn new(
         addr: Addr,
         tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
-        backoff: Duration,
-        connect_timeout: Duration,
     ) -> Self {
         Self {
             addr,
             tls_server_identity,
             tls_config: Conditional::None(tls::ReasonForNoTls::Disabled),
-            backoff,
-            connect_timeout,
         }
     }
 
