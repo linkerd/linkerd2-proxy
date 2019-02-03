@@ -467,8 +467,7 @@ where
 
                 // Instantiated for each TCP connection received from the local
                 // application (including HTTP connections).
-                let accept = phantom_data::layer()
-                    .push(keepalive::accept::layer(config.outbound_accept_keepalive))
+                let accept = keepalive::accept::layer(config.outbound_accept_keepalive)
                     .push(transport_metrics.accept("outbound"))
                     .bind(());
 
