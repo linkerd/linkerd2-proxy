@@ -177,10 +177,10 @@ impl<A, C, R, B> Server<A, C, R, B>
 where
     A: Stack<Source, Error = Never> + Clone,
     A::Value: Accept<Connection>,
-    <A::Value as Accept<Connection>>::Io: Send + Peek + 'static,
+    <A::Value as Accept<Connection>>::Io: fmt::Debug + Send + Peek + 'static,
     C: Stack<connect::Target, Error = Never> + Clone,
     C::Value: connect::Connect,
-    <C::Value as connect::Connect>::Connected: Send + 'static,
+    <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
     R: Stack<Source, Error = Never> + Clone,
