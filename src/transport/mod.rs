@@ -2,6 +2,7 @@ pub mod connect;
 mod connection;
 mod addr_info;
 mod io;
+pub mod keepalive;
 pub mod metrics;
 mod prefixed;
 pub mod tls;
@@ -22,4 +23,5 @@ pub use self::{
         Peek,
     },
     io::BoxedIo,
+    keepalive::SetKeepalive,
 };

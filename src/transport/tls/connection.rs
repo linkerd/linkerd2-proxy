@@ -6,7 +6,7 @@ use futures::Future;
 use tokio::prelude::*;
 use tokio::net::TcpStream;
 
-use transport::{AddrInfo, io::internal::Io, prefixed::Prefixed};
+use transport::{AddrInfo, io::internal::Io, prefixed::Prefixed, SetKeepalive};
 
 use super::{
     identity::Identity,
@@ -124,6 +124,19 @@ impl<S, C> AddrInfo for Connection<S, C>
 
     fn get_original_dst(&self) -> Option<SocketAddr> {
         self.0.get_ref().0.get_original_dst()
+    }
+}
+
+impl<S, C> SetKeepalive for Connection<S, C>
+    where S: SetKeepalive + Debug,
+          C: Session + Debug,
+{
+    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
+        self.0.get_ref().0.keepalive()
+    }
+
+    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
+        self.0.get_mut().0.set_keepalive(ka)
     }
 }
 

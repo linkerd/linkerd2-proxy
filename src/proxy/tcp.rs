@@ -18,27 +18,27 @@ pub(super) fn forward<I, C, T>(
 ) -> impl Future<Item=(), Error=()> + Send + 'static
 where
     T: fmt::Debug,
-    I: AsyncRead + AsyncWrite + Send + 'static,
+    I: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
     C: svc::Stack<T>,
     C::Value: Connect,
     C::Error: fmt::Debug,
     <C::Value as Connect>::Future: Send + 'static,
     <C::Value as Connect>::Error: fmt::Debug,
-    <C::Value as Connect>::Connected: Send + 'static,
+    <C::Value as Connect>::Connected: fmt::Debug + Send + 'static,
 {
     let connect = match connect.make(&target) {
         Ok(c) => c,
         Err(e) => {
-            error!("forward error: {:?}: {:?}", target, e);
+            error!("forward stack error: {:?}: {:?}", target, e);
             return Either::A(future::ok(()));
         }
     };
 
     let fwd = connect.connect()
-        .map_err(|e| info!("forward connect error: {:?}", e))
+        .map_err(|e| info!("forward connect failure: {:?}", e))
         .and_then(move |io| {
             Duplex::new(server_io, io)
-                .map_err(|e| info!("forward duplex error: {}", e))
+                .map_err(|e| debug!("forward duplex complete: {}", e))
         });
 
     Either::B(fwd)
@@ -72,8 +72,8 @@ struct CopyBuf {
 
 impl<In, Out> Duplex<In, Out>
 where
-    In: AsyncRead + AsyncWrite,
-    Out: AsyncRead + AsyncWrite,
+    In: AsyncRead + AsyncWrite + fmt::Debug,
+    Out: AsyncRead + AsyncWrite + fmt::Debug,
 {
     pub(super) fn new(in_io: In, out_io: Out) -> Self {
         Duplex {
@@ -85,8 +85,8 @@ where
 
 impl<In, Out> Future for Duplex<In, Out>
 where
-    In: AsyncRead + AsyncWrite,
-    Out: AsyncRead + AsyncWrite,
+    In: AsyncRead + AsyncWrite + fmt::Debug,
+    Out: AsyncRead + AsyncWrite + fmt::Debug,
 {
     type Item = ();
     type Error = io::Error;
@@ -95,6 +95,7 @@ where
         // This purposefully ignores the Async part, since we don't want to
         // return early if the first half isn't ready, but the other half
         // could make progress.
+        trace!("poll {:?} <-> {:?}", self.half_in.io, self.half_out.io);
         self.half_in.copy_into(&mut self.half_out)?;
         self.half_out.copy_into(&mut self.half_in)?;
         if self.half_in.is_done() && self.half_out.is_done() {
@@ -107,7 +108,7 @@ where
 
 impl<T> HalfDuplex<T>
 where
-    T: AsyncRead,
+    T: AsyncRead + fmt::Debug,
 {
     fn new(io: T) -> Self {
         Self {
@@ -119,7 +120,7 @@ where
 
     fn copy_into<U>(&mut self, dst: &mut HalfDuplex<U>) -> Poll<(), io::Error>
     where
-        U: AsyncWrite,
+        U: AsyncWrite + fmt::Debug,
     {
         // Since Duplex::poll() intentionally ignores the Async part of our
         // return value, we may be polled again after returning Ready, if the
@@ -127,12 +128,14 @@ where
         // shutdown, we finished in a previous poll, so don't even enter into
         // the copy loop.
         if dst.is_shutdown {
+            trace!("already shutdown {:?}", dst.io);
             return Ok(Async::Ready(()));
         }
         loop {
             try_ready!(self.read());
             try_ready!(self.write_into(dst));
             if self.buf.is_none() {
+                trace!("shutting down {:?}", dst.io);
                 debug_assert!(!dst.is_shutdown,
                     "attempted to shut down destination twice");
                 try_ready!(dst.io.shutdown());
@@ -141,8 +144,6 @@ where
                 return Ok(Async::Ready(()));
             }
         }
-
-
     }
 
     fn read(&mut self) -> Poll<(), io::Error> {
@@ -150,13 +151,17 @@ where
         if let Some(ref mut buf) = self.buf {
             if !buf.has_remaining() {
                 buf.reset();
+
+                trace!("reading");
                 let n = try_ready!(self.io.read_buf(buf));
+                trace!("read {}B", n);
+
                 is_eof = n == 0;
             }
         }
-
         if is_eof {
-            self.buf.take();
+            trace!("eof");
+            self.buf = None;
         }
 
         Ok(Async::Ready(()))
@@ -164,11 +169,13 @@ where
 
     fn write_into<U>(&mut self, dst: &mut HalfDuplex<U>) -> Poll<(), io::Error>
     where
-        U: AsyncWrite,
+        U: AsyncWrite + fmt::Debug,
     {
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
+                trace!("writing {}B", buf.remaining());
                 let n = try_ready!(dst.io.write_buf(buf));
+                trace!("wrote {}B", n);
                 if n == 0 {
                     return Err(write_zero());
                 }
@@ -242,6 +249,7 @@ mod tests {
     use futures::{Async, Poll};
     use super::*;
 
+    #[derive(Debug)]
     struct DoneIo(AtomicBool);
 
     impl<'a> Read for &'a DoneIo {

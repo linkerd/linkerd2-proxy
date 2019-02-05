@@ -8,12 +8,12 @@ use std::io;
 use std::net::SocketAddr;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    net::{TcpListener, TcpStream, ConnectFuture},
+    net::{TcpListener, TcpStream, tcp::ConnectFuture},
     reactor::Handle,
 };
 
 use Conditional;
-use transport::{AddrInfo, BoxedIo, GetOriginalDst, tls};
+use transport::{AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive, tls};
 use indexmap::IndexSet;
 
 pub struct BoundPort<G = ()> {
@@ -145,7 +145,6 @@ impl BoundPort {
 }
 
 impl<G> BoundPort<G> {
-
     pub fn without_protocol_detection_for(
         self,
         disable_protocol_detection_ports: IndexSet<u16>,
@@ -408,7 +407,7 @@ impl Future for Connecting {
                         );
                         io::Error::new(e.kind(), details)
                     }));
-                    trace!("Connecting: state=plaintext; tls={:?};",tls);
+                    trace!("Connecting: state=plaintext; tls={:?};", tls);
                     set_nodelay_or_warn(&plaintext_stream);
                     match tls.take().expect("Polled after ready") {
                         Conditional::Some(config) => {
@@ -554,6 +553,16 @@ impl AsyncWrite for Connection {
 
     fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
         self.io.write_buf(buf)
+    }
+}
+
+impl SetKeepalive for Connection {
+    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
+        self.io.keepalive()
+    }
+
+    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
+        self.io.set_keepalive(ka)
     }
 }
 
