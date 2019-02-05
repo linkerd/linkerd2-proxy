@@ -34,7 +34,7 @@ use svc::{
 use tap;
 use task;
 use telemetry;
-use transport::{self, connect, tls, BoundPort, Connection, GetOriginalDst};
+use transport::{self, connect, keepalive, tls, BoundPort, Connection, GetOriginalDst};
 use {Addr, Conditional};
 
 use super::config::Config;
@@ -239,16 +239,18 @@ where
                 .as_ref()
                 .and_then(|s| s.controller_identity.clone().map(|id| id));
 
-            let control_config = control_host_and_port.map(|host_and_port| {
-                control::Config::new(
-                    host_and_port,
-                    tls_server_identity,
-                    config.control_backoff_delay,
-                    config.control_connect_timeout,
-                )
+            // If the controller is on localhost, use the inbound keepalive.
+            // If the controller is remote, use the outbound keepalive.
+            let keepalive = control_host_and_port.as_ref().and_then(|a| {
+                if a.is_loopback() {
+                    config.inbound_connect_keepalive
+                } else {
+                    config.outbound_connect_keepalive
+                }
             });
 
             let stack = connect::Stack::new()
+                .push(keepalive::connect::layer(keepalive))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
                 .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
@@ -267,10 +269,10 @@ where
             // spawn a task on an executor when `make` is called. This is done
             // lazily so that a default executor is available to spawn the
             // background buffering task.
-            future::lazy(move || match control_config {
+            future::lazy(move || match control_host_and_port {
                 None => Ok(None),
-                Some(config) => stack
-                    .make(&config)
+                Some(addr) => stack
+                    .make(&control::Config::new(addr, tls_server_identity))
                     .map(Some)
                     .map_err(|e| error!("failed to build controller: {}", e)),
             })
@@ -288,16 +290,20 @@ where
                 config.namespaces.clone(),
                 config.destination_get_suffixes,
                 config.destination_concurrency_limit,
+                config.proxy_id.clone(),
             );
             resolver_bg_tx
                 .send(resolver_bg)
                 .ok()
                 .expect("admin thread must receive resolver task");
 
-            let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3));
+
+            let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3), config.proxy_id);
 
             let outbound = {
-                use super::outbound::{discovery::Resolve, orig_proto_upgrade, server_id, Endpoint};
+                use super::outbound::{
+                    discovery::Resolve, orig_proto_upgrade, server_id, Endpoint,
+                };
                 use proxy::{
                     canonicalize,
                     http::{balance, header_from_target, metrics, retry},
@@ -315,6 +321,7 @@ where
                 // Establishes connections to remote peers (for both TCP
                 // forwarding and HTTP proxying).
                 let connect = connect::Stack::new()
+                    .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                     .push(svc::timeout::layer(config.outbound_connect_timeout))
                     .push(transport_metrics.connect("outbound"));
 
@@ -363,7 +370,9 @@ where
                 //    is retryable.
                 let dst_route_layer = phantom_data::layer()
                     .push(insert_target::layer())
-                    .push(metrics::layer::<_, classify::Response>(retry_http_metrics.clone()))
+                    .push(metrics::layer::<_, classify::Response>(
+                        retry_http_metrics.clone(),
+                    ))
                     .push(retry::layer(retry_http_metrics))
                     .push(proxy::http::timeout::layer())
                     .push(metrics::layer::<_, classify::Response>(route_http_metrics))
@@ -462,7 +471,9 @@ where
 
                 // Instantiated for each TCP connection received from the local
                 // application (including HTTP connections).
-                let accept = transport_metrics.accept("outbound").bind(());
+                let accept = keepalive::accept::layer(config.outbound_accept_keepalive)
+                    .push(transport_metrics.accept("outbound"))
+                    .bind(());
 
                 serve(
                     "out",
@@ -490,6 +501,7 @@ where
                 // Establishes connections to the local application (for both
                 // TCP forwarding and HTTP proxying).
                 let connect = connect::Stack::new()
+                    .push(keepalive::connect::layer(config.inbound_connect_keepalive))
                     .push(svc::timeout::layer(config.inbound_connect_timeout))
                     .push(transport_metrics.connect("inbound"))
                     .push(rewrite_loopback_addr::layer());
@@ -603,7 +615,9 @@ where
 
                 // As the inbound proxy accepts connections, we don't do any
                 // special transport-level handling.
-                let accept = transport_metrics.accept("inbound").bind(());
+                let accept = keepalive::accept::layer(config.inbound_accept_keepalive)
+                    .push(transport_metrics.accept("inbound"))
+                    .bind(());
 
                 serve(
                     "in",
@@ -686,17 +700,17 @@ fn serve<A, C, R, B, G>(
 where
     A: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     A::Value: proxy::Accept<Connection>,
-    <A::Value as proxy::Accept<Connection>>::Io: Send + transport::Peek + 'static,
+    <A::Value as proxy::Accept<Connection>>::Io: fmt::Debug + Send + transport::Peek + 'static,
     C: svc::Stack<connect::Target, Error = Never> + Send + Clone + 'static,
     C::Value: connect::Connect + Send,
-    <C::Value as connect::Connect>::Connected: Send + 'static,
+    <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
     R: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
-    R::Value:
-        svc::Service<http::Request<proxy::http::Body>, Response = http::Response<B>>,
+    R::Value: svc::Service<http::Request<proxy::http::Body>, Response = http::Response<B>>,
     R::Value: Send + 'static,
-    <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error: error::Error + Send + Sync + 'static,
+    <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error:
+        error::Error + Send + Sync + 'static,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
     G: GetOriginalDst + Send + 'static,

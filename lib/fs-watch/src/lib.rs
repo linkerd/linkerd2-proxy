@@ -182,7 +182,7 @@ pub mod inotify {
 
     pub struct WatchStream {
         inotify: Inotify,
-        stream: EventStream,
+        stream: EventStream<[u8; 32]>,
         paths: Vec<PathBuf>,
     }
 
@@ -194,7 +194,7 @@ pub mod inotify {
     impl WatchStream {
         pub fn new(paths: Vec<PathBuf>) -> Result<Self, io::Error> {
             let mut inotify = Inotify::init()?;
-            let stream = inotify.event_stream();
+            let stream = inotify.event_stream([0; 32]);
 
             let mut watch_stream = WatchStream {
                 inotify,
@@ -269,13 +269,11 @@ pub mod inotify {
 mod tests {
     extern crate env_logger;
     extern crate linkerd2_task as task;
-    extern crate tempdir;
+    extern crate tempfile;
     extern crate tokio;
 
     use super::*;
     use self::task::test_util::BlockOnFor;
-
-    use self::tempdir::TempDir;
     use self::tokio::runtime::current_thread::Runtime;
     use tokio_timer::{clock, Interval};
 
@@ -293,14 +291,17 @@ mod tests {
 
     struct Fixture {
         paths: Vec<PathBuf>,
-        dir: TempDir,
+        dir: tempfile::TempDir,
         rt: Runtime,
     }
 
     impl Fixture {
         fn new() -> Fixture {
             let _ = self::env_logger::try_init();
-            let dir = TempDir::new("test").unwrap();
+            let dir = tempfile::Builder::new()
+                .prefix("test")
+                .tempdir()
+                .unwrap();
             let paths = vec![
                 dir.path().join("a"),
                 dir.path().join("b"),

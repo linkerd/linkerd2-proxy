@@ -84,6 +84,7 @@ struct NewQuery {
     /// will go down accordingly.
     active_query_handle: Arc<()>,
     concurrency_limit: usize,
+    proxy_id: String,
 }
 
 enum DestinationServiceQuery<T>
@@ -110,9 +111,10 @@ where
         namespaces: Namespaces,
         suffixes: Vec<dns::Suffix>,
         concurrency_limit: usize,
+        proxy_id: String,
     ) -> Self {
         Self {
-            new_query: NewQuery::new(namespaces, suffixes, concurrency_limit),
+            new_query: NewQuery::new(namespaces, suffixes, concurrency_limit, proxy_id),
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -318,12 +320,13 @@ where
 
 impl NewQuery {
 
-    fn new(namespaces: Namespaces, suffixes: Vec<dns::Suffix>, concurrency_limit: usize) -> Self {
+    fn new(namespaces: Namespaces, suffixes: Vec<dns::Suffix>, concurrency_limit: usize, proxy_id: String) -> Self {
         Self {
             namespaces,
             suffixes,
             concurrency_limit,
             active_query_handle: Arc::new(()),
+            proxy_id,
         }
     }
 
@@ -384,6 +387,7 @@ impl NewQuery {
                 let req = GetDestination {
                     scheme: "k8s".into(),
                     path: format!("{}", dst),
+                    proxy_id: self.proxy_id.clone(),
                 };
                 let mut svc = Destination::new(client.lift_ref());
                 let response = svc.get(grpc::Request::new(req));

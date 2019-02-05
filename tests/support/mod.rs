@@ -17,6 +17,7 @@ pub extern crate net2;
 extern crate prost;
 extern crate tokio;
 extern crate tokio_connect;
+extern crate tokio_current_thread;
 pub extern crate tokio_io;
 extern crate tower_grpc;
 extern crate tower_service;
@@ -35,11 +36,11 @@ pub use self::futures::{future::Executor, *,};
 pub use self::futures::sync::oneshot;
 pub use self::http::{HeaderMap, Request, Response, StatusCode};
 use self::tokio::{
-    executor::current_thread,
     net::{TcpListener},
     runtime,
     reactor,
 };
+use self::tokio_current_thread as current_thread;
 use self::tokio_connect::Connect;
 use self::tower_grpc as grpc;
 use self::tower_service::{Service};

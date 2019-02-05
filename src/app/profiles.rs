@@ -22,6 +22,7 @@ use NameAddr;
 pub struct Client<T> {
     service: Option<T>,
     backoff: Duration,
+    proxy_id: String,
 }
 
 pub struct Rx(mpsc::Receiver<profiles::Routes>);
@@ -36,6 +37,7 @@ where
     service: Option<T>,
     state: State<T>,
     tx: mpsc::Sender<profiles::Routes>,
+    proxy_id: String,
 }
 
 enum State<T>
@@ -59,8 +61,8 @@ where
     <<T::ResponseBody as Body>::Data as IntoBuf>::Buf: Send + 'static,
     T::Error: fmt::Debug,
 {
-    pub fn new(service: Option<T>, backoff: Duration) -> Self {
-        Self { service, backoff }
+    pub fn new(service: Option<T>, backoff: Duration, proxy_id: String) -> Self {
+        Self { service, backoff, proxy_id }
     }
 }
 
@@ -84,6 +86,7 @@ where
             state: State::Disconnected,
             service: self.service.clone(),
             backoff: self.backoff,
+            proxy_id: self.proxy_id.clone(),
         };
         let spawn = DefaultExecutor::current().spawn(Box::new(daemon.map_err(|_| ())));
 
@@ -181,6 +184,7 @@ where
                     let req = api::GetDestination {
                         scheme: "k8s".to_owned(),
                         path: self.dst.clone(),
+                        proxy_id: self.proxy_id.clone(),
                     };
                     debug!("disconnected; getting profile: {:?}", req);
                     let rspf = client.get_profile(grpc::Request::new(req));

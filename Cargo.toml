@@ -33,7 +33,7 @@ linkerd2-stack     = { path = "lib/stack" }
 linkerd2-task      = { path = "lib/task" }
 linkerd2-timeout   = { path = "lib/timeout" }
 
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.5" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.6" }
 
 bytes = "0.4"
 env_logger = { version = "0.5", default-features = false }
@@ -48,14 +48,14 @@ log = "0.4.1"
 indexmap = "1.0.0"
 prost = "0.4.0"
 prost-types = "0.4.0"
-rand = "0.6"
+rand = "0.6.3"
 try-lock = "0.2"
 
 # for config parsing
 regex = "1.0.0"
 
 # networking
-tokio = "0.1.7"
+tokio = "0.1.14"
 tokio-signal = "0.2"
 tokio-timer = "0.2.6"   # for tokio_timer::clock
 tokio-connect         = { git = "https://github.com/carllerche/tokio-connect" }
@@ -83,7 +83,6 @@ untrusted = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
-inotify = { git = "https://github.com/inotify-rs/inotify" }
 procinfo = "0.4.2"
 
 [dev-dependencies]
@@ -91,14 +90,12 @@ net2 = "0.2"
 quickcheck = { version = "0.8", default-features = false }
 linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
 linkerd2-task    = { path = "lib/task", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.5" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.6" }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.
 tokio-io = "0.1.6"
-
-[patch.crates-io]
-webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }
+tokio-current-thread = "0.1.4"
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.
@@ -106,3 +103,9 @@ webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-nam
 debug = false
 [profile.test]
 debug = false
+
+[patch.crates-io]
+prost = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
+prost-derive = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
+prost-build = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
+webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }

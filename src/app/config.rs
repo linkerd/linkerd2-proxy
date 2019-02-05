@@ -44,6 +44,18 @@ pub struct Config {
     /// The maximum amount of time to wait for a connection to a remote peer.
     pub outbound_connect_timeout: Duration,
 
+    // TCP Keepalive set on accepted inbound connections.
+    pub inbound_accept_keepalive: Option<Duration>,
+
+    // TCP Keepalive set on accepted outbound connections.
+    pub outbound_accept_keepalive: Option<Duration>,
+
+    // TCP Keepalive set on inbound connections to the local application.
+    pub inbound_connect_keepalive: Option<Duration>,
+
+    // TCP Keepalive set on outbound connections to the remote peers.
+    pub outbound_connect_keepalive: Option<Duration>,
+
     pub inbound_ports_disable_protocol_detection: IndexSet<u16>,
 
     pub outbound_ports_disable_protocol_detection: IndexSet<u16>,
@@ -92,6 +104,8 @@ pub struct Config {
     pub metrics_retain_idle: Duration,
 
     pub namespaces: Namespaces,
+
+    pub proxy_id: String,
 
     /// Optional minimum TTL for DNS lookups.
     pub dns_min_ttl: Option<Duration>,
@@ -179,6 +193,12 @@ pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
 
+const ENV_INBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_ACCEPT_KEEPALIVE";
+const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEPALIVE";
+
+const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEPALIVE";
+const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
+
 pub const DEPRECATED_ENV_PRIVATE_LISTENER: &str = "LINKERD2_PROXY_PRIVATE_LISTENER";
 pub const DEPRECATED_ENV_PRIVATE_FORWARD: &str = "LINKERD2_PROXY_PRIVATE_FORWARD";
 const DEPRECATED_ENV_PUBLIC_LISTENER: &str = "LINKERD2_PROXY_PUBLIC_LISTENER";
@@ -239,6 +259,7 @@ pub const ENV_TLS_CONTROLLER_IDENTITY: &str = "LINKERD2_PROXY_TLS_CONTROLLER_IDE
 pub const ENV_CONTROLLER_NAMESPACE: &str = "LINKERD2_PROXY_CONTROLLER_NAMESPACE";
 pub const ENV_POD_NAMESPACE: &str = "LINKERD2_PROXY_POD_NAMESPACE";
 pub const VAR_POD_NAMESPACE: &str = "$LINKERD2_PROXY_POD_NAMESPACE";
+pub const ENV_PROXY_ID: &str = "LINKERD2_PROXY_ID";
 
 pub const ENV_CONTROL_URL: &str = "LINKERD2_PROXY_CONTROL_URL";
 pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
@@ -321,35 +342,53 @@ impl<'a> TryFrom<&'a Strings> for Config {
             strings, ENV_INBOUND_LISTENER, DEPRECATED_ENV_PUBLIC_LISTENER, parse_addr);
         let control_listener_addr = parse(strings, ENV_CONTROL_LISTENER, parse_addr);
         let metrics_listener_addr = parse(strings, ENV_METRICS_LISTENER, parse_addr);
+
         let inbound_forward = parse_deprecated(
             strings, ENV_INBOUND_FORWARD, DEPRECATED_ENV_PRIVATE_FORWARD, parse_addr);
+
         let inbound_connect_timeout = parse_deprecated(
             strings, ENV_INBOUND_CONNECT_TIMEOUT, DEPRECATED_ENV_PRIVATE_CONNECT_TIMEOUT, parse_duration);
         let outbound_connect_timeout = parse_deprecated(
             strings, ENV_OUTBOUND_CONNECT_TIMEOUT, DEPRECATED_ENV_PUBLIC_CONNECT_TIMEOUT, parse_duration);
+
+        let inbound_accept_keepalive = parse(strings, ENV_INBOUND_ACCEPT_KEEPALIVE, parse_duration);
+        let outbound_accept_keepalive = parse(strings, ENV_OUTBOUND_ACCEPT_KEEPALIVE, parse_duration);
+
+        let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
+        let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
+
         let inbound_disable_ports = parse(strings, ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, parse_port_set);
         let outbound_disable_ports = parse(strings, ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, parse_port_set);
+
         let inbound_router_capacity = parse(strings, ENV_INBOUND_ROUTER_CAPACITY, parse_number);
         let outbound_router_capacity = parse(strings, ENV_OUTBOUND_ROUTER_CAPACITY, parse_number);
+
         let inbound_router_max_idle_age = parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
         let outbound_router_max_idle_age = parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
+
         let destination_concurrency_limit =
             parse(strings, ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT, parse_number);
         let destination_get_suffixes =
             parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
         let destination_profile_suffixes =
             parse(strings, ENV_DESTINATION_PROFILE_SUFFIXES, parse_dns_suffixes);
+
         let tls_trust_anchors = parse(strings, ENV_TLS_TRUST_ANCHORS, parse_path);
         let tls_end_entity_cert = parse(strings, ENV_TLS_CERT, parse_path);
         let tls_private_key = parse(strings, ENV_TLS_PRIVATE_KEY, parse_path);
         let tls_pod_identity_template = strings.get(ENV_TLS_POD_IDENTITY);
         let tls_controller_identity = strings.get(ENV_TLS_CONTROLLER_IDENTITY);
+
         let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
+
         let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
+
         let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
         let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
+
         let dns_canonicalize_timeout = parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration)?
             .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT);
+
         let pod_namespace = strings.get(ENV_POD_NAMESPACE).and_then(|maybe_value| {
             // There cannot be a default pod namespace, and the pod namespace is required.
             maybe_value.ok_or_else(|| {
@@ -372,6 +411,9 @@ impl<'a> TryFrom<&'a Strings> for Config {
             pod: pod_namespace?,
             tls_controller: controller_namespace?,
         };
+
+        let proxy_id_template = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
+        let proxy_id = proxy_id_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
 
         let tls_controller_identity = tls_controller_identity?;
         let control_host_and_port = control_host_and_port?;
@@ -462,6 +504,12 @@ impl<'a> TryFrom<&'a Strings> for Config {
             outbound_connect_timeout: outbound_connect_timeout?
                 .unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
 
+            inbound_accept_keepalive: inbound_accept_keepalive?,
+            outbound_accept_keepalive: outbound_accept_keepalive?,
+
+            inbound_connect_keepalive: inbound_connect_keepalive?,
+            outbound_connect_keepalive: outbound_connect_keepalive?,
+
             inbound_ports_disable_protocol_detection: inbound_disable_ports?
                 .unwrap_or_else(|| default_disable_ports_protocol_detection()),
             outbound_ports_disable_protocol_detection: outbound_disable_ports?
@@ -498,6 +546,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
 
             namespaces,
+
+            proxy_id,
 
             dns_min_ttl: dns_min_ttl?,
 
@@ -540,8 +590,10 @@ impl Strings for Env {
 
 impl TestEnv {
     pub fn new() -> Self {
+        let mut values = HashMap::new();
+        values.insert(ENV_PROXY_ID, "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into());
         Self {
-            values: Default::default(),
+            values,
         }
     }
 

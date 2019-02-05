@@ -2,8 +2,7 @@ extern crate tokio_connect;
 
 pub use self::tokio_connect::Connect;
 
-use std::net::SocketAddr;
-use std::{hash, io};
+use std::{hash, io, net::SocketAddr};
 
 use Conditional;
 use never::Never;
@@ -21,14 +20,16 @@ pub struct Stack {}
 pub struct Target {
     pub addr: SocketAddr,
     pub tls: tls::ConditionalConnectionConfig<tls::ClientConfig>,
-    _p: (),
 }
 
 // ===== impl Target =====
 
 impl Target {
     pub fn new(addr: SocketAddr, tls: tls::ConditionalConnectionConfig<tls::ClientConfig>) -> Self {
-        Self { addr, tls, _p: () }
+        Self {
+            addr,
+            tls,
+        }
     }
 
     pub fn tls_status(&self) -> tls::Status {
@@ -59,7 +60,11 @@ impl hash::Hash for Target {
 
 impl PartialEq for Target {
     fn eq(&self, other: &Target) -> bool {
-        self.addr.eq(&other.addr) && self.tls_status().is_some().eq(&other.tls_status().is_some())
+        self.addr.eq(&other.addr)
+            && self
+                .tls_status()
+                .is_some()
+                .eq(&other.tls_status().is_some())
     }
 }
 
