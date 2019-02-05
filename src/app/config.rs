@@ -105,6 +105,8 @@ pub struct Config {
 
     pub namespaces: Namespaces,
 
+    pub proxy_id: String,
+
     /// Optional minimum TTL for DNS lookups.
     pub dns_min_ttl: Option<Duration>,
 
@@ -257,6 +259,7 @@ pub const ENV_TLS_CONTROLLER_IDENTITY: &str = "LINKERD2_PROXY_TLS_CONTROLLER_IDE
 pub const ENV_CONTROLLER_NAMESPACE: &str = "LINKERD2_PROXY_CONTROLLER_NAMESPACE";
 pub const ENV_POD_NAMESPACE: &str = "LINKERD2_PROXY_POD_NAMESPACE";
 pub const VAR_POD_NAMESPACE: &str = "$LINKERD2_PROXY_POD_NAMESPACE";
+pub const ENV_PROXY_ID: &str = "LINKERD2_PROXY_ID";
 
 pub const ENV_CONTROL_URL: &str = "LINKERD2_PROXY_CONTROL_URL";
 pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
@@ -409,6 +412,9 @@ impl<'a> TryFrom<&'a Strings> for Config {
             tls_controller: controller_namespace?,
         };
 
+        let proxy_id_template = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
+        let proxy_id = proxy_id_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
+
         let tls_controller_identity = tls_controller_identity?;
         let control_host_and_port = control_host_and_port?;
 
@@ -541,6 +547,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
 
             namespaces,
 
+            proxy_id,
+
             dns_min_ttl: dns_min_ttl?,
 
             dns_max_ttl: dns_max_ttl?,
@@ -582,8 +590,10 @@ impl Strings for Env {
 
 impl TestEnv {
     pub fn new() -> Self {
+        let mut values = HashMap::new();
+        values.insert(ENV_PROXY_ID, "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into());
         Self {
-            values: Default::default(),
+            values,
         }
     }
 

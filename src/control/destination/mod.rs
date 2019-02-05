@@ -117,6 +117,7 @@ pub fn new<T>(
     namespaces: Namespaces,
     suffixes: Vec<dns::Suffix>,
     concurrency_limit: usize,
+    proxy_id: String,
 ) -> (Resolver, impl Future<Item = (), Error = ()>)
 where
     T: HttpService<BoxBody>,
@@ -131,6 +132,7 @@ where
         namespaces,
         suffixes,
         concurrency_limit,
+        proxy_id,
     );
     let task = future::poll_fn(move || bg.poll_rpc(&mut client));
     (disco, task)

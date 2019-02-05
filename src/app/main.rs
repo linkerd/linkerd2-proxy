@@ -290,13 +290,15 @@ where
                 config.namespaces.clone(),
                 config.destination_get_suffixes,
                 config.destination_concurrency_limit,
+                config.proxy_id.clone(),
             );
             resolver_bg_tx
                 .send(resolver_bg)
                 .ok()
                 .expect("admin thread must receive resolver task");
 
-            let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3));
+
+            let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3), config.proxy_id);
 
             let outbound = {
                 use super::outbound::{
