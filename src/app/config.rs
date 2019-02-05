@@ -105,6 +105,9 @@ pub struct Config {
 
     pub namespaces: Namespaces,
 
+    /// This ID is passed to the Destination service so that it can return
+    /// different results depending on the identity of the proxy making the
+    /// call.
     pub proxy_id: String,
 
     /// Optional minimum TTL for DNS lookups.
@@ -454,8 +457,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
             tls_controller: controller_namespace?,
         };
 
-        let proxy_id_template = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
-        let proxy_id = proxy_id_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
+        let proxy_id = strings.get(ENV_PROXY_ID)?.unwrap_or_default();
 
         let tls_controller_identity = tls_controller_identity?;
         let control_host_and_port = control_host_and_port?;
@@ -644,12 +646,9 @@ impl Strings for Env {
 
 impl TestEnv {
     pub fn new() -> Self {
-        let mut values = HashMap::new();
-        values.insert(
-            ENV_PROXY_ID,
-            "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into(),
-        );
-        Self { values }
+        Self {
+            values: Default::default(),
+        }
     }
 
     pub fn put(&mut self, key: &'static str, value: String) {

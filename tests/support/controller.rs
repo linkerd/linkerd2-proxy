@@ -62,7 +62,7 @@ impl Controller {
         let dst = pb::GetDestination {
             scheme: "k8s".into(),
             path,
-            proxy_id: "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into(),
+            proxy_id: String::new(),
         };
         self.expect_dst_calls
             .lock()
@@ -98,7 +98,7 @@ impl Controller {
         let dst = pb::GetDestination {
             scheme: "k8s".into(),
             path,
-            proxy_id: "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into(),
+            proxy_id: String::new(),
         };
         self.expect_profile_calls
             .lock()
