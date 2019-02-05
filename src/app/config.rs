@@ -361,7 +361,6 @@ impl<'a> TryFrom<&'a Strings> for Config {
             })
         });
         let controller_namespace = strings.get(ENV_CONTROLLER_NAMESPACE);
-        let proxy_id = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
 
         // There is no default controller URL because a default would make it
         // too easy to connect to the wrong controller, which would be dangerous.
@@ -376,6 +375,9 @@ impl<'a> TryFrom<&'a Strings> for Config {
             pod: pod_namespace?,
             tls_controller: controller_namespace?,
         };
+
+        let proxy_id_template = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
+        let proxy_id = proxy_id_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
 
         let tls_controller_identity = tls_controller_identity?;
         let control_host_and_port = control_host_and_port?;
