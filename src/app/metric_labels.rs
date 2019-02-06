@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Write},
-    net,
-};
+use std::fmt::{self, Write};
 
 use metrics::FmtLabels;
 
@@ -18,7 +15,6 @@ pub struct ControlLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EndpointLabels {
-    addr: net::SocketAddr,
     direction: Direction,
     tls_status: tls::Status,
     dst_name: Option<NameAddr>,
@@ -89,7 +85,6 @@ impl FmtLabels for RouteLabels {
 impl From<inbound::Endpoint> for EndpointLabels {
     fn from(ep: inbound::Endpoint) -> Self {
         Self {
-            addr: ep.addr,
             dst_name: ep.dst_name,
             direction: Direction::In,
             tls_status: ep.source_tls_status,
@@ -114,7 +109,6 @@ where
 impl From<outbound::Endpoint> for EndpointLabels {
     fn from(ep: outbound::Endpoint) -> Self {
         Self {
-            addr: ep.connect.addr,
             dst_name: ep.dst_name,
             direction: Direction::Out,
             tls_status: ep.connect.tls_status(),
