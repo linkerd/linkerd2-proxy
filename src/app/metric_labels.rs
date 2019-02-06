@@ -1,6 +1,4 @@
-use std::{
-    fmt::{self, Write},
-};
+use std::fmt::{self, Write};
 
 use metrics::FmtLabels;
 
