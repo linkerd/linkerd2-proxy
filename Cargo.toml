@@ -99,7 +99,6 @@ tokio-current-thread = "0.1.4"
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.
-
 [profile.dev]
 debug = false
 [profile.test]
@@ -109,3 +108,4 @@ debug = false
 prost = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
 prost-derive = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
 prost-build = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
+webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }

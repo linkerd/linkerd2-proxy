@@ -54,7 +54,7 @@ pub enum Connecting {
         connect: ConnectFuture,
         tls: Option<tls::ConditionalConnectionConfig<tls::ClientConfig>>,
     },
-    UpgradeToTls(tls::UpgradeClientToTls),
+    UpgradeToTls(tls::UpgradeClientToTls, tls::Identity),
 }
 
 /// Abstracts a plaintext socket vs. a TLS decorated one.
@@ -75,7 +75,7 @@ pub struct Connection {
     peek_buf: BytesMut,
 
     /// Whether or not the connection is secured with TLS.
-    tls_status: tls::Status,
+    tls_peer_identity: tls::ConditionalIdentity,
 
     /// If true, the proxy should attempt to detect the protocol for this
     /// connection. If false, protocol detection should be skipped.
@@ -350,7 +350,10 @@ impl Future for ConditionallyUpgradeServerToTls {
                 },
                 ConditionallyUpgradeServerToTls::UpgradeToTls(upgrading) => {
                     let tls_stream = try_ready!(upgrading.poll());
-                    return Ok(Async::Ready(Connection::tls(BoxedIo::new(tls_stream))));
+                    let peer_identity = tls_stream
+                        .client_identity()
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "tls identity missing"))?;
+                    return Ok(Async::Ready(Connection::tls(BoxedIo::new(tls_stream), peer_identity)));
                 }
             }
         }
@@ -414,7 +417,7 @@ impl Future for Connecting {
                             trace!("plaintext connection established; trying to upgrade");
                             let upgrade = tls::Connection::connect(
                                 plaintext_stream, &config.server_identity, config.config);
-                            Connecting::UpgradeToTls(upgrade)
+                            Connecting::UpgradeToTls(upgrade, config.server_identity)
                         },
                         Conditional::None(why) => {
                             trace!("plaintext connection established; no TLS ({:?})", why);
@@ -422,9 +425,9 @@ impl Future for Connecting {
                         },
                     }
                 },
-                Connecting::UpgradeToTls(upgrade) => {
+                Connecting::UpgradeToTls(upgrade, server_identity) => {
                     let tls_stream = try_ready!(upgrade.poll());
-                    return Ok(Async::Ready(Connection::tls(BoxedIo::new(tls_stream))));
+                    return Ok(Async::Ready(Connection::tls(BoxedIo::new(tls_stream), server_identity.clone())));
                 },
             };
         }
@@ -444,7 +447,7 @@ impl Connection {
         Connection {
             io: BoxedIo::new(io),
             peek_buf: BytesMut::new(),
-            tls_status: Conditional::None(reason),
+            tls_peer_identity: Conditional::None(reason),
             detect_protocol: false,
             orig_dst: None,
         }
@@ -456,17 +459,17 @@ impl Connection {
         Connection {
             io: BoxedIo::new(io),
             peek_buf,
-            tls_status: Conditional::None(why_no_tls),
+            tls_peer_identity: Conditional::None(why_no_tls),
             detect_protocol: true,
             orig_dst: None,
         }
     }
 
-    fn tls(io: BoxedIo) -> Self {
+    fn tls(io: BoxedIo, peer_identity: tls::Identity) -> Self {
         Connection {
             io: io,
             peek_buf: BytesMut::new(),
-            tls_status: Conditional::Some(()),
+            tls_peer_identity: Conditional::Some(peer_identity),
             detect_protocol: true,
             orig_dst: None,
         }
@@ -488,7 +491,11 @@ impl Connection {
     }
 
     pub fn tls_status(&self) -> tls::Status {
-        self.tls_status
+        tls::Status::from(&self.tls_peer_identity)
+    }
+
+    pub fn tls_peer_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
+        self.tls_peer_identity.as_ref()
     }
 
     pub fn should_detect_protocol(&self) -> bool {

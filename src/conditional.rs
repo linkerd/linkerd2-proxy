@@ -52,3 +52,15 @@ where
         !self.is_none()
     }
 }
+
+impl<'a, C, R> Conditional<&'a C, R>
+where
+    C: Clone,
+{
+    pub fn cloned(self) -> Conditional<C, R> {
+        match self {
+            Conditional::Some(c) => Conditional::Some(c.clone()),
+            Conditional::None(r) => Conditional::None(r),
+        }
+    }
+}

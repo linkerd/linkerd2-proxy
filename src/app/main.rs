@@ -442,6 +442,7 @@ where
                 let addr_router = addr_stack
                     .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(limit::layer(MAX_IN_FLIGHT))
+                    .push(strip_header::request::layer(super::L5D_CLIENT_ID))
                     .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                     .push(router::layer(|req: &http::Request<_>| {
                         super::http_request_l5d_override_dst_addr(req)
@@ -489,7 +490,7 @@ where
 
             let inbound = {
                 use super::inbound::{
-                    orig_proto_downgrade, rewrite_loopback_addr, Endpoint, RecognizeEndpoint,
+                    client_id, orig_proto_downgrade, rewrite_loopback_addr, Endpoint, RecognizeEndpoint,
                 };
 
                 let capacity = config.inbound_router_capacity;
@@ -607,7 +608,9 @@ where
                 let source_stack = dst_router
                     .push(orig_proto_downgrade::layer())
                     .push(insert_target::layer())
+                    .push(client_id::layer())
                     .push(strip_header::response::layer(super::L5D_SERVER_ID))
+                    .push(strip_header::request::layer(super::L5D_CLIENT_ID))
                     .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER));
 
                 // As the inbound proxy accepts connections, we don't do any

@@ -70,7 +70,7 @@ pub struct Source {
     pub remote: SocketAddr,
     pub local: SocketAddr,
     pub orig_dst: Option<SocketAddr>,
-    pub tls_status: tls::Status,
+    pub tls_peer: tls::ConditionalIdentity,
     _p: (),
 }
 
@@ -115,13 +115,13 @@ impl Source {
         remote: SocketAddr,
         local: SocketAddr,
         orig_dst: Option<SocketAddr>,
-        tls_status: tls::Status
+        tls_peer: tls::ConditionalIdentity,
     ) -> Self {
        Self {
            remote,
            local,
            orig_dst,
-           tls_status,
+           tls_peer,
            _p: (),
        }
    }
@@ -238,7 +238,7 @@ where
             remote: remote_addr,
             local: connection.local_addr().unwrap_or(self.listen_addr),
             orig_dst,
-            tls_status: connection.tls_status(),
+            tls_peer: connection.tls_peer_identity().cloned(),
             _p: (),
         };
 

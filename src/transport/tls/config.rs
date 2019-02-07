@@ -431,10 +431,6 @@ impl ServerConfig {
         // Ask TLS clients for a certificate and accept any certificate issued
         // by our trusted CA(s).
         //
-        // Initially, also allow TLS clients that don't have a client
-        // certificate too, to minimize risk. TODO: Use
-        // `AllowAnyAuthenticatedClient` to require a valid certificate.
-        //
         // XXX: Rustls's built-in verifiers don't let us tweak things as fully
         // as we'd like (e.g. controlling the set of trusted signature
         // algorithms), but they provide good enough defaults for now.
@@ -442,7 +438,7 @@ impl ServerConfig {
         //
         // TODO: Change Rustls's API to Avoid needing to clone `root_cert_store`.
         let client_cert_verifier =
-            rustls::AllowAnyAnonymousOrAuthenticatedClient::new(common.root_cert_store.clone());
+            rustls::AllowAnyAuthenticatedClient::new(common.root_cert_store.clone());
 
         let mut config = rustls::ServerConfig::new(client_cert_verifier);
         set_common_settings(&mut config.versions);

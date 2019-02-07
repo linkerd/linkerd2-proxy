@@ -86,14 +86,6 @@ impl CertResolver {
 
 }
 
-fn parse_end_entity_cert<'a>(cert_chain: &'a[rustls::Certificate])
-    -> Result<webpki::EndEntityCert<'a>, webpki::Error>
-{
-    let cert = cert_chain.first()
-        .map(rustls::Certificate::as_ref)
-        .unwrap_or(&[]); // An empty input fill fail to parse.
-    webpki::EndEntityCert::from(untrusted::Input::from(cert))
-}
 
 impl rustls::ResolvesClientCert for CertResolver {
     fn resolve(&self, _acceptable_issuers: &[&[u8]], sigschemes: &[rustls::SignatureScheme])
@@ -120,7 +112,7 @@ impl rustls::ResolvesServerCert for CertResolver {
         };
 
         // Verify that our certificate is valid for the given SNI name.
-        if let Err(err) = parse_end_entity_cert(&self.certified_key.as_ref()?.cert)
+        if let Err(err) = super::parse_end_entity_cert(&self.certified_key.as_ref()?.cert)
             .and_then(|cert| cert.verify_is_valid_for_dns_name(server_name)) {
             debug!("our certificate is not valid for the SNI name -> no certificate: {:?}", err);
             return None;

@@ -5,7 +5,7 @@ use std::fmt;
 use std::sync::Arc;
 
 /// An endpoint's identity.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Identity(pub(super) Arc<DnsName>);
 
 impl Identity {
@@ -46,6 +46,10 @@ impl Identity {
                 error!("Invalid DNS name: {:?}", hostname);
                 ()
             })
+    }
+
+    pub fn from_client_cert(name: &webpki::DNSNameRef) -> Self {
+        Identity(Arc::new(DnsName(name.to_owned())))
     }
 
     pub(super) fn as_dns_name_ref(&self) -> webpki::DNSNameRef {

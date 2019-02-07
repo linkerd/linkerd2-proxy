@@ -62,7 +62,7 @@ impl tap::Inspect for Endpoint {
         req.extensions().get::<Source>().map(|s| s.remote)
     }
 
-    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::Status {
+    fn src_tls<'a, B>(&self, _: &'a http::Request<B>) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
         Conditional::None(tls::ReasonForNoTls::InternalTraffic)
     }
 
@@ -74,8 +74,8 @@ impl tap::Inspect for Endpoint {
         Some(self.metadata.labels())
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::Status {
-        self.metadata.tls_status()
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
+        self.connect.tls_server_identity()
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
@@ -346,28 +346,18 @@ pub mod server_id {
         fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
             let svc = self.inner.make(endpoint)?;
 
-            if endpoint.connect.tls.is_some() {
-                match endpoint.metadata.tls_identity() {
-                    Conditional::Some(id) => match HeaderValue::from_str(id.as_ref()) {
-                        Ok(value) => {
-                            debug!("l5d-server-id enabled for {:?}", endpoint);
-                            return Ok(svc::Either::A(Service {
-                                inner: svc,
-                                value,
-                                _marker: PhantomData,
-                            }));
-                        },
-                        Err(_err) => {
-                            warn!("l5d-server-id identity header is invalid: {:?}", endpoint);
-                        }
+            if let Conditional::Some(id) = endpoint.connect.tls_server_identity() {
+                match HeaderValue::from_str(id.as_ref()) {
+                    Ok(value) => {
+                        debug!("l5d-server-id enabled for {:?}", endpoint);
+                        return Ok(svc::Either::A(Service {
+                            inner: svc,
+                            value,
+                            _marker: PhantomData,
+                        }));
                     },
-                    Conditional::None(why) => {
-                        error!("endpoint tls is some, but no identity ({:?}): {:?}", why, endpoint);
-
-                        // This is a bug, so panic in tests!
-                        if cfg!(debug_assertions) {
-                            panic!("endpoint tls is some, but no identity ({:?}): {:?}", why, endpoint);
-                        }
+                    Err(_err) => {
+                        warn!("l5d-server-id identity header is invalid: {:?}", endpoint);
                     },
                 }
             }
