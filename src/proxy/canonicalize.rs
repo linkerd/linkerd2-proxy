@@ -44,11 +44,25 @@ pub struct Service<M: svc::Stack<Addr>> {
 
 struct Task {
     original: NameAddr,
-    resolved: Option<NameAddr>,
+    resolved: Cache,
     resolver: dns::Resolver,
     state: State,
     timeout: Duration,
     tx: mpsc::Sender<NameAddr>,
+}
+
+/// Tracks the state of the last resolution.
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum Cache {
+    /// The service has not yet been notified of a value.
+    AwaitingInitial,
+
+    /// The service has been notified with the original value (i.e. due to an
+    /// error), and we do not yet have a resolved name.
+    Unresolved,
+
+    /// The service was last-notified with this name.
+    Resolved(NameAddr),
 }
 
 enum State {
@@ -68,10 +82,7 @@ pub enum Error<M, S> {
 // FIXME the resolver should be abstracted to a trait so that this can be tested
 // without a real DNS service.
 pub fn layer(resolver: dns::Resolver, timeout: Duration) -> Layer {
-    Layer {
-        resolver,
-        timeout,
-    }
+    Layer { resolver, timeout }
 }
 
 impl<M> svc::Layer<Addr, Addr, M> for Layer
@@ -137,7 +148,7 @@ impl Task {
     ) -> Self {
         Self {
             original,
-            resolved: None,
+            resolved: Cache::AwaitingInitial,
             resolver,
             state: State::Init,
             timeout,
@@ -167,30 +178,42 @@ impl Future for Task {
                             // service with it and set a delay that will notify
                             // when the resolver should be consulted again.
                             let resolved = NameAddr::new(refine.name, self.original.port());
-                            if self.resolved.as_ref() != Some(&resolved) {
+                            if self.resolved.get() != Some(&resolved) {
                                 let err = self.tx.try_send(resolved.clone()).err();
                                 if err.map(|e| e.is_disconnected()).unwrap_or(false) {
                                     return Ok(().into());
                                 }
 
-                                self.resolved = Some(resolved);
+                                self.resolved = Cache::Resolved(resolved);
                             }
 
                             State::ValidUntil(Delay::new(refine.valid_until))
                         }
                         Err(e) => {
-                            if self.resolved.is_none() {
-                                error!("failed to refine {}: {}", self.original.name(), e);
+                            if self.resolved == Cache::AwaitingInitial {
+                                // The service needs a value in order to
+                                // continue, so we need to publish the original
+                                // name so it can proceed.
+                                warn!(
+                                    "failed to refine {}: {}; using original name",
+                                    self.original.name(),
+                                    e,
+                                );
                                 let err = self.tx.try_send(self.original.clone()).err();
                                 if err.map(|e| e.is_disconnected()).unwrap_or(false) {
                                     return Ok(().into());
                                 }
 
-                                // Pretend the original name was resolved so
-                                // that we don't re-publish on subsequent errors.
-                                self.resolved = Some(self.original.clone());
+                                // There's now no need to re-publish the
+                                // original name on subsequent failures.
+                                self.resolved = Cache::Unresolved;
                             } else {
-                                warn!("failed to refine {}: {}, falling back", self.original.name(), e);
+                                debug!(
+                                    "failed to refresh {}: {}; cache={:?}",
+                                    self.original.name(),
+                                    e,
+                                    self.resolved,
+                                );
                             }
 
                             let valid_until = e
@@ -218,6 +241,15 @@ impl Future for Task {
                     }
                 }
             };
+        }
+    }
+}
+
+impl Cache {
+    fn get(&self) -> Option<&NameAddr> {
+        match self {
+            Cache::Resolved(ref r) => Some(&r),
+            _ => None,
         }
     }
 }
