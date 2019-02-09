@@ -191,9 +191,8 @@ impl Future for Task {
                         }
                         Err(e) => {
                             if self.resolved == Cache::AwaitingInitial {
-                                // The service needs a value in order to
-                                // continue, so we need to publish the original
-                                // name so it can proceed.
+                                // The service needs a value, so we need to
+                                // publish the original name so it can proceed.
                                 warn!(
                                     "failed to refine {}: {}; using original name",
                                     self.original.name(),
