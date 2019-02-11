@@ -25,6 +25,8 @@ CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
 
 CARGO_TEST = $(CARGO) test --all --frozen $(RELEASE)
 
+CARGO_FMT = $(CARGO) fmt --all
+
 DOCKER = docker
 DOCKER_BUILD = docker build
 ifdef DOCKER_TAG
@@ -54,6 +56,14 @@ build: $(TARGET_BIN)
 .PHONY: clean
 clean:
 	$(CARGO) clean --target-dir $(TARGET)
+
+.PHONY: check-fmt
+check-fmt:
+	$(CARGO_FMT) -- --check
+
+.PHONY: fmt
+fmt:
+	$(CARGO_FMT)
 
 .PHONY: test
 test: fetch
