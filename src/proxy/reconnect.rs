@@ -1,10 +1,9 @@
 extern crate tower_reconnect;
 
-
+pub use self::tower_reconnect::{Error, Reconnect};
 use futures::{task, Async, Future, Poll};
 use std::fmt;
 use std::time::Duration;
-pub use self::tower_reconnect::{Error, Reconnect};
 use tokio_timer::{clock, Delay};
 
 use svc;
@@ -65,7 +64,7 @@ impl Layer {
     pub fn with_fixed_backoff(self, wait: Duration) -> Self {
         Self {
             backoff: Backoff::Fixed(wait),
-            .. self
+            ..self
         }
     }
 }
@@ -132,7 +131,7 @@ where
     fn with_fixed_backoff(self, wait: Duration) -> Self {
         Self {
             backoff: Backoff::Fixed(wait),
-            .. self
+            ..self
         }
     }
 }
@@ -140,7 +139,7 @@ where
 impl<T, N, S, Req> svc::Service<Req> for Service<T, N>
 where
     T: fmt::Debug,
-    N: svc::Service<(), Response=S>,
+    N: svc::Service<(), Response = S>,
     N::Error: fmt::Display,
     S: svc::Service<Req>,
 {
@@ -155,7 +154,7 @@ where
                 if let Some(delay) = self.active_backoff.as_mut() {
                     match delay.poll() {
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Ok(Async::Ready(())) => {},
+                        Ok(Async::Ready(())) => {}
                         Err(e) => {
                             error!("timer failed; continuing without backoff: {}", e);
                         }
@@ -254,8 +253,8 @@ mod tests {
     use super::*;
     use futures::{future, Future};
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-    use svc::Service as _Service;
     use std::{error, fmt, time};
+    use svc::Service as _Service;
     use tokio::runtime::current_thread::Runtime;
 
     struct NewService {
@@ -307,10 +306,10 @@ mod tests {
 
         fn poll(&mut self) -> Poll<Service, InitErr> {
             if self.should_fail {
-                return Err(InitErr {})
+                return Err(InitErr {});
             }
 
-            Ok(Service{}.into())
+            Ok(Service {}.into())
         }
     }
 
@@ -324,8 +323,8 @@ mod tests {
     #[test]
     fn reconnects_with_backoff() {
         let mock = NewService { fails: 2.into() };
-        let mut backoff = super::Service::for_test(mock)
-            .with_fixed_backoff(Duration::from_millis(100));
+        let mut backoff =
+            super::Service::for_test(mock).with_fixed_backoff(Duration::from_millis(100));
         let mut rt = Runtime::new().unwrap();
 
         // Checks that, after the inner NewService fails to connect twice, it

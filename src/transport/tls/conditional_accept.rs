@@ -1,4 +1,4 @@
-use super::{Identity, untrusted};
+use super::{untrusted, Identity};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Match {
@@ -38,32 +38,37 @@ pub fn match_client_hello(input: &[u8], identity: &Identity) -> Match {
             } else {
                 Match::NotMatched
             };
-            trace!("match_client_hello: parsed correctly up to SNI; matches: {:?}", matches);
+            trace!(
+                "match_client_hello: parsed correctly up to SNI; matches: {:?}",
+                matches
+            );
             matches
-        },
+        }
         Ok(None) => {
             trace!("match_client_hello: failed to parse up to SNI");
             Match::NotMatched
-        },
+        }
         Err(untrusted::EndOfInput) => {
             trace!("match_client_hello: needs more input");
             Match::Incomplete
-        },
+        }
     }
 }
 
 /// The result is `Ok(Some(hostname))` if the SNI extension was found, `Ok(None)`
 /// if we affirmatively rejected the input before we found the SNI extension, or
 /// `Err(EndOfInput)` if we don't have enough input to continue.
-fn extract_sni<'a>(input: &mut untrusted::Reader<'a>)
-    -> Result<Option<untrusted::Input<'a>>, untrusted::EndOfInput>
-{
+fn extract_sni<'a>(
+    input: &mut untrusted::Reader<'a>,
+) -> Result<Option<untrusted::Input<'a>>, untrusted::EndOfInput> {
     // TLS ciphertext record header.
 
-    if input.read_byte()? != 22 { // ContentType::handshake
+    if input.read_byte()? != 22 {
+        // ContentType::handshake
         return Ok(None);
     }
-    if input.read_byte()? != 0x03 { // legacy_record_version.major is always 0x03.
+    if input.read_byte()? != 0x03 {
+        // legacy_record_version.major is always 0x03.
         return Ok(None);
     }
     {
@@ -77,25 +82,27 @@ fn extract_sni<'a>(input: &mut untrusted::Reader<'a>)
 
     // Treat the record length and its body as a vector<u16>.
     let r = read_vector(input, |input| {
-        if input.read_byte()? != 1 { // HandshakeType::client_hello
+        if input.read_byte()? != 1 {
+            // HandshakeType::client_hello
             return Ok(None);
         }
         // The length is a 24-bit big-endian value. Nobody (good) will never
         // send a value larger than 0xffff so treat it as a 0x00 followed
         // by vector<u16>
-        if input.read_byte()? != 0 { // Most significant byte of the length
+        if input.read_byte()? != 0 {
+            // Most significant byte of the length
             return Ok(None);
         }
         read_vector(input, |input| {
             // version{.major,.minor} == {0x3, 0x3} for TLS 1.2 and later.
-            if input.read_byte()? != 0x03 ||
-               input.read_byte()? != 0x03 {
+            if input.read_byte()? != 0x03 || input.read_byte()? != 0x03 {
                 return Ok(None);
             }
 
             input.skip(32)?; // random
             skip_vector_u8(input)?; // session_id
-            if !skip_vector(input)? { // cipher_suites
+            if !skip_vector(input)? {
+                // cipher_suites
                 return Ok(None);
             }
             skip_vector_u8(input)?; // compression_methods
@@ -105,7 +112,8 @@ fn extract_sni<'a>(input: &mut untrusted::Reader<'a>)
             read_vector(input, |input| {
                 while !input.at_end() {
                     let extension_type = read_u16(input)?;
-                    if extension_type != 0 { // ExtensionType::server_name
+                    if extension_type != 0 {
+                        // ExtensionType::server_name
                         skip_vector(input)?;
                         continue;
                     }
@@ -117,7 +125,8 @@ fn extract_sni<'a>(input: &mut untrusted::Reader<'a>)
                         read_vector(input, |input| {
                             // Nobody sends an SNI extension with anything
                             // other than a single `host_name` value.
-                            if input.read_byte()? != 0 { // NameType::host_name
+                            if input.read_byte()? != 0 {
+                                // NameType::host_name
                                 return Ok(None);
                             }
                             // Return the value of the `HostName`.
@@ -142,10 +151,13 @@ fn extract_sni<'a>(input: &mut untrusted::Reader<'a>)
 
 /// Reads a `u16` vector, which is formatted as a big-endian `u16` length
 /// followed by that many bytes.
-fn read_vector<'a, F, T>(input: &mut untrusted::Reader<'a>, f: F)
-    -> Result<Option<T>, untrusted::EndOfInput>
-    where F: Fn(&mut untrusted::Reader<'a>) -> Result<Option<T>, untrusted::EndOfInput>,
-          T: 'a,
+fn read_vector<'a, F, T>(
+    input: &mut untrusted::Reader<'a>,
+    f: F,
+) -> Result<Option<T>, untrusted::EndOfInput>
+where
+    F: Fn(&mut untrusted::Reader<'a>) -> Result<Option<T>, untrusted::EndOfInput>,
+    T: 'a,
 {
     let length = read_u16(input)?;
 
@@ -217,8 +229,11 @@ mod tests {
 
     #[test]
     fn mismatch_http_1_0_request() {
-        check_all_prefixes(Match::NotMatched, "example.com",
-                           b"GET /TheProject.html HTTP/1.0\r\n\r\n");
+        check_all_prefixes(
+            Match::NotMatched,
+            "example.com",
+            b"GET /TheProject.html HTTP/1.0\r\n\r\n",
+        );
     }
 
     fn check_all_prefixes(expected_match: Match, identity: &str, input: &[u8]) {

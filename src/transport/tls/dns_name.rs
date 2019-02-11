@@ -1,6 +1,6 @@
 use super::{untrusted, webpki};
-use std::fmt;
 use convert::TryFrom;
+use std::fmt;
 
 /// A `DnsName` is guaranteed to be syntactically valid. The validity rules
 /// are specified in [RFC 5280 Section 7.2], except that underscores are also
@@ -57,7 +57,7 @@ mod tests {
         let cases = &[
             ("localhost", false), // Not absolute
             ("localhost.", true),
-            ("LocalhOsT.", true), // Case-insensitive
+            ("LocalhOsT.", true),   // Case-insensitive
             ("mlocalhost.", false), // prefixed
             ("localhost1.", false), // suffixed
         ];
@@ -77,8 +77,14 @@ mod tests {
             ("web.svc.local.", "web.svc.local"),
         ];
         for (host, expected_result) in cases {
-            let dns_name = DnsName::try_from(host.as_bytes()).expect(&format!("'{}' was invalid", host));
-            assert_eq!(dns_name.without_trailing_dot(), *expected_result, "{:?}", dns_name)
+            let dns_name =
+                DnsName::try_from(host.as_bytes()).expect(&format!("'{}' was invalid", host));
+            assert_eq!(
+                dns_name.without_trailing_dot(),
+                *expected_result,
+                "{:?}",
+                dns_name
+            )
         }
         assert!(DnsName::try_from(".".as_bytes()).is_err());
     }

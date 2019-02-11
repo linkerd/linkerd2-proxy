@@ -1,14 +1,12 @@
 use convert::TryFrom;
 use futures::prelude::*;
-use std::{fmt, net};
 use std::time::Instant;
+use std::{fmt, net};
 use tokio::timer::Delay;
 use trust_dns_resolver::{
     config::{ResolverConfig, ResolverOpts},
-    lookup_ip::{LookupIp},
-    system_conf,
-    AsyncResolver,
-    BackgroundLookupIp,
+    lookup_ip::LookupIp,
+    system_conf, AsyncResolver, BackgroundLookupIp,
 };
 
 pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
@@ -106,14 +104,12 @@ impl Suffix {
                         hd.ends_with('.')
                     }
                 }
-
             }
         }
     }
 }
 
 impl Resolver {
-
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
     ///
@@ -124,8 +120,9 @@ impl Resolver {
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_and_env(env_config: &Config)
-        -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError> {
+    pub fn from_system_config_and_env(
+        env_config: &Config,
+    ) -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError> {
         let (config, opts) = system_conf::read_system_conf()?;
         let opts = env_config.configure_resolver_opts(opts);
         trace!("DNS config: {:?}", &config);
@@ -133,19 +130,17 @@ impl Resolver {
         Ok(Self::new(config, opts))
     }
 
-
     /// NOTE: It would be nice to be able to return a named type rather than
     ///       `impl Future` for the background future; it would be called
     ///       `Background` or `ResolverBackground` if that were possible.
-    pub fn new(config: ResolverConfig,  mut opts: ResolverOpts)
-        -> (Self, impl Future<Item = (), Error = ()> + Send)
-    {
+    pub fn new(
+        config: ResolverConfig,
+        mut opts: ResolverOpts,
+    ) -> (Self, impl Future<Item = (), Error = ()> + Send) {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
         let (resolver, background) = AsyncResolver::new(config, opts);
-        let resolver = Resolver {
-            resolver,
-        };
+        let resolver = Resolver { resolver };
         (resolver, background)
     }
 
@@ -162,7 +157,9 @@ impl Resolver {
                 trace!("completed with {:?}", &result);
                 result.map(Response::Exists).or_else(|e| {
                     if let &ResolveErrorKind::NoRecordsFound { valid_until, .. } = e.kind() {
-                        Ok(Response::DoesNotExist { retry_after: valid_until })
+                        Ok(Response::DoesNotExist {
+                            retry_after: valid_until,
+                        })
                     } else {
                         Err(e)
                     }
@@ -248,18 +245,40 @@ mod tests {
 
         static VALID: &[Case] = &[
             // Almost all digits and dots, similar to IPv4 addresses.
-            Case { input: "1.2.3.x", output: "1.2.3.x", },
-            Case { input: "1.2.3.x", output: "1.2.3.x", },
-            Case { input: "1.2.3.4A", output: "1.2.3.4a", },
-            Case { input: "a.b.c.d", output: "a.b.c.d", },
-
+            Case {
+                input: "1.2.3.x",
+                output: "1.2.3.x",
+            },
+            Case {
+                input: "1.2.3.x",
+                output: "1.2.3.x",
+            },
+            Case {
+                input: "1.2.3.4A",
+                output: "1.2.3.4a",
+            },
+            Case {
+                input: "a.b.c.d",
+                output: "a.b.c.d",
+            },
             // Uppercase letters in labels
-            Case { input: "A.b.c.d", output: "a.b.c.d", },
-            Case { input: "a.mIddle.c", output: "a.middle.c", },
-            Case { input: "a.b.c.D", output: "a.b.c.d", },
-
+            Case {
+                input: "A.b.c.d",
+                output: "a.b.c.d",
+            },
+            Case {
+                input: "a.mIddle.c",
+                output: "a.middle.c",
+            },
+            Case {
+                input: "a.b.c.D",
+                output: "a.b.c.d",
+            },
             // Absolute
-            Case { input: "a.b.c.d.", output: "a.b.c.d.", },
+            Case {
+                input: "a.b.c.d.",
+                output: "a.b.c.d.",
+            },
         ];
 
         for case in VALID {
@@ -271,9 +290,7 @@ mod tests {
             // These are not in the "preferred name syntax" as defined by
             // https://tools.ietf.org/html/rfc1123#section-2.1. In particular
             // the last label only has digits.
-            "1.2.3.4",
-            "a.1.2.3",
-            "1.2.x.3",
+            "1.2.3.4", "a.1.2.3", "1.2.x.3",
         ];
 
         for case in INVALID {
@@ -297,7 +314,10 @@ mod tests {
         ] {
             let n = Name::try_from(name.as_bytes()).unwrap();
             let s = Suffix::try_from(suffix).unwrap();
-            assert!(s.contains(&n), format!("{} should contain {}", suffix, name));
+            assert!(
+                s.contains(&n),
+                format!("{} should contain {}", suffix, name)
+            );
         }
     }
 
@@ -311,7 +331,10 @@ mod tests {
         ] {
             let n = Name::try_from(name.as_bytes()).unwrap();
             let s = Suffix::try_from(suffix).unwrap();
-            assert!(!s.contains(&n), format!("{} should not contain {}", suffix, name));
+            assert!(
+                !s.contains(&n),
+                format!("{} should not contain {}", suffix, name)
+            );
         }
 
         assert!(Suffix::try_from("").is_err(), "suffix must not be empty");

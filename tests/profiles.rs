@@ -1,4 +1,4 @@
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 #![deny(warnings)]
 mod support;
 use self::support::*;

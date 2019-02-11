@@ -1,9 +1,12 @@
-use std::{fmt, error::Error as StdError};
 use std::marker::PhantomData;
+use std::{error::Error as StdError, fmt};
 
 use futures::{Future, Poll};
 use http;
-use hyper::{body::Payload, client::conn::{self, Handshake, SendRequest}};
+use hyper::{
+    body::Payload,
+    client::conn::{self, Handshake, SendRequest},
+};
 
 use super::{Body, ClientUsedTls, Error};
 use svc;
@@ -33,10 +36,10 @@ enum ConnectState<C: connect::Connect, B> {
     Handshake {
         client_used_tls: bool,
         hs: Handshake<C::Connected, B>,
-    }
+    },
 }
 
-pub struct ResponseFuture{
+pub struct ResponseFuture {
     client_used_tls: bool,
     inner: conn::ResponseFuture,
 }
@@ -100,9 +103,13 @@ where
             let io = match self.state {
                 ConnectState::Connect(ref mut fut) => {
                     try_ready!(fut.poll().map_err(ConnectError::Connect))
-                },
-                ConnectState::Handshake { ref mut hs, client_used_tls } => {
-                    let (tx, conn) = try_ready!(hs.poll().map_err(|err| ConnectError::Handshake(err.into())));
+                }
+                ConnectState::Handshake {
+                    ref mut hs,
+                    client_used_tls,
+                } => {
+                    let (tx, conn) =
+                        try_ready!(hs.poll().map_err(|err| ConnectError::Handshake(err.into())));
                     let _ = self
                         .executor
                         .execute(conn.map_err(|err| debug!("http2 conn error: {}", err)));
@@ -110,7 +117,8 @@ where
                     return Ok(Connection {
                         client_used_tls,
                         tx,
-                    }.into());
+                    }
+                    .into());
                 }
             };
 
@@ -181,4 +189,3 @@ impl<E: fmt::Display> fmt::Display for ConnectError<E> {
 }
 
 impl<E: StdError> StdError for ConnectError<E> {}
-

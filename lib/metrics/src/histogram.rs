@@ -1,8 +1,8 @@
-use std::{cmp, iter, slice};
 use std::fmt;
 use std::marker::PhantomData;
+use std::{cmp, iter, slice};
 
-use super::{Counter, FmtMetric, FmtLabels};
+use super::{Counter, FmtLabels, FmtMetric};
 
 /// A series of latency values and counts.
 #[derive(Debug, Clone)]
@@ -75,7 +75,10 @@ impl<V: Into<u64>> Histogram<V> {
         let v: V = u.into();
         let value: u64 = v.into();
 
-        let idx = self.bounds.0.iter()
+        let idx = self
+            .bounds
+            .0
+            .iter()
             .position(|b| match *b {
                 Bucket::Le(ceiling) => value <= ceiling,
                 Bucket::Inf => true,
@@ -94,10 +97,7 @@ impl<V: Into<u64>> Histogram<V> {
         for (&bucket, &count) in self {
             if bucket >= le {
                 let count: u64 = count.into();
-                assert!(
-                    count >= at_least,
-                    "le={:?}; bucket={:?};", le, bucket
-                );
+                assert!(count >= at_least, "le={:?}; bucket={:?};", le, bucket);
                 break;
             }
         }
@@ -127,19 +127,18 @@ impl<V: Into<u64>> Histogram<V> {
                 Bucket::Le(c) => c,
                 Bucket::Inf => break,
             };
-            let next = self.bounds.0.get(i + 1)
+            let next = self
+                .bounds
+                .0
+                .get(i + 1)
                 .expect("Bucket::Le may not be the last in `bounds`!");
 
-            if value <= ceiling || next >= &value  {
+            if value <= ceiling || next >= &value {
                 break;
             }
 
             let count: u64 = self.buckets[i].into();
-            assert_eq!(
-                count, exactly,
-                "bucket={:?}; value={:?};",
-                bucket, value,
-            );
+            assert_eq!(count, exactly, "bucket={:?}; value={:?};", bucket, value,);
         }
         self
     }
@@ -162,24 +161,16 @@ impl<V: Into<u64>> Histogram<V> {
 
             if past_le {
                 let count: u64 = count.into();
-                assert_eq!(
-                    count, exactly,
-                    "bucket={:?}; value={:?};",
-                    bucket, value,
-                );
+                assert_eq!(count, exactly, "bucket={:?}; value={:?};", bucket, value,);
             }
         }
         self
     }
-
 }
 
 impl<'a, V: Into<u64>> IntoIterator for &'a Histogram<V> {
     type Item = (&'a Bucket, &'a Counter);
-    type IntoIter = iter::Zip<
-        slice::Iter<'a, Bucket>,
-        slice::Iter<'a, Counter>,
-    >;
+    type IntoIter = iter::Zip<slice::Iter<'a, Bucket>, slice::Iter<'a, Counter>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.bounds.0.iter().zip(self.buckets.iter())
@@ -288,8 +279,8 @@ impl cmp::Ord for Bucket {
 mod tests {
     use super::*;
 
-    use std::u64;
     use std::collections::HashMap;
+    use std::u64;
 
     static BOUNDS: &'static Bounds = &Bounds(&[
         Bucket::Le(10),
@@ -408,4 +399,3 @@ mod tests {
         }
     }
 }
-

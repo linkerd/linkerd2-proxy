@@ -1,6 +1,6 @@
 use futures::Poll;
 use http;
-use http::header::{IntoHeaderName, HeaderValue};
+use http::header::{HeaderValue, IntoHeaderName};
 
 use svc;
 
@@ -30,7 +30,7 @@ pub struct Service<H, S> {
 
 pub fn layer<H>(header: H) -> Layer<H>
 where
-    H: IntoHeaderName + Clone
+    H: IntoHeaderName + Clone,
 {
     Layer { header }
 }
@@ -70,7 +70,11 @@ where
         let inner = self.inner.make(t)?;
         let header = self.header.clone();
         let value = t.into();
-        Ok(Service { header, inner, value })
+        Ok(Service {
+            header,
+            inner,
+            value,
+        })
     }
 }
 
@@ -90,7 +94,8 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        req.headers_mut().insert(self.header.clone(), self.value.clone());
+        req.headers_mut()
+            .insert(self.header.clone(), self.value.clone());
         self.inner.call(req)
     }
 }

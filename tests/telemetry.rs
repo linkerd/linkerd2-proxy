@@ -1,15 +1,15 @@
 #![deny(warnings)]
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 #[macro_use]
 extern crate log;
-extern crate regex;
 extern crate flate2;
+extern crate regex;
 
 #[macro_use]
 mod support;
 use self::support::*;
-use support::bytes::IntoBuf;
 use std::io::Read;
+use support::bytes::IntoBuf;
 
 struct Fixture {
     client: client::Client,
@@ -26,46 +26,39 @@ struct TcpFixture {
 impl Fixture {
     fn inbound() -> Self {
         info!("running test server");
-        Fixture::inbound_with_server(server::new()
-            .route("/", "hello")
-            .run())
+        Fixture::inbound_with_server(server::new().route("/", "hello").run())
     }
 
     fn outbound() -> Self {
         info!("running test server");
-        Fixture::outbound_with_server(server::new()
-            .route("/", "hello")
-            .run())
+        Fixture::outbound_with_server(server::new().route("/", "hello").run())
     }
 
     fn inbound_with_server(srv: server::Listening) -> Self {
-        let proxy = proxy::new()
-            .inbound(srv)
-            .run();
+        let proxy = proxy::new().inbound(srv).run();
         let metrics = client::http1(proxy.metrics, "localhost");
 
-        let client = client::new(
-            proxy.inbound,
-            "tele.test.svc.cluster.local"
-        );
-        Fixture { client, metrics, proxy }
+        let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
+        Fixture {
+            client,
+            metrics,
+            proxy,
+        }
     }
 
     fn outbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new()
             .destination_and_close("tele.test.svc.cluster.local", srv.addr)
             .run();
-        let proxy = proxy::new()
-            .controller(ctrl)
-            .outbound(srv)
-            .run();
+        let proxy = proxy::new().controller(ctrl).outbound(srv).run();
         let metrics = client::http1(proxy.metrics, "localhost");
 
-        let client = client::new(
-            proxy.outbound,
-            "tele.test.svc.cluster.local"
-        );
-        Fixture { client, metrics, proxy }
+        let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
+        Fixture {
+            client,
+            metrics,
+            proxy,
+        }
     }
 }
 
@@ -87,30 +80,38 @@ impl TcpFixture {
     }
 
     fn inbound() -> Self {
-        let proxy = proxy::new()
-            .inbound(TcpFixture::server())
-            .run();
+        let proxy = proxy::new().inbound(TcpFixture::server()).run();
 
         let client = client::tcp(proxy.inbound);
         let metrics = client::http1(proxy.metrics, "localhost");
-        TcpFixture { client, metrics, proxy }
+        TcpFixture {
+            client,
+            metrics,
+            proxy,
+        }
     }
 
     fn outbound() -> Self {
-        let proxy = proxy::new()
-            .outbound(TcpFixture::server())
-            .run();
+        let proxy = proxy::new().outbound(TcpFixture::server()).run();
 
         let client = client::tcp(proxy.outbound);
         let metrics = client::http1(proxy.metrics, "localhost");
-        TcpFixture { client, metrics, proxy }
+        TcpFixture {
+            client,
+            metrics,
+            proxy,
+        }
     }
 }
 
 #[test]
 fn metrics_endpoint_inbound_request_count() {
     let _ = env_logger_init();
-    let Fixture { client, metrics, proxy: _proxy } = Fixture::inbound();
+    let Fixture {
+        client,
+        metrics,
+        proxy: _proxy,
+    } = Fixture::inbound();
 
     // prior to seeing any requests, request count should be empty.
     assert!(!metrics.get("/metrics")
@@ -121,13 +122,16 @@ fn metrics_endpoint_inbound_request_count() {
 
     // after seeing a request, the request count should be 1.
     assert_eventually_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\"} 1");
-
 }
 
 #[test]
 fn metrics_endpoint_outbound_request_count() {
     let _ = env_logger_init();
-    let Fixture { client, metrics, proxy: _proxy } = Fixture::outbound();
+    let Fixture {
+        client,
+        metrics,
+        proxy: _proxy,
+    } = Fixture::outbound();
 
     // prior to seeing any requests, request count should be empty.
     assert!(!metrics.get("/metrics")
@@ -138,7 +142,6 @@ fn metrics_endpoint_outbound_request_count() {
 
     // after seeing a request, the request count should be 1.
     assert_eventually_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-
 }
 
 mod response_classification {
@@ -157,12 +160,11 @@ mod response_classification {
         http::StatusCode::INTERNAL_SERVER_ERROR,
     ];
 
-
     fn expected_metric(
         status: &http::StatusCode,
         direction: &str,
         tls: &str,
-        no_tls_reason: Option<&str>
+        no_tls_reason: Option<&str>,
     ) -> String {
         format!(
             "response_total{{authority=\"tele.test.svc.cluster.local\",direction=\"{}\",tls=\"{}\",{}status_code=\"{}\",classification=\"{}\"}} 1",
@@ -179,23 +181,20 @@ mod response_classification {
     }
 
     fn make_test_server() -> server::Listening {
-        fn parse_header(headers: &http::HeaderMap, which: &str)
-            -> Option<http::StatusCode>
-        {
-            headers.get(which)
-                .map(|val| {
-                    val.to_str()
-                        .expect("requested status should be ascii")
-                        .parse::<http::StatusCode>()
-                        .expect("requested status should be numbers")
-                })
+        fn parse_header(headers: &http::HeaderMap, which: &str) -> Option<http::StatusCode> {
+            headers.get(which).map(|val| {
+                val.to_str()
+                    .expect("requested status should be ascii")
+                    .parse::<http::StatusCode>()
+                    .expect("requested status should be numbers")
+            })
         }
         info!("running test server");
         server::new()
             .route_fn("/", move |req| {
                 let headers = req.headers();
-                let status = parse_header(headers, REQ_STATUS_HEADER)
-                    .unwrap_or(http::StatusCode::OK);
+                let status =
+                    parse_header(headers, REQ_STATUS_HEADER).unwrap_or(http::StatusCode::OK);
                 let grpc_status = parse_header(headers, REQ_GRPC_STATUS_HEADER);
                 let mut rsp = if let Some(_grpc_status) = grpc_status {
                     // TODO: tests for grpc statuses
@@ -212,14 +211,18 @@ mod response_classification {
     #[test]
     fn inbound_http() {
         let _ = env_logger_init();
-        let Fixture { client, metrics, proxy: _proxy } =
-            Fixture::inbound_with_server(make_test_server());
+        let Fixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = Fixture::inbound_with_server(make_test_server());
 
         for (i, status) in STATUSES.iter().enumerate() {
             let request = client.request(
-                client.request_builder("/")
+                client
+                    .request_builder("/")
                     .header(REQ_STATUS_HEADER, status.as_str())
-                    .method("GET")
+                    .method("GET"),
             );
             assert_eq!(&request.status(), status);
 
@@ -237,14 +240,18 @@ mod response_classification {
     #[test]
     fn outbound_http() {
         let _ = env_logger_init();
-        let Fixture { client, metrics, proxy: _proxy } =
-            Fixture::outbound_with_server(make_test_server());
+        let Fixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = Fixture::outbound_with_server(make_test_server());
 
         for (i, status) in STATUSES.iter().enumerate() {
             let request = client.request(
-                client.request_builder("/")
+                client
+                    .request_builder("/")
                     .header(REQ_STATUS_HEADER, status.as_str())
-                    .method("GET")
+                    .method("GET"),
             );
             assert_eq!(&request.status(), status);
 
@@ -280,8 +287,11 @@ fn metrics_endpoint_inbound_response_latency() {
         .route_with_latency("/hi", "good morning", Duration::from_millis(40))
         .run();
 
-    let Fixture { client, metrics, proxy: _proxy } =
-        Fixture::inbound_with_server(srv);
+    let Fixture {
+        client,
+        metrics,
+        proxy: _proxy,
+    } = Fixture::inbound_with_server(srv);
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey"), "hello");
@@ -356,8 +366,11 @@ fn metrics_endpoint_outbound_response_latency() {
         .route_with_latency("/hi", "good morning", Duration::from_millis(40))
         .run();
 
-    let Fixture { client, metrics, proxy: _proxy } =
-        Fixture::outbound_with_server(srv);
+    let Fixture {
+        client,
+        metrics,
+        proxy: _proxy,
+    } = Fixture::outbound_with_server(srv);
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey"), "hello");
@@ -425,27 +438,23 @@ mod outbound_dst_labels {
 
     fn fixture(dest: &str) -> (Fixture, SocketAddr, DstSender) {
         info!("running test server");
-        let srv = server::new()
-            .route("/", "hello")
-            .run();
+        let srv = server::new().route("/", "hello").run();
 
         let addr = srv.addr;
 
         let ctrl = controller::new();
         let dst_tx = ctrl.destination_tx(dest);
 
-        let proxy = proxy::new()
-            .controller(ctrl.run())
-            .outbound(srv)
-            .run();
+        let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
         let metrics = client::http1(proxy.metrics, "localhost");
 
-        let client = client::new(
-            proxy.outbound,
-            dest,
-        );
+        let client = client::new(proxy.outbound, dest);
 
-        let f = Fixture { client, metrics, proxy };
+        let f = Fixture {
+            client,
+            metrics,
+            proxy,
+        };
 
         (f, addr, dst_tx)
     }
@@ -453,8 +462,15 @@ mod outbound_dst_labels {
     #[test]
     fn multiple_addr_labels() {
         let _ = env_logger_init();
-        let (Fixture { client, metrics, proxy: _proxy }, addr, dst_tx) =
-            fixture("labeled.test.svc.cluster.local");
+        let (
+            Fixture {
+                client,
+                metrics,
+                proxy: _proxy,
+            },
+            addr,
+            dst_tx,
+        ) = fixture("labeled.test.svc.cluster.local");
 
         {
             let mut labels = HashMap::new();
@@ -477,8 +493,15 @@ mod outbound_dst_labels {
     #[test]
     fn multiple_addrset_labels() {
         let _ = env_logger_init();
-        let (Fixture { client, metrics, proxy: _proxy }, addr, dst_tx) =
-            fixture("labeled.test.svc.cluster.local");
+        let (
+            Fixture {
+                client,
+                metrics,
+                proxy: _proxy,
+            },
+            addr,
+            dst_tx,
+        ) = fixture("labeled.test.svc.cluster.local");
 
         {
             let mut labels = HashMap::new();
@@ -486,7 +509,6 @@ mod outbound_dst_labels {
             labels.insert("set_label2".to_owned(), "bar".to_owned());
             dst_tx.send_labeled(addr, HashMap::new(), labels);
         }
-
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
@@ -502,8 +524,15 @@ mod outbound_dst_labels {
     #[test]
     fn labeled_addr_and_addrset() {
         let _ = env_logger_init();
-        let (Fixture { client, metrics, proxy: _proxy }, addr, dst_tx) =
-            fixture("labeled.test.svc.cluster.local");
+        let (
+            Fixture {
+                client,
+                metrics,
+                proxy: _proxy,
+            },
+            addr,
+            dst_tx,
+        ) = fixture("labeled.test.svc.cluster.local");
 
         {
             let mut alabels = HashMap::new();
@@ -531,10 +560,17 @@ mod outbound_dst_labels {
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_addr_labels() {
         let _ = env_logger_init();
-                info!("running test server");
+        info!("running test server");
 
-        let (Fixture { client, metrics, proxy: _proxy }, addr, dst_tx) =
-            fixture("labeled.test.svc.cluster.local");
+        let (
+            Fixture {
+                client,
+                metrics,
+                proxy: _proxy,
+            },
+            addr,
+            dst_tx,
+        ) = fixture("labeled.test.svc.cluster.local");
 
         {
             let mut alabels = HashMap::new();
@@ -588,9 +624,16 @@ mod outbound_dst_labels {
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_set_labels() {
         let _ = env_logger_init();
-                info!("running test server");
-        let (Fixture { client, metrics, proxy: _proxy }, addr, dst_tx) =
-            fixture("labeled.test.svc.cluster.local");
+        info!("running test server");
+        let (
+            Fixture {
+                client,
+                metrics,
+                proxy: _proxy,
+            },
+            addr,
+            dst_tx,
+        ) = fixture("labeled.test.svc.cluster.local");
 
         {
             let alabels = HashMap::new();
@@ -673,15 +716,16 @@ fn metrics_have_no_double_commas() {
     assert!(!scrape.contains(",,"), "outbound metrics had double comma");
 }
 
-
 #[test]
 fn metrics_has_start_time() {
-    let Fixture { metrics, proxy: _proxy, .. } = Fixture::inbound();
+    let Fixture {
+        metrics,
+        proxy: _proxy,
+        ..
+    } = Fixture::inbound();
     let uptime_regex = regex::Regex::new(r"process_start_time_seconds \d+")
         .expect("compiling regex shouldn't fail");
-    assert_eventually!(
-        uptime_regex.find(&metrics.get("/metrics")).is_some()
-    )
+    assert_eventually!(uptime_regex.find(&metrics.get("/metrics")).is_some())
 }
 
 mod transport {
@@ -691,16 +735,22 @@ mod transport {
     #[test]
     fn inbound_http_accept() {
         let _ = env_logger_init();
-        let Fixture { client, metrics, proxy } = Fixture::inbound();
+        let Fixture {
+            client,
+            metrics,
+            proxy,
+        } = Fixture::inbound();
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(metrics.get("/metrics"),
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
             "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
         );
         // drop the client to force the connection to close.
         drop(client);
-        assert_eventually_contains!(metrics.get("/metrics"),
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
             "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
         );
 
@@ -709,12 +759,14 @@ mod transport {
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(metrics.get("/metrics"),
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
             "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 2"
         );
         // drop the client to force the connection to close.
         drop(client);
-        assert_eventually_contains!(metrics.get("/metrics"),
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
             "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 2"
         );
     }
@@ -722,12 +774,18 @@ mod transport {
     #[test]
     fn inbound_http_connect() {
         let _ = env_logger_init();
-        let Fixture { client, metrics, proxy } = Fixture::inbound();
+        let Fixture {
+            client,
+            metrics,
+            proxy,
+        } = Fixture::inbound();
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"internal_traffic\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"internal_traffic\"} 1"
+        );
 
         // create a new client to force a new connection
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
@@ -735,18 +793,25 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
         // server connection should be pooled
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"internal_traffic\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"internal_traffic\"} 1"
+        );
     }
 
     #[test]
     fn outbound_http_accept() {
         let _ = env_logger_init();
-        let Fixture { client, metrics, proxy } = Fixture::outbound();
+        let Fixture {
+            client,
+            metrics,
+            proxy,
+        } = Fixture::outbound();
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(metrics.get("/metrics"),
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
             "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1"
         );
         // drop the client to force the connection to close.
@@ -760,7 +825,8 @@ mod transport {
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(metrics.get("/metrics"),
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
             "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 2"
         );
         // drop the client to force the connection to close.
@@ -773,7 +839,11 @@ mod transport {
     #[test]
     fn outbound_http_connect() {
         let _ = env_logger_init();
-        let Fixture { client, metrics, proxy } = Fixture::outbound();
+        let Fixture {
+            client,
+            metrics,
+            proxy,
+        } = Fixture::outbound();
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
@@ -793,8 +863,11 @@ mod transport {
     #[test]
     fn inbound_tcp_connect() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::inbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::inbound();
 
         let tcp_client = client.connect();
 
@@ -814,9 +887,7 @@ mod transport {
                 future::ok(())
             })
             .run();
-        let proxy = proxy::new()
-            .inbound(srv)
-            .run();
+        let proxy = proxy::new().inbound(srv).run();
 
         let client = client::tcp(proxy.inbound);
         let metrics = client::http1(proxy.metrics, "localhost");
@@ -830,8 +901,10 @@ mod transport {
         assert_eventually_contains!(metrics.get("/metrics"),
             "tcp_close_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"EXFULL\"} 1");
         // Connection from the client should have closed cleanly.
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
+        );
     }
 
     #[test]
@@ -844,9 +917,7 @@ mod transport {
                 future::ok(())
             })
             .run();
-        let proxy = proxy::new()
-            .outbound(srv)
-            .run();
+        let proxy = proxy::new().outbound(srv).run();
 
         let client = client::tcp(proxy.outbound);
         let metrics = client::http1(proxy.metrics, "localhost");
@@ -867,31 +938,42 @@ mod transport {
     #[test]
     fn inbound_tcp_accept() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::inbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::inbound();
 
         let tcp_client = client.connect();
 
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
 
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
+        );
 
         drop(tcp_client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
+        );
 
         let tcp_client = client.connect();
 
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
 
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 2");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 2"
+        );
         drop(tcp_client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 2");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 2"
+        );
     }
 
     // linkerd/linkerd2#831
@@ -899,8 +981,11 @@ mod transport {
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_duration() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::inbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::inbound();
 
         let tcp_client = client.connect();
 
@@ -935,8 +1020,11 @@ mod transport {
     #[test]
     fn inbound_tcp_write_bytes_total() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::inbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::inbound();
         let src_expected = format!(
             "tcp_write_bytes_total{{direction=\"inbound\",peer=\"src\",tls=\"disabled\"}} {}",
             TcpFixture::BYE_MSG.len()
@@ -960,8 +1048,11 @@ mod transport {
     #[test]
     fn inbound_tcp_read_bytes_total() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::inbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::inbound();
         let src_expected = format!(
             "tcp_read_bytes_total{{direction=\"inbound\",peer=\"src\",tls=\"disabled\"}} {}",
             TcpFixture::HELLO_MSG.len()
@@ -979,13 +1070,17 @@ mod transport {
 
         let out = metrics.get("/metrics");
         assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);    }
+        assert_eventually_contains!(out, &dst_expected);
+    }
 
     #[test]
     fn outbound_tcp_connect() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::outbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::outbound();
 
         let tcp_client = client.connect();
 
@@ -998,16 +1093,21 @@ mod transport {
     #[test]
     fn outbound_tcp_accept() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::outbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::outbound();
 
         let tcp_client = client.connect();
 
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
 
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1"
+        );
 
         drop(tcp_client);
         assert_eventually_contains!(metrics.get("/metrics"),
@@ -1018,8 +1118,10 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
 
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 2");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 2"
+        );
         drop(tcp_client);
         assert_eventually_contains!(metrics.get("/metrics"),
             "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\",errno=\"\"} 2");
@@ -1029,8 +1131,11 @@ mod transport {
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn outbound_tcp_duration() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::outbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::outbound();
 
         let tcp_client = client.connect();
 
@@ -1065,8 +1170,11 @@ mod transport {
     #[test]
     fn outbound_tcp_write_bytes_total() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::outbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::outbound();
         let src_expected = format!(
             "tcp_write_bytes_total{{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"}} {}",
             TcpFixture::BYE_MSG.len()
@@ -1090,8 +1198,11 @@ mod transport {
     #[test]
     fn outbound_tcp_read_bytes_total() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::outbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::outbound();
         let src_expected = format!(
             "tcp_read_bytes_total{{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"}} {}",
             TcpFixture::HELLO_MSG.len()
@@ -1115,56 +1226,78 @@ mod transport {
     #[test]
     fn outbound_tcp_open_connections() {
         let _ = env_logger_init();
-        let TcpFixture { client, metrics, proxy: _proxy } =
-            TcpFixture::outbound();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy: _proxy,
+        } = TcpFixture::outbound();
 
         let tcp_client = client.connect();
 
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1"
+        );
         drop(tcp_client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 0");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 0"
+        );
         let tcp_client = client.connect();
 
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1"
+        );
 
         drop(tcp_client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 0");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 0"
+        );
     }
 
     #[test]
     fn outbound_http_tcp_open_connections() {
         let _ = env_logger_init();
-        let Fixture { client, metrics, proxy } =
-            Fixture::outbound();
+        let Fixture {
+            client,
+            metrics,
+            proxy,
+        } = Fixture::outbound();
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
 
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1"
+        );
         drop(client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 0");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 0"
+        );
 
         // create a new client to force a new connection
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 1"
+        );
 
         drop(client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 0");
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"internal_traffic\"} 0"
+        );
     }
 }
 
@@ -1173,40 +1306,47 @@ mod transport {
 fn metrics_compression() {
     let _ = env_logger_init();
 
-    let Fixture { client, metrics, proxy: _proxy } = Fixture::inbound();
+    let Fixture {
+        client,
+        metrics,
+        proxy: _proxy,
+    } = Fixture::inbound();
 
     let do_scrape = |encoding: &str| {
         let resp = metrics.request(
-            metrics.request_builder("/metrics")
+            metrics
+                .request_builder("/metrics")
                 .method("GET")
-                .header("Accept-Encoding", encoding)
+                .header("Accept-Encoding", encoding),
         );
 
         {
             // create a new scope so we can release our borrow on `resp` before
             // getting the body
-            let content_encoding = resp.headers()
-                .get("content-encoding")
-                .as_ref()
-                .map(|val| val
-                    .to_str()
+            let content_encoding = resp.headers().get("content-encoding").as_ref().map(|val| {
+                val.to_str()
                     .expect("content-encoding value should be ascii")
-                );
-            assert_eq!(content_encoding, Some("gzip"),
-                "unexpected Content-Encoding {:?} (requested Accept-Encoding: {})", content_encoding, encoding);
+            });
+            assert_eq!(
+                content_encoding,
+                Some("gzip"),
+                "unexpected Content-Encoding {:?} (requested Accept-Encoding: {})",
+                content_encoding,
+                encoding
+            );
         }
 
-        let body = resp.into_body()
+        let body = resp
+            .into_body()
             .concat2()
             .wait()
             .expect("response body concat");
         let mut decoder = flate2::read::GzDecoder::new(body.into_buf());
         let mut scrape = String::new();
-        decoder.read_to_string(&mut scrape)
-            .expect(&format!(
-                "decode gzip (requested Accept-Encoding: {})",
-                encoding
-            ));
+        decoder.read_to_string(&mut scrape).expect(&format!(
+            "decode gzip (requested Accept-Encoding: {})",
+            encoding
+        ));
         scrape
     };
 
@@ -1214,7 +1354,7 @@ fn metrics_compression() {
         "gzip",
         "deflate, gzip",
         "gzip,deflate",
-        "brotli,gzip,deflate"
+        "brotli,gzip,deflate",
     ];
 
     info!("client.get(/)");

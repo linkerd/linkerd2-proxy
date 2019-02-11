@@ -6,13 +6,7 @@ use std::{
 };
 
 use telemetry::{
-    metrics::{
-        Counter,
-        FmtLabels,
-        FmtMetrics,
-        Gauge,
-        Scopes,
-    },
+    metrics::{Counter, FmtLabels, FmtMetrics, Gauge, Scopes},
     Errno,
 };
 use transport::tls;

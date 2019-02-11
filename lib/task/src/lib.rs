@@ -5,28 +5,15 @@ extern crate futures;
 extern crate log;
 extern crate tokio;
 
-use futures::future::{
-    Future,
-    ExecuteError,
-    ExecuteErrorKind,
-};
 pub use futures::future::Executor;
+use futures::future::{ExecuteError, ExecuteErrorKind, Future};
 
 use tokio::{
-    executor::{
-        DefaultExecutor,
-        Executor as TokioExecutor,
-        SpawnError,
-    },
+    executor::{DefaultExecutor, Executor as TokioExecutor, SpawnError},
     runtime::{self as thread_pool, current_thread},
 };
 
-use std::{
-    error::Error as StdError,
-    fmt,
-    io,
-    sync::Arc,
-};
+use std::{error::Error as StdError, fmt, io, sync::Arc};
 
 pub type BoxSendFuture = Box<Future<Item = (), Error = ()> + Send>;
 
@@ -89,11 +76,7 @@ pub enum Error {
 // ===== impl LazyExecutor =====;
 
 impl TokioExecutor for LazyExecutor {
-    fn spawn(
-        &mut self,
-        future: BoxSendFuture,
-    ) -> Result<(), SpawnError>
-    {
+    fn spawn(&mut self, future: BoxSendFuture) -> Result<(), SpawnError> {
         DefaultExecutor::current().spawn(future)
     }
 
@@ -121,7 +104,8 @@ where
                 panic!("unexpected `SpawnError`: {:?}", e);
             }
         };
-        executor.spawn(Box::new(future))
+        executor
+            .spawn(Box::new(future))
             .expect("spawn() errored but status() was Ok");
         Ok(())
     }
@@ -136,10 +120,7 @@ impl<E: TokioExecutor> BoxExecutor<E> {
 }
 
 impl<E: TokioExecutor> TokioExecutor for BoxExecutor<E> {
-    fn spawn(
-        &mut self,
-        future: BoxSendFuture,
-    ) -> Result<(), SpawnError> {
+    fn spawn(&mut self, future: BoxSendFuture) -> Result<(), SpawnError> {
         self.0.spawn(future)
     }
 
@@ -168,7 +149,8 @@ where
                 panic!("unexpected `SpawnError`: {:?}", e);
             }
         };
-        self.0.execute(Box::new(future))
+        self.0
+            .execute(Box::new(future))
             .expect("spawn() errored but status() was Ok");
         Ok(())
     }
@@ -187,7 +169,8 @@ where
     F: Future<Item = (), Error = ()> + 'static + Send,
 {
     fn execute(&self, future: F) -> Result<(), ExecuteError<F>> {
-        self.0.execute(Box::new(future))
+        self.0
+            .execute(Box::new(future))
             .map_err(|_| panic!("erased executor error"))
     }
 }
@@ -211,7 +194,8 @@ where
     F: Future<Item = (), Error = ()> + 'static + Send,
 {
     fn execute(&self, future: F) -> Result<(), ExecuteError<F>> {
-        self.0.execute(Box::new(future))
+        self.0
+            .execute(Box::new(future))
             .map_err(|_| panic!("erased executor error"))
     }
 }
@@ -230,24 +214,26 @@ impl MainRuntime {
         F: Future<Item = (), Error = ()> + Send + 'static,
     {
         match *self {
-            MainRuntime::CurrentThread(ref mut rt) => { rt.spawn(future); }
-            MainRuntime::ThreadPool(ref mut rt) => {  rt.spawn(future); }
+            MainRuntime::CurrentThread(ref mut rt) => {
+                rt.spawn(future);
+            }
+            MainRuntime::ThreadPool(ref mut rt) => {
+                rt.spawn(future);
+            }
         };
         self
     }
 
     /// Runs `self` until `shutdown_signal` completes.
-    pub fn run_until<F>(self, shutdown_signal: F)  -> Result<(), ()>
+    pub fn run_until<F>(self, shutdown_signal: F) -> Result<(), ()>
     where
         F: Future<Item = (), Error = ()> + Send + 'static,
     {
         match self {
-            MainRuntime::CurrentThread(mut rt) =>
-                rt.block_on(shutdown_signal),
-            MainRuntime::ThreadPool(rt) =>
-                shutdown_signal
-                    .and_then(move |()| rt.shutdown_now())
-                    .wait(),
+            MainRuntime::CurrentThread(mut rt) => rt.block_on(shutdown_signal),
+            MainRuntime::ThreadPool(rt) => {
+                shutdown_signal.and_then(move |()| rt.shutdown_now()).wait()
+            }
         }
     }
 }
@@ -269,7 +255,6 @@ impl From<thread_pool::Runtime> for MainRuntime {
 // ===== impl Error =====
 
 impl Error {
-
     /// Wrap a `SpawnError` or `ExecuteError` in an `io::Error`.
     ///
     /// The returned `io::Error` will have `ErrorKind::Other`. Wrapping
@@ -291,7 +276,7 @@ impl From<SpawnError> for Error {
                 "Error::from: unknown SpawnError '{:?}'\n\
                  This indicates a change in Tokio's API surface that should\n\
                  be handled.",
-                 spawn_error,
+                spawn_error,
             );
             Error::Unknown
         }
@@ -306,8 +291,8 @@ impl<F> From<ExecuteError<F>> for Error {
             _ => {
                 warn!(
                     "Error::from: unknown ExecuteError '{:?}'\n\
-                    This indicates a change in the futures-rs API surface\n\
-                    that should be handled.",
+                     This indicates a change in the futures-rs API surface\n\
+                     that should be handled.",
                     exec_error,
                 );
                 Error::Unknown
@@ -335,9 +320,9 @@ impl StdError for Error {
 pub mod test_util {
     extern crate tokio_timer;
 
+    use self::tokio_timer as timer;
     use futures::Future;
     use tokio::runtime::current_thread;
-    use self::tokio_timer as timer;
 
     use std::time::Duration;
 
@@ -361,18 +346,23 @@ pub mod test_util {
     impl BlockOnFor for current_thread::Runtime {
         fn block_on_for<F>(&mut self, timeout: Duration, f: F) -> Result<F::Item, F::Error>
         where
-            F: Future
+            F: Future,
         {
             let f = timer::Timeout::new(f, timeout);
             match self.block_on(f) {
                 Ok(item) => Ok(item),
-                Err(e) => if e.is_inner() {
-                    return Err(e.into_inner().unwrap());
-                } else if e.is_timer() {
-                    panic!("timer error: {}", e.into_timer().unwrap());
-                } else {
-                    panic!("assertion failed: future did not finish within {:?}", timeout);
-                },
+                Err(e) => {
+                    if e.is_inner() {
+                        return Err(e.into_inner().unwrap());
+                    } else if e.is_timer() {
+                        panic!("timer error: {}", e.into_timer().unwrap());
+                    } else {
+                        panic!(
+                            "assertion failed: future did not finish within {:?}",
+                            timeout
+                        );
+                    }
+                }
             }
         }
     }

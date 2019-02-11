@@ -3,12 +3,10 @@ use support::*;
 use std::io;
 use std::sync::Mutex;
 
-use self::futures::{
-    sync::{mpsc, oneshot},
-};
+use self::futures::sync::{mpsc, oneshot};
 use self::tokio::{
-    net::TcpStream,
     io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
 };
 use support::hyper::body::Payload;
 
@@ -24,16 +22,24 @@ pub fn new<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
 }
 
 pub fn http1<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
-    Client::new(addr, auth.into(), Run::Http1 {
-        absolute_uris: false,
-    })
+    Client::new(
+        addr,
+        auth.into(),
+        Run::Http1 {
+            absolute_uris: false,
+        },
+    )
 }
 
 /// This sends `GET http://foo.com/ HTTP/1.1` instead of just `GET / HTTP/1.1`.
 pub fn http1_absolute_uris<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
-    Client::new(addr, auth.into(), Run::Http1 {
-        absolute_uris: true,
-    })
+    Client::new(
+        addr,
+        auth.into(),
+        Run::Http1 {
+            absolute_uris: true,
+        },
+    )
 }
 
 pub fn http2<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
@@ -78,29 +84,32 @@ impl Client {
             res.status(),
         );
         let stream = res.into_parts().1;
-        stream.concat2()
+        stream
+            .concat2()
             .map(|body| ::std::str::from_utf8(&body).unwrap().to_string())
             .wait()
             .expect("get() wait body")
     }
 
-    pub fn request_async(&self, builder: &mut http::request::Builder) -> Box<Future<Item=Response, Error=String> + Send> {
+    pub fn request_async(
+        &self,
+        builder: &mut http::request::Builder,
+    ) -> Box<Future<Item = Response, Error = String> + Send> {
         self.send_req(builder.body(Bytes::new()).unwrap())
     }
 
     pub fn request(&self, builder: &mut http::request::Builder) -> Response {
-        self.request_async(builder)
-            .wait()
-            .expect("response")
+        self.request_async(builder).wait().expect("response")
     }
 
     pub fn request_body(&self, req: Request) -> Response {
-        self.send_req(req)
-            .wait()
-            .expect("response")
+        self.send_req(req).wait().expect("response")
     }
 
-    pub fn request_body_async(&self, req: Request) -> Box<Future<Item=Response, Error=String> + Send> {
+    pub fn request_body_async(
+        &self,
+        req: Request,
+    ) -> Box<Future<Item = Response, Error = String> + Send> {
         self.send_req(req)
     }
 
@@ -111,9 +120,11 @@ impl Client {
         b
     }
 
-    fn send_req(&self, mut req: Request) -> Box<Future<Item=Response, Error=String> + Send> {
+    fn send_req(&self, mut req: Request) -> Box<Future<Item = Response, Error = String> + Send> {
         if req.uri().scheme_part().is_none() {
-            let absolute = format!("http://{}{}", self.authority, req.uri().path()).parse().unwrap();
+            let absolute = format!("http://{}{}", self.authority, req.uri().path())
+                .parse()
+                .unwrap();
             *req.uri_mut() = absolute;
         }
         let (tx, rx) = oneshot::channel();
@@ -122,17 +133,13 @@ impl Client {
     }
 
     pub fn wait_for_closed(self) {
-        self.running
-            .wait()
-            .expect("wait_for_closed");
+        self.running.wait().expect("wait_for_closed");
     }
 }
 
 #[derive(Debug)]
 enum Run {
-    Http1 {
-        absolute_uris: bool,
-    },
+    Http1 { absolute_uris: bool },
     Http2,
 }
 
@@ -140,52 +147,52 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
     let (tx, rx) = mpsc::unbounded::<(Request, oneshot::Sender<Result<Response, String>>)>();
     let (running_tx, running_rx) = running();
 
-    let tname = format!(
-        "support {:?} server (test={})",
-        version,
-        thread_name(),
-    );
+    let tname = format!("support {:?} server (test={})", version, thread_name(),);
 
-    ::std::thread::Builder::new().name(tname).spawn(move || {
-        let mut runtime = runtime::current_thread::Runtime::new()
-            .expect("initialize support client runtime");
+    ::std::thread::Builder::new()
+        .name(tname)
+        .spawn(move || {
+            let mut runtime =
+                runtime::current_thread::Runtime::new().expect("initialize support client runtime");
 
-        let absolute_uris = if let Run::Http1 { absolute_uris } = version {
-            absolute_uris
-        } else {
-            false
-        };
-        let conn = Conn {
-            addr,
-            running: Mutex::new(Some(running_tx)),
-            absolute_uris,
-        };
+            let absolute_uris = if let Run::Http1 { absolute_uris } = version {
+                absolute_uris
+            } else {
+                false
+            };
+            let conn = Conn {
+                addr,
+                running: Mutex::new(Some(running_tx)),
+                absolute_uris,
+            };
 
-        let http2_only = match version {
-            Run::Http1 { .. } => false,
-            Run::Http2 => true,
-        };
+            let http2_only = match version {
+                Run::Http1 { .. } => false,
+                Run::Http2 => true,
+            };
 
-        let client = hyper::Client::builder()
-            .http2_only(http2_only)
-            .build::<Conn, hyper::Body>(conn);
+            let client = hyper::Client::builder()
+                .http2_only(http2_only)
+                .build::<Conn, hyper::Body>(conn);
 
-        let work = rx.for_each(move |(req, cb)| {
-            let req = req.map(hyper::Body::from);
-            let fut = client.request(req).then(move |result| {
-                let result = result
-                    .map(|resp| resp.map(BytesBody))
-                    .map_err(|e| e.to_string());
-                let _ = cb.send(result);
-                Ok(())
-            });
-            tokio::spawn(fut);
-            Ok(())
+            let work = rx
+                .for_each(move |(req, cb)| {
+                    let req = req.map(hyper::Body::from);
+                    let fut = client.request(req).then(move |result| {
+                        let result = result
+                            .map(|resp| resp.map(BytesBody))
+                            .map_err(|e| e.to_string());
+                        let _ = cb.send(result);
+                        Ok(())
+                    });
+                    tokio::spawn(fut);
+                    Ok(())
+                })
+                .map_err(|e| println!("client error: {:?}", e));
+
+            runtime.block_on(work).expect("support client runtime");
         })
-            .map_err(|e| println!("client error: {:?}", e));
-
-        runtime.block_on(work).expect("support client runtime");
-    }).expect("thread spawn");
+        .expect("thread spawn");
     (tx, running_rx)
 }
 
@@ -200,7 +207,8 @@ struct Conn {
 
 impl Conn {
     fn connect_(&self) -> Box<Future<Item = RunningIo, Error = ::std::io::Error> + Send> {
-        let running = self.running
+        let running = self
+            .running
             .lock()
             .expect("running lock")
             .take()
@@ -227,14 +235,15 @@ impl Connect for Conn {
 
 impl hyper::client::connect::Connect for Conn {
     type Transport = RunningIo;
-    type Future = Box<Future<
-        Item = (Self::Transport, hyper::client::connect::Connected),
-        Error = ::std::io::Error,
-    > + Send>;
+    type Future = Box<
+        Future<
+                Item = (Self::Transport, hyper::client::connect::Connected),
+                Error = ::std::io::Error,
+            > + Send,
+    >;
     type Error = ::std::io::Error;
     fn connect(&self, _: hyper::client::connect::Destination) -> Self::Future {
-        let connected = hyper::client::connect::Connected::new()
-            .proxy(self.absolute_uris);
+        let connected = hyper::client::connect::Connected::new().proxy(self.absolute_uris);
         Box::new(self.connect_().map(|t| (t, connected)))
     }
 }
@@ -293,4 +302,3 @@ impl Stream for BytesBody {
         self.poll_data()
     }
 }
-

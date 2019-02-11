@@ -1,18 +1,21 @@
 use futures::{future::Either, Future};
 use http;
 use hyper;
-use std::{error, fmt};
 use std::net::SocketAddr;
+use std::{error, fmt};
 
-use Conditional;
+use super::Accept;
 use drain;
 use never::Never;
-use svc::{Stack, Service};
-use transport::{connect, tls, Connection, Peek};
-use proxy::http::{glue::{HttpBody, HyperServerSvc}, upgrade};
+use proxy::http::{
+    glue::{HttpBody, HyperServerSvc},
+    upgrade,
+};
 use proxy::protocol::Protocol;
 use proxy::tcp;
-use super::Accept;
+use svc::{Service, Stack};
+use transport::{connect, tls, Connection, Peek};
+use Conditional;
 
 /// A protocol-transparent Server!
 ///
@@ -49,10 +52,7 @@ where
     C::Value: connect::Connect,
     // Prepares a route for each accepted HTTP connection.
     R: Stack<Source, Error = Never> + Clone,
-    R::Value: Service<
-        http::Request<HttpBody>,
-        Response = http::Response<B>,
-    >,
+    R::Value: Service<http::Request<HttpBody>, Response = http::Response<B>>,
     B: hyper::body::Payload,
 {
     drain_signal: drain::Watch,
@@ -103,11 +103,12 @@ impl Source {
 
     fn same_addr(a0: SocketAddr, a1: SocketAddr) -> bool {
         use std::net::IpAddr::{V4, V6};
-        (a0.port() == a1.port()) && match (a0.ip(), a1.ip()) {
-            (V6(a0), V4(a1)) => a0.to_ipv4() == Some(a1),
-            (V4(a0), V6(a1)) => Some(a0) == a1.to_ipv4(),
-            (a0, a1) => (a0 == a1),
-        }
+        (a0.port() == a1.port())
+            && match (a0.ip(), a1.ip()) {
+                (V6(a0), V4(a1)) => a0.to_ipv4() == Some(a1),
+                (V4(a0), V6(a1)) => Some(a0) == a1.to_ipv4(),
+                (a0, a1) => (a0 == a1),
+            }
     }
 
     #[cfg(test)]
@@ -117,14 +118,14 @@ impl Source {
         orig_dst: Option<SocketAddr>,
         tls_peer: tls::ConditionalIdentity,
     ) -> Self {
-       Self {
-           remote,
-           local,
-           orig_dst,
-           tls_peer,
-           _p: (),
-       }
-   }
+        Self {
+            remote,
+            local,
+            orig_dst,
+            tls_peer,
+            _p: (),
+        }
+    }
 }
 
 // for logging context
@@ -184,16 +185,12 @@ where
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
     R: Stack<Source, Error = Never> + Clone,
-    R::Value: Service<
-        http::Request<HttpBody>,
-        Response = http::Response<B>,
-    >,
+    R::Value: Service<http::Request<HttpBody>, Response = http::Response<B>>,
     R::Value: 'static,
     <R::Value as Service<http::Request<HttpBody>>>::Error: error::Error + Send + Sync + 'static,
     <R::Value as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
 {
-
     /// Creates a new `Server`.
     pub fn new(
         proxy_name: &'static str,
@@ -225,14 +222,15 @@ where
     /// what protocol the connection is speaking. From there, the connection
     /// will be mapped into respective services, and spawned into an
     /// executor.
-    pub fn serve(&self, connection: Connection, remote_addr: SocketAddr)
-        -> impl Future<Item=(), Error=()>
-    {
+    pub fn serve(
+        &self,
+        connection: Connection,
+        remote_addr: SocketAddr,
+    ) -> impl Future<Item = (), Error = ()> {
         let orig_dst = connection.original_dst_addr();
         let disable_protocol_detection = !connection.should_detect_protocol();
 
-        let log = self.log.clone()
-            .with_remote(remote_addr);
+        let log = self.log.clone().with_remote(remote_addr);
 
         let source = Source {
             remote: remote_addr,
@@ -255,7 +253,8 @@ where
             return log.future(Either::B(fut));
         }
 
-        let detect_protocol = io.peek()
+        let detect_protocol = io
+            .peek()
             .map_err(|e| debug!("peek error: {}", e))
             .map(|io| {
                 let p = Protocol::detect(io.peeked());
@@ -267,61 +266,60 @@ where
         let connect = self.connect.clone();
         let drain_signal = self.drain_signal.clone();
         let log_clone = log.clone();
-        let serve = detect_protocol
-            .and_then(move |(proto, io)| match proto {
-                None => Either::A({
-                    trace!("did not detect protocol; forwarding TCP");
-                    let fwd = tcp::forward(io, &connect, &source);
-                    drain_signal.watch(fwd, |_| {})
-                }),
+        let serve = detect_protocol.and_then(move |(proto, io)| match proto {
+            None => Either::A({
+                trace!("did not detect protocol; forwarding TCP");
+                let fwd = tcp::forward(io, &connect, &source);
+                drain_signal.watch(fwd, |_| {})
+            }),
 
-                Some(proto) => Either::B(match proto {
-                    Protocol::Http1 => Either::A({
-                        trace!("detected HTTP/1");
-                        match route.make(&source) {
-                            Err(never) => match never {},
-                            Ok(s) => {
-                                // Enable support for HTTP upgrades (CONNECT and websockets).
-                                let svc = upgrade::Service::new(
-                                    s,
-                                    drain_signal.clone(),
-                                    log_clone.executor(),
-                                );
-                                let svc = HyperServerSvc::new(svc);
-                                let conn = http
-                                    .http1_only(true)
-                                    .serve_connection(io, svc)
-                                    .with_upgrades();
-                                drain_signal
-                                    .watch(conn, |conn| {
-                                        conn.graceful_shutdown();
-                                    })
-                                    .map(|_| ())
-                                    .map_err(|e| trace!("http1 server error: {:?}", e))
-                            },
+            Some(proto) => Either::B(match proto {
+                Protocol::Http1 => Either::A({
+                    trace!("detected HTTP/1");
+                    match route.make(&source) {
+                        Err(never) => match never {},
+                        Ok(s) => {
+                            // Enable support for HTTP upgrades (CONNECT and websockets).
+                            let svc = upgrade::Service::new(
+                                s,
+                                drain_signal.clone(),
+                                log_clone.executor(),
+                            );
+                            let svc = HyperServerSvc::new(svc);
+                            let conn = http
+                                .http1_only(true)
+                                .serve_connection(io, svc)
+                                .with_upgrades();
+                            drain_signal
+                                .watch(conn, |conn| {
+                                    conn.graceful_shutdown();
+                                })
+                                .map(|_| ())
+                                .map_err(|e| trace!("http1 server error: {:?}", e))
                         }
-                    }),
-                    Protocol::Http2 => Either::B({
-                        trace!("detected HTTP/2");
-                        match route.make(&source) {
-                            Err(never) => match never {},
-                            Ok(s) => {
-                                let svc = HyperServerSvc::new(s);
-                                let conn = http
-                                    .with_executor(log_clone.executor())
-                                    .http2_only(true)
-                                    .serve_connection(io, svc);
-                                drain_signal
-                                    .watch(conn, |conn| {
-                                        conn.graceful_shutdown();
-                                    })
-                                    .map(|_| ())
-                                    .map_err(|e| trace!("http2 server error: {:?}", e))
-                            },
-                        }
-                    }),
+                    }
                 }),
-            });
+                Protocol::Http2 => Either::B({
+                    trace!("detected HTTP/2");
+                    match route.make(&source) {
+                        Err(never) => match never {},
+                        Ok(s) => {
+                            let svc = HyperServerSvc::new(s);
+                            let conn = http
+                                .with_executor(log_clone.executor())
+                                .http2_only(true)
+                                .serve_connection(io, svc);
+                            drain_signal
+                                .watch(conn, |conn| {
+                                    conn.graceful_shutdown();
+                                })
+                                .map(|_| ())
+                                .map_err(|e| trace!("http2 server error: {:?}", e))
+                        }
+                    }
+                }),
+            }),
+        });
 
         log.future(Either::A(serve))
     }

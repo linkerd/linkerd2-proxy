@@ -173,7 +173,7 @@ impl classify::ClassifyEos for Eos {
                 .and_then(grpc_class)
                 .unwrap_or_else(|| Class::Grpc(SuccessOrFailure::Failure, 0)),
             Eos::Profile(class) => class,
-            Eos::Error(msg) => Class::Stream(SuccessOrFailure::Failure, msg.into())
+            Eos::Error(msg) => Class::Stream(SuccessOrFailure::Failure, msg.into()),
         }
     }
 
@@ -212,9 +212,9 @@ fn h2_error(err: &h2::Error) -> String {
 impl Class {
     pub(super) fn is_failure(&self) -> bool {
         match self {
-            Class::Default(SuccessOrFailure::Failure) |
-            Class::Grpc(SuccessOrFailure::Failure, _) |
-            Class::Stream(SuccessOrFailure::Failure, _) => true,
+            Class::Default(SuccessOrFailure::Failure)
+            | Class::Grpc(SuccessOrFailure::Failure, _)
+            | Class::Stream(SuccessOrFailure::Failure, _) => true,
             _ => false,
         }
     }
@@ -302,7 +302,9 @@ mod tests {
         let mut trailers = HeaderMap::new();
         trailers.insert("grpc-status", 3.into());
 
-        let class = super::Response::Profile(Default::default()).start(&rsp).eos(Some(&trailers));
+        let class = super::Response::Profile(Default::default())
+            .start(&rsp)
+            .eos(Some(&trailers));
         assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 3));
     }
 }

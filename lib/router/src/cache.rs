@@ -1,5 +1,9 @@
 use indexmap::IndexMap;
-use std::{hash::Hash, ops::{Deref, DerefMut}, time::{Duration, Instant}};
+use std::{
+    hash::Hash,
+    ops::{Deref, DerefMut},
+    time::{Duration, Instant},
+};
 
 // Reexported so IndexMap isn't exposed.
 pub use indexmap::Equivalent;
@@ -217,9 +221,13 @@ impl Now for () {
 mod tests {
     use super::*;
     use futures::Future;
-    use std::{cell::RefCell, rc::Rc, time::{Duration, Instant}};
-    use test_util::MultiplyAndAssign;
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        time::{Duration, Instant},
+    };
     use svc::Service;
+    use test_util::MultiplyAndAssign;
 
     /// A mocked instance of `Now` to drive tests.
     #[derive(Clone)]

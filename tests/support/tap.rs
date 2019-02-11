@@ -5,9 +5,7 @@ use linkerd2_proxy_api::tap as pb;
 
 pub fn client(addr: SocketAddr) -> Client {
     let api = pb::client::Tap::new(SyncSvc(client::http2(addr, "localhost")));
-    Client {
-        api,
-    }
+    Client { api }
 }
 
 pub struct Client {
@@ -15,9 +13,13 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn observe(&mut self, req: ObserveBuilder) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Error> {
+    pub fn observe(
+        &mut self,
+        req: ObserveBuilder,
+    ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Error> {
         let req = tower_grpc::Request::new(req.0);
-        self.api.observe(req)
+        self.api
+            .observe(req)
             .wait()
             .expect("tap observe wait")
             .into_inner()
@@ -32,9 +34,11 @@ pub fn observe_request() -> ObserveBuilder {
                 pb::observe_request::match_::Http {
                     match_: Some(pb::observe_request::match_::http::Match::Path(
                         pb::observe_request::match_::http::StringMatch {
-                            match_: Some(pb::observe_request::match_::http::string_match::Match::Prefix(
-                                "/".to_string()
-                            )),
+                            match_: Some(
+                                pb::observe_request::match_::http::string_match::Match::Prefix(
+                                    "/".to_string(),
+                                ),
+                            ),
                         },
                     )),
                 },
@@ -54,18 +58,16 @@ impl ObserveBuilder {
 
     pub fn ports(mut self, min: u16, max: u16) -> Self {
         self.0.match_ = Some(pb::observe_request::Match {
-            match_: Some(
-                pb::observe_request::match_::Match::Destination(
-                    pb::observe_request::match_::Tcp {
-                        match_: Some(pb::observe_request::match_::tcp::Match::Ports(
-                            pb::observe_request::match_::tcp::PortRange {
-                                min: min.into(),
-                                max: max.into(),
-                            },
-                        )),
-                    },
-                ),
-            ),
+            match_: Some(pb::observe_request::match_::Match::Destination(
+                pb::observe_request::match_::Tcp {
+                    match_: Some(pb::observe_request::match_::tcp::Match::Ports(
+                        pb::observe_request::match_::tcp::PortRange {
+                            min: min.into(),
+                            max: max.into(),
+                        },
+                    )),
+                },
+            )),
         });
         self
     }
@@ -98,13 +100,9 @@ impl TapEventExt for pb::TapEvent {
 
     fn event(&self) -> &pb::tap_event::http::Event {
         match self.event {
-            Some(
-                pb::tap_event::Event::Http(
-                    pb::tap_event::Http {
-                        event: Some(ref ev),
-                    }
-                )
-            ) => ev,
+            Some(pb::tap_event::Event::Http(pb::tap_event::Http {
+                event: Some(ref ev),
+            })) => ev,
             _ => panic!("unknown event: {:?}", self.event),
         }
     }
@@ -114,56 +112,46 @@ impl TapEventExt for pb::TapEvent {
             pb::tap_event::http::Event::RequestInit(_ev) => {
                 //TODO: ugh
                 unimplemented!("method");
-            },
+            }
             _ => panic!("not RequestInit event"),
         }
     }
 
     fn request_init_authority(&self) -> &str {
         match self.event() {
-            pb::tap_event::http::Event::RequestInit(ev) => {
-                &ev.authority
-            },
+            pb::tap_event::http::Event::RequestInit(ev) => &ev.authority,
             _ => panic!("not RequestInit event"),
         }
     }
 
     fn request_init_path(&self) -> &str {
         match self.event() {
-            pb::tap_event::http::Event::RequestInit(ev) => {
-                &ev.path
-            },
+            pb::tap_event::http::Event::RequestInit(ev) => &ev.path,
             _ => panic!("not RequestInit event"),
         }
     }
 
     fn response_init_status(&self) -> u16 {
         match self.event() {
-            pb::tap_event::http::Event::ResponseInit(ev) => {
-                ev.http_status as u16
-            },
+            pb::tap_event::http::Event::ResponseInit(ev) => ev.http_status as u16,
             _ => panic!("not ResponseInit event"),
         }
     }
 
     fn response_end_bytes(&self) -> u64 {
         match self.event() {
-            pb::tap_event::http::Event::ResponseEnd(ev) => {
-                ev.response_bytes
-            },
+            pb::tap_event::http::Event::ResponseEnd(ev) => ev.response_bytes,
             _ => panic!("not ResponseEnd event"),
         }
     }
 
     fn response_end_eos_grpc(&self) -> u32 {
         match self.event() {
-            pb::tap_event::http::Event::ResponseEnd(ev) => {
-                match ev.eos {
-                    Some(pb::Eos {
-                        end: Some(pb::eos::End::GrpcStatusCode(code)),
-                    }) => code,
-                    _ => panic!("not Eos GrpcStatusCode: {:?}", ev.eos),
-                }
+            pb::tap_event::http::Event::ResponseEnd(ev) => match ev.eos {
+                Some(pb::Eos {
+                    end: Some(pb::eos::End::GrpcStatusCode(code)),
+                }) => code,
+                _ => panic!("not Eos GrpcStatusCode: {:?}", ev.eos),
             },
             _ => panic!("not ResponseEnd event"),
         }
@@ -187,14 +175,16 @@ where
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         let req = req.map(|mut body| {
             let mut buf = BytesMut::new();
-            while let Some(bytes) = future::poll_fn(|| body.poll_data()).wait().expect("req body") {
+            while let Some(bytes) = future::poll_fn(|| body.poll_data())
+                .wait()
+                .expect("req body")
+            {
                 buf.extend_from_slice(&bytes);
             }
 
             buf.freeze()
         });
-        Box::new(self.0.request_body_async(req)
-            .map(|res| res.map(GrpcBody)))
+        Box::new(self.0.request_body_async(req).map(|res| res.map(GrpcBody)))
     }
 }
 
@@ -204,14 +194,14 @@ impl tower_grpc::Body for GrpcBody {
     type Data = Bytes;
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
-        self.0.poll_data().map_err(|err| {
-            unimplemented!("grpc poll_data error: {}", err)
-        })
+        self.0
+            .poll_data()
+            .map_err(|err| unimplemented!("grpc poll_data error: {}", err))
     }
 
     fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
-        self.0.poll_trailers().map_err(|err| {
-            unimplemented!("grpc poll_trailers error: {}", err)
-        })
+        self.0
+            .poll_trailers()
+            .map_err(|err| unimplemented!("grpc poll_trailers error: {}", err))
     }
 }

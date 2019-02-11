@@ -1,12 +1,11 @@
 pub mod req_body_as_payload {
     use bytes::Bytes;
-    use http;
     use futures::Poll;
+    use http;
     use tower_grpc::Body;
 
     use super::super::GrpcBody;
     use svc;
-
 
     #[derive(Clone, Debug)]
     pub struct Layer;
@@ -76,8 +75,8 @@ pub mod req_body_as_payload {
 
 pub mod req_box_body {
     use bytes::Bytes;
-    use http;
     use futures::Poll;
+    use http;
     use tower_grpc::{Body, BoxBody};
 
     use svc;
@@ -110,8 +109,8 @@ pub mod req_box_body {
 }
 
 pub mod res_body_as_payload {
-    use http;
     use futures::{future, Future, Poll};
+    use http;
     use tower_grpc::Body;
 
     use super::super::GrpcBody;
@@ -128,25 +127,19 @@ pub mod res_body_as_payload {
     impl<B1, B2, S> svc::Service<http::Request<B1>> for Service<S>
     where
         B2: Body,
-        S: svc::Service<
-            http::Request<B1>,
-            Response = http::Response<B2>,
-        >,
+        S: svc::Service<http::Request<B1>, Response = http::Response<B2>>,
     {
         type Response = http::Response<GrpcBody<B2>>;
         type Error = S::Error;
-        type Future = future::Map<S::Future, fn(http::Response<B2>) -> http::Response<GrpcBody<B2>>>;
+        type Future =
+            future::Map<S::Future, fn(http::Response<B2>) -> http::Response<GrpcBody<B2>>>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             self.0.poll_ready()
         }
 
         fn call(&mut self, req: http::Request<B1>) -> Self::Future {
-            self.0.call(req)
-                .map(|res| {
-                    res.map(GrpcBody::new)
-                })
+            self.0.call(req).map(|res| res.map(GrpcBody::new))
         }
     }
 }
-

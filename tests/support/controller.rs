@@ -1,8 +1,8 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 
-use support::*;
 use support::bytes::IntoBuf;
 use support::hyper::body::Payload;
+use support::*;
 // use support::tokio::executor::Executor as _TokioExecutor;
 
 use std::collections::{HashMap, VecDeque};
@@ -83,7 +83,7 @@ impl Controller {
 
     pub fn delay_listen<F>(self, f: F) -> Listening
     where
-        F: Future<Item=(), Error=()> + Send + 'static,
+        F: Future<Item = (), Error = ()> + Send + 'static,
     {
         run(self, Some(Box::new(f.then(|_| Ok(())))))
     }
@@ -119,14 +119,14 @@ fn grpc_internal_code() -> grpc::Error {
 fn grpc_no_results() -> grpc::Error {
     grpc::Error::Grpc(grpc::Status::with_code_and_message(
         grpc::Code::Unavailable,
-        "unit test controller has no results".into()
+        "unit test controller has no results".into(),
     ))
 }
 
 fn grpc_unexpected_request() -> grpc::Error {
     grpc::Error::Grpc(grpc::Status::with_code_and_message(
         grpc::Code::InvalidArgument,
-        "unit test controller expected different request".into()
+        "unit test controller expected different request".into(),
     ))
 }
 
@@ -148,7 +148,12 @@ impl DstSender {
     }
 
     pub fn send_labeled(&self, addr: SocketAddr, addr_labels: Labels, parent_labels: Labels) {
-        self.send(destination_add_labeled(addr, Hint::Unknown, addr_labels, parent_labels));
+        self.send(destination_add_labeled(
+            addr,
+            Hint::Unknown,
+            addr_labels,
+            parent_labels,
+        ));
     }
 
     pub fn send_h2_hinted(&self, addr: SocketAddr) {
@@ -190,7 +195,8 @@ impl pb::server::Destination for Controller {
     }
 
     type GetProfileStream = ProfileReceiver;
-    type GetProfileFuture = future::FutureResult<grpc::Response<Self::GetProfileStream>, grpc::Error>;
+    type GetProfileFuture =
+        future::FutureResult<grpc::Response<Self::GetProfileStream>, grpc::Error>;
 
     fn get_profile(&mut self, req: grpc::Request<pb::GetDestination>) -> Self::GetProfileFuture {
         if let Ok(mut calls) = self.expect_profile_calls.lock() {
@@ -208,7 +214,10 @@ impl pb::server::Destination for Controller {
     }
 }
 
-fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Send>>) -> Listening {
+fn run(
+    controller: Controller,
+    delay: Option<Box<Future<Item = (), Error = ()> + Send>>,
+) -> Listening {
     let (tx, rx) = shutdown_signal();
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -227,14 +236,12 @@ fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Sen
                 delay.wait().expect("support server delay wait");
             }
             let dst_svc = pb::server::DestinationServer::new(controller);
-            let mut runtime = runtime::current_thread::Runtime::new()
-                .expect("support controller runtime");
+            let mut runtime =
+                runtime::current_thread::Runtime::new().expect("support controller runtime");
 
             let listener = listener.listen(1024).expect("Tcp::listen");
-            let bind = TcpListener::from_std(
-                listener,
-                &reactor::Handle::current()
-            ).expect("from_std");
+            let bind =
+                TcpListener::from_std(listener, &reactor::Handle::current()).expect("from_std");
 
             if let Some(listening_tx) = listening_tx {
                 let _ = listening_tx.send(());
@@ -245,30 +252,25 @@ fn run(controller: Controller, delay: Option<Box<Future<Item=(), Error=()> + Sen
                 .serve(move || {
                     let dst_svc = Mutex::new(dst_svc.clone());
                     hyper::service::service_fn(move |req| {
-                        let req = req.map(|body| {
-                            tower_grpc::BoxBody::new(Box::new(PayloadToGrpc(body)))
-                        });
+                        let req =
+                            req.map(|body| tower_grpc::BoxBody::new(Box::new(PayloadToGrpc(body))));
                         dst_svc
                             .lock()
                             .expect("dst_svc lock")
                             .call(req)
-                            .map(|res| {
-                                res.map(GrpcToPayload)
-                            })
+                            .map(|res| res.map(GrpcToPayload))
                     })
                 })
                 .map_err(|e| println!("controller error: {:?}", e));
 
             runtime.spawn(serve);
             runtime.block_on(rx).expect("support controller run");
-        }).unwrap();
+        })
+        .unwrap();
 
     listening_rx.wait().expect("listening_rx");
 
-    Listening {
-        addr,
-        shutdown: tx,
-    }
+    Listening { addr, shutdown: tx }
 }
 
 pub enum Hint {
@@ -288,9 +290,8 @@ pub fn destination_add_labeled(
     addr: SocketAddr,
     hint: Hint,
     set_labels: HashMap<String, String>,
-    addr_labels: HashMap<String, String>)
-    -> pb::Update
-{
+    addr_labels: HashMap<String, String>,
+) -> pb::Update {
     let protocol_hint = match hint {
         Hint::Unknown => None,
         Hint::H2 => Some(pb::ProtocolHint {
@@ -298,84 +299,68 @@ pub fn destination_add_labeled(
         }),
     };
     pb::Update {
-        update: Some(pb::update::Update::Add(
-            pb::WeightedAddrSet {
-                addrs: vec![
-                    pb::WeightedAddr {
-                        addr: Some(net::TcpAddress {
-                            ip: Some(ip_conv(addr.ip())),
-                            port: u32::from(addr.port()),
-                        }),
-                        weight: 0,
-                        metric_labels: addr_labels,
-                        protocol_hint,
-                        ..Default::default()
-                    },
-                ],
-                metric_labels: set_labels,
-            },
-        )),
+        update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
+            addrs: vec![pb::WeightedAddr {
+                addr: Some(net::TcpAddress {
+                    ip: Some(ip_conv(addr.ip())),
+                    port: u32::from(addr.port()),
+                }),
+                weight: 0,
+                metric_labels: addr_labels,
+                protocol_hint,
+                ..Default::default()
+            }],
+            metric_labels: set_labels,
+        })),
     }
 }
 
-pub fn destination_add_tls(
-    addr: SocketAddr,
-    pod: &str,
-    controller_ns: &str,
-) -> pb::Update {
+pub fn destination_add_tls(addr: SocketAddr, pod: &str, controller_ns: &str) -> pb::Update {
     pb::Update {
-        update: Some(pb::update::Update::Add(
-            pb::WeightedAddrSet {
-                addrs: vec![
-                    pb::WeightedAddr {
-                        addr: Some(net::TcpAddress {
-                            ip: Some(ip_conv(addr.ip())),
-                            port: u32::from(addr.port()),
-                        }),
-                        tls_identity: Some(pb::TlsIdentity {
-                            strategy: Some(pb::tls_identity::Strategy::K8sPodIdentity(
-                                pb::tls_identity::K8sPodIdentity {
-                                    pod_identity: pod.into(),
-                                    controller_ns: controller_ns.into(),
-                                }
-                            )),
-                        }),
-                        ..Default::default()
-                    },
-                ],
+        update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
+            addrs: vec![pb::WeightedAddr {
+                addr: Some(net::TcpAddress {
+                    ip: Some(ip_conv(addr.ip())),
+                    port: u32::from(addr.port()),
+                }),
+                tls_identity: Some(pb::TlsIdentity {
+                    strategy: Some(pb::tls_identity::Strategy::K8sPodIdentity(
+                        pb::tls_identity::K8sPodIdentity {
+                            pod_identity: pod.into(),
+                            controller_ns: controller_ns.into(),
+                        },
+                    )),
+                }),
                 ..Default::default()
-            },
-        )),
+            }],
+            ..Default::default()
+        })),
     }
 }
 
 pub fn destination_add_none() -> pb::Update {
     pb::Update {
-        update: Some(pb::update::Update::Add(
-            pb::WeightedAddrSet {
-                addrs: Vec::new(),
-                ..Default::default()
-            },
-        )),
+        update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
+            addrs: Vec::new(),
+            ..Default::default()
+        })),
     }
 }
 
 pub fn destination_remove_none() -> pb::Update {
     pb::Update {
-        update: Some(pb::update::Update::Remove(
-            pb::AddrSet {
-                addrs: Vec::new(),
-                ..Default::default()
-            },
-        )),
+        update: Some(pb::update::Update::Remove(pb::AddrSet {
+            addrs: Vec::new(),
+            ..Default::default()
+        })),
     }
 }
 
 pub fn destination_exists_with_no_endpoints() -> pb::Update {
     pb::Update {
-        update: Some(pb::update::Update::NoEndpoints(
-            pb::NoEndpoints { exists: true }
-        )),
+        update: Some(pb::update::Update::NoEndpoints(pb::NoEndpoints {
+            exists: true,
+        })),
     }
 }
 
@@ -392,7 +377,11 @@ where
     }
 }
 
-pub fn retry_budget(ttl: Duration, retry_ratio: f32, min_retries_per_second: u32) -> pb::RetryBudget {
+pub fn retry_budget(
+    ttl: Duration,
+    retry_ratio: f32,
+    min_retries_per_second: u32,
+) -> pb::RetryBudget {
     pb::RetryBudget {
         ttl: Some(ttl.into()),
         retry_ratio,
@@ -411,7 +400,7 @@ impl RouteBuilder {
 
     pub fn request_path(mut self, path: &str) -> Self {
         let path_match = pb::PathMatch {
-            regex: String::from(path)
+            regex: String::from(path),
         };
         self.route.condition = Some(pb::RequestMatch {
             match_: Some(pb::request_match::Match::Path(path_match)),
@@ -437,18 +426,17 @@ impl RouteBuilder {
             Bound::Included(&min) => min,
             Bound::Excluded(&min) => min + 1,
             Bound::Unbounded => 100,
-        }.into();
+        }
+        .into();
         let max = match status_range.end_bound() {
             Bound::Included(&max) => max,
             Bound::Excluded(&max) => max - 1,
             Bound::Unbounded => 599,
-        }.into();
+        }
+        .into();
         assert!(min >= 100 && min <= max);
         assert!(max <= 599);
-        let range = pb::HttpStatusRange {
-            min,
-            max,
-        };
+        let range = pb::HttpStatusRange { min, max };
         let condition = pb::ResponseMatch {
             match_: Some(pb::response_match::Match::Status(range)),
         };
@@ -488,24 +476,29 @@ fn ip_conv(ip: IpAddr) -> net::IpAddress {
         IpAddr::V6(v6) => {
             let (first, last) = octets_to_u64s(v6.octets());
             net::IpAddress {
-                ip: Some(net::ip_address::Ip::Ipv6(net::IPv6 {
-                    first,
-                    last,
-                })),
+                ip: Some(net::ip_address::Ip::Ipv6(net::IPv6 { first, last })),
             }
         }
     }
 }
 
 fn octets_to_u64s(octets: [u8; 16]) -> (u64, u64) {
-    let first = (u64::from(octets[0]) << 56) + (u64::from(octets[1]) << 48)
-        + (u64::from(octets[2]) << 40) + (u64::from(octets[3]) << 32)
-        + (u64::from(octets[4]) << 24) + (u64::from(octets[5]) << 16)
-        + (u64::from(octets[6]) << 8) + u64::from(octets[7]);
-    let last = (u64::from(octets[8]) << 56) + (u64::from(octets[9]) << 48)
-        + (u64::from(octets[10]) << 40) + (u64::from(octets[11]) << 32)
-        + (u64::from(octets[12]) << 24) + (u64::from(octets[13]) << 16)
-        + (u64::from(octets[14]) << 8) + u64::from(octets[15]);
+    let first = (u64::from(octets[0]) << 56)
+        + (u64::from(octets[1]) << 48)
+        + (u64::from(octets[2]) << 40)
+        + (u64::from(octets[3]) << 32)
+        + (u64::from(octets[4]) << 24)
+        + (u64::from(octets[5]) << 16)
+        + (u64::from(octets[6]) << 8)
+        + u64::from(octets[7]);
+    let last = (u64::from(octets[8]) << 56)
+        + (u64::from(octets[9]) << 48)
+        + (u64::from(octets[10]) << 40)
+        + (u64::from(octets[11]) << 32)
+        + (u64::from(octets[12]) << 24)
+        + (u64::from(octets[13]) << 16)
+        + (u64::from(octets[14]) << 8)
+        + u64::from(octets[15]);
     (first, last)
 }
 
@@ -524,7 +517,9 @@ impl tower_grpc::Body for PayloadToGrpc {
     }
 
     fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
-        self.0.poll_trailers().map_err(|_| tower_grpc::Error::Inner(()))
+        self.0
+            .poll_trailers()
+            .map_err(|_| tower_grpc::Error::Inner(()))
     }
 }
 
@@ -552,5 +547,3 @@ where
         self.0.poll_metadata()
     }
 }
-
-

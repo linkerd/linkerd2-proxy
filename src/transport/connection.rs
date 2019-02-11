@@ -1,20 +1,22 @@
 /// Tokio-level (not Tower-level) proxy-specific networking.
-
 use bytes::{Buf, BytesMut};
-use futures::{Async, Future, IntoFuture, Poll, Stream, future::{self, Either}, stream};
+use futures::{
+    future::{self, Either},
+    stream, Async, Future, IntoFuture, Poll, Stream,
+};
 use std;
 use std::cmp;
 use std::io;
 use std::net::SocketAddr;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    net::{TcpListener, TcpStream, tcp::ConnectFuture},
+    net::{tcp::ConnectFuture, TcpListener, TcpStream},
     reactor::Handle,
 };
 
-use Conditional;
-use transport::{AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive, tls};
 use indexmap::IndexSet;
+use transport::{tls, AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive};
+use Conditional;
 
 pub struct BoundPort<G = ()> {
     inner: Option<std::net::TcpListener>,
@@ -25,9 +27,10 @@ pub struct BoundPort<G = ()> {
 }
 
 /// Initiates a client connection to the given address.
-pub(super) fn connect(addr: &SocketAddr, tls: tls::ConditionalConnectionConfig<tls::ClientConfig>)
-    -> Connecting
-{
+pub(super) fn connect(
+    addr: &SocketAddr,
+    tls: tls::ConditionalConnectionConfig<tls::ClientConfig>,
+) -> Connecting {
     Connecting::Plaintext {
         addr: *addr,
         connect: TcpStream::connect(addr),
@@ -100,10 +103,11 @@ pub trait Peek {
     fn peeked(&self) -> &[u8];
 
     /// A `Future` around `poll_peek`, returning this type instead.
-    fn peek(self) -> PeekFuture<Self> where Self: Sized {
-        PeekFuture {
-            inner: Some(self),
-        }
+    fn peek(self) -> PeekFuture<Self>
+    where
+        Self: Sized,
+    {
+        PeekFuture { inner: Some(self) }
     }
 }
 
@@ -116,9 +120,10 @@ pub struct PeekFuture<T> {
 // ===== impl BoundPort =====
 
 impl BoundPort {
-    pub fn new(addr: SocketAddr, tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>)
-        -> Result<Self, io::Error>
-    {
+    pub fn new(
+        addr: SocketAddr,
+        tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>,
+    ) -> Result<Self, io::Error> {
         let inner = std::net::TcpListener::bind(addr)?;
         let local_addr = inner.local_addr()?;
         Ok(BoundPort {
@@ -167,15 +172,15 @@ impl<G> BoundPort<G> {
     pub fn listen_and_fold<T, F, Fut>(
         self,
         initial: T,
-        f: F)
-        -> impl Future<Item = (), Error = io::Error> + Send + 'static
-        where
-            F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
-            T: Send + 'static,
-            G: Send + 'static,
-            Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
-            <Fut as IntoFuture>::Future: Send,
-            Self: GetOriginalDst + Send + 'static,
+        f: F,
+    ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
+    where
+        F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
+        T: Send + 'static,
+        G: Send + 'static,
+        Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
+        <Fut as IntoFuture>::Future: Send,
+        Self: GetOriginalDst + Send + 'static,
     {
         self.listen_and_fold_inner(std::u64::MAX, initial, f)
     }
@@ -185,25 +190,8 @@ impl<G> BoundPort<G> {
         self,
         connection_limit: u64,
         initial: T,
-        f: F)
-        -> impl Future<Item = (), Error = io::Error> + Send + 'static
-        where
-            F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
-            T: Send + 'static,
-            G: Send + 'static,
-            Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
-            <Fut as IntoFuture>::Future: Send,
-            Self: GetOriginalDst,
-    {
-        self.listen_and_fold_inner(connection_limit, initial, f)
-    }
-
-    fn listen_and_fold_inner<T, F, Fut>(
-        mut self,
-        connection_limit: u64,
-        initial: T,
-        f: F)
-        -> impl Future<Item = (), Error = io::Error> + Send + 'static
+        f: F,
+    ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
     where
         F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
         T: Send + 'static,
@@ -212,7 +200,26 @@ impl<G> BoundPort<G> {
         <Fut as IntoFuture>::Future: Send,
         Self: GetOriginalDst,
     {
-        let inner = self.inner.take()
+        self.listen_and_fold_inner(connection_limit, initial, f)
+    }
+
+    fn listen_and_fold_inner<T, F, Fut>(
+        mut self,
+        connection_limit: u64,
+        initial: T,
+        f: F,
+    ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
+    where
+        F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
+        T: Send + 'static,
+        G: Send + 'static,
+        Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
+        <Fut as IntoFuture>::Future: Send,
+        Self: GetOriginalDst,
+    {
+        let inner = self
+            .inner
+            .take()
             .expect("listener shouldn't be taken twice");
         future::lazy(move || {
             // Create the TCP listener lazily, so that it's not bound to a
@@ -221,7 +228,8 @@ impl<G> BoundPort<G> {
             // background reactor if `listen_and_fold` is called before we've
             // initialized the runtime.
             TcpListener::from_std(inner, &Handle::current())
-        }).and_then(move |mut listener| {
+        })
+        .and_then(move |mut listener| {
             let incoming = stream::poll_fn(move || {
                 let ret = try_ready!(listener.poll_accept());
                 Ok(Async::Ready(Some(ret)))
@@ -255,8 +263,10 @@ impl<G> BoundPort<G> {
         .map(|_| ())
     }
 
-    fn new_conn(&self, socket: TcpStream)
-        -> impl Future<Item = Connection, Error = io::Error> + Send + 'static
+    fn new_conn(
+        &self,
+        socket: TcpStream,
+    ) -> impl Future<Item = Connection, Error = io::Error> + Send + 'static
     where
         Self: GetOriginalDst,
     {
@@ -268,10 +278,10 @@ impl<G> BoundPort<G> {
             // Protocol detection is disabled for the original port. Return a
             // new connection without protocol detection.
             (Some(addr), _) if self.disable_protocol_detection_ports.contains(&addr.port()) => {
-                let conn = Connection::without_protocol_detection(socket)
-                    .with_original_dst(Some(addr));
+                let conn =
+                    Connection::without_protocol_detection(socket).with_original_dst(Some(addr));
                 Either::A(future::ok(conn))
-            },
+            }
             // TLS is enabled. Try to accept a TLS handshake.
             (dst, Conditional::Some(tls)) => {
                 let tls = tls::ConnectionConfig {
@@ -281,13 +291,12 @@ impl<G> BoundPort<G> {
                 let handshake = ConditionallyUpgradeServerToTls::new(socket, tls)
                     .map(move |c| c.with_original_dst(dst));
                 Either::B(Either::A(handshake))
-            },
+            }
             // TLS is disabled. Return a new plaintext connection.
             (dst, Conditional::None(why_no_tls)) => {
-                let conn = Connection::plain(socket, *why_no_tls)
-                    .with_original_dst(dst);
+                let conn = Connection::plain(socket, *why_no_tls).with_original_dst(dst);
                 Either::B(Either::B(future::ok(conn)))
-            },
+            }
         }
     }
 }
@@ -337,23 +346,26 @@ impl Future for ConditionallyUpgradeServerToTls {
                             trace!("upgrading accepted connection to TLS");
                             let upgrade = inner.take().unwrap().into_tls_upgrade();
                             ConditionallyUpgradeServerToTls::UpgradeToTls(upgrade)
-                        },
+                        }
                         tls::conditional_accept::Match::NotMatched => {
                             trace!("passing through accepted connection without TLS");
                             let conn = inner.take().unwrap().into_plaintext();
                             return Ok(Async::Ready(conn));
-                        },
+                        }
                         tls::conditional_accept::Match::Incomplete => {
                             continue;
-                        },
+                        }
                     }
-                },
+                }
                 ConditionallyUpgradeServerToTls::UpgradeToTls(upgrading) => {
                     let tls_stream = try_ready!(upgrading.poll());
-                    let peer_identity = tls_stream
-                        .client_identity()
-                        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "tls identity missing"))?;
-                    return Ok(Async::Ready(Connection::tls(BoxedIo::new(tls_stream), peer_identity)));
+                    let peer_identity = tls_stream.client_identity().ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::Other, "tls identity missing")
+                    })?;
+                    return Ok(Async::Ready(Connection::tls(
+                        BoxedIo::new(tls_stream),
+                        peer_identity,
+                    )));
                 }
             }
         }
@@ -372,7 +384,7 @@ impl ConditionallyUpgradeServerToTlsInner {
             // XXX: It is ambiguous whether this is the start of a TLS handshake or not.
             // For now, resolve the ambiguity in favor of plaintext. TODO: revisit this
             // when we add support for TLS policy.
-            return Ok(tls::conditional_accept::Match::NotMatched.into())
+            return Ok(tls::conditional_accept::Match::NotMatched.into());
         }
 
         let buf = self.peek_buf.as_ref();
@@ -387,7 +399,7 @@ impl ConditionallyUpgradeServerToTlsInner {
         Connection::plain_with_peek_buf(
             self.socket,
             self.peek_buf,
-            tls::ReasonForNoTls::NotProxyTls
+            tls::ReasonForNoTls::NotProxyTls,
         )
     }
 }
@@ -403,11 +415,7 @@ impl Future for Connecting {
             *self = match self {
                 Connecting::Plaintext { addr, connect, tls } => {
                     let plaintext_stream = try_ready!(connect.poll().map_err(|e| {
-                        let details = format!(
-                            "{} (address: {})",
-                            e,
-                            addr,
-                        );
+                        let details = format!("{} (address: {})", e, addr,);
                         io::Error::new(e.kind(), details)
                     }));
                     trace!("Connecting: state=plaintext; tls={:?};", tls);
@@ -416,19 +424,25 @@ impl Future for Connecting {
                         Conditional::Some(config) => {
                             trace!("plaintext connection established; trying to upgrade");
                             let upgrade = tls::Connection::connect(
-                                plaintext_stream, &config.server_identity, config.config);
+                                plaintext_stream,
+                                &config.server_identity,
+                                config.config,
+                            );
                             Connecting::UpgradeToTls(upgrade, config.server_identity)
-                        },
+                        }
                         Conditional::None(why) => {
                             trace!("plaintext connection established; no TLS ({:?})", why);
                             return Ok(Async::Ready(Connection::plain(plaintext_stream, why)));
-                        },
+                        }
                     }
-                },
+                }
                 Connecting::UpgradeToTls(upgrade, server_identity) => {
                     let tls_stream = try_ready!(upgrade.poll());
-                    return Ok(Async::Ready(Connection::tls(BoxedIo::new(tls_stream), server_identity.clone())));
-                },
+                    return Ok(Async::Ready(Connection::tls(
+                        BoxedIo::new(tls_stream),
+                        server_identity.clone(),
+                    )));
+                }
             };
         }
     }
@@ -453,9 +467,11 @@ impl Connection {
         }
     }
 
-    fn plain_with_peek_buf(io: TcpStream, peek_buf: BytesMut, why_no_tls: tls::ReasonForNoTls)
-        -> Self
-    {
+    fn plain_with_peek_buf(
+        io: TcpStream,
+        peek_buf: BytesMut,
+        why_no_tls: tls::ReasonForNoTls,
+    ) -> Self {
         Connection {
             io: BoxedIo::new(io),
             peek_buf,
@@ -476,10 +492,7 @@ impl Connection {
     }
 
     fn with_original_dst(self, orig_dst: Option<SocketAddr>) -> Self {
-        Self {
-            orig_dst,
-            ..self
-        }
+        Self { orig_dst, ..self }
     }
 
     pub fn original_dst_addr(&self) -> Option<SocketAddr> {
@@ -607,7 +620,7 @@ impl<T: Peek> Future for PeekFuture<T> {
             Ok(Async::NotReady) => {
                 self.inner = Some(io);
                 Ok(Async::NotReady)
-            },
+            }
             Err(e) => Err(e),
         }
     }

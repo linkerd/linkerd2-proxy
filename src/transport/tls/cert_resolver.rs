@@ -1,15 +1,6 @@
-use std::{
-    fmt,
-    sync::Arc,
-};
+use std::{fmt, sync::Arc};
 
-use super::{
-    config,
-
-    rustls,
-    untrusted,
-    webpki,
-};
+use super::{config, rustls, untrusted, webpki};
 use ring::{self, rand, signature};
 
 /// Manages the use of the private key and certificate.
@@ -22,8 +13,7 @@ pub struct CertResolver {
 
 impl fmt::Debug for CertResolver {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        f.debug_struct("CertResolver")
-            .finish()
+        f.debug_struct("CertResolver").finish()
     }
 }
 
@@ -49,17 +39,20 @@ impl CertResolver {
     pub fn new(
         _certificate_was_validated: (), // TODO: `rustls::ServerCertVerified`.
         cert_chain: Vec<rustls::Certificate>,
-        private_key: untrusted::Input)
-        -> Result<Self, config::Error>
-    {
+        private_key: untrusted::Input,
+    ) -> Result<Self, config::Error> {
         let private_key =
-                signature::EcdsaKeyPair::from_pkcs8(config::SIGNATURE_ALG_RING_SIGNING, private_key)
-            .map_err(config::Error::InvalidPrivateKey)?;
+            signature::EcdsaKeyPair::from_pkcs8(config::SIGNATURE_ALG_RING_SIGNING, private_key)
+                .map_err(config::Error::InvalidPrivateKey)?;
 
-        let signer = Signer { private_key: Arc::new(private_key) };
+        let signer = Signer {
+            private_key: Arc::new(private_key),
+        };
         let signing_key = SigningKey { signer };
         let certified_key = Some(rustls::sign::CertifiedKey::new(
-            cert_chain, Arc::new(Box::new(signing_key))));
+            cert_chain,
+            Arc::new(Box::new(signing_key)),
+        ));
         Ok(Self { certified_key })
     }
 
@@ -71,11 +64,15 @@ impl CertResolver {
     /// `rustls::ResolvesClientCert` and `rustls::ResolvesServerCert`, but
     /// will always returns `None`.
     pub fn empty() -> Self {
-        Self { certified_key: None, }
+        Self {
+            certified_key: None,
+        }
     }
 
-    fn resolve_(&self, sigschemes: &[rustls::SignatureScheme]) -> Option<rustls::sign::CertifiedKey>
-    {
+    fn resolve_(
+        &self,
+        sigschemes: &[rustls::SignatureScheme],
+    ) -> Option<rustls::sign::CertifiedKey> {
         if !sigschemes.contains(&config::SIGNATURE_ALG_RUSTLS_SCHEME) {
             debug!("signature scheme not supported -> no certificate");
             return None;
@@ -83,14 +80,14 @@ impl CertResolver {
 
         self.certified_key.as_ref().cloned()
     }
-
 }
 
-
 impl rustls::ResolvesClientCert for CertResolver {
-    fn resolve(&self, _acceptable_issuers: &[&[u8]], sigschemes: &[rustls::SignatureScheme])
-        -> Option<rustls::sign::CertifiedKey>
-    {
+    fn resolve(
+        &self,
+        _acceptable_issuers: &[&[u8]],
+        sigschemes: &[rustls::SignatureScheme],
+    ) -> Option<rustls::sign::CertifiedKey> {
         // The proxy's server-side doesn't send the list of acceptable issuers so
         // don't bother looking at `_acceptable_issuers`.
         self.resolve_(sigschemes)
@@ -102,8 +99,11 @@ impl rustls::ResolvesClientCert for CertResolver {
 }
 
 impl rustls::ResolvesServerCert for CertResolver {
-    fn resolve(&self, server_name: Option<webpki::DNSNameRef>,
-               sigschemes: &[rustls::SignatureScheme]) -> Option<rustls::sign::CertifiedKey> {
+    fn resolve(
+        &self,
+        server_name: Option<webpki::DNSNameRef>,
+        sigschemes: &[rustls::SignatureScheme],
+    ) -> Option<rustls::sign::CertifiedKey> {
         let server_name = if let Some(server_name) = server_name {
             server_name
         } else {
@@ -113,8 +113,12 @@ impl rustls::ResolvesServerCert for CertResolver {
 
         // Verify that our certificate is valid for the given SNI name.
         if let Err(err) = super::parse_end_entity_cert(&self.certified_key.as_ref()?.cert)
-            .and_then(|cert| cert.verify_is_valid_for_dns_name(server_name)) {
-            debug!("our certificate is not valid for the SNI name -> no certificate: {:?}", err);
+            .and_then(|cert| cert.verify_is_valid_for_dns_name(server_name))
+        {
+            debug!(
+                "our certificate is not valid for the SNI name -> no certificate: {:?}",
+                err
+            );
             return None;
         }
 
@@ -123,9 +127,10 @@ impl rustls::ResolvesServerCert for CertResolver {
 }
 
 impl rustls::sign::SigningKey for SigningKey {
-    fn choose_scheme(&self, offered: &[rustls::SignatureScheme])
-        -> Option<Box<rustls::sign::Signer>>
-    {
+    fn choose_scheme(
+        &self,
+        offered: &[rustls::SignatureScheme],
+    ) -> Option<Box<rustls::sign::Signer>> {
         if offered.contains(&config::SIGNATURE_ALG_RUSTLS_SCHEME) {
             Some(Box::new(self.signer.clone()))
         } else {
@@ -141,10 +146,12 @@ impl rustls::sign::SigningKey for SigningKey {
 impl rustls::sign::Signer for Signer {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::TLSError> {
         let rng = rand::SystemRandom::new();
-        self.private_key.sign(&rng, untrusted::Input::from(message))
+        self.private_key
+            .sign(&rng, untrusted::Input::from(message))
             .map(|signature| signature.as_ref().to_owned())
-            .map_err(|ring::error::Unspecified|
-                rustls::TLSError::General("Signing Failed".to_owned()))
+            .map_err(|ring::error::Unspecified| {
+                rustls::TLSError::General("Signing Failed".to_owned())
+            })
     }
 
     fn get_scheme(&self) -> rustls::SignatureScheme {

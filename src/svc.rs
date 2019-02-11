@@ -6,13 +6,6 @@ extern crate tower_util;
 pub use self::tower_service::Service;
 pub use self::tower_util::MakeService;
 
-pub use self::stack::{
-    shared,
-    stack_per_request,
-    watch,
-    Either,
-    Layer,
-    Stack,
-};
+pub use self::stack::{shared, stack_per_request, watch, Either, Layer, Stack};
 
 pub use self::linkerd2_timeout::stack as timeout;

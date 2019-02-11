@@ -1,5 +1,5 @@
 #![deny(warnings)]
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 #[macro_use]
 mod support;
 use self::support::*;
@@ -17,15 +17,20 @@ macro_rules! generate_outbound_dns_limit_test {
             let srv_addr = srv.addr;
 
             let mut env = app::config::TestEnv::new();
-            env.put(app::config::ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT, "2".to_owned());
+            env.put(
+                app::config::ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT,
+                "2".to_owned(),
+            );
 
             let ctrl = controller::new();
-            let _txs = (1..=3).map(|n| {
-                let disco_n = format!("disco{}.test.svc.cluster.local", n);
-                let tx = ctrl.destination_tx(&disco_n);
-                tx.send_addr(srv_addr);
-                tx // This will go into a vec, to keep the stream open.
-            }).collect::<Vec<_>>();
+            let _txs = (1..=3)
+                .map(|n| {
+                    let disco_n = format!("disco{}.test.svc.cluster.local", n);
+                    let tx = ctrl.destination_tx(&disco_n);
+                    tx.send_addr(srv_addr);
+                    tx // This will go into a vec, to keep the stream open.
+                })
+                .collect::<Vec<_>>();
 
             let proxy = proxy::new()
                 .controller(ctrl.run())
@@ -64,7 +69,7 @@ macro_rules! generate_outbound_dns_limit_test {
             let rsp = client.request(req.method("GET"));
             assert_eq!(rsp.status(), http::StatusCode::OK);
         }
-    }
+    };
 }
 
 macro_rules! generate_tests {
@@ -544,13 +549,9 @@ fn outbound_updates_newer_services() {
 
     let srv = server::http1().route("/h1", "hello h1").run();
 
-    let ctrl = controller::new()
-        .destination_and_close("disco.test.svc.cluster.local", srv.addr);
+    let ctrl = controller::new().destination_and_close("disco.test.svc.cluster.local", srv.addr);
 
-    let proxy = proxy::new()
-        .controller(ctrl.run())
-        .outbound(srv)
-        .run();
+    let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
 
     // the HTTP2 service starts watching first, receiving an addr
     // from the controller
@@ -592,9 +593,7 @@ mod proxy_to_proxy {
         let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
         dst.send_h2_hinted(srv.addr);
 
-        let proxy = proxy::new()
-            .controller(ctrl.run())
-            .run();
+        let proxy = proxy::new().controller(ctrl.run()).run();
 
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
@@ -602,7 +601,6 @@ mod proxy_to_proxy {
         assert_eq!(res.status(), 200);
         assert_eq!(res.version(), http::Version::HTTP_11);
     }
-
 
     #[test]
     fn inbound_http1() {
@@ -621,10 +619,7 @@ mod proxy_to_proxy {
 
         let ctrl = controller::new();
 
-        let proxy = proxy::new()
-            .controller(ctrl.run())
-            .inbound(srv)
-            .run();
+        let proxy = proxy::new().controller(ctrl.run()).inbound(srv).run();
 
         // This client will be used as a mocked-other-proxy.
         let client = client::http2(proxy.inbound, "disco.test.svc.cluster.local");
@@ -632,7 +627,7 @@ mod proxy_to_proxy {
         let res = client.request(
             client
                 .request_builder("/h1")
-                .header("l5d-orig-proto", "HTTP/1.1")
+                .header("l5d-orig-proto", "HTTP/1.1"),
         );
         assert_eq!(res.status(), 200);
         assert_eq!(res.version(), http::Version::HTTP_2);
@@ -649,15 +644,14 @@ mod proxy_to_proxy {
             })
             .run();
 
-        let proxy = proxy::new()
-            .inbound(srv)
-            .run();
+        let proxy = proxy::new().inbound(srv).run();
 
         let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
 
         let res = client.request(
-            client.request_builder("/stripped")
-                .header("l5d-client-id", "sneaky.sneaky")
+            client
+                .request_builder("/stripped")
+                .header("l5d-client-id", "sneaky.sneaky"),
         );
         assert_eq!(res.status(), 200);
     }
@@ -676,15 +670,14 @@ mod proxy_to_proxy {
         let ctrl = controller::new()
             .destination_and_close("disco.test.svc.cluster.local", srv.addr)
             .run();
-        let proxy = proxy::new()
-            .controller(ctrl)
-            .run();
+        let proxy = proxy::new().controller(ctrl).run();
 
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
         let res = client.request(
-            client.request_builder("/stripped")
-                .header("l5d-client-id", "sneaky.sneaky")
+            client
+                .request_builder("/stripped")
+                .header("l5d-client-id", "sneaky.sneaky"),
         );
         assert_eq!(res.status(), 200);
     }
@@ -702,15 +695,11 @@ mod proxy_to_proxy {
             })
             .run();
 
-        let proxy = proxy::new()
-            .inbound(srv)
-            .run();
+        let proxy = proxy::new().inbound(srv).run();
 
         let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
 
-        let res = client.request(
-            &mut client.request_builder("/strip-me")
-        );
+        let res = client.request(&mut client.request_builder("/strip-me"));
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get("l5d-server-id"), None);
     }
@@ -731,15 +720,11 @@ mod proxy_to_proxy {
         let ctrl = controller::new()
             .destination_and_close("disco.test.svc.cluster.local", srv.addr)
             .run();
-        let proxy = proxy::new()
-            .controller(ctrl)
-            .run();
+        let proxy = proxy::new().controller(ctrl).run();
 
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
-        let res = client.request(
-            &mut client.request_builder("/strip-me")
-        );
+        let res = client.request(&mut client.request_builder("/strip-me"));
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get("l5d-server-id"), None);
     }
@@ -756,9 +741,7 @@ mod proxy_to_proxy {
                 })
                 .run();
 
-            let in_proxy = proxy::new()
-                .inbound(srv)
-                .run_with_test_env(tls_env());
+            let in_proxy = proxy::new().inbound(srv).run_with_test_env(tls_env());
 
             let ctrl = controller::new();
             let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
@@ -774,12 +757,10 @@ mod proxy_to_proxy {
 
             let client = $make_client(out_proxy.outbound, "disco.test.svc.cluster.local");
 
-            let res = client.request(
-                &mut client.request_builder("/hallo")
-            );
+            let res = client.request(&mut client.request_builder("/hallo"));
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers()["l5d-server-id"], id);
-        }
+        };
     }
 
     #[test]
@@ -803,8 +784,7 @@ mod proxy_to_proxy {
 
         let (cert, key, trust_anchors) = {
             let path_to_string = |path: &PathBuf| {
-                path
-                    .as_path()
+                path.as_path()
                     .to_owned()
                     .into_os_string()
                     .into_string()
@@ -834,8 +814,7 @@ mod proxy_to_proxy {
         env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
         env.put(
             app::config::ENV_TLS_POD_IDENTITY,
-            "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local"
-                .to_string(),
+            "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
         );
         env.put(app::config::ENV_CONTROLLER_NAMESPACE, "linkerd".to_string());
         env.put(app::config::ENV_POD_NAMESPACE, "ns1".to_string());

@@ -4,10 +4,10 @@ pub use self::tokio_connect::Connect;
 
 use std::{hash, io, net::SocketAddr};
 
-use Conditional;
 use never::Never;
 use svc;
 use transport::{connection, tls};
+use Conditional;
 
 #[derive(Debug, Clone)]
 pub struct Stack {}
@@ -26,10 +26,7 @@ pub struct Target {
 
 impl Target {
     pub fn new(addr: SocketAddr, tls: tls::ConditionalConnectionConfig<tls::ClientConfig>) -> Self {
-        Self {
-            addr,
-            tls,
-        }
+        Self { addr, tls }
     }
 
     pub fn tls_status(&self) -> tls::Status {

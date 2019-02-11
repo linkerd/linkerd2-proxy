@@ -297,8 +297,8 @@ where
                 .ok()
                 .expect("admin thread must receive resolver task");
 
-
-            let profiles_client = ProfilesClient::new(controller, Duration::from_secs(3), config.proxy_id);
+            let profiles_client =
+                ProfilesClient::new(controller, Duration::from_secs(3), config.proxy_id);
 
             let outbound = {
                 use super::outbound::{
@@ -490,7 +490,8 @@ where
 
             let inbound = {
                 use super::inbound::{
-                    client_id, orig_proto_downgrade, rewrite_loopback_addr, Endpoint, RecognizeEndpoint,
+                    client_id, orig_proto_downgrade, rewrite_loopback_addr, Endpoint,
+                    RecognizeEndpoint,
                 };
 
                 let capacity = config.inbound_router_capacity;

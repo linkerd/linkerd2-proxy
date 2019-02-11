@@ -117,9 +117,7 @@ impl Route {
     }
 
     pub fn set_retries(&mut self, budget: Arc<Budget>) {
-        self.retries = Some(Retries {
-            budget,
-        });
+        self.retries = Some(Retries { budget });
     }
 
     pub fn set_timeout(&mut self, timeout: Duration) {
@@ -202,8 +200,11 @@ pub mod router {
 
     use super::*;
 
-    pub fn layer<T, G, M, R>(suffixes: Vec<dns::Suffix>, get_routes: G, route_layer: R)
-        -> Layer<G, M, R>
+    pub fn layer<T, G, M, R>(
+        suffixes: Vec<dns::Suffix>,
+        get_routes: G,
+        route_layer: R,
+    ) -> Layer<G, M, R>
     where
         T: CanGetDestination + WithRoute + Clone,
         M: svc::Stack<T>,

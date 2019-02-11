@@ -8,34 +8,20 @@ use std::fmt;
 
 use Conditional;
 
+mod cert_resolver;
 pub mod conditional_accept;
 mod config;
-mod cert_resolver;
 mod connection;
 mod dns_name;
 mod identity;
 
 pub use self::{
     config::{
-        ClientConfig,
-        ClientConfigWatch,
-        CommonSettings,
-        ConditionalConnectionConfig,
-        ConditionalClientConfig,
-        ConfigWatch,
-        ConnectionConfig,
-        Error as ConfigError,
-        ReasonForNoTls,
-        ReasonForNoIdentity,
-        ServerConfig,
-        ServerConfigWatch,
+        ClientConfig, ClientConfigWatch, CommonSettings, ConditionalClientConfig,
+        ConditionalConnectionConfig, ConfigWatch, ConnectionConfig, Error as ConfigError,
+        ReasonForNoIdentity, ReasonForNoTls, ServerConfig, ServerConfigWatch,
     },
-    connection::{
-        Connection,
-        Session,
-        UpgradeClientToTls,
-        UpgradeServerToTls
-    },
+    connection::{Connection, Session, UpgradeClientToTls, UpgradeServerToTls},
     dns_name::{DnsName, InvalidDnsName},
     identity::Identity,
     rustls::TLSError as Error,
@@ -53,7 +39,7 @@ pub type Status = Conditional<(), ReasonForNoTls>;
 impl Status {
     pub fn from<C>(c: &Conditional<C, ReasonForNoTls>) -> Self
     where
-        C: Clone + fmt::Debug
+        C: Clone + fmt::Debug,
     {
         c.as_ref().map(|_| ())
     }
@@ -67,7 +53,7 @@ impl fmt::Display for Status {
             Conditional::None(ReasonForNoTls::Disabled) => "disabled",
             Conditional::None(ReasonForNoTls::InternalTraffic) => "internal_traffic",
             Conditional::None(ReasonForNoTls::NoIdentity(_)) => "no_identity",
-            Conditional::None(ReasonForNoTls::NotProxyTls) => "no_proxy_tls"
+            Conditional::None(ReasonForNoTls::NotProxyTls) => "no_proxy_tls",
         };
 
         f.pad(s)
@@ -79,10 +65,11 @@ pub trait HasStatus {
     fn tls_status(&self) -> Status;
 }
 
-fn parse_end_entity_cert<'a>(cert_chain: &'a[rustls::Certificate])
-    -> Result<webpki::EndEntityCert<'a>, webpki::Error>
-{
-    let cert = cert_chain.first()
+fn parse_end_entity_cert<'a>(
+    cert_chain: &'a [rustls::Certificate],
+) -> Result<webpki::EndEntityCert<'a>, webpki::Error> {
+    let cert = cert_chain
+        .first()
         .map(rustls::Certificate::as_ref)
         .unwrap_or(&[]); // An empty input will fail to parse.
     webpki::EndEntityCert::from(untrusted::Input::from(cert))

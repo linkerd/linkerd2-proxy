@@ -18,7 +18,10 @@ impl<S> Prefixed<S> {
     }
 }
 
-impl<S> io::Read for Prefixed<S> where S: Debug + io::Read {
+impl<S> io::Read for Prefixed<S>
+where
+    S: Debug + io::Read,
+{
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         // Check the length only once, since looking as the length
         // of a Bytes isn't as cheap as the length of a &[u8].
@@ -41,13 +44,19 @@ impl<S> io::Read for Prefixed<S> where S: Debug + io::Read {
     }
 }
 
-impl<S> AsyncRead for Prefixed<S> where S: AsyncRead + Debug {
+impl<S> AsyncRead for Prefixed<S>
+where
+    S: AsyncRead + Debug,
+{
     unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
         self.io.prepare_uninitialized_buffer(buf)
     }
 }
 
-impl<S> io::Write for Prefixed<S> where S: Debug + io::Write {
+impl<S> io::Write for Prefixed<S>
+where
+    S: Debug + io::Write,
+{
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.io.write(buf)
     }
@@ -57,19 +66,26 @@ impl<S> io::Write for Prefixed<S> where S: Debug + io::Write {
     }
 }
 
-impl<S> AsyncWrite for Prefixed<S> where S: AsyncWrite + Debug {
+impl<S> AsyncWrite for Prefixed<S>
+where
+    S: AsyncWrite + Debug,
+{
     fn shutdown(&mut self) -> Result<Async<()>, io::Error> {
         self.io.shutdown()
     }
 
     fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error>
-        where Self: Sized
+    where
+        Self: Sized,
     {
         self.io.write_buf(buf)
     }
 }
 
-impl<S> AddrInfo for Prefixed<S> where S: AddrInfo {
+impl<S> AddrInfo for Prefixed<S>
+where
+    S: AddrInfo,
+{
     fn local_addr(&self) -> Result<SocketAddr, io::Error> {
         self.io.local_addr()
     }
@@ -79,7 +95,10 @@ impl<S> AddrInfo for Prefixed<S> where S: AddrInfo {
     }
 }
 
-impl<S> SetKeepalive for Prefixed<S> where S: SetKeepalive {
+impl<S> SetKeepalive for Prefixed<S>
+where
+    S: SetKeepalive,
+{
     fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
         self.io.keepalive()
     }
@@ -89,7 +108,10 @@ impl<S> SetKeepalive for Prefixed<S> where S: SetKeepalive {
     }
 }
 
-impl<S> Io for Prefixed<S> where S: Io {
+impl<S> Io for Prefixed<S>
+where
+    S: Io,
+{
     fn shutdown_write(&mut self) -> Result<(), io::Error> {
         self.io.shutdown_write()
     }

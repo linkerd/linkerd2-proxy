@@ -1,8 +1,7 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 #![cfg_attr(feature = "cargo-clippy", allow(new_without_default_derive))]
 #![deny(warnings)]
-
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 
 extern crate bytes;
 extern crate env_logger;

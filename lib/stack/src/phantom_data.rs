@@ -24,7 +24,7 @@ impl<T, M: super::Stack<T>> super::Layer<T, T, M> for Layer<T, M> {
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             inner,
-            _p: PhantomData
+            _p: PhantomData,
         }
     }
 }

@@ -1,4 +1,4 @@
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 #![deny(warnings)]
 #[macro_use]
 mod support;
@@ -11,18 +11,12 @@ use support::tap::TapEventExt;
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn inbound_http1() {
     let _ = env_logger_init();
-    let srv = server::http1()
-        .route("/", "hello")
-        .run();
+    let srv = server::http1().route("/", "hello").run();
 
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
+    let proxy = proxy::new().inbound(srv).run();
 
     let mut tap = tap::client(proxy.control);
-    let events = tap.observe(
-        tap::observe_request()
-    );
+    let events = tap.observe(tap::observe_request());
 
     let authority = "tap.test.svc.cluster.local";
     let client = client::http1(proxy.inbound, authority);
@@ -58,21 +52,18 @@ fn grpc_headers_end() {
         })
         .run();
 
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
+    let proxy = proxy::new().inbound(srv).run();
 
     let mut tap = tap::client(proxy.control);
-    let events = tap.observe(
-        tap::observe_request()
-    );
+    let events = tap.observe(tap::observe_request());
 
     let authority = "tap.test.svc.cluster.local";
     let client = client::http2(proxy.inbound, authority);
 
-    let res = client.request(client
-        .request_builder("/")
-        .header("content-type", "application/grpc+nope")
+    let res = client.request(
+        client
+            .request_builder("/")
+            .header("content-type", "application/grpc+nope"),
     );
     assert_eq!(res.status(), 200);
     assert_eq!(res.headers()["grpc-status"], "1");

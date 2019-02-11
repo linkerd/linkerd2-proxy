@@ -3,9 +3,9 @@ use std::fmt::{self, Write};
 use metrics::FmtLabels;
 
 use transport::tls;
-use {Conditional, Addr, NameAddr};
+use {Addr, Conditional, NameAddr};
 
-use super::{control, classify, dst, inbound, outbound};
+use super::{classify, control, dst, inbound, outbound};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ControlLabels {
@@ -48,7 +48,7 @@ impl From<control::Config> for ControlLabels {
     fn from(c: control::Config) -> Self {
         ControlLabels {
             addr: c.addr().clone(),
-            tls_status: c.tls_status()
+            tls_status: c.tls_status(),
         }
     }
 }
@@ -61,7 +61,6 @@ impl FmtLabels for ControlLabels {
         Ok(())
     }
 }
-
 
 // === impl RouteLabels ===
 
@@ -117,7 +116,10 @@ impl From<outbound::Endpoint> for EndpointLabels {
         Self {
             dst_name: ep.dst_name,
             direction: Direction::Out,
-            tls_id: ep.connect.tls_server_identity().map(|id| TlsId::ServerId(id.clone())),
+            tls_id: ep
+                .connect
+                .tls_server_identity()
+                .map(|id| TlsId::ServerId(id.clone())),
             labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
         }
     }
@@ -215,12 +217,8 @@ impl FmtLabels for tls::Status {
 impl FmtLabels for TlsId {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TlsId::ClientId(ref id) => {
-                write!(f, "client_id=\"{}\"", id.as_ref())
-            },
-            TlsId::ServerId(ref id) => {
-                write!(f, "server_id=\"{}\"", id.as_ref())
-            },
+            TlsId::ClientId(ref id) => write!(f, "client_id=\"{}\"", id.as_ref()),
+            TlsId::ServerId(ref id) => write!(f, "server_id=\"{}\"", id.as_ref()),
         }
     }
 }

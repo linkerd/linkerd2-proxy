@@ -4,19 +4,15 @@ use std::{
     fmt,
     iter::IntoIterator,
     net::SocketAddr,
-    time::{Instant, Duration},
+    time::{Duration, Instant},
 };
 
-use futures::{Async, Future, Stream,};
-use tower_http::HttpService;
+use futures::{Async, Future, Stream};
 use tower_grpc::{Body, BoxBody};
+use tower_http::HttpService;
 
 use api::{
-    destination::{
-        protocol_hint::Protocol,
-        update::Update as PbUpdate2,
-        WeightedAddr,
-    },
+    destination::{protocol_hint::Protocol, update::Update as PbUpdate2, WeightedAddr},
     net::TcpAddress,
 };
 
@@ -83,13 +79,11 @@ where
                 Ok(Async::Ready(Some(update))) => match update.update {
                     Some(PbUpdate2::Add(a_set)) => {
                         let set_labels = a_set.metric_labels;
-                        let addrs = a_set
-                            .addrs
-                            .into_iter()
-                            .filter_map(|pb|
-                                pb_to_addr_meta(pb, &set_labels, tls_controller_namespace));
+                        let addrs = a_set.addrs.into_iter().filter_map(|pb| {
+                            pb_to_addr_meta(pb, &set_labels, tls_controller_namespace)
+                        });
                         self.add(auth, addrs)
-                    },
+                    }
                     Some(PbUpdate2::Remove(r_set)) => {
                         exists = Exists::Yes(());
                         self.remove(
@@ -99,15 +93,15 @@ where
                                 .iter()
                                 .filter_map(|addr| pb_to_sock_addr(addr.clone())),
                         );
-                    },
+                    }
                     Some(PbUpdate2::NoEndpoints(ref no_endpoints)) if no_endpoints.exists => {
                         exists = Exists::Yes(());
                         self.no_endpoints(auth, no_endpoints.exists);
-                    },
+                    }
                     Some(PbUpdate2::NoEndpoints(no_endpoints)) => {
                         debug_assert!(!no_endpoints.exists);
                         exists = Exists::No;
-                    },
+                    }
                     None => (),
                 },
                 Ok(Async::Ready(None)) => {
@@ -116,14 +110,14 @@ where
                         auth
                     );
                     return (Remote::NeedsReconnect.into(), exists);
-                },
+                }
                 Ok(Async::NotReady) => {
                     return (Remote::ConnectedOrConnecting { rx }.into(), exists);
-                },
+                }
                 Err(err) => {
                     warn!("Destination.Get stream errored for {:?}: {:?}", auth, err);
                     return (Remote::NeedsReconnect.into(), exists);
-                },
+                }
             };
         }
     }
@@ -141,7 +135,7 @@ where
                     trace!("DNS query not ready {:?}", authority);
                     self.dns_query = Some(query);
                     return;
-                },
+                }
                 Ok(Async::Ready(dns::Response::Exists(ips))) => {
                     trace!(
                         "positive result of DNS query for {:?}: {:?}",
@@ -153,14 +147,16 @@ where
                         ips.iter().map(|ip| {
                             (
                                 SocketAddr::from((ip, authority.port())),
-                                Metadata::none(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery),
+                                Metadata::none(
+                                    tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery,
+                                ),
                             )
                         }),
                     );
 
                     // Poll again after the deadline on the DNS response.
                     ips.valid_until()
-                },
+                }
                 Ok(Async::Ready(dns::Response::DoesNotExist { retry_after })) => {
                     trace!(
                         "negative result (NXDOMAIN) of DNS query for {:?}",
@@ -170,7 +166,7 @@ where
                     // Poll again after the deadline on the DNS response, if
                     // there is one.
                     retry_after.unwrap_or_else(|| Instant::now() + DNS_ERROR_TTL)
-                },
+                }
                 Err(e) => {
                     // Do nothing so that the most recent non-error response is used until a
                     // non-error response is received
@@ -178,7 +174,7 @@ where
 
                     // Poll again after the default wait time.
                     Instant::now() + DNS_ERROR_TTL
-                },
+                }
             };
             self.reset_dns_query(dns_resolver, deadline, &authority)
         }
@@ -200,7 +196,7 @@ where
         match self.addrs {
             Exists::Yes(ref mut cache) => {
                 cache.set_reset_on_next_modification();
-            },
+            }
             Exists::No | Exists::Unknown => (),
         }
     }
@@ -229,7 +225,7 @@ where
                     Self::on_change(&mut self.responders, authority_for_logging, change)
                 });
                 cache
-            },
+            }
             Exists::Unknown | Exists::No => Cache::new(),
         };
         self.addrs = Exists::Yes(cache);
@@ -246,7 +242,7 @@ where
                 cache.clear(&mut |change| {
                     Self::on_change(&mut self.responders, authority_for_logging, change)
                 });
-            },
+            }
             Exists::Unknown | Exists::No => (),
         };
         self.addrs = if exists {
@@ -264,7 +260,7 @@ where
         let (update_str, update, addr) = match change {
             CacheChange::Insertion { key, value } => {
                 ("insert", Update::Add(key, value.clone()), key)
-            },
+            }
             CacheChange::Removal { key } => ("remove", Update::Remove(key), key),
             CacheChange::Modification { key, new_value } => (
                 "change metadata for",
@@ -281,7 +277,6 @@ where
     }
 }
 
-
 /// Construct a new labeled `SocketAddr `from a protobuf `WeightedAddr`.
 fn pb_to_addr_meta(
     pb: WeightedAddr,
@@ -291,7 +286,8 @@ fn pb_to_addr_meta(
     let addr = pb.addr.and_then(pb_to_sock_addr)?;
 
     let meta = {
-        let mut t = set_labels.iter()
+        let mut t = set_labels
+            .iter()
             .chain(pb.metric_labels.iter())
             .collect::<Vec<(&String, &String)>>();
         t.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
@@ -310,14 +306,14 @@ fn pb_to_addr_meta(
         match tls::Identity::maybe_from_protobuf(tls_controller_namespace, pb) {
             Ok(Some(identity)) => {
                 tls_identity = Conditional::Some(identity);
-            },
+            }
             Ok(None) => (),
             Err(e) => {
                 error!("Failed to parse TLS identity: {:?}", e);
                 // XXX: Wallpaper over the error and keep going without TLS.
                 // TODO: Hard fail here once the TLS infrastructure has been
                 // validated.
-            },
+            }
         }
     };
 
@@ -360,7 +356,7 @@ fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
             Some(Ip::Ipv4(octets)) => {
                 let ipv4 = Ipv4Addr::from(octets);
                 Some(SocketAddr::from((ipv4, pb.port as u16)))
-            },
+            }
             Some(Ip::Ipv6(v6)) => {
                 let octets = [
                     (v6.first >> 56) as u8,
@@ -382,7 +378,7 @@ fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
                 ];
                 let ipv6 = Ipv6Addr::from(octets);
                 Some(SocketAddr::from((ipv6, pb.port as u16)))
-            },
+            }
             None => None,
         },
         None => None,

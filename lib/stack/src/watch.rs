@@ -2,8 +2,8 @@ extern crate futures_watch;
 
 use self::futures_watch::Watch;
 use futures::{future::MapErr, Async, Future, Poll, Stream};
-use std::{error, fmt};
 use std::marker::PhantomData;
+use std::{error, fmt};
 
 use svc;
 
@@ -108,7 +108,9 @@ where
     type Error = M::Error;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(&target.with_update(&*self.watch.borrow()))?;
+        let inner = self
+            .inner
+            .make(&target.with_update(&*self.watch.borrow()))?;
         Ok(Service {
             inner,
             watch: self.watch.clone(),

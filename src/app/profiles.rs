@@ -62,7 +62,11 @@ where
     T::Error: fmt::Debug,
 {
     pub fn new(service: Option<T>, backoff: Duration, proxy_id: String) -> Self {
-        Self { service, backoff, proxy_id }
+        Self {
+            service,
+            backoff,
+            proxy_id,
+        }
     }
 }
 
@@ -74,7 +78,7 @@ where
     <T::ResponseBody as Body>::Data: Send + 'static,
     <<T::ResponseBody as Body>::Data as IntoBuf>::Buf: Send + 'static,
     T::Error: fmt::Debug,
- {
+{
     type Stream = Rx;
 
     fn get_routes(&self, dst: &NameAddr) -> Option<Self::Stream> {
@@ -138,9 +142,7 @@ where
                     let routes = profile
                         .routes
                         .into_iter()
-                        .filter_map(move |orig| {
-                            convert_route(orig, retry_budget.as_ref())
-                        });
+                        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()));
                     match tx.start_send(routes.collect()) {
                         Ok(AsyncSink::Ready) => {} // continue
                         Ok(AsyncSink::NotReady(_)) => {
@@ -217,7 +219,10 @@ where
     }
 }
 
-fn convert_route(orig: api::Route, retry_budget: Option<&Arc<Budget>>) -> Option<(profiles::RequestMatch, profiles::Route)> {
+fn convert_route(
+    orig: api::Route,
+    retry_budget: Option<&Arc<Budget>>,
+) -> Option<(profiles::RequestMatch, profiles::Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
         .response_classes
@@ -240,7 +245,7 @@ fn set_route_retry(route: &mut profiles::Route, retry_budget: Option<&Arc<Budget
         None => {
             warn!("retry_budget is missing: {:?}", route);
             return;
-        },
+        }
     };
 
     route.set_retries(budget);
@@ -250,10 +255,10 @@ fn set_route_timeout(route: &mut profiles::Route, timeout: Result<Duration, Dura
     match timeout {
         Ok(dur) => {
             route.set_timeout(dur);
-        },
+        }
         Err(_) => {
             warn!("route timeout is negative: {:?}", route);
-        },
+        }
     }
 }
 
@@ -340,7 +345,10 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
     let min_retries = if orig.min_retries_per_second <= ::std::i32::MAX as u32 {
         orig.min_retries_per_second
     } else {
-        warn!("retry_budget min_retries_per_second overflow: {:?}", orig.min_retries_per_second);
+        warn!(
+            "retry_budget min_retries_per_second overflow: {:?}",
+            orig.min_retries_per_second
+        );
         return None;
     };
     let retry_ratio = orig.retry_ratio;
@@ -356,16 +364,16 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
                     return None;
                 }
                 dur
-            },
+            }
             Err(negative) => {
                 warn!("retry_budget ttl negative: {:?}", negative);
                 return None;
-            },
+            }
         },
         None => {
             warn!("retry_budget ttl missing");
             return None;
-        },
+        }
     };
 
     Some(Arc::new(Budget::new(ttl, min_retries, retry_ratio)))
@@ -373,8 +381,8 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
 
 #[cfg(test)]
 mod tests {
-    use quickcheck::*;
     use super::*;
+    use quickcheck::*;
 
     quickcheck! {
         fn retry_budget_from_proto(
@@ -397,4 +405,3 @@ mod tests {
         }
     }
 }
-
