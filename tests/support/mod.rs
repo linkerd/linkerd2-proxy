@@ -6,13 +6,15 @@
 #![allow(dead_code)]
 
 pub extern crate bytes;
-pub extern crate linkerd2_proxy_api;
-extern crate linkerd2_proxy;
-extern crate linkerd2_task;
+extern crate env_logger;
 extern crate futures;
 extern crate h2;
 pub extern crate http;
 extern crate hyper;
+extern crate linkerd2_proxy;
+pub extern crate linkerd2_proxy_api;
+extern crate linkerd2_task;
+extern crate log;
 pub extern crate net2;
 extern crate prost;
 extern crate tokio;
@@ -21,40 +23,33 @@ extern crate tokio_current_thread;
 pub extern crate tokio_io;
 extern crate tower_grpc;
 extern crate tower_service;
-extern crate log;
-extern crate env_logger;
 
-use std::fmt;
 pub use std::collections::HashMap;
+use std::fmt;
 pub use std::net::SocketAddr;
 pub use std::time::Duration;
 
 pub use self::bytes::Bytes;
+pub use self::futures::sync::oneshot;
+pub use self::futures::{future::Executor, *};
+pub use self::http::{HeaderMap, Request, Response, StatusCode};
 pub use self::linkerd2_proxy::*;
 pub use self::linkerd2_task::LazyExecutor;
-pub use self::futures::{future::Executor, *,};
-pub use self::futures::sync::oneshot;
-pub use self::http::{HeaderMap, Request, Response, StatusCode};
-use self::tokio::{
-    net::{TcpListener},
-    runtime,
-    reactor,
-};
-use self::tokio_current_thread as current_thread;
+use self::tokio::{net::TcpListener, reactor, runtime};
 use self::tokio_connect::Connect;
+use self::tokio_current_thread as current_thread;
 use self::tower_grpc as grpc;
-use self::tower_service::{Service};
+use self::tower_service::Service;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";
 pub const DEFAULT_TEST_PATIENCE: Duration = Duration::from_millis(15);
 
 /// By default, disable logging in modules that are expected to error in tests.
-const DEFAULT_LOG: &'static str =
-    "error,\
-    linkerd2_proxy::proxy::canonicalize=off,\
-    linkerd2_proxy::proxy::http::router=off,\
-    linkerd2_proxy::proxy::tcp=off";
+const DEFAULT_LOG: &'static str = "error,\
+                                   linkerd2_proxy::proxy::canonicalize=off,\
+                                   linkerd2_proxy::proxy::http::router=off,\
+                                   linkerd2_proxy::proxy::tcp=off";
 
 pub fn env_logger_init() -> Result<(), String> {
     use std::env;
@@ -65,8 +60,7 @@ pub fn env_logger_init() -> Result<(), String> {
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    env_logger::try_init()
-        .map_err(|e| e.to_string())
+    env_logger::try_init().map_err(|e| e.to_string())
 }
 
 /// Retry an assertion up to a specified number of times, waiting
@@ -135,15 +129,25 @@ macro_rules! assert_eventually {
 #[macro_export]
 macro_rules! assert_contains {
     ($haystack:expr, $needle:expr) => {
-        assert!($haystack.contains($needle), "haystack:\n{}\ndid not contain:\n{}", $haystack, $needle)
-    }
+        assert!(
+            $haystack.contains($needle),
+            "haystack:\n{}\ndid not contain:\n{}",
+            $haystack,
+            $needle
+        )
+    };
 }
 
 #[macro_export]
 macro_rules! assert_eventually_contains {
     ($scrape:expr, $contains:expr) => {
-        assert_eventually!($scrape.contains($contains), "metrics scrape:\n{}\ndid not contain:\n{}", $scrape, $contains)
-    }
+        assert_eventually!(
+            $scrape.contains($contains),
+            "metrics scrape:\n{}\ndid not contain:\n{}",
+            $scrape,
+            $contains
+        )
+    };
 }
 
 pub mod client;
@@ -168,7 +172,7 @@ impl Shutdown {
     }
 }
 
-pub type ShutdownRx = Box<Future<Item=(), Error=()> + Send>;
+pub type ShutdownRx = Box<Future<Item = (), Error = ()> + Send>;
 
 /// A channel used to signal when a Client's related connection is running or closed.
 pub fn running() -> (oneshot::Sender<()>, Running) {
@@ -177,7 +181,7 @@ pub fn running() -> (oneshot::Sender<()>, Running) {
     (tx, rx)
 }
 
-pub type Running = Box<Future<Item=(), Error=()> + Send>;
+pub type Running = Box<Future<Item = (), Error = ()> + Send>;
 
 pub fn s(bytes: &[u8]) -> &str {
     ::std::str::from_utf8(bytes.as_ref()).unwrap()
@@ -222,8 +226,8 @@ pub trait FutureWaitExt: Future {
         Self: Sized,
     {
         use std::sync::Arc;
-        use std::time::Instant;
         use std::thread;
+        use std::time::Instant;
 
         struct ThreadNotify(thread::Thread);
 
@@ -247,7 +251,7 @@ pub trait FutureWaitExt: Future {
                     }
 
                     thread::park_timeout(deadline - now);
-                },
+                }
             }
         }
     }
@@ -279,7 +283,6 @@ impl<T: Future> FutureWaitExt for T {}
 pub trait ResultWaitedExt {
     fn expect_timedout(self, msg: &str);
 }
-
 
 impl<T: fmt::Debug, E: fmt::Debug> ResultWaitedExt for Result<T, Waited<E>> {
     fn expect_timedout(self, msg: &str) {

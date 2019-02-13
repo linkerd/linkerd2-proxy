@@ -1,11 +1,11 @@
 extern crate futures;
 
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
-use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
 use futures::sync::mpsc;
+use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
 
 /// Creates a lossy multi-producer single-consumer channel.
 ///
@@ -23,10 +23,7 @@ pub fn channel<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
         capacity: capacity.clone(),
     };
 
-    let r = Receiver {
-        rx,
-        capacity,
-    };
+    let r = Receiver { rx, capacity };
 
     (s, r)
 }
@@ -85,7 +82,8 @@ impl<T> Sender<T> {
                 return Err(SendError::Rejected(v));
             }
 
-            let ret = self.capacity
+            let ret = self
+                .capacity
                 .compare_and_swap(cap, cap - 1, Ordering::SeqCst);
             if ret == cap {
                 break;

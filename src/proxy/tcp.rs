@@ -1,6 +1,6 @@
 use bytes::{Buf, BufMut};
-use futures::{Async, Future, Poll};
 use futures::future::{self, Either};
+use futures::{Async, Future, Poll};
 use std::{fmt, io};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -15,7 +15,7 @@ pub(super) fn forward<I, C, T>(
     server_io: I,
     connect: &C,
     target: &T,
-) -> impl Future<Item=(), Error=()> + Send + 'static
+) -> impl Future<Item = (), Error = ()> + Send + 'static
 where
     T: fmt::Debug,
     I: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
@@ -34,11 +34,11 @@ where
         }
     };
 
-    let fwd = connect.connect()
+    let fwd = connect
+        .connect()
         .map_err(|e| info!("forward connect failure: {:?}", e))
         .and_then(move |io| {
-            Duplex::new(server_io, io)
-                .map_err(|e| debug!("forward duplex complete: {}", e))
+            Duplex::new(server_io, io).map_err(|e| debug!("forward duplex complete: {}", e))
         });
 
     Either::B(fwd)
@@ -136,8 +136,7 @@ where
             try_ready!(self.write_into(dst));
             if self.buf.is_none() {
                 trace!("shutting down {:?}", dst.io);
-                debug_assert!(!dst.is_shutdown,
-                    "attempted to shut down destination twice");
+                debug_assert!(!dst.is_shutdown, "attempted to shut down destination twice");
                 try_ready!(dst.io.shutdown());
                 dst.is_shutdown = true;
 
@@ -242,12 +241,12 @@ impl BufMut for CopyBuf {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Error, Read, Write, Result};
+    use std::io::{Error, Read, Result, Write};
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    use tokio::io::{AsyncRead, AsyncWrite};
-    use futures::{Async, Poll};
     use super::*;
+    use futures::{Async, Poll};
+    use tokio::io::{AsyncRead, AsyncWrite};
 
     #[derive(Debug)]
     struct DoneIo(AtomicBool);

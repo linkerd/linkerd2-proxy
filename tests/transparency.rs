@@ -1,5 +1,5 @@
 #![deny(warnings)]
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 #[macro_use]
 mod support;
 use self::support::*;
@@ -24,9 +24,7 @@ fn inbound_http1() {
     let _ = env_logger_init();
 
     let srv = server::http1().route("/", "hello h1").run();
-    let proxy = proxy::new()
-        .inbound_fuzz_addr(srv)
-        .run();
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/"), "hello h1");
@@ -45,9 +43,7 @@ fn outbound_tcp() {
             msg2
         })
         .run();
-    let proxy = proxy::new()
-        .outbound(srv)
-        .run();
+    let proxy = proxy::new().outbound(srv).run();
 
     let client = client::tcp(proxy.outbound);
 
@@ -70,9 +66,7 @@ fn inbound_tcp() {
             msg2
         })
         .run();
-    let proxy = proxy::new()
-        .inbound_fuzz_addr(srv)
-        .run();
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
 
     let client = client::tcp(proxy.inbound);
 
@@ -94,9 +88,7 @@ fn test_server_speaks_first(env: app::config::TestEnv) {
     let srv = server::tcp()
         .accept_fut(move |sock| {
             tokio_io::io::write_all(sock, msg1.as_bytes())
-                .and_then(move |(sock, _)| {
-                    tokio_io::io::read(sock, vec![0; 512])
-                })
+                .and_then(move |(sock, _)| tokio_io::io::read(sock, vec![0; 512]))
                 .map(move |(_sock, vec, n)| {
                     assert_eq!(&vec[..n], msg2.as_bytes());
                     tx.send(()).unwrap();
@@ -130,8 +122,7 @@ fn tcp_server_first_tls() {
 
     let (cert, key, trust_anchors) = {
         let path_to_string = |path: &PathBuf| {
-            path
-                .as_path()
+            path.as_path()
                 .to_owned()
                 .into_os_string()
                 .into_string()
@@ -161,8 +152,7 @@ fn tcp_server_first_tls() {
     env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
     env.put(
         app::config::ENV_TLS_POD_IDENTITY,
-        "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local"
-            .to_string(),
+        "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
     );
     env.put(app::config::ENV_CONTROLLER_NAMESPACE, "linkerd".to_string());
     env.put(app::config::ENV_POD_NAMESPACE, "ns1".to_string());
@@ -174,12 +164,8 @@ fn tcp_server_first_tls() {
 fn tcp_with_no_orig_dst() {
     let _ = env_logger_init();
 
-    let srv = server::tcp()
-        .accept(move |_| "don't read me")
-        .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
+    let srv = server::tcp().accept(move |_| "don't read me").run();
+    let proxy = proxy::new().inbound(srv).run();
 
     // no outbound configured for proxy
     let client = client::tcp(proxy.outbound);
@@ -212,7 +198,8 @@ fn tcp_connections_close_if_client_closes() {
                     assert_eq!(&vec[..n], msg1.as_bytes());
 
                     tokio_io::io::write_all(sock, msg2.as_bytes())
-                }).and_then(|(sock, _)| {
+                })
+                .and_then(|(sock, _)| {
                     // lets read again, but we should get eof
                     tokio_io::io::read(sock, [0; 16])
                 })
@@ -223,9 +210,7 @@ fn tcp_connections_close_if_client_closes() {
                 .map_err(|e| panic!("tcp server error: {}", e))
         })
         .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
+    let proxy = proxy::new().inbound(srv).run();
 
     let client = client::tcp(proxy.inbound);
 
@@ -273,23 +258,24 @@ macro_rules! http1_tests {
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let res = client.request(client.request_builder("/")
-                .header("x-foo-bar", "baz")
-                .header("connection", "x-foo-bar, close")
-                // These headers will fail in the proxy_to_proxy case if
-                // they are not stripped.
-                //
-                // normally would be stripped by `connection: keep-alive`,
-                // but test its removed even if the connection header forgot
-                // about it.
-                .header("keep-alive", "500")
-                .header("proxy-connection", "a")
+            let res = client.request(
+                client
+                    .request_builder("/")
+                    .header("x-foo-bar", "baz")
+                    .header("connection", "x-foo-bar, close")
+                    // These headers will fail in the proxy_to_proxy case if
+                    // they are not stripped.
+                    //
+                    // normally would be stripped by `connection: keep-alive`,
+                    // but test its removed even if the connection header forgot
+                    // about it.
+                    .header("keep-alive", "500")
+                    .header("proxy-connection", "a"),
             );
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert!(!res.headers().contains_key("x-server-quux"));
         }
-
 
         #[test]
         fn http10_with_host() {
@@ -309,9 +295,12 @@ macro_rules! http1_tests {
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, host);
 
-            let res = client.request(client.request_builder("/")
-                .version(http::Version::HTTP_10)
-                .header("host", host));
+            let res = client.request(
+                client
+                    .request_builder("/")
+                    .version(http::Version::HTTP_10)
+                    .header("host", host),
+            );
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_10);
@@ -334,9 +323,12 @@ macro_rules! http1_tests {
             let proxy = $proxy(srv);
             let client = client::http1_absolute_uris(proxy.inbound, auth);
 
-            let res = client.request(client.request_builder("/")
-                .version(http::Version::HTTP_11)
-                .header("host", host));
+            let res = client.request(
+                client
+                    .request_builder("/")
+                    .version(http::Version::HTTP_11)
+                    .header("host", host),
+            );
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_11);
@@ -353,22 +345,21 @@ macro_rules! http1_tests {
             // to simplify testing.
 
             let upgrade_req = "\
-                GET /chat HTTP/1.1\r\n\
-                Host: transparency.test.svc.cluster.local\r\n\
-                Connection: upgrade\r\n\
-                Upgrade: chatproto\r\n\
-                \r\n\
-                ";
+                               GET /chat HTTP/1.1\r\n\
+                               Host: transparency.test.svc.cluster.local\r\n\
+                               Connection: upgrade\r\n\
+                               Upgrade: chatproto\r\n\
+                               \r\n\
+                               ";
             let upgrade_res = "\
-                HTTP/1.1 101 Switching Protocols\r\n\
-                Upgrade: chatproto\r\n\
-                Connection: upgrade\r\n\
-                \r\n\
-                ";
+                               HTTP/1.1 101 Switching Protocols\r\n\
+                               Upgrade: chatproto\r\n\
+                               Connection: upgrade\r\n\
+                               \r\n\
+                               ";
             let upgrade_needle = "\r\nupgrade: chatproto\r\n";
             let chatproto_req = "[chatproto-c]{send}: hi all\n";
             let chatproto_res = "[chatproto-s]{recv}: welcome!\n";
-
 
             let srv = server::tcp()
                 .accept_fut(move |sock| {
@@ -434,7 +425,6 @@ macro_rules! http1_tests {
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
 
-
             let res = client.request(&mut client.request_builder("/"));
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
@@ -466,10 +456,13 @@ macro_rules! http1_tests {
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let res = client.request(client.request_builder("/")
-                .header("upgrade", "h2c")
-                .header("http2-settings", "")
-                .header("connection", "upgrade, http2-settings"));
+            let res = client.request(
+                client
+                    .request_builder("/")
+                    .header("upgrade", "h2c")
+                    .header("http2-settings", "")
+                    .header("connection", "upgrade, http2-settings"),
+            );
 
             // If the assertion is trigger in the above test route, the proxy will
             // just send back a 500.
@@ -487,14 +480,14 @@ macro_rules! http1_tests {
             // but client doesn't need to know that for our tests.
 
             let connect_req = "\
-                CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n\
-                Host: transparency.test.svc.cluster.local\r\n\
-                \r\n\
-                ";
+                               CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n\
+                               Host: transparency.test.svc.cluster.local\r\n\
+                               \r\n\
+                               ";
             let connect_res = "\
-                HTTP/1.1 200 OK\r\n\
-                \r\n\
-                ";
+                               HTTP/1.1 200 OK\r\n\
+                               \r\n\
+                               ";
 
             let tunneled_req = "{send}: hi all\n";
             let tunneled_res = "{recv}: welcome!\n";
@@ -505,7 +498,10 @@ macro_rules! http1_tests {
                     tokio_io::io::read(sock, vec![0; 512])
                         .and_then(move |(sock, vec, n)| {
                             let head = s(&vec[..n]);
-                            assert_contains!(head, "CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n");
+                            assert_contains!(
+                                head,
+                                "CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n"
+                            );
 
                             // Write connect_res back...
                             tokio_io::io::write_all(sock, connect_res)
@@ -562,13 +558,7 @@ macro_rules! http1_tests {
             // from ever touching the network.
             let client = client::tcp(proxy.inbound);
 
-            let bad_uris = vec![
-                "/origin-form",
-                "/",
-                "http://test/bar",
-                "http://test",
-                "*",
-            ];
+            let bad_uris = vec!["/origin-form", "/", "http://test/bar", "http://test", "*"];
 
             for bad_uri in bad_uris {
                 let tcp_client = client.connect();
@@ -644,16 +634,13 @@ macro_rules! http1_tests {
             let srv = server::http1()
                 .route_async("/", |req| {
                     assert_eq!(req.headers()["transfer-encoding"], "chunked");
-                    req
-                        .into_body()
-                        .concat2()
-                        .map(|body| {
-                            assert_eq!(body, "hello");
-                            Response::builder()
-                                .header("transfer-encoding", "chunked")
-                                .body("world".into())
-                                .unwrap()
-                        })
+                    req.into_body().concat2().map(|body| {
+                        assert_eq!(body, "hello");
+                        Response::builder()
+                            .header("transfer-encoding", "chunked")
+                            .body("world".into())
+                            .unwrap()
+                    })
                 })
                 .run();
             let proxy = $proxy(srv);
@@ -682,7 +669,7 @@ macro_rules! http1_tests {
                 .route_fn("/", |req| {
                     let has_body_header = req.headers().contains_key("transfer-encoding")
                         || req.headers().contains_key("content-length");
-                    let status = if  has_body_header {
+                    let status = if has_body_header {
                         StatusCode::BAD_REQUEST
                     } else {
                         StatusCode::OK
@@ -695,21 +682,10 @@ macro_rules! http1_tests {
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let methods = &[
-                "GET",
-                "POST",
-                "PUT",
-                "DELETE",
-                "HEAD",
-                "PATCH",
-            ];
+            let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
 
             for &method in methods {
-                let resp = client.request(
-                    client
-                        .request_builder("/")
-                        .method(method)
-                );
+                let resp = client.request(client.request_builder("/").method(method));
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
             }
@@ -736,22 +712,14 @@ macro_rules! http1_tests {
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-
-            let methods = &[
-                "GET",
-                "POST",
-                "PUT",
-                "DELETE",
-                "HEAD",
-                "PATCH",
-            ];
+            let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
 
             for &method in methods {
                 let resp = client.request(
                     client
                         .request_builder("/")
                         .method(method)
-                        .header("content-length", "0")
+                        .header("content-length", "0"),
                 );
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
@@ -767,7 +735,8 @@ macro_rules! http1_tests {
 
             let srv = server::http1()
                 .route_fn("/", move |req| {
-                    let status = req.headers()
+                    let status = req
+                        .headers()
                         .get(req_status_header)
                         .map(|val| {
                             val.to_str()
@@ -777,10 +746,7 @@ macro_rules! http1_tests {
                         })
                         .unwrap_or(200);
 
-                    Response::builder()
-                        .status(status)
-                        .body("".into())
-                        .unwrap()
+                    Response::builder().status(status).body("".into()).unwrap()
                 })
                 .run();
             let proxy = $proxy(srv);
@@ -793,11 +759,7 @@ macro_rules! http1_tests {
             //they should be tested here as well. As RFC7230 says, a 2xx response to
             //a CONNECT request is not allowed to contain a body (but 4xx, 5xx can!).
 
-            let resp = client.request(
-                client
-                    .request_builder("/")
-                    .method("HEAD")
-            );
+            let resp = client.request(client.request_builder("/").method("HEAD"));
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert!(!resp.headers().contains_key("transfer-encoding"));
@@ -807,7 +769,7 @@ macro_rules! http1_tests {
                 //The current test server doesn't support sending 1xx responses
                 //easily. We could test this by making a new unit test with the
                 //server being a TCP server, and write the response manually.
-                StatusCode::NO_CONTENT, // 204
+                StatusCode::NO_CONTENT,   // 204
                 StatusCode::NOT_MODIFIED, // 304
             ];
 
@@ -815,11 +777,15 @@ macro_rules! http1_tests {
                 let resp = client.request(
                     client
                         .request_builder("/")
-                        .header(req_status_header, status.as_str())
+                        .header(req_status_header, status.as_str()),
                 );
 
                 assert_eq!(resp.status(), status);
-                assert!(!resp.headers().contains_key("transfer-encoding"), "transfer-encoding with status={:?}", status);
+                assert!(
+                    !resp.headers().contains_key("transfer-encoding"),
+                    "transfer-encoding with status={:?}",
+                    status
+                );
             }
         }
 
@@ -839,16 +805,13 @@ macro_rules! http1_tests {
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let resp = client.request(
-                client
-                    .request_builder("/")
-                    .method("HEAD")
-            );
+            let resp = client.request(client.request_builder("/").method("HEAD"));
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["content-length"], "55");
 
-            let body = resp.into_body()
+            let body = resp
+                .into_body()
                 .concat2()
                 .wait()
                 .expect("response body concat");
@@ -864,17 +827,17 @@ macro_rules! http1_tests {
             let srv = server::tcp()
                 .accept(move |_read| {
                     "\
-                    HTTP/1.0 200 OK\r\n\
-                    \r\n\
-                    body till eof\
-                    "
+                     HTTP/1.0 200 OK\r\n\
+                     \r\n\
+                     body till eof\
+                     "
                 })
                 .accept(move |_read| {
                     "\
-                    HTTP/1.1 200 OK\r\n\
-                    \r\n\
-                    body till eof\
-                    "
+                     HTTP/1.1 200 OK\r\n\
+                     \r\n\
+                     body till eof\
+                     "
                 })
                 .run();
             let proxy = $proxy(srv);
@@ -895,17 +858,22 @@ macro_rules! http1_tests {
             ];
 
             for v in versions {
-                let resp = client.request(
-                    client
-                        .request_builder("/")
-                        .method("GET")
-                );
+                let resp = client.request(client.request_builder("/").method("GET"));
 
                 assert_eq!(resp.status(), StatusCode::OK, "HTTP/{}", v);
-                assert!(!resp.headers().contains_key("transfer-encoding"), "HTTP/{} transfer-encoding", v);
-                assert!(!resp.headers().contains_key("content-length"), "HTTP/{} content-length", v);
+                assert!(
+                    !resp.headers().contains_key("transfer-encoding"),
+                    "HTTP/{} transfer-encoding",
+                    v
+                );
+                assert!(
+                    !resp.headers().contains_key("content-length"),
+                    "HTTP/{} content-length",
+                    v
+                );
 
-                let body = resp.into_body()
+                let body = resp
+                    .into_body()
                     .concat2()
                     .wait()
                     .expect("response body concat");
@@ -913,8 +881,7 @@ macro_rules! http1_tests {
                 assert_eq!(body, "body till eof", "HTTP/{} body", v);
             }
         }
-
-    }
+    };
 }
 
 mod one_proxy {
@@ -956,7 +923,6 @@ mod proxy_to_proxy {
     } }
 }
 
-
 #[test]
 fn http10_without_host() {
     // Without a host or authority, there's no way to route this test,
@@ -974,23 +940,22 @@ fn http10_without_host() {
                 .unwrap()
         })
         .run();
-    let proxy = proxy::new()
-        .inbound(srv)
-        .run();
+    let proxy = proxy::new().inbound(srv).run();
 
     let client = client::tcp(proxy.inbound);
 
     let tcp_client = client.connect();
 
-    tcp_client.write("\
-        GET / HTTP/1.0\r\n\
-        \r\n\
-    ");
+    tcp_client.write(
+        "\
+         GET / HTTP/1.0\r\n\
+         \r\n\
+         ",
+    );
 
     let expected = "HTTP/1.0 200 OK\r\n";
     assert_eq!(s(&tcp_client.read()[..expected.len()]), expected);
 }
-
 
 #[test]
 fn http1_one_connection_per_host() {
@@ -1004,15 +969,16 @@ fn http1_one_connection_per_host() {
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
-    let inbound = &proxy.inbound_server.as_ref()
-        .expect("no inbound server!");
+    let inbound = &proxy.inbound_server.as_ref().expect("no inbound server!");
 
     // Run each case with and without a body.
     let run_request = move |host, expected_conn_cnt| {
         for path in &["/no-body", "/body"][..] {
-            let res = client.request(client.request_builder(path)
-                .version(http::Version::HTTP_11)
-                .header("host", host)
+            let res = client.request(
+                client
+                    .request_builder(path)
+                    .version(http::Version::HTTP_11)
+                    .header("host", host),
             );
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_11);
@@ -1041,20 +1007,19 @@ fn http1_one_connection_per_host() {
 fn http1_requests_without_host_have_unique_connections() {
     let _ = env_logger_init();
 
-    let srv = server::http1()
-        .route("/", "unique hosts")
-        .run();
+    let srv = server::http1().route("/", "unique hosts").run();
     let proxy = proxy::new().inbound(srv).run();
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
-    let inbound = &proxy.inbound_server.as_ref()
-        .expect("no inbound server!");
+    let inbound = &proxy.inbound_server.as_ref().expect("no inbound server!");
 
     // Make a request with no Host header and no authority in the request path.
-    let res = client.request(client.request_builder("/")
-        .version(http::Version::HTTP_11)
-        .header("host", "")
+    let res = client.request(
+        client
+            .request_builder("/")
+            .version(http::Version::HTTP_11)
+            .header("host", ""),
     );
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
@@ -1062,9 +1027,11 @@ fn http1_requests_without_host_have_unique_connections() {
 
     // Another request with no Host. The proxy must open a new connection
     // for that request.
-    let res = client.request(client.request_builder("/")
-        .version(http::Version::HTTP_11)
-        .header("host", "")
+    let res = client.request(
+        client
+            .request_builder("/")
+            .version(http::Version::HTTP_11)
+            .header("host", ""),
     );
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
@@ -1072,9 +1039,11 @@ fn http1_requests_without_host_have_unique_connections() {
 
     // Make a request with a host header. It must also receive its
     // own connection.
-    let res = client.request(client.request_builder("/")
-        .version(http::Version::HTTP_11)
-        .header("host", "foo.bar")
+    let res = client.request(
+        client
+            .request_builder("/")
+            .version(http::Version::HTTP_11)
+            .header("host", "foo.bar"),
     );
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
@@ -1082,9 +1051,11 @@ fn http1_requests_without_host_have_unique_connections() {
 
     // Another request with no Host. The proxy must open a new connection
     // for that request.
-    let res = client.request(client.request_builder("/")
-        .version(http::Version::HTTP_11)
-        .header("host", "")
+    let res = client.request(
+        client
+            .request_builder("/")
+            .version(http::Version::HTTP_11)
+            .header("host", ""),
     );
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
@@ -1105,8 +1076,7 @@ fn retry_reconnect_errors() {
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
     let metrics = client::http1(proxy.metrics, "localhost");
 
-    let fut = client.request_async(client.request_builder("/")
-        .version(http::Version::HTTP_2));
+    let fut = client.request_async(client.request_builder("/").version(http::Version::HTTP_2));
 
     // wait until metrics has seen our connection, this can be flaky depending on
     // all the other threads currently running...

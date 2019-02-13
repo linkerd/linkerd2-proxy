@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use super::{FmtMetric, FmtLabels};
+use super::{FmtLabels, FmtMetric};
 
 /// An instaneous metric value.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]

@@ -5,10 +5,10 @@ extern crate tower_service as svc;
 
 use futures::{Future, Poll};
 
-use std::{error, fmt, mem};
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{error, fmt, mem};
 
 mod cache;
 
@@ -81,7 +81,7 @@ impl<R, T, F> Recognize<R> for F
 where
     T: Clone + Eq + Hash,
     F: Fn(&R) -> Option<T>,
- {
+{
     type Target = T;
 
     fn recognize(&self, req: &R) -> Option<T> {
@@ -157,7 +157,11 @@ where
         // Bind a new route, send the request on the route, and cache the route.
         let mut service = match self.inner.make.make(&target) {
             Ok(svc) => svc,
-            Err(e) => return ResponseFuture { state: State::RouteError(e) },
+            Err(e) => {
+                return ResponseFuture {
+                    state: State::RouteError(e),
+                };
+            }
         };
 
         let response = service.call(request);
@@ -174,7 +178,9 @@ where
     Stk::Value: svc::Service<Req>,
 {
     fn clone(&self) -> Self {
-        Router { inner: self.inner.clone() }
+        Router {
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -185,15 +191,21 @@ where
     F: Future,
 {
     fn new(inner: F) -> Self {
-        ResponseFuture { state: State::Inner(inner) }
+        ResponseFuture {
+            state: State::Inner(inner),
+        }
     }
 
     fn not_recognized() -> Self {
-        ResponseFuture { state: State::NotRecognized }
+        ResponseFuture {
+            state: State::NotRecognized,
+        }
     }
 
     fn no_capacity(capacity: usize) -> Self {
-        ResponseFuture { state: State::NoCapacity(capacity) }
+        ResponseFuture {
+            state: State::NoCapacity(capacity),
+        }
     }
 }
 
@@ -209,12 +221,10 @@ where
 
         match self.state {
             Inner(ref mut fut) => fut.poll().map_err(Error::Inner),
-            RouteError(..) => {
-                match mem::replace(&mut self.state, Invalid) {
-                    RouteError(e) => Err(Error::Route(e)),
-                    _ => unreachable!(),
-                }
-            }
+            RouteError(..) => match mem::replace(&mut self.state, Invalid) {
+                RouteError(e) => Err(Error::Route(e)),
+                _ => unreachable!(),
+            },
             NotRecognized => Err(Error::NotRecognized),
             NoCapacity(capacity) => Err(Error::NoCapacity(capacity)),
             Invalid => panic!("response future polled after ready"),
@@ -232,8 +242,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Inner(ref why) => fmt::Display::fmt(why, f),
-            Error::Route(ref why) =>
-                write!(f, "route recognition failed: {}", why),
+            Error::Route(ref why) => write!(f, "route recognition failed: {}", why),
             Error::NotRecognized => f.pad("route not recognized"),
             Error::NoCapacity(capacity) => write!(f, "router capacity reached ({})", capacity),
         }
@@ -265,7 +274,7 @@ where
 
 #[cfg(test)]
 mod test_util {
-    use futures::{Poll, future};
+    use futures::{future, Poll};
     use stack::Stack;
     use svc::Service;
 
@@ -338,11 +347,11 @@ mod test_util {
 
 #[cfg(test)]
 mod tests {
+    use super::{Error, Router};
     use futures::Future;
     use std::time::Duration;
-    use test_util::*;
     use svc::Service;
-    use super::{Error, Router};
+    use test_util::*;
 
     impl Router<Request, Recognize, Recognize> {
         fn call_ok(&mut self, req: Request) -> usize {

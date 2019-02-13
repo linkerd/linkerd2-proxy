@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 
 use support::*;
@@ -73,9 +73,7 @@ impl Server {
     where
         F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + 'static,
     {
-        self.route_async(path, move |req| {
-            Ok(cb(req))
-        })
+        self.route_async(path, move |req| Ok(cb(req)))
     }
 
     /// Call a closure when the request matches, returning a Future of
@@ -83,23 +81,18 @@ impl Server {
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
         F: Fn(Request<ReqBody>) -> U + Send + 'static,
-        U: IntoFuture<Item=Response<Bytes>, Error=()> + Send + 'static,
+        U: IntoFuture<Item = Response<Bytes>, Error = ()> + Send + 'static,
         U::Future: Send + 'static,
     {
         let func = move |req| {
             Box::new(cb(req).into_future())
-                as Box<Future<Item=Response<Bytes>, Error=()> + Send>
+                as Box<Future<Item = Response<Bytes>, Error = ()> + Send>
         };
         self.routes.insert(path.into(), Route(Box::new(func)));
         self
     }
 
-    pub fn route_with_latency(
-        self,
-        path: &str,
-        resp: &str,
-        latency: Duration
-    ) -> Self {
+    pub fn route_with_latency(self, path: &str, resp: &str, latency: Duration) -> Self {
         let resp = Bytes::from(resp);
         self.route_fn(path, move |_| {
             thread::sleep(latency);
@@ -112,7 +105,7 @@ impl Server {
 
     pub fn delay_listen<F>(self, f: F) -> Listening
     where
-        F: Future<Item=(), Error=()> + Send + 'static,
+        F: Future<Item = (), Error = ()> + Send + 'static,
     {
         self.run_inner(Some(Box::new(f.then(|_| Ok(())))))
     }
@@ -121,19 +114,14 @@ impl Server {
         self.run_inner(None)
     }
 
-    fn run_inner(self, delay: Option<Box<Future<Item=(), Error=()> + Send>>) -> Listening {
+    fn run_inner(self, delay: Option<Box<Future<Item = (), Error = ()> + Send>>) -> Listening {
         let (tx, rx) = shutdown_signal();
         let (listening_tx, listening_rx) = oneshot::channel();
         let mut listening_tx = Some(listening_tx);
         let conn_count = Arc::new(AtomicUsize::from(0));
         let srv_conn_count = Arc::clone(&conn_count);
         let version = self.version;
-        let tname = format!(
-            "support {:?} server (test={})",
-            version,
-            thread_name(),
-        );
-
+        let tname = format!("support {:?} server (test={})", version, thread_name(),);
 
         let addr = SocketAddr::from(([127, 0, 0, 1], 0));
         let listener = net2::TcpBuilder::new_v4().expect("Tcp::new_v4");
@@ -159,58 +147,54 @@ impl Server {
                     Run::Http2 => http.http2_only(true),
                 };
 
-                let bind = TcpListener::from_std(
-                    listener,
-                    &reactor::Handle::current()
-                ).expect("from_std");
+                let bind =
+                    TcpListener::from_std(listener, &reactor::Handle::current()).expect("from_std");
 
                 if let Some(listening_tx) = listening_tx {
                     let _ = listening_tx.send(());
                 }
 
-                let serve = bind.incoming()
-                    .for_each(move |sock| {
-                        if let Err(e) = sock.set_nodelay(true) {
-                            return Err(e);
-                        }
+                let serve = bind.incoming().for_each(move |sock| {
+                    if let Err(e) = sock.set_nodelay(true) {
+                        return Err(e);
+                    }
 
-                        let http_clone = http.clone();
-                        let srv_conn_count = Arc::clone(&srv_conn_count);
-                        let fut = new_svc.call(())
-                            .inspect(move |_| {
-                                srv_conn_count.fetch_add(1, Ordering::Release);
-                            })
-                            .map_err(|e| println!("server new_service error: {}", e))
-                            .and_then(move |svc|
-                                http_clone.serve_connection(sock, svc)
-                                    .map_err(|e| println!("server h1 error: {}", e))
-                            )
-                            .map(|_| ());
-                        current_thread::TaskExecutor::current()
-                            .execute(fut)
-                            .map_err(|e| {
-                                println!("server execute error: {:?}", e);
-                                io::Error::from(io::ErrorKind::Other)
-                            })
-                    });
+                    let http_clone = http.clone();
+                    let srv_conn_count = Arc::clone(&srv_conn_count);
+                    let fut = new_svc
+                        .call(())
+                        .inspect(move |_| {
+                            srv_conn_count.fetch_add(1, Ordering::Release);
+                        })
+                        .map_err(|e| println!("server new_service error: {}", e))
+                        .and_then(move |svc| {
+                            http_clone
+                                .serve_connection(sock, svc)
+                                .map_err(|e| println!("server h1 error: {}", e))
+                        })
+                        .map(|_| ());
+                    current_thread::TaskExecutor::current()
+                        .execute(fut)
+                        .map_err(|e| {
+                            println!("server execute error: {:?}", e);
+                            io::Error::from(io::ErrorKind::Other)
+                        })
+                });
 
                 runtime.spawn(
                     serve
                         .map(|_| ())
-                        .map_err(|e| println!("server error: {}", e))
+                        .map_err(|e| println!("server error: {}", e)),
                 );
 
                 runtime.block_on(rx).expect("block on");
-            }).unwrap();
+            })
+            .unwrap();
 
         listening_rx.wait().expect("listening_rx");
 
         // printlns will show if the test fails...
-        println!(
-            "{:?} server running; addr={}",
-            version,
-            addr,
-        );
+        println!("{:?} server running; addr={}", version, addr,);
 
         Listening {
             addr,
@@ -226,18 +210,20 @@ enum Run {
     Http2,
 }
 
-struct Route(Box<
-    Fn(Request<ReqBody>) -> Box<Future<Item=Response<Bytes>, Error=()> + Send> + Send
->);
+struct Route(
+    Box<Fn(Request<ReqBody>) -> Box<Future<Item = Response<Bytes>, Error = ()> + Send> + Send>,
+);
 
 impl Route {
     fn string(body: &str) -> Route {
         let body = Bytes::from(body);
         Route(Box::new(move |_| {
-            Box::new(future::ok(http::Response::builder()
-                .status(200)
-                .body(body.clone())
-                .unwrap()))
+            Box::new(future::ok(
+                http::Response::builder()
+                    .status(200)
+                    .body(body.clone())
+                    .unwrap(),
+            ))
         }))
     }
 }
@@ -248,17 +234,15 @@ impl ::std::fmt::Debug for Route {
     }
 }
 
-type ReqBody = Box<Stream<Item=Bytes, Error=()> + Send>;
+type ReqBody = Box<Stream<Item = Bytes, Error = ()> + Send>;
 
 #[derive(Debug)]
 struct Svc(Arc<HashMap<String, Route>>);
 
 impl Svc {
-    fn route(&mut self, req: Request<ReqBody>) -> impl Future<Item=Response<Bytes>, Error=()> {
+    fn route(&mut self, req: Request<ReqBody>) -> impl Future<Item = Response<Bytes>, Error = ()> {
         match self.0.get(req.uri().path()) {
-            Some(Route(ref func)) => {
-                func(req)
-            }
+            Some(Route(ref func)) => func(req),
             None => {
                 println!("server 404: {:?}", req.uri().path());
                 let res = http::Response::builder()
@@ -275,22 +259,19 @@ impl hyper::service::Service for Svc {
     type ReqBody = hyper::Body;
     type ResBody = hyper::Body;
     type Error = http::Error;
-    type Future = Box<Future<Item=hyper::Response<hyper::Body>, Error=Self::Error> + Send>;
+    type Future = Box<Future<Item = hyper::Response<hyper::Body>, Error = Self::Error> + Send>;
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
         let req = req.map(|body| {
-            Box::new(body.map(|chunk| chunk.into_bytes())
-                .map_err(|err| {
-                    panic!("body error: {}", err);
-                })) as ReqBody
+            Box::new(body.map(|chunk| chunk.into_bytes()).map_err(|err| {
+                panic!("body error: {}", err);
+            })) as ReqBody
         });
-        Box::new(self.route(req)
-            .map(|res| {
-                res.map(|s| hyper::Body::from(s))
-            })
-            .map_err(|()| {
-                panic!("test route handler errored")
-            }))
+        Box::new(
+            self.route(req)
+                .map(|res| res.map(|s| hyper::Body::from(s)))
+                .map_err(|()| panic!("test route handler errored")),
+        )
     }
 }
 

@@ -10,10 +10,7 @@ where
     S: super::Stack<T>,
     M: MapErr<S::Error>,
 {
-    Stack {
-        inner,
-        map_err,
-    }
+    Stack { inner, map_err }
 }
 
 pub trait MapErr<Input> {

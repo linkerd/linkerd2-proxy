@@ -113,7 +113,10 @@ where
         if let Some(retries) = target.can_retry() {
             trace!("stack is retryable");
             let stats = self.registry.scoped(target.clone().into());
-            Ok(svc::Either::A(tower_retry::Retry::new(Policy(retries, stats), inner)))
+            Ok(svc::Either::A(tower_retry::Retry::new(
+                Policy(retries, stats),
+                inner,
+            )))
         } else {
             Ok(svc::Either::B(inner))
         }
@@ -132,18 +135,16 @@ where
 
     fn retry(&self, req: &Request<A>, result: Result<&Response<B>, &E>) -> Option<Self::Future> {
         match result {
-            Ok(res) => {
-                match self.0.retry(req, res) {
-                    Ok(()) => {
-                        trace!("retrying request");
-                        Some(future::ok(self.clone()))
-                    },
-                    Err(NoRetry::Budget) => {
-                        self.1.incr_retry_skipped_budget();
-                        None
-                    },
-                    Err(NoRetry::Success) => None,
+            Ok(res) => match self.0.retry(req, res) {
+                Ok(()) => {
+                    trace!("retrying request");
+                    Some(future::ok(self.clone()))
                 }
+                Err(NoRetry::Budget) => {
+                    self.1.incr_retry_skipped_budget();
+                    None
+                }
+                Err(NoRetry::Success) => None,
             },
             Err(_err) => {
                 trace!("cannot retry transport error");

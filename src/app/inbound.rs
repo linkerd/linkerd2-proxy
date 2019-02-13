@@ -52,7 +52,10 @@ impl tap::Inspect for Endpoint {
         req.extensions().get::<Source>().map(|s| s.remote)
     }
 
-    fn src_tls<'a, B>(&self, req: &'a http::Request<B>) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
+    fn src_tls<'a, B>(
+        &self,
+        req: &'a http::Request<B>,
+    ) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
         req.extensions()
             .get::<Source>()
             .map(|s| s.tls_peer.as_ref())
@@ -72,7 +75,9 @@ impl tap::Inspect for Endpoint {
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
-        req.extensions().get::<super::dst::Route>().map(|r| r.labels().clone())
+        req.extensions()
+            .get::<super::dst::Route>()
+            .map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
@@ -263,8 +268,8 @@ pub mod client_id {
     use http::{self, header::HeaderValue};
 
     use proxy::server::Source;
-    use Conditional;
     use svc;
+    use Conditional;
 
     #[derive(Debug)]
     pub struct Layer<B>(PhantomData<fn() -> B>);
@@ -338,7 +343,7 @@ pub mod client_id {
                             value,
                             _marker: PhantomData,
                         }));
-                    },
+                    }
                     Err(_err) => {
                         warn!("l5d-client-id identity header is invalid: {:?}", source);
                     }
@@ -375,10 +380,8 @@ pub mod client_id {
         }
 
         fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-            req.headers_mut().insert(
-                super::super::L5D_CLIENT_ID,
-                self.value.clone()
-            );
+            req.headers_mut()
+                .insert(super::super::L5D_CLIENT_ID, self.value.clone());
 
             self.inner.call(req)
         }
@@ -405,8 +408,7 @@ mod tests {
         }
     }
 
-    const TLS_DISABLED: tls::ConditionalIdentity =
-        Conditional::None(tls::ReasonForNoTls::Disabled);
+    const TLS_DISABLED: tls::ConditionalIdentity = Conditional::None(tls::ReasonForNoTls::Disabled);
 
     quickcheck! {
         fn recognize_orig_dst(

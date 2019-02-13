@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use linkerd2_stack as svc;
 use super::Timeout;
+use linkerd2_stack as svc;
 
 /// Creates a layer that *always* applies the timeout to every request.
 ///

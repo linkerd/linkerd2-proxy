@@ -6,10 +6,8 @@ use std::time::Duration;
 use tower_retry::budget::Budget;
 
 use proxy::http::{
-    metrics::classify::{CanClassify, Classify, ClassifyResponse, ClassifyEos},
-    profiles,
-    retry,
-    timeout,
+    metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
+    profiles, retry, timeout,
 };
 use {Addr, NameAddr};
 
@@ -41,7 +39,6 @@ pub struct DstAddr {
 
 // === impl Route ===
 
-
 impl CanClassify for Route {
     type Classify = classify::Request;
 
@@ -54,13 +51,10 @@ impl retry::CanRetry for Route {
     type Retry = Retry;
 
     fn can_retry(&self) -> Option<Self::Retry> {
-        self
-            .route
-            .retries()
-            .map(|retries| Retry {
-                budget: retries.budget().clone(),
-                response_classes: self.route.response_classes().clone(),
-            })
+        self.route.retries().map(|retries| Retry {
+            budget: retries.budget().clone(),
+            response_classes: self.route.response_classes().clone(),
+        })
     }
 }
 
@@ -73,7 +67,11 @@ impl timeout::HasTimeout for Route {
 // === impl Retry ===
 
 impl retry::Retry for Retry {
-    fn retry<B1, B2>(&self, req: &http::Request<B1>, res: &http::Response<B2>) -> Result<(), retry::NoRetry> {
+    fn retry<B1, B2>(
+        &self,
+        req: &http::Request<B1>,
+        res: &http::Response<B2>,
+    ) -> Result<(), retry::NoRetry> {
         let class = classify::Request::from(self.response_classes.clone())
             .classify(req)
             .start(res)
@@ -90,14 +88,16 @@ impl retry::Retry for Retry {
         Err(retry::NoRetry::Success)
     }
 
-    fn clone_request<B: retry::TryClone>(&self, req: &http::Request<B>) -> Option<http::Request<B>> {
-        retry::TryClone::try_clone(req)
-            .map(|mut clone| {
-                if let Some(ext) = req.extensions().get::<classify::Response>() {
-                    clone.extensions_mut().insert(ext.clone());
-                }
-                clone
-            })
+    fn clone_request<B: retry::TryClone>(
+        &self,
+        req: &http::Request<B>,
+    ) -> Option<http::Request<B>> {
+        retry::TryClone::try_clone(req).map(|mut clone| {
+            if let Some(ext) = req.extensions().get::<classify::Response>() {
+                clone.extensions_mut().insert(ext.clone());
+            }
+            clone
+        })
     }
 }
 
@@ -111,11 +111,17 @@ impl AsRef<Addr> for DstAddr {
 
 impl DstAddr {
     pub fn outbound(addr: Addr) -> Self {
-        DstAddr { addr, direction: Direction::Out }
+        DstAddr {
+            addr,
+            direction: Direction::Out,
+        }
     }
 
     pub fn inbound(addr: Addr) -> Self {
-        DstAddr { addr, direction: Direction::In }
+        DstAddr {
+            addr,
+            direction: Direction::In,
+        }
     }
 
     pub fn direction(&self) -> Direction {
@@ -125,8 +131,7 @@ impl DstAddr {
 
 impl<'t> From<&'t DstAddr> for http::header::HeaderValue {
     fn from(a: &'t DstAddr) -> Self {
-        http::header::HeaderValue::from_str(&format!("{}", a))
-            .expect("addr must be a valid header")
+        http::header::HeaderValue::from_str(&format!("{}", a)).expect("addr must be a valid header")
     }
 }
 

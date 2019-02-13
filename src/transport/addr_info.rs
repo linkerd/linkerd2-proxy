@@ -1,7 +1,7 @@
-use std::net::SocketAddr;
-use tokio::net::TcpStream;
 use std::fmt::Debug;
 use std::io;
+use std::net::SocketAddr;
+use tokio::net::TcpStream;
 
 pub trait AddrInfo: Debug {
     fn local_addr(&self) -> Result<SocketAddr, io::Error>;
@@ -60,9 +60,9 @@ impl GetOriginalDst for SoOriginalDst {
 #[cfg(target_os = "linux")]
 mod linux {
     use libc;
-    use std::{io, mem};
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
     use std::os::unix::io::RawFd;
+    use std::{io, mem};
 
     pub unsafe fn so_original_dst(fd: RawFd) -> io::Result<SocketAddr> {
         let mut sockaddr: libc::sockaddr_storage = mem::zeroed();
@@ -129,9 +129,12 @@ mod linux {
                 let port = sa.sin6_port;
                 let flowinfo = sa.sin6_flowinfo;
                 let scope_id = sa.sin6_scope_id;
-                Ok(SocketAddr::V6(
-                    SocketAddrV6::new(ip, ntoh16(port), flowinfo, scope_id),
-                ))
+                Ok(SocketAddr::V6(SocketAddrV6::new(
+                    ip,
+                    ntoh16(port),
+                    flowinfo,
+                    scope_id,
+                )))
             }
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,

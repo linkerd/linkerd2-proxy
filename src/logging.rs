@@ -1,14 +1,14 @@
 use std::cell::RefCell;
 use std::env;
-use std::io::Write;
 use std::fmt;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use env_logger;
-use futures::{Future, Poll};
 use futures::future::{ExecuteError, Executor};
-use log::{Level};
+use futures::{Future, Poll};
+use log::Level;
 
 const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 
@@ -28,7 +28,7 @@ pub fn init() {
                     Level::Error => "ERR!",
                 };
                 writeln!(
-                   fmt,
+                    fmt,
                     "{} {}{} {}",
                     level,
                     Context(&ctxt.borrow()),
@@ -113,7 +113,7 @@ where
 {
     fn spawn(
         &mut self,
-        future: Box<Future<Item = (), Error = ()> + 'static + Send>
+        future: Box<Future<Item = (), Error = ()> + 'static + Send>,
     ) -> ::std::result::Result<(), ::tokio::executor::SpawnError> {
         let fut = context_future(self.context.clone(), future);
         ::task::LazyExecutor.spawn(Box::new(fut))
@@ -132,7 +132,10 @@ where
             Err(err) => {
                 let kind = err.kind();
                 let mut future = err.into_future();
-                Err(ExecuteError::new(kind, future.future.take().expect("future")))
+                Err(ExecuteError::new(
+                    kind,
+                    future.future.take().expect("future"),
+                ))
             }
         }
     }
@@ -279,7 +282,7 @@ impl Server {
     pub fn with_remote(self, remote: SocketAddr) -> Self {
         Self {
             remote: Some(remote),
-            .. self
+            ..self
         }
     }
 
@@ -294,7 +297,11 @@ impl Server {
 
 impl fmt::Display for Server {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}={{server={} listen={}", self.section, self.name, self.listen)?;
+        write!(
+            f,
+            "{}={{server={} listen={}",
+            self.section, self.name, self.listen
+        )?;
         if let Some(remote) = self.remote {
             write!(f, " remote={}", remote)?;
         }
@@ -312,14 +319,14 @@ impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
     pub fn with_settings(self, p: ::proxy::http::Settings) -> Self {
         Self {
             settings: Some(p),
-            .. self
+            ..self
         }
     }
 
     pub fn with_remote(self, remote: SocketAddr) -> Self {
         Self {
             remote: Some(remote),
-            .. self
+            ..self
         }
     }
 
@@ -330,7 +337,11 @@ impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
 
 impl<C: fmt::Display, D: fmt::Display> fmt::Display for Client<C, D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}={{client={} dst={}", self.section, self.client, self.dst)?;
+        write!(
+            f,
+            "{}={{client={} dst={}",
+            self.section, self.client, self.dst
+        )?;
         if let Some(ref proto) = self.settings {
             write!(f, " proto={:?}", proto)?;
         }

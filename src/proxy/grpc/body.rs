@@ -1,5 +1,5 @@
 use bytes::IntoBuf;
-use futures::{Poll};
+use futures::Poll;
 use http;
 use hyper::body::Payload;
 use tower_grpc as grpc;

@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
-use std::{fmt, net};
 use std::sync::Arc;
+use std::{fmt, net};
 
 use control::destination::{Metadata, ProtocolHint};
 use proxy::http::settings;
@@ -55,14 +55,16 @@ impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Endpoint {
 }
 
 impl tap::Inspect for Endpoint {
-
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr> {
         use proxy::server::Source;
 
         req.extensions().get::<Source>().map(|s| s.remote)
     }
 
-    fn src_tls<'a, B>(&self, _: &'a http::Request<B>) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
+    fn src_tls<'a, B>(
+        &self,
+        _: &'a http::Request<B>,
+    ) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
         Conditional::None(tls::ReasonForNoTls::InternalTraffic)
     }
 
@@ -79,14 +81,15 @@ impl tap::Inspect for Endpoint {
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
-        req.extensions().get::<super::dst::Route>().map(|r| r.labels().clone())
+        req.extensions()
+            .get::<super::dst::Route>()
+            .map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
         true
     }
 }
-
 
 pub mod discovery {
     use futures::{Async, Poll};
@@ -256,7 +259,9 @@ pub mod orig_proto_upgrade {
                     orig_proto::L5D_ORIG_PROTO,
                     endpoint,
                 );
-                self.inner.make(&endpoint).map(|i| svc::Either::A(orig_proto::Upgrade::new(i)))
+                self.inner
+                    .make(&endpoint)
+                    .map(|i| svc::Either::A(orig_proto::Upgrade::new(i)))
             } else {
                 self.inner.make(&endpoint).map(svc::Either::B)
             }
@@ -273,9 +278,9 @@ pub mod server_id {
     use http::{self, header::HeaderValue};
 
     use super::Endpoint;
-    use Conditional;
     use proxy::http::ClientUsedTls;
     use svc;
+    use Conditional;
 
     #[derive(Debug)]
     pub struct Layer<B>(PhantomData<fn() -> B>);
@@ -297,7 +302,6 @@ pub mod server_id {
         inner: F,
         value: HeaderValue,
     }
-
 
     pub fn layer<B>() -> Layer<B> {
         Layer(PhantomData)
@@ -355,10 +359,10 @@ pub mod server_id {
                             value,
                             _marker: PhantomData,
                         }));
-                    },
+                    }
                     Err(_err) => {
                         warn!("l5d-server-id identity header is invalid: {:?}", endpoint);
-                    },
+                    }
                 }
             }
 
@@ -411,7 +415,8 @@ pub mod server_id {
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             let mut res = try_ready!(self.inner.poll());
             if res.extensions().get::<ClientUsedTls>().is_some() {
-                res.headers_mut().insert(super::super::L5D_SERVER_ID, self.value.clone());
+                res.headers_mut()
+                    .insert(super::super::L5D_SERVER_ID, self.value.clone());
             }
             Ok(res.into())
         }

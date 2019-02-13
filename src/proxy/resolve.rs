@@ -55,9 +55,7 @@ where
     R: Resolve<T> + Clone,
     R::Endpoint: fmt::Debug,
 {
-    Layer {
-        resolve,
-    }
+    Layer { resolve }
 }
 
 impl<T, R, M> svc::Layer<T, R::Endpoint, M> for Layer<R>
@@ -100,7 +98,7 @@ where
 
 // === impl Discover ===
 
-impl<R, M>  tower_discover::Discover for Discover<R, M>
+impl<R, M> tower_discover::Discover for Discover<R, M>
 where
     R: Resolution,
     R::Endpoint: fmt::Debug,

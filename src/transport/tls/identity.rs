@@ -1,6 +1,6 @@
+use super::{webpki, DnsName, InvalidDnsName};
 use api;
 use convert::TryFrom;
-use super::{DnsName, InvalidDnsName, webpki};
 use std::fmt;
 use std::sync::Arc;
 
@@ -17,9 +17,8 @@ impl Identity {
     /// information is returned.
     pub fn maybe_from_protobuf(
         controller_namespace: Option<&str>,
-        pb: api::destination::TlsIdentity)
-        -> Result<Option<Self>, ()>
-    {
+        pb: api::destination::TlsIdentity,
+    ) -> Result<Option<Self>, ()> {
         use api::destination::tls_identity::Strategy;
         match pb.strategy {
             Some(Strategy::K8sPodIdentity(i)) => {
@@ -31,7 +30,7 @@ impl Identity {
                     return Ok(None);
                 }
                 Self::from_sni_hostname(i.pod_identity.as_bytes()).map(Some)
-            },
+            }
             None => Ok(None), // No TLS.
         }
     }

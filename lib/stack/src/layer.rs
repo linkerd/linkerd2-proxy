@@ -19,8 +19,7 @@ pub trait Layer<T, U, S: super::Stack<U>> {
     fn bind(&self, next: S) -> Self::Stack;
 
     /// Produces a new Layer with this layer wrapping the provided inner layer.
-    fn and_then<V, N, L>(self, inner: L)
-        -> AndThen<U, Self, L>
+    fn and_then<V, N, L>(self, inner: L) -> AndThen<U, Self, L>
     where
         N: super::Stack<V>,
         L: Layer<U, V, N>,
@@ -34,8 +33,7 @@ pub trait Layer<T, U, S: super::Stack<U>> {
     }
 
     /// Produces a new Layer with another layer wrapping this one.
-    fn push<R, L>(self, outer: L)
-        -> AndThen<T, L, Self>
+    fn push<R, L>(self, outer: L) -> AndThen<T, L, Self>
     where
         L: Layer<R, T, Self::Stack>,
         Self: Sized,
@@ -48,8 +46,7 @@ pub trait Layer<T, U, S: super::Stack<U>> {
     }
 
     /// Wraps this layer such that stack errors are modified by `map_err`.
-    fn map_err<M>(self, map_err: M)
-        -> AndThen<T, super::map_err::Layer<M>, Self>
+    fn map_err<M>(self, map_err: M) -> AndThen<T, super::map_err::Layer<M>, Self>
     where
         Self: Sized,
         M: super::map_err::MapErr<Self::Error>,
@@ -75,16 +72,14 @@ impl<T, M: super::Stack<T>> Layer<T, T, M> for () {
 /// Given an `Outer: Layer<T, U, _>` and an `Inner: Layer<U, V, _>`, producesa
 /// `Layer<T, C, _>`, encapsulating the logic of the Outer and Inner layers.
 #[derive(Debug, Clone)]
-pub struct AndThen<U, Outer, Inner>
-{
+pub struct AndThen<U, Outer, Inner> {
     outer: Outer,
     inner: Inner,
     // `AndThen` should be Send/Sync independently of U`.
     _p: PhantomData<fn() -> U>,
 }
 
-impl<T, U, V, M, Outer, Inner> Layer<T, V, M>
-    for AndThen<U, Outer, Inner>
+impl<T, U, V, M, Outer, Inner> Layer<T, V, M> for AndThen<U, Outer, Inner>
 where
     Outer: Layer<T, U, Inner::Stack>,
     Inner: Layer<U, V, M>,

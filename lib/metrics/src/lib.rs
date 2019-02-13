@@ -1,10 +1,10 @@
 //! Utilties for exposing metrics to Prometheus.
 
 extern crate deflate;
-extern crate indexmap;
 extern crate futures;
 extern crate http;
 extern crate hyper;
+extern crate indexmap;
 #[macro_use]
 extern crate log;
 #[cfg(test)]
@@ -22,7 +22,7 @@ mod serve;
 pub use self::counter::Counter;
 pub use self::gauge::Gauge;
 pub use self::histogram::Histogram;
-pub use self::prom::{FmtMetrics, FmtLabels, FmtMetric, Metric};
+pub use self::prom::{FmtLabels, FmtMetric, FmtMetrics, Metric};
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
 

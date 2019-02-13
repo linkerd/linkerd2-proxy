@@ -1,13 +1,8 @@
-use deflate::CompressionOptions;
 use deflate::write::GzEncoder;
+use deflate::CompressionOptions;
 use futures::future::{self, FutureResult};
 use http::{self, header, StatusCode};
-use hyper::{
-    service::Service,
-    Body,
-    Request,
-    Response,
-};
+use hyper::{service::Service, Body, Request, Response};
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
@@ -30,16 +25,17 @@ enum ServeError {
 
 impl<M: FmtMetrics> Serve<M> {
     pub fn new(metrics: M) -> Self {
-        Self {
-            metrics,
-        }
+        Self { metrics }
     }
 
     fn is_gzip<B>(req: &Request<B>) -> bool {
         req.headers()
-            .get_all(header::ACCEPT_ENCODING).iter()
+            .get_all(header::ACCEPT_ENCODING)
+            .iter()
             .any(|value| {
-                value.to_str().ok()
+                value
+                    .to_str()
+                    .ok()
                     .map(|value| value.contains("gzip"))
                     .unwrap_or(false)
             })
@@ -113,7 +109,9 @@ impl From<io::Error> for ServeError {
 
 impl fmt::Display for ServeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}",
+        write!(
+            f,
+            "{}: {}",
             self.description(),
             self.cause().expect("ServeError must have cause")
         )
@@ -124,7 +122,7 @@ impl Error for ServeError {
     fn description(&self) -> &str {
         match *self {
             ServeError::Http(_) => "error constructing HTTP response",
-            ServeError::Io(_) => "error writing metrics"
+            ServeError::Io(_) => "error writing metrics",
         }
     }
 

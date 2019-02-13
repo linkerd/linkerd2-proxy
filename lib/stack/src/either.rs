@@ -1,4 +1,4 @@
-use futures::{Future, Poll, future};
+use futures::{future, Future, Poll};
 use std::{error, fmt};
 
 use svc;
@@ -14,7 +14,7 @@ impl<T, U, A, B, N> super::Layer<T, U, N> for Either<A, B>
 where
     A: super::Layer<T, U, N>,
     B: super::Layer<T, U, N, Error = A::Error>,
-    N: super::Stack<U>
+    N: super::Stack<U>,
 {
     type Value = <Either<A::Stack, B::Stack> as super::Stack<T>>::Value;
     type Error = <Either<A::Stack, B::Stack> as super::Stack<T>>::Error;

@@ -36,7 +36,7 @@ impl Protocol {
             // the first line is HTTP1.
             Ok(_) | Err(httparse::Error::TooManyHeaders) => {
                 return Some(Protocol::Http1);
-            },
+            }
             _ => {}
         }
 

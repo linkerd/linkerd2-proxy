@@ -40,7 +40,9 @@ pub struct Ms(Duration);
 
 impl Into<u64> for Ms {
     fn into(self) -> u64 {
-        self.0.as_secs().saturating_mul(1_000)
+        self.0
+            .as_secs()
+            .saturating_mul(1_000)
             .saturating_add(u64::from(self.0.subsec_nanos()) / 1_000_000)
     }
 }

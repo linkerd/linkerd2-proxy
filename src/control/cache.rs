@@ -1,5 +1,5 @@
-use indexmap::{IndexMap, IndexSet};
 use indexmap::map::{self, Entry};
+use indexmap::{IndexMap, IndexSet};
 use std::hash::Hash;
 use std::iter::IntoIterator;
 use std::mem;
@@ -76,9 +76,8 @@ where
             inner: &mut IndexMap<K, V>,
             key: K,
             new_value: V,
-            on_change: &mut F
-        )
-        where
+            on_change: &mut F,
+        ) where
             K: Eq + Hash + Copy,
             V: PartialEq,
             F: for<'value> FnMut(CacheChange<'value, K, V>),
@@ -90,14 +89,14 @@ where
                         new_value: &new_value,
                     });
                     entry.insert(new_value);
-                },
+                }
                 Entry::Vacant(entry) => {
                     on_change(CacheChange::Insertion {
                         key,
                         value: &new_value,
                     });
                     entry.insert(new_value);
-                },
+                }
                 Entry::Occupied(_) => {
                     // Entry is occupied but the value is the same as the new
                     // value, so skip it.
@@ -108,9 +107,7 @@ where
         if !self.reset_on_next_modification {
             // We don't need to invalidate the cache, so just update
             // to add the new keys.
-            iter.for_each(|(k, v)| {
-                update_inner(&mut self.inner, k, v, on_change)
-            });
+            iter.for_each(|(k, v)| update_inner(&mut self.inner, k, v, on_change));
         } else {
             // The cache was invalidated, so after updating entries present
             // in `to_insert`, remove any keys not present in `to_insert`.
@@ -120,11 +117,13 @@ where
                     k
                 })
                 .collect();
-            self.inner.retain(|key, _| if retained_keys.contains(key) {
-                true
-            } else {
-                on_change(CacheChange::Removal { key: *key });
-                false
+            self.inner.retain(|key, _| {
+                if retained_keys.contains(key) {
+                    true
+                } else {
+                    on_change(CacheChange::Removal { key: *key });
+                    false
+                }
             });
         }
         self.reset_on_next_modification = false;
@@ -153,7 +152,7 @@ where
     {
         for (key, _) in self.inner.drain(..) {
             on_change(CacheChange::Removal { key })
-        };
+        }
         self.reset_on_next_modification = false;
     }
 }
@@ -177,7 +176,7 @@ mod tests {
     #[test]
     fn update_union_fires_events() {
         let mut cache = Cache {
-            inner: indexmap!{ 1 => "one",  2 => "two", },
+            inner: indexmap! { 1 => "one",  2 => "two", },
             reset_on_next_modification: false,
         };
 
@@ -185,58 +184,58 @@ mod tests {
         let mut modifications = 0;
 
         cache.update_union(
-            indexmap!{ 1 => "one", 2 => "2", 3 => "three"}.into_iter(),
+            indexmap! { 1 => "one", 2 => "2", 3 => "three"}.into_iter(),
             &mut |change: CacheChange<usize, &str>| match change {
                 CacheChange::Removal { .. } => {
                     panic!("no removals should have been fired!");
-                },
+                }
                 CacheChange::Insertion { key, value } => {
                     insertions += 1;
                     assert_eq!(key, 3);
                     assert_eq!(value, &"three");
-                },
+                }
                 CacheChange::Modification { key, new_value } => {
                     modifications += 1;
                     assert_eq!(key, 2);
                     assert_eq!(new_value, &"2");
                 }
-            }
+            },
         );
 
         cache.update_union(
-            indexmap!{ 1 => "1", 2 => "2", 3 => "3"}.into_iter(),
+            indexmap! { 1 => "1", 2 => "2", 3 => "3"}.into_iter(),
             &mut |change: CacheChange<usize, &str>| match change {
                 CacheChange::Removal { .. } => {
                     panic!("no removals should have been fired!");
-                },
+                }
                 CacheChange::Insertion { .. } => {
                     panic!("no insertions should have been fired!");
-                },
+                }
                 CacheChange::Modification { key, new_value } => {
                     modifications += 1;
                     assert!(key == 1 || key == 3);
                     assert!(new_value == &"1" || new_value == &"3")
                 }
-            }
+            },
         );
         assert_eq!(insertions, 1);
         assert_eq!(modifications, 3);
 
         cache.update_union(
-            indexmap!{ 4 => "four", 5 => "five"}.into_iter(),
+            indexmap! { 4 => "four", 5 => "five"}.into_iter(),
             &mut |change: CacheChange<usize, &str>| match change {
                 CacheChange::Removal { .. } => {
                     panic!("no removals should have been fired!");
-                },
+                }
                 CacheChange::Insertion { key, value } => {
                     insertions += 1;
                     assert!(key == 4 || key == 5);
                     assert!(value == &"four" || value == &"five")
-                },
+                }
                 CacheChange::Modification { .. } => {
                     panic!("no insertions should have been fired!");
                 }
-            }
+            },
         );
         assert_eq!(insertions, 3);
         assert_eq!(modifications, 3);
@@ -245,31 +244,26 @@ mod tests {
     #[test]
     fn clear_fires_removal_event() {
         let mut cache = Cache {
-            inner: indexmap!{ 1 => () },
+            inner: indexmap! { 1 => () },
             reset_on_next_modification: false,
         };
-        cache.clear(
-            &mut |change| {
-                assert_eq!(change, CacheChange::Removal{ key: 1, });
-            },
-        )
+        cache.clear(&mut |change| {
+            assert_eq!(change, CacheChange::Removal { key: 1 });
+        })
     }
 
     #[test]
     fn update_union_reset_on_next_modification() {
-        let original_values = indexmap!{ 1 => (), 2 => (), 3 => (), 4 => () };
+        let original_values = indexmap! { 1 => (), 2 => (), 3 => (), 4 => () };
         // One original value, one new value.
-        let new_values = indexmap!{3 => (), 5 => ()};
+        let new_values = indexmap! {3 => (), 5 => ()};
 
         {
             let mut cache = Cache {
                 inner: original_values.clone(),
                 reset_on_next_modification: true,
             };
-            cache.update_union(
-                new_values.iter().map(|(&k, v)| (k, v.clone())),
-                &mut |_| (),
-            );
+            cache.update_union(new_values.iter().map(|(&k, v)| (k, v.clone())), &mut |_| ());
             assert_eq!(&cache.inner, &new_values);
             assert_eq!(cache.reset_on_next_modification, false);
         }
@@ -279,13 +273,10 @@ mod tests {
                 inner: original_values.clone(),
                 reset_on_next_modification: false,
             };
-            cache.update_union(
-                new_values.iter().map(|(&k, v)| (k, v.clone())),
-                &mut |_| (),
-            );
+            cache.update_union(new_values.iter().map(|(&k, v)| (k, v.clone())), &mut |_| ());
             assert_eq!(
                 &cache.inner,
-                &indexmap!{ 1 => (), 2 => (), 3 => (), 4 => (), 5 => () }
+                &indexmap! { 1 => (), 2 => (), 3 => (), 4 => (), 5 => () }
             );
             assert_eq!(cache.reset_on_next_modification, false);
         }
@@ -293,10 +284,10 @@ mod tests {
 
     #[test]
     fn remove_reset_on_next_modification() {
-        let original_values = indexmap!{ 1 => (), 2 => (), 3 => (), 4 => () };
+        let original_values = indexmap! { 1 => (), 2 => (), 3 => (), 4 => () };
 
         // One original value, one new value.
-        let to_remove = indexmap!{ 3 => (), 5 => ()};
+        let to_remove = indexmap! { 3 => (), 5 => ()};
 
         {
             let mut cache = Cache {
@@ -314,14 +305,14 @@ mod tests {
                 reset_on_next_modification: false,
             };
             cache.remove(to_remove.iter().map(|(&k, _)| k), &mut |_| ());
-            assert_eq!(&cache.inner, &indexmap!{1 => (), 2 => (), 4 => ()});
+            assert_eq!(&cache.inner, &indexmap! {1 => (), 2 => (), 4 => ()});
             assert_eq!(cache.reset_on_next_modification, false);
         }
     }
 
     #[test]
     fn clear_reset_on_next_modification() {
-        let original_values = indexmap!{ 1 => (), 2 => (), 3 => (), 4 => () };
+        let original_values = indexmap! { 1 => (), 2 => (), 3 => (), 4 => () };
 
         {
             let mut cache = Cache {

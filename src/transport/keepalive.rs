@@ -171,10 +171,7 @@ pub mod connect {
         fn connect(&self) -> Self::Future {
             let keepalive = self.keepalive;
             let inner = self.inner.connect();
-            Connect {
-                keepalive,
-                inner,
-            }
+            Connect { keepalive, inner }
         }
     }
 

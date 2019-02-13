@@ -2,7 +2,7 @@ use std::fmt;
 
 use svc;
 use transport::tls;
-use {Conditional, Addr};
+use {Addr, Conditional};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -288,7 +288,9 @@ pub mod resolve {
                         State::make_inner(sa, &config, &stack)
                     }
                     State::Invalid(ref mut e) => {
-                        return Err(Error::Invalid(e.take().expect("future polled after failure")));
+                        return Err(Error::Invalid(
+                            e.take().expect("future polled after failure"),
+                        ));
                     }
                 };
             }
@@ -371,7 +373,7 @@ pub mod client {
     pub fn layer<C, B>() -> Layer<C, B>
     where
         C: svc::Stack<connect::Target> + Clone,
-        C::Value: connect::Connect + Clone + Send + Sync  + 'static,
+        C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
         <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
@@ -389,7 +391,7 @@ pub mod client {
     impl<C, B> svc::Layer<Target, connect::Target, C> for Layer<C, B>
     where
         C: svc::Stack<connect::Target> + Clone,
-        C::Value: connect::Connect + Clone + Send + Sync  + 'static,
+        C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
         <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
@@ -424,16 +426,13 @@ pub mod client {
     impl<C, B> svc::Stack<Target> for Stack<C, B>
     where
         C: svc::Stack<connect::Target> + Clone,
-        C::Value: connect::Connect  + Clone + Send + Sync + 'static,
+        C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
         <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
         B: Payload,
     {
-        type Value = http::h2::Connect<
-            C::Value,
-            B,
-        >;
+        type Value = http::h2::Connect<C::Value, B>;
         type Error = C::Error;
 
         fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
@@ -447,4 +446,3 @@ pub mod client {
         }
     }
 }
-

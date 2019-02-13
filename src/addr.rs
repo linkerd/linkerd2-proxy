@@ -46,7 +46,10 @@ impl Addr {
         a: &http::uri::Authority,
         default_port: u16,
     ) -> Result<Self, Error> {
-        Self::from_str_and_port(a.host(), a.port_part().map(|p| p.as_u16()).unwrap_or(default_port))
+        Self::from_str_and_port(
+            a.host(),
+            a.port_part().map(|p| p.as_u16()).unwrap_or(default_port),
+        )
     }
 
     pub fn from_authority_with_port(a: &http::uri::Authority) -> Result<Self, Error> {
@@ -146,7 +149,10 @@ impl NameAddr {
         a: &http::uri::Authority,
         default_port: u16,
     ) -> Result<Self, Error> {
-        Self::from_str_and_port(a.host(), a.port_part().map(|p| p.as_u16()).unwrap_or(default_port))
+        Self::from_str_and_port(
+            a.host(),
+            a.port_part().map(|p| p.as_u16()).unwrap_or(default_port),
+        )
     }
 
     pub fn from_authority_with_port(a: &http::uri::Authority) -> Result<Self, Error> {
@@ -175,8 +181,7 @@ impl NameAddr {
 }
 
 impl fmt::Display for NameAddr {
-
-    fn fmt(&self, f: &mut fmt::Formatter)  -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.name.without_trailing_dot(), self.port)
     }
 }

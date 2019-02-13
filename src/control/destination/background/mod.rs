@@ -1,25 +1,18 @@
+use futures::{sync::mpsc, Async, Poll, Stream};
 use std::{
     collections::{
         hash_map::{Entry, HashMap},
         VecDeque,
     },
-    fmt,
-    mem,
-    time::Instant,
+    fmt, mem,
     sync::Arc,
-};
-use futures::{
-    sync::mpsc,
-    Async, Poll, Stream,
+    time::Instant,
 };
 use tower_grpc::{self as grpc, Body, BoxBody};
 use tower_http::HttpService;
 
 use api::destination::client::Destination;
-use api::destination::{
-    GetDestination,
-    Update as PbUpdate,
-};
+use api::destination::{GetDestination, Update as PbUpdate};
 
 use super::{ResolveRequest, Update};
 use app::config::Namespaces;
@@ -122,7 +115,7 @@ where
         }
     }
 
-   pub(super) fn poll_rpc(&mut self, client: &mut Option<T>) -> Poll<(), ()> {
+    pub(super) fn poll_rpc(&mut self, client: &mut Option<T>) -> Poll<(), ()> {
         // This loop is make sure any streams that were found disconnected
         // in `poll_destinations` while the `rpc` service is ready should
         // be reconnected now, otherwise the task would just sleep...
@@ -147,16 +140,16 @@ where
                 match client.poll_ready() {
                     Ok(Async::Ready(())) => {
                         self.rpc_ready = true;
-                    },
+                    }
                     Ok(Async::NotReady) => {
                         self.rpc_ready = false;
                         return Async::NotReady;
-                    },
+                    }
                     Err(err) => {
                         warn!("Destination.Get poll_ready error: {:?}", err);
                         self.rpc_ready = false;
                         return Async::NotReady;
-                    },
+                    }
                 }
 
                 // handle any pending reconnects first
@@ -178,7 +171,7 @@ where
                     // ahead and try to free up capacity (by dropping any
                     // inactive DestinationSets).
                     if dsts.needs_query_for(&resolve.authority) {
-                        trace!("--> no query capacity, try retain_active...", );
+                        trace!("--> no query capacity, try retain_active...",);
                         dsts.retain_active();
                     };
 
@@ -187,35 +180,37 @@ where
                             // we may already know of some addresses here, so push
                             // them onto the new watch first
                             match occ.get().addrs {
-                                Exists::Yes(ref cache) => for (&addr, meta) in cache {
-                                    let update = Update::Add(addr, meta.clone());
-                                    resolve.responder.update_tx
-                                        .unbounded_send(update)
-                                        .expect("unbounded_send does not fail");
-                                },
+                                Exists::Yes(ref cache) => {
+                                    for (&addr, meta) in cache {
+                                        let update = Update::Add(addr, meta.clone());
+                                        resolve
+                                            .responder
+                                            .update_tx
+                                            .unbounded_send(update)
+                                            .expect("unbounded_send does not fail");
+                                    }
+                                }
                                 Exists::No | Exists::Unknown => (),
                             }
 
                             if occ.get().needs_query_capacity() {
                                 trace!("--> {:?} wants to query Destination", occ.key());
-                                let query = new_query
-                                    .query_destination_service_if_relevant(
-                                        client.as_mut(),
-                                        occ.key(),
-                                        "connect (previously at capacity)",
-                                    );
+                                let query = new_query.query_destination_service_if_relevant(
+                                    client.as_mut(),
+                                    occ.key(),
+                                    "connect (previously at capacity)",
+                                );
                                 occ.get_mut().query = query;
                             }
 
                             occ.get_mut().responders.push(resolve.responder);
-                        },
+                        }
                         Entry::Vacant(vac) => {
-                            let query = new_query
-                                .query_destination_service_if_relevant(
-                                    client.as_mut(),
-                                    vac.key(),
-                                    "connect",
-                                );
+                            let query = new_query.query_destination_service_if_relevant(
+                                client.as_mut(),
+                                vac.key(),
+                                "connect",
+                            );
                             let mut set = DestinationSet {
                                 addrs: Exists::Unknown,
                                 query,
@@ -227,20 +222,16 @@ where
                             // Kubernetes), or if we don't have a `client`, then immediately start
                             // polling DNS.
                             if !set.query.is_active() {
-                                set.reset_dns_query(
-                                    &self.dns_resolver,
-                                    Instant::now(),
-                                    vac.key(),
-                                );
+                                set.reset_dns_query(&self.dns_resolver, Instant::now(), vac.key());
                             }
                             vac.insert(set);
-                        },
+                        }
                     }
-                },
+                }
                 Ok(Async::Ready(None)) => {
                     trace!("Discover tx is dropped, shutdown");
                     return Async::Ready(());
-                },
+                }
                 Ok(Async::NotReady) => return Async::NotReady,
                 Err(_) => unreachable!("unbounded receiver doesn't error"),
             }
@@ -253,12 +244,11 @@ where
 
         while let Some(auth) = self.dsts.reconnects.pop_front() {
             if let Some(set) = self.dsts.destinations.get_mut(&auth) {
-                set.query = self.new_query
-                    .query_destination_service_if_relevant(
-                        Some(client),
-                        &auth,
-                        "reconnect",
-                    );
+                set.query = self.new_query.query_destination_service_if_relevant(
+                    Some(client),
+                    &auth,
+                    "reconnect",
+                );
                 return !set.needs_query_capacity();
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
@@ -273,17 +263,13 @@ where
             let (new_query, found_by_destination_service) = match set.query.take() {
                 DestinationServiceQuery::Active(Remote::ConnectedOrConnecting { rx }) => {
                     let (new_query, found_by_destination_service) =
-                        set.poll_destination_service(
-                            auth,
-                            rx,
-                            self.new_query.tls_controller_ns(),
-                        );
+                        set.poll_destination_service(auth, rx, self.new_query.tls_controller_ns());
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
                     }
                     (new_query.into(), found_by_destination_service)
-                },
+                }
                 query => (query, Exists::Unknown),
             };
             set.query = new_query;
@@ -300,11 +286,11 @@ where
                 Exists::Yes(()) => {
                     // Stop polling DNS on any active update from the Destination service.
                     set.dns_query = None;
-                },
+                }
                 Exists::No => {
                     // Fall back to DNS.
                     set.reset_dns_query(&self.dns_resolver, Instant::now(), auth);
-                },
+                }
                 Exists::Unknown => (), // No change from Destination service's perspective.
             }
 
@@ -313,14 +299,17 @@ where
             set.poll_dns(&self.dns_resolver, auth);
         }
     }
-
 }
 
 // ===== impl NewQuery =====
 
 impl NewQuery {
-
-    fn new(namespaces: Namespaces, suffixes: Vec<dns::Suffix>, concurrency_limit: usize, proxy_id: String) -> Self {
+    fn new(
+        namespaces: Namespaces,
+        suffixes: Vec<dns::Suffix>,
+        concurrency_limit: usize,
+        proxy_id: String,
+    ) -> Self {
         Self {
             namespaces,
             suffixes,
@@ -376,11 +365,10 @@ impl NewQuery {
                 warn!(
                     "Can't query Destination service for {:?}, maximum \
                      number of queries ({}) reached.",
-                    dst,
-                    self.concurrency_limit,
+                    dst, self.concurrency_limit,
                 );
                 DestinationServiceQuery::NoCapacity
-            },
+            }
             // We should query the Destination service and there is sufficient
             // query capacity, so we're good to go!
             Some(client) => {
@@ -396,10 +384,10 @@ impl NewQuery {
                     rx: Receiver::new(response, active),
                 };
                 DestinationServiceQuery::Active(query)
-            },
+            }
             // This authority should not query the Destination service. Return
             // None, but set the "needs query" flag to false.
-            _ => DestinationServiceQuery::Inactive
+            _ => DestinationServiceQuery::Inactive,
         }
     }
 
@@ -416,7 +404,6 @@ where
     T::ResponseBody: Body,
     T::Error: fmt::Debug,
 {
-
     fn new() -> Self {
         Self {
             destinations: HashMap::new(),
@@ -452,7 +439,6 @@ where
     T: HttpService<BoxBody>,
     T::ResponseBody: Body,
 {
-
     pub fn is_active(&self) -> bool {
         match self {
             DestinationServiceQuery::Active(_) => true,
@@ -470,9 +456,8 @@ where
     }
 
     pub fn take(&mut self) -> Self {
-         mem::replace(self, DestinationServiceQuery::Inactive)
+        mem::replace(self, DestinationServiceQuery::Inactive)
     }
-
 }
 
 impl<T> From<ActiveQuery<T>> for DestinationServiceQuery<T>

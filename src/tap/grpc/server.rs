@@ -11,11 +11,11 @@ use tower_grpc::{self as grpc, Response};
 
 use api::{http_types, pb_duration, tap as api};
 
-use Conditional;
 use super::match_::Match;
 use proxy::http::HasH2Reason;
 use tap::{iface, Inspect};
 use transport::tls;
+use Conditional;
 
 #[derive(Clone, Debug)]
 pub struct Server<T> {
@@ -500,7 +500,9 @@ impl iface::TapPayload for TapResponsePayload {
     }
 
     fn fail<E: HasH2Reason>(self, e: &E) {
-        let end = e.h2_reason().map(|r| api::eos::End::ResetErrorCode(r.into()));
+        let end = e
+            .h2_reason()
+            .map(|r| api::eos::End::ResetErrorCode(r.into()));
         self.send(end);
     }
 }
@@ -540,26 +542,32 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
         source_meta: {
             let mut m = api::tap_event::EndpointMeta::default();
             let tls = inspect.src_tls(req);
-            m.labels.insert("tls".to_owned(), tls::Status::from(&tls).to_string());
+            m.labels
+                .insert("tls".to_owned(), tls::Status::from(&tls).to_string());
             if let Conditional::Some(id) = tls {
-                m.labels.insert("client_id".to_owned(), id.as_ref().to_owned());
+                m.labels
+                    .insert("client_id".to_owned(), id.as_ref().to_owned());
             }
             Some(m)
         },
         destination: inspect.dst_addr(req).as_ref().map(|a| a.into()),
         destination_meta: inspect.dst_labels(req).map(|labels| {
             let mut m = api::tap_event::EndpointMeta::default();
-            m.labels.extend(labels.iter().map(|(k, v)| (k.clone(), v.clone())));
+            m.labels
+                .extend(labels.iter().map(|(k, v)| (k.clone(), v.clone())));
             let tls = inspect.dst_tls(req);
-            m.labels.insert("tls".to_owned(), tls::Status::from(&tls).to_string());
+            m.labels
+                .insert("tls".to_owned(), tls::Status::from(&tls).to_string());
             if let Conditional::Some(id) = tls {
-                m.labels.insert("server_id".to_owned(), id.as_ref().to_owned());
+                m.labels
+                    .insert("server_id".to_owned(), id.as_ref().to_owned());
             }
             m
         }),
         route_meta: inspect.route_labels(req).map(|labels| {
             let mut m = api::tap_event::RouteMeta::default();
-            m.labels.extend(labels.as_ref().iter().map(|(k, v)| (k.clone(), v.clone())));
+            m.labels
+                .extend(labels.as_ref().iter().map(|(k, v)| (k.clone(), v.clone())));
             m
         }),
         event: None,

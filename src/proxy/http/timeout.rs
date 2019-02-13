@@ -3,8 +3,8 @@ use std::time::Duration;
 use futures::{future, Future, Poll};
 use http::{Request, Response, StatusCode};
 
-use svc::linkerd2_timeout::{Error as TimeoutError, Timeout};
 use svc;
+use svc::linkerd2_timeout::{Error as TimeoutError, Timeout};
 
 /// Implement on targets to determine if a service has a timeout.
 pub trait HasTimeout {
@@ -48,9 +48,7 @@ where
     type Stack = Stack<M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
-        Stack {
-            inner,
-        }
+        Stack { inner }
     }
 }
 
@@ -89,8 +87,9 @@ where
         match self.0.poll_ready() {
             Ok(ok) => Ok(ok),
             Err(TimeoutError::Error(err)) => Err(err),
-            Err(TimeoutError::Timeout(_)) |
-            Err(TimeoutError::Timer(_)) => unreachable!("timeout error in poll_ready"),
+            Err(TimeoutError::Timeout(_)) | Err(TimeoutError::Timer(_)) => {
+                unreachable!("timeout error in poll_ready")
+            }
         }
     }
 
@@ -103,7 +102,7 @@ where
                 *res.status_mut() = StatusCode::GATEWAY_TIMEOUT;
                 res.extensions_mut().insert(ProxyTimedOut(()));
                 Ok(res)
-            },
+            }
             TimeoutError::Timer(err) => {
                 // These are unexpected, and mean the runtime is in a bad place.
                 error!("unexpected runtime timer error: {}", err);
@@ -114,4 +113,3 @@ where
         })
     }
 }
-

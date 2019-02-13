@@ -7,7 +7,7 @@ use tokio_timer::clock;
 
 use metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 
-use super::{ClassMetrics, RequestMetrics, Registry, RetrySkipped, StatusMetrics};
+use super::{ClassMetrics, Registry, RequestMetrics, RetrySkipped, StatusMetrics};
 
 /// Reports HTTP metrics for prometheus.
 #[derive(Clone, Debug)]
@@ -53,7 +53,7 @@ where
 
         Self {
             scope: Scope::prefixed(prefix),
-            .. self
+            ..self
         }
     }
 }
@@ -121,11 +121,7 @@ where
         Ok(())
     }
 
-    fn fmt_by_retry<M>(
-        &self,
-        f: &mut fmt::Formatter,
-        metric: Metric<M>,
-    ) -> fmt::Result
+    fn fmt_by_retry<M>(&self, f: &mut fmt::Formatter, metric: Metric<M>) -> fmt::Result
     where
         M: FmtMetric,
     {
@@ -224,11 +220,17 @@ impl Scope {
     }
 
     fn response_latency_ms(&self) -> Metric<Histogram<latency::Ms>> {
-        Metric::new(&self.response_latency_ms_key, &Self::RESPONSE_LATENCY_MS_HELP)
+        Metric::new(
+            &self.response_latency_ms_key,
+            &Self::RESPONSE_LATENCY_MS_HELP,
+        )
     }
 
     fn retry_skipped_total(&self) -> Metric<Counter> {
-        Metric::new(&self.retry_skipped_total_key, &Self::RETRY_SKIPPED_TOTAL_HELP)
+        Metric::new(
+            &self.retry_skipped_total_key,
+            &Self::RETRY_SKIPPED_TOTAL_HELP,
+        )
     }
 
     const REQUEST_TOTAL_HELP: &'static str = "Total count of HTTP requests.";
@@ -237,9 +239,10 @@ impl Scope {
 
     const RESPONSE_LATENCY_MS_HELP: &'static str =
         "Elapsed times between a request's headers being received \
-        and its response stream completing";
+         and its response stream completing";
 
-    const RETRY_SKIPPED_TOTAL_HELP: &'static str = "Total count of retryable HTTP responses that were not retried.";
+    const RETRY_SKIPPED_TOTAL_HELP: &'static str =
+        "Total count of retryable HTTP responses that were not retried.";
 }
 
 impl FmtLabels for Status {
@@ -250,8 +253,12 @@ impl FmtLabels for Status {
 
 impl FmtLabels for RetrySkipped {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "skipped=\"{}\"", match self {
-            RetrySkipped::Budget => "budget",
-        })
+        write!(
+            f,
+            "skipped=\"{}\"",
+            match self {
+                RetrySkipped::Budget => "budget",
+            }
+        )
     }
 }

@@ -1,17 +1,10 @@
 use futures::{Future, Poll, Stream};
 use prost::Message;
-use std::{
-    fmt,
-    sync::Weak,
-};
-use tower_http::{HttpService};
+use std::{fmt, sync::Weak};
 use tower_grpc::{
-    self as grpc,
-    Body,
-    BoxBody,
-    Streaming,
-    client::server_streaming::ResponseFuture,
+    self as grpc, client::server_streaming::ResponseFuture, Body, BoxBody, Streaming,
 };
+use tower_http::HttpService;
 
 /// Tracks the state of a gRPC response stream from a remote.
 ///
@@ -23,9 +16,7 @@ where
     S::ResponseBody: Body,
 {
     NeedsReconnect,
-    ConnectedOrConnecting {
-        rx: Receiver<M, S>,
-    },
+    ConnectedOrConnecting { rx: Receiver<M, S> },
 }
 
 /// Receives streaming RPCs updates.
@@ -94,9 +85,7 @@ where
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
             let stream = match self.rx {
-                Rx::Waiting(ref mut future) => {
-                    try_ready!(future.poll()).into_inner()
-                }
+                Rx::Waiting(ref mut future) => try_ready!(future.poll()).into_inner(),
 
                 Rx::Streaming(ref mut stream) => {
                     return stream.poll().map_err(Self::coerce_stream_err);

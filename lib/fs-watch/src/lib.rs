@@ -6,7 +6,12 @@ extern crate futures_watch;
 extern crate ring;
 extern crate tokio_timer;
 
-use std::{fs, io, cell::RefCell, path::{Path, PathBuf}, time::Duration};
+use std::{
+    cell::RefCell,
+    fs, io,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use futures::Stream;
 use ring::digest::{self, Digest};
@@ -61,12 +66,10 @@ where
         .filter(move |_| {
             let mut any_changes = false;
             for file in &files {
-                let has_changed = file
-                    .update_and_check()
-                    .unwrap_or_else(|e| {
-                        warn!("error hashing {:?}: {}", &file.path, e);
-                        false
-                    });
+                let has_changed = file.update_and_check().unwrap_or_else(|e| {
+                    warn!("error hashing {:?}: {}", &file.path, e);
+                    false
+                });
                 if has_changed {
                     any_changes = true;
                 }
@@ -151,7 +154,7 @@ impl PathAndHash {
                     self.curr_hash.replace(curr_hash);
                 }
                 Ok(changed)
-            },
+            }
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
                 if self.curr_hash.borrow().is_some() {
                     // If we have a previous hash, then the file was deleted,
@@ -164,11 +167,10 @@ impl PathAndHash {
                     // been a change.
                     Ok(false)
                 }
-            },
+            }
             // Propagate any other errors.
             Err(e) => Err(e),
         }
-
     }
 }
 
@@ -176,8 +178,8 @@ impl PathAndHash {
 pub mod inotify {
     extern crate inotify;
 
-    use futures::{Async, Poll, Stream};
     use self::inotify::{Event, EventMask, EventStream, Inotify, WatchMask};
+    use futures::{Async, Poll, Stream};
     use std::{io, path::PathBuf};
 
     pub struct WatchStream {
@@ -208,8 +210,11 @@ pub mod inotify {
         }
 
         fn add_paths(&mut self) -> Result<(), io::Error> {
-            let mask = WatchMask::CREATE | WatchMask::MODIFY | WatchMask::DELETE
-                | WatchMask::DELETE_SELF | WatchMask::MOVE
+            let mask = WatchMask::CREATE
+                | WatchMask::MODIFY
+                | WatchMask::DELETE
+                | WatchMask::DELETE_SELF
+                | WatchMask::MOVE
                 | WatchMask::MOVE_SELF;
             for path in &self.paths {
                 let watch_path = path.canonicalize().unwrap_or_else(|e| {
@@ -272,9 +277,9 @@ mod tests {
     extern crate tempfile;
     extern crate tokio;
 
-    use super::*;
     use self::task::test_util::BlockOnFor;
     use self::tokio::runtime::current_thread::Runtime;
+    use super::*;
     use tokio_timer::{clock, Interval};
 
     #[cfg(not(target_os = "windows"))]
@@ -298,10 +303,7 @@ mod tests {
     impl Fixture {
         fn new() -> Fixture {
             let _ = self::env_logger::try_init();
-            let dir = tempfile::Builder::new()
-                .prefix("test")
-                .tempdir()
-                .unwrap();
+            let dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
             let paths = vec![
                 dir.path().join("a"),
                 dir.path().join("b"),

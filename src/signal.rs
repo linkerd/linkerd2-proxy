@@ -5,7 +5,7 @@ extern crate tokio_signal;
 
 use self::futures::Future;
 
-type ShutdownSignal = Box<Future<Item=(), Error=()> + Send>;
+type ShutdownSignal = Box<Future<Item = (), Error = ()> + Send>;
 
 /// Returns a `Future` that completes when the proxy should start to shutdown.
 pub fn shutdown() -> ShutdownSignal {
@@ -31,7 +31,8 @@ mod imp {
             // `Handle::current()` and starting the background reactor when
             // we haven't initialized the runtime yet.
             Ok([SIGINT, SIGTERM].into_iter())
-        }).and_then(|signals| {
+        })
+        .and_then(|signals| {
             let signals = signals.map(|&sig| {
                 // Create a Future that completes the first
                 // time the process receives 'sig'.
@@ -74,8 +75,8 @@ mod imp {
 
 #[cfg(not(unix))]
 mod imp {
-    use super::{tokio_signal, ShutdownSignal};
     use super::futures::{Future, Stream};
+    use super::{tokio_signal, ShutdownSignal};
 
     pub(super) fn shutdown() -> ShutdownSignal {
         // On Windows, we don't have all the signals, but Windows also

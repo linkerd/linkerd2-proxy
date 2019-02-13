@@ -1,16 +1,16 @@
-use bytes::{Bytes};
+use bytes::Bytes;
 use futures::{Async, Future, Poll};
-use http;
 use h2;
-use hyper::{self, body::Payload};
+use http;
 use hyper::client::connect as hyper_connect;
+use hyper::{self, body::Payload};
 use std::{error::Error as StdError, fmt};
 use tower_grpc as grpc;
 
-use Conditional;
-use proxy::http::{HasH2Reason, upgrade::Http11Upgrade};
+use proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
 use svc;
-use transport::{Connect, tls::HasStatus as HasTlsStatus};
+use transport::{tls::HasStatus as HasTlsStatus, Connect};
+use Conditional;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[derive(Debug)]
@@ -18,7 +18,7 @@ pub struct HttpBody {
     /// In HttpBody::drop, if this was an HTTP upgrade, the body is taken
     /// to be inserted into the Http11Upgrade half.
     pub(super) body: Option<hyper::Body>,
-    pub(super) upgrade: Option<Http11Upgrade>
+    pub(super) upgrade: Option<Http11Upgrade>,
 }
 
 /// Glue for a `tower::Service` to used as a `hyper::server::Service`.
@@ -54,16 +54,14 @@ impl Payload for HttpBody {
     type Error = h2::Error;
 
     fn is_end_stream(&self) -> bool {
-        self
-            .body
+        self.body
             .as_ref()
             .expect("only taken in drop")
             .is_end_stream()
     }
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        self
-            .body
+        self.body
             .as_mut()
             .expect("only taken in drop")
             .poll_data()
@@ -77,8 +75,7 @@ impl Payload for HttpBody {
     }
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
-        self
-            .body
+        self.body
             .as_mut()
             .expect("only taken in drop")
             .poll_trailers()
@@ -109,8 +106,7 @@ impl grpc::Body for HttpBody {
     }
 
     fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, grpc::Error> {
-        Payload::poll_trailers(self)
-            .map_err(From::from)
+        Payload::poll_trailers(self).map_err(From::from)
     }
 }
 
@@ -137,11 +133,7 @@ impl Drop for HttpBody {
     fn drop(&mut self) {
         // If an HTTP/1 upgrade was wanted, send the upgrade future.
         if let Some(upgrade) = self.upgrade.take() {
-            let on_upgrade = self
-                .body
-                .take()
-                .expect("take only on drop")
-                .on_upgrade();
+            let on_upgrade = self.body.take().expect("take only on drop").on_upgrade();
             upgrade.insert_half(on_upgrade);
         }
     }
@@ -151,18 +143,13 @@ impl Drop for HttpBody {
 
 impl<S> HyperServerSvc<S> {
     pub fn new(service: S) -> Self {
-        HyperServerSvc {
-            service,
-        }
+        HyperServerSvc { service }
     }
 }
 
 impl<S, B> hyper::service::Service for HyperServerSvc<S>
 where
-    S: svc::Service<
-        http::Request<HttpBody>,
-        Response=http::Response<B>,
-    >,
+    S: svc::Service<http::Request<HttpBody>, Response = http::Response<B>>,
     S::Error: StdError + Send + Sync + 'static,
     B: Payload,
 {
@@ -224,8 +211,7 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let transport = try_ready!(self.inner.poll());
-        let connected = hyper_connect::Connected::new()
-            .proxy(self.absolute_form);
+        let connected = hyper_connect::Connected::new().proxy(self.absolute_form);
         let connected = if let Conditional::Some(()) = transport.tls_status() {
             connected.extra(ClientUsedTls(()))
         } else {
@@ -239,8 +225,7 @@ where
 
 impl HasH2Reason for Error {
     fn h2_reason(&self) -> Option<h2::Reason> {
-        self
-            .0
+        self.0
             .cause2()
             .and_then(|cause| cause.downcast_ref::<h2::Error>())
             .and_then(|err| err.reason())
@@ -270,4 +255,3 @@ impl StdError for Error {
         self.0.cause()
     }
 }
-

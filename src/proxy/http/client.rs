@@ -1,14 +1,14 @@
 use futures::{future, Async, Future, Poll};
 use http;
 use hyper;
-use std::{error, fmt};
 use std::marker::PhantomData;
+use std::{error, fmt};
 use tokio::executor::Executor;
 
-use super::{h1, h2, Settings};
 use super::glue::{Error, HttpBody, HyperConnect};
 use super::normalize_uri::ShouldNormalizeUri;
-use super::upgrade::{HttpConnect, Http11Upgrade};
+use super::upgrade::{Http11Upgrade, HttpConnect};
+use super::{h1, h2, Settings};
 use svc::{self, stack_per_request::ShouldStackPerRequest};
 use transport::{connect, tls};
 
@@ -46,8 +46,7 @@ where
     _p: PhantomData<fn() -> B>,
 }
 
-type HyperClient<C, B> =
-    hyper::Client<HyperConnect<C>, B>;
+type HyperClient<C, B> = hyper::Client<HyperConnect<C>, B>;
 
 /// A `NewService` that can speak either HTTP/1 or HTTP/2.
 pub struct Client<C, B>
@@ -96,7 +95,11 @@ pub enum ClientServiceFuture {
 
 impl Config {
     pub fn new(target: connect::Target, settings: Settings) -> Self {
-        Config { target, settings, _p: () }
+        Config {
+            target,
+            settings,
+            _p: (),
+        }
     }
 }
 
@@ -117,7 +120,6 @@ impl fmt::Display for Config {
         self.target.addr.fmt(f)
     }
 }
-
 
 // === impl Layer ===
 
@@ -161,7 +163,7 @@ where
             connect,
             proxy_name: self.proxy_name,
             _p: PhantomData,
-         }
+        }
     }
 }
 
@@ -218,10 +220,15 @@ where
     pub fn new<E>(settings: &Settings, connect: C, executor: E) -> Self
     where
         E: Executor + Clone,
-        E: future::Executor<Box<Future<Item = (), Error = ()> + Send + 'static>> + Send + Sync + 'static,
+        E: future::Executor<Box<Future<Item = (), Error = ()> + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
     {
         match settings {
-            Settings::Http1 { was_absolute_form, .. } => {
+            Settings::Http1 {
+                was_absolute_form, ..
+            } => {
                 let h1 = hyper::Client::builder()
                     .executor(executor)
                     // hyper should never try to automatically set the Host
@@ -231,7 +238,7 @@ where
                 Client {
                     inner: ClientInner::Http1(h1),
                 }
-            },
+            }
             Settings::Http2 => {
                 let h2 = h2::Connect::new(connect, executor);
                 Client {
@@ -260,12 +267,8 @@ where
 
     fn call(&mut self, _target: ()) -> Self::Future {
         match self.inner {
-            ClientInner::Http1(ref h1) => {
-                ClientNewServiceFuture::Http1(Some(h1.clone()))
-            },
-            ClientInner::Http2(ref mut h2) => {
-                ClientNewServiceFuture::Http2(h2.call(()))
-            },
+            ClientInner::Http1(ref h1) => ClientNewServiceFuture::Http1(Some(h1.clone())),
+            ClientInner::Http2(ref mut h2) => ClientNewServiceFuture::Http2(h2.call(())),
         }
     }
 }
@@ -286,7 +289,7 @@ where
         let svc = match *self {
             ClientNewServiceFuture::Http1(ref mut h1) => {
                 ClientService::Http1(h1.take().expect("poll more than once"))
-            },
+            }
             ClientNewServiceFuture::Http2(ref mut h2) => {
                 let svc = try_ready!(h2.poll());
                 ClientService::Http2(svc)
@@ -318,8 +321,13 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        debug!("client request: method={} uri={} version={:?} headers={:?}",
-            req.method(), req.uri(), req.version(), req.headers());
+        debug!(
+            "client request: method={} uri={} version={:?} headers={:?}",
+            req.method(),
+            req.uri(),
+            req.version(),
+            req.headers()
+        );
         match *self {
             ClientService::Http1(ref h1) => {
                 let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
@@ -333,10 +341,8 @@ where
                     upgrade,
                     is_http_connect,
                 }
-            },
-            ClientService::Http2(ref mut h2) => {
-                ClientServiceFuture::Http2(h2.call(req))
             }
+            ClientService::Http2(ref mut h2) => ClientServiceFuture::Http2(h2.call(req)),
         }
     }
 }
@@ -349,12 +355,15 @@ impl Future for ClientServiceFuture {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self {
-            ClientServiceFuture::Http1 { future, upgrade, is_http_connect } => {
-                let mut res = try_ready!(future.poll())
-                    .map(|b| HttpBody {
-                        body: Some(b),
-                        upgrade: upgrade.take(),
-                    });
+            ClientServiceFuture::Http1 {
+                future,
+                upgrade,
+                is_http_connect,
+            } => {
+                let mut res = try_ready!(future.poll()).map(|b| HttpBody {
+                    body: Some(b),
+                    upgrade: upgrade.take(),
+                });
                 if *is_http_connect {
                     res.extensions_mut().insert(HttpConnect);
                 }
@@ -365,11 +374,8 @@ impl Future for ClientServiceFuture {
                     h1::strip_connection_headers(res.headers_mut());
                 }
                 Ok(Async::Ready(res))
-            },
-            ClientServiceFuture::Http2(f) => {
-                f.poll()
-            },
+            }
+            ClientServiceFuture::Http2(f) => f.poll(),
         }
     }
 }
-

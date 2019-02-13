@@ -1,14 +1,14 @@
+extern crate hyper_balance;
 extern crate tower_balance;
 extern crate tower_discover;
-extern crate hyper_balance;
 
+use self::tower_discover::Discover;
+use hyper::body::Payload;
 use std::marker::PhantomData;
 use std::time::Duration;
-use hyper::body::Payload;
-use self::tower_discover::Discover;
 
-pub use self::tower_balance::{choose::PowerOfTwoChoices, load::WithPeakEwma, Balance};
 pub use self::hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
+pub use self::tower_balance::{choose::PowerOfTwoChoices, load::WithPeakEwma, Balance};
 
 use http;
 use svc;

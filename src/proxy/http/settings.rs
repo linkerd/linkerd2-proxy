@@ -82,8 +82,8 @@ pub mod router {
 
     use futures::{Future, Poll};
     use http;
-    use std::{error, fmt};
     use std::marker::PhantomData;
+    use std::{error, fmt};
 
     use super::Settings;
     use proxy::http::client::Config;
@@ -114,7 +114,7 @@ pub mod router {
         M: svc::Stack<Config>,
         M::Value: svc::Service<http::Request<B>>,
     {
-        inner: <Router<B, M> as svc::Service<http::Request<B>>>::Future
+        inner: <Router<B, M> as svc::Service<http::Request<B>>>::Future,
     }
 
     #[derive(Debug)]
@@ -197,7 +197,9 @@ pub mod router {
         M::Value: svc::Service<http::Request<B>>,
     {
         fn clone(&self) -> Self {
-            Self { router: self.router.clone() }
+            Self {
+                router: self.router.clone(),
+            }
         }
     }
 

@@ -15,7 +15,10 @@ jobs:
   include:
     # On PRs and branches, quickly run tests in debug mode.
     - if: type = pull_request
-      script: make test
+      install: rustup component add rustfmt
+      script:
+        - make check-fmt
+        - make test
       rust: stable
 
     # On master, package an artifact and run tests in release mode before

@@ -13,7 +13,7 @@ pub mod resolve;
 pub mod server;
 mod tcp;
 
-pub use self::resolve::{Resolve, Resolution};
+pub use self::resolve::{Resolution, Resolve};
 pub use self::server::{Server, Source};
 
 /// Wraps serverside transports with additional functionality.

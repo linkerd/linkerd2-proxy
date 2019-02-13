@@ -3,9 +3,9 @@ use futures::{Async, Future, Poll};
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use transport::{connect, Peek, tls};
+use transport::{connect, tls, Peek};
 
-use super::{NewSensor, Sensor, Eos};
+use super::{Eos, NewSensor, Sensor};
 
 /// Wraps a transport with telemetry.
 #[derive(Debug)]
@@ -47,7 +47,8 @@ impl<T: AsyncRead + AsyncWrite> Io<T> {
             Ok(v) => Ok(v),
             Err(e) => {
                 if e.kind() != io::ErrorKind::WouldBlock {
-                    let eos = e.raw_os_error()
+                    let eos = e
+                        .raw_os_error()
                         .map(|e| Eos::Error(e.into()))
                         .unwrap_or(Eos::Clean);
                     self.sensor.record_close(eos);
@@ -124,7 +125,10 @@ where
 {
     /// Returns a `Connect` to `addr` and `handle`.
     pub(super) fn new(underlying: C, new_sensor: NewSensor) -> Self {
-        Self { underlying, new_sensor }
+        Self {
+            underlying,
+            new_sensor,
+        }
     }
 }
 
@@ -157,7 +161,9 @@ where
         let io = try_ready!(self.underlying.poll());
         debug!("client connection open");
 
-        let sensor = self.new_sensor.take()
+        let sensor = self
+            .new_sensor
+            .take()
             .expect("future must not be polled after ready")
             .new_sensor();
         let t = Io::new(io, sensor);

@@ -1,4 +1,3 @@
-
 pub fn layer<T, M>(map_target: M) -> Layer<M>
 where
     M: MapTarget<T>,

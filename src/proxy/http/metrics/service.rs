@@ -10,9 +10,9 @@ use std::time::Instant;
 use tokio_timer::clock;
 use tower_grpc;
 
-use super::classify::{ClassifyEos, ClassifyResponse};
-use super::{ClassMetrics, RequestMetrics, Registry, StatusMetrics};
 use super::super::retry::TryClone;
+use super::classify::{ClassifyEos, ClassifyResponse};
+use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
 use svc;
 
 /// A stack module that wraps services to record metrics.
@@ -208,10 +208,7 @@ where
 
 impl<C, S, A, B> svc::Service<http::Request<A>> for Service<S, C>
 where
-    S: svc::Service<
-        http::Request<RequestBody<A, C::Class>>,
-        Response = http::Response<B>,
-    >,
+    S: svc::Service<http::Request<RequestBody<A, C::Class>>, Response = http::Response<B>>,
     A: Payload,
     B: Payload,
     C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
@@ -323,7 +320,7 @@ where
 
 impl<B, C> tower_grpc::Body for RequestBody<B, C>
 where
-    B: Payload<Error=h2::Error>,
+    B: Payload<Error = h2::Error>,
     C: Hash + Eq + Send + 'static,
 {
     type Data = B::Data;
@@ -343,19 +340,14 @@ where
 
 impl<B, C> TryClone for RequestBody<B, C>
 where
-    B: Payload<Error=h2::Error> + TryClone,
-    C: Eq + Hash
+    B: Payload<Error = h2::Error> + TryClone,
+    C: Eq + Hash,
 {
     fn try_clone(&self) -> Option<Self> {
-        self
-            .inner
-            .try_clone()
-            .map(|inner| {
-                RequestBody {
-                    inner,
-                    metrics: self.metrics.clone(),
-                }
-            })
+        self.inner.try_clone().map(|inner| RequestBody {
+            inner,
+            metrics: self.metrics.clone(),
+        })
     }
 }
 
@@ -443,7 +435,7 @@ where
 
 impl<B, C> Payload for ResponseBody<B, C>
 where
-    B: Payload<Error=h2::Error>,
+    B: Payload<Error = h2::Error>,
     C: ClassifyEos<Error = h2::Error> + Send + 'static,
     C::Class: Hash + Eq + Send,
 {
@@ -477,7 +469,7 @@ where
 
 impl<B, C> tower_grpc::Body for ResponseBody<B, C>
 where
-    B: Payload<Error=h2::Error>,
+    B: Payload<Error = h2::Error>,
     C: ClassifyEos<Error = h2::Error> + Send + 'static,
     C::Class: Hash + Eq + Send + 'static,
 {

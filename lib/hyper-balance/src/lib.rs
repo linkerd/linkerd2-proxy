@@ -182,7 +182,7 @@ mod tests {
     use std::sync::{Arc, Weak};
     use tower_balance::load::Instrument;
 
-    use super::{PendingUntilFirstData, PendingUntilEos};
+    use super::{PendingUntilEos, PendingUntilFirstData};
 
     #[test]
     fn first_data() {

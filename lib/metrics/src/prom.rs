@@ -5,7 +5,10 @@ use std::marker::{PhantomData, Sized};
 pub trait FmtMetrics {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result;
 
-    fn as_display(&self) -> DisplayMetrics<&Self> where Self: Sized {
+    fn as_display(&self) -> DisplayMetrics<&Self>
+    where
+        Self: Sized,
+    {
         DisplayMetrics(self)
     }
 
@@ -91,12 +94,12 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
         &self,
         f: &mut fmt::Formatter,
         scopes: I,
-        to_metric: F
+        to_metric: F,
     ) -> fmt::Result
     where
         L: FmtLabels,
         I: IntoIterator<Item = (L, &'s S)>,
-        F: Fn(&S) -> &M
+        F: Fn(&S) -> &M,
     {
         for (labels, scope) in scopes {
             to_metric(scope).fmt_metric_labeled(f, self.name, labels)?;

@@ -1,8 +1,8 @@
 use std::mem;
 
-use futures::{Async, Future, Poll, Stream};
 use futures::future::Shared;
 use futures::sync::{mpsc, oneshot};
+use futures::{Async, Future, Poll, Stream};
 
 use never::Never;
 
@@ -14,10 +14,7 @@ pub fn channel() -> (Signal, Watch) {
     let (tx, rx) = oneshot::channel();
     let (drained_tx, drained_rx) = mpsc::channel(0);
     (
-        Signal {
-            drained_rx,
-            tx,
-        },
+        Signal { drained_rx, tx },
         Watch {
             drained_tx,
             rx: rx.shared(),
@@ -117,16 +114,16 @@ where
                         Ok(Async::Ready(_)) | Err(_) => {
                             // Drain has been triggered!
                             on_drain(&mut self.future);
-                        },
+                        }
                         Ok(Async::NotReady) => {
                             self.state = State::Watch(on_drain);
                             return self.future.poll();
                         }
                     }
-                },
+                }
                 State::Draining => {
                     return self.future.poll();
-                },
+                }
             }
         }
     }
@@ -148,8 +145,8 @@ impl Future for Drained {
 
 #[cfg(test)]
 mod tests {
-    use futures::{future, Async, Future, Poll};
     use super::*;
+    use futures::{future, Async, Future, Poll};
 
     struct TestMe {
         draining: bool,
@@ -217,7 +214,9 @@ mod tests {
             assert!(draining.poll().unwrap().is_ready());
 
             Ok::<_, ()>(())
-        }).wait().unwrap();
+        })
+        .wait()
+        .unwrap();
     }
 
     #[test]
@@ -260,6 +259,8 @@ mod tests {
             assert!(draining.poll().unwrap().is_ready());
 
             Ok::<_, ()>(())
-        }).wait().unwrap();
+        })
+        .wait()
+        .unwrap();
     }
 }

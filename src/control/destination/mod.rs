@@ -24,28 +24,21 @@
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
-use futures::{
-    future,
-    sync::mpsc,
-    Async,
-    Future,
-    Poll,
-    Stream
-};
+use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
-use tower_http::HttpService;
 use tower_grpc::{Body, BoxBody};
+use tower_http::HttpService;
 
 use dns;
-use transport::tls;
 use proxy::resolve::{self, Resolve, Update};
+use transport::tls;
 
 pub mod background;
 
-use app::config::Namespaces;
 use self::background::Background;
+use app::config::Namespaces;
 use {Conditional, NameAddr};
 
 /// A handle to request resolutions from the background discovery task.
@@ -175,8 +168,7 @@ impl resolve::Resolution for Resolution {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-        let up = try_ready!(self.update_rx.poll())
-            .expect("resolution stream must be infinite");
+        let up = try_ready!(self.update_rx.poll()).expect("resolution stream must be infinite");
         Ok(Async::Ready(up))
     }
 }
@@ -203,7 +195,7 @@ impl Metadata {
     pub fn new(
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
-        tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>
+        tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
     ) -> Self {
         Self {
             labels,

@@ -1,5 +1,5 @@
-use indexmap::IndexMap;
 use super::prom::FmtLabels;
+use indexmap::IndexMap;
 use std::hash::Hash;
 
 /// Holds an `S`-typed scope for each `L`-typed label set.

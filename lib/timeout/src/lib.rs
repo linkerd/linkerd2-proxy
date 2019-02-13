@@ -5,10 +5,10 @@ extern crate tokio_timer;
 extern crate tower_service as svc;
 
 use futures::{Future, Poll};
+use std::time::Duration;
+use std::{error, fmt};
 use tokio_connect::Connect;
 use tokio_timer as timer;
-use std::{error, fmt};
-use std::time::Duration;
 
 pub mod stack;
 
@@ -30,7 +30,6 @@ pub enum Error<E> {
     Timer(timer::Error),
 }
 
-
 /// A duration which pretty-prints as fractional seconds.
 #[derive(Copy, Clone, Debug)]
 struct HumanDuration(pub Duration);
@@ -40,10 +39,7 @@ struct HumanDuration(pub Duration);
 impl<T> Timeout<T> {
     /// Construct a new `Timeout` wrapping `inner`.
     pub fn new(inner: T, duration: Duration) -> Self {
-        Timeout {
-            inner,
-            duration,
-        }
+        Timeout { inner, duration }
     }
 
     fn error<E>(&self, error: E) -> Error<E> {
@@ -52,20 +48,24 @@ impl<T> Timeout<T> {
 
     fn timeout_error<E>(&self, error: timer::timeout::Error<E>) -> Error<E> {
         match error {
-            _ if error.is_timer() =>
-                Error::Timer(error.into_timer()
-                    .expect("error.into_timer() must succeed if error.is_timer()")),
-            _ if error.is_elapsed() =>
-                Error::Timeout(self.duration),
-            _ => Error::Error(error.into_inner()
-                .expect("if error is not elapsed or timer, must be inner")),
+            _ if error.is_timer() => Error::Timer(
+                error
+                    .into_timer()
+                    .expect("error.into_timer() must succeed if error.is_timer()"),
+            ),
+            _ if error.is_elapsed() => Error::Timeout(self.duration),
+            _ => Error::Error(
+                error
+                    .into_inner()
+                    .expect("if error is not elapsed or timer, must be inner"),
+            ),
         }
     }
 }
 
 impl<S, T, E, Req> svc::Service<Req> for Timeout<S>
 where
-    S: svc::Service<Req, Response=T, Error=E>,
+    S: svc::Service<Req, Response = T, Error = E>,
 {
     type Response = T;
     type Error = Error<E>;
@@ -83,7 +83,6 @@ where
         }
     }
 }
-
 
 impl<C> Connect for Timeout<C>
 where
@@ -118,12 +117,11 @@ where
 
 impl<E> fmt::Display for Error<E>
 where
-    E: fmt::Display
+    E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Timeout(ref d) =>
-                write!(f, "operation timed out after {}", HumanDuration(*d)),
+            Error::Timeout(ref d) => write!(f, "operation timed out after {}", HumanDuration(*d)),
             Error::Timer(ref err) => write!(f, "timer failed: {}", err),
             Error::Error(ref err) => fmt::Display::fmt(err, f),
         }
@@ -132,7 +130,7 @@ where
 
 impl<E> error::Error for Error<E>
 where
-    E: error::Error
+    E: error::Error,
 {
     fn cause(&self) -> Option<&error::Error> {
         match *self {

@@ -53,12 +53,12 @@ impl FmtMetrics for Report {
 
 #[cfg(target_os = "linux")]
 mod system {
-    use procinfo::pid;
     use libc::{self, pid_t};
-    use std::{io, fs};
+    use procinfo::pid;
+    use std::{fs, io};
 
+    use super::super::metrics::{Counter, FmtMetrics, Gauge};
     use super::*;
-    use super::super::metrics::{Counter, Gauge, FmtMetrics};
 
     metrics! {
         process_cpu_seconds_total: Counter {
@@ -102,8 +102,7 @@ mod system {
 
         fn max_fds() -> io::Result<Option<Gauge>> {
             let limit = pid::limits_self()?.max_open_files;
-            let max_fds = limit.soft.or(limit.hard)
-                .map(|max| Gauge::from(max as u64));
+            let max_fds = limit.soft.or(limit.hard).map(|max| Gauge::from(max as u64));
             Ok(max_fds)
         }
 
@@ -113,7 +112,7 @@ mod system {
                     let error = io::Error::last_os_error();
                     error!("error getting {}: {:?}", name, error);
                     Err(error)
-                },
+                }
                 val => Ok(val as u64),
             }
         }
@@ -132,10 +131,8 @@ mod system {
 
             let clock_ticks = stat.utime as u64 + stat.stime as u64;
             process_cpu_seconds_total.fmt_help(f)?;
-            process_cpu_seconds_total.fmt_metric(
-                f,
-                Counter::from(clock_ticks / self.clock_ticks_per_sec),
-            )?;
+            process_cpu_seconds_total
+                .fmt_metric(f, Counter::from(clock_ticks / self.clock_ticks_per_sec))?;
 
             match Self::open_fds(stat.pid) {
                 Ok(open_fds) => {
@@ -161,16 +158,11 @@ mod system {
             }
 
             process_virtual_memory_bytes.fmt_help(f)?;
-            process_virtual_memory_bytes.fmt_metric(
-                f,
-                Gauge::from(stat.vsize as u64),
-            )?;
+            process_virtual_memory_bytes.fmt_metric(f, Gauge::from(stat.vsize as u64))?;
 
             process_resident_memory_bytes.fmt_help(f)?;
-            process_resident_memory_bytes.fmt_metric(
-                f,
-                Gauge::from(stat.rss as u64 * self.page_size),
-            )
+            process_resident_memory_bytes
+                .fmt_metric(f, Gauge::from(stat.rss as u64 * self.page_size))
         }
     }
 }
@@ -188,7 +180,7 @@ mod system {
         pub fn new() -> io::Result<Self> {
             Err(io::Error::new(
                 io::ErrorKind::Other,
-                "procinfo not supported on this operating system"
+                "procinfo not supported on this operating system",
             ))
         }
     }

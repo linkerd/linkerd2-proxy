@@ -12,9 +12,9 @@ pub mod profiles;
 pub mod retry;
 pub mod router;
 pub mod settings;
-pub mod upgrade;
 pub mod strip_header;
 pub mod timeout;
+pub mod upgrade;
 
 pub use self::client::Client;
 pub use self::glue::{ClientUsedTls, Error, HttpBody as Body, HyperServerSvc};

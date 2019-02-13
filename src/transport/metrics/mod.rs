@@ -5,16 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use metrics::{
-    latency,
-    Counter,
-    FmtLabels,
-    FmtMetric,
-    FmtMetrics,
-    Gauge,
-    Histogram,
-    Metric,
-};
+use metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric};
 
 use proxy;
 use svc;
@@ -162,13 +153,13 @@ impl Inner {
     }
 
     fn iter(&self) -> impl Iterator<Item = (&Key, MutexGuard<Metrics>)> {
-        self.0.iter()
+        self.0
+            .iter()
             .filter_map(|(k, l)| l.lock().ok().map(move |m| (k, m)))
     }
 
     /// Formats a metric across all instances of `Metrics` in the registry.
-    fn fmt_by<F, M>(&self, f: &mut fmt::Formatter, metric: Metric<M>, get_metric: F)
-        -> fmt::Result
+    fn fmt_by<F, M>(&self, f: &mut fmt::Formatter, metric: Metric<M>, get_metric: F) -> fmt::Result
     where
         F: Fn(&Metrics) -> &M,
         M: FmtMetric,
@@ -181,8 +172,12 @@ impl Inner {
     }
 
     /// Formats a metric across all instances of `EosMetrics` in the registry.
-    fn fmt_eos_by<F, M>(&self, f: &mut fmt::Formatter, metric: Metric<M>, get_metric: F)
-        -> fmt::Result
+    fn fmt_eos_by<F, M>(
+        &self,
+        f: &mut fmt::Formatter,
+        metric: Metric<M>,
+        get_metric: F,
+    ) -> fmt::Result
     where
         F: Fn(&EosMetrics) -> &M,
         M: FmtMetric,
@@ -204,7 +199,6 @@ impl Inner {
 // ===== impl Registry =====
 
 impl Registry {
-
     pub fn accept<I, M>(&self, direction: &'static str) -> LayerAccept<I, M>
     where
         I: AsyncRead + AsyncWrite,
@@ -254,7 +248,7 @@ impl<I, M> svc::Layer<proxy::Source, proxy::Source, M> for LayerAccept<I, M>
 where
     I: AsyncRead + AsyncWrite,
     M: svc::Stack<proxy::Source>,
-    M::Value: proxy::Accept<I>
+    M::Value: proxy::Accept<I>,
 {
     type Value = <StackAccept<I, M> as svc::Stack<proxy::Source>>::Value;
     type Error = <StackAccept<I, M> as svc::Stack<proxy::Source>>::Error;
@@ -290,7 +284,7 @@ impl<I, M> svc::Stack<proxy::Source> for StackAccept<I, M>
 where
     I: AsyncRead + AsyncWrite,
     M: svc::Stack<proxy::Source>,
-    M::Value: proxy::Accept<I>
+    M::Value: proxy::Accept<I>,
 {
     type Value = Accept<I, M::Value>;
     type Error = M::Error;
@@ -390,7 +384,6 @@ where
     }
 }
 
-
 impl<T, M> svc::Stack<T> for StackConnect<T, M>
 where
     T: Into<connect::Target> + Clone,
@@ -417,7 +410,6 @@ where
         Ok(Connect::new(inner, NewSensor(metrics)))
     }
 }
-
 
 // ===== impl Report =====
 
@@ -457,7 +449,6 @@ impl FmtMetrics for Report {
 // ===== impl Sensor =====
 
 impl Sensor {
-
     pub fn open(metrics: Option<Arc<Mutex<Metrics>>>) -> Self {
         if let Some(ref m) = metrics {
             if let Ok(mut m) = m.lock() {
@@ -521,7 +512,6 @@ impl NewSensor {
 // ===== impl Key =====
 
 impl Key {
-
     pub fn accept(direction: Direction, tls_status: tls::Status) -> Self {
         Self {
             peer: Peer::Src,
@@ -570,9 +560,7 @@ impl FmtLabels for Eos {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Eos::Clean => f.pad("errno=\"\""),
-            Eos::Error(errno) => {
-                write!(f, "errno=\"{}\"", errno)
-            }
+            Eos::Error(errno) => write!(f, "errno=\"{}\"", errno),
         }
     }
 }

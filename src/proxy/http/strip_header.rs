@@ -90,7 +90,7 @@ pub mod request {
 
     pub fn layer<H>(header: H) -> super::Layer<H, ReqHeader>
     where
-        H: AsHeaderName + Clone
+        H: AsHeaderName + Clone,
     {
         super::layer(header)
     }
@@ -128,7 +128,7 @@ pub mod response {
 
     pub fn layer<H>(header: H) -> super::Layer<H, ResHeader>
     where
-        H: AsHeaderName + Clone
+        H: AsHeaderName + Clone,
     {
         super::layer(header)
     }

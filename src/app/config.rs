@@ -11,10 +11,10 @@ use indexmap::IndexSet;
 use trust_dns_resolver::config::ResolverOpts;
 
 use addr;
-use dns;
 use convert::TryFrom;
+use dns;
 use transport::tls;
-use {Conditional, Addr};
+use {Addr, Conditional};
 
 // TODO:
 //
@@ -136,7 +136,7 @@ pub struct Listener {
 /// Errors produced when loading a `Config` struct.
 #[derive(Clone, Debug)]
 pub enum Error {
-    InvalidEnvVar
+    InvalidEnvVar,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -180,7 +180,7 @@ pub trait Strings {
 pub struct Env;
 
 pub struct TestEnv {
-    values: HashMap<&'static str, String>
+    values: HashMap<&'static str, String>,
 }
 
 // Environment variables to look at when loading the configuration
@@ -247,8 +247,10 @@ pub const ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT: &str =
 
 // These *disable* our protocol detection for connections whose SO_ORIGINAL_DST
 // has a port in the provided list.
-pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str = "LINKERD2_PROXY_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
-pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str = "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
+pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
+    "LINKERD2_PROXY_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
+pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
+    "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
 pub const ENV_TLS_TRUST_ANCHORS: &str = "LINKERD2_PROXY_TLS_TRUST_ANCHORS";
 pub const ENV_TLS_CERT: &str = "LINKERD2_PROXY_TLS_CERT";
@@ -294,10 +296,10 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 /// It's assumed that a typical proxy can serve inbound traffic for up to 100 pod-local
 /// HTTP services and may communicate with up to 10K external HTTP domains.
-const DEFAULT_INBOUND_ROUTER_CAPACITY:  usize = 100;
+const DEFAULT_INBOUND_ROUTER_CAPACITY: usize = 100;
 const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 100;
 
-const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE:  Duration = Duration::from_secs(60);
+const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 
 const DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT: usize = 100;
@@ -337,41 +339,80 @@ impl<'a> TryFrom<&'a Strings> for Config {
         // will log any errors so defer returning any errors until all of them
         // have been parsed.
         let outbound_listener_addr = parse_deprecated(
-            strings, ENV_OUTBOUND_LISTENER, DEPRECATED_ENV_PRIVATE_LISTENER, parse_addr);
+            strings,
+            ENV_OUTBOUND_LISTENER,
+            DEPRECATED_ENV_PRIVATE_LISTENER,
+            parse_addr,
+        );
         let inbound_listener_addr = parse_deprecated(
-            strings, ENV_INBOUND_LISTENER, DEPRECATED_ENV_PUBLIC_LISTENER, parse_addr);
+            strings,
+            ENV_INBOUND_LISTENER,
+            DEPRECATED_ENV_PUBLIC_LISTENER,
+            parse_addr,
+        );
         let control_listener_addr = parse(strings, ENV_CONTROL_LISTENER, parse_addr);
         let metrics_listener_addr = parse(strings, ENV_METRICS_LISTENER, parse_addr);
 
         let inbound_forward = parse_deprecated(
-            strings, ENV_INBOUND_FORWARD, DEPRECATED_ENV_PRIVATE_FORWARD, parse_addr);
+            strings,
+            ENV_INBOUND_FORWARD,
+            DEPRECATED_ENV_PRIVATE_FORWARD,
+            parse_addr,
+        );
 
         let inbound_connect_timeout = parse_deprecated(
-            strings, ENV_INBOUND_CONNECT_TIMEOUT, DEPRECATED_ENV_PRIVATE_CONNECT_TIMEOUT, parse_duration);
+            strings,
+            ENV_INBOUND_CONNECT_TIMEOUT,
+            DEPRECATED_ENV_PRIVATE_CONNECT_TIMEOUT,
+            parse_duration,
+        );
         let outbound_connect_timeout = parse_deprecated(
-            strings, ENV_OUTBOUND_CONNECT_TIMEOUT, DEPRECATED_ENV_PUBLIC_CONNECT_TIMEOUT, parse_duration);
+            strings,
+            ENV_OUTBOUND_CONNECT_TIMEOUT,
+            DEPRECATED_ENV_PUBLIC_CONNECT_TIMEOUT,
+            parse_duration,
+        );
 
         let inbound_accept_keepalive = parse(strings, ENV_INBOUND_ACCEPT_KEEPALIVE, parse_duration);
-        let outbound_accept_keepalive = parse(strings, ENV_OUTBOUND_ACCEPT_KEEPALIVE, parse_duration);
+        let outbound_accept_keepalive =
+            parse(strings, ENV_OUTBOUND_ACCEPT_KEEPALIVE, parse_duration);
 
-        let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
-        let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
+        let inbound_connect_keepalive =
+            parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
+        let outbound_connect_keepalive =
+            parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
 
-        let inbound_disable_ports = parse(strings, ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, parse_port_set);
-        let outbound_disable_ports = parse(strings, ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, parse_port_set);
+        let inbound_disable_ports = parse(
+            strings,
+            ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+            parse_port_set,
+        );
+        let outbound_disable_ports = parse(
+            strings,
+            ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+            parse_port_set,
+        );
 
         let inbound_router_capacity = parse(strings, ENV_INBOUND_ROUTER_CAPACITY, parse_number);
         let outbound_router_capacity = parse(strings, ENV_OUTBOUND_ROUTER_CAPACITY, parse_number);
 
-        let inbound_router_max_idle_age = parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
-        let outbound_router_max_idle_age = parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
+        let inbound_router_max_idle_age =
+            parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
+        let outbound_router_max_idle_age =
+            parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
 
-        let destination_concurrency_limit =
-            parse(strings, ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT, parse_number);
+        let destination_concurrency_limit = parse(
+            strings,
+            ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT,
+            parse_number,
+        );
         let destination_get_suffixes =
             parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
-        let destination_profile_suffixes =
-            parse(strings, ENV_DESTINATION_PROFILE_SUFFIXES, parse_dns_suffixes);
+        let destination_profile_suffixes = parse(
+            strings,
+            ENV_DESTINATION_PROFILE_SUFFIXES,
+            parse_dns_suffixes,
+        );
 
         let tls_trust_anchors = parse(strings, ENV_TLS_TRUST_ANCHORS, parse_path);
         let tls_end_entity_cert = parse(strings, ENV_TLS_CERT, parse_path);
@@ -386,8 +427,9 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
         let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
 
-        let dns_canonicalize_timeout = parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration)?
-            .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT);
+        let dns_canonicalize_timeout =
+            parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration)?
+                .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT);
 
         let pod_namespace = strings.get(ENV_POD_NAMESPACE).and_then(|maybe_value| {
             // There cannot be a default pod namespace, and the pod namespace is required.
@@ -418,15 +460,18 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let tls_controller_identity = tls_controller_identity?;
         let control_host_and_port = control_host_and_port?;
 
-        let tls_settings = match (tls_trust_anchors?,
-                                  tls_end_entity_cert?,
-                                  tls_private_key?,
-                                  tls_pod_identity_template?.as_ref())
-        {
-            (Some(trust_anchors),
-             Some(end_entity_cert),
-             Some(private_key),
-             Some(tls_pod_identity_template)) => {
+        let tls_settings = match (
+            tls_trust_anchors?,
+            tls_end_entity_cert?,
+            tls_private_key?,
+            tls_pod_identity_template?.as_ref(),
+        ) {
+            (
+                Some(trust_anchors),
+                Some(end_entity_cert),
+                Some(private_key),
+                Some(tls_pod_identity_template),
+            ) => {
                 let pod_identity =
                     tls_pod_identity_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
                 let pod_identity = tls::Identity::from_sni_hostname(pod_identity.as_bytes())
@@ -437,13 +482,14 @@ impl<'a> TryFrom<&'a Strings> for Config {
                 // that case.
                 let controller_identity = if let Some(identity) = &tls_controller_identity {
                     match &control_host_and_port {
-                        Some(hp) if hp.is_loopback() =>
-                            Conditional::None(tls::ReasonForNoIdentity::Loopback),
+                        Some(hp) if hp.is_loopback() => {
+                            Conditional::None(tls::ReasonForNoIdentity::Loopback)
+                        }
                         Some(_) => {
                             let identity = tls::Identity::from_sni_hostname(identity.as_bytes())
                                 .map_err(|_| Error::InvalidEnvVar)?; // Already logged.
                             Conditional::Some(identity)
-                        },
+                        }
                         None => Conditional::None(tls::ReasonForNoIdentity::NotConfigured),
                     }
                 } else {
@@ -457,27 +503,35 @@ impl<'a> TryFrom<&'a Strings> for Config {
                     pod_identity,
                     controller_identity,
                 }))
-            },
+            }
             (None, None, None, _) => Ok(Conditional::None(tls::ReasonForNoTls::Disabled)),
             (trust_anchors, end_entity_cert, private_key, pod_identity) => {
                 if trust_anchors.is_none() {
-                    error!("{} is not set; it is required when {} and {} are set.",
-                           ENV_TLS_TRUST_ANCHORS, ENV_TLS_CERT, ENV_TLS_PRIVATE_KEY);
+                    error!(
+                        "{} is not set; it is required when {} and {} are set.",
+                        ENV_TLS_TRUST_ANCHORS, ENV_TLS_CERT, ENV_TLS_PRIVATE_KEY
+                    );
                 }
                 if end_entity_cert.is_none() {
-                    error!("{} is not set; it is required when {} are set.",
-                           ENV_TLS_CERT, ENV_TLS_TRUST_ANCHORS);
+                    error!(
+                        "{} is not set; it is required when {} are set.",
+                        ENV_TLS_CERT, ENV_TLS_TRUST_ANCHORS
+                    );
                 }
                 if private_key.is_none() {
-                    error!("{} is not set; it is required when {} are set.",
-                           ENV_TLS_PRIVATE_KEY, ENV_TLS_TRUST_ANCHORS);
+                    error!(
+                        "{} is not set; it is required when {} are set.",
+                        ENV_TLS_PRIVATE_KEY, ENV_TLS_TRUST_ANCHORS
+                    );
                 }
                 if pod_identity.is_none() {
-                    error!("{} is not set; it is required when {} are set.",
-                           ENV_TLS_POD_IDENTITY, ENV_TLS_CERT);
+                    error!(
+                        "{} is not set; it is required when {} are set.",
+                        ENV_TLS_POD_IDENTITY, ENV_TLS_CERT
+                    );
                 }
                 Err(Error::InvalidEnvVar)
-            },
+            }
         }?;
 
         Ok(Config {
@@ -567,7 +621,7 @@ fn default_disable_ports_protocol_detection() -> IndexSet<u16> {
 fn parse_addr(s: &str) -> Result<SocketAddr, ParseError> {
     match parse_url(s)? {
         Addr::Socket(a) => Ok(a),
-        _ => Err(ParseError::HostIsNotAnIpAddress)
+        _ => Err(ParseError::HostIsNotAnIpAddress),
     }
 }
 
@@ -591,10 +645,11 @@ impl Strings for Env {
 impl TestEnv {
     pub fn new() -> Self {
         let mut values = HashMap::new();
-        values.insert(ENV_PROXY_ID, "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into());
-        Self {
-            values,
-        }
+        values.insert(
+            ENV_PROXY_ID,
+            "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into(),
+        );
+        Self { values }
     }
 
     pub fn put(&mut self, key: &'static str, value: String) {
@@ -610,18 +665,19 @@ impl Strings for TestEnv {
 
 // ===== Parsing =====
 
-fn parse_number<T>(s: &str) -> Result<T, ParseError> where T: FromStr {
+fn parse_number<T>(s: &str) -> Result<T, ParseError>
+where
+    T: FromStr,
+{
     s.parse().map_err(|_| ParseError::NotANumber)
 }
 
 fn parse_duration(s: &str) -> Result<Duration, ParseError> {
     use regex::Regex;
 
-    let re = Regex::new(r"^\s*(\d+)(ms|s|m|h|d)?\s*$")
-        .expect("duration regex");
+    let re = Regex::new(r"^\s*(\d+)(ms|s|m|h|d)?\s*$").expect("duration regex");
 
-    let cap = re.captures(s)
-        .ok_or(ParseError::NotADuration)?;
+    let cap = re.captures(s).ok_or(ParseError::NotADuration)?;
 
     let magnitude = parse_number(&cap[1])?;
     match cap.get(2).map(|m| m.as_str()) {
@@ -640,11 +696,14 @@ fn parse_path(s: &str) -> Result<PathBuf, ParseError> {
 }
 
 fn parse_url(s: &str) -> Result<Addr, ParseError> {
-    let url = s.parse::<http::Uri>().map_err(|_| ParseError::UrlError(UrlError::SyntaxError))?;
+    let url = s
+        .parse::<http::Uri>()
+        .map_err(|_| ParseError::UrlError(UrlError::SyntaxError))?;
     if url.scheme_part().map(|s| s.as_str()) != Some("tcp") {
         return Err(ParseError::UrlError(UrlError::UnsupportedScheme));
     }
-    let authority = url.authority_part()
+    let authority = url
+        .authority_part()
         .ok_or_else(|| ParseError::UrlError(UrlError::MissingAuthority))?;
 
     if url.path() != "/" {
@@ -667,7 +726,9 @@ fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
 }
 
 fn parse<T, Parse>(strings: &Strings, name: &str, parse: Parse) -> Result<Option<T>, Error>
-    where Parse: FnOnce(&str) -> Result<T, ParseError> {
+where
+    Parse: FnOnce(&str) -> Result<T, ParseError>,
+{
     match strings.get(name)? {
         Some(ref s) => {
             let r = parse(s).map_err(|parse_error| {
@@ -675,16 +736,20 @@ fn parse<T, Parse>(strings: &Strings, name: &str, parse: Parse) -> Result<Option
                 Error::InvalidEnvVar
             })?;
             Ok(Some(r))
-        },
+        }
         None => Ok(None),
     }
 }
 
-fn parse_deprecated<T, Parse>(strings: &Strings, name: &str, deprecated_name: &str, f: Parse)
-    -> Result<Option<T>, Error>
+fn parse_deprecated<T, Parse>(
+    strings: &Strings,
+    name: &str,
+    deprecated_name: &str,
+    f: Parse,
+) -> Result<Option<T>, Error>
 where
     Parse: Copy,
-    Parse: Fn(&str) -> Result<T, ParseError>
+    Parse: Fn(&str) -> Result<T, ParseError>,
 {
     match parse(strings, name, f)? {
         Some(v) => Ok(Some(v)),
@@ -696,7 +761,7 @@ where
             Ok(v)
         }
     }
- }
+}
 
 fn parse_dns_suffixes(list: &str) -> Result<Vec<dns::Suffix>, ParseError> {
     let mut suffixes = Vec::new();
@@ -774,7 +839,10 @@ mod tests {
 
     #[test]
     fn parse_duration_overflows_invalid() {
-        assert_eq!(parse_duration("123456789012345678901234567890ms"), Err(ParseError::NotANumber));
+        assert_eq!(
+            parse_duration("123456789012345678901234567890ms"),
+            Err(ParseError::NotANumber)
+        );
     }
 
     #[test]
@@ -807,8 +875,16 @@ mod tests {
         assert_eq!(p(""), Ok(vec![]), "empty string");
         assert_eq!(p(",,,"), Ok(vec![]), "empty list components are ignored");
         assert_eq!(p("."), Ok(vec![".".to_owned()]), "root is valid");
-        assert_eq!(p("a.b.c"), Ok(vec!["a.b.c".to_owned()]), "a name without trailing dot");
-        assert_eq!(p("a.b.c."), Ok(vec!["a.b.c.".to_owned()]), "a name with a trailing dot");
+        assert_eq!(
+            p("a.b.c"),
+            Ok(vec!["a.b.c".to_owned()]),
+            "a name without trailing dot"
+        );
+        assert_eq!(
+            p("a.b.c."),
+            Ok(vec!["a.b.c.".to_owned()]),
+            "a name with a trailing dot"
+        );
         assert_eq!(
             p(" a.b.c. , d.e.f. "),
             Ok(vec!["a.b.c.".to_owned(), "d.e.f.".to_owned()]),
@@ -824,5 +900,5 @@ mod tests {
             Ok(vec!["multi.case.name".to_owned()]),
             "names are coerced to lowercase"
         );
-     }
+    }
 }

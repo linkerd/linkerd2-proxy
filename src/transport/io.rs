@@ -5,8 +5,8 @@ use bytes::Buf;
 use futures::Poll;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use super::{AddrInfo, SetKeepalive};
 use self::internal::Io;
+use super::{AddrInfo, SetKeepalive};
 
 /// A public wrapper around a `Box<Io>`.
 ///
@@ -83,9 +83,9 @@ impl SetKeepalive for BoxedIo {
 }
 
 pub(super) mod internal {
+    use super::{AddrInfo, AsyncRead, AsyncWrite, Buf, Poll, SetKeepalive, Shutdown};
     use std::io;
     use tokio::net::TcpStream;
-    use super::{AddrInfo, AsyncRead, AsyncWrite, Buf, Poll, SetKeepalive, Shutdown};
 
     /// This trait is private, since it's purpose is for creating a dynamic
     /// trait object, but doing so without care can lead not getting vectored
@@ -174,7 +174,6 @@ mod tests {
             self.write_buf(&mut buf)
         }
     }
-
 
     #[test]
     fn boxed_io_uses_vectored_io() {

@@ -3,13 +3,16 @@ use std::fmt;
 use std::mem;
 use std::sync::Arc;
 
-use futures::{Future, Poll, future::{self, Either}};
+use futures::{
+    future::{self, Either},
+    Future, Poll,
+};
 use hyper::upgrade::OnUpgrade;
 use try_lock::TryLock;
 
+use super::{glue::HttpBody, h1};
 use drain;
 use proxy::tcp;
-use super::{h1, glue::HttpBody};
 use svc;
 use task::{BoxSendFuture, ErasedExecutor, Executor};
 
@@ -72,7 +75,6 @@ pub struct Service<S, E> {
     upgrade_executor: E,
 }
 
-
 // ===== impl Http11Upgrade =====
 
 impl Http11Upgrade {
@@ -114,7 +116,7 @@ impl Http11Upgrade {
                     .expect("only Half::Server touches server TryLock");
                 debug_assert!(lock.is_none());
                 *lock = Some(upgrade);
-            },
+            }
             Half::Client => {
                 let mut lock = self
                     .inner
@@ -147,21 +149,18 @@ impl Drop for Inner {
         if let (Some(server), Some(client)) = (server, client) {
             trace!("HTTP/1.1 upgrade has both halves");
 
-            let server_upgrade = server.map_err(|e| {
-                debug!("server HTTP upgrade error: {}", e)
-            });
+            let server_upgrade = server.map_err(|e| debug!("server HTTP upgrade error: {}", e));
 
-            let client_upgrade = client.map_err(|e| {
-                debug!("client HTTP upgrade error: {}", e)
-            });
+            let client_upgrade = client.map_err(|e| debug!("client HTTP upgrade error: {}", e));
 
-            let both_upgrades = server_upgrade
-                .join(client_upgrade)
-                .and_then(|(server_conn, client_conn)| {
-                    trace!("HTTP upgrade successful");
-                    tcp::Duplex::new(server_conn, client_conn)
-                        .map_err(|e| info!("tcp duplex error: {}", e))
-                });
+            let both_upgrades =
+                server_upgrade
+                    .join(client_upgrade)
+                    .and_then(|(server_conn, client_conn)| {
+                        trace!("HTTP upgrade successful");
+                        tcp::Duplex::new(server_conn, client_conn)
+                            .map_err(|e| info!("tcp duplex error: {}", e))
+                    });
 
             // There's nothing to do when drain is signaled, we just have to hope
             // the sockets finish soon. However, the drain signal still needs to
@@ -198,19 +197,13 @@ impl<S, E> Service<S, E> {
 
 impl<S, E, B> svc::Service<http::Request<HttpBody>> for Service<S, E>
 where
-    S: svc::Service<
-        http::Request<HttpBody>,
-        Response = http::Response<B>,
-    >,
+    S: svc::Service<http::Request<HttpBody>, Response = http::Response<B>>,
     E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
     B: Default,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = Either<
-        S::Future,
-        future::FutureResult<http::Response<B>, Self::Error>,
-    >;
+    type Future = Either<S::Future, future::FutureResult<http::Response<B>, Self::Error>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.service.poll_ready()

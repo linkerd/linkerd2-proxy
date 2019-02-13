@@ -19,8 +19,7 @@ pub trait Classify {
             Class = Self::Class,
             Error = Self::Error,
             ClassifyEos = Self::ClassifyEos,
-        >
-        + Clone
+        > + Clone
         + Send
         + Sync
         + 'static;

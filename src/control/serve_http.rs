@@ -1,5 +1,5 @@
 use futures::{future, Future};
-use hyper::{Body, server::conn::Http, service::Service};
+use hyper::{server::conn::Http, service::Service, Body};
 use tokio::executor::current_thread::TaskExecutor;
 
 use task;
@@ -34,7 +34,8 @@ where
                     .map_err(task::Error::into_io);
 
                 future::result(r)
-            }).map_err(move |err| error!("{} listener error: {}", ename, err))
+            })
+            .map_err(move |err| error!("{} listener error: {}", ename, err))
     };
 
     log.future(fut)

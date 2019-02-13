@@ -105,8 +105,7 @@ where
     type Scope = Arc<Mutex<RequestMetrics<C>>>;
 
     fn scoped(&self, target: T) -> Self::Scope {
-        self
-            .lock()
+        self.lock()
             .expect("metrics Registry lock")
             .by_target
             .entry(target)
@@ -120,8 +119,7 @@ where
     C: Hash + Eq,
 {
     fn incr_retry_skipped(&mut self, reason: RetrySkipped) {
-        self
-            .by_retry_skipped
+        self.by_retry_skipped
             .entry(reason)
             .or_insert_with(Counter::default)
             .incr();

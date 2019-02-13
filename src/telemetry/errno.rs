@@ -18,7 +18,7 @@ impl fmt::Display for Errno {
     }
 }
 
-#[cfg(not(target_os="windows"))]
+#[cfg(not(target_os = "windows"))]
 mod code {
     use std::fmt;
 
@@ -192,14 +192,14 @@ mod code {
     }
 }
 
-#[cfg(target_os="windows")]
+#[cfg(target_os = "windows")]
 mod code {
     use std::fmt;
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
     pub struct Code(i32);
 
-    #[cfg(target_os="windows")]
+    #[cfg(target_os = "windows")]
     impl From<i32> for Code {
         fn from(n: i32) -> Self {
             Errno(codes::Code(n))
