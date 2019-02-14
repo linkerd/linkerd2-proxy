@@ -5,6 +5,7 @@ use futures::{Poll, Stream};
 /// Combines two different `Stream`s yielding the same item and error
 /// types into a single type.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum EitherStream<A, B> {
     A(A),
     B(B),

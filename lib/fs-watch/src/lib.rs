@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate log;
-#[macro_use]
 extern crate futures;
 extern crate futures_watch;
 extern crate ring;
