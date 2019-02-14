@@ -1,9 +1,5 @@
 #[macro_use]
 extern crate log;
-#[cfg(target_os = "linux")]
-#[macro_use]
-extern crate futures;
-#[cfg(not(target_os = "linux"))]
 extern crate futures;
 extern crate futures_watch;
 extern crate ring;
@@ -237,7 +233,7 @@ pub mod inotify {
         type Error = io::Error;
         fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
             loop {
-                match try_ready!(self.stream.poll()) {
+                match futures::try_ready!(self.stream.poll()) {
                     Some(Event { mask, name, .. }) => {
                         if mask.contains(EventMask::IGNORED) {
                             // This event fires if we removed a watch. Poll the
