@@ -16,15 +16,9 @@ PKG = $(PKG_NAME).tar.gz
 
 SHASUM = shasum -a 256
 
-CARGO = cargo
-ifdef CARGO_VERBOSE
-	CARGO = cargo --verbose
-endif
-
+CARGO ?= cargo
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
-
 CARGO_TEST = $(CARGO) test --all --frozen $(RELEASE)
-
 CARGO_FMT = $(CARGO) fmt --all
 
 DOCKER = docker
@@ -33,13 +27,25 @@ ifdef DOCKER_TAG
 	DOCKER_BUILD = docker build -t $(DOCKER_TAG)
 endif
 
+RUSTCFLAGS ?=
+ifdef CARGO_DEBUG
+	RUSTCFLAGS += -C debuginfo=2
+endif
+
 $(TARGET_BIN): fetch
 	$(CARGO_BUILD)
 
 $(PKG_ROOT)/$(PKG): $(TARGET_BIN)
 	mkdir -p $(PKG_BASE)/bin
 	cp LICENSE $(PKG_BASE)
-	cp $(TARGET_BIN) $(PKG_BASE)/bin
+	cp $(TARGET_BIN) $(PKG_BASE)/bin/linkerd2-proxy
+	strip $(PKG_BASE)/bin/linkerd2-proxy
+ifdef CARGO_DEBUG
+	if which objcopy >/dev/null ; then \
+		objcopy $(TARGET_BIN) $(PKG_BASE)/linkerd2-proxy.obj ; \
+		chmod 644 $(PKG_BASE)/linkerd2-proxy.obj ; \
+	fi
+endif
 	cd $(PKG_ROOT) && \
 		tar -czvf $(PKG) $(PKG_NAME) && \
 		($(SHASUM) $(PKG) >$(PKG_NAME).txt) && \
