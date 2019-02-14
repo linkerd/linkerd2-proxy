@@ -1,5 +1,9 @@
 #[macro_use]
 extern crate log;
+#[cfg(target_os = "linux")]
+#[macro_use]
+extern crate futures;
+#[cfg(not(target_os = "linux"))]
 extern crate futures;
 extern crate futures_watch;
 extern crate ring;
@@ -17,6 +21,7 @@ use ring::digest::{self, Digest};
 
 use tokio_timer::{clock, Interval};
 
+#[cfg(target_os = "linux")]
 mod either_stream;
 
 /// Stream changes to the files at a group of paths.
