@@ -10,10 +10,11 @@ env:
 branches:
   only:
     - master
+    - identity/master
 
 jobs:
   include:
-    # On PRs and branches, quickly run tests in debug mode.
+    # On PRs, quickly run tests in debug mode.
     - if: type = pull_request
       install: rustup component add rustfmt
       script:
@@ -36,7 +37,7 @@ jobs:
       deploy:
         on:
           repo: linkerd/linkerd2-proxy
-          branch: master
+          all_branches: true
         skip_cleanup: true
         local-dir: target/release/package
         bucket: build.l5d.io
