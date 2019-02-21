@@ -112,7 +112,7 @@ pub mod router {
     pub struct ResponseFuture<B, M>
     where
         M: svc::Stack<Config>,
-        M::Value: svc::Service<http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>> + Clone,
     {
         inner: <Router<B, M> as svc::Service<http::Request<B>>>::Future,
     }
@@ -141,7 +141,7 @@ pub mod router {
     where
         T: HasConnect,
         M: svc::Stack<Config> + Clone,
-        M::Value: svc::Service<http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>> + Clone,
     {
         type Value = <Stack<B, M> as svc::Stack<T>>::Value;
         type Error = <Stack<B, M> as svc::Stack<T>>::Error;
@@ -162,7 +162,7 @@ pub mod router {
     where
         T: HasConnect,
         M: svc::Stack<Config> + Clone,
-        M::Value: svc::Service<http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>> + Clone,
     {
         type Value = Service<B, M>;
         type Error = M::Error;
@@ -206,7 +206,7 @@ pub mod router {
     impl<B, M> svc::Service<http::Request<B>> for Service<B, M>
     where
         M: svc::Stack<Config>,
-        M::Value: svc::Service<http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>> + Clone,
     {
         type Response = <Router<B, M> as svc::Service<http::Request<B>>>::Response;
         type Error = Error<<M::Value as svc::Service<http::Request<B>>>::Error, M::Error>;
@@ -232,7 +232,7 @@ pub mod router {
     impl<B, M> Future for ResponseFuture<B, M>
     where
         M: svc::Stack<Config>,
-        M::Value: svc::Service<http::Request<B>>,
+        M::Value: svc::Service<http::Request<B>> + Clone,
     {
         type Item = <Router<B, M> as svc::Service<http::Request<B>>>::Response;
         type Error = Error<<M::Value as svc::Service<http::Request<B>>>::Error, M::Error>;

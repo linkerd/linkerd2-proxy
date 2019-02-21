@@ -88,7 +88,7 @@ impl<Req, Rec, Stk, B> svc::Layer<Config, Rec::Target, Stk> for Layer<Req, Rec>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
-    Stk::Value: svc::Service<Req, Response = http::Response<B>>,
+    Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Stk::Value as svc::Service<Req>>::Error: error::Error,
     Stk::Error: fmt::Debug,
     B: Default + Send + 'static,
@@ -112,7 +112,7 @@ impl<Req, Rec, Stk, B> svc::Stack<Config> for Stack<Req, Rec, Stk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
-    Stk::Value: svc::Service<Req, Response = http::Response<B>>,
+    Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Stk::Value as svc::Service<Req>>::Error: error::Error,
     Stk::Error: fmt::Debug,
     B: Default + Send + 'static,
@@ -164,7 +164,7 @@ impl<Req, Rec, Stk, B> svc::Service<Req> for Service<Req, Rec, Stk>
 where
     Rec: Recognize<Req> + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Send + Sync + 'static,
-    Stk::Value: svc::Service<Req, Response = http::Response<B>>,
+    Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Stk::Value as svc::Service<Req>>::Error: error::Error,
     Stk::Error: fmt::Debug,
     B: Default + Send + 'static,
