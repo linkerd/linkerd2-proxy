@@ -328,6 +328,83 @@ macro_rules! generate_tests {
             assert_eq!(client.get("/"), "hello");
         }
 
+        mod remote_header {
+            use http::header::HeaderValue;
+            use super::super::*;
+
+            const REMOTE_IP_HEADER: &'static str = "l5d-remote-ip";
+            const FOO: &'static str = "0.0.0.0";
+            const BAR: &'static str = "127.0.0.1";
+
+            #[test]
+            fn outbound_should_strip() {
+                let _ = env_logger_init();
+                let header = HeaderValue::from_static(FOO);
+
+                let srv = $make_server().route_fn("/strip", |_req| {
+                    Response::builder().header(REMOTE_IP_HEADER, FOO).body(Default::default()).unwrap()
+                }).run();
+
+                let ctrl = controller::new().destination_and_close("disco.test.svc.cluster.local", srv.addr);
+                let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
+                let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+                let rsp = client.request(&mut client.request_builder("/strip"));
+
+                assert_eq!(rsp.status(), 200);
+                assert_ne!(rsp.headers().get(REMOTE_IP_HEADER), Some(&header));
+            }
+
+            #[test]
+            fn inbound_should_strip() {
+                let _ = env_logger_init();
+                let header = HeaderValue::from_static(FOO);
+
+                let srv = $make_server().route_fn("/strip", move |req| {
+                    assert_ne!(req.headers().get(REMOTE_IP_HEADER), Some(&header));
+                    Response::default()
+                }).run();
+
+                let proxy = proxy::new().inbound(srv).run();
+                let client = $make_client(proxy.inbound, "disco.test.svc.cluster.local");
+                let rsp = client.request(client.request_builder("/strip").header(REMOTE_IP_HEADER, FOO));
+
+                assert_eq!(rsp.status(), 200);
+            }
+
+            #[test]
+            fn outbound_should_set() {
+                let _ = env_logger_init();
+                let header = HeaderValue::from_static(BAR);
+
+                let srv = $make_server().route("/set", "hello").run();
+                let ctrl = controller::new().destination_and_close("disco.test.svc.cluster.local", srv.addr);
+                let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
+                let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+                let rsp = client.request(&mut client.request_builder("/set"));
+
+                assert_eq!(rsp.status(), 200);
+                assert_eq!(rsp.headers().get(REMOTE_IP_HEADER), Some(&header));
+            }
+
+            #[test]
+            fn inbound_should_set() {
+                let _ = env_logger_init();
+
+                let header = HeaderValue::from_static(BAR);
+
+                let srv = $make_server().route_fn("/set", move |req| {
+                    assert_eq!(req.headers().get(REMOTE_IP_HEADER), Some(&header));
+                    Response::default()
+                }).run();
+
+                let proxy = proxy::new().inbound(srv).run();
+                let client = $make_client(proxy.inbound, "disco.test.svc.cluster.local");
+                let rsp = client.request(&mut client.request_builder("/set"));
+
+                assert_eq!(rsp.status(), 200);
+            }
+        }
+
         mod override_header {
             use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
             use super::super::*;

@@ -422,3 +422,141 @@ pub mod server_id {
         }
     }
 }
+
+/// Adds `l5d-remote-ip` headers to http::Responses derived from the
+/// `remote` of a `Source`.
+pub mod remote_ip {
+    use std::marker::PhantomData;
+
+    use futures::{Future, Poll};
+    use http::{self, header::HeaderValue};
+
+    use super::Endpoint;
+    use svc;
+
+    #[derive(Debug)]
+    pub struct Layer<B>(PhantomData<fn() -> B>);
+
+    #[derive(Debug)]
+    pub struct Stack<M, B> {
+        inner: M,
+        _marker: PhantomData<fn() -> B>,
+    }
+
+    #[derive(Debug)]
+    pub struct Service<S, B> {
+        inner: S,
+        value: HeaderValue,
+        _marker: PhantomData<fn() -> B>,
+    }
+
+    pub struct ResponseFuture<F> {
+        inner: F,
+        value: HeaderValue,
+    }
+
+    pub fn layer<B>() -> Layer<B> {
+        Layer(PhantomData)
+    }
+
+    impl<B> Clone for Layer<B> {
+        fn clone(&self) -> Self {
+            Layer(PhantomData)
+        }
+    }
+
+    impl<M, B> svc::Layer<Endpoint, Endpoint, M> for Layer<B>
+    where
+        M: svc::Stack<Endpoint>,
+    {
+        type Value = <Stack<M, B> as svc::Stack<Endpoint>>::Value;
+        type Error = <Stack<M, B> as svc::Stack<Endpoint>>::Error;
+        type Stack = Stack<M, B>;
+
+        fn bind(&self, inner: M) -> Self::Stack {
+            Stack {
+                inner,
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    // === impl Stack ===
+
+    impl<M: Clone, B> Clone for Stack<M, B> {
+        fn clone(&self) -> Self {
+            Stack {
+                inner: self.inner.clone(),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<M, B> svc::Stack<Endpoint> for Stack<M, B>
+    where
+        M: svc::Stack<Endpoint>,
+    {
+        type Value = Service<M::Value, B>;
+        type Error = M::Error;
+
+        fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
+            let svc = self.inner.make(endpoint)?;
+            let value = HeaderValue::from_str(&endpoint.connect.addr.ip().to_string()).unwrap();
+
+            return Ok(Service {
+                inner: svc,
+                value,
+                _marker: PhantomData,
+            });
+        }
+    }
+
+    // === impl Service ===
+
+    impl<S: Clone, B> Clone for Service<S, B> {
+        fn clone(&self) -> Self {
+            Service {
+                inner: self.inner.clone(),
+                value: self.value.clone(),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<S, B, Req> svc::Service<Req> for Service<S, B>
+    where
+        S: svc::Service<Req, Response = http::Response<B>>,
+    {
+        type Response = S::Response;
+        type Error = S::Error;
+        type Future = ResponseFuture<S::Future>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, req: Req) -> Self::Future {
+            let fut = self.inner.call(req);
+
+            ResponseFuture {
+                inner: fut,
+                value: self.value.clone(),
+            }
+        }
+    }
+
+    impl<F, B> Future for ResponseFuture<F>
+    where
+        F: Future<Item = http::Response<B>>,
+    {
+        type Item = F::Item;
+        type Error = F::Error;
+
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            let mut res = try_ready!(self.inner.poll());
+            res.headers_mut()
+                .insert(super::super::L5D_REMOTE_IP, self.value.clone());
+            Ok(res.into())
+        }
+    }
+}

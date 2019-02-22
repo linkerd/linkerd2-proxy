@@ -302,7 +302,7 @@ where
 
             let outbound = {
                 use super::outbound::{
-                    discovery::Resolve, orig_proto_upgrade, server_id, Endpoint,
+                    discovery::Resolve, orig_proto_upgrade, remote_ip, server_id, Endpoint,
                 };
                 use proxy::{
                     canonicalize,
@@ -348,8 +348,10 @@ where
                 let endpoint_stack = client_stack
                     .push(buffer::layer(MAX_IN_FLIGHT))
                     .push(strip_header::response::layer(super::L5D_SERVER_ID))
+                    .push(strip_header::response::layer(super::L5D_REMOTE_IP))
                     .push(settings::router::layer::<Endpoint, _>())
                     .push(server_id::layer())
+                    .push(remote_ip::layer())
                     .push(orig_proto_upgrade::layer())
                     .push(tap_layer.clone())
                     .push(metrics::layer::<_, classify::Response>(
@@ -490,7 +492,7 @@ where
 
             let inbound = {
                 use super::inbound::{
-                    client_id, orig_proto_downgrade, rewrite_loopback_addr, Endpoint,
+                    client_id, orig_proto_downgrade, remote_ip, rewrite_loopback_addr, Endpoint,
                     RecognizeEndpoint,
                 };
 
@@ -609,9 +611,11 @@ where
                 let source_stack = dst_router
                     .push(orig_proto_downgrade::layer())
                     .push(insert_target::layer())
+                    .push(remote_ip::layer())
+                    .push(strip_header::request::layer(super::L5D_REMOTE_IP))
                     .push(client_id::layer())
-                    .push(strip_header::response::layer(super::L5D_SERVER_ID))
                     .push(strip_header::request::layer(super::L5D_CLIENT_ID))
+                    .push(strip_header::response::layer(super::L5D_SERVER_ID))
                     .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER));
 
                 // As the inbound proxy accepts connections, we don't do any
