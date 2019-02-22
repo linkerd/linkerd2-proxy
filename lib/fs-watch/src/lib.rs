@@ -177,14 +177,21 @@ impl PathAndHash {
 #[cfg(target_os = "linux")]
 pub mod inotify {
     extern crate inotify;
+    extern crate inotify_sys;
+    extern crate libc;
 
     use self::inotify::{Event, EventMask, EventStream, Inotify, WatchMask};
+    use self::inotify_sys as ffi;
+
     use futures::{Async, Poll, Stream};
-    use std::{io, path::PathBuf};
+    use std::{io, mem, path::PathBuf};
+
+    const EVENT_BUF_SZ: usize =
+        mem::size_of::<ffi::inotify_event>() + (libc::FILENAME_MAX as usize) + 1;
 
     pub struct WatchStream {
         inotify: Inotify,
-        stream: EventStream<[u8; 32]>,
+        stream: EventStream<Vec<u8>>,
         paths: Vec<PathBuf>,
     }
 
@@ -196,7 +203,7 @@ pub mod inotify {
     impl WatchStream {
         pub fn new(paths: Vec<PathBuf>) -> Result<Self, io::Error> {
             let mut inotify = Inotify::init()?;
-            let stream = inotify.event_stream([0; 32]);
+            let stream = inotify.event_stream(Vec::from(&[0; EVENT_BUF_SZ][..]));
 
             let mut watch_stream = WatchStream {
                 inotify,
@@ -811,5 +818,27 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn inotify_nonexistent_files_dont_file_delete_events() {
         Fixture::new().test_inotify(test_detects_delete_and_recreate)
+    }
+
+    const LONG: &str = "loooooooooooooooooooooooooooooooooooooooooooooooongboi";
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn polling_handles_a_really_long_filename() {
+        let mut fixture = Fixture::new();
+        let long = fixture.dir.path().join(LONG);
+        fixture.paths.push(long);
+
+        fixture.test_polling(test_detects_create)
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn inotify_handles_a_really_long_filename() {
+        let mut fixture = Fixture::new();
+        let long = fixture.dir.path().join(LONG);
+        fixture.paths.push(long);
+
+        fixture.test_inotify(test_detects_create)
     }
 }
