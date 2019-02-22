@@ -4,7 +4,10 @@ use futures::Stream;
 use http;
 use indexmap::IndexMap;
 use regex::Regex;
+use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_retry::budget::Budget;
@@ -38,9 +41,9 @@ pub trait CanGetDestination {
     fn get_destination(&self) -> Option<&NameAddr>;
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {
-    labels: Arc<IndexMap<String, String>>,
+    labels: Labels,
     response_classes: ResponseClasses,
     retries: Option<Retries>,
     timeout: Option<Duration>,
@@ -61,7 +64,8 @@ pub struct ResponseClass {
     match_: ResponseMatch,
 }
 
-pub type ResponseClasses = Arc<Vec<ResponseClass>>;
+#[derive(Clone, Default)]
+pub struct ResponseClasses(Arc<Vec<ResponseClass>>);
 
 #[derive(Clone, Debug)]
 pub enum ResponseMatch {
@@ -79,6 +83,9 @@ pub struct Retries {
     budget: Arc<Budget>,
 }
 
+#[derive(Clone, Default)]
+struct Labels(Arc<IndexMap<String, String>>);
+
 // === impl Route ===
 
 impl Route {
@@ -89,19 +96,19 @@ impl Route {
         let labels = {
             let mut pairs = label_iter.collect::<Vec<_>>();
             pairs.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
-            Arc::new(IndexMap::from_iter(pairs))
+            Labels(Arc::new(IndexMap::from_iter(pairs)))
         };
 
         Self {
             labels,
-            response_classes: response_classes.into(),
+            response_classes: ResponseClasses(response_classes.into()),
             retries: None,
             timeout: None,
         }
     }
 
     pub fn labels(&self) -> &Arc<IndexMap<String, String>> {
-        &self.labels
+        &self.labels.0
     }
 
     pub fn response_classes(&self) -> &ResponseClasses {
@@ -155,6 +162,36 @@ impl ResponseClass {
     }
 }
 
+// === impl ResponseClasses ===
+
+impl Deref for ResponseClasses {
+    type Target = [ResponseClass];
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl PartialEq for ResponseClasses {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for ResponseClasses {}
+
+impl Hash for ResponseClasses {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ref(&self.0) as *const _ as usize);
+    }
+}
+
+impl fmt::Debug for ResponseClasses {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 // === impl ResponseMatch ===
 
 impl ResponseMatch {
@@ -178,6 +215,42 @@ impl Retries {
     }
 }
 
+impl PartialEq for Retries {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.budget, &other.budget)
+    }
+}
+
+impl Eq for Retries {}
+
+impl Hash for Retries {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ref(&self.budget) as *const _ as usize);
+    }
+}
+
+// === impl Labels ===
+
+impl PartialEq for Labels {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Labels {}
+
+impl Hash for Labels {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ref(&self.0) as *const _ as usize);
+    }
+}
+
+impl fmt::Debug for Labels {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// A stack module that produces a Service that routes requests through alternate
 /// middleware configurations
 ///
@@ -189,9 +262,11 @@ impl Retries {
 /// before requests are dispatched. If an individual route wishes to apply
 /// backpressure, it must implement its own buffer/limit strategy.
 pub mod router {
+    extern crate linkerd2_router as rt;
+
     use futures::{Async, Poll, Stream};
     use http;
-    use std::{error, fmt};
+    use std::hash::Hash;
 
     use never::Never;
 
@@ -200,11 +275,11 @@ pub mod router {
 
     use super::*;
 
-    pub fn layer<T, G, M, R>(
+    pub fn layer<T, G, M, R, B>(
         suffixes: Vec<dns::Suffix>,
         get_routes: G,
         route_layer: R,
-    ) -> Layer<G, M, R>
+    ) -> Layer<G, M, R, B>
     where
         T: CanGetDestination + WithRoute + Clone,
         M: svc::Stack<T>,
@@ -225,56 +300,73 @@ pub mod router {
         }
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Layer<G, M, R = ()> {
+    #[derive(Debug)]
+    pub struct Layer<G, M, R, B> {
         get_routes: G,
         route_layer: R,
-        default_route: Route,
         suffixes: Vec<dns::Suffix>,
-        _p: ::std::marker::PhantomData<fn() -> M>,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct Stack<G, M, R = ()> {
-        inner: M,
-        get_routes: G,
-        route_layer: R,
+        /// This is saved into a field so that the same `Arc`s are used and
+        /// cloned, instead of calling `Route::default()` every time.
         default_route: Route,
-        suffixes: Vec<dns::Suffix>,
+        _p: ::std::marker::PhantomData<fn() -> (M, B)>,
     }
 
     #[derive(Debug)]
-    pub enum Error<D, R> {
-        Inner(D),
-        Route(R),
+    pub struct Stack<G, M, R, B> {
+        inner: M,
+        get_routes: G,
+        route_layer: R,
+        suffixes: Vec<dns::Suffix>,
+        default_route: Route,
+        _p: ::std::marker::PhantomData<fn(B)>,
     }
 
-    pub struct Service<G, T, R>
+    pub struct Service<G, T, R, B>
     where
-        T: WithRoute,
+        T: WithRoute + Clone,
+        T::Output: Eq + Hash,
         R: svc::Stack<T::Output>,
+        R::Value: svc::Service<http::Request<B>> + Clone,
     {
         target: T,
         stack: R,
         route_stream: Option<G>,
-        routes: Vec<(RequestMatch, R::Value)>,
-        default_route: R::Value,
+        router: Router<B, T, R>,
+        default_route: Route,
     }
 
-    impl<D: fmt::Display, R: fmt::Display> fmt::Display for Error<D, R> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            match self {
-                Error::Inner(e) => fmt::Display::fmt(&e, f),
-                Error::Route(e) => fmt::Display::fmt(&e, f),
+    type Router<B, T, M> = rt::Router<http::Request<B>, Recognize<T>, M>;
+
+    pub struct Recognize<T> {
+        target: T,
+        routes: Routes,
+        default_route: Route,
+    }
+
+    impl<B, T> rt::Recognize<http::Request<B>> for Recognize<T>
+    where
+        T: WithRoute + Clone,
+        T::Output: Eq + Hash,
+    {
+        type Target = T::Output;
+
+        fn recognize(&self, req: &http::Request<B>) -> Option<Self::Target> {
+            for (ref condition, ref route) in &self.routes {
+                if condition.is_match(&req) {
+                    trace!("using configured route: {:?}", condition);
+                    return Some(self.target.clone().with_route(route.clone()));
+                }
             }
+
+            trace!("using default route");
+            Some(self.target.clone().with_route(self.default_route.clone()))
         }
     }
 
-    impl<D: error::Error, R: error::Error> error::Error for Error<D, R> {}
-
-    impl<T, G, M, R> svc::Layer<T, T, M> for Layer<G, M, R>
+    impl<T, G, M, R, B> svc::Layer<T, T, M> for Layer<G, M, R, B>
     where
         T: CanGetDestination + WithRoute + Clone,
+        <T as WithRoute>::Output: Eq + Hash,
         G: GetRoutes + Clone,
         M: svc::Stack<T>,
         M::Value: Clone,
@@ -283,25 +375,46 @@ pub mod router {
                 <T as WithRoute>::Output,
                 svc::shared::Stack<M::Value>,
             > + Clone,
+        R::Stack: Clone,
+        <R::Stack as svc::Stack<<T as WithRoute>::Output>>::Value:
+            svc::Service<http::Request<B>> + Clone,
     {
-        type Value = <Stack<G, M, R> as svc::Stack<T>>::Value;
-        type Error = <Stack<G, M, R> as svc::Stack<T>>::Error;
-        type Stack = Stack<G, M, R>;
+        type Value = <Stack<G, M, R, B> as svc::Stack<T>>::Value;
+        type Error = <Stack<G, M, R, B> as svc::Stack<T>>::Error;
+        type Stack = Stack<G, M, R, B>;
 
         fn bind(&self, inner: M) -> Self::Stack {
             Stack {
                 inner,
                 get_routes: self.get_routes.clone(),
                 route_layer: self.route_layer.clone(),
-                default_route: self.default_route.clone(),
                 suffixes: self.suffixes.clone(),
+                default_route: self.default_route.clone(),
+                _p: ::std::marker::PhantomData,
             }
         }
     }
 
-    impl<T, G, M, R> svc::Stack<T> for Stack<G, M, R>
+    impl<G, M, R, B> Clone for Layer<G, M, R, B>
+    where
+        G: Clone,
+        R: Clone,
+    {
+        fn clone(&self) -> Self {
+            Layer {
+                suffixes: self.suffixes.clone(),
+                get_routes: self.get_routes.clone(),
+                route_layer: self.route_layer.clone(),
+                default_route: self.default_route.clone(),
+                _p: ::std::marker::PhantomData,
+            }
+        }
+    }
+
+    impl<T, G, M, R, B> svc::Stack<T> for Stack<G, M, R, B>
     where
         T: CanGetDestination + WithRoute + Clone,
+        <T as WithRoute>::Output: Eq + Hash,
         M: svc::Stack<T>,
         M::Value: Clone,
         G: GetRoutes,
@@ -310,18 +423,29 @@ pub mod router {
                 <T as WithRoute>::Output,
                 svc::shared::Stack<M::Value>,
             > + Clone,
+        R::Stack: Clone,
+        <R::Stack as svc::Stack<<T as WithRoute>::Output>>::Value:
+            svc::Service<http::Request<B>> + Clone,
     {
-        type Value = Service<G::Stream, T, R::Stack>;
-        type Error = Error<M::Error, R::Error>;
+        type Value = Service<G::Stream, T, R::Stack, B>;
+        type Error = M::Error;
 
         fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-            let inner = self.inner.make(&target).map_err(Error::Inner)?;
+            let inner = self.inner.make(&target)?;
             let stack = self.route_layer.bind(svc::shared::stack(inner));
 
-            let default_route = {
-                let t = target.clone().with_route(self.default_route.clone());
-                stack.make(&t).map_err(Error::Route)?
-            };
+            let router = Router::new(
+                Recognize {
+                    target: target.clone(),
+                    routes: Vec::new(),
+                    default_route: self.default_route.clone(),
+                },
+                stack.clone(),
+                // only need 1 for default_route at first
+                1,
+                // Doesn't matter, since we are guaranteed to have enough capacity.
+                Duration::from_secs(0),
+            );
 
             let route_stream = match target.get_destination() {
                 Some(ref dst) => {
@@ -343,27 +467,51 @@ pub mod router {
                 target: target.clone(),
                 stack,
                 route_stream,
-                default_route,
-                routes: Vec::new(),
+                router,
+                default_route: self.default_route.clone(),
             })
         }
     }
 
-    impl<G, T, R> Service<G, T, R>
+    impl<G, M, R, B> Clone for Stack<G, M, R, B>
+    where
+        G: Clone,
+        M: Clone,
+        R: Clone,
+    {
+        fn clone(&self) -> Self {
+            Stack {
+                inner: self.inner.clone(),
+                get_routes: self.get_routes.clone(),
+                route_layer: self.route_layer.clone(),
+                suffixes: self.suffixes.clone(),
+                default_route: self.default_route.clone(),
+                _p: ::std::marker::PhantomData,
+            }
+        }
+    }
+
+    impl<G, T, R, B> Service<G, T, R, B>
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
+        T::Output: Eq + Hash,
         R: svc::Stack<T::Output> + Clone,
+        R::Value: svc::Service<http::Request<B>> + Clone,
     {
-        fn update_routes(&mut self, mut routes: Routes) {
-            self.routes = Vec::with_capacity(routes.len());
-            for (req_match, route) in routes.drain(..) {
-                let target = self.target.clone().with_route(route.clone());
-                match self.stack.make(&target) {
-                    Ok(svc) => self.routes.push((req_match, svc)),
-                    Err(_) => error!("failed to build service for route: route={:?}", route),
-                }
-            }
+        fn update_routes(&mut self, routes: Routes) {
+            let slots = routes.len() + 1;
+            self.router = Router::new(
+                Recognize {
+                    target: self.target.clone(),
+                    routes,
+                    default_route: self.default_route.clone(),
+                },
+                self.stack.clone(),
+                slots,
+                // Doesn't matter, since we are guaranteed to have enough capacity.
+                Duration::from_secs(0),
+            );
         }
 
         fn poll_route_stream(&mut self) -> Option<Async<Option<Routes>>> {
@@ -373,16 +521,17 @@ pub mod router {
         }
     }
 
-    impl<G, T, R, B> svc::Service<http::Request<B>> for Service<G, T, R>
+    impl<G, T, Stk, B, Svc> svc::Service<http::Request<B>> for Service<G, T, Stk, B>
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
-        R: svc::Stack<T::Output> + Clone,
-        R::Value: svc::Service<http::Request<B>>,
+        T::Output: Eq + Hash,
+        Stk: svc::Stack<T::Output, Value = Svc> + Clone,
+        Svc: svc::Service<http::Request<B>> + Clone,
     {
-        type Response = <R::Value as svc::Service<http::Request<B>>>::Response;
-        type Error = <R::Value as svc::Service<http::Request<B>>>::Error;
-        type Future = <R::Value as svc::Service<http::Request<B>>>::Future;
+        type Response = Svc::Response;
+        type Error = rt::Error<Svc::Error, Stk::Error>;
+        type Future = rt::ResponseFuture<http::Request<B>, Svc, Stk::Error>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             while let Some(Async::Ready(Some(routes))) = self.poll_route_stream() {
@@ -393,15 +542,7 @@ pub mod router {
         }
 
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            for (ref condition, ref mut service) in &mut self.routes {
-                if condition.is_match(&req) {
-                    trace!("using configured route: {:?}", condition);
-                    return service.call(req);
-                }
-            }
-
-            trace!("using default route");
-            self.default_route.call(req)
+            self.router.call(req)
         }
     }
 }

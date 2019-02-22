@@ -19,7 +19,7 @@ pub enum Direction {
     Out,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Route {
     pub dst_addr: DstAddr,
     pub route: profiles::Route,
