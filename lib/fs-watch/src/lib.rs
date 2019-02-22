@@ -812,4 +812,26 @@ mod tests {
     fn inotify_nonexistent_files_dont_file_delete_events() {
         Fixture::new().test_inotify(test_detects_delete_and_recreate)
     }
+
+    const LONG: &str = "loooooooooooooooooooooooooooooooooooooooooooooooongboi";
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn polling_handles_a_really_long_filename() {
+        let mut fixture = Fixture::new();
+        let long = fixture.dir.path().join(LONG);
+        fixture.paths.push(long);
+
+        fixture.test_polling(test_detects_create)
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn inotify_handles_a_really_long_filename() {
+        let mut fixture = Fixture::new();
+        let long = fixture.dir.path().join(LONG);
+        fixture.paths.push(long);
+
+        fixture.test_inotify(test_detects_create)
+    }
 }
