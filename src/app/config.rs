@@ -453,12 +453,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
             tls_private_key?,
             tls_local_identity?.as_ref(),
         ) {
-            (
-                Some(trust_anchors),
-                Some(end_entity_cert),
-                Some(private_key),
-                Some(local_id),
-            ) => {
+            (Some(trust_anchors), Some(end_entity_cert), Some(private_key), Some(local_id)) => {
                 let local_identity = tls::Identity::from_sni_hostname(local_id.as_bytes())
                     .map_err(|_| Error::InvalidEnvVar)?; // Already logged.
 
