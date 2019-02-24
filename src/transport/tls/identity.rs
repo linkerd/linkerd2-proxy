@@ -13,9 +13,7 @@ impl Identity {
     ///
     /// In the event of an error, the error is logged, so no detailed error
     /// information is returned.
-    pub fn maybe_from_protobuf(
-        pb: api::destination::TlsIdentity,
-    ) -> Result<Option<Self>, ()> {
+    pub fn maybe_from_protobuf(pb: api::destination::TlsIdentity) -> Result<Option<Self>, ()> {
         use api::destination::tls_identity::Strategy;
         match pb.strategy {
             Some(Strategy::K8sPodIdentity(i)) => {

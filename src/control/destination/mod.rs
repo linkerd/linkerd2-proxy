@@ -117,13 +117,7 @@ where
 {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
-    let mut bg = Background::new(
-        rx,
-        dns_resolver,
-        suffixes,
-        concurrency_limit,
-        proxy_id,
-    );
+    let mut bg = Background::new(rx, dns_resolver, suffixes, concurrency_limit, proxy_id);
     let task = future::poll_fn(move || bg.poll_rpc(&mut client));
     (disco, task)
 }

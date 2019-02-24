@@ -78,9 +78,10 @@ where
                 Ok(Async::Ready(Some(update))) => match update.update {
                     Some(PbUpdate2::Add(a_set)) => {
                         let set_labels = a_set.metric_labels;
-                        let addrs = a_set.addrs.into_iter().filter_map(|pb| {
-                            pb_to_addr_meta(pb, &set_labels)
-                        });
+                        let addrs = a_set
+                            .addrs
+                            .into_iter()
+                            .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
                         self.add(auth, addrs)
                     }
                     Some(PbUpdate2::Remove(r_set)) => {
