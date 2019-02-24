@@ -94,7 +94,7 @@ where
                     .server
                     .as_ref()
                     .map(|tls_server_config| tls::ConnectionConfig {
-                        server_identity: settings.pod_identity.clone(),
+                        server_identity: settings.local_identity.clone(),
                         config: tls_server_config.clone(),
                     })
             });

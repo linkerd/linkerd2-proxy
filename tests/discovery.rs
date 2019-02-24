@@ -813,7 +813,7 @@ mod proxy_to_proxy {
         env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
         env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
         env.put(
-            app::config::ENV_TLS_POD_IDENTITY,
+            app::config::ENV_TLS_local_identITY,
             "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
         );
         env.put(app::config::ENV_CONTROLLER_NAMESPACE, "linkerd".to_string());

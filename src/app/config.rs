@@ -118,8 +118,6 @@ pub struct Config {
 
 #[derive(Clone, Debug)]
 pub struct Namespaces {
-    pub pod: String,
-
     /// `None` if TLS is disabled; otherwise must be `Some`.
     pub tls_controller: Option<String>,
 }
@@ -255,12 +253,10 @@ pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
 pub const ENV_TLS_TRUST_ANCHORS: &str = "LINKERD2_PROXY_TLS_TRUST_ANCHORS";
 pub const ENV_TLS_CERT: &str = "LINKERD2_PROXY_TLS_CERT";
 pub const ENV_TLS_PRIVATE_KEY: &str = "LINKERD2_PROXY_TLS_PRIVATE_KEY";
-pub const ENV_TLS_POD_IDENTITY: &str = "LINKERD2_PROXY_TLS_POD_IDENTITY";
+pub const ENV_TLS_LOCAL_IDENTITY: &str = "LINKERD2_PROXY_TLS_LOCAL_IDENTITY";
 pub const ENV_TLS_CONTROLLER_IDENTITY: &str = "LINKERD2_PROXY_TLS_CONTROLLER_IDENTITY";
 
 pub const ENV_CONTROLLER_NAMESPACE: &str = "LINKERD2_PROXY_CONTROLLER_NAMESPACE";
-pub const ENV_POD_NAMESPACE: &str = "LINKERD2_PROXY_POD_NAMESPACE";
-pub const VAR_POD_NAMESPACE: &str = "$LINKERD2_PROXY_POD_NAMESPACE";
 pub const ENV_PROXY_ID: &str = "LINKERD2_PROXY_ID";
 
 pub const ENV_CONTROL_URL: &str = "LINKERD2_PROXY_CONTROL_URL";
@@ -417,7 +413,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let tls_trust_anchors = parse(strings, ENV_TLS_TRUST_ANCHORS, parse_path);
         let tls_end_entity_cert = parse(strings, ENV_TLS_CERT, parse_path);
         let tls_private_key = parse(strings, ENV_TLS_PRIVATE_KEY, parse_path);
-        let tls_pod_identity_template = strings.get(ENV_TLS_POD_IDENTITY);
+        let tls_local_identity = strings.get(ENV_TLS_LOCAL_IDENTITY);
         let tls_controller_identity = strings.get(ENV_TLS_CONTROLLER_IDENTITY);
 
         let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
@@ -430,14 +426,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let dns_canonicalize_timeout =
             parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration)?
                 .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT);
-
-        let pod_namespace = strings.get(ENV_POD_NAMESPACE).and_then(|maybe_value| {
-            // There cannot be a default pod namespace, and the pod namespace is required.
-            maybe_value.ok_or_else(|| {
-                error!("{} is not set", ENV_POD_NAMESPACE);
-                Error::InvalidEnvVar
-            })
-        });
+;
         let controller_namespace = strings.get(ENV_CONTROLLER_NAMESPACE);
 
         // There is no default controller URL because a default would make it
@@ -450,12 +439,10 @@ impl<'a> TryFrom<&'a Strings> for Config {
             .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT);
 
         let namespaces = Namespaces {
-            pod: pod_namespace?,
             tls_controller: controller_namespace?,
         };
 
-        let proxy_id_template = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
-        let proxy_id = proxy_id_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
+        let proxy_id = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
 
         let tls_controller_identity = tls_controller_identity?;
         let control_host_and_port = control_host_and_port?;
@@ -464,17 +451,15 @@ impl<'a> TryFrom<&'a Strings> for Config {
             tls_trust_anchors?,
             tls_end_entity_cert?,
             tls_private_key?,
-            tls_pod_identity_template?.as_ref(),
+            tls_local_identity?.as_ref(),
         ) {
             (
                 Some(trust_anchors),
                 Some(end_entity_cert),
                 Some(private_key),
-                Some(tls_pod_identity_template),
+                Some(local_id),
             ) => {
-                let pod_identity =
-                    tls_pod_identity_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
-                let pod_identity = tls::Identity::from_sni_hostname(pod_identity.as_bytes())
+                let local_identity = tls::Identity::from_sni_hostname(local_id.as_bytes())
                     .map_err(|_| Error::InvalidEnvVar)?; // Already logged.
 
                 // Avoid setting the controller identity if it is going to be
@@ -500,12 +485,12 @@ impl<'a> TryFrom<&'a Strings> for Config {
                     trust_anchors,
                     end_entity_cert,
                     private_key,
-                    pod_identity,
+                    local_identity,
                     controller_identity,
                 }))
             }
             (None, None, None, _) => Ok(Conditional::None(tls::ReasonForNoTls::Disabled)),
-            (trust_anchors, end_entity_cert, private_key, pod_identity) => {
+            (trust_anchors, end_entity_cert, private_key, local_identity) => {
                 if trust_anchors.is_none() {
                     error!(
                         "{} is not set; it is required when {} and {} are set.",
@@ -524,10 +509,10 @@ impl<'a> TryFrom<&'a Strings> for Config {
                         ENV_TLS_PRIVATE_KEY, ENV_TLS_TRUST_ANCHORS
                     );
                 }
-                if pod_identity.is_none() {
+                if local_identity.is_none() {
                     error!(
                         "{} is not set; it is required when {} are set.",
-                        ENV_TLS_POD_IDENTITY, ENV_TLS_CERT
+                        ENV_TLS_LOCAL_IDENTITY, ENV_TLS_CERT
                     );
                 }
                 Err(Error::InvalidEnvVar)
