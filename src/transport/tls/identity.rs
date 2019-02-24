@@ -11,24 +11,14 @@ pub struct Identity(pub(super) Arc<DnsName>);
 impl Identity {
     /// Parses the given TLS identity, if provided.
     ///
-    /// `controller_namespace` will be None if TLS is disabled.
-    ///
     /// In the event of an error, the error is logged, so no detailed error
     /// information is returned.
     pub fn maybe_from_protobuf(
-        controller_namespace: Option<&str>,
         pb: api::destination::TlsIdentity,
     ) -> Result<Option<Self>, ()> {
         use api::destination::tls_identity::Strategy;
         match pb.strategy {
             Some(Strategy::K8sPodIdentity(i)) => {
-                // XXX: If we don't know the controller's namespace or we don't
-                // share the same controller then we won't be able to validate
-                // the certificate yet. TODO: Support cross-controller
-                // certificate validation and lock this down.
-                if controller_namespace != Some(i.controller_ns.as_ref()) {
-                    return Ok(None);
-                }
                 Self::from_sni_hostname(i.pod_identity.as_bytes()).map(Some)
             }
             None => Ok(None), // No TLS.

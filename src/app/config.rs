@@ -103,8 +103,6 @@ pub struct Config {
     /// Age after which metrics may be dropped.
     pub metrics_retain_idle: Duration,
 
-    pub namespaces: Namespaces,
-
     pub proxy_id: String,
 
     /// Optional minimum TTL for DNS lookups.
@@ -114,14 +112,6 @@ pub struct Config {
     pub dns_max_ttl: Option<Duration>,
 
     pub dns_canonicalize_timeout: Duration,
-}
-
-#[derive(Clone, Debug)]
-pub struct Namespaces {
-    pub pod: String,
-
-    /// `None` if TLS is disabled; otherwise must be `Some`.
-    pub tls_controller: Option<String>,
 }
 
 /// Configuration settings for binding a listener.
@@ -258,7 +248,6 @@ pub const ENV_TLS_PRIVATE_KEY: &str = "LINKERD2_PROXY_TLS_PRIVATE_KEY";
 pub const ENV_TLS_POD_IDENTITY: &str = "LINKERD2_PROXY_TLS_POD_IDENTITY";
 pub const ENV_TLS_CONTROLLER_IDENTITY: &str = "LINKERD2_PROXY_TLS_CONTROLLER_IDENTITY";
 
-pub const ENV_CONTROLLER_NAMESPACE: &str = "LINKERD2_PROXY_CONTROLLER_NAMESPACE";
 pub const ENV_POD_NAMESPACE: &str = "LINKERD2_PROXY_POD_NAMESPACE";
 pub const VAR_POD_NAMESPACE: &str = "$LINKERD2_PROXY_POD_NAMESPACE";
 pub const ENV_PROXY_ID: &str = "LINKERD2_PROXY_ID";
@@ -437,8 +426,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
                 error!("{} is not set", ENV_POD_NAMESPACE);
                 Error::InvalidEnvVar
             })
-        });
-        let controller_namespace = strings.get(ENV_CONTROLLER_NAMESPACE);
+        })?;
 
         // There is no default controller URL because a default would make it
         // too easy to connect to the wrong controller, which would be dangerous.
@@ -449,13 +437,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let control_connect_timeout = parse(strings, ENV_CONTROL_CONNECT_TIMEOUT, parse_duration)?
             .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT);
 
-        let namespaces = Namespaces {
-            pod: pod_namespace?,
-            tls_controller: controller_namespace?,
-        };
-
         let proxy_id_template = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
-        let proxy_id = proxy_id_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
+        let proxy_id = proxy_id_template.replace(VAR_POD_NAMESPACE, &pod_namespace);
 
         let tls_controller_identity = tls_controller_identity?;
         let control_host_and_port = control_host_and_port?;
@@ -473,7 +456,7 @@ impl<'a> TryFrom<&'a Strings> for Config {
                 Some(tls_pod_identity_template),
             ) => {
                 let pod_identity =
-                    tls_pod_identity_template.replace(VAR_POD_NAMESPACE, &namespaces.pod);
+                    tls_pod_identity_template.replace(VAR_POD_NAMESPACE, &pod_namespace);
                 let pod_identity = tls::Identity::from_sni_hostname(pod_identity.as_bytes())
                     .map_err(|_| Error::InvalidEnvVar)?; // Already logged.
 
@@ -598,8 +581,6 @@ impl<'a> TryFrom<&'a Strings> for Config {
             control_connect_timeout,
 
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
-
-            namespaces,
 
             proxy_id,
 

@@ -15,7 +15,6 @@ use api::destination::client::Destination;
 use api::destination::{GetDestination, Update as PbUpdate};
 
 use super::{ResolveRequest, Update};
-use app::config::Namespaces;
 use control::{
     cache::Exists,
     remote_stream::{Receiver, Remote},
@@ -67,7 +66,6 @@ where
 /// The configurationn necessary to create a new Destination service
 /// query.
 struct NewQuery {
-    namespaces: Namespaces,
     suffixes: Vec<dns::Suffix>,
     /// Used for counting the number of currently-active queries.
     ///
@@ -101,13 +99,12 @@ where
     pub(super) fn new(
         request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
         dns_resolver: dns::Resolver,
-        namespaces: Namespaces,
         suffixes: Vec<dns::Suffix>,
         concurrency_limit: usize,
         proxy_id: String,
     ) -> Self {
         Self {
-            new_query: NewQuery::new(namespaces, suffixes, concurrency_limit, proxy_id),
+            new_query: NewQuery::new(suffixes, concurrency_limit, proxy_id),
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -263,7 +260,7 @@ where
             let (new_query, found_by_destination_service) = match set.query.take() {
                 DestinationServiceQuery::Active(Remote::ConnectedOrConnecting { rx }) => {
                     let (new_query, found_by_destination_service) =
-                        set.poll_destination_service(auth, rx, self.new_query.tls_controller_ns());
+                        set.poll_destination_service(auth, rx);
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
@@ -305,13 +302,11 @@ where
 
 impl NewQuery {
     fn new(
-        namespaces: Namespaces,
         suffixes: Vec<dns::Suffix>,
         concurrency_limit: usize,
         proxy_id: String,
     ) -> Self {
         Self {
-            namespaces,
             suffixes,
             concurrency_limit,
             active_query_handle: Arc::new(()),
@@ -389,10 +384,6 @@ impl NewQuery {
             // None, but set the "needs query" flag to false.
             _ => DestinationServiceQuery::Inactive,
         }
-    }
-
-    fn tls_controller_ns(&self) -> Option<&str> {
-        self.namespaces.tls_controller.as_ref().map(String::as_ref)
     }
 }
 

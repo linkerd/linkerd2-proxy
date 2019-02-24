@@ -70,7 +70,6 @@ where
         &mut self,
         auth: &NameAddr,
         mut rx: UpdateRx<T>,
-        tls_controller_namespace: Option<&str>,
     ) -> (ActiveQuery<T>, Exists<()>) {
         let mut exists = Exists::Unknown;
 
@@ -80,7 +79,7 @@ where
                     Some(PbUpdate2::Add(a_set)) => {
                         let set_labels = a_set.metric_labels;
                         let addrs = a_set.addrs.into_iter().filter_map(|pb| {
-                            pb_to_addr_meta(pb, &set_labels, tls_controller_namespace)
+                            pb_to_addr_meta(pb, &set_labels)
                         });
                         self.add(auth, addrs)
                     }
@@ -281,7 +280,6 @@ where
 fn pb_to_addr_meta(
     pb: WeightedAddr,
     set_labels: &HashMap<String, String>,
-    tls_controller_namespace: Option<&str>,
 ) -> Option<(SocketAddr, Metadata)> {
     let addr = pb.addr.and_then(pb_to_sock_addr)?;
 
@@ -303,7 +301,7 @@ fn pb_to_addr_meta(
     let mut tls_identity =
         Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery);
     if let Some(pb) = pb.tls_identity {
-        match tls::Identity::maybe_from_protobuf(tls_controller_namespace, pb) {
+        match tls::Identity::maybe_from_protobuf(pb) {
             Ok(Some(identity)) => {
                 tls_identity = Conditional::Some(identity);
             }
