@@ -262,245 +262,47 @@ pub mod rewrite_loopback_addr {
 /// Adds `l5d-client-id` headers to http::Requests derived from the
 /// TlsIdentity of a `Source`.
 pub mod client_id {
-    use std::marker::PhantomData;
+    use http::header::HeaderValue;
 
-    use futures::Poll;
-    use http::{self, header::HeaderValue};
-
-    use proxy::server::Source;
-    use svc;
+    use proxy::{
+        http::add_header::{self, request::ReqHeader, Layer},
+        server::Source,
+    };
     use Conditional;
 
-    #[derive(Debug)]
-    pub struct Layer<B>(PhantomData<fn() -> B>);
-
-    #[derive(Debug)]
-    pub struct Stack<M, B> {
-        inner: M,
-        _marker: PhantomData<fn() -> B>,
-    }
-
-    #[derive(Debug)]
-    pub struct Service<S, B> {
-        inner: S,
-        value: HeaderValue,
-        _marker: PhantomData<fn() -> B>,
-    }
-
-    pub fn layer<B>() -> Layer<B> {
-        Layer(PhantomData)
-    }
-
-    impl<B> Clone for Layer<B> {
-        fn clone(&self) -> Self {
-            Layer(PhantomData)
-        }
-    }
-
-    impl<M, B> svc::Layer<Source, Source, M> for Layer<B>
-    where
-        M: svc::Stack<Source>,
-    {
-        type Value = <Stack<M, B> as svc::Stack<Source>>::Value;
-        type Error = <Stack<M, B> as svc::Stack<Source>>::Error;
-        type Stack = Stack<M, B>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack {
-                inner,
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    // === impl Stack ===
-
-    impl<M: Clone, B> Clone for Stack<M, B> {
-        fn clone(&self) -> Self {
-            Stack {
-                inner: self.inner.clone(),
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    impl<M, B> svc::Stack<Source> for Stack<M, B>
-    where
-        M: svc::Stack<Source>,
-    {
-        type Value = svc::Either<Service<M::Value, B>, M::Value>;
-        type Error = M::Error;
-
-        fn make(&self, source: &Source) -> Result<Self::Value, Self::Error> {
-            let svc = self.inner.make(source)?;
-
+    pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
+        add_header::request::layer(super::super::L5D_CLIENT_ID, |source: &Source| {
             if let Conditional::Some(ref id) = source.tls_peer {
-                match HeaderValue::from_str(id.as_ref()) {
+                return match HeaderValue::from_str(id.as_ref()) {
                     Ok(value) => {
                         debug!("l5d-client-id enabled for {:?}", source);
-                        return Ok(svc::Either::A(Service {
-                            inner: svc,
-                            value,
-                            _marker: PhantomData,
-                        }));
+                        Some(value)
                     }
                     Err(_err) => {
                         warn!("l5d-client-id identity header is invalid: {:?}", source);
+                        None
                     }
-                }
+                };
             }
 
-            trace!("l5d-client-id not enabled for {:?}", source);
-            Ok(svc::Either::B(svc))
-        }
-    }
-
-    // === impl Service ===
-
-    impl<S: Clone, B> Clone for Service<S, B> {
-        fn clone(&self) -> Self {
-            Service {
-                inner: self.inner.clone(),
-                value: self.value.clone(),
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    impl<S, B> svc::Service<http::Request<B>> for Service<S, B>
-    where
-        S: svc::Service<http::Request<B>>,
-    {
-        type Response = S::Response;
-        type Error = S::Error;
-        type Future = S::Future;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
-        }
-
-        fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-            req.headers_mut()
-                .insert(super::super::L5D_CLIENT_ID, self.value.clone());
-
-            self.inner.call(req)
-        }
+            None
+        })
     }
 }
 
 /// Adds `l5d-remote-ip` headers to http::Requests derived from the
 /// `remote` of a `Source`.
 pub mod remote_ip {
-    use std::marker::PhantomData;
+    use http::header::HeaderValue;
+    use proxy::{
+        http::add_header::{self, request::ReqHeader, Layer},
+        server::Source,
+    };
 
-    use futures::Poll;
-    use http::{self, header::HeaderValue};
-
-    use proxy::server::Source;
-    use svc;
-
-    #[derive(Debug)]
-    pub struct Layer<B>(PhantomData<fn() -> B>);
-
-    #[derive(Debug)]
-    pub struct Stack<M, B> {
-        inner: M,
-        _marker: PhantomData<fn() -> B>,
-    }
-
-    #[derive(Debug)]
-    pub struct Service<S, B> {
-        inner: S,
-        value: HeaderValue,
-        _marker: PhantomData<fn() -> B>,
-    }
-
-    pub fn layer<B>() -> Layer<B> {
-        Layer(PhantomData)
-    }
-
-    impl<B> Clone for Layer<B> {
-        fn clone(&self) -> Self {
-            Layer(PhantomData)
-        }
-    }
-
-    impl<M, B> svc::Layer<Source, Source, M> for Layer<B>
-    where
-        M: svc::Stack<Source>,
-    {
-        type Value = <Stack<M, B> as svc::Stack<Source>>::Value;
-        type Error = <Stack<M, B> as svc::Stack<Source>>::Error;
-        type Stack = Stack<M, B>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack {
-                inner,
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    // === impl Stack ===
-
-    impl<M: Clone, B> Clone for Stack<M, B> {
-        fn clone(&self) -> Self {
-            Stack {
-                inner: self.inner.clone(),
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    impl<M, B> svc::Stack<Source> for Stack<M, B>
-    where
-        M: svc::Stack<Source>,
-    {
-        type Value = Service<M::Value, B>;
-        type Error = M::Error;
-
-        fn make(&self, source: &Source) -> Result<Self::Value, Self::Error> {
-            let svc = self.inner.make(source)?;
-            let value = HeaderValue::from_str(&source.remote.ip().to_string()).unwrap();
-
-            return Ok(Service {
-                inner: svc,
-                value,
-                _marker: PhantomData,
-            });
-        }
-    }
-
-    // === impl Service ===
-
-    impl<S: Clone, B> Clone for Service<S, B> {
-        fn clone(&self) -> Self {
-            Service {
-                inner: self.inner.clone(),
-                value: self.value.clone(),
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    impl<S, B> svc::Service<http::Request<B>> for Service<S, B>
-    where
-        S: svc::Service<http::Request<B>>,
-    {
-        type Response = S::Response;
-        type Error = S::Error;
-        type Future = S::Future;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
-        }
-
-        fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-            req.headers_mut()
-                .insert(super::super::L5D_REMOTE_IP, self.value.clone());
-
-            self.inner.call(req)
-        }
+    pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
+        add_header::request::layer(super::super::L5D_REMOTE_IP, |source: &Source| {
+            HeaderValue::from_str(&source.remote.ip().to_string()).ok()
+        })
     }
 }
 
