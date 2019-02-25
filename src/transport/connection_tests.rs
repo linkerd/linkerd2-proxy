@@ -53,7 +53,7 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     let client_tls = tls::config_test_util::BAR_NS1.client(
         tls::config_test_util::BAR_NS1
             .to_settings()
-            .pod_identity
+            .local_identity
             .clone(),
     );
 

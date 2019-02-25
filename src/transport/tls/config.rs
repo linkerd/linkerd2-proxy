@@ -40,7 +40,7 @@ pub struct CommonSettings {
 
     /// The identity of the pod being proxied (as opposed to the psuedo-service
     /// exposed on the proxy's control port).
-    pub pod_identity: Identity,
+    pub local_identity: Identity,
 
     /// The identity of the controller, if given.
     pub controller_identity: Conditional<Identity, ReasonForNoIdentity>,
@@ -269,14 +269,14 @@ impl CommonConfig {
             .verify_server_cert(
                 &root_cert_store,
                 &cert_chain,
-                settings.pod_identity.as_dns_name_ref(),
+                settings.local_identity.as_dns_name_ref(),
                 &[],
             ) // No OCSP
             .map(|_| ())
             .map_err(|err| {
                 error!(
                     "validating certificate failed for {:?}: {}",
-                    settings.pod_identity, err
+                    settings.local_identity, err
                 );
                 Error::EndEntityCertIsNotValid(err)
             })?;
@@ -515,7 +515,7 @@ pub mod test_util {
         pub fn to_settings(&self) -> CommonSettings {
             let dir = PathBuf::from("src/transport/tls/testdata");
             CommonSettings {
-                pod_identity: Identity::from_sni_hostname(self.identity.as_bytes()).unwrap(),
+                local_identity: Identity::from_sni_hostname(self.identity.as_bytes()).unwrap(),
                 controller_identity: Conditional::None(ReasonForNoIdentity::NotConfigured),
                 trust_anchors: dir.join(self.trust_anchors),
                 end_entity_cert: dir.join(self.end_entity_cert),
@@ -554,7 +554,7 @@ pub mod test_util {
                 Conditional::None(_) => unreachable!(),
             };
             ConnectionConfig {
-                server_identity: settings.pod_identity,
+                server_identity: settings.local_identity,
                 config,
             }
         }

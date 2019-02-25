@@ -315,7 +315,7 @@ pub fn destination_add_labeled(
     }
 }
 
-pub fn destination_add_tls(addr: SocketAddr, pod: &str, controller_ns: &str) -> pb::Update {
+pub fn destination_add_tls(addr: SocketAddr, local_id: &str, controller_ns: &str) -> pb::Update {
     pb::Update {
         update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
             addrs: vec![pb::WeightedAddr {
@@ -326,7 +326,7 @@ pub fn destination_add_tls(addr: SocketAddr, pod: &str, controller_ns: &str) -> 
                 tls_identity: Some(pb::TlsIdentity {
                     strategy: Some(pb::tls_identity::Strategy::K8sPodIdentity(
                         pb::tls_identity::K8sPodIdentity {
-                            pod_identity: pod.into(),
+                            local_identity: local_id.into(),
                             controller_ns: controller_ns.into(),
                         },
                     )),

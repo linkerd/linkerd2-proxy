@@ -75,7 +75,7 @@ tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc", defaul
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060", default-features = false }
 
 # tls
-ring = "0.14"
+ring = "0.14.6"
 webpki = "0.19"
 rustls = "0.15"
 tokio-rustls = "0.9"

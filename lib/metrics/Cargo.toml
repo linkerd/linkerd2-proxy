@@ -17,4 +17,4 @@ indexmap = "1.0"
 log = "0.4"
 
 [dev-dependencies]
-quickcheck = { version = "0.6", default-features = false }
+quickcheck = { version = "0.8", default-features = false }
