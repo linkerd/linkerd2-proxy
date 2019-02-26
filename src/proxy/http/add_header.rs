@@ -68,6 +68,19 @@ where
     }
 }
 
+impl<H, T, R> fmt::Debug for Layer<H, T, R>
+where
+    H: fmt::Debug,
+    T: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Layer")
+            .field("header", &self.header)
+            .field("retrieve", &format_args!("{}", "..."))
+            .finish()
+    }
+}
+
 // === impl Stack ===
 
 impl<H, T, M, R> svc::Stack<T> for Stack<H, T, M, R>
@@ -93,6 +106,21 @@ where
 
         trace!("{:?} not enabled for {:?}", self.header, t);
         Ok(svc::Either::B(inner))
+    }
+}
+
+impl<H, T, M, R> fmt::Debug for Stack<H, T, M, R>
+where
+    H: fmt::Debug,
+    T: fmt::Debug,
+    M: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Stack")
+            .field("header", &self.header)
+            .field("retrieve", &format_args!("{}", "..."))
+            .field("inner", &self.inner)
+            .finish()
     }
 }
 
