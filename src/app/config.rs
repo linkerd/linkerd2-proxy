@@ -105,6 +105,9 @@ pub struct Config {
 
     pub namespaces: Namespaces,
 
+    /// This ID is passed to the Destination service so that it can return
+    /// different results depending on the identity of the proxy making the
+    /// call.
     pub proxy_id: String,
 
     /// Optional minimum TTL for DNS lookups.
@@ -644,12 +647,9 @@ impl Strings for Env {
 
 impl TestEnv {
     pub fn new() -> Self {
-        let mut values = HashMap::new();
-        values.insert(
-            ENV_PROXY_ID,
-            "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into(),
-        );
-        Self { values }
+        Self {
+            values: Default::default(),
+        }
     }
 
     pub fn put(&mut self, key: &'static str, value: String) {
