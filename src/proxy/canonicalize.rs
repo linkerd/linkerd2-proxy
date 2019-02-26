@@ -304,10 +304,10 @@ impl<M: fmt::Display, S: fmt::Display> fmt::Display for Error<M, S> {
 }
 
 impl<M: error::Error, S: error::Error> error::Error for Error<M, S> {
-    fn cause(&self) -> Option<&error::Error> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            Error::Stack(e) => e.cause(),
-            Error::Service(e) => e.cause(),
+            Error::Stack(e) => e.source(),
+            Error::Service(e) => e.source(),
         }
     }
 }

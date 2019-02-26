@@ -117,9 +117,9 @@ impl<M: fmt::Display, S> fmt::Display for Error<M, S> {
 }
 
 impl<M: error::Error, S> error::Error for Error<M, S> {
-    fn cause(&self) -> Option<&error::Error> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            Error::Stack(e) => e.cause(),
+            Error::Stack(e) => e.source(),
             Error::Spawn(_) => None,
         }
     }
