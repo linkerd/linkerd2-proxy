@@ -333,16 +333,16 @@ macro_rules! generate_tests {
             use super::super::*;
 
             const REMOTE_IP_HEADER: &'static str = "l5d-remote-ip";
-            const FOO: &'static str = "0.0.0.0";
-            const BAR: &'static str = "127.0.0.1";
+            const IP_1: &'static str = "0.0.0.0";
+            const IP_2: &'static str = "127.0.0.1";
 
             #[test]
             fn outbound_should_strip() {
                 let _ = env_logger_init();
-                let header = HeaderValue::from_static(FOO);
+                let header = HeaderValue::from_static(IP_1);
 
                 let srv = $make_server().route_fn("/strip", |_req| {
-                    Response::builder().header(REMOTE_IP_HEADER, FOO).body(Default::default()).unwrap()
+                    Response::builder().header(REMOTE_IP_HEADER, IP_1).body(Default::default()).unwrap()
                 }).run();
 
                 let ctrl = controller::new().destination_and_close("disco.test.svc.cluster.local", srv.addr);
@@ -357,7 +357,7 @@ macro_rules! generate_tests {
             #[test]
             fn inbound_should_strip() {
                 let _ = env_logger_init();
-                let header = HeaderValue::from_static(FOO);
+                let header = HeaderValue::from_static(IP_1);
 
                 let srv = $make_server().route_fn("/strip", move |req| {
                     assert_ne!(req.headers().get(REMOTE_IP_HEADER), Some(&header));
@@ -366,7 +366,7 @@ macro_rules! generate_tests {
 
                 let proxy = proxy::new().inbound(srv).run();
                 let client = $make_client(proxy.inbound, "disco.test.svc.cluster.local");
-                let rsp = client.request(client.request_builder("/strip").header(REMOTE_IP_HEADER, FOO));
+                let rsp = client.request(client.request_builder("/strip").header(REMOTE_IP_HEADER, IP_1));
 
                 assert_eq!(rsp.status(), 200);
             }
@@ -374,7 +374,7 @@ macro_rules! generate_tests {
             #[test]
             fn outbound_should_set() {
                 let _ = env_logger_init();
-                let header = HeaderValue::from_static(BAR);
+                let header = HeaderValue::from_static(IP_2);
 
                 let srv = $make_server().route("/set", "hello").run();
                 let ctrl = controller::new().destination_and_close("disco.test.svc.cluster.local", srv.addr);
@@ -390,7 +390,7 @@ macro_rules! generate_tests {
             fn inbound_should_set() {
                 let _ = env_logger_init();
 
-                let header = HeaderValue::from_static(BAR);
+                let header = HeaderValue::from_static(IP_2);
 
                 let srv = $make_server().route_fn("/set", move |req| {
                     assert_eq!(req.headers().get(REMOTE_IP_HEADER), Some(&header));

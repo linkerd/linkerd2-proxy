@@ -262,6 +262,7 @@ pub mod rewrite_loopback_addr {
 /// Adds `l5d-client-id` headers to http::Requests derived from the
 /// TlsIdentity of a `Source`.
 pub mod client_id {
+    use super::super::L5D_CLIENT_ID;
     use http::header::HeaderValue;
 
     use proxy::{
@@ -271,16 +272,15 @@ pub mod client_id {
     use Conditional;
 
     pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
-        add_header::request::layer(super::super::L5D_CLIENT_ID, |source: &Source| {
+        add_header::request::layer(L5D_CLIENT_ID, |source: &Source| {
             if let Conditional::Some(ref id) = source.tls_peer {
-                return match HeaderValue::from_str(id.as_ref()) {
+                match HeaderValue::from_str(id.as_ref()) {
                     Ok(value) => {
                         debug!("l5d-client-id enabled for {:?}", source);
-                        Some(value)
+                        return Some(value);
                     }
                     Err(_err) => {
                         warn!("l5d-client-id identity header is invalid: {:?}", source);
-                        None
                     }
                 };
             }
@@ -293,6 +293,8 @@ pub mod client_id {
 /// Adds `l5d-remote-ip` headers to http::Requests derived from the
 /// `remote` of a `Source`.
 pub mod remote_ip {
+    use super::super::L5D_REMOTE_IP;
+    use bytes::Bytes;
     use http::header::HeaderValue;
     use proxy::{
         http::add_header::{self, request::ReqHeader, Layer},
@@ -300,8 +302,8 @@ pub mod remote_ip {
     };
 
     pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
-        add_header::request::layer(super::super::L5D_REMOTE_IP, |source: &Source| {
-            HeaderValue::from_str(&source.remote.ip().to_string()).ok()
+        add_header::request::layer(L5D_REMOTE_IP, |source: &Source| {
+            HeaderValue::from_shared(Bytes::from(source.remote.ip().to_string())).ok()
         })
     }
 }

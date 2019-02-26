@@ -272,22 +272,22 @@ pub mod orig_proto_upgrade {
 /// Adds `l5d-server-id` headers to http::Responses derived from the
 /// TlsIdentity of an `Endpoint`.
 pub mod server_id {
+    use super::super::L5D_SERVER_ID;
     use super::Endpoint;
     use http::header::HeaderValue;
     use proxy::http::add_header::{self, response::ResHeader, Layer};
     use Conditional;
 
     pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
-        add_header::response::layer(super::super::L5D_SERVER_ID, |endpoint: &Endpoint| {
+        add_header::response::layer(L5D_SERVER_ID, |endpoint: &Endpoint| {
             if let Conditional::Some(id) = endpoint.connect.tls_server_identity() {
-                return match HeaderValue::from_str(id.as_ref()) {
+                match HeaderValue::from_str(id.as_ref()) {
                     Ok(value) => {
                         debug!("l5d-server-id enabled for {:?}", endpoint);
-                        Some(value)
+                        return Some(value);
                     }
                     Err(_err) => {
                         warn!("l5d-server-id identity header is invalid: {:?}", endpoint);
-                        None
                     }
                 };
             }
@@ -300,13 +300,15 @@ pub mod server_id {
 /// Adds `l5d-remote-ip` headers to http::Responses derived from the
 /// `remote` of a `Source`.
 pub mod remote_ip {
+    use super::super::L5D_REMOTE_IP;
     use super::Endpoint;
+    use bytes::Bytes;
     use http::header::HeaderValue;
     use proxy::http::add_header::{self, response::ResHeader, Layer};
 
     pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
-        add_header::response::layer(super::super::L5D_REMOTE_IP, |endpoint: &Endpoint| {
-            HeaderValue::from_str(&endpoint.connect.addr.ip().to_string()).ok()
+        add_header::response::layer(L5D_REMOTE_IP, |endpoint: &Endpoint| {
+            HeaderValue::from_shared(Bytes::from(endpoint.connect.addr.ip().to_string())).ok()
         })
     }
 }
