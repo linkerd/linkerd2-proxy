@@ -251,7 +251,7 @@ impl fmt::Display for Error {
 }
 
 impl StdError for Error {
-    fn cause(&self) -> Option<&StdError> {
-        self.0.cause()
+    fn source(&self) -> Option<&(StdError + 'static)> {
+        self.0.source()
     }
 }

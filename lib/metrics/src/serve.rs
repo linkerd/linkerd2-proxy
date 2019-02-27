@@ -113,7 +113,7 @@ impl fmt::Display for ServeError {
             f,
             "{}: {}",
             self.description(),
-            self.cause().expect("ServeError must have cause")
+            self.source().expect("ServeError must have source")
         )
     }
 }
@@ -126,10 +126,10 @@ impl Error for ServeError {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         match *self {
-            ServeError::Http(ref cause) => Some(cause),
-            ServeError::Io(ref cause) => Some(cause),
+            ServeError::Http(ref source) => Some(source),
+            ServeError::Io(ref source) => Some(source),
         }
     }
 }

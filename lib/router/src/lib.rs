@@ -262,10 +262,10 @@ where
 
 impl<T, U> error::Error for Error<T, U>
 where
-    T: error::Error,
-    U: error::Error,
+    T: error::Error + 'static,
+    U: error::Error + 'static,
 {
-    fn cause(&self) -> Option<&error::Error> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             Error::Inner(ref why) => Some(why),
             Error::Route(ref why) => Some(why),
