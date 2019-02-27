@@ -113,7 +113,7 @@ impl fmt::Display for ServeError {
             f,
             "{}: {}",
             self.description(),
-            self.source().expect("ServeError must have cause")
+            self.source().expect("ServeError must have source")
         )
     }
 }
