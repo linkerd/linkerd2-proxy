@@ -306,6 +306,7 @@ pub mod client {
     use std::marker::PhantomData;
     use std::net::SocketAddr;
 
+    use super::super::config::H2Config;
     use proxy::http;
     use svc;
     use transport::{connect, tls};

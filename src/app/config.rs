@@ -122,6 +122,8 @@ pub struct Config {
     pub dns_max_ttl: Option<Duration>,
 
     pub dns_canonicalize_timeout: Duration,
+
+    pub h2_settings: H2Config,
 }
 
 /// Configuration settings for binding a listener.
@@ -267,6 +269,12 @@ const ENV_DNS_MAX_TTL: &str = "LINKERD2_PROXY_DNS_MAX_TTL";
 /// The amount of time to wait for a DNS query to succeed before falling back to
 /// an uncanonicalized address.
 const ENV_DNS_CANONICALIZE_TIMEOUT: &str = "LINKERD2_PROXY_DNS_CANONICALIZE_TIMEOUT";
+
+/// Configure the stream or connection level flow control setting for HTTP2.
+///
+/// If unspecified, the default value of 65,535 is used.
+const ENV_INITIAL_STREAM_WINDOW_SIZE: &str = "LINKERD2_PROXY_INITIAL_STREAM_WINDOW_SIZE";
+const ENV_INITIAL_CONNECTION_WINDOW_SIZE: &str = "LINKERD2_PROXY_INITIAL_CONNECTION_WINDOW_SIZE";
 
 // Default values for various configuration fields
 const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";

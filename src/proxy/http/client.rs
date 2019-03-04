@@ -9,6 +9,7 @@ use super::glue::{Error, HttpBody, HyperConnect};
 use super::normalize_uri::ShouldNormalizeUri;
 use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{h1, h2, Settings};
+use app::config::H2Config;
 use svc::{self, stack_per_request::ShouldStackPerRequest};
 use transport::{connect, tls};
 
@@ -129,6 +130,7 @@ where
 {
     Layer {
         proxy_name,
+        h2_settings,
         _p: PhantomData,
     }
 }
@@ -140,6 +142,7 @@ where
     fn clone(&self) -> Self {
         Self {
             proxy_name: self.proxy_name,
+            h2_settings: self.h2_settings,
             _p: PhantomData,
         }
     }
@@ -163,6 +166,7 @@ where
         Stack {
             connect,
             proxy_name: self.proxy_name,
+            h2_settings: self.h2_settings,
             _p: PhantomData,
         }
     }
@@ -181,6 +185,7 @@ where
         Self {
             proxy_name: self.proxy_name,
             connect: self.connect.clone(),
+            h2_settings: self.h2_settings,
             _p: PhantomData,
         }
     }
@@ -205,7 +210,12 @@ where
         let executor = ::logging::Client::proxy(self.proxy_name, config.target.peer_addr())
             .with_settings(config.settings.clone())
             .executor();
-        Ok(Client::new(&config.settings, connect, executor))
+        Ok(Client::new(
+            &config.settings,
+            connect,
+            executor,
+            self.h2_settings,
+        ))
     }
 }
 
@@ -220,7 +230,7 @@ where
     B: hyper::body::Payload + 'static,
 {
     /// Create a new `Client`, bound to a specific protocol (HTTP/1 or HTTP/2).
-    pub fn new<E>(settings: &Settings, connect: C, executor: E) -> Self
+    pub fn new<E>(settings: &Settings, connect: C, executor: E, h2_settings: H2Config) -> Self
     where
         E: Executor + Clone,
         E: future::Executor<Box<Future<Item = (), Error = ()> + Send + 'static>>
@@ -243,7 +253,7 @@ where
                 }
             }
             Settings::Http2 => {
-                let h2 = h2::Connect::new(connect, executor);
+                let h2 = h2::Connect::new(connect, executor, h2_settings);
                 Client {
                     inner: ClientInner::Http2(h2),
                 }
