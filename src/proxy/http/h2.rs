@@ -9,7 +9,7 @@ use hyper::{
 };
 
 use super::{Body, ClientUsedTls, Error};
-use app::config::H2Config;
+use app::config::H2Settings;
 use svc;
 use task::{ArcExecutor, BoxSendFuture, Executor};
 use transport::{connect, tls::HasStatus as HasTlsStatus};
@@ -18,7 +18,7 @@ use transport::{connect, tls::HasStatus as HasTlsStatus};
 pub struct Connect<C, B> {
     connect: C,
     executor: ArcExecutor,
-    h2_settings: H2Config,
+    h2_settings: H2Settings,
     _marker: PhantomData<fn() -> B>,
 }
 
@@ -31,7 +31,7 @@ pub struct Connection<B> {
 pub struct ConnectFuture<C: connect::Connect, B> {
     executor: ArcExecutor,
     state: ConnectState<C, B>,
-    h2_settings: H2Config,
+    h2_settings: H2Settings,
 }
 
 enum ConnectState<C: connect::Connect, B> {
@@ -56,7 +56,7 @@ pub enum ConnectError<E> {
 // ===== impl Connect =====
 
 impl<C, B> Connect<C, B> {
-    pub fn new<E>(connect: C, executor: E, h2_settings: H2Config) -> Self
+    pub fn new<E>(connect: C, executor: E, h2_settings: H2Settings) -> Self
     where
         E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
     {
