@@ -574,6 +574,7 @@ dependencies = [
  "linkerd2-stack 0.1.0",
  "linkerd2-task 0.1.0",
  "linkerd2-timeout 0.1.0",
+ "linkerd2-tracing 0.1.0",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "procinfo 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -661,6 +662,17 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-timeout"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-stack 0.1.0",
+ "tokio-connect 0.1.0 (git+https://github.com/carllerche/tokio-connect)",
+ "tokio-timer 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-service 0.2.0 (git+https://github.com/tower-rs/tower)",
+]
+
+[[package]]
+name = "linkerd2-tracing"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",

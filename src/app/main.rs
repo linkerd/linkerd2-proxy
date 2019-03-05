@@ -322,6 +322,7 @@ where
                 // Establishes connections to remote peers (for both TCP
                 // forwarding and HTTP proxying).
                 let connect = connect::Stack::new()
+                    .push(svc::tracing::layer(String::from("outbound")))
                     .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                     .push(svc::timeout::layer(config.outbound_connect_timeout))
                     .push(transport_metrics.connect("outbound"));
@@ -465,7 +466,8 @@ where
                     .make(&router::Config::new("out addr", capacity, max_idle_age))
                     .map(shared::stack)
                     .expect("outbound addr router")
-                    .push(phantom_data::layer());
+                    .push(phantom_data::layer())
+                    .push(svc::tracing::layer(String::from("inbound")));
 
                 // Instantiates an HTTP service for each `Source` using the
                 // shared `addr_router`. The `Source` is stored in the request's

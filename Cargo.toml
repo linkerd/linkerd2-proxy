@@ -9,6 +9,7 @@ members = [
     "lib/stack",
     "lib/task",
     "lib/timeout",
+    "lib/tracing"
 ]
 
 [package]
@@ -32,6 +33,7 @@ linkerd2-router    = { path = "lib/router" }
 linkerd2-stack     = { path = "lib/stack" }
 linkerd2-task      = { path = "lib/task" }
 linkerd2-timeout   = { path = "lib/timeout" }
+linkerd2-tracing   = { path = "lib/tracing" }
 
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.6" }
 
@@ -100,7 +102,7 @@ tokio-current-thread = "0.1.4"
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.
 [profile.dev]
-debug = false
+debug = true
 [profile.test]
 debug = false
 

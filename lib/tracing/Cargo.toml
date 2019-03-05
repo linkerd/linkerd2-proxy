@@ -1,0 +1,11 @@
+[package]
+name = "linkerd2-tracing"
+version = "0.1.0"
+publish = false
+
+[dependencies]
+futures = "0.1"
+linkerd2-stack = { path = "../stack" }
+tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
+tokio-timer = "0.2.4"
+tower-service = { git = "https://github.com/tower-rs/tower" }
