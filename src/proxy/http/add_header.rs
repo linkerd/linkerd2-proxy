@@ -69,19 +69,6 @@ where
     }
 }
 
-impl<H, T, R> fmt::Debug for Layer<H, T, R>
-where
-    H: fmt::Debug,
-    T: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Layer")
-            .field("header", &self.header)
-            .field("get_header", &format_args!("{}", "..."))
-            .finish()
-    }
-}
-
 // === impl Stack ===
 
 impl<H, T, M, R> svc::Stack<T> for Stack<H, T, M, R>
