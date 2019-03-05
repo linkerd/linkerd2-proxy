@@ -4,15 +4,15 @@ use http::header::{AsHeaderName, HeaderValue};
 
 use svc;
 
-/// A function used to retrieve the value for a given Stack target.
-type RetrieveHeader<T> = fn(&T) -> Option<HeaderValue>;
+/// A function used to get the header value for a given Stack target.
+type GetHeader<T> = fn(&T) -> Option<HeaderValue>;
 
 /// Wraps HTTP `Service` `Stack<T>`s so that a given header is removed from a
 /// request or response.
 #[derive(Clone)]
 pub struct Layer<H, T, R> {
     header: H,
-    retrieve: RetrieveHeader<T>,
+    get_header: GetHeader<T>,
     _req_or_res: PhantomData<fn(R)>,
 }
 
@@ -21,7 +21,7 @@ pub struct Layer<H, T, R> {
 #[derive(Clone)]
 pub struct Stack<H, T, M, R> {
     header: H,
-    retrieve: RetrieveHeader<T>,
+    get_header: GetHeader<T>,
     inner: M,
     _req_or_res: PhantomData<fn(R)>,
 }
@@ -37,14 +37,14 @@ pub struct Service<H, S, R> {
 // === impl Layer ===
 
 /// Call `request::layer(header)` or `response::layer(header)`.
-fn layer<H, T, R>(header: H, retrieve: RetrieveHeader<T>) -> Layer<H, T, R>
+fn layer<H, T, R>(header: H, get_header: GetHeader<T>) -> Layer<H, T, R>
 where
     H: AsHeaderName + Clone,
     R: Clone,
 {
     Layer {
         header,
-        retrieve,
+        get_header,
         _req_or_res: PhantomData,
     }
 }
@@ -62,7 +62,7 @@ where
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             header: self.header.clone(),
-            retrieve: self.retrieve,
+            get_header: self.get_header,
             inner,
             _req_or_res: PhantomData,
         }
@@ -77,7 +77,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Layer")
             .field("header", &self.header)
-            .field("retrieve", &format_args!("{}", "..."))
+            .field("get_header", &format_args!("{}", "..."))
             .finish()
     }
 }
@@ -96,7 +96,7 @@ where
     fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
         let inner = self.inner.make(t)?;
 
-        if let Some(value) = (self.retrieve)(t) {
+        if let Some(value) = (self.get_header)(t) {
             return Ok(svc::Either::A(Service {
                 header: self.header.clone(),
                 value,
@@ -119,7 +119,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Stack")
             .field("header", &self.header)
-            .field("retrieve", &format_args!("{}", "..."))
+            .field("get_header", &format_args!("{}", "..."))
             .field("inner", &self.inner)
             .finish()
     }
@@ -132,14 +132,11 @@ pub mod request {
 
     use svc;
 
-    pub fn layer<H, T>(
-        header: H,
-        retrieve: super::RetrieveHeader<T>,
-    ) -> super::Layer<H, T, ReqHeader>
+    pub fn layer<H, T>(header: H, get_header: super::GetHeader<T>) -> super::Layer<H, T, ReqHeader>
     where
         H: AsHeaderName + Clone,
     {
-        super::layer(header, retrieve)
+        super::layer(header, get_header)
     }
 
     /// Marker type used to specify that the `Request` headers should be added.
@@ -174,14 +171,11 @@ pub mod response {
 
     use svc;
 
-    pub fn layer<H, T>(
-        header: H,
-        retrieve: super::RetrieveHeader<T>,
-    ) -> super::Layer<H, T, ResHeader>
+    pub fn layer<H, T>(header: H, get_header: super::GetHeader<T>) -> super::Layer<H, T, ResHeader>
     where
         H: AsHeaderName + Clone,
     {
-        super::layer(header, retrieve)
+        super::layer(header, get_header)
     }
 
     /// Marker type used to specify that the `Response` headers should be added.
