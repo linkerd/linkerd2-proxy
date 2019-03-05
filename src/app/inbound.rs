@@ -261,7 +261,7 @@ pub mod rewrite_loopback_addr {
 
 /// Adds `l5d-client-id` headers to http::Requests derived from the
 /// TlsIdentity of a `Source`.
-pub mod client_id {
+pub mod set_client_id_on_req {
     use super::super::L5D_CLIENT_ID;
     use http::header::HeaderValue;
 
@@ -292,7 +292,7 @@ pub mod client_id {
 
 /// Adds `l5d-remote-ip` headers to http::Requests derived from the
 /// `remote` of a `Source`.
-pub mod remote_ip {
+pub mod set_remote_ip_on_req {
     use super::super::L5D_REMOTE_IP;
     use bytes::Bytes;
     use http::header::HeaderValue;

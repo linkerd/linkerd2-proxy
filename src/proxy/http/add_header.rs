@@ -4,14 +4,15 @@ use http::header::{AsHeaderName, HeaderValue};
 
 use svc;
 
-type Ret<T> = fn(&T) -> Option<HeaderValue>;
+/// A function used to retrieve the value for a given Stack target.
+type RetrieveHeader<T> = fn(&T) -> Option<HeaderValue>;
 
 /// Wraps HTTP `Service` `Stack<T>`s so that a given header is removed from a
 /// request or response.
 #[derive(Clone)]
 pub struct Layer<H, T, R> {
     header: H,
-    retrieve: Ret<T>,
+    retrieve: RetrieveHeader<T>,
     _req_or_res: PhantomData<fn(R)>,
 }
 
@@ -20,7 +21,7 @@ pub struct Layer<H, T, R> {
 #[derive(Clone)]
 pub struct Stack<H, T, M, R> {
     header: H,
-    retrieve: Ret<T>,
+    retrieve: RetrieveHeader<T>,
     inner: M,
     _req_or_res: PhantomData<fn(R)>,
 }
@@ -36,7 +37,7 @@ pub struct Service<H, S, R> {
 // === impl Layer ===
 
 /// Call `request::layer(header)` or `response::layer(header)`.
-fn layer<H, T, R>(header: H, retrieve: Ret<T>) -> Layer<H, T, R>
+fn layer<H, T, R>(header: H, retrieve: RetrieveHeader<T>) -> Layer<H, T, R>
 where
     H: AsHeaderName + Clone,
     R: Clone,
@@ -131,7 +132,10 @@ pub mod request {
 
     use svc;
 
-    pub fn layer<H, T>(header: H, retrieve: super::Ret<T>) -> super::Layer<H, T, ReqHeader>
+    pub fn layer<H, T>(
+        header: H,
+        retrieve: super::RetrieveHeader<T>,
+    ) -> super::Layer<H, T, ReqHeader>
     where
         H: AsHeaderName + Clone,
     {
@@ -170,7 +174,10 @@ pub mod response {
 
     use svc;
 
-    pub fn layer<H, T>(header: H, retrieve: super::Ret<T>) -> super::Layer<H, T, ResHeader>
+    pub fn layer<H, T>(
+        header: H,
+        retrieve: super::RetrieveHeader<T>,
+    ) -> super::Layer<H, T, ResHeader>
     where
         H: AsHeaderName + Clone,
     {

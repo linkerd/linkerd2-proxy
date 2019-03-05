@@ -302,7 +302,8 @@ where
 
             let outbound = {
                 use super::outbound::{
-                    discovery::Resolve, orig_proto_upgrade, remote_ip, server_id, Endpoint,
+                    add_remote_ip_on_rsp, add_server_id_on_rsp, discovery::Resolve,
+                    orig_proto_upgrade, Endpoint,
                 };
                 use proxy::{
                     canonicalize,
@@ -350,8 +351,8 @@ where
                     .push(strip_header::response::layer(super::L5D_SERVER_ID))
                     .push(strip_header::response::layer(super::L5D_REMOTE_IP))
                     .push(settings::router::layer::<Endpoint, _>())
-                    .push(server_id::layer())
-                    .push(remote_ip::layer())
+                    .push(add_server_id_on_rsp::layer())
+                    .push(add_remote_ip_on_rsp::layer())
                     .push(orig_proto_upgrade::layer())
                     .push(tap_layer.clone())
                     .push(metrics::layer::<_, classify::Response>(
@@ -492,8 +493,8 @@ where
 
             let inbound = {
                 use super::inbound::{
-                    client_id, orig_proto_downgrade, remote_ip, rewrite_loopback_addr, Endpoint,
-                    RecognizeEndpoint,
+                    orig_proto_downgrade, rewrite_loopback_addr, set_client_id_on_req,
+                    set_remote_ip_on_req, Endpoint, RecognizeEndpoint,
                 };
 
                 let capacity = config.inbound_router_capacity;
@@ -611,9 +612,9 @@ where
                 let source_stack = dst_router
                     .push(orig_proto_downgrade::layer())
                     .push(insert_target::layer())
-                    .push(remote_ip::layer())
+                    .push(set_remote_ip_on_req::layer())
                     .push(strip_header::request::layer(super::L5D_REMOTE_IP))
-                    .push(client_id::layer())
+                    .push(set_client_id_on_req::layer())
                     .push(strip_header::request::layer(super::L5D_CLIENT_ID))
                     .push(strip_header::response::layer(super::L5D_SERVER_ID))
                     .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER));

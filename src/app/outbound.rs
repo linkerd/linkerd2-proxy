@@ -271,7 +271,7 @@ pub mod orig_proto_upgrade {
 
 /// Adds `l5d-server-id` headers to http::Responses derived from the
 /// TlsIdentity of an `Endpoint`.
-pub mod server_id {
+pub mod add_server_id_on_rsp {
     use super::super::L5D_SERVER_ID;
     use super::Endpoint;
     use http::header::HeaderValue;
@@ -299,7 +299,7 @@ pub mod server_id {
 
 /// Adds `l5d-remote-ip` headers to http::Responses derived from the
 /// `remote` of a `Source`.
-pub mod remote_ip {
+pub mod add_remote_ip_on_rsp {
     use super::super::L5D_REMOTE_IP;
     use super::Endpoint;
     use bytes::Bytes;
