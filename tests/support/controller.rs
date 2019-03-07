@@ -1,5 +1,3 @@
-#![cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
-
 use support::bytes::IntoBuf;
 use support::hyper::body::Payload;
 use support::*;
@@ -315,7 +313,7 @@ pub fn destination_add_labeled(
     }
 }
 
-pub fn destination_add_tls(addr: SocketAddr, local_id: &str, controller_ns: &str) -> pb::Update {
+pub fn destination_add_tls(addr: SocketAddr, local_id: &str) -> pb::Update {
     pb::Update {
         update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
             addrs: vec![pb::WeightedAddr {
@@ -326,8 +324,8 @@ pub fn destination_add_tls(addr: SocketAddr, local_id: &str, controller_ns: &str
                 tls_identity: Some(pb::TlsIdentity {
                     strategy: Some(pb::tls_identity::Strategy::K8sPodIdentity(
                         pb::tls_identity::K8sPodIdentity {
-                            local_identity: local_id.into(),
-                            controller_ns: controller_ns.into(),
+                            pod_identity: local_id.into(),
+                            ..Default::default()
                         },
                     )),
                 }),

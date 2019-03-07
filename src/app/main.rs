@@ -287,7 +287,6 @@ where
             let (resolver, resolver_bg) = control::destination::new(
                 controller.clone(),
                 dns_resolver.clone(),
-                config.namespaces.clone(),
                 config.destination_get_suffixes,
                 config.destination_concurrency_limit,
                 config.proxy_id.clone(),

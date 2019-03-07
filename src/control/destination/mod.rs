@@ -38,7 +38,6 @@ use transport::tls;
 pub mod background;
 
 use self::background::Background;
-use app::config::Namespaces;
 use {Conditional, NameAddr};
 
 /// A handle to request resolutions from the background discovery task.
@@ -107,7 +106,6 @@ pub enum ProtocolHint {
 pub fn new<T>(
     mut client: Option<T>,
     dns_resolver: dns::Resolver,
-    namespaces: Namespaces,
     suffixes: Vec<dns::Suffix>,
     concurrency_limit: usize,
     proxy_id: String,
@@ -122,7 +120,6 @@ where
     let mut bg = Background::new(
         rx,
         dns_resolver,
-        namespaces,
         suffixes,
         concurrency_limit,
         proxy_id,

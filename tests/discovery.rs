@@ -825,7 +825,6 @@ mod proxy_to_proxy {
             dst.send(controller::destination_add_tls(
                 in_proxy.inbound,
                 id,
-                "linkerd",
             ));
 
             let out_proxy = proxy::new()
@@ -890,11 +889,9 @@ mod proxy_to_proxy {
         env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
         env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
         env.put(
-            app::config::ENV_TLS_local_identITY,
+            app::config::ENV_TLS_LOCAL_IDENTITY,
             "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
         );
-        env.put(app::config::ENV_CONTROLLER_NAMESPACE, "linkerd".to_string());
-        env.put(app::config::ENV_POD_NAMESPACE, "ns1".to_string());
 
         env
     }
