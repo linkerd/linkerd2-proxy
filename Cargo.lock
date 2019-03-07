@@ -1579,7 +1579,7 @@ dependencies = [
 [[package]]
 name = "tower-grpc"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower-grpc#65f6c9ed21fbff10cb6bed0320434b1b4c3b69d3"
+source = "git+https://github.com/tower-rs/tower-grpc#3fd94dcfea06bc375d5de7b245ca091c7b71aca1"
 dependencies = [
  "base64 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1597,7 +1597,7 @@ dependencies = [
 [[package]]
 name = "tower-grpc-build"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower-grpc#65f6c9ed21fbff10cb6bed0320434b1b4c3b69d3"
+source = "git+https://github.com/tower-rs/tower-grpc#3fd94dcfea06bc375d5de7b245ca091c7b71aca1"
 dependencies = [
  "codegen 0.1.0 (git+https://github.com/carllerche/codegen)",
  "heck 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",

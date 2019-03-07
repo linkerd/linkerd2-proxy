@@ -130,9 +130,9 @@ where
 
 impl<E> error::Error for Error<E>
 where
-    E: error::Error,
+    E: error::Error + 'static,
 {
-    fn cause(&self) -> Option<&error::Error> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             Error::Error(ref err) => Some(err),
             Error::Timer(ref err) => Some(err),

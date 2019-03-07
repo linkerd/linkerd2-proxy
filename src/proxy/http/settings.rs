@@ -259,10 +259,10 @@ pub mod router {
     }
 
     impl<E: error::Error, M: error::Error> error::Error for Error<E, M> {
-        fn cause(&self) -> Option<&error::Error> {
+        fn source(&self) -> Option<&(dyn error::Error + 'static)> {
             match self {
-                Error::Service(e) => e.cause(),
-                Error::Stack(e) => e.cause(),
+                Error::Service(e) => e.source(),
+                Error::Stack(e) => e.source(),
             }
         }
     }

@@ -105,6 +105,9 @@ pub struct Config {
 
     pub namespaces: Namespaces,
 
+    /// This ID is passed to the Destination service so that it can return
+    /// different results depending on the identity of the proxy making the
+    /// call.
     pub proxy_id: String,
 
     /// Optional minimum TTL for DNS lookups.
@@ -293,7 +296,7 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 /// It's assumed that a typical proxy can serve inbound traffic for up to 100 pod-local
 /// HTTP services and may communicate with up to 10K external HTTP domains.
 const DEFAULT_INBOUND_ROUTER_CAPACITY: usize = 100;
-const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 100;
+const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 10000;
 
 const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
@@ -624,12 +627,9 @@ impl Strings for Env {
 
 impl TestEnv {
     pub fn new() -> Self {
-        let mut values = HashMap::new();
-        values.insert(
-            ENV_PROXY_ID,
-            "foo.deployment.default.linkerd-managed.linkerd.svc.cluster.local".into(),
-        );
-        Self { values }
+        Self {
+            values: Default::default(),
+        }
     }
 
     pub fn put(&mut self, key: &'static str, value: String) {

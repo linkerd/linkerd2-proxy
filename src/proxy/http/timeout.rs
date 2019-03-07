@@ -30,7 +30,7 @@ pub struct Stack<M> {
     inner: M,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Service<S>(Timeout<S>);
 
 /// A marker set in `http::Response::extensions` that *this* process triggered

@@ -81,10 +81,10 @@ impl<A: fmt::Display, B: fmt::Display> fmt::Display for Either<A, B> {
 }
 
 impl<A: error::Error, B: error::Error> error::Error for Either<A, B> {
-    fn cause(&self) -> Option<&error::Error> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            Either::A(a) => a.cause(),
-            Either::B(b) => b.cause(),
+            Either::A(a) => a.source(),
+            Either::B(b) => b.source(),
         }
     }
 }
