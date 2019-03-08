@@ -8,12 +8,14 @@ use std::{error, fmt};
 use tokio_connect::Connect;
 
 pub mod stack;
+mod span;
 
 /// A Tracing construct that wraps an underlying operation.
 #[derive(Debug, Clone)]
 pub struct Tracing<T> {
     inner: T,
-    name: String
+    name: String,
+    span: Option<span::Span>
 }
 
 /// An error representing a Tracing error.
@@ -27,8 +29,8 @@ pub enum Error<E> {
 
 impl<T> Tracing<T> {
     /// Construct a new `Tracing` wrapping `inner`.
-    pub fn new(inner: T, name: String) -> Self {
-        Tracing { inner, name }
+    pub fn new(inner: T, name: String, span: Option<span::Span>) -> Self {
+        Tracing { inner, name, span: span}
     }
 }
 
@@ -46,9 +48,11 @@ where
 
     fn call(&mut self, req: Req) -> Self::Future {
         let inner = self.inner.call(req);
+        let span: Option<span::Span> = span::SpanContext::new().span_from_request(String::from("spanName"), String::from("request_place_holder"));
         Tracing {
             inner,
-            name: self.name.clone()
+            name: self.name.clone(),
+            span: span
         }
     }
 }
@@ -63,9 +67,11 @@ where
 
     fn connect(&self) -> Self::Future {
         let inner = self.inner.connect();
+        let span: Option<span::Span> = span::SpanContext::new().span_from_request(String::from("spanName"), String::from("request_place_holder"));
         Tracing {
             inner,
-            name: self.name.clone()
+            name: self.name.clone(),
+            span: span
         }
     }
 }
@@ -80,12 +86,21 @@ where
         self.inner.poll().map(|value| {
             match value {
                 // close span on Ready
-                Async::Ready(_) => println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ready! {}", self.name.clone()),
-                Async::NotReady => println!("================================================== not ready {}", self.name.clone())
+                Async::Ready(_) => {
+                    if let Some(ref mut sampled_span) = self.span {
+                        sampled_span.finish_span();
+                    }
+                },
+                Async::NotReady => {
+
+                }
             }
             value
         }).map_err(|e| {
             // close span on error
+            if let Some(ref mut sampled_span) = self.span {
+                sampled_span.finish_span();
+            }
             Error::Error(e)
         })
     }
@@ -120,3 +135,5 @@ where
         }
     }
 }
+
+

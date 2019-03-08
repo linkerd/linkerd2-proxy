@@ -1,6 +1,8 @@
 use super::Tracing;
 use linkerd2_stack as svc;
 
+use span;
+
 /// Creates a layer that handles Tracing start and finish events
 ///
 /// The tracer layer is responsible for applying tracing
@@ -43,8 +45,8 @@ where
     type Error = M::Error;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        // create span here and pass to tracing instance?
+        let span: Option<span::Span> = span::SpanContext::new().span_from_request(String::from("spanName"), String::from("request_place_holder"));
         let inner = self.inner.make(target)?;
-        Ok(Tracing::new(inner, self.name.clone()))
+        Ok(Tracing::new(inner, self.name.clone(), span))
     }
 }
