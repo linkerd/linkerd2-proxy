@@ -166,9 +166,9 @@ where
         const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
         const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-        let control_host_and_port = config.control_host_and_port.clone();
+        let dst_addr = config.destination_addr.clone();
 
-        info!("using controller at {:?}", control_host_and_port);
+        info!("using destination service at {:?}", dst_addr);
         info!("routing on {:?}", outbound_listener.local_addr());
         info!(
             "proxying on {:?} to {:?}",
@@ -234,14 +234,11 @@ where
         let controller_fut = {
             use super::control;
 
-            let tls_server_identity = config
-                .tls_settings
-                .as_ref()
-                .and_then(|s| s.controller_identity.clone().map(|id| id));
+            let tls_server_identity = config.destination_identity.clone();
 
             // If the controller is on localhost, use the inbound keepalive.
             // If the controller is remote, use the outbound keepalive.
-            let keepalive = control_host_and_port.as_ref().and_then(|a| {
+            let keepalive = dst_addr.as_ref().and_then(|a| {
                 if a.is_loopback() {
                     config.inbound_connect_keepalive
                 } else {
@@ -269,7 +266,7 @@ where
             // spawn a task on an executor when `make` is called. This is done
             // lazily so that a default executor is available to spawn the
             // background buffering task.
-            future::lazy(move || match control_host_and_port {
+            future::lazy(move || match dst_addr {
                 None => Ok(None),
                 Some(addr) => stack
                     .make(&control::Config::new(addr, tls_server_identity))
@@ -289,7 +286,7 @@ where
                 dns_resolver.clone(),
                 config.destination_get_suffixes,
                 config.destination_concurrency_limit,
-                config.proxy_id.clone(),
+                config.destination_context.clone(),
             );
             resolver_bg_tx
                 .send(resolver_bg)
@@ -297,7 +294,7 @@ where
                 .expect("admin thread must receive resolver task");
 
             let profiles_client =
-                ProfilesClient::new(controller, Duration::from_secs(3), config.proxy_id);
+                ProfilesClient::new(controller, Duration::from_secs(3), config.destination_context);
 
             let outbound = {
                 use super::outbound::{

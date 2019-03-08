@@ -1,12 +1,10 @@
 use std::collections::HashMap;
-use std::env;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use http;
 use indexmap::IndexSet;
 use trust_dns_resolver::config::ResolverOpts;
 
@@ -15,10 +13,6 @@ use convert::TryFrom;
 use dns;
 use transport::tls;
 use {Addr, Conditional};
-
-// TODO:
-//
-// * Make struct fields private.
 
 /// Tracks all configuration settings for the process.
 #[derive(Debug)]
@@ -68,6 +62,32 @@ pub struct Config {
 
     pub outbound_router_max_idle_age: Duration,
 
+    /// Age after which metrics may be dropped.
+    pub metrics_retain_idle: Duration,
+
+    /// Time to wait when encountering errors talking to control plane before
+    /// a new connection.
+    pub control_backoff_delay: Duration,
+
+    /// The maximum amount of time to wait for a connection to the controller.
+    pub control_connect_timeout: Duration,
+
+    //
+    // Destination Config
+    //
+
+    /// Where to talk to the control plane.
+    ///
+    /// When set, DNS is only after the Destination service says that there is
+    /// no service with the given name. When not set, the Destination service
+    /// is completely bypassed for service discovery and DNS is always used.
+    ///
+    /// This is optional to allow the proxy to work without the controller for
+    /// experimental & testing purposes.
+    pub destination_addr: Option<Addr>,
+
+    pub destination_identity: tls::ConditionalIdentity,
+
     /// The maximum number of queries to the Destination service which may be
     /// active concurrently.
     pub destination_concurrency_limit: usize,
@@ -78,35 +98,17 @@ pub struct Config {
     /// Configured by `ENV_DESTINATION_PROFILE_SUFFIXES`.
     pub destination_profile_suffixes: Vec<dns::Suffix>,
 
-    pub tls_settings: Conditional<tls::CommonSettings, tls::ReasonForNoTls>,
+    /// This token is passed to the Destination service so that it can return
+    /// different results depending on the identity of the proxy making the
+    /// call.
+    pub destination_context: String,
+
+    //
+    // DNS Config
+    //
 
     /// The path to "/etc/resolv.conf"
     pub resolv_conf_path: PathBuf,
-
-    /// Where to talk to the control plane.
-    ///
-    /// When set, DNS is only after the Destination service says that there is
-    /// no service with the given name. When not set, the Destination service
-    /// is completely bypassed for service discovery and DNS is always used.
-    ///
-    /// This is optional to allow the proxy to work without the controller for
-    /// experimental & testing purposes.
-    pub control_host_and_port: Option<Addr>,
-
-    /// Time to wait when encountering errors talking to control plane before
-    /// a new connection.
-    pub control_backoff_delay: Duration,
-
-    /// The maximum amount of time to wait for a connection to the controller.
-    pub control_connect_timeout: Duration,
-
-    /// Age after which metrics may be dropped.
-    pub metrics_retain_idle: Duration,
-
-    /// This ID is passed to the Destination service so that it can return
-    /// different results depending on the identity of the proxy making the
-    /// call.
-    pub proxy_id: String,
 
     /// Optional minimum TTL for DNS lookups.
     pub dns_min_ttl: Option<Duration>,
@@ -130,6 +132,7 @@ pub struct Listener {
 #[derive(Clone, Debug)]
 pub enum Error {
     InvalidEnvVar,
+    InvalidIdentity(super::identity::Error),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -140,25 +143,9 @@ pub enum ParseError {
     NotANumber,
     HostIsNotAnIpAddress,
     NotUnicode,
-    UrlError(UrlError),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum UrlError {
-    /// The URl is syntactically invalid according to general URL parsing rules.
-    SyntaxError,
-
-    /// The URL has a scheme that isn't supported.
-    UnsupportedScheme,
-
-    /// The URL is missing the authority part.
-    MissingAuthority,
-
-    /// The URL is missing the authority part.
-    AuthorityError(addr::Error),
-
-    /// The URL contains a path component that isn't "/", which isn't allowed.
-    PathNotAllowed,
+    AddrError(addr::Error),
+    NameError,
+    InvalidTrustAnchors,
 }
 
 /// The strings used to build a configuration.
@@ -245,15 +232,14 @@ pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
 pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
-pub const ENV_TLS_TRUST_ANCHORS: &str = "LINKERD2_PROXY_TLS_TRUST_ANCHORS";
-pub const ENV_TLS_CERT: &str = "LINKERD2_PROXY_TLS_CERT";
-pub const ENV_TLS_PRIVATE_KEY: &str = "LINKERD2_PROXY_TLS_PRIVATE_KEY";
-pub const ENV_TLS_LOCAL_IDENTITY: &str = "LINKERD2_PROXY_TLS_LOCAL_IDENTITY";
-pub const ENV_TLS_CONTROLLER_IDENTITY: &str = "LINKERD2_PROXY_TLS_CONTROLLER_IDENTITY";
+pub const ENV_IDENTITY_END_ENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_END_ENTITY_DIR";
+pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
+pub const ENV_IDENTITY_LOCAL_IDENTITY: &str = "LINKERD2_PROXY_LOCAL_IDENTITY";
 
-pub const ENV_PROXY_ID: &str = "LINKERD2_PROXY_ID";
+pub const ENV_DESTINATION_ADDR: &str = "LINKERD2_PROXY_DESTINATION_ADDR";
+pub const ENV_DESTINATION_CONTEXT_TOKEN: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT_TOKEN";
+pub const ENV_DESTINATION_IDENTITY: &str = "LINKERD2_PROXY_DESTINATION_IDENTITY";
 
-pub const ENV_CONTROL_URL: &str = "LINKERD2_PROXY_CONTROL_URL";
 pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
@@ -325,43 +311,16 @@ impl<'a> TryFrom<&'a Strings> for Config {
     type Err = Error;
     /// Load a `Config` by reading ENV variables.
     fn try_from(strings: &Strings) -> Result<Self, Self::Err> {
-        // Parse all the environment variables. `env_var` and `env_var_parse`
-        // will log any errors so defer returning any errors until all of them
-        // have been parsed.
-        let outbound_listener_addr = parse_deprecated(
-            strings,
-            ENV_OUTBOUND_LISTENER,
-            DEPRECATED_ENV_PRIVATE_LISTENER,
-            parse_addr,
-        );
-        let inbound_listener_addr = parse_deprecated(
-            strings,
-            ENV_INBOUND_LISTENER,
-            DEPRECATED_ENV_PUBLIC_LISTENER,
-            parse_addr,
-        );
-        let control_listener_addr = parse(strings, ENV_CONTROL_LISTENER, parse_addr);
-        let metrics_listener_addr = parse(strings, ENV_METRICS_LISTENER, parse_addr);
+        // Parse all the environment variables. `parse` will log any errors so
+        // defer returning any errors until all of them have been parsed.
+        let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTENER, parse_socket_addr);
+        let inbound_listener_addr = parse(strings, ENV_INBOUND_LISTENER, parse_socket_addr);
+        let control_listener_addr = parse(strings, ENV_CONTROL_LISTENER, parse_socket_addr);
+        let metrics_listener_addr = parse(strings, ENV_METRICS_LISTENER, parse_socket_addr);
+        let inbound_forward = parse(strings, ENV_INBOUND_FORWARD, parse_socket_addr);
 
-        let inbound_forward = parse_deprecated(
-            strings,
-            ENV_INBOUND_FORWARD,
-            DEPRECATED_ENV_PRIVATE_FORWARD,
-            parse_addr,
-        );
-
-        let inbound_connect_timeout = parse_deprecated(
-            strings,
-            ENV_INBOUND_CONNECT_TIMEOUT,
-            DEPRECATED_ENV_PRIVATE_CONNECT_TIMEOUT,
-            parse_duration,
-        );
-        let outbound_connect_timeout = parse_deprecated(
-            strings,
-            ENV_OUTBOUND_CONNECT_TIMEOUT,
-            DEPRECATED_ENV_PUBLIC_CONNECT_TIMEOUT,
-            parse_duration,
-        );
+        let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
+        let outbound_connect_timeout = parse(strings, ENV_OUTBOUND_CONNECT_TIMEOUT, parse_duration);
 
         let inbound_accept_keepalive = parse(strings, ENV_INBOUND_ACCEPT_KEEPALIVE, parse_duration);
         let outbound_accept_keepalive =
@@ -391,25 +350,6 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let outbound_router_max_idle_age =
             parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
 
-        let destination_concurrency_limit = parse(
-            strings,
-            ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT,
-            parse_number,
-        );
-        let destination_get_suffixes =
-            parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
-        let destination_profile_suffixes = parse(
-            strings,
-            ENV_DESTINATION_PROFILE_SUFFIXES,
-            parse_dns_suffixes,
-        );
-
-        let tls_trust_anchors = parse(strings, ENV_TLS_TRUST_ANCHORS, parse_path);
-        let tls_end_entity_cert = parse(strings, ENV_TLS_CERT, parse_path);
-        let tls_private_key = parse(strings, ENV_TLS_PRIVATE_KEY, parse_path);
-        let tls_local_identity = strings.get(ENV_TLS_LOCAL_IDENTITY);
-        let tls_controller_identity = strings.get(ENV_TLS_CONTROLLER_IDENTITY);
-
         let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
 
         let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
@@ -421,103 +361,93 @@ impl<'a> TryFrom<&'a Strings> for Config {
             parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration)?
                 .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT);
 
-        // There is no default controller URL because a default would make it
-        // too easy to connect to the wrong controller, which would be dangerous.
-        let control_host_and_port = parse(strings, ENV_CONTROL_URL, parse_url);
-
         let control_backoff_delay = parse(strings, ENV_CONTROL_BACKOFF_DELAY, parse_duration)?
             .unwrap_or(DEFAULT_CONTROL_BACKOFF_DELAY);
         let control_connect_timeout = parse(strings, ENV_CONTROL_CONNECT_TIMEOUT, parse_duration)?
             .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT);
 
-        let proxy_id = strings.get(ENV_PROXY_ID)?.unwrap_or(String::new());
-
-        let tls_controller_identity = tls_controller_identity?;
-        let control_host_and_port = control_host_and_port?;
-
-        let tls_settings = match (
-            tls_trust_anchors?,
-            tls_end_entity_cert?,
-            tls_private_key?,
-            tls_local_identity?.as_ref(),
+        let identity_config = super::identity::Config::parse(strings)
+            id_trust_anchors,
+            id_end_entity_dir,
+            local_id.as_ref(),
         ) {
-            (Some(trust_anchors), Some(end_entity_cert), Some(private_key), Some(local_id)) => {
-                let local_identity = tls::Identity::from_sni_hostname(local_id.as_bytes())
-                    .map_err(|_| Error::InvalidEnvVar)?; // Already logged.
-
-                // Avoid setting the controller identity if it is going to be
-                // a loopback connection since TLS isn't needed or supported in
-                // that case.
-                let controller_identity = if let Some(identity) = &tls_controller_identity {
-                    match &control_host_and_port {
-                        Some(hp) if hp.is_loopback() => {
-                            Conditional::None(tls::ReasonForNoIdentity::Loopback)
-                        }
-                        Some(_) => {
-                            let identity = tls::Identity::from_sni_hostname(identity.as_bytes())
-                                .map_err(|_| Error::InvalidEnvVar)?; // Already logged.
-                            Conditional::Some(identity)
-                        }
-                        None => Conditional::None(tls::ReasonForNoIdentity::NotConfigured),
+            (Some(trust_anchors), Some(end_entity_dir), Some(local_id)) => {
+                Config::try_new
+            }
+            (None, None, None) => Conditional::None(tls::ReasonForNoTls::Disabled),
+            (trust_anchors, end_entity_dir, local_id) => {
+                for (unset, name) in &[
+                    (trust_anchors.is_none(), ENV_TRUST_ANCHORS),
+                    (end_entity_dir.is_none(), ENV_END_ENTITY_DIR),
+                    (local_id.is_none(), ENV_LOCAL_IDENTITY),
+                ] {
+                    if *unset {
+                        error!("{} must be set when other identity variables are set.", name);
                     }
-                } else {
-                    Conditional::None(tls::ReasonForNoIdentity::NotConfigured)
-                };
+                }
+                return Err(Error::InvalidEnvVar);
+            }
+        };
 
-                Ok(Conditional::Some(tls::CommonSettings {
-                    trust_anchors,
-                    end_entity_cert,
-                    private_key,
-                    local_identity,
-                    controller_identity,
-                }))
+        // There is no default controller URL because a default would make it
+        // too easy to connect to the wrong controller, which would be dangerous.
+        let dst_addr = parse(strings, ENV_DESTINATION_ADDR, parse_addr)?;
+        let dst_token = strings.get(ENV_DESTINATION_CONTEXT_TOKEN)?.unwrap_or_default();
+
+        // Avoid setting the controller identity if it is going to be
+        // a loopback connection since TLS isn't needed or supported in
+        // that case.
+        let dst_id = match &dst_addr {
+            Some(addr) if addr.is_loopback() => {
+                Conditional::None(tls::ReasonForNoIdentity::Loopback.into())
             }
-            (None, None, None, _) => Ok(Conditional::None(tls::ReasonForNoTls::Disabled)),
-            (trust_anchors, end_entity_cert, private_key, local_identity) => {
-                if trust_anchors.is_none() {
-                    error!(
-                        "{} is not set; it is required when {} and {} are set.",
-                        ENV_TLS_TRUST_ANCHORS, ENV_TLS_CERT, ENV_TLS_PRIVATE_KEY
-                    );
+            Some(_) => {
+                match parse(strings, ENV_DESTINATION_IDENTITY, super::identity::parse_identity)? {
+                    Some(id) => Conditional::Some(id),
+                    None => {
+                        if identity_config.is_some() {
+                            error!(
+                                "{} must be set when other identity variables are set.",
+                                ENV_DESTINATION_IDENTITY,
+                            );
+                            return Err(Error::InvalidEnvVar);
+                        }
+                        Conditional::None(tls::ReasonForNoIdentity::NotConfigured.into())
+                    }
                 }
-                if end_entity_cert.is_none() {
-                    error!(
-                        "{} is not set; it is required when {} are set.",
-                        ENV_TLS_CERT, ENV_TLS_TRUST_ANCHORS
-                    );
-                }
-                if private_key.is_none() {
-                    error!(
-                        "{} is not set; it is required when {} are set.",
-                        ENV_TLS_PRIVATE_KEY, ENV_TLS_TRUST_ANCHORS
-                    );
-                }
-                if local_identity.is_none() {
-                    error!(
-                        "{} is not set; it is required when {} are set.",
-                        ENV_TLS_LOCAL_IDENTITY, ENV_TLS_CERT
-                    );
-                }
-                Err(Error::InvalidEnvVar)
             }
-        }?;
+            None => Conditional::None(tls::ReasonForNoIdentity::NotConfigured.into()),
+        };
+
+        let dst_concurrency_limit = parse(
+            strings,
+            ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT,
+            parse_number,
+        );
+        let dst_get_suffixes =
+            parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
+        let dst_profile_suffixes = parse(
+            strings,
+            ENV_DESTINATION_PROFILE_SUFFIXES,
+            parse_dns_suffixes,
+        );
 
         Ok(Config {
             outbound_listener: Listener {
                 addr: outbound_listener_addr?
-                    .unwrap_or_else(|| parse_addr(DEFAULT_OUTBOUND_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTENER).unwrap()),
             },
             inbound_listener: Listener {
                 addr: inbound_listener_addr?
-                    .unwrap_or_else(|| parse_addr(DEFAULT_INBOUND_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTENER).unwrap()),
             },
             control_listener: Listener {
                 addr: control_listener_addr?
-                    .unwrap_or_else(|| parse_addr(DEFAULT_CONTROL_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTENER).unwrap()),
             },
             metrics_listener: Listener {
                 addr: metrics_listener_addr?
-                    .unwrap_or_else(|| parse_addr(DEFAULT_METRICS_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_METRICS_LISTENER).unwrap()),
             },
             inbound_forward: inbound_forward?,
 
@@ -547,27 +477,28 @@ impl<'a> TryFrom<&'a Strings> for Config {
             outbound_router_max_idle_age: outbound_router_max_idle_age?
                 .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
 
-            destination_concurrency_limit: destination_concurrency_limit?
+            destination_concurrency_limit: dst_concurrency_limit?
                 .unwrap_or(DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT),
 
-            destination_get_suffixes: destination_get_suffixes?
+            destination_get_suffixes: dst_get_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
 
-            destination_profile_suffixes: destination_profile_suffixes?
+            destination_profile_suffixes: dst_profile_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
 
-            tls_settings,
+            destination_addr: dst_addr,
+            destination_context: dst_token,
+            destination_identity: dst_id,
+
+            identity_config,
 
             resolv_conf_path: resolv_conf_path?
                 .unwrap_or(DEFAULT_RESOLV_CONF.into())
                 .into(),
-            control_host_and_port,
             control_backoff_delay,
             control_connect_timeout,
 
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
-
-            proxy_id,
 
             dns_min_ttl: dns_min_ttl?,
 
@@ -582,19 +513,12 @@ fn default_disable_ports_protocol_detection() -> IndexSet<u16> {
     IndexSet::from_iter(DEFAULT_PORTS_DISABLE_PROTOCOL_DETECTION.iter().cloned())
 }
 
-// ===== impl Addr =====
-
-fn parse_addr(s: &str) -> Result<SocketAddr, ParseError> {
-    match parse_url(s)? {
-        Addr::Socket(a) => Ok(a),
-        _ => Err(ParseError::HostIsNotAnIpAddress),
-    }
-}
-
 // ===== impl Env =====
 
 impl Strings for Env {
     fn get(&self, key: &str) -> Result<Option<String>, Error> {
+        use std::env;
+
         match env::var(key) {
             Ok(value) => Ok(Some(value)),
             Err(env::VarError::NotPresent) => Ok(None),
@@ -654,30 +578,15 @@ fn parse_duration(s: &str) -> Result<Duration, ParseError> {
     }
 }
 
-fn parse_path(s: &str) -> Result<PathBuf, ParseError> {
-    Ok(PathBuf::from(s))
+fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
+    match parse_addr(s)? {
+        Addr::Socket(a) => Ok(a),
+        _ => Err(ParseError::HostIsNotAnIpAddress),
+    }
 }
 
-fn parse_url(s: &str) -> Result<Addr, ParseError> {
-    let url = s
-        .parse::<http::Uri>()
-        .map_err(|_| ParseError::UrlError(UrlError::SyntaxError))?;
-    if url.scheme_part().map(|s| s.as_str()) != Some("tcp") {
-        return Err(ParseError::UrlError(UrlError::UnsupportedScheme));
-    }
-    let authority = url
-        .authority_part()
-        .ok_or_else(|| ParseError::UrlError(UrlError::MissingAuthority))?;
-
-    if url.path() != "/" {
-        return Err(ParseError::UrlError(UrlError::PathNotAllowed));
-    }
-    // http::Uri doesn't provde an accessor for the fragment; See
-    // https://github.com/hyperium/http/issues/127. For now just ignore any
-    // fragment that is there.
-
-    Addr::from_authority_with_port(authority)
-        .map_err(|e| ParseError::UrlError(UrlError::AuthorityError(e)))
+fn parse_addr(s: &str) -> Result<Addr, ParseError> {
+    addr::Addr::from_str(s).map_err(ParseError::AddrError)
 }
 
 fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
@@ -688,7 +597,8 @@ fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
     Ok(set)
 }
 
-fn parse<T, Parse>(strings: &Strings, name: &str, parse: Parse) -> Result<Option<T>, Error>
+
+pub(super) fn parse<T, Parse>(strings: &Strings, name: &str, parse: Parse) -> Result<Option<T>, Error>
 where
     Parse: FnOnce(&str) -> Result<T, ParseError>,
 {
@@ -704,6 +614,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 fn parse_deprecated<T, Parse>(
     strings: &Strings,
     name: &str,
