@@ -4,6 +4,7 @@ use futures::{
     future::{self, Either},
     stream, Async, Future, IntoFuture, Poll, Stream,
 };
+use indexmap::IndexSet;
 use std;
 use std::cmp;
 use std::io;
@@ -14,7 +15,7 @@ use tokio::{
     reactor::Handle,
 };
 
-use indexmap::IndexSet;
+use identity::Identity;
 use transport::{tls, AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive};
 use Conditional;
 
@@ -57,7 +58,7 @@ pub enum Connecting {
         connect: ConnectFuture,
         tls: Option<tls::ConditionalConnectionConfig<tls::ClientConfig>>,
     },
-    UpgradeToTls(tls::UpgradeClientToTls, tls::Identity),
+    UpgradeToTls(tls::UpgradeClientToTls, Identity),
 }
 
 /// Abstracts a plaintext socket vs. a TLS decorated one.
@@ -481,7 +482,7 @@ impl Connection {
         }
     }
 
-    fn tls(io: BoxedIo, peer_identity: tls::Identity) -> Self {
+    fn tls(io: BoxedIo, peer_identity: Identity) -> Self {
         Connection {
             io: io,
             peek_buf: BytesMut::new(),
@@ -507,7 +508,7 @@ impl Connection {
         tls::Status::from(&self.tls_peer_identity)
     }
 
-    pub fn tls_peer_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
+    pub fn tls_peer_identity(&self) -> Conditional<&Identity, tls::ReasonForNoTls> {
         self.tls_peer_identity.as_ref()
     }
 

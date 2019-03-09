@@ -36,7 +36,6 @@ extern crate tower_grpc;
 extern crate tower_http;
 extern crate tower_retry;
 extern crate tower_util;
-extern crate trust_dns_resolver;
 extern crate try_lock;
 
 #[macro_use]
@@ -56,6 +55,7 @@ pub mod control;
 pub mod convert;
 mod dns;
 mod drain;
+mod identity;
 mod logging;
 mod proxy;
 mod svc;

@@ -1,21 +1,20 @@
-use std::io;
-use std::net::SocketAddr;
-
 use bytes::Buf;
 use futures::Future;
+use std::fmt::Debug;
+use std::io;
+use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 
 use dns;
+use identity::Identity;
 use transport::{io::internal::Io, prefixed::Prefixed, AddrInfo, SetKeepalive};
 
 use super::{
-    identity::Identity,
     rustls,
     tokio_rustls::{self, TlsAcceptor, TlsConnector, TlsStream},
     ClientConfig, ServerConfig,
 };
-use std::fmt::Debug;
 
 pub use self::rustls::Session;
 use bytes::Bytes;

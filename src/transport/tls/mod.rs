@@ -6,13 +6,13 @@ extern crate webpki;
 
 use std::fmt;
 
+use identity::Identity;
 use Conditional;
 
 mod cert_resolver;
 pub mod conditional_accept;
 mod config;
 mod connection;
-mod identity;
 
 pub use self::{
     config::{
@@ -21,7 +21,6 @@ pub use self::{
         ServerConfigWatch,
     },
     connection::{Connection, Session, UpgradeClientToTls, UpgradeServerToTls},
-    identity::Identity,
     rustls::TLSError as Error,
 };
 

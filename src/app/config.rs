@@ -4,12 +4,14 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
+use std::{fs, io};
 
 use indexmap::IndexSet;
 
 use addr;
 use convert::TryFrom;
 use dns;
+use identity;
 use transport::tls;
 use {Addr, Conditional};
 
@@ -71,7 +73,7 @@ pub struct Config {
     /// The maximum amount of time to wait for a connection to the controller.
     pub control_connect_timeout: Duration,
 
-    pub identity_config: super::identity::ConditionalConfig,
+    pub identity_config: Option<identity::Config>,
 
     //
     // Destination Config
@@ -133,7 +135,7 @@ pub enum Error {
     InvalidEnvVar,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub enum ParseError {
     EnvironmentUnsupported,
     NotADuration,
@@ -143,6 +145,7 @@ pub enum ParseError {
     NotUnicode,
     AddrError(addr::Error),
     NameError,
+    InvalidTokenSource(io::Error),
     InvalidTrustAnchors,
 }
 
@@ -231,6 +234,7 @@ pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_END_ENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_END_ENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
 pub const ENV_IDENTITY_LOCAL_IDENTITY: &str = "LINKERD2_PROXY_LOCAL_IDENTITY";
+pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_TOKEN_FILE";
 
 pub const ENV_DESTINATION_ADDR: &str = "LINKERD2_PROXY_DESTINATION_ADDR";
 pub const ENV_DESTINATION_CONTEXT_TOKEN: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT_TOKEN";
@@ -360,7 +364,7 @@ impl Config {
         let control_connect_timeout = parse(strings, ENV_CONTROL_CONNECT_TIMEOUT, parse_duration)?
             .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT);
 
-        let identity_config = super::identity::Config::parse(strings);
+        let identity_config = parse_identity_config(strings);
 
         // There is no default controller URL because a default would make it
         // too easy to connect to the wrong controller, which would be dangerous.
@@ -373,11 +377,7 @@ impl Config {
             .as_ref()
             .map(|c| c.is_none())
             .unwrap_or(false);
-        let dst_id = parse(
-            strings,
-            ENV_DESTINATION_IDENTITY,
-            parse_dns_name,
-        );
+        let dst_id = parse(strings, ENV_DESTINATION_IDENTITY, parse_dns_name);
         let dst_id: Result<tls::ConditionalIdentity, Error> = dst_addr
             .as_ref()
             .map_err(|e| e.clone())
@@ -651,6 +651,101 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
     dns::Name::try_from(s.as_bytes())
         .map(dns::Suffix::Name)
         .map_err(|_| ParseError::NotADomainSuffix)
+}
+
+pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity::Config>, Error> {
+    let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |ref s| {
+        identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
+    });
+    let ee = parse(strings, ENV_IDENTITY_END_ENTITY_DIR, |ref s| {
+        Ok(PathBuf::from(s))
+    });
+    let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
+        identity::TokenSource::if_nonempty_file(s).map_err(ParseError::InvalidTokenSource)
+    });
+    let li = parse(strings, ENV_IDENTITY_LOCAL_IDENTITY, |ref s| {
+        super::config::parse_dns_name(s).map(|id| id.into())
+    });
+
+    let disabled = strings
+        .get(ENV_IDENTITY_DISABLED)?
+        .map(|d| !d.is_empty())
+        .unwrap_or(false);
+    match (disabled, ta?, ee?, li?, tok?) {
+        (false, Some(trust_anchors), Some(dir), Some(identity), Some(token)) => {
+            let key = {
+                let mut p = dir.clone();
+                p.push("key.p8");
+
+                fs::read(p)
+                    .map_err(|e| {
+                        error!("Failed to read key: {}", e);
+                        Error::InvalidEnvVar
+                    })
+                    .and_then(|b| {
+                        identity::Key::from_pkcs8(&b).map_err(|e| {
+                            error!("Invalid key: {}", e);
+                            Error::InvalidEnvVar
+                        })
+                    })
+            };
+
+            let csr = {
+                let mut p = dir;
+                p.push("csr.der");
+
+                fs::read(p)
+                    .map_err(|e| {
+                        error!("Failed to read CSR: {}", e);
+                        Error::InvalidEnvVar
+                    })
+                    .and_then(|b| {
+                        identity::CSR::from_der(b).ok_or_else(|| {
+                            error!("No CSR found");
+                            Error::InvalidEnvVar
+                        })
+                    })
+            };
+
+            Ok(Some(identity::Config {
+                identity,
+                token,
+                trust_anchors,
+                csr: csr?,
+                key: key?,
+            }))
+        }
+        (true, None, None, None, None) => Ok(None),
+        (false, None, None, None, None) => {
+            error!(
+                "{} must be set or identity configuration must be specified.",
+                ENV_IDENTITY_DISABLED
+            );
+            Err(Error::InvalidEnvVar)
+        }
+        (disabled, trust_anchors, end_entity_dir, local_id, token) => {
+            if disabled {
+                error!(
+                    "{} must be unset when other identity variables are set.",
+                    ENV_IDENTITY_DISABLED,
+                );
+            }
+            for (unset, name) in &[
+                (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),
+                (end_entity_dir.is_none(), ENV_IDENTITY_END_ENTITY_DIR),
+                (local_id.is_none(), ENV_IDENTITY_LOCAL_IDENTITY),
+                (token.is_none(), ENV_IDENTITY_TOKEN_FILE),
+            ] {
+                if *unset {
+                    error!(
+                        "{} must be set when other identity variables are set.",
+                        name,
+                    );
+                }
+            }
+            Err(Error::InvalidEnvVar)
+        }
+    }
 }
 
 #[cfg(test)]

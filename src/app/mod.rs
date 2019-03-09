@@ -6,7 +6,6 @@ mod classify;
 pub mod config;
 mod control;
 mod dst;
-mod identity;
 mod inbound;
 mod main;
 mod metric_labels;
