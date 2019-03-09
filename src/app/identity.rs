@@ -9,17 +9,16 @@ use super::config::{
     parse, Error as EnvError, ParseError, Strings, ENV_IDENTITY_DISABLED,
     ENV_IDENTITY_END_ENTITY_DIR, ENV_IDENTITY_LOCAL_IDENTITY, ENV_IDENTITY_TRUST_ANCHORS,
 };
-use convert::TryFrom;
 use dns;
 use Conditional;
 
 // These must be kept in sync:
 static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
     &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING;
-const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
-    rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
-const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
-    rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
+// const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
+//     rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
+// const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
+//     rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -36,10 +35,7 @@ pub struct Csr(Vec<u8>);
 #[derive(Debug)]
 pub enum Error {
     EmptyCSR,
-    InvalidEnv,
     InvalidKey(ring::error::KeyRejected),
-    InvalidEndEntityDir,
-    InvalidTrustAnchors,
     Io(io::Error),
 }
 
@@ -51,7 +47,7 @@ impl Config {
     pub fn parse<S: Strings>(strings: &S) -> Result<ConditionalConfig, EnvError> {
         let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, parse_cert_pool);
         let ee = parse(strings, ENV_IDENTITY_END_ENTITY_DIR, parse_path);
-        let li = parse(strings, ENV_IDENTITY_LOCAL_IDENTITY, parse_identity);
+        let li = parse(strings, ENV_IDENTITY_LOCAL_IDENTITY, super::config::parse_dns_name);
 
         let disabled = strings
             .get(ENV_IDENTITY_DISABLED)?
@@ -129,10 +125,6 @@ fn load_dir(dir: PathBuf) -> Result<(EcdsaKeyPair, Csr), Error> {
 
 fn parse_path(s: &str) -> Result<PathBuf, ParseError> {
     Ok(PathBuf::from(s))
-}
-
-pub(super) fn parse_identity(s: &str) -> Result<dns::Name, ParseError> {
-    dns::Name::try_from(s.as_bytes()).map_err(|_| ParseError::NameError)
 }
 
 fn parse_cert_pool(s: &str) -> Result<rustls::RootCertStore, ParseError> {

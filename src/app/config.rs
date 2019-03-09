@@ -6,7 +6,6 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use indexmap::IndexSet;
-use trust_dns_resolver::config::ResolverOpts;
 
 use addr;
 use convert::TryFrom;
@@ -180,9 +179,6 @@ const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KE
 
 pub const DEPRECATED_ENV_PRIVATE_LISTENER: &str = "LINKERD2_PROXY_PRIVATE_LISTENER";
 pub const DEPRECATED_ENV_PRIVATE_FORWARD: &str = "LINKERD2_PROXY_PRIVATE_FORWARD";
-const DEPRECATED_ENV_PUBLIC_LISTENER: &str = "LINKERD2_PROXY_PUBLIC_LISTENER";
-const DEPRECATED_ENV_PRIVATE_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_PRIVATE_CONNECT_TIMEOUT";
-const DEPRECATED_ENV_PUBLIC_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_PUBLIC_CONNECT_TIMEOUT";
 
 // Limits the number of HTTP routes that may be active in the proxy at any time. There is
 // an inbound route for each local port that receives connections. There is an outbound
@@ -293,10 +289,10 @@ const DEFAULT_PORTS_DISABLE_PROTOCOL_DETECTION: &[u16] = &[
 
 // ===== impl Config =====
 
-impl Config {
+impl dns::ConfigureResolver for Config {
     /// Modify a `trust-dns-resolver::config::ResolverOpts` to reflect
     /// the configured minimum and maximum DNS TTL values.
-    pub fn configure_resolver(&self, opts: &mut ResolverOpts) {
+    fn configure_resolver(&self, opts: &mut dns::ResolverOpts) {
         opts.positive_min_ttl = self.dns_min_ttl;
         opts.positive_max_ttl = self.dns_max_ttl;
         // TODO: Do we want to allow the positive and negative TTLs to be
@@ -380,11 +376,11 @@ impl Config {
         let dst_id = parse(
             strings,
             ENV_DESTINATION_IDENTITY,
-            super::identity::parse_identity,
+            parse_dns_name,
         );
         let dst_id: Result<tls::ConditionalIdentity, Error> = dst_addr
             .as_ref()
-            .map_err(|e| *e)
+            .map_err(|e| e.clone())
             .and_then(move |ref a| match a {
                 None => Ok(Conditional::None(
                     tls::ReasonForNoIdentity::NotConfigured.into(),
@@ -585,6 +581,10 @@ fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
         set.insert(parse_number::<u16>(num)?);
     }
     Ok(set)
+}
+
+pub(super) fn parse_dns_name(s: &str) -> Result<dns::Name, ParseError> {
+    dns::Name::try_from(s.as_bytes()).map_err(|_| ParseError::NameError)
 }
 
 pub(super) fn parse<T, Parse>(

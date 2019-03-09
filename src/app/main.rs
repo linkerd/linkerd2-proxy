@@ -55,7 +55,6 @@ use super::profiles::Client as ProfilesClient;
 ///
 pub struct Main<G> {
     config: Config,
-    tls_config_watch: tls::ConfigWatch,
 
     start_time: SystemTime,
 
@@ -69,6 +68,8 @@ pub struct Main<G> {
     runtime: task::MainRuntime,
 }
 
+const TLS_FIXME: tls::ReasonForNoIdentity = tls::ReasonForNoIdentity::NotConfigured;
+
 impl<G> Main<G>
 where
     G: GetOriginalDst + Clone + Send + 'static,
@@ -79,8 +80,6 @@ where
     {
         let start_time = SystemTime::now();
 
-        let tls_config_watch = tls::ConfigWatch::new(config.identity_config.clone());
-
         // TODO: Serve over TLS.
         let control_listener = BoundPort::new(
             config.control_listener.addr,
@@ -88,18 +87,11 @@ where
         )
         .expect("controller listener bind");
 
-        let inbound_listener = {
-            let tls = config.identity_config.as_ref().and_then(|settings| {
-                tls_config_watch
-                    .server
-                    .as_ref()
-                    .map(|tls_server_config| tls::ConnectionConfig {
-                        server_identity: settings.identity_config.name.clone().into(),
-                        config: tls_server_config.clone(),
-                    })
-            });
-            BoundPort::new(config.inbound_listener.addr, tls).expect("public listener bind")
-        };
+        let inbound_listener = BoundPort::new(
+            config.inbound_listener.addr,
+            Conditional::None(TLS_FIXME.into()),
+        )
+        .expect("public listener bind");
 
         let outbound_listener = BoundPort::new(
             config.outbound_listener.addr,
@@ -119,7 +111,6 @@ where
         Main {
             config,
             start_time,
-            tls_config_watch,
             control_listener,
             inbound_listener,
             outbound_listener,
@@ -152,7 +143,6 @@ where
         let Main {
             config,
             start_time,
-            tls_config_watch,
             control_listener,
             inbound_listener,
             outbound_listener,
@@ -190,12 +180,11 @@ where
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let (dns_resolver, dns_bg) =
-            dns::Resolver::from_system_config_with(|ro| config.configure_resolver(ro))
-                .unwrap_or_else(|e| {
-                    // FIXME: DNS configuration should be infallible.
-                    panic!("invalid DNS configuration: {:?}", e);
-                });
+        let (dns_resolver, dns_bg) = dns::Resolver::from_system_config_with(&config)
+            .unwrap_or_else(|e| {
+                // FIXME: DNS configuration should be infallible.
+                panic!("invalid DNS configuration: {:?}", e);
+            });
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
@@ -219,23 +208,23 @@ where
 
         let (transport_metrics, transport_report) = transport::metrics::new();
 
-        let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
+        //let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
 
         let report = endpoint_http_report
             .and_then(route_http_report)
             .and_then(retry_http_report)
             .and_then(transport_report)
-            .and_then(tls_config_report)
+            //.and_then(tls_config_report)
             .and_then(ctl_http_report)
             .and_then(telemetry::process::Report::new(start_time));
 
-        let tls_client_config = tls_config_watch.client.clone();
-        let tls_cfg_bg = tls_config_watch.start(tls_config_sensor);
+        //let tls_client_config = tls_config_watch.client.clone();
+        //let tls_cfg_bg = tls_config_watch.start(tls_config_sensor);
 
         let controller_fut = {
             use super::control;
 
-            let tls_server_identity = config.destination_identity.clone();
+            //let tls_server_identity = config.destination_identity.clone();
 
             // If the controller is on localhost, use the inbound keepalive.
             // If the controller is remote, use the outbound keepalive.
@@ -257,11 +246,13 @@ where
                     ctl_http_metrics,
                 ))
                 .push(proxy::grpc::req_body_as_payload::layer())
-                .push(svc::watch::layer(tls_client_config.clone()))
+                //.push(svc::watch::layer(tls_client_config.clone()))
                 .push(phantom_data::layer())
                 .push(control::add_origin::layer())
                 .push(buffer::layer(config.destination_concurrency_limit))
                 .push(limit::layer(config.destination_concurrency_limit));
+
+            let tls = Conditional::None(TLS_FIXME.into());
 
             // Because the control client is buffered, we need to be able to
             // spawn a task on an executor when `make` is called. This is done
@@ -270,7 +261,7 @@ where
             future::lazy(move || match dst_addr {
                 None => Ok(None),
                 Some(addr) => stack
-                    .make(&control::Config::new(addr, tls_server_identity))
+                    .make(&control::Config::new(addr, tls))
                     .map(Some)
                     .map_err(|e| error!("failed to build controller: {}", e)),
             })
@@ -357,8 +348,8 @@ where
                     .push(tap_layer.clone())
                     .push(metrics::layer::<_, classify::Response>(
                         endpoint_http_metrics,
-                    ))
-                    .push(svc::watch::layer(tls_client_config));
+                    ));
+                //.push(svc::watch::layer(tls_client_config));
 
                 // A per-`dst::Route` layer that uses profile data to configure
                 // a per-route layer.
@@ -670,7 +661,7 @@ where
                             .future(resolver_bg_rx.map_err(|_| {}).flatten()),
                     );
 
-                    rt.spawn(::logging::admin().bg("tls-config").future(tls_cfg_bg));
+                    //rt.spawn(::logging::admin().bg("tls-config").future(tls_cfg_bg));
 
                     let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
                     rt.block_on(shutdown).expect("admin");

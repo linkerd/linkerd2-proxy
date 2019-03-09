@@ -1,50 +1,14 @@
 use std::{
     self, fmt,
-    fs::File,
-    io::{self, Cursor, Read},
     path::PathBuf,
     sync::Arc,
-    time::Duration,
 };
 
-use super::{cert_resolver::CertResolver, rustls, untrusted, webpki, Identity};
-use telemetry::tls_config_reload;
+use super::{cert_resolver::CertResolver, rustls, webpki, Identity};
 use Conditional;
 
-use futures::{future, stream, Future, Stream};
-use futures_watch::{Store, Watch};
+use futures_watch::Watch;
 use ring::signature;
-
-/// Not-yet-validated settings that are used for both TLS clients and TLS
-/// servers.
-///
-/// The trust anchors are stored in PEM format because, in Kubernetes, they are
-/// stored in a ConfigMap, and until very recently Kubernetes cannot store
-/// binary data in ConfigMaps. Also, PEM is the most interoperable way to
-/// distribute trust anchors, especially if it is desired to support multiple
-/// trust anchors at once.
-///
-/// The end-entity certificate and private key are in DER format because they
-/// are stored in the secret store where space utilization is a concern, and
-/// because PEM doesn't offer any advantages.
-#[derive(Clone, Debug)]
-pub struct CommonSettings {
-    /// The trust anchors as concatenated PEM-encoded X.509 certificates.
-    pub trust_anchors: PathBuf,
-
-    /// The end-entity certificate as a DER-encoded X.509 certificate.
-    pub end_entity_cert: PathBuf,
-
-    /// The private key in DER-encoded PKCS#8 form.
-    pub private_key: PathBuf,
-
-    /// The identity of the pod being proxied (as opposed to the psuedo-service
-    /// exposed on the proxy's control port).
-    pub local_identity: Identity,
-
-    /// The identity of the controller, if given.
-    pub controller_identity: Conditional<Identity, ReasonForNoIdentity>,
-}
 
 /// Validated configuration common between TLS clients and TLS servers.
 #[derive(Debug)]
@@ -172,44 +136,6 @@ pub enum Error {
     InvalidPrivateKey(ring::error::KeyRejected),
 }
 
-impl CommonSettings {
-    fn paths(&self) -> [&PathBuf; 3] {
-        [
-            &self.trust_anchors,
-            &self.end_entity_cert,
-            &self.private_key,
-        ]
-    }
-
-    /// Stream changes to the files described by this `CommonSettings`.
-    ///
-    /// The returned stream consists of each subsequent successfully loaded
-    /// `CommonSettings` after each change. If the settings could not be
-    /// reloaded (i.e., they were malformed), nothing is sent.
-    fn stream_changes(
-        self,
-        interval: Duration,
-        mut sensor: tls_config_reload::Sensor,
-    ) -> impl Stream<Item = CommonConfig, Error = ()> {
-        let paths = self.paths().iter().map(|&p| p.clone()).collect::<Vec<_>>();
-        // Generate one "change" immediately before starting to watch
-        // the files, so that we'll try to load them now if they exist.
-        stream::once(Ok(()))
-            .chain(::fs_watch::stream_changes(paths, interval))
-            .filter_map(move |_| match CommonConfig::load_from_disk(&self) {
-                Err(e) => {
-                    warn!("error reloading TLS config: {:?}, falling back", e);
-                    sensor.failed(e);
-                    None
-                }
-                Ok(cfg) => {
-                    sensor.reloaded();
-                    Some(cfg)
-                }
-            })
-    }
-}
-
 impl CommonConfig {
     /// Loads a configuration from the given files and validates it. If an
     /// error is returned then the caller should try again after the files are
@@ -221,37 +147,12 @@ impl CommonConfig {
     /// must be issued by the CA represented by a certificate in the
     /// trust anchors file. Since filesystem operations are not atomic, we
     /// need to check for this consistency.
-    fn load_from_disk(settings: &CommonSettings) -> Result<Self, Error> {
-        let root_cert_store =
-            load_file_contents(&settings.trust_anchors).and_then(|file_contents| {
-                let mut root_cert_store = rustls::RootCertStore::empty();
-                let (added, skipped) = root_cert_store
-                    .add_pem_file(&mut Cursor::new(file_contents))
-                    .map_err(|err| {
-                        error!("error parsing trust anchors file: {:?}", err);
-                        Error::FailedToParseTrustAnchors(None)
-                    })?;
-                if skipped != 0 {
-                    warn!("skipped {} trust anchors in trust anchors file", skipped);
-                }
-                if added > 0 {
-                    Ok(root_cert_store)
-                } else {
-                    error!("no valid trust anchors in trust anchors file");
-                    Err(Error::FailedToParseTrustAnchors(None))
-                }
-            })?;
-
-        let end_entity_cert = load_file_contents(&settings.end_entity_cert)?;
-
-        // XXX: Assume there are no intermediates since there is no way to load
-        // them yet.
-        let cert_chain = vec![rustls::Certificate(end_entity_cert)];
-
-        // Load the private key after we've validated the certificate.
-        let private_key = load_file_contents(&settings.private_key)?;
-        let private_key = untrusted::Input::from(&private_key);
-
+    fn validate(
+        root_cert_store: rustls::RootCertStore,
+        cert_chain: Vec<rustls::Certificate>,
+        private_key: signature::EcdsaKeyPair,
+        local_identity: Identity,
+    ) -> Result<Self, Error> {
         // Ensure the certificate is valid for the services we terminate for
         // TLS. This assumes that server cert validation does the same or
         // more validation than client cert validation.
@@ -261,32 +162,29 @@ impl CommonConfig {
         // `rustls::ClientConfig::get_verifier()`.
         //
         // XXX: Once `rustls::ServerCertVerified` is exposed in Rustls's
-        // safe API, remove the `map(|_| ())` below.
+        // safe API, use it to pass proof to CertResolver::new....
         //
         // TODO: Restrict accepted signatutre algorithms.
-        let certificate_was_validated = rustls::ClientConfig::new()
+        static NO_OCSP: &'static [u8] = &[];
+        rustls::ClientConfig::new()
             .get_verifier()
             .verify_server_cert(
                 &root_cert_store,
                 &cert_chain,
-                settings.local_identity.as_dns_name_ref(),
-                &[],
-            ) // No OCSP
-            .map(|_| ())
+                local_identity.as_dns_name_ref(),
+                NO_OCSP,
+            )
             .map_err(|err| {
                 error!(
                     "validating certificate failed for {:?}: {}",
-                    settings.local_identity, err
+                    local_identity, err
                 );
                 Error::EndEntityCertIsNotValid(err)
             })?;
 
         // `CertResolver::new` is responsible for verifying that the
         // private key is the right one for the certificate.
-        let cert_resolver = CertResolver::new(certificate_was_validated, cert_chain, private_key)?;
-
-        info!("loaded TLS configuration.");
-
+        let cert_resolver = CertResolver::new(cert_chain, private_key);
         Ok(Self {
             root_cert_store,
             cert_resolver: Arc::new(cert_resolver),
@@ -298,88 +196,6 @@ impl CommonConfig {
             root_cert_store: rustls::RootCertStore::empty(),
             cert_resolver: Arc::new(CertResolver::empty()),
         }
-    }
-}
-
-// A Future that, when polled, checks for config updates and publishes them.
-pub type PublishConfigs = Box<Future<Item = (), Error = ()> + Send>;
-
-/// Watches for client and server TLS configuration.
-///
-/// If all references are dropped to _either_ the `client` or `server` watches,
-/// all updates will cease for both config watches.
-pub struct ConfigWatch {
-    pub client: ClientConfigWatch,
-    pub server: Conditional<ServerConfigWatch, ReasonForNoTls>,
-    client_store: Store<Conditional<ClientConfig, ReasonForNoTls>>,
-    server_store: Store<ServerConfig>,
-    settings: Conditional<CommonSettings, ReasonForNoTls>,
-}
-
-impl ConfigWatch {
-    pub fn new(settings: Conditional<CommonSettings, ReasonForNoTls>) -> Self {
-        let (server_watch, server_store) = {
-            let empty = CommonConfig::empty();
-            Watch::new(ServerConfig::from(&empty))
-        };
-
-        let (client_reason, server) = match settings {
-            Conditional::Some(_) => (ReasonForNoTls::NoConfig, Conditional::Some(server_watch)),
-            Conditional::None(reason) => (reason, Conditional::None(reason)),
-        };
-
-        let (client, client_store) = Watch::new(Conditional::None(client_reason));
-
-        ConfigWatch {
-            client,
-            server,
-            client_store,
-            server_store,
-            settings,
-        }
-    }
-
-    /// Returns a task to drive updates.
-    ///
-    /// The returned task Future is expected to never complete. If TLS is
-    /// disabled then an empty future is returned.
-    pub fn start(self, sensor: tls_config_reload::Sensor) -> PublishConfigs {
-        let settings = match self.settings {
-            Conditional::Some(settings) => settings,
-            Conditional::None(_) => return Box::new(future::empty()),
-        };
-
-        let (client_store, server_store) = (self.client_store, self.server_store);
-
-        let changes = settings.stream_changes(Duration::from_secs(1), sensor);
-
-        // `Store::store` will return an error iff all watchers have been dropped,
-        // so we'll use `fold` to cancel the forwarding future. Eventually, we can
-        // also use the fold to continue tracking previous states if we need to do
-        // that.
-        let f = changes
-            .fold(
-                (client_store, server_store),
-                |(mut client_store, mut server_store), ref config| {
-                    client_store
-                        .store(Conditional::Some(ClientConfig::from(config)))
-                        .map_err(|_| trace!("all client config watchers dropped"))?;
-                    server_store
-                        .store(ServerConfig::from(config))
-                        .map_err(|_| trace!("all server config watchers dropped"))?;
-                    Ok((client_store, server_store))
-                },
-            )
-            .then(|_| {
-                error!("forwarding to tls config watches finished.");
-                Err(())
-            });
-
-        // This function and `ServerConfig::no_tls` return `Box<Future<...>>`
-        // rather than `impl Future<...>` so that they can have the _same_ return
-        // types (impl Traits are not the same type unless the original
-        // non-anonymized type was the same).
-        Box::new(f)
     }
 }
 
@@ -434,35 +250,6 @@ impl ServerConfig {
         config.cert_resolver = common.cert_resolver.clone();
         ServerConfig(Arc::new(config))
     }
-}
-
-fn load_file_contents(path: &PathBuf) -> Result<Vec<u8>, Error> {
-    fn load_file(path: &PathBuf) -> Result<Vec<u8>, io::Error> {
-        let mut result = Vec::new();
-        let mut file = File::open(path)?;
-        loop {
-            match file.read_to_end(&mut result) {
-                Ok(_) => {
-                    return Ok(result);
-                }
-                Err(e) => {
-                    if e.kind() != io::ErrorKind::Interrupted {
-                        return Err(e);
-                    }
-                }
-            }
-        }
-    }
-
-    load_file(path)
-        .map(|contents| {
-            trace!("loaded file {:?}", path);
-            contents
-        })
-        .map_err(|e| {
-            error!("error loading {}: {}", path.display(), e);
-            Error::Io(path.clone(), e.raw_os_error())
-        })
 }
 
 fn set_common_settings(versions: &mut Vec<rustls::ProtocolVersion>) {

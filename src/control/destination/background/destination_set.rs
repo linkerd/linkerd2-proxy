@@ -327,21 +327,14 @@ fn pb_to_addr_meta(
 fn pb_to_id(pb: TlsIdentity) -> Option<tls::Identity> {
     use api::destination::tls_identity::Strategy;
 
-    match pb.strategy? {
-        Strategy::K8sPodIdentity(i) => {
+    let Strategy::K8sPodIdentity(i) = pb.strategy?;
             match tls::Identity::from_sni_hostname(i.pod_identity.as_bytes()) {
                 Ok(i) => Some(i),
                 Err(_) => {
                     warn!("Ignoring invalid identity: {}", i.pod_identity);
                     None
                 }
-            }
         }
-        _ => {
-            warn!("Ignoring unsupported identity strategy");
-            None
-        }
-    }
 }
 
 fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {

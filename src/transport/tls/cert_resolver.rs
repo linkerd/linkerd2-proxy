@@ -36,15 +36,10 @@ impl CertResolver {
     ///
     /// TODO: Verify that the public key of the certificate matches the private
     /// key.
-    pub fn new(
-        _certificate_was_validated: (), // TODO: `rustls::ServerCertVerified`.
+    pub(super) fn new(
         cert_chain: Vec<rustls::Certificate>,
-        private_key: untrusted::Input,
-    ) -> Result<Self, config::Error> {
-        let private_key =
-            signature::EcdsaKeyPair::from_pkcs8(config::SIGNATURE_ALG_RING_SIGNING, private_key)
-                .map_err(config::Error::InvalidPrivateKey)?;
-
+        private_key: signature::EcdsaKeyPair,
+    ) -> Self {
         let signer = Signer {
             private_key: Arc::new(private_key),
         };
@@ -53,7 +48,7 @@ impl CertResolver {
             cert_chain,
             Arc::new(Box::new(signing_key)),
         ));
-        Ok(Self { certified_key })
+        Self { certified_key }
     }
 
     /// Returns a new `CertResolver` which indicates that we don't yet have
@@ -63,7 +58,7 @@ impl CertResolver {
     /// hasn't been loaded yet. The returned `CertResolver` implements
     /// `rustls::ResolvesClientCert` and `rustls::ResolvesServerCert`, but
     /// will always returns `None`.
-    pub fn empty() -> Self {
+    pub(super) fn empty() -> Self {
         Self {
             certified_key: None,
         }

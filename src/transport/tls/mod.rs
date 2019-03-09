@@ -16,9 +16,9 @@ mod identity;
 
 pub use self::{
     config::{
-        ClientConfig, ClientConfigWatch, CommonSettings, ConditionalClientConfig,
-        ConditionalConnectionConfig, ConfigWatch, ConnectionConfig, Error as ConfigError,
-        ReasonForNoIdentity, ReasonForNoTls, ServerConfig, ServerConfigWatch,
+        ClientConfig, ClientConfigWatch, ConditionalClientConfig, ConditionalConnectionConfig,
+        ConnectionConfig, Error as ConfigError, ReasonForNoIdentity, ReasonForNoTls, ServerConfig,
+        ServerConfigWatch,
     },
     connection::{Connection, Session, UpgradeClientToTls, UpgradeServerToTls},
     identity::Identity,

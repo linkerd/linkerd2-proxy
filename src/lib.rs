@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![allow(dead_code)] // FIXME
 #![recursion_limit = "128"]
 
 extern crate bytes;

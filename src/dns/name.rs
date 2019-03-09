@@ -27,13 +27,13 @@ impl Name {
 
 impl fmt::Debug for Name {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        fmt::Debug::fmt(self, f)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
 
 impl fmt::Display for Name {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        fmt::Display::fmt(self, f)
+        fmt::Display::fmt(self.as_ref(), f)
     }
 }
 

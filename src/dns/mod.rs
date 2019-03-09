@@ -3,9 +3,7 @@ extern crate untrusted;
 extern crate webpki;
 
 use self::trust_dns_resolver::{
-    config::{ResolverConfig, ResolverOpts},
-    lookup_ip::LookupIp,
-    system_conf, AsyncResolver, BackgroundLookupIp,
+    config::ResolverConfig, lookup_ip::LookupIp, system_conf, AsyncResolver, BackgroundLookupIp,
 };
 use convert::TryFrom;
 use futures::prelude::*;
@@ -16,11 +14,16 @@ use tokio::timer::Delay;
 mod name;
 
 pub use self::name::{InvalidName, Name};
+pub use self::trust_dns_resolver::config::ResolverOpts;
 pub use self::trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 
 #[derive(Clone)]
 pub struct Resolver {
     resolver: AsyncResolver,
+}
+
+pub trait ConfigureResolver {
+    fn configure_resolver(&self, &mut ResolverOpts);
 }
 
 #[derive(Debug)]
@@ -117,14 +120,11 @@ impl Resolver {
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_with<C>(
-        configure: C,
-    ) -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError>
-    where
-        C: FnOnce(&mut ResolverOpts),
-    {
+    pub fn from_system_config_with<C: ConfigureResolver>(
+        c: &C,
+    ) -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
-        configure(&mut opts);
+        c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
         Ok(Self::new(config, opts))
