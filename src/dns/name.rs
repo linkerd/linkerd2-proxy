@@ -2,47 +2,63 @@ use super::{untrusted, webpki};
 use convert::TryFrom;
 use std::fmt;
 
-/// A `DnsName` is guaranteed to be syntactically valid. The validity rules
+/// A `Name` is guaranteed to be syntactically valid. The validity rules
 /// are specified in [RFC 5280 Section 7.2], except that underscores are also
 /// allowed.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct DnsName(pub(super) webpki::DNSName);
+pub struct Name(webpki::DNSName);
 
-impl DnsName {
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct InvalidName;
+
+impl Name {
     pub fn is_localhost(&self) -> bool {
-        *self == DnsName::try_from("localhost.".as_bytes()).unwrap()
+        *self == Name::try_from("localhost.".as_bytes()).unwrap()
     }
 
     pub fn without_trailing_dot(&self) -> &str {
         self.as_ref().trim_end_matches('.')
     }
-}
 
-impl fmt::Debug for DnsName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        self.as_ref().fmt(f)
+    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
+        self.0.as_ref()
     }
 }
 
-impl fmt::Display for DnsName {
+impl fmt::Debug for Name {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        self.as_ref().fmt(f)
+        fmt::Debug::fmt(self, f)
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct InvalidDnsName;
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        fmt::Display::fmt(self, f)
+    }
+}
 
-impl<'a> TryFrom<&'a [u8]> for DnsName {
-    type Err = InvalidDnsName;
+impl From<webpki::DNSName> for Name {
+    fn from(n: webpki::DNSName) -> Self {
+        Name(n)
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for Name {
+    type Err = InvalidName;
     fn try_from(s: &[u8]) -> Result<Self, Self::Err> {
         webpki::DNSNameRef::try_from_ascii(untrusted::Input::from(s))
-            .map(|r| DnsName(r.to_owned()))
-            .map_err(|()| InvalidDnsName)
+            .map_err(|()| InvalidName)
+            .map(|r| r.to_owned().into())
     }
 }
 
-impl AsRef<str> for DnsName {
+impl Into<webpki::DNSName> for Name {
+    fn into(self) -> webpki::DNSName {
+        self.0
+    }
+}
+
+impl AsRef<str> for Name {
     fn as_ref(&self) -> &str {
         <webpki::DNSName as AsRef<str>>::as_ref(&self.0)
     }
@@ -62,7 +78,7 @@ mod tests {
             ("localhost1.", false), // suffixed
         ];
         for (host, expected_result) in cases {
-            let dns_name = DnsName::try_from(host.as_bytes()).unwrap();
+            let dns_name = Name::try_from(host.as_bytes()).unwrap();
             assert_eq!(dns_name.is_localhost(), *expected_result, "{:?}", dns_name)
         }
     }
@@ -78,7 +94,7 @@ mod tests {
         ];
         for (host, expected_result) in cases {
             let dns_name =
-                DnsName::try_from(host.as_bytes()).expect(&format!("'{}' was invalid", host));
+                Name::try_from(host.as_bytes()).expect(&format!("'{}' was invalid", host));
             assert_eq!(
                 dns_name.without_trailing_dot(),
                 *expected_result,
@@ -86,6 +102,6 @@ mod tests {
                 dns_name
             )
         }
-        assert!(DnsName::try_from(".".as_bytes()).is_err());
+        assert!(Name::try_from(".".as_bytes()).is_err());
     }
 }

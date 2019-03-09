@@ -72,10 +72,11 @@ pub struct Config {
     /// The maximum amount of time to wait for a connection to the controller.
     pub control_connect_timeout: Duration,
 
+    pub identity_config: super::identity::ConditionalConfig,
+
     //
     // Destination Config
     //
-
     /// Where to talk to the control plane.
     ///
     /// When set, DNS is only after the Destination service says that there is
@@ -106,7 +107,6 @@ pub struct Config {
     //
     // DNS Config
     //
-
     /// The path to "/etc/resolv.conf"
     pub resolv_conf_path: PathBuf,
 
@@ -132,7 +132,6 @@ pub struct Listener {
 #[derive(Clone, Debug)]
 pub enum Error {
     InvalidEnvVar,
-    InvalidIdentity(super::identity::Error),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -232,6 +231,7 @@ pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
 pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
+pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_END_ENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_END_ENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
 pub const ENV_IDENTITY_LOCAL_IDENTITY: &str = "LINKERD2_PROXY_LOCAL_IDENTITY";
@@ -296,21 +296,19 @@ const DEFAULT_PORTS_DISABLE_PROTOCOL_DETECTION: &[u16] = &[
 impl Config {
     /// Modify a `trust-dns-resolver::config::ResolverOpts` to reflect
     /// the configured minimum and maximum DNS TTL values.
-    pub fn configure_resolver_opts(&self, mut opts: ResolverOpts) -> ResolverOpts {
+    pub fn configure_resolver(&self, opts: &mut ResolverOpts) {
         opts.positive_min_ttl = self.dns_min_ttl;
         opts.positive_max_ttl = self.dns_max_ttl;
         // TODO: Do we want to allow the positive and negative TTLs to be
         //       configured separately?
         opts.negative_min_ttl = self.dns_min_ttl;
         opts.negative_max_ttl = self.dns_max_ttl;
-        opts
     }
 }
 
-impl<'a> TryFrom<&'a Strings> for Config {
-    type Err = Error;
+impl Config {
     /// Load a `Config` by reading ENV variables.
-    fn try_from(strings: &Strings) -> Result<Self, Self::Err> {
+    pub fn parse<S: Strings>(strings: &S) -> Result<Self, Error> {
         // Parse all the environment variables. `parse` will log any errors so
         // defer returning any errors until all of them have been parsed.
         let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTENER, parse_socket_addr);
@@ -350,82 +348,73 @@ impl<'a> TryFrom<&'a Strings> for Config {
         let outbound_router_max_idle_age =
             parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
 
-        let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
-
         let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
+
+        // DNS
+
+        let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
 
         let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
         let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
 
-        let dns_canonicalize_timeout =
-            parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration)?
-                .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT);
+        let dns_canonicalize_timeout = parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration);
 
         let control_backoff_delay = parse(strings, ENV_CONTROL_BACKOFF_DELAY, parse_duration)?
             .unwrap_or(DEFAULT_CONTROL_BACKOFF_DELAY);
         let control_connect_timeout = parse(strings, ENV_CONTROL_CONNECT_TIMEOUT, parse_duration)?
             .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT);
 
-        let identity_config = super::identity::Config::parse(strings)
-            id_trust_anchors,
-            id_end_entity_dir,
-            local_id.as_ref(),
-        ) {
-            (Some(trust_anchors), Some(end_entity_dir), Some(local_id)) => {
-                Config::try_new
-            }
-            (None, None, None) => Conditional::None(tls::ReasonForNoTls::Disabled),
-            (trust_anchors, end_entity_dir, local_id) => {
-                for (unset, name) in &[
-                    (trust_anchors.is_none(), ENV_TRUST_ANCHORS),
-                    (end_entity_dir.is_none(), ENV_END_ENTITY_DIR),
-                    (local_id.is_none(), ENV_LOCAL_IDENTITY),
-                ] {
-                    if *unset {
-                        error!("{} must be set when other identity variables are set.", name);
-                    }
-                }
-                return Err(Error::InvalidEnvVar);
-            }
-        };
+        let identity_config = super::identity::Config::parse(strings);
 
         // There is no default controller URL because a default would make it
         // too easy to connect to the wrong controller, which would be dangerous.
-        let dst_addr = parse(strings, ENV_DESTINATION_ADDR, parse_addr)?;
-        let dst_token = strings.get(ENV_DESTINATION_CONTEXT_TOKEN)?.unwrap_or_default();
+        let dst_addr = parse(strings, ENV_DESTINATION_ADDR, parse_addr);
 
         // Avoid setting the controller identity if it is going to be
         // a loopback connection since TLS isn't needed or supported in
         // that case.
-        let dst_id = match &dst_addr {
-            Some(addr) if addr.is_loopback() => {
-                Conditional::None(tls::ReasonForNoIdentity::Loopback.into())
-            }
-            Some(_) => {
-                match parse(strings, ENV_DESTINATION_IDENTITY, super::identity::parse_identity)? {
-                    Some(id) => Conditional::Some(id),
-                    None => {
-                        if identity_config.is_some() {
-                            error!(
-                                "{} must be set when other identity variables are set.",
-                                ENV_DESTINATION_IDENTITY,
-                            );
-                            return Err(Error::InvalidEnvVar);
-                        }
-                        Conditional::None(tls::ReasonForNoIdentity::NotConfigured.into())
-                    }
+        let id_disabled = identity_config
+            .as_ref()
+            .map(|c| c.is_none())
+            .unwrap_or(false);
+        let dst_id = parse(
+            strings,
+            ENV_DESTINATION_IDENTITY,
+            super::identity::parse_identity,
+        );
+        let dst_id: Result<tls::ConditionalIdentity, Error> = dst_addr
+            .as_ref()
+            .map_err(|e| *e)
+            .and_then(move |ref a| match a {
+                None => Ok(Conditional::None(
+                    tls::ReasonForNoIdentity::NotConfigured.into(),
+                )),
+                _ if id_disabled => Ok(Conditional::None(
+                    tls::ReasonForNoIdentity::NotConfigured.into(),
+                )),
+                Some(addr) if addr.is_loopback() => {
+                    Ok(Conditional::None(tls::ReasonForNoIdentity::Loopback.into()))
                 }
-            }
-            None => Conditional::None(tls::ReasonForNoIdentity::NotConfigured.into()),
-        };
+                Some(_) => dst_id.and_then(|id| match id {
+                    Some(id) => Ok(Conditional::Some(id.into())),
+                    None => {
+                        error!(
+                            "{} must be set when identity is configured.",
+                            ENV_DESTINATION_IDENTITY,
+                        );
+                        Err(Error::InvalidEnvVar)
+                    }
+                }),
+            });
+
+        let dst_token = strings.get(ENV_DESTINATION_CONTEXT_TOKEN);
 
         let dst_concurrency_limit = parse(
             strings,
             ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT,
             parse_number,
         );
-        let dst_get_suffixes =
-            parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
+        let dst_get_suffixes = parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
         let dst_profile_suffixes = parse(
             strings,
             ENV_DESTINATION_PROFILE_SUFFIXES,
@@ -486,11 +475,11 @@ impl<'a> TryFrom<&'a Strings> for Config {
             destination_profile_suffixes: dst_profile_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
 
-            destination_addr: dst_addr,
-            destination_context: dst_token,
-            destination_identity: dst_id,
+            destination_addr: dst_addr?,
+            destination_context: dst_token?.unwrap_or_default(),
+            destination_identity: dst_id?.map(|id| id.into()),
 
-            identity_config,
+            identity_config: identity_config?,
 
             resolv_conf_path: resolv_conf_path?
                 .unwrap_or(DEFAULT_RESOLV_CONF.into())
@@ -504,7 +493,8 @@ impl<'a> TryFrom<&'a Strings> for Config {
 
             dns_max_ttl: dns_max_ttl?,
 
-            dns_canonicalize_timeout,
+            dns_canonicalize_timeout: dns_canonicalize_timeout?
+                .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT),
         })
     }
 }
@@ -597,8 +587,11 @@ fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
     Ok(set)
 }
 
-
-pub(super) fn parse<T, Parse>(strings: &Strings, name: &str, parse: Parse) -> Result<Option<T>, Error>
+pub(super) fn parse<T, Parse>(
+    strings: &Strings,
+    name: &str,
+    parse: Parse,
+) -> Result<Option<T>, Error>
 where
     Parse: FnOnce(&str) -> Result<T, ParseError>,
 {

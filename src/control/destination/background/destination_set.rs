@@ -12,7 +12,9 @@ use tower_grpc::{Body, BoxBody};
 use tower_http::HttpService;
 
 use api::{
-    destination::{protocol_hint::Protocol, update::Update as PbUpdate2, WeightedAddr},
+    destination::{
+        protocol_hint::Protocol, update::Update as PbUpdate2, TlsIdentity, WeightedAddr,
+    },
     net::TcpAddress,
 };
 
@@ -78,9 +80,10 @@ where
                 Ok(Async::Ready(Some(update))) => match update.update {
                     Some(PbUpdate2::Add(a_set)) => {
                         let set_labels = a_set.metric_labels;
-                        let addrs = a_set.addrs.into_iter().filter_map(|pb| {
-                            pb_to_addr_meta(pb, &set_labels)
-                        });
+                        let addrs = a_set
+                            .addrs
+                            .into_iter()
+                            .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
                         self.add(auth, addrs)
                     }
                     Some(PbUpdate2::Remove(r_set)) => {
@@ -298,25 +301,7 @@ fn pb_to_addr_meta(
         m
     };
 
-    let mut tls_identity =
-        Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery);
-    if let Some(pb) = pb.tls_identity {
-        match tls::Identity::maybe_from_protobuf(pb) {
-            Ok(Some(identity)) => {
-                tls_identity = Conditional::Some(identity);
-            }
-            Ok(None) => (),
-            Err(e) => {
-                error!("Failed to parse TLS identity: {:?}", e);
-                // XXX: Wallpaper over the error and keep going without TLS.
-                // TODO: Hard fail here once the TLS infrastructure has been
-                // validated.
-            }
-        }
-    };
-
     let mut proto_hint = ProtocolHint::Unknown;
-
     if let Some(hint) = pb.protocol_hint {
         if let Some(proto) = hint.protocol {
             match proto {
@@ -327,8 +312,36 @@ fn pb_to_addr_meta(
         }
     }
 
-    let meta = Metadata::new(meta, proto_hint, tls_identity);
+    let tls_id = pb
+        .tls_identity
+        .and_then(pb_to_id)
+        .map(Conditional::Some)
+        .unwrap_or_else(|| {
+            Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery)
+        });
+
+    let meta = Metadata::new(meta, proto_hint, tls_id);
     Some((addr, meta))
+}
+
+fn pb_to_id(pb: TlsIdentity) -> Option<tls::Identity> {
+    use api::destination::tls_identity::Strategy;
+
+    match pb.strategy? {
+        Strategy::K8sPodIdentity(i) => {
+            match tls::Identity::from_sni_hostname(i.pod_identity.as_bytes()) {
+                Ok(i) => Some(i),
+                Err(_) => {
+                    warn!("Ignoring invalid identity: {}", i.pod_identity);
+                    None
+                }
+            }
+        }
+        _ => {
+            warn!("Ignoring unsupported identity strategy");
+            None
+        }
+    }
 }
 
 fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {

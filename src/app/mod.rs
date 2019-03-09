@@ -23,11 +23,10 @@ const L5D_SERVER_ID: &'static str = "l5d-server-id";
 const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 
 pub fn init() -> Result<config::Config, config::Error> {
-    use convert::TryFrom;
     use logging;
 
     logging::init();
-    config::Config::try_from(&config::Env)
+    config::Config::parse(&config::Env)
 }
 
 const DEFAULT_PORT: u16 = 80;

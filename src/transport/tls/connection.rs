@@ -6,6 +6,7 @@ use futures::Future;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 
+use dns;
 use transport::{io::internal::Io, prefixed::Prefixed, AddrInfo, SetKeepalive};
 
 use super::{
@@ -60,10 +61,11 @@ pub type UpgradeServerToTls = UpgradeToTls<
 impl Connection<TcpStream, rustls::ClientSession> {
     pub fn connect(
         socket: TcpStream,
-        identity: &Identity,
+        id: &Identity,
         ClientConfig(config): ClientConfig,
     ) -> UpgradeClientToTls {
-        UpgradeToTls(TlsConnector::from(config).connect(identity.as_dns_name_ref(), socket))
+        let c = TlsConnector::from(config).connect(id.as_dns_name_ref(), socket);
+        UpgradeToTls(c)
     }
 }
 
@@ -73,7 +75,8 @@ impl Connection<Prefixed<TcpStream>, rustls::ServerSession> {
         prefix: Bytes,
         ServerConfig(config): ServerConfig,
     ) -> UpgradeServerToTls {
-        UpgradeToTls(TlsAcceptor::from(config).accept(Prefixed::new(prefix, socket)))
+        let a = TlsAcceptor::from(config).accept(Prefixed::new(prefix, socket));
+        UpgradeToTls(a)
     }
 
     pub fn client_identity(&self) -> Option<Identity> {
@@ -82,7 +85,11 @@ impl Connection<Prefixed<TcpStream>, rustls::ServerSession> {
         let end_cert = super::parse_end_entity_cert(&certs).ok()?;
         let dns_names = end_cert.dns_names().ok()?;
 
-        dns_names.first().map(Identity::from_client_cert)
+        dns_names
+            .first()
+            .map(|n| n.to_owned())
+            .map(dns::Name::from)
+            .map(Identity::from)
     }
 }
 

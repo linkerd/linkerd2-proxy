@@ -79,7 +79,7 @@ where
     {
         let start_time = SystemTime::now();
 
-        let tls_config_watch = tls::ConfigWatch::new(config.tls_settings.clone());
+        let tls_config_watch = tls::ConfigWatch::new(config.identity_config.clone());
 
         // TODO: Serve over TLS.
         let control_listener = BoundPort::new(
@@ -89,12 +89,12 @@ where
         .expect("controller listener bind");
 
         let inbound_listener = {
-            let tls = config.tls_settings.as_ref().and_then(|settings| {
+            let tls = config.identity_config.as_ref().and_then(|settings| {
                 tls_config_watch
                     .server
                     .as_ref()
                     .map(|tls_server_config| tls::ConnectionConfig {
-                        server_identity: settings.local_identity.clone(),
+                        server_identity: settings.identity_config.name.clone().into(),
                         config: tls_server_config.clone(),
                     })
             });
@@ -190,11 +190,12 @@ where
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let (dns_resolver, dns_bg) = dns::Resolver::from_system_config_and_env(&config)
-            .unwrap_or_else(|e| {
-                // FIXME: DNS configuration should be infallible.
-                panic!("invalid DNS configuration: {:?}", e);
-            });
+        let (dns_resolver, dns_bg) =
+            dns::Resolver::from_system_config_with(|ro| config.configure_resolver(ro))
+                .unwrap_or_else(|e| {
+                    // FIXME: DNS configuration should be infallible.
+                    panic!("invalid DNS configuration: {:?}", e);
+                });
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
@@ -293,8 +294,11 @@ where
                 .ok()
                 .expect("admin thread must receive resolver task");
 
-            let profiles_client =
-                ProfilesClient::new(controller, Duration::from_secs(3), config.destination_context);
+            let profiles_client = ProfilesClient::new(
+                controller,
+                Duration::from_secs(3),
+                config.destination_context,
+            );
 
             let outbound = {
                 use super::outbound::{

@@ -12,7 +12,6 @@ mod cert_resolver;
 pub mod conditional_accept;
 mod config;
 mod connection;
-mod dns_name;
 mod identity;
 
 pub use self::{
@@ -22,7 +21,6 @@ pub use self::{
         ReasonForNoIdentity, ReasonForNoTls, ServerConfig, ServerConfigWatch,
     },
     connection::{Connection, Session, UpgradeClientToTls, UpgradeServerToTls},
-    dns_name::{DnsName, InvalidDnsName},
     identity::Identity,
     rustls::TLSError as Error,
 };

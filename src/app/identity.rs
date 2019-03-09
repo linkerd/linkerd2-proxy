@@ -1,20 +1,17 @@
 extern crate ring;
 extern crate rustls;
 extern crate untrusted;
-extern crate webpki;
 
 use self::ring::signature::EcdsaKeyPair;
 use std::{fs, io, path::PathBuf, sync::Arc};
-use self::webpki::{DNSName, DNSNameRef};
 
 use super::config::{
-    parse,
-    ENV_IDENTITY_END_ENTITY_DIR,
-    ENV_IDENTITY_TRUST_ANCHORS,
-    ENV_LOCAL_IDENTITY,
-    ParseError,
-    Strings,
+    parse, Error as EnvError, ParseError, Strings, ENV_IDENTITY_DISABLED,
+    ENV_IDENTITY_END_ENTITY_DIR, ENV_IDENTITY_LOCAL_IDENTITY, ENV_IDENTITY_TRUST_ANCHORS,
 };
+use convert::TryFrom;
+use dns;
+use Conditional;
 
 // These must be kept in sync:
 static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
@@ -24,13 +21,12 @@ const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
 const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
     rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
 
-
 #[derive(Clone, Debug)]
 pub struct Config {
     trust_anchors: rustls::RootCertStore,
     csr: Csr,
     key: Arc<EcdsaKeyPair>,
-    name: DNSName,
+    name: dns::Name,
 }
 
 /// A DER-encoded X.509 certificate signing request.
@@ -47,35 +43,61 @@ pub enum Error {
     Io(io::Error),
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Disabled(());
+pub type ConditionalConfig = Conditional<Config, Disabled>;
+
 impl Config {
-    fn parse(strings: &Strings) -> Result<Option<Self>, Box<dyn Error>> {
-        match (
-            parse(strings, ENV_IDENTITY_TRUST_ANCHORS, parse_cert_pool)
-                .map_err(|_| Error:InvalidTrustAnchors)?,
-            parse(strings, ENV_IDENTITY_END_ENTITY_DIR, parse_path)?,
-                .map_err(|_| Error:InvalidEndEntityDir)?,
-            parse(strings, ENV_LOCAL_IDENTITY, parse_identity)?.as_ref(),
-        ) {
-            (None, None, None) => Ok(None),
-            (Some(trust_anchors), Some(end_entity_dir), Some(local_id)) => {
-                let (key, csr) = load_dir(end_entity_dir)?;
-                Ok(Some(Config {
+    pub fn parse<S: Strings>(strings: &S) -> Result<ConditionalConfig, EnvError> {
+        let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, parse_cert_pool);
+        let ee = parse(strings, ENV_IDENTITY_END_ENTITY_DIR, parse_path);
+        let li = parse(strings, ENV_IDENTITY_LOCAL_IDENTITY, parse_identity);
+
+        let disabled = strings
+            .get(ENV_IDENTITY_DISABLED)?
+            .map(|d| !d.is_empty())
+            .unwrap_or(false);
+        match (disabled, ta?, ee?, li?) {
+            (false, Some(trust_anchors), Some(end_entity_dir), Some(name)) => {
+                let (key, csr) = load_dir(end_entity_dir).map_err(|e| {
+                    error!("Invalid end-entity directory: {:?}", e);
+                    EnvError::InvalidEnvVar
+                })?;
+                Ok(Conditional::Some(Config {
+                    name,
                     csr,
                     key: Arc::new(key),
                     trust_anchors,
                 }))
             }
-            (trust_anchors, end_entity_dir, local_id) => {
+            (true, None, None, None) => Ok(Conditional::None(Disabled(()))),
+            (false, None, None, None) => {
+                error!(
+                    "{} must be set or identity configuration must be specified.",
+                    ENV_IDENTITY_DISABLED
+                );
+                Err(EnvError::InvalidEnvVar)
+            }
+            (disabled, trust_anchors, end_entity_dir, local_id) => {
+                if disabled {
+                    error!(
+                        "{} must be unset when other identity variables are set.",
+                        ENV_IDENTITY_DISABLED,
+                    );
+                }
                 for (unset, name) in &[
                     (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),
                     (end_entity_dir.is_none(), ENV_IDENTITY_END_ENTITY_DIR),
-                    (local_id.is_none(), ENV_LOCAL_IDENTITY),
+                    (local_id.is_none(), ENV_IDENTITY_LOCAL_IDENTITY),
                 ] {
                     if *unset {
-                        error!("{} must be set when other identity variables are set.", name);
+                        error!(
+                            "{} must be set when other identity variables are set.",
+                            name
+                        );
                     }
                 }
-                Err(Error::InvalidEnv)
+                Err(EnvError::InvalidEnvVar)
             }
         }
     }
@@ -109,12 +131,9 @@ fn parse_path(s: &str) -> Result<PathBuf, ParseError> {
     Ok(PathBuf::from(s))
 }
 
-pub(super) fn parse_identity(s: &str) -> Result<DNSName, ParseError> {
-    DNSNameRef::try_from_ascii(s.as_bytes())
-        .map(|r| r.to_owned())
-        .map_err(|_| ParseError::NameError)
+pub(super) fn parse_identity(s: &str) -> Result<dns::Name, ParseError> {
+    dns::Name::try_from(s.as_bytes()).map_err(|_| ParseError::NameError)
 }
-
 
 fn parse_cert_pool(s: &str) -> Result<rustls::RootCertStore, ParseError> {
     use std::io::Cursor;

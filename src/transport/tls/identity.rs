@@ -1,59 +1,39 @@
-use super::{webpki, DnsName, InvalidDnsName};
-use api;
 use convert::TryFrom;
+use dns;
 use std::fmt;
-use std::sync::Arc;
 
 /// An endpoint's identity.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct Identity(pub(super) Arc<DnsName>);
+pub struct Identity(dns::Name);
+
+impl From<dns::Name> for Identity {
+    fn from(n: dns::Name) -> Self {
+        Identity(n)
+    }
+}
 
 impl Identity {
-    /// Parses the given TLS identity, if provided.
-    ///
-    /// In the event of an error, the error is logged, so no detailed error
-    /// information is returned.
-    pub fn maybe_from_protobuf(
-        pb: api::destination::TlsIdentity,
-    ) -> Result<Option<Self>, ()> {
-        use api::destination::tls_identity::Strategy;
-        match pb.strategy {
-            Some(Strategy::K8sPodIdentity(i)) => {
-                Self::from_sni_hostname(i.pod_identity.as_bytes()).map(Some)
-            }
-            None => Ok(None), // No TLS.
-        }
-    }
-
-    pub fn from_sni_hostname(hostname: &[u8]) -> Result<Self, ()> {
+    pub fn from_sni_hostname(hostname: &[u8]) -> Result<Self, dns::InvalidName> {
         if hostname.last() == Some(&b'.') {
-            return Err(()); // SNI hostnames are implicitly absolute.
+            return Err(dns::InvalidName); // SNI hostnames are implicitly absolute.
         }
-        DnsName::try_from(hostname)
-            .map(|name| Identity(Arc::new(name)))
-            .map_err(|InvalidDnsName| {
-                error!("Invalid DNS name: {:?}", hostname);
-                ()
-            })
+
+        dns::Name::try_from(hostname).map(|n| n.into())
     }
 
-    pub fn from_client_cert(name: &webpki::DNSNameRef) -> Self {
-        Identity(Arc::new(DnsName(name.to_owned())))
-    }
-
-    pub(super) fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
-        (self.0).0.as_ref()
+    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
+        self.0.as_dns_name_ref()
     }
 }
 
 impl AsRef<str> for Identity {
     fn as_ref(&self) -> &str {
-        (*self.0).as_ref()
+        AsRef::<str>::as_ref(&self.0)
     }
 }
 
 impl fmt::Debug for Identity {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        self.as_ref().fmt(f)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
