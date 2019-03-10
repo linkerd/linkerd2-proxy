@@ -15,7 +15,7 @@ use tokio::{
     reactor::Handle,
 };
 
-use identity::Identity;
+use identity::Name as Identity;
 use transport::{tls, AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive};
 use Conditional;
 

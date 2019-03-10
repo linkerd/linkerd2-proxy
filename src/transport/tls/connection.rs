@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use tokio::prelude::*;
 
 use dns;
-use identity::Identity;
+use identity::Name as Identity;
 use transport::{io::internal::Io, prefixed::Prefixed, AddrInfo, SetKeepalive};
 
 use super::{
@@ -82,13 +82,9 @@ impl Connection<Prefixed<TcpStream>, rustls::ServerSession> {
         let (_io, session) = self.0.get_ref();
         let certs = session.get_peer_certificates()?;
         let end_cert = super::parse_end_entity_cert(&certs).ok()?;
-        let dns_names = end_cert.dns_names().ok()?;
-
-        dns_names
-            .first()
-            .map(|n| n.to_owned())
-            .map(dns::Name::from)
-            .map(Identity::from)
+        // Use the first DNS name ias the identity.
+        let name: &str = end_cert.dns_names().ok()?.into_iter().next()?.into();
+        Identity::from_sni_hostname(name.as_bytes()).ok()
     }
 }
 

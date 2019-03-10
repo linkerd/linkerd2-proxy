@@ -5,7 +5,11 @@ extern crate untrusted;
 use self::ring::rand;
 use self::ring::signature::EcdsaKeyPair;
 use self::rustls::RootCertStore;
-use std::{fmt, fs, io, path::Path, sync::Arc};
+use std::error::Error;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::SystemTime;
+use std::{fmt, fs, io};
 
 pub use self::ring::error::KeyRejected;
 
@@ -18,7 +22,7 @@ pub struct CSR(Arc<Vec<u8>>);
 
 /// An endpoint's identity.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct Identity(Arc<dns::Name>);
+pub struct Name(Arc<dns::Name>);
 
 #[derive(Clone, Debug)]
 pub struct Key(Arc<EcdsaKeyPair>);
@@ -32,8 +36,22 @@ pub struct TrustAnchors(Arc<RootCertStore>);
 #[derive(Clone, Debug)]
 pub struct TokenSource(Arc<String>);
 
+#[derive(Clone, Debug)]
+pub struct Crt {
+    name: Name,
+    expiry: SystemTime,
+    chain: Vec<rustls::Certificate>,
+}
+
 #[derive(Clone)]
-pub struct CrtKey(rustls::sign::CertifiedKey);
+pub struct CrtKey {
+    name: Name,
+    expiry: SystemTime,
+    key: rustls::sign::CertifiedKey,
+}
+
+#[derive(Clone, Debug)]
+pub struct InvalidCrt(rustls::TLSError);
 
 // These must be kept in sync:
 static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
@@ -66,18 +84,6 @@ impl Key {
         let i = untrusted::Input::from(b);
         let k = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, i)?;
         Ok(Key(Arc::new(k)))
-    }
-
-    pub fn to_crt_key(&self, leaf: Vec<u8>, mut intermediates: Vec<Vec<u8>>) -> CrtKey {
-        let mut chain = Vec::with_capacity(intermediates.len() + 1);
-        chain.push(rustls::Certificate(leaf));
-        chain.extend(intermediates.drain(..).map(rustls::Certificate));
-
-        let k = SigningKey(self.0.clone());
-        CrtKey(rustls::sign::CertifiedKey::new(
-            chain,
-            Arc::new(Box::new(k)),
-        ))
     }
 }
 
@@ -114,21 +120,21 @@ impl rustls::sign::Signer for Signer {
     }
 }
 
-// === impl Identity ===
+// === impl Name ===
 
-impl From<dns::Name> for Identity {
-    fn from(n: dns::Name) -> Self {
-        Identity(Arc::new(n))
-    }
-}
+// impl From<dns::Name> for Name {
+//     fn from(n: dns::Name) -> Self {
+//         Name(Arc::new(n))
+//     }
+// }
 
-impl Identity {
+impl Name {
     pub fn from_sni_hostname(hostname: &[u8]) -> Result<Self, dns::InvalidName> {
         if hostname.last() == Some(&b'.') {
             return Err(dns::InvalidName); // SNI hostnames are implicitly absolute.
         }
 
-        dns::Name::try_from(hostname).map(|n| n.into())
+        dns::Name::try_from(hostname).map(|n| Name(Arc::new(n)))
     }
 
     pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
@@ -136,13 +142,13 @@ impl Identity {
     }
 }
 
-impl AsRef<str> for Identity {
+impl AsRef<str> for Name {
     fn as_ref(&self) -> &str {
         (*self.0).as_ref()
     }
 }
 
-impl fmt::Debug for Identity {
+impl fmt::Debug for Name {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt::Debug::fmt(&self.0, f)
     }
@@ -153,20 +159,20 @@ impl fmt::Debug for Identity {
 impl TokenSource {
     pub fn if_nonempty_file(p: String) -> io::Result<Self> {
         let ts = TokenSource(Arc::new(p));
-        ts.load().and_then(|t| {
-            if t.is_empty() {
-                Err(io::Error::new(
-                    io::ErrorKind::Other.into(),
-                    "token is empty",
-                ))
-            } else {
-                Ok(ts)
-            }
-        })
+        ts.load().map(|_| ts)
     }
 
     pub fn load(&self) -> io::Result<Vec<u8>> {
-        fs::read(self.0.as_str())
+        let t = fs::read(self.0.as_str())?;
+
+        if t.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other.into(),
+                "token is empty",
+            ));
+        }
+
+        Ok(t)
     }
 }
 
@@ -187,6 +193,49 @@ impl TrustAnchors {
 
         Some(TrustAnchors(Arc::new(roots)))
     }
+
+    pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {
+        // Ensure the certificate is valid for the services we terminate for
+        // TLS. This assumes that server cert validation does the same or
+        // more validation than client cert validation.
+        //
+        // XXX: Rustls currently only provides access to a
+        // `ServerCertVerifier` through
+        // `rustls::ClientConfig::get_verifier()`.
+        //
+        // XXX: Once `rustls::ServerCertVerified` is exposed in Rustls's
+        // safe API, use it to pass proof to CertResolver::new....
+        //
+        // TODO: Restrict accepted signatutre algorithms.
+        static NO_OCSP: &'static [u8] = &[];
+        rustls::ClientConfig::new()
+            .get_verifier()
+            .verify_server_cert(&self.0, &crt.chain, crt.name.as_dns_name_ref(), NO_OCSP)
+            .map_err(InvalidCrt)?;
+
+        let k = SigningKey(key.0.clone());
+        Ok(CrtKey {
+            name: crt.name,
+            expiry: crt.expiry,
+            key: rustls::sign::CertifiedKey::new(crt.chain, Arc::new(Box::new(k))),
+        })
+    }
+}
+
+// === CrtKey ===
+
+impl Crt {
+    pub fn new(name: Name, leaf: Vec<u8>, intermediates: Vec<Vec<u8>>, expiry: SystemTime) -> Self {
+        let mut chain = Vec::with_capacity(intermediates.len() + 1);
+        chain.push(rustls::Certificate(leaf));
+        chain.extend(intermediates.into_iter().map(rustls::Certificate));
+
+        Self {
+            name,
+            chain,
+            expiry,
+        }
+    }
 }
 
 // === CrtKey ===
@@ -201,7 +250,7 @@ impl CrtKey {
             return None;
         }
 
-        Some(self.0.clone())
+        Some(self.key.clone())
     }
 }
 
@@ -235,7 +284,7 @@ impl rustls::ResolvesServerCert for CrtKey {
         };
 
         // Verify that our certificate is valid for the given SNI name.
-        let c = (&self.0.cert)
+        let c = (&self.key.cert)
             .first()
             .map(rustls::Certificate::as_ref)
             .unwrap_or(&[]); // An empty input will fail to parse.
@@ -250,5 +299,23 @@ impl rustls::ResolvesServerCert for CrtKey {
         }
 
         self.resolve_(sigschemes)
+    }
+}
+
+// === impl InvalidCrt ===
+
+impl fmt::Display for InvalidCrt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl Error for InvalidCrt {
+    fn description(&self) -> &str {
+        self.0.description()
+    }
+
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.0.source()
     }
 }

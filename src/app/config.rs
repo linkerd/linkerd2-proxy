@@ -591,10 +591,8 @@ fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
     Ok(set)
 }
 
-pub(super) fn parse_identity(s: &str) -> Result<identity::Identity, ParseError> {
-    dns::Name::try_from(s.as_bytes())
-        .map(|n| n.into())
-        .map_err(|_| ParseError::NameError)
+pub(super) fn parse_identity(s: &str) -> Result<identity::Name, ParseError> {
+    identity::Name::from_sni_hostname(s.as_bytes()).map_err(|_| ParseError::NameError)
 }
 
 pub(super) fn parse<T, Parse>(
@@ -688,7 +686,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
             false,
             Some(trust_anchors),
             Some(dir),
-            Some(identity),
+            Some(local_name),
             Some(token),
             min_refresh,
             max_refresh,
@@ -730,7 +728,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
             };
 
             Ok(Some(identity::Config {
-                identity,
+                local_name,
                 token,
                 trust_anchors,
                 csr: csr?,

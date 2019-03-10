@@ -5,7 +5,7 @@ use futures_watch::{Store, Watch};
 use http;
 use std::fmt;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, Body, BoxBody};
@@ -15,17 +15,24 @@ use api::identity as api;
 use never::Never;
 
 use identity;
-pub use identity::{CrtKey, Identity, Key, TokenSource, TrustAnchors, CSR};
+pub use identity::{Crt, CrtKey, Key, Name, TokenSource, TrustAnchors, CSR};
 
 #[derive(Debug)]
 pub struct Config {
     pub trust_anchors: TrustAnchors,
     pub key: Key,
     pub csr: CSR,
-    pub identity: Identity,
+    pub local_name: Name,
     pub token: TokenSource,
     pub min_refresh: Duration,
     pub max_refresh: Duration,
+}
+
+#[derive(Clone)]
+pub struct LocalIdentity {
+    trust_anchors: TrustAnchors,
+    name: Name,
+    crt_key: Watch<Option<CrtKey>>,
 }
 
 /// Drives updates.
@@ -51,43 +58,49 @@ where
     Pending(grpc::client::unary::ResponseFuture<api::CertifyResponse, T::Future, T::ResponseBody>),
 }
 
-pub fn new<T>(config: Config, client: T) -> (Watch<Option<CrtKey>>, Daemon<T>)
+pub fn new<T>(config: Config, client: T) -> (LocalIdentity, Daemon<T>)
 where
     T: HttpService<BoxBody>,
     T::ResponseBody: grpc::Body,
 {
-    let (w, crt_key) = Watch::new(None);
+    let (ck_watch, ck_store) = Watch::new(None);
+    let id = LocalIdentity {
+        name: config.local_name.clone(),
+        trust_anchors: config.trust_anchors.clone(),
+        crt_key: ck_watch,
+    };
     let d = Daemon {
         config,
-        crt_key,
+        crt_key: ck_store,
         inner: Inner::ShouldRefresh,
-        expiry: SystemTime::now(),
+        expiry: UNIX_EPOCH,
         client: api::client::Identity::new(client),
     };
-    (w, d)
+    (id, d)
 }
+
+// === impl LocalIdentity ===
+
+impl LocalIdentity {}
 
 // === impl Daemon ===
 
-impl<T> Daemon<T>
-where
-    T: HttpService<BoxBody> + Clone,
-    T::ResponseBody: Body,
-    T::Error: fmt::Debug,
-{
-    fn refresh(expiry: SystemTime, min_refresh: Duration) -> Delay {
-        // Take the current instant from the clock before
-        // snapshotting the SystemTime so that the, if anything,
-        // we understimate the time to sleep.
+impl Config {
+    fn refresh(&self, expiry: SystemTime) -> Delay {
         let now = clock::now();
 
-        // Use 80% of the actual lifetime, so that we can tolerate failures and retry...
-        let lifetime = expiry
+        let refresh = match expiry
             .duration_since(SystemTime::now())
-            .map(|d| d * 8 / 10)
-            .unwrap_or_else(|_| min_refresh);
+            .ok()
+            .map(|d| d * 7 / 10)
+        {
+            None => self.min_refresh,
+            Some(lifetime) if lifetime < self.min_refresh => self.min_refresh,
+            Some(lifetime) if self.max_refresh < lifetime => self.max_refresh,
+            Some(lifetime) => lifetime,
+        };
 
-        Delay::new(now + lifetime)
+        Delay::new(now + refresh)
     }
 }
 
@@ -111,7 +124,7 @@ where
                 }
                 Inner::ShouldRefresh => {
                     let req = grpc::Request::new(api::CertifyRequest {
-                        identity: self.config.identity.as_ref().to_owned(),
+                        identity: self.config.local_name.as_ref().to_owned(),
                         token: self.config.token.load().expect("FIXME"),
                         certificate_signing_request: self.config.csr.to_vec(),
                     });
@@ -127,27 +140,42 @@ where
                             valid_until,
                         } = rsp.into_inner();
 
-                        let crt_key = self
-                            .config
-                            .key
-                            .to_crt_key(leaf_certificate, intermediate_certificates);
-                        // TODO validate crt_key against roots.
+                        match valid_until.and_then(|d| Result::<SystemTime, Duration>::from(d).ok())
+                        {
+                            None => error!(
+                                "Identity service did not specify a ceritificate expiration."
+                            ),
+                            Some(expiry) => {
+                                let key = self.config.key.clone();
+                                let crt = Crt::new(
+                                    self.config.local_name.clone(),
+                                    leaf_certificate,
+                                    intermediate_certificates,
+                                    expiry,
+                                );
 
-                        if self.crt_key.store(Some(crt_key)).is_err() {
-                            // If we can't store a value, than all observations
-                            // have been dropped and we can stop refreshing.
-                            return Ok(Async::Ready(()));
+                                match self.config.trust_anchors.certify(key, crt) {
+                                    Err(e) => {
+                                        error!("Received invalid ceritficate: {}", e);
+                                    }
+                                    Ok(crt_key) => {
+                                        if self.crt_key.store(Some(crt_key)).is_err() {
+                                            // If we can't store a value, than all observations
+                                            // have been dropped and we can stop refreshing.
+                                            return Ok(Async::Ready(()));
+                                        }
+
+                                        self.expiry = expiry;
+                                    }
+                                }
+                            }
                         }
 
-                        self.expiry = valid_until
-                            .and_then(|ts| Result::<SystemTime, Duration>::from(ts).ok())
-                            .unwrap_or(UNIX_EPOCH);
-
-                        Inner::Waiting(Self::refresh(self.expiry, self.config.min_refresh))
+                        Inner::Waiting(self.config.refresh(self.expiry))
                     }
                     Err(e) => {
                         error!("Failed to certify identity: {}", e);
-                        Inner::Waiting(Self::refresh(self.expiry, self.config.min_refresh))
+                        Inner::Waiting(self.config.refresh(self.expiry))
                     }
                 },
             };
