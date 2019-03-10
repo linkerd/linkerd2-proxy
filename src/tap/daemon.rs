@@ -1,6 +1,6 @@
-use futures::sync::{mpsc, oneshot};
 use futures::{Async, Future, Poll, Stream};
 use never::Never;
+use tokio::sync::{mpsc, oneshot};
 
 use super::iface::Tap;
 
@@ -86,7 +86,7 @@ impl<T: Tap> Future for Daemon<T> {
                 let err = svc.try_send(tap.clone()).err();
 
                 // If the service has been dropped, make sure that it's not added.
-                dropped = err.as_ref().map(|e| e.is_disconnected()).unwrap_or(false);
+                dropped = err.as_ref().map(|e| e.is_closed()).unwrap_or(false);
 
                 // If service can't receive any more taps, stop trying.
                 if err.is_some() {
@@ -119,7 +119,7 @@ impl<T: Tap> Future for Daemon<T> {
             // of the tap.
             for idx in (0..self.svcs.len()).rev() {
                 let err = self.svcs[idx].try_send(tap.clone()).err();
-                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
+                if err.map(|e| e.is_closed()).unwrap_or(false) {
                     trace!("removing a service");
                     self.svcs.swap_remove(idx);
                 }

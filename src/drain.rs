@@ -1,8 +1,8 @@
 use std::mem;
 
 use futures::future::Shared;
-use futures::sync::{mpsc, oneshot};
 use futures::{Async, Future, Poll, Stream};
+use tokio::sync::{mpsc, oneshot};
 
 use never::Never;
 
@@ -12,7 +12,7 @@ use never::Never;
 /// when a drain is signaled.
 pub fn channel() -> (Signal, Watch) {
     let (tx, rx) = oneshot::channel();
-    let (drained_tx, drained_rx) = mpsc::channel(0);
+    let (drained_tx, drained_rx) = mpsc::channel(1);
     (
         Signal { drained_rx, tx },
         Watch {
@@ -136,7 +136,7 @@ impl Future for Drained {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match try_ready!(self.drained_rx.poll()) {
+        match try_ready!(self.drained_rx.poll().map_err(|_| ())) {
             Some(never) => match never {},
             None => Ok(Async::Ready(())),
         }

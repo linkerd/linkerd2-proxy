@@ -1,11 +1,11 @@
 use bytes::Buf;
-use futures::sync::{mpsc, oneshot};
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
 use never::Never;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
+use tokio::sync::{mpsc, oneshot};
 use tokio_timer::clock;
 use tower_grpc::{self as grpc, Response};
 

@@ -9,10 +9,11 @@
 //! DNS TTLs are honored and, if the resolution changes, the inner stack is
 //! rebuilt with the updated value.
 
-use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
+use futures::{future, Async, Future, Poll, Stream};
 use std::time::Duration;
 use std::{error, fmt};
 use tokio::executor::{DefaultExecutor, Executor};
+use tokio::sync::mpsc;
 use tokio_timer::{clock, Delay, Timeout};
 
 use dns;
@@ -180,7 +181,7 @@ impl Future for Task {
                             let resolved = NameAddr::new(refine.name, self.original.port());
                             if self.resolved.get() != Some(&resolved) {
                                 let err = self.tx.try_send(resolved.clone()).err();
-                                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
+                                if err.map(|e| e.is_closed()).unwrap_or(false) {
                                     return Ok(().into());
                                 }
 
@@ -199,7 +200,7 @@ impl Future for Task {
                                     e,
                                 );
                                 let err = self.tx.try_send(self.original.clone()).err();
-                                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
+                                if err.map(|e| e.is_closed()).unwrap_or(false) {
                                     return Ok(().into());
                                 }
 

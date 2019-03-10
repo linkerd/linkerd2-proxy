@@ -1,10 +1,10 @@
-use futures::sync::mpsc;
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use http;
 use regex::Regex;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::executor::{DefaultExecutor, Executor};
+use tokio::sync::mpsc;
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tower_retry::budget::Budget;
