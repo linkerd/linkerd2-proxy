@@ -6,7 +6,7 @@ extern crate webpki;
 
 use std::fmt;
 
-use identity::Identity;
+pub use identity::Identity;
 use Conditional;
 
 mod cert_resolver;

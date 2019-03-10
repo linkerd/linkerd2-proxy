@@ -8,10 +8,10 @@ use std::{fs, io};
 
 use indexmap::IndexSet;
 
+use super::identity;
 use addr;
 use convert::TryFrom;
 use dns;
-use identity;
 use transport::tls;
 use {Addr, Conditional};
 
@@ -235,6 +235,11 @@ pub const ENV_IDENTITY_END_ENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_END_ENTIT
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
 pub const ENV_IDENTITY_LOCAL_IDENTITY: &str = "LINKERD2_PROXY_LOCAL_IDENTITY";
 pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_TOKEN_FILE";
+pub const ENV_IDENTITY_MIN_REFRESH: &str = "LINKERD2_PROXY_MIN_REFRESH";
+pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_MAX_REFRESH";
+
+pub const ENV_IDENTITY_ADDR: &str = "LINKERD2_PROXY_IDENTITY_ADDR";
+pub const ENV_IDENTITY_IDENTITY: &str = "LINKERD2_PROXY_IDENTITY_IDENTITY";
 
 pub const ENV_DESTINATION_ADDR: &str = "LINKERD2_PROXY_DESTINATION_ADDR";
 pub const ENV_DESTINATION_CONTEXT_TOKEN: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT_TOKEN";
@@ -282,6 +287,9 @@ const DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT: usize = 100;
 
 const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
+
+const DEFAULT_IDENTITY_MIN_REFRESH: Duration = Duration::from_secs(10);
+const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24);
 
 // By default, we keep a list of known assigned ports of server-first protocols.
 //
@@ -377,7 +385,7 @@ impl Config {
             .as_ref()
             .map(|c| c.is_none())
             .unwrap_or(false);
-        let dst_id = parse(strings, ENV_DESTINATION_IDENTITY, parse_dns_name);
+        let dst_id = parse(strings, ENV_DESTINATION_IDENTITY, parse_identity);
         let dst_id: Result<tls::ConditionalIdentity, Error> = dst_addr
             .as_ref()
             .map_err(|e| e.clone())
@@ -583,8 +591,10 @@ fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
     Ok(set)
 }
 
-pub(super) fn parse_dns_name(s: &str) -> Result<dns::Name, ParseError> {
-    dns::Name::try_from(s.as_bytes()).map_err(|_| ParseError::NameError)
+pub(super) fn parse_identity(s: &str) -> Result<identity::Identity, ParseError> {
+    dns::Name::try_from(s.as_bytes())
+        .map(|n| n.into())
+        .map_err(|_| ParseError::NameError)
 }
 
 pub(super) fn parse<T, Parse>(
@@ -661,21 +671,32 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
         Ok(PathBuf::from(s))
     });
     let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
-        identity::TokenSource::if_nonempty_file(s).map_err(ParseError::InvalidTokenSource)
+        identity::TokenSource::if_nonempty_file(s.to_string())
+            .map_err(ParseError::InvalidTokenSource)
     });
-    let li = parse(strings, ENV_IDENTITY_LOCAL_IDENTITY, |ref s| {
-        super::config::parse_dns_name(s).map(|id| id.into())
-    });
+    let li = parse(strings, ENV_IDENTITY_LOCAL_IDENTITY, parse_identity);
+    let min_refresh = parse(strings, ENV_IDENTITY_MIN_REFRESH, parse_duration);
+    let max_refresh = parse(strings, ENV_IDENTITY_MAX_REFRESH, parse_duration);
 
     let disabled = strings
         .get(ENV_IDENTITY_DISABLED)?
         .map(|d| !d.is_empty())
         .unwrap_or(false);
-    match (disabled, ta?, ee?, li?, tok?) {
-        (false, Some(trust_anchors), Some(dir), Some(identity), Some(token)) => {
+
+    match (disabled, ta?, ee?, li?, tok?, min_refresh?, max_refresh?) {
+        (
+            false,
+            Some(trust_anchors),
+            Some(dir),
+            Some(identity),
+            Some(token),
+            min_refresh,
+            max_refresh,
+        ) => {
             let key = {
                 let mut p = dir.clone();
-                p.push("key.p8");
+                p.push("key");
+                p.set_extension("p8");
 
                 fs::read(p)
                     .map_err(|e| {
@@ -692,7 +713,8 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
 
             let csr = {
                 let mut p = dir;
-                p.push("csr.der");
+                p.push("csr");
+                p.set_extension("der");
 
                 fs::read(p)
                     .map_err(|e| {
@@ -713,17 +735,19 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
                 trust_anchors,
                 csr: csr?,
                 key: key?,
+                min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
+                max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
             }))
         }
-        (true, None, None, None, None) => Ok(None),
-        (false, None, None, None, None) => {
+        (true, None, None, None, None, None, None) => Ok(None),
+        (false, None, None, None, None, None, None) => {
             error!(
                 "{} must be set or identity configuration must be specified.",
                 ENV_IDENTITY_DISABLED
             );
             Err(Error::InvalidEnvVar)
         }
-        (disabled, trust_anchors, end_entity_dir, local_id, token) => {
+        (disabled, trust_anchors, end_entity_dir, local_id, token, minr, maxr) => {
             if disabled {
                 error!(
                     "{} must be unset when other identity variables are set.",
@@ -735,6 +759,8 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
                 (end_entity_dir.is_none(), ENV_IDENTITY_END_ENTITY_DIR),
                 (local_id.is_none(), ENV_IDENTITY_LOCAL_IDENTITY),
                 (token.is_none(), ENV_IDENTITY_TOKEN_FILE),
+                (minr.is_none(), ENV_IDENTITY_MIN_REFRESH),
+                (maxr.is_none(), ENV_IDENTITY_MAX_REFRESH),
             ] {
                 if *unset {
                     error!(
