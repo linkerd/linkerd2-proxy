@@ -1,15 +1,14 @@
 use indexmap::IndexMap;
 use std::{
     collections::HashMap,
-    fmt,
+    //fmt,
     iter::IntoIterator,
     net::SocketAddr,
     time::{Duration, Instant},
 };
 
 use futures::{Async, Future, Stream};
-use tower_grpc::{Body, BoxBody};
-use tower_http::HttpService;
+use tower_grpc::{BoxBody, generic::client::GrpcService};
 
 use api::{
     destination::{protocol_hint::Protocol, update::Update as PbUpdate2, WeightedAddr},
@@ -30,8 +29,7 @@ use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 /// Holds the state of a single resolution.
 pub(super) struct DestinationSet<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
     pub query: DestinationServiceQuery<T>,
@@ -43,9 +41,7 @@ where
 
 impl<T> DestinationSet<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
-    T::Error: fmt::Debug,
+    T: GrpcService<BoxBody>,
 {
     pub(super) fn reset_dns_query(
         &mut self,
@@ -183,8 +179,7 @@ where
 
 impl<T> DestinationSet<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     /// Returns `true` if the authority that created this query _should_ query
     /// the Destination service, but was unable to due to insufficient capaacity.

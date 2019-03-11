@@ -3,9 +3,11 @@ extern crate futures_watch;
 use self::futures_watch::Watch;
 use futures::{future::MapErr, Async, Future, Poll, Stream};
 use std::marker::PhantomData;
-use std::{error, fmt};
+use std::fmt;
 
 use svc;
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Implemented by targets that can be updated by a `Watch<U>`
 pub trait WithUpdate<U> {
@@ -36,11 +38,9 @@ pub struct Service<T: WithUpdate<U>, U, M: super::Stack<T::Updated>> {
     inner: M::Value,
 }
 
+/// An error in the `Service` when trying to make a new stack from a watch update.
 #[derive(Debug)]
-pub enum Error<I, M> {
-    Stack(M),
-    Inner(I),
-}
+pub struct MakeWatch(Error);
 
 /// A special implemtation of WithUpdate that clones the observed update value.
 #[derive(Clone, Debug)]
@@ -122,14 +122,16 @@ where
 
 // === impl Service ===
 
-impl<T, U, M, R> svc::Service<R> for Service<T, U, M>
+impl<T, U, M, Svc, R> svc::Service<R> for Service<T, U, M>
 where
     T: WithUpdate<U>,
-    M: super::Stack<T::Updated>,
-    M::Value: svc::Service<R>,
+    M: super::Stack<T::Updated, Value = Svc>,
+    M::Error: Into<Error>,
+    Svc: svc::Service<R>,
+    Svc::Error: Into<Error>,
 {
     type Response = <M::Value as svc::Service<R>>::Response;
-    type Error = Error<<M::Value as svc::Service<R>>::Error, M::Error>;
+    type Error = Error;
     type Future = MapErr<
         <M::Value as svc::Service<R>>::Future,
         fn(<M::Value as svc::Service<R>>::Error) -> Self::Error,
@@ -144,14 +146,16 @@ where
             // `inner` is only updated if `updated` is valid. The caller may
             // choose to continue using the service or discard as is
             // appropriate.
-            self.inner = self.stack.make(&updated).map_err(Error::Stack)?;
+            self.inner = self.stack.make(&updated).map_err(|e| {
+                Box::new(MakeWatch(e.into()))
+            })?;
         }
 
-        self.inner.poll_ready().map_err(Error::Inner)
+        self.inner.poll_ready().map_err(Into::into)
     }
 
     fn call(&mut self, req: R) -> Self::Future {
-        self.inner.call(req).map_err(Error::Inner)
+        self.inner.call(req).map_err(Into::into)
     }
 }
 
@@ -199,16 +203,17 @@ impl<U: Clone> WithUpdate<U> for CloneUpdate {
 
 // === impl Error ===
 
-impl<I: fmt::Display, M: fmt::Display> fmt::Display for Error<I, M> {
+impl fmt::Display for MakeWatch {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::Inner(i) => i.fmt(f),
-            Error::Stack(m) => m.fmt(f),
-        }
+        write!(f, "error making stack after watch update: {}", self.0)
     }
 }
 
-impl<I: error::Error, M: error::Error> error::Error for Error<I, M> {}
+impl std::error::Error for MakeWatch {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&*self.0)
+    }
+}
 
 #[cfg(test)]
 mod tests {

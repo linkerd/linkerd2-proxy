@@ -4,15 +4,16 @@ use http;
 use http::header::CONTENT_LENGTH;
 use std::marker::PhantomData;
 use std::time::Duration;
-use std::{error, fmt};
+use std::fmt;
 
 use never::Never;
 use svc;
 
 extern crate linkerd2_router;
 
-use self::linkerd2_router::Error;
 pub use self::linkerd2_router::{Recognize, Router};
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -89,8 +90,8 @@ where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
     Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
-    <Stk::Value as svc::Service<Req>>::Error: error::Error,
-    Stk::Error: fmt::Debug,
+    <Stk::Value as svc::Service<Req>>::Error: Into<Error>,
+    Stk::Error: Into<Error>,
     B: Default + Send + 'static,
 {
     type Value = <Stack<Req, Rec, Stk> as svc::Stack<Config>>::Value;
@@ -113,8 +114,8 @@ where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
     Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
-    <Stk::Value as svc::Service<Req>>::Error: error::Error,
-    Stk::Error: fmt::Debug,
+    <Stk::Value as svc::Service<Req>>::Error: Into<Error>,
+    Stk::Error: Into<Error>,
     B: Default + Send + 'static,
 {
     type Value = Service<Req, Rec, Stk>;
@@ -131,30 +132,24 @@ where
     }
 }
 
-fn route_err_to_5xx<E, F>(e: Error<E, F>) -> http::StatusCode
-where
-    E: error::Error,
-    F: fmt::Debug,
-{
-    match e {
-        Error::Route(r) => {
-            error!("router error: {:?}", r);
-            http::StatusCode::INTERNAL_SERVER_ERROR
-        }
-        Error::Inner(i) => {
-            error!("service error: {}", i);
-            http::StatusCode::INTERNAL_SERVER_ERROR
-        }
-        Error::NotRecognized => {
-            error!("could not recognize request");
-            http::StatusCode::INTERNAL_SERVER_ERROR
-        }
-        Error::NoCapacity(capacity) => {
-            // TODO For H2 streams, we should probably signal a protocol-level
-            // capacity change.
-            error!("router at capacity ({})", capacity);
-            http::StatusCode::SERVICE_UNAVAILABLE
-        }
+fn route_err_to_5xx(e: Error) -> http::StatusCode {
+    use self::linkerd2_router::error;
+
+    if let Some(ref r) = e.downcast_ref::<error::MakeRoute>() {
+        error!("router error: {:?}", r);
+        http::StatusCode::INTERNAL_SERVER_ERROR
+    } else if let Some(_) = e.downcast_ref::<error::NotRecognized>() {
+        error!("could not recognize request");
+        http::StatusCode::INTERNAL_SERVER_ERROR
+    } else if let Some(ref c) = e.downcast_ref::<error::NoCapacity>() {
+        // TODO For H2 streams, we should probably signal a protocol-level
+        // capacity change.
+        error!("router at capacity ({})", c.0);
+        http::StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        // Inner
+        error!("service error: {}", e);
+        http::StatusCode::INTERNAL_SERVER_ERROR
     }
 }
 
@@ -165,8 +160,8 @@ where
     Rec: Recognize<Req> + Send + Sync + 'static,
     Stk: svc::Stack<Rec::Target> + Send + Sync + 'static,
     Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
-    <Stk::Value as svc::Service<Req>>::Error: error::Error,
-    Stk::Error: fmt::Debug,
+    <Stk::Value as svc::Service<Req>>::Error: Into<Error>,
+    Stk::Error: Into<Error>,
     B: Default + Send + 'static,
 {
     type Response = <Router<Req, Rec, Stk> as svc::Service<Req>>::Response;
@@ -203,11 +198,9 @@ where
 
 // === impl ResponseFuture ===
 
-impl<F, E, G, B> Future for ResponseFuture<F>
+impl<F, B> Future for ResponseFuture<F>
 where
-    F: Future<Item = http::Response<B>, Error = Error<E, G>>,
-    E: error::Error,
-    G: fmt::Debug,
+    F: Future<Item = http::Response<B>, Error = Error>,
     B: Default,
 {
     type Item = F::Item;

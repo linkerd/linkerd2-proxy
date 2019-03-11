@@ -1,15 +1,12 @@
-use bytes::IntoBuf;
 use futures::sync::mpsc;
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use http;
 use regex::Regex;
-use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay};
-use tower_grpc::{self as grpc, Body, BoxBody};
-use tower_http::HttpService;
+use tower_grpc::{self as grpc, Body, BoxBody, generic::client::GrpcService};
 use tower_retry::budget::Budget;
 
 use api::destination as api;
@@ -29,8 +26,7 @@ pub struct Rx(mpsc::Receiver<profiles::Routes>);
 
 struct Daemon<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     dst: String,
     backoff: Duration,
@@ -42,8 +38,7 @@ where
 
 enum State<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     Disconnected,
     Backoff(Delay),
@@ -55,11 +50,13 @@ where
 
 impl<T> Client<T>
 where
-    T: HttpService<BoxBody> + Clone + Send + 'static,
-    T::ResponseBody: Body + Send + 'static,
-    <T::ResponseBody as Body>::Data: Send + 'static,
-    <<T::ResponseBody as Body>::Data as IntoBuf>::Buf: Send + 'static,
-    T::Error: fmt::Debug,
+    // These bounds aren't *required* here, they just help detect the problem
+    // earlier (as Client::new), instead of when trying to passing a `Client`
+    // to something that wants `impl profiles::GetRoutes`.
+    T: GrpcService<BoxBody> + Clone + Send + 'static,
+    T::ResponseBody: Send,
+    <T::ResponseBody as Body>::Item: Send,
+    T::Future: Send,
 {
     pub fn new(service: Option<T>, backoff: Duration, proxy_id: String) -> Self {
         Self {
@@ -72,12 +69,10 @@ where
 
 impl<T> profiles::GetRoutes for Client<T>
 where
-    T: HttpService<BoxBody> + Clone + Send + 'static,
-    T::Future: Send + 'static,
-    T::ResponseBody: Body + Send + 'static,
-    <T::ResponseBody as Body>::Data: Send + 'static,
-    <<T::ResponseBody as Body>::Data as IntoBuf>::Buf: Send + 'static,
-    T::Error: fmt::Debug,
+    T: GrpcService<BoxBody> + Clone + Send + 'static,
+    T::ResponseBody: Send,
+    <T::ResponseBody as Body>::Item: Send,
+    T::Future: Send,
 {
     type Stream = Rx;
 
@@ -118,9 +113,7 @@ enum StreamState {
 
 impl<T> Daemon<T>
 where
-    T: HttpService<BoxBody> + Clone,
-    T::ResponseBody: Body,
-    T::Error: fmt::Debug,
+    T: GrpcService<BoxBody>,
 {
     fn proxy_stream(
         rx: &mut grpc::Streaming<api::DestinationProfile, T::ResponseBody>,
@@ -167,9 +160,7 @@ where
 
 impl<T> Future for Daemon<T>
 where
-    T: HttpService<BoxBody> + Clone,
-    T::ResponseBody: Body,
-    T::Error: fmt::Debug,
+    T: GrpcService<BoxBody>,
 {
     type Item = ();
     type Error = Never;
@@ -178,8 +169,19 @@ where
         loop {
             self.state = match self.state {
                 State::Disconnected => {
-                    let mut client = match self.service {
-                        Some(ref svc) => api::client::Destination::new(svc.clone()),
+                    let svc = match self.service {
+                        Some(ref mut svc) => match svc.poll_ready() {
+                            Ok(Async::Ready(())) => svc.as_service(),
+                            Ok(Async::NotReady) => return Ok(Async::NotReady),
+                            Err(err) => {
+                                error!(
+                                    "profile service unexpected error (dst = {}): {:?}",
+                                    self.dst,
+                                    err.into(),
+                                );
+                                return Ok(Async::Ready(()));
+                            },
+                        },
                         None => return Ok(Async::Ready(())),
                     };
 
@@ -188,7 +190,8 @@ where
                         path: self.dst.clone(),
                         proxy_id: self.proxy_id.clone(),
                     };
-                    debug!("disconnected; getting profile: {:?}", req);
+                    debug!("getting profile: {:?}", req);
+                    let mut client = api::client::Destination::new(svc);
                     let rspf = client.get_profile(grpc::Request::new(req));
                     State::Waiting(rspf)
                 }

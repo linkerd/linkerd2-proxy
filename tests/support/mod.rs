@@ -22,6 +22,7 @@ extern crate tokio_connect;
 extern crate tokio_current_thread;
 pub extern crate tokio_io;
 extern crate tower_grpc;
+extern crate tower_http_service;
 extern crate tower_service;
 
 pub use std::collections::HashMap;
@@ -39,6 +40,7 @@ use self::tokio::{net::TcpListener, reactor, runtime};
 use self::tokio_connect::Connect;
 use self::tokio_current_thread as current_thread;
 use self::tower_grpc as grpc;
+use self::tower_http_service::{Body as HttpBody};
 use self::tower_service::Service;
 
 /// Environment variable for overriding the test patience.

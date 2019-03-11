@@ -716,7 +716,7 @@ where
     R::Value: svc::Service<http::Request<proxy::http::Body>, Response = http::Response<B>>,
     R::Value: Send + 'static,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Error:
-        error::Error + Send + Sync + 'static,
+        Into<Box<dyn error::Error + Send + Sync>> + Send,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
     G: GetOriginalDst + Send + 'static,
@@ -790,13 +790,12 @@ fn serve_tap<N, B>(
 ) -> impl Future<Item = (), Error = ()> + 'static
 where
     B: tower_grpc::Body + Send + 'static,
-    B::Data: Send + 'static,
-    <B::Data as bytes::IntoBuf>::Buf: Send + 'static,
+    B::Item: Send + 'static,
     N: svc::MakeService<(), http::Request<grpc::BoxBody>, Response = http::Response<B>>
         + Send
         + 'static,
-    N::Error: error::Error + Send + Sync,
-    N::MakeError: error::Error,
+    N::Error: Into<Box<dyn error::Error + Send + Sync>>,
+    N::MakeError: ::std::fmt::Display,
     <N::Service as svc::Service<http::Request<grpc::BoxBody>>>::Future: Send + 'static,
 {
     let log = logging::admin().server("tap", bound_port.local_addr());

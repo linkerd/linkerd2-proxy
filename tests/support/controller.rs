@@ -112,27 +112,30 @@ impl Controller {
     }
 }
 
-fn grpc_internal_code() -> grpc::Error {
-    grpc::Error::Grpc(grpc::Status::with_code(grpc::Code::Internal))
+fn grpc_internal_code() -> grpc::Status {
+    grpc::Status::new(
+        grpc::Code::Internal,
+        "unit test controller internal error",
+    )
 }
 
-fn grpc_no_results() -> grpc::Error {
-    grpc::Error::Grpc(grpc::Status::with_code_and_message(
+fn grpc_no_results() -> grpc::Status {
+    grpc::Status::new(
         grpc::Code::Unavailable,
-        "unit test controller has no results".into(),
-    ))
+        "unit test controller has no results",
+    )
 }
 
-fn grpc_unexpected_request() -> grpc::Error {
-    grpc::Error::Grpc(grpc::Status::with_code_and_message(
+fn grpc_unexpected_request() -> grpc::Status {
+    grpc::Status::new(
         grpc::Code::InvalidArgument,
-        "unit test controller expected different request".into(),
-    ))
+        "unit test controller expected different request",
+    )
 }
 
 impl Stream for DstReceiver {
     type Item = pb::Update;
-    type Error = grpc::Error;
+    type Error = grpc::Status;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         self.0.poll().map_err(|_| grpc_internal_code())
     }
@@ -163,7 +166,7 @@ impl DstSender {
 
 impl Stream for ProfileReceiver {
     type Item = pb::DestinationProfile;
-    type Error = grpc::Error;
+    type Error = grpc::Status;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         self.0.poll().map_err(|_| grpc_internal_code())
     }
@@ -177,7 +180,7 @@ impl ProfileSender {
 
 impl pb::server::Destination for Controller {
     type GetStream = DstReceiver;
-    type GetFuture = future::FutureResult<grpc::Response<Self::GetStream>, grpc::Error>;
+    type GetFuture = future::FutureResult<grpc::Response<Self::GetStream>, grpc::Status>;
 
     fn get(&mut self, req: grpc::Request<pb::GetDestination>) -> Self::GetFuture {
         if let Ok(mut calls) = self.expect_dst_calls.lock() {
@@ -196,7 +199,7 @@ impl pb::server::Destination for Controller {
 
     type GetProfileStream = ProfileReceiver;
     type GetProfileFuture =
-        future::FutureResult<grpc::Response<Self::GetProfileStream>, grpc::Error>;
+        future::FutureResult<grpc::Response<Self::GetProfileStream>, grpc::Status>;
 
     fn get_profile(&mut self, req: grpc::Request<pb::GetDestination>) -> Self::GetProfileFuture {
         if let Ok(mut calls) = self.expect_profile_calls.lock() {
@@ -253,7 +256,7 @@ fn run(
                     let dst_svc = Mutex::new(dst_svc.clone());
                     hyper::service::service_fn(move |req| {
                         let req =
-                            req.map(|body| tower_grpc::BoxBody::new(Box::new(PayloadToGrpc(body))));
+                            req.map(|body| tower_grpc::BoxBody::map_from(PayloadToGrpc(body)));
                         dst_svc
                             .lock()
                             .expect("dst_svc lock")
@@ -504,22 +507,20 @@ fn octets_to_u64s(octets: [u8; 16]) -> (u64, u64) {
 
 struct PayloadToGrpc(hyper::Body);
 
-impl tower_grpc::Body for PayloadToGrpc {
-    type Data = Bytes;
+impl HttpBody for PayloadToGrpc {
+    type Item = hyper::Chunk;
+    type Error = hyper::Error;
 
     fn is_end_stream(&self) -> bool {
         self.0.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
-        let data = try_ready!(self.0.poll_data().map_err(|_| tower_grpc::Error::Inner(())));
-        Ok(data.map(Bytes::from).into())
+    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        self.0.poll_data()
     }
 
-    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
-        self.0
-            .poll_trailers()
-            .map_err(|_| tower_grpc::Error::Inner(()))
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+        self.0.poll_trailers()
     }
 }
 
@@ -528,22 +529,22 @@ struct GrpcToPayload<B>(B);
 impl<B> Payload for GrpcToPayload<B>
 where
     B: tower_grpc::Body + Send + 'static,
-    B::Data: Send + 'static,
-    <B::Data as IntoBuf>::Buf: Send + 'static,
+    B::Item: Send + 'static,
+    <B::Item as IntoBuf>::Buf: Send + 'static,
 {
-    type Data = <B::Data as IntoBuf>::Buf;
-    type Error = tower_grpc::Error;
+    type Data = <B::Item as IntoBuf>::Buf;
+    type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         self.0.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
-        let data = try_ready!(self.0.poll_data());
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+        let data = try_ready!(self.0.poll_buf());
         Ok(data.map(IntoBuf::into_buf).into())
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
-        self.0.poll_metadata()
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+        self.0.poll_trailers()
     }
 }

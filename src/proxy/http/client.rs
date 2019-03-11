@@ -151,7 +151,7 @@ where
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     <C::Value as connect::Connect>::Connected: tls::HasStatus + Send,
     <C::Value as connect::Connect>::Future: Send + 'static,
-    <C::Value as connect::Connect>::Error: error::Error + Send + Sync,
+    <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync>>,
     B: hyper::body::Payload + Send + 'static,
 {
     type Value = <Stack<C, B> as svc::Stack<Config>>::Value;
@@ -190,7 +190,7 @@ where
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     <C::Value as connect::Connect>::Connected: tls::HasStatus + Send,
     <C::Value as connect::Connect>::Future: Send + 'static,
-    <C::Value as connect::Connect>::Error: error::Error + Send + Sync,
+    <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync>>,
     B: hyper::body::Payload + Send + 'static,
 {
     type Value = Client<C::Value, B>;
@@ -212,7 +212,7 @@ impl<C, B> Client<C, B>
 where
     C: connect::Connect + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
-    C::Error: error::Error + Send + Sync,
+    C::Error: Into<Box<dyn error::Error + Send + Sync>>,
     C::Connected: tls::HasStatus + Send,
     B: hyper::body::Payload + 'static,
 {
@@ -253,7 +253,7 @@ impl<C, B> svc::Service<()> for Client<C, B>
 where
     C: connect::Connect + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: error::Error + Send + Sync,
+    <C::Future as Future>::Error: Into<Box<dyn error::Error + Send + Sync>>,
     C::Connected: tls::HasStatus + Send,
     B: hyper::body::Payload + 'static,
 {
@@ -306,7 +306,7 @@ where
     C: connect::Connect + Send + Sync + 'static,
     C::Connected: tls::HasStatus + Send,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: error::Error + Send + Sync,
+    <C::Future as Future>::Error: Into<Box<dyn error::Error + Send + Sync>>,
     B: hyper::body::Payload + 'static,
 {
     type Response = http::Response<HttpBody>;

@@ -187,7 +187,8 @@ where
     R: Stack<Source, Error = Never> + Clone,
     R::Value: Service<http::Request<HttpBody>, Response = http::Response<B>>,
     R::Value: 'static,
-    <R::Value as Service<http::Request<HttpBody>>>::Error: error::Error + Send + Sync + 'static,
+    <R::Value as Service<http::Request<HttpBody>>>::Error:
+        Into<Box<dyn std::error::Error + Send + Sync>> + Send,
     <R::Value as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
 {

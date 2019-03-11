@@ -11,4 +11,4 @@ publish = false
 futures = "0.1"
 indexmap = "1.0.0"
 linkerd2-stack  = { path = "../stack" }
-tower-service = { git = "https://github.com/tower-rs/tower" }
+tower-service = "0.2"

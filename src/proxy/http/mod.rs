@@ -29,12 +29,25 @@ pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
 }
 
+impl HasH2Reason for Box<dyn std::error::Error> {
+    fn h2_reason(&self) -> Option<::h2::Reason> {
+        None
+    }
+}
+
+impl HasH2Reason for Box<dyn std::error::Error + Send + Sync> {
+    fn h2_reason(&self) -> Option<::h2::Reason> {
+        None
+    }
+}
+
 impl HasH2Reason for ::h2::Error {
     fn h2_reason(&self) -> Option<::h2::Reason> {
         self.reason()
     }
 }
 
+/*
 impl<E: HasH2Reason> HasH2Reason for super::buffer::ServiceError<E> {
     fn h2_reason(&self) -> Option<::h2::Reason> {
         match self {
@@ -43,6 +56,7 @@ impl<E: HasH2Reason> HasH2Reason for super::buffer::ServiceError<E> {
         }
     }
 }
+*/
 
 impl<A: HasH2Reason, B: HasH2Reason> HasH2Reason for Either<A, B> {
     fn h2_reason(&self) -> Option<::h2::Reason> {

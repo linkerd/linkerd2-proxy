@@ -1,10 +1,13 @@
 use futures::{Future, Poll, Stream};
 use prost::Message;
-use std::{fmt, sync::Weak};
+use std::sync::Weak;
 use tower_grpc::{
-    self as grpc, client::server_streaming::ResponseFuture, Body, BoxBody, Streaming,
+    self as grpc,
+    client::server_streaming::ResponseFuture,
+    generic::client::GrpcService,
+    BoxBody,
+    Streaming,
 };
-use tower_http::HttpService;
 
 /// Tracks the state of a gRPC response stream from a remote.
 ///
@@ -12,8 +15,7 @@ use tower_http::HttpService;
 /// remote stream.
 pub enum Remote<M, S>
 where
-    S: HttpService<BoxBody>,
-    S::ResponseBody: Body,
+    S: GrpcService<BoxBody>,
 {
     NeedsReconnect,
     ConnectedOrConnecting { rx: Receiver<M, S> },
@@ -26,8 +28,7 @@ where
 /// the gRPC response and its streaming body.
 pub struct Receiver<M, S>
 where
-    S: HttpService<BoxBody>,
-    S::ResponseBody: Body,
+    S: GrpcService<BoxBody>,
 {
     rx: Rx<M, S>,
 
@@ -38,8 +39,7 @@ where
 
 enum Rx<M, S>
 where
-    S: HttpService<BoxBody>,
-    S::ResponseBody: Body,
+    S: GrpcService<BoxBody>,
 {
     Waiting(ResponseFuture<M, S::Future>),
     Streaming(Streaming<M, S::ResponseBody>),
@@ -47,40 +47,18 @@ where
 
 // ===== impl Receiver =====
 
-impl<M: Message + Default, S: HttpService<BoxBody>> Receiver<M, S>
-where
-    S::ResponseBody: Body,
-    S::Error: fmt::Debug,
-{
+impl<M: Message + Default, S: GrpcService<BoxBody>> Receiver<M, S> {
     pub fn new(future: ResponseFuture<M, S::Future>, active: Weak<()>) -> Self {
         Receiver {
             rx: Rx::Waiting(future),
             _active: active,
         }
     }
-
-    // Coerces the stream's Error<()> to an Error<S::Error>.
-    fn coerce_stream_err(e: grpc::Error<()>) -> grpc::Error<S::Error> {
-        match e {
-            grpc::Error::Grpc(s) => grpc::Error::Grpc(s),
-            grpc::Error::Inner(()) => {
-                // `stream.poll` shouldn't return this variant. If it for
-                // some reason does, we report this as an unknown error.
-                warn!("unexpected gRPC stream error");
-                debug_assert!(false);
-                grpc::Error::Grpc(grpc::Status::with_code(grpc::Code::Unknown))
-            }
-        }
-    }
 }
 
-impl<M: Message + Default, S: HttpService<BoxBody>> Stream for Receiver<M, S>
-where
-    S::ResponseBody: Body,
-    S::Error: fmt::Debug,
-{
+impl<M: Message + Default, S: GrpcService<BoxBody>> Stream for Receiver<M, S> {
     type Item = M;
-    type Error = grpc::Error<S::Error>;
+    type Error = grpc::Status;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
@@ -88,7 +66,7 @@ where
                 Rx::Waiting(ref mut future) => try_ready!(future.poll()).into_inner(),
 
                 Rx::Streaming(ref mut stream) => {
-                    return stream.poll().map_err(Self::coerce_stream_err);
+                    return stream.poll();
                 }
             };
 

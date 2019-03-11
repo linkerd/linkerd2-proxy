@@ -80,16 +80,16 @@ impl Settings {
 pub mod router {
     extern crate linkerd2_router as rt;
 
-    use futures::{Future, Poll};
+    use futures::{Poll};
     use http;
     use std::marker::PhantomData;
-    use std::{error, fmt};
 
     use super::Settings;
     use proxy::http::client::Config;
-    use proxy::http::HasH2Reason;
     use svc;
     use transport::connect;
+
+    type Error = Box<dyn std::error::Error + Send + Sync>;
 
     pub trait HasConnect {
         fn connect(&self) -> connect::Target;
@@ -109,19 +109,6 @@ pub mod router {
         router: Router<B, M>,
     }
 
-    pub struct ResponseFuture<B, M>
-    where
-        M: svc::Stack<Config>,
-        M::Value: svc::Service<http::Request<B>> + Clone,
-    {
-        inner: <Router<B, M> as svc::Service<http::Request<B>>>::Future,
-    }
-
-    #[derive(Debug)]
-    pub enum Error<E, M> {
-        Service(E),
-        Stack(M),
-    }
 
     pub struct Recognize(connect::Target);
 
@@ -137,11 +124,13 @@ pub mod router {
         }
     }
 
-    impl<B, T, M> svc::Layer<T, Config, M> for Layer<T, B>
+    impl<B, T, M, Svc> svc::Layer<T, Config, M> for Layer<T, B>
     where
         T: HasConnect,
-        M: svc::Stack<Config> + Clone,
-        M::Value: svc::Service<http::Request<B>> + Clone,
+        M: svc::Stack<Config, Value = Svc> + Clone,
+        M::Error: Into<Error>,
+        Svc: svc::Service<http::Request<B>> + Clone,
+        Svc::Error: Into<Error>,
     {
         type Value = <Stack<B, M> as svc::Stack<T>>::Value;
         type Error = <Stack<B, M> as svc::Stack<T>>::Error;
@@ -158,11 +147,13 @@ pub mod router {
         }
     }
 
-    impl<B, T, M> svc::Stack<T> for Stack<B, M>
+    impl<B, T, M, Svc> svc::Stack<T> for Stack<B, M>
     where
         T: HasConnect,
-        M: svc::Stack<Config> + Clone,
-        M::Value: svc::Service<http::Request<B>> + Clone,
+        M: svc::Stack<Config, Value = Svc> + Clone,
+        M::Error: Into<Error>,
+        Svc: svc::Service<http::Request<B>> + Clone,
+        Svc::Error: Into<Error>,
     {
         type Value = Service<B, M>;
         type Error = M::Error;
@@ -203,76 +194,23 @@ pub mod router {
         }
     }
 
-    impl<B, M> svc::Service<http::Request<B>> for Service<B, M>
+    impl<B, M, Svc> svc::Service<http::Request<B>> for Service<B, M>
     where
-        M: svc::Stack<Config>,
-        M::Value: svc::Service<http::Request<B>> + Clone,
+        M: svc::Stack<Config, Value = Svc>,
+        M::Error: Into<Error>,
+        Svc: svc::Service<http::Request<B>> + Clone,
+        Svc::Error: Into<Error>,
     {
         type Response = <Router<B, M> as svc::Service<http::Request<B>>>::Response;
-        type Error = Error<<M::Value as svc::Service<http::Request<B>>>::Error, M::Error>;
-        type Future = ResponseFuture<B, M>;
+        type Error = Error;
+        type Future = rt::ResponseFuture<http::Request<B>, Svc>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            match self.router.poll_ready() {
-                Ok(async) => Ok(async),
-                Err(rt::Error::Inner(e)) => Err(Error::Service(e)),
-                Err(rt::Error::Route(e)) => Err(Error::Stack(e)),
-                Err(rt::Error::NoCapacity(_)) | Err(rt::Error::NotRecognized) => {
-                    unreachable!("router must reliably dispatch");
-                }
-            }
+            self.router.poll_ready()
         }
 
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            let inner = self.router.call(req);
-            ResponseFuture { inner }
-        }
-    }
-
-    impl<B, M> Future for ResponseFuture<B, M>
-    where
-        M: svc::Stack<Config>,
-        M::Value: svc::Service<http::Request<B>> + Clone,
-    {
-        type Item = <Router<B, M> as svc::Service<http::Request<B>>>::Response;
-        type Error = Error<<M::Value as svc::Service<http::Request<B>>>::Error, M::Error>;
-
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            match self.inner.poll() {
-                Ok(async) => Ok(async),
-                Err(rt::Error::Inner(e)) => Err(Error::Service(e)),
-                Err(rt::Error::Route(e)) => Err(Error::Stack(e)),
-                Err(rt::Error::NoCapacity(_)) | Err(rt::Error::NotRecognized) => {
-                    unreachable!("router must reliably dispatch");
-                }
-            }
-        }
-    }
-
-    impl<E: fmt::Display, M: fmt::Display> fmt::Display for Error<E, M> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            match self {
-                Error::Service(e) => e.fmt(f),
-                Error::Stack(e) => e.fmt(f),
-            }
-        }
-    }
-
-    impl<E: error::Error, M: error::Error> error::Error for Error<E, M> {
-        fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-            match self {
-                Error::Service(e) => e.source(),
-                Error::Stack(e) => e.source(),
-            }
-        }
-    }
-
-    impl<E: HasH2Reason, M> HasH2Reason for Error<E, M> {
-        fn h2_reason(&self) -> Option<::h2::Reason> {
-            match self {
-                Error::Service(e) => e.h2_reason(),
-                Error::Stack(_) => None,
-            }
+            self.router.call(req)
         }
     }
 }
