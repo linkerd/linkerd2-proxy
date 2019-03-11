@@ -244,6 +244,7 @@ mod test_util {
     use futures::{future, Poll};
     use stack::Stack;
     use std::cell::Cell;
+    use std::fmt;
     use std::rc::Rc;
     use svc::Service;
 
@@ -279,7 +280,7 @@ mod test_util {
 
     impl Stack<usize> for Recognize {
         type Value = MultiplyAndAssign;
-        type Error = ();
+        type Error = MulError;
 
         fn make(&self, _: &usize) -> Result<Self::Value, Self::Error> {
             Ok(MultiplyAndAssign::default())
@@ -302,7 +303,7 @@ mod test_util {
 
     impl Stack<usize> for MultiplyAndAssign {
         type Value = MultiplyAndAssign;
-        type Error = ();
+        type Error = MulError;
 
         fn make(&self, _: &usize) -> Result<Self::Value, Self::Error> {
             // Don't use a clone, so that they don't affect the original Stack...
@@ -344,11 +345,19 @@ mod test_util {
             Request::Recognized(n)
         }
     }
+
+    impl fmt::Display for MulError {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{:?}", self)
+        }
+    }
+
+    impl std::error::Error for MulError {}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Router};
+    use super::{error, Router};
     use futures::Future;
     use std::time::Duration;
     use std::usize;
@@ -357,7 +366,7 @@ mod tests {
 
     impl<Stk> Router<Request, Recognize, Stk>
     where
-        Stk: stack::Stack<usize, Error = ()>,
+        Stk: stack::Stack<usize, Error = MulError>,
         Stk::Value: svc::Service<Request, Response = usize, Error = MulError> + Clone,
     {
         fn call_ok(&mut self, req: impl Into<Request>) -> usize {
@@ -366,7 +375,7 @@ mod tests {
             self.call(req).wait().expect(&msg)
         }
 
-        fn call_err(&mut self, req: impl Into<Request>) -> super::Error<MulError, ()> {
+        fn call_err(&mut self, req: impl Into<Request>) -> error::Error {
             let req = req.into();
             let msg = format!("router.call({:?}) should error", req);
             self.call(req.into()).wait().expect_err(&msg)
@@ -378,7 +387,7 @@ mod tests {
         let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(0));
 
         let rsp = router.call_err(Request::NotRecognized);
-        assert_eq!(rsp, Error::NotRecognized);
+        assert!(rsp.is::<error::NotRecognized>());
     }
 
     #[test]
@@ -389,7 +398,12 @@ mod tests {
         assert_eq!(rsp, 2);
 
         let rsp = router.call_err(3);
-        assert_eq!(rsp, Error::NoCapacity(1));
+        assert_eq!(
+            rsp.downcast_ref::<error::NoCapacity>()
+                .expect("error should be NoCapacity")
+                .0,
+            1
+        );
     }
 
     #[test]
@@ -413,6 +427,9 @@ mod tests {
         );
 
         let err = router.call_err(2);
-        assert_eq!(err, Error::Inner(MulError::AtMax));
+        assert_eq!(
+            err.downcast_ref::<MulError>().expect("should be MulError"),
+            &MulError::AtMax,
+        );
     }
 }
