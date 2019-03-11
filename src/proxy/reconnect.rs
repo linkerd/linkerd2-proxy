@@ -1,6 +1,6 @@
 extern crate tower_reconnect;
 
-pub use self::tower_reconnect::{Reconnect};
+pub use self::tower_reconnect::Reconnect;
 use futures::{task, Async, Future, Poll};
 use std::fmt;
 use std::marker::PhantomData;
@@ -197,7 +197,7 @@ where
             Ok(ready) => {
                 self.mute_connect_error_log = false;
                 Ok(ready)
-            },
+            }
             Err(err) => {
                 // A connection could not be established to the target.
 

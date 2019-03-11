@@ -2,9 +2,9 @@ use futures::{Future, Poll};
 use h2;
 use http;
 use http::header::CONTENT_LENGTH;
+use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
-use std::fmt;
 
 use never::Never;
 use svc;

@@ -27,7 +27,7 @@
 use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use std::sync::{Arc, Weak};
-use tower_grpc::{BoxBody, generic::client::GrpcService};
+use tower_grpc::{generic::client::GrpcService, BoxBody};
 
 use dns;
 use proxy::resolve::{self, Resolve, Update};

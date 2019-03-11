@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
     time::Instant,
 };
-use tower_grpc::{self as grpc, BoxBody, generic::client::GrpcService};
+use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 
 use api::destination::client::Destination;
 use api::destination::{GetDestination, Update as PbUpdate};

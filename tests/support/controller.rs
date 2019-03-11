@@ -113,10 +113,7 @@ impl Controller {
 }
 
 fn grpc_internal_code() -> grpc::Status {
-    grpc::Status::new(
-        grpc::Code::Internal,
-        "unit test controller internal error",
-    )
+    grpc::Status::new(grpc::Code::Internal, "unit test controller internal error")
 }
 
 fn grpc_no_results() -> grpc::Status {

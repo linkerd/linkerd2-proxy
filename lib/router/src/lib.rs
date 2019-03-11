@@ -6,9 +6,9 @@ extern crate tower_service as svc;
 use futures::{Async, Future, Poll};
 
 use std::hash::Hash;
+use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::mem;
 
 mod cache;
 pub mod error;
@@ -103,7 +103,7 @@ where
 impl<Req, Rec, Stk, Svc> svc::Service<Req> for Router<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
-    Stk: stack::Stack<Rec::Target, Value=Svc>,
+    Stk: stack::Stack<Rec::Target, Value = Svc>,
     Stk::Error: Into<error::Error>,
     Svc: svc::Service<Req> + Clone,
     Svc::Error: Into<error::Error>,

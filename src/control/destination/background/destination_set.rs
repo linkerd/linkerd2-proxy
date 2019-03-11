@@ -8,7 +8,7 @@ use std::{
 };
 
 use futures::{Async, Future, Stream};
-use tower_grpc::{BoxBody, generic::client::GrpcService};
+use tower_grpc::{generic::client::GrpcService, BoxBody};
 
 use api::{
     destination::{protocol_hint::Protocol, update::Update as PbUpdate2, WeightedAddr},

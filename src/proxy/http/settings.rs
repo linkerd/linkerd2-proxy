@@ -80,7 +80,7 @@ impl Settings {
 pub mod router {
     extern crate linkerd2_router as rt;
 
-    use futures::{Poll};
+    use futures::Poll;
     use http;
     use std::marker::PhantomData;
 
@@ -108,7 +108,6 @@ pub mod router {
     {
         router: Router<B, M>,
     }
-
 
     pub struct Recognize(connect::Target);
 

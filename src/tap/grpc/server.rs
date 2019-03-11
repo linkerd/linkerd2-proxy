@@ -209,10 +209,8 @@ impl<F: Future<Item = ()>> Future for ResponseFuture<F> {
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(())) => {}
             Err(_) => {
-                let status = grpc::Status::new(
-                    grpc::Code::ResourceExhausted,
-                    "Too many active taps",
-                );
+                let status =
+                    grpc::Status::new(grpc::Code::ResourceExhausted, "Too many active taps");
                 return Err(status);
             }
         }

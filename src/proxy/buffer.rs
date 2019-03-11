@@ -2,7 +2,7 @@ extern crate tower_buffer;
 
 use std::{error, fmt, marker::PhantomData};
 
-pub use self::tower_buffer::{Buffer};
+pub use self::tower_buffer::Buffer;
 
 use logging;
 use svc;

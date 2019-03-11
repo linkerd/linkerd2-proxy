@@ -21,7 +21,6 @@ pub struct Timeout<T> {
     duration: Duration,
 }
 
-
 //===== impl Timeout =====
 
 impl<T> Timeout<T> {
@@ -99,4 +98,3 @@ where
         self.inner.poll().map_err(|e| self.timeout_error(e))
     }
 }
-

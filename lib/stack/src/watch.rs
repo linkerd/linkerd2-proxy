@@ -2,8 +2,8 @@ extern crate futures_watch;
 
 use self::futures_watch::Watch;
 use futures::{future::MapErr, Async, Future, Poll, Stream};
-use std::marker::PhantomData;
 use std::fmt;
+use std::marker::PhantomData;
 
 use svc;
 
@@ -146,9 +146,10 @@ where
             // `inner` is only updated if `updated` is valid. The caller may
             // choose to continue using the service or discard as is
             // appropriate.
-            self.inner = self.stack.make(&updated).map_err(|e| {
-                Box::new(MakeWatch(e.into()))
-            })?;
+            self.inner = self
+                .stack
+                .make(&updated)
+                .map_err(|e| Box::new(MakeWatch(e.into())))?;
         }
 
         self.inner.poll_ready().map_err(Into::into)

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay};
-use tower_grpc::{self as grpc, Body, BoxBody, generic::client::GrpcService};
+use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tower_retry::budget::Budget;
 
 use api::destination as api;
@@ -180,7 +180,7 @@ where
                                     err.into(),
                                 );
                                 return Ok(Async::Ready(()));
-                            },
+                            }
                         },
                         None => return Ok(Async::Ready(())),
                     };
