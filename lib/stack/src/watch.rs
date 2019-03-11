@@ -225,6 +225,7 @@ mod tests {
     use self::tokio::runtime::current_thread::Runtime;
     use super::*;
     use futures::future;
+    use never::Never;
     use std::time::Duration;
     use svc::Service as _Service;
 
@@ -235,8 +236,8 @@ mod tests {
         struct Svc(usize);
         impl svc::Service<()> for Svc {
             type Response = usize;
-            type Error = ();
-            type Future = future::FutureResult<usize, ()>;
+            type Error = Never;
+            type Future = future::FutureResult<usize, Self::Error>;
             fn poll_ready(&mut self) -> Poll<(), Self::Error> {
                 Ok(().into())
             }
@@ -261,8 +262,8 @@ mod tests {
         struct Stack;
         impl ::Stack<usize> for Stack {
             type Value = Svc;
-            type Error = ();
-            fn make(&self, n: &usize) -> Result<Svc, ()> {
+            type Error = Never;
+            fn make(&self, n: &usize) -> Result<Svc, Never> {
                 Ok(Svc(*n))
             }
         }
