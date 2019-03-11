@@ -141,10 +141,11 @@ where
 // === impl Service ===
 
 #[cfg(test)]
-impl<N> Service<&'static str, N>
+impl<N, S> Service<&'static str, N>
 where
-    N: svc::Service<()>,
-    N::Error: fmt::Display,
+    N: svc::Service<(), Response = S>,
+    S: svc::Service<()>,
+    Error: From<N::Error> + From<S::Error>,
 {
     fn for_test(new_service: N) -> Self {
         Self {
@@ -253,6 +254,7 @@ where
 mod tests {
     use super::*;
     use futures::{future, Future};
+    use never::Never;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::{error, fmt, time};
     use svc::Service as _Service;
@@ -289,10 +291,10 @@ mod tests {
 
     impl svc::Service<()> for Service {
         type Response = ();
-        type Error = ();
-        type Future = future::FutureResult<(), ()>;
+        type Error = Never;
+        type Future = future::FutureResult<(), Self::Error>;
 
-        fn poll_ready(&mut self) -> Poll<(), ()> {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             Ok(().into())
         }
 
