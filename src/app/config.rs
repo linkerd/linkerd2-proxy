@@ -88,7 +88,7 @@ pub struct Config {
     /// experimental & testing purposes.
     pub destination_addr: Option<Addr>,
 
-    pub destination_identity: tls::ConditionalIdentity,
+    pub destination_identity: Conditional<identity::Name, tls::ReasonForNoTls>,
 
     /// The maximum number of queries to the Destination service which may be
     /// active concurrently.

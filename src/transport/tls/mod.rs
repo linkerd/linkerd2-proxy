@@ -6,28 +6,23 @@ extern crate webpki;
 
 use std::fmt;
 
-pub use identity::Name as Identity;
+use identity;
 use Conditional;
 
-mod cert_resolver;
 pub mod conditional_accept;
 mod config;
 mod connection;
 
 pub use self::{
-    config::{
-        ClientConfig, ClientConfigWatch, ConditionalClientConfig, ConditionalConnectionConfig,
-        ConnectionConfig, Error as ConfigError, ReasonForNoIdentity, ReasonForNoTls, ServerConfig,
-        ServerConfigWatch,
-    },
-    connection::{Connection, Session, UpgradeClientToTls, UpgradeServerToTls},
+    config::{Error as ConfigError, ReasonForNoIdentity, ReasonForNoTls},
+    connection::{Connection, Session},
     rustls::TLSError as Error,
 };
 
 #[cfg(test)]
 pub use self::config::test_util as config_test_util;
 
-pub type ConditionalIdentity = Conditional<Identity, ReasonForNoTls>;
+pub type ConditionalIdentity = Conditional<identity::Name, ReasonForNoTls>;
 
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.

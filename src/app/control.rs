@@ -1,5 +1,6 @@
 use std::fmt;
 
+use identity;
 use svc;
 use transport::tls;
 use {Addr, Conditional};
@@ -7,14 +8,14 @@ use {Addr, Conditional};
 #[derive(Clone, Debug)]
 pub struct Config {
     addr: Addr,
-    tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
+    tls_server_identity: Conditional<identity::Name, tls::ReasonForNoTls>,
     tls_config: tls::ConditionalClientConfig,
 }
 
 impl Config {
     pub fn new(
         addr: Addr,
-        tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
+        tls_server_identity: Conditional<identity::Name, tls::ReasonForNoTls>,
     ) -> Self {
         Self {
             addr,

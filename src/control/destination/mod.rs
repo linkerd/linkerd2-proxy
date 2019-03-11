@@ -32,6 +32,7 @@ use tower_grpc::{Body, BoxBody};
 use tower_http::HttpService;
 
 use dns;
+use identity;
 use proxy::resolve::{self, Resolve, Update};
 use transport::tls;
 
@@ -86,7 +87,7 @@ pub struct Metadata {
     protocol_hint: ProtocolHint,
 
     /// How to verify TLS for the endpoint.
-    tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
+    tls_identity: Conditional<identity::Name, tls::ReasonForNoIdentity>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -117,13 +118,7 @@ where
 {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
-    let mut bg = Background::new(
-        rx,
-        dns_resolver,
-        suffixes,
-        concurrency_limit,
-        proxy_id,
-    );
+    let mut bg = Background::new(rx, dns_resolver, suffixes, concurrency_limit, proxy_id);
     let task = future::poll_fn(move || bg.poll_rpc(&mut client));
     (disco, task)
 }
@@ -192,7 +187,7 @@ impl Metadata {
     pub fn new(
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
-        tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
+        tls_identity: Conditional<identity::Name, tls::ReasonForNoIdentity>,
     ) -> Self {
         Self {
             labels,
@@ -210,7 +205,7 @@ impl Metadata {
         self.protocol_hint
     }
 
-    pub fn tls_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoIdentity> {
+    pub fn tls_identity(&self) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
         self.tls_identity.as_ref()
     }
 

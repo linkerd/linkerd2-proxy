@@ -13,7 +13,6 @@ use transport::{io::internal::Io, prefixed::Prefixed, AddrInfo, SetKeepalive};
 use super::{
     rustls,
     tokio_rustls::{self, TlsAcceptor, TlsConnector, TlsStream},
-    ClientConfig, ServerConfig,
 };
 
 pub use self::rustls::Session;
@@ -28,12 +27,34 @@ where
     S: Debug,
     C: Debug;
 
-pub struct UpgradeToTls<S, C, F>(F)
+pub struct UpgradeToTLS<S, C, F>(F)
 where
     C: Session,
     F: Future<Item = TlsStream<S, C>, Error = io::Error>;
 
-impl<C, S, F> Future for UpgradeToTls<S, C, F>
+pub type UpgradeClientToTLS =
+    UpgradeToTLS<TcpStream, rustls::ClientSession, tokio_rustls::Connect<TcpStream>>;
+
+pub type UpgradeServerToTLS = UpgradeToTLS<
+    Prefixed<TcpStream>,
+    rustls::ServerSession,
+    tokio_rustls::Accept<Prefixed<TcpStream>>,
+>;
+
+// === impl UpgradeToTLS ===
+
+impl<C, S, F> From<F> for UpgradeToTLS<S, C, F>
+where
+    S: Debug,
+    C: Session + Debug,
+    F: Future<Item = TlsStream<S, C>, Error = io::Error>,
+{
+    fn from(f: F) -> Self {
+        UpgradeToTLS(f)
+    }
+}
+
+impl<C, S, F> Future for UpgradeToTLS<S, C, F>
 where
     S: Debug,
     C: Session + Debug,
@@ -48,36 +69,9 @@ where
     }
 }
 
-pub type UpgradeClientToTls =
-    UpgradeToTls<TcpStream, rustls::ClientSession, tokio_rustls::Connect<TcpStream>>;
-
-pub type UpgradeServerToTls = UpgradeToTls<
-    Prefixed<TcpStream>,
-    rustls::ServerSession,
-    tokio_rustls::Accept<Prefixed<TcpStream>>,
->;
-
-impl Connection<TcpStream, rustls::ClientSession> {
-    pub fn connect(
-        socket: TcpStream,
-        id: &Identity,
-        ClientConfig(config): ClientConfig,
-    ) -> UpgradeClientToTls {
-        let c = TlsConnector::from(config).connect(id.as_dns_name_ref(), socket);
-        UpgradeToTls(c)
-    }
-}
+// === impl Connection ===
 
 impl Connection<Prefixed<TcpStream>, rustls::ServerSession> {
-    pub fn accept(
-        socket: TcpStream,
-        prefix: Bytes,
-        ServerConfig(config): ServerConfig,
-    ) -> UpgradeServerToTls {
-        let a = TlsAcceptor::from(config).accept(Prefixed::new(prefix, socket));
-        UpgradeToTls(a)
-    }
-
     pub fn client_identity(&self) -> Option<Identity> {
         let (_io, session) = self.0.get_ref();
         let certs = session.get_peer_certificates()?;

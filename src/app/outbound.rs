@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 use std::sync::Arc;
 use std::{fmt, net};
 
+use super::identity;
 use control::destination::{Metadata, ProtocolHint};
 use proxy::http::settings;
 use svc;
@@ -39,21 +40,6 @@ impl fmt::Display for Endpoint {
     }
 }
 
-impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Endpoint {
-    type Updated = Self;
-
-    fn with_update(&self, client_config: &tls::ConditionalClientConfig) -> Self::Updated {
-        let mut ep = self.clone();
-        ep.connect.tls = ep.metadata.tls_identity().and_then(|identity| {
-            client_config.as_ref().map(|config| tls::ConnectionConfig {
-                server_identity: identity.clone(),
-                config: config.clone(),
-            })
-        });
-        ep
-    }
-}
-
 impl tap::Inspect for Endpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr> {
         use proxy::server::Source;
@@ -64,7 +50,7 @@ impl tap::Inspect for Endpoint {
     fn src_tls<'a, B>(
         &self,
         _: &'a http::Request<B>,
-    ) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoTls> {
         Conditional::None(tls::ReasonForNoTls::InternalTraffic)
     }
 
@@ -76,7 +62,10 @@ impl tap::Inspect for Endpoint {
         Some(self.metadata.labels())
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
+    fn dst_tls<B>(
+        &self,
+        _: &http::Request<B>,
+    ) -> Conditional<&identity::Name, tls::ReasonForNoTls> {
         self.connect.tls_server_identity()
     }
 

@@ -6,7 +6,6 @@ use std::{hash, io, net::SocketAddr};
 
 use never::Never;
 use svc;
-use transport::{connection, tls};
 use Conditional;
 
 #[derive(Debug, Clone)]
@@ -33,7 +32,7 @@ impl Target {
         self.tls.as_ref().map(|_| {})
     }
 
-    pub fn tls_server_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
+    pub fn tls_server_identity(&self) -> Conditional<&identity::Name, tls::ReasonForNoTls> {
         self.tls.as_ref().map(|config| &config.server_identity)
     }
 }

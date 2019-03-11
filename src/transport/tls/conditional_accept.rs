@@ -1,4 +1,6 @@
-use super::{untrusted, Identity};
+use super::untrusted;
+
+use identity;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Match {
@@ -21,7 +23,7 @@ pub enum Match {
 /// This assumes that the ClientHello is small and is sent in a single TLS
 /// record, which is what all reasonable implementations do. (If they were not
 /// to, they wouldn't interoperate with picky servers.)
-pub fn match_client_hello(input: &[u8], identity: &Identity) -> Match {
+pub fn match_client_hello(input: &[u8], identity: &identity::Name) -> Match {
     let r = untrusted::Input::from(input).read_all(untrusted::EndOfInput, |input| {
         let r = extract_sni(input);
         input.skip_to_end(); // Ignore anything after what we parsed.
@@ -29,20 +31,20 @@ pub fn match_client_hello(input: &[u8], identity: &Identity) -> Match {
     });
     match r {
         Ok(Some(sni)) => {
-            let matches = if let Ok(sni) = Identity::from_sni_hostname(sni.as_slice_less_safe()) {
-                if sni == *identity {
-                    Match::Matched
-                } else {
-                    Match::NotMatched
-                }
-            } else {
-                Match::NotMatched
-            };
+            let m = identity::Name::from_sni_hostname(sni.as_slice_less_safe())
+                .map(|sni| {
+                    if sni == *identity {
+                        Match::Matched
+                    } else {
+                        Match::NotMatched
+                    }
+                })
+                .unwrap_or(Match::NotMatched);
             trace!(
                 "match_client_hello: parsed correctly up to SNI; matches: {:?}",
-                matches
+                m
             );
-            matches
+            m
         }
         Ok(None) => {
             trace!("match_client_hello: failed to parse up to SNI");
@@ -239,7 +241,7 @@ mod tests {
     fn check_all_prefixes(expected_match: Match, identity: &str, input: &[u8]) {
         assert!(expected_match == Match::Matched || expected_match == Match::NotMatched);
 
-        let identity = tls::Identity::from_sni_hostname(identity.as_bytes()).unwrap();
+        let identity = identity::Name::from_sni_hostname(identity.as_bytes()).unwrap();
 
         let mut i = 0;
 

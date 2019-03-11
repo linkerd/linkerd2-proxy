@@ -2,6 +2,7 @@ use std::fmt::{self, Write};
 
 use metrics::FmtLabels;
 
+use identity;
 use transport::tls;
 use {Addr, Conditional, NameAddr};
 
@@ -35,8 +36,8 @@ enum Direction {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum TlsId {
-    ClientId(tls::Identity),
-    ServerId(tls::Identity),
+    ClientId(identity::Name),
+    ServerId(identity::Name),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use super::classify;
 use super::dst::DstAddr;
+use super::identity;
 use proxy::http::{router, settings};
 use proxy::server::Source;
 use tap;
@@ -55,7 +56,7 @@ impl tap::Inspect for Endpoint {
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
-    ) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoTls> {
         req.extensions()
             .get::<Source>()
             .map(|s| s.tls_peer.as_ref())
@@ -70,7 +71,10 @@ impl tap::Inspect for Endpoint {
         None
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
+    fn dst_tls<B>(
+        &self,
+        _: &http::Request<B>,
+    ) -> Conditional<&identity::Name, tls::ReasonForNoTls> {
         Conditional::None(tls::ReasonForNoTls::InternalTraffic)
     }
 

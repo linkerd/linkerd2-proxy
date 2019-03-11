@@ -24,6 +24,7 @@ use control::{
     remote_stream::Remote,
 };
 use dns::{self, IpAddrListFuture};
+use identity;
 use transport::tls;
 use {Conditional, NameAddr};
 
@@ -324,17 +325,17 @@ fn pb_to_addr_meta(
     Some((addr, meta))
 }
 
-fn pb_to_id(pb: TlsIdentity) -> Option<tls::Identity> {
+fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
     use api::destination::tls_identity::Strategy;
 
     let Strategy::K8sPodIdentity(i) = pb.strategy?;
-            match tls::Identity::from_sni_hostname(i.pod_identity.as_bytes()) {
-                Ok(i) => Some(i),
-                Err(_) => {
-                    warn!("Ignoring invalid identity: {}", i.pod_identity);
-                    None
-                }
+    match identity::Name::from_sni_hostname(i.pod_identity.as_bytes()) {
+        Ok(i) => Some(i),
+        Err(_) => {
+            warn!("Ignoring invalid identity: {}", i.pod_identity);
+            None
         }
+    }
 }
 
 fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {

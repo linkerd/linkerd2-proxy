@@ -17,7 +17,6 @@ use never::Never;
 use identity;
 pub use identity::{Crt, CrtKey, Key, Name, TokenSource, TrustAnchors, CSR};
 
-#[derive(Debug)]
 pub struct Config {
     pub trust_anchors: TrustAnchors,
     pub key: Key,
