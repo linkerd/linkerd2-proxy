@@ -1,11 +1,9 @@
-use bytes::Bytes;
 use futures::{Async, Future, Poll};
 use h2;
 use http;
 use hyper::client::connect as hyper_connect;
 use hyper::{self, body::Payload};
 use std::{error::Error as StdError, fmt};
-use tower_grpc as grpc;
 
 use proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
 use svc;
@@ -89,24 +87,20 @@ impl Payload for HttpBody {
     }
 }
 
-impl grpc::Body for HttpBody {
-    type Data = Bytes;
+impl tower_http_service::Body for HttpBody {
+    type Item = hyper::body::Chunk;
+    type Error = h2::Error;
 
     fn is_end_stream(&self) -> bool {
         Payload::is_end_stream(self)
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, grpc::Error> {
-        match Payload::poll_data(self) {
-            Ok(Async::Ready(Some(chunk))) => Ok(Async::Ready(Some(chunk.into()))),
-            Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(err) => Err(err.into()),
-        }
+    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        Payload::poll_data(self)
     }
 
-    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, grpc::Error> {
-        Payload::poll_trailers(self).map_err(From::from)
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+        Payload::poll_trailers(self)
     }
 }
 
@@ -150,7 +144,7 @@ impl<S> HyperServerSvc<S> {
 impl<S, B> hyper::service::Service for HyperServerSvc<S>
 where
     S: svc::Service<http::Request<HttpBody>, Response = http::Response<B>>,
-    S::Error: StdError + Send + Sync + 'static,
+    S::Error: Into<Box<dyn StdError + Send + Sync>>,
     B: Payload,
 {
     type ReqBody = hyper::Body;
@@ -185,7 +179,7 @@ impl<C> hyper_connect::Connect for HyperConnect<C>
 where
     C: Connect + Send + Sync,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: StdError + Send + Sync + 'static,
+    <C::Future as Future>::Error: Into<Box<dyn StdError + Send + Sync>>,
     C::Connected: HasTlsStatus + Send + 'static,
 {
     type Transport = C::Connected;
@@ -204,7 +198,7 @@ impl<F> Future for HyperConnectFuture<F>
 where
     F: Future + 'static,
     F::Item: HasTlsStatus,
-    F::Error: StdError + Send + Sync,
+    F::Error: Into<Box<dyn StdError + Send + Sync>>,
 {
     type Item = (F::Item, hyper_connect::Connected);
     type Error = F::Error;
