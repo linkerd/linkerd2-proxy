@@ -4,12 +4,11 @@ use std::{
         hash_map::{Entry, HashMap},
         VecDeque,
     },
-    fmt, mem,
+    mem,
     sync::Arc,
     time::Instant,
 };
-use tower_grpc::{self as grpc, Body, BoxBody};
-use tower_http::HttpService;
+use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 
 use api::destination::client::Destination;
 use api::destination::{GetDestination, Update as PbUpdate};
@@ -37,8 +36,7 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 /// propagated to all requesters.
 pub(super) struct Background<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     new_query: NewQuery,
     dns_resolver: dns::Resolver,
@@ -55,8 +53,7 @@ where
 #[derive(Default)]
 struct DestinationCache<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     destinations: HashMap<NameAddr, DestinationSet<T>>,
     /// A queue of authorities that need to be reconnected.
@@ -80,8 +77,7 @@ struct NewQuery {
 
 enum DestinationServiceQuery<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     Inactive,
     Active(ActiveQuery<T>),
@@ -92,9 +88,7 @@ where
 
 impl<T> Background<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
-    T::Error: fmt::Debug,
+    T: GrpcService<BoxBody>,
 {
     pub(super) fn new(
         request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
@@ -143,7 +137,7 @@ where
                         return Async::NotReady;
                     }
                     Err(err) => {
-                        warn!("Destination.Get poll_ready error: {:?}", err);
+                        warn!("Destination.Get poll_ready error: {:?}", err.into());
                         self.rpc_ready = false;
                         return Async::NotReady;
                     }
@@ -343,9 +337,7 @@ impl NewQuery {
         connect_or_reconnect: &str,
     ) -> DestinationServiceQuery<T>
     where
-        T: HttpService<BoxBody>,
-        T::ResponseBody: Body,
-        T::Error: fmt::Debug,
+        T: GrpcService<BoxBody>,
     {
         trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
         if !self.suffixes.iter().any(|s| s.contains(dst.name())) {
@@ -372,7 +364,7 @@ impl NewQuery {
                     path: format!("{}", dst),
                     proxy_id: self.proxy_id.clone(),
                 };
-                let mut svc = Destination::new(client.lift_ref());
+                let mut svc = Destination::new(client.as_service());
                 let response = svc.get(grpc::Request::new(req));
                 let active = Arc::downgrade(&self.active_query_handle);
                 let query = Remote::ConnectedOrConnecting {
@@ -391,9 +383,7 @@ impl NewQuery {
 
 impl<T> DestinationCache<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
-    T::Error: fmt::Debug,
+    T: GrpcService<BoxBody>,
 {
     fn new() -> Self {
         Self {
@@ -427,8 +417,7 @@ where
 
 impl<T> DestinationServiceQuery<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     pub fn is_active(&self) -> bool {
         match self {
@@ -446,15 +435,14 @@ where
         }
     }
 
-    pub fn take(&mut self) -> Self {
+    pub fn take(&mut self) -> DestinationServiceQuery<T> {
         mem::replace(self, DestinationServiceQuery::Inactive)
     }
 }
 
 impl<T> From<ActiveQuery<T>> for DestinationServiceQuery<T>
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
+    T: GrpcService<BoxBody>,
 {
     fn from(active: ActiveQuery<T>) -> Self {
         DestinationServiceQuery::Active(active)

@@ -111,9 +111,8 @@ impl<T: iface::Subscribe<Tap>> Server<T> {
         Self { base_id, subscribe }
     }
 
-    fn invalid_arg(message: String) -> grpc::Error {
-        let status = grpc::Status::with_code_and_message(grpc::Code::InvalidArgument, message);
-        grpc::Error::Grpc(status)
+    fn invalid_arg(message: String) -> grpc::Status {
+        grpc::Status::new(grpc::Code::InvalidArgument, message)
     }
 }
 
@@ -123,7 +122,7 @@ where
 {
     type ObserveStream = ResponseStream;
     type ObserveFuture = future::Either<
-        future::FutureResult<Response<Self::ObserveStream>, grpc::Error>,
+        future::FutureResult<Response<Self::ObserveStream>, grpc::Status>,
         ResponseFuture<T::Future>,
     >;
 
@@ -202,7 +201,7 @@ where
 
 impl<F: Future<Item = ()>> Future for ResponseFuture<F> {
     type Item = Response<ResponseStream>;
-    type Error = grpc::Error;
+    type Error = grpc::Status;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         // Ensure that tap registers successfully.
@@ -210,11 +209,9 @@ impl<F: Future<Item = ()>> Future for ResponseFuture<F> {
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(())) => {}
             Err(_) => {
-                let status = grpc::Status::with_code_and_message(
-                    grpc::Code::ResourceExhausted,
-                    "Too many active taps".into(),
-                );
-                return Err(grpc::Error::Grpc(status));
+                let status =
+                    grpc::Status::new(grpc::Code::ResourceExhausted, "Too many active taps");
+                return Err(status);
             }
         }
 
@@ -231,7 +228,7 @@ impl<F: Future<Item = ()>> Future for ResponseFuture<F> {
 
 impl Stream for ResponseStream {
     type Item = api::TapEvent;
-    type Error = grpc::Error;
+    type Error = grpc::Status;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         // Drop the dispatch future once it completes so that services do not do

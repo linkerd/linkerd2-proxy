@@ -275,6 +275,8 @@ pub mod router {
 
     use super::*;
 
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+
     pub fn layer<T, G, M, R, B>(
         suffixes: Vec<dns::Suffix>,
         get_routes: G,
@@ -527,11 +529,13 @@ pub mod router {
         T: WithRoute + Clone,
         T::Output: Eq + Hash,
         Stk: svc::Stack<T::Output, Value = Svc> + Clone,
+        Stk::Error: Into<Error>,
         Svc: svc::Service<http::Request<B>> + Clone,
+        Svc::Error: Into<Error>,
     {
         type Response = Svc::Response;
-        type Error = rt::Error<Svc::Error, Stk::Error>;
-        type Future = rt::ResponseFuture<http::Request<B>, Svc, Stk::Error>;
+        type Error = Error;
+        type Future = rt::ResponseFuture<http::Request<B>, Svc>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             while let Some(Async::Ready(Some(routes))) = self.poll_route_stream() {

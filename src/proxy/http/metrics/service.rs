@@ -8,7 +8,6 @@ use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio_timer::clock;
-use tower_grpc;
 
 use super::super::retry::TryClone;
 use super::classify::{ClassifyEos, ClassifyResponse};
@@ -318,23 +317,24 @@ where
     }
 }
 
-impl<B, C> tower_grpc::Body for RequestBody<B, C>
+impl<B, C> tower_http_service::Body for RequestBody<B, C>
 where
     B: Payload<Error = h2::Error>,
     C: Hash + Eq + Send + 'static,
 {
-    type Data = B::Data;
+    type Item = B::Data;
+    type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         Payload::is_end_stream(self)
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
-        Payload::poll_data(self).map_err(From::from)
+    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        Payload::poll_data(self)
     }
 
-    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
-        Payload::poll_trailers(self).map_err(From::from)
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+        Payload::poll_trailers(self)
     }
 }
 
@@ -467,24 +467,25 @@ where
     }
 }
 
-impl<B, C> tower_grpc::Body for ResponseBody<B, C>
+impl<B, C> tower_http_service::Body for ResponseBody<B, C>
 where
     B: Payload<Error = h2::Error>,
     C: ClassifyEos<Error = h2::Error> + Send + 'static,
     C::Class: Hash + Eq + Send + 'static,
 {
-    type Data = B::Data;
+    type Item = B::Data;
+    type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         Payload::is_end_stream(self)
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
-        Payload::poll_data(self).map_err(From::from)
+    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        Payload::poll_data(self)
     }
 
-    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
-        Payload::poll_trailers(self).map_err(From::from)
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+        Payload::poll_trailers(self)
     }
 }
 

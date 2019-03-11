@@ -1,22 +1,29 @@
 extern crate tower_reconnect;
 
-pub use self::tower_reconnect::{Error, Reconnect};
+pub use self::tower_reconnect::Reconnect;
 use futures::{task, Async, Future, Poll};
 use std::fmt;
+use std::marker::PhantomData;
 use std::time::Duration;
 use tokio_timer::{clock, Delay};
 
 use svc;
 
-#[derive(Clone, Debug)]
-pub struct Layer {
+// compiler doesn't seem to notice this used in where bounds below...
+#[allow(unused)]
+type Error = Box<dyn std::error::Error + Send + Sync>;
+
+#[derive(Debug)]
+pub struct Layer<Req> {
     backoff: Backoff,
+    _req: PhantomData<fn(Req)>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Stack<M> {
+#[derive(Debug)]
+pub struct Stack<Req, M> {
     backoff: Backoff,
     inner: M,
+    _req: PhantomData<fn(Req)>,
 }
 
 /// Wraps `tower_reconnect`, handling errors.
@@ -48,52 +55,73 @@ enum Backoff {
     Fixed(Duration),
 }
 
-pub struct ResponseFuture<F> {
-    inner: F,
-}
-
 // === impl Layer ===
 
-pub fn layer() -> Layer {
+pub fn layer<Req>() -> Layer<Req> {
     Layer {
         backoff: Backoff::None,
+        _req: PhantomData,
     }
 }
 
-impl Layer {
+impl<Req> Layer<Req> {
     pub fn with_fixed_backoff(self, wait: Duration) -> Self {
         Self {
             backoff: Backoff::Fixed(wait),
-            ..self
+            _req: PhantomData,
         }
     }
 }
 
-impl<T, M> svc::Layer<T, T, M> for Layer
+impl<Req> Clone for Layer<Req> {
+    fn clone(&self) -> Self {
+        Layer {
+            backoff: self.backoff.clone(),
+            _req: PhantomData,
+        }
+    }
+}
+
+impl<Req, T, M, N, S> svc::Layer<T, T, M> for Layer<Req>
 where
     T: Clone + fmt::Debug,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<()>,
+    M: svc::Stack<T, Value = N>,
+    N: svc::Service<(), Response = S>,
+    S: svc::Service<Req>,
+    Error: From<N::Error> + From<S::Error>,
 {
-    type Value = <Stack<M> as svc::Stack<T>>::Value;
-    type Error = <Stack<M> as svc::Stack<T>>::Error;
-    type Stack = Stack<M>;
+    type Value = <Stack<Req, M> as svc::Stack<T>>::Value;
+    type Error = <Stack<Req, M> as svc::Stack<T>>::Error;
+    type Stack = Stack<Req, M>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
             inner,
             backoff: self.backoff.clone(),
+            _req: PhantomData,
         }
     }
 }
 
 // === impl Stack ===
 
-impl<T, M> svc::Stack<T> for Stack<M>
+impl<Req, M: Clone> Clone for Stack<Req, M> {
+    fn clone(&self) -> Self {
+        Stack {
+            inner: self.inner.clone(),
+            backoff: self.backoff.clone(),
+            _req: PhantomData,
+        }
+    }
+}
+
+impl<T, Req, M, N, S> svc::Stack<T> for Stack<Req, M>
 where
     T: Clone + fmt::Debug,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<()>,
+    M: svc::Stack<T, Value = N>,
+    N: svc::Service<(), Response = S>,
+    S: svc::Service<Req>,
+    Error: From<N::Error> + From<S::Error>,
 {
     type Value = Service<T, M::Value>;
     type Error = M::Error;
@@ -113,10 +141,11 @@ where
 // === impl Service ===
 
 #[cfg(test)]
-impl<N> Service<&'static str, N>
+impl<N, S> Service<&'static str, N>
 where
-    N: svc::Service<()>,
-    N::Error: fmt::Display,
+    N: svc::Service<(), Response = S>,
+    S: svc::Service<()>,
+    Error: From<N::Error> + From<S::Error>,
 {
     fn for_test(new_service: N) -> Self {
         Self {
@@ -140,12 +169,12 @@ impl<T, N, S, Req> svc::Service<Req> for Service<T, N>
 where
     T: fmt::Debug,
     N: svc::Service<(), Response = S>,
-    N::Error: fmt::Display,
     S: svc::Service<Req>,
+    Error: From<N::Error> + From<S::Error>,
 {
     type Response = S::Response;
-    type Error = S::Error;
-    type Future = ResponseFuture<<Reconnect<N, ()> as svc::Service<Req>>::Future>;
+    type Error = <Reconnect<N, ()> as svc::Service<Req>>::Error;
+    type Future = <Reconnect<N, ()> as svc::Service<Req>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match self.backoff {
@@ -170,13 +199,7 @@ where
                 self.mute_connect_error_log = false;
                 Ok(ready)
             }
-
-            Err(Error::Service(err)) => {
-                self.mute_connect_error_log = false;
-                Err(err)
-            }
-
-            Err(Error::Connect(err)) => {
+            Err(err) => {
                 // A connection could not be established to the target.
 
                 // This is only logged as a warning at most once. Subsequent
@@ -207,17 +230,11 @@ where
                 task::current().notify();
                 Ok(Async::NotReady)
             }
-
-            Err(Error::NotReady) => {
-                unreachable!("poll_ready can't fail with NotReady");
-            }
         }
     }
 
     fn call(&mut self, request: Req) -> Self::Future {
-        ResponseFuture {
-            inner: self.inner.call(request),
-        }
+        self.inner.call(request)
     }
 }
 
@@ -233,25 +250,11 @@ where
     }
 }
 
-impl<F, E, Cant> Future for ResponseFuture<F>
-where
-    F: Future<Error = Error<E, Cant>>,
-{
-    type Item = F::Item;
-    type Error = E;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.inner.poll().map_err(|e| match e {
-            Error::Service(err) => err,
-            _ => unreachable!("response future must fail with inner error"),
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use futures::{future, Future};
+    use never::Never;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::{error, fmt, time};
     use svc::Service as _Service;
@@ -288,10 +291,10 @@ mod tests {
 
     impl svc::Service<()> for Service {
         type Response = ();
-        type Error = ();
-        type Future = future::FutureResult<(), ()>;
+        type Error = Never;
+        type Future = future::FutureResult<(), Self::Error>;
 
-        fn poll_ready(&mut self) -> Poll<(), ()> {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             Ok(().into())
         }
 

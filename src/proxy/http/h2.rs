@@ -188,4 +188,4 @@ impl<E: fmt::Display> fmt::Display for ConnectError<E> {
     }
 }
 
-impl<E: StdError> StdError for ConnectError<E> {}
+impl<E: fmt::Debug + fmt::Display> StdError for ConnectError<E> {}
