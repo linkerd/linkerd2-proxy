@@ -74,7 +74,6 @@ pub struct Config {
     pub control_connect_timeout: Duration,
 
     pub identity_config: Option<identity::Config>,
-
     //
     // Destination Config
     //
@@ -86,9 +85,7 @@ pub struct Config {
     ///
     /// This is optional to allow the proxy to work without the controller for
     /// experimental & testing purposes.
-    pub destination_addr: Option<Addr>,
-
-    pub destination_identity: Conditional<identity::Name, tls::ReasonForNoTls>,
+    pub destination_addr: Option<ControlAddr>,
 
     /// The maximum number of queries to the Destination service which may be
     /// active concurrently.
@@ -118,6 +115,20 @@ pub struct Config {
     pub dns_max_ttl: Option<Duration>,
 
     pub dns_canonicalize_timeout: Duration,
+}
+
+#[derive(Clone, Debug)]
+pub struct ControlAddr {
+    pub addr: Addr,
+    pub identity: Conditional<identity::Name, NoControlIdentity>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum NoControlIdentity {
+    /// Identity is not needed on this localhost client.
+    Loopback,
+    /// Identity has been disabled on the entire process.
+    Disabled,
 }
 
 /// Configuration settings for binding a listener.
@@ -238,12 +249,11 @@ pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_TOKEN_FILE";
 pub const ENV_IDENTITY_MIN_REFRESH: &str = "LINKERD2_PROXY_MIN_REFRESH";
 pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_MAX_REFRESH";
 
-pub const ENV_IDENTITY_ADDR: &str = "LINKERD2_PROXY_IDENTITY_ADDR";
-pub const ENV_IDENTITY_IDENTITY: &str = "LINKERD2_PROXY_IDENTITY_IDENTITY";
+pub const ENV_IDENTITY_SVC_BASE: &str = "LINKERD2_PROXY_IDENTITY_SVC";
 
-pub const ENV_DESTINATION_ADDR: &str = "LINKERD2_PROXY_DESTINATION_ADDR";
+pub const ENV_DESTINATION_SVC_BASE: &str = "LINKERD2_PROXY_DESTINATION_SVC";
+
 pub const ENV_DESTINATION_CONTEXT_TOKEN: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT_TOKEN";
-pub const ENV_DESTINATION_IDENTITY: &str = "LINKERD2_PROXY_DESTINATION_IDENTITY";
 
 pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
@@ -374,42 +384,15 @@ impl Config {
 
         let identity_config = parse_identity_config(strings);
 
-        // There is no default controller URL because a default would make it
-        // too easy to connect to the wrong controller, which would be dangerous.
-        let dst_addr = parse(strings, ENV_DESTINATION_ADDR, parse_addr);
-
-        // Avoid setting the controller identity if it is going to be
-        // a loopback connection since TLS isn't needed or supported in
-        // that case.
         let id_disabled = identity_config
             .as_ref()
             .map(|c| c.is_none())
             .unwrap_or(false);
-        let dst_id = parse(strings, ENV_DESTINATION_IDENTITY, parse_identity);
-        let dst_id: Result<tls::ConditionalIdentity, Error> = dst_addr
-            .as_ref()
-            .map_err(|e| e.clone())
-            .and_then(move |ref a| match a {
-                None => Ok(Conditional::None(
-                    tls::ReasonForNoIdentity::NotConfigured.into(),
-                )),
-                _ if id_disabled => Ok(Conditional::None(
-                    tls::ReasonForNoIdentity::NotConfigured.into(),
-                )),
-                Some(addr) if addr.is_loopback() => {
-                    Ok(Conditional::None(tls::ReasonForNoIdentity::Loopback.into()))
-                }
-                Some(_) => dst_id.and_then(|id| match id {
-                    Some(id) => Ok(Conditional::Some(id.into())),
-                    None => {
-                        error!(
-                            "{} must be set when identity is configured.",
-                            ENV_DESTINATION_IDENTITY,
-                        );
-                        Err(Error::InvalidEnvVar)
-                    }
-                }),
-            });
+        let dst_addr = if id_disabled {
+            parse_control_addr_disable_identity(strings, ENV_DESTINATION_SVC_BASE)
+        } else {
+            parse_control_addr(strings, ENV_DESTINATION_SVC_BASE)
+        };
 
         let dst_token = strings.get(ENV_DESTINATION_CONTEXT_TOKEN);
 
@@ -481,7 +464,6 @@ impl Config {
 
             destination_addr: dst_addr?,
             destination_context: dst_token?.unwrap_or_default(),
-            destination_identity: dst_id?.map(|id| id.into()),
 
             identity_config: identity_config?,
 
@@ -661,7 +643,48 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
         .map_err(|_| ParseError::NotADomainSuffix)
 }
 
+pub fn parse_control_addr<S: Strings>(
+    strings: &S,
+    base: &str,
+) -> Result<Option<ControlAddr>, Error> {
+    let a_env = format!("{}_ADDR", base);
+    let a = parse(strings, &a_env, parse_addr);
+    let n_env = format!("{}_NAME", base);
+    let n = parse(strings, &n_env, parse_identity);
+    match (a?, n?) {
+        (None, None) => Ok(None),
+        (Some(addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
+            addr,
+            identity: Conditional::None(NoControlIdentity::Loopback),
+        })),
+        (Some(addr), Some(name)) => Ok(Some(ControlAddr {
+            addr,
+            identity: Conditional::Some(name),
+        })),
+        (Some(_), None) => {
+            error!("{} must be specified when {} is set", n_env, a_env);
+            Err(Error::InvalidEnvVar)
+        }
+        (None, Some(_)) => {
+            error!("{} must be specified when {} is set", a_env, n_env);
+            Err(Error::InvalidEnvVar)
+        }
+    }
+}
+
+pub fn parse_control_addr_disable_identity<S: Strings>(
+    strings: &S,
+    base: &str,
+) -> Result<Option<ControlAddr>, Error> {
+    let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
+    Ok(a.map(|addr| ControlAddr {
+        addr,
+        identity: Conditional::None(NoControlIdentity::Disabled),
+    }))
+}
+
 pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity::Config>, Error> {
+    let sa = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |ref s| {
         identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
     });
@@ -681,9 +704,30 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
         .map(|d| !d.is_empty())
         .unwrap_or(false);
 
-    match (disabled, ta?, ee?, li?, tok?, min_refresh?, max_refresh?) {
+    match (
+        disabled,
+        sa?,
+        ta?,
+        ee?,
+        li?,
+        tok?,
+        min_refresh?,
+        max_refresh?,
+    ) {
+        (disabled, None, None, None, None, None, None, None) => {
+            if !disabled {
+                error!(
+                    "{} must be set or identity configuration must be specified.",
+                    ENV_IDENTITY_DISABLED
+                );
+                Err(Error::InvalidEnvVar)
+            } else {
+                Ok(None)
+            }
+        }
         (
             false,
+            Some(svc_addr),
             Some(trust_anchors),
             Some(dir),
             Some(local_name),
@@ -728,6 +772,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
             };
 
             Ok(Some(identity::Config {
+                svc_addr,
                 local_name,
                 token,
                 trust_anchors,
@@ -737,22 +782,17 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
             }))
         }
-        (true, None, None, None, None, None, None) => Ok(None),
-        (false, None, None, None, None, None, None) => {
-            error!(
-                "{} must be set or identity configuration must be specified.",
-                ENV_IDENTITY_DISABLED
-            );
-            Err(Error::InvalidEnvVar)
-        }
-        (disabled, trust_anchors, end_entity_dir, local_id, token, minr, maxr) => {
+        (disabled, svc_addr, trust_anchors, end_entity_dir, local_id, token, minr, maxr) => {
             if disabled {
                 error!(
                     "{} must be unset when other identity variables are set.",
                     ENV_IDENTITY_DISABLED,
                 );
             }
+            let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
+            let svc_env: &str = &s.as_str();
             for (unset, name) in &[
+                (svc_addr.is_none(), svc_env),
                 (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),
                 (end_entity_dir.is_none(), ENV_IDENTITY_END_ENTITY_DIR),
                 (local_id.is_none(), ENV_IDENTITY_LOCAL_IDENTITY),

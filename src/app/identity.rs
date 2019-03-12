@@ -1,14 +1,8 @@
-use bytes::IntoBuf;
-use futures::sync::mpsc;
-use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
+use futures::{Async, Future, Poll, Stream};
 use futures_watch::{Store, Watch};
-use http;
-use std::fmt;
-use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::executor::{DefaultExecutor, Executor};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio_timer::{clock, Delay};
-use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
+use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 
 use api::identity as api;
 use never::Never;
@@ -16,7 +10,9 @@ use never::Never;
 use identity;
 pub use identity::{Crt, CrtKey, Key, Name, TokenSource, TrustAnchors, CSR};
 
+#[derive(Debug)]
 pub struct Config {
+    pub svc_addr: super::config::ControlAddr,
     pub trust_anchors: TrustAnchors,
     pub key: Key,
     pub csr: CSR,

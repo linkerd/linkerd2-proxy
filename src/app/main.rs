@@ -228,8 +228,8 @@ where
 
             // If the controller is on localhost, use the inbound keepalive.
             // If the controller is remote, use the outbound keepalive.
-            let keepalive = dst_addr.as_ref().and_then(|a| {
-                if a.is_loopback() {
+            let keepalive = dst_addr.as_ref().and_then(|ControlAddr { addr, .. }| {
+                if addr.is_loopback() {
                     config.inbound_connect_keepalive
                 } else {
                     config.outbound_connect_keepalive
