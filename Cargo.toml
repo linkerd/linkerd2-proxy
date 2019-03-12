@@ -68,9 +68,9 @@ tower-discover        = { git = "https://github.com/tower-rs/tower" }
 tower-in-flight-limit = { git = "https://github.com/tower-rs/tower" }
 tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
 tower-retry           = { git = "https://github.com/tower-rs/tower" }
-tower-service         = { git = "https://github.com/tower-rs/tower" }
+tower-service         = "0.2"
 tower-util            = { git = "https://github.com/tower-rs/tower" }
-tower-http            = { git = "https://github.com/tower-rs/tower-http" }
+tower-http-service    = { git = "https://github.com/tower-rs/tower-http" }
 tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
 
 # FIXME update to a release when available (>0.11)

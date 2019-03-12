@@ -1,8 +1,7 @@
 pub mod req_body_as_payload {
-    use bytes::Bytes;
     use futures::Poll;
     use http;
-    use tower_grpc::Body;
+    use hyper::body::Payload;
 
     use super::super::GrpcBody;
     use svc;
@@ -56,7 +55,7 @@ pub mod req_body_as_payload {
 
     impl<B, S> svc::Service<http::Request<B>> for Service<S>
     where
-        B: Body<Data = Bytes> + Send + 'static,
+        GrpcBody<B>: Payload,
         S: svc::Service<http::Request<GrpcBody<B>>>,
     {
         type Response = S::Response;
@@ -77,7 +76,7 @@ pub mod req_box_body {
     use bytes::Bytes;
     use futures::Poll;
     use http;
-    use tower_grpc::{Body, BoxBody};
+    use tower_grpc::{self as grpc, Body, BoxBody};
 
     use svc;
 
@@ -91,7 +90,9 @@ pub mod req_box_body {
 
     impl<B, S> svc::Service<http::Request<B>> for Service<S>
     where
-        B: Body<Data = Bytes> + Send + 'static,
+        B: Body + Send + 'static,
+        Bytes: From<B::Item>,
+        grpc::Status: From<B::Error>,
         S: svc::Service<http::Request<BoxBody>>,
     {
         type Response = S::Response;
@@ -103,7 +104,7 @@ pub mod req_box_body {
         }
 
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            self.0.call(req.map(|b| BoxBody::new(Box::new(b))))
+            self.0.call(req.map(BoxBody::map_from))
         }
     }
 }
@@ -111,6 +112,7 @@ pub mod req_box_body {
 pub mod res_body_as_payload {
     use futures::{future, Future, Poll};
     use http;
+    use hyper::body::Payload;
     use tower_grpc::Body;
 
     use super::super::GrpcBody;
@@ -127,6 +129,7 @@ pub mod res_body_as_payload {
     impl<B1, B2, S> svc::Service<http::Request<B1>> for Service<S>
     where
         B2: Body,
+        GrpcBody<B2>: Payload,
         S: svc::Service<http::Request<B1>, Response = http::Response<B2>>,
     {
         type Response = http::Response<GrpcBody<B2>>;

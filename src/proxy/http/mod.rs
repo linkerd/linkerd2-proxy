@@ -23,33 +23,35 @@ pub use self::settings::Settings;
 
 use http::header::AsHeaderName;
 use http::uri::Authority;
-use svc::Either;
 
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
 }
 
+impl HasH2Reason for Box<dyn std::error::Error + Send + Sync> {
+    fn h2_reason(&self) -> Option<::h2::Reason> {
+        let mut cause = Some(&**self as &(dyn std::error::Error + 'static));
+
+        while let Some(err) = cause {
+            if let Some(err) = err.downcast_ref::<::h2::Error>() {
+                return err.h2_reason();
+            } else if let Some(err) = err.downcast_ref::<Error>() {
+                // check glue::Error as well
+                // TODO: can be removed once we update to hyper 0.12.25,
+                // which implements `source` for `hyper::Error`.
+                return err.h2_reason();
+            }
+
+            cause = err.source();
+        }
+
+        None
+    }
+}
+
 impl HasH2Reason for ::h2::Error {
     fn h2_reason(&self) -> Option<::h2::Reason> {
         self.reason()
-    }
-}
-
-impl<E: HasH2Reason> HasH2Reason for super::buffer::ServiceError<E> {
-    fn h2_reason(&self) -> Option<::h2::Reason> {
-        match self {
-            super::buffer::ServiceError::Inner(e) => e.h2_reason(),
-            super::buffer::ServiceError::Closed => None,
-        }
-    }
-}
-
-impl<A: HasH2Reason, B: HasH2Reason> HasH2Reason for Either<A, B> {
-    fn h2_reason(&self) -> Option<::h2::Reason> {
-        match self {
-            Either::A(a) => a.h2_reason(),
-            Either::B(b) => b.h2_reason(),
-        }
     }
 }
 
