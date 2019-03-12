@@ -5,15 +5,16 @@ extern crate futures;
 extern crate log;
 extern crate tokio;
 
+use std::{error::Error as StdError, fmt, io, sync::Arc};
+
 pub use futures::future::Executor;
 use futures::future::{ExecuteError, ExecuteErrorKind, Future};
 
+pub use tokio::spawn;
 use tokio::{
     executor::{DefaultExecutor, Executor as TokioExecutor, SpawnError},
     runtime::{self as thread_pool, current_thread},
 };
-
-use std::{error::Error as StdError, fmt, io, sync::Arc};
 
 pub type BoxSendFuture = Box<Future<Item = (), Error = ()> + Send>;
 
