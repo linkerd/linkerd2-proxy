@@ -17,6 +17,7 @@ pub use self::ring::error::KeyRejected;
 
 use convert::TryFrom;
 use dns;
+use transport::tls;
 
 pub trait LocalIdentity {
     fn name(&self) -> &Name;
@@ -54,11 +55,11 @@ pub struct Crt {
 pub struct CrtKey {
     name: Name,
     expiry: SystemTime,
-    acceptor: TlsAcceptor,
-    connector: TlsConnector,
+    client_config: Arc<rustls::ClientConfig>,
+    server_config: Arc<rustls::ServerConfig>,
 }
 
-struct Resolver(rustls::sign::CertifiedKey);
+struct CertResolver(rustls::sign::CertifiedKey);
 
 #[derive(Clone, Debug)]
 pub struct InvalidCrt(rustls::TLSError);
@@ -219,14 +220,6 @@ impl TrustAnchors {
         Some(TrustAnchors(Arc::new(c)))
     }
 
-    /// Validates that the `io` stream connects to a server named `peer` nad
-    pub fn connect<Io>(&self, server_name: &Name, io: Io) -> Connect<Io>
-    where
-        Io: io::Read + io::Write,
-    {
-        TlsConnector::from(self.0.clone()).connect(server_name.as_dns_name_ref(), io)
-    }
-
     pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {
         let mut client = self.0.as_ref().clone();
 
@@ -239,7 +232,7 @@ impl TrustAnchors {
         // `rustls::ClientConfig::get_verifier()`.
         //
         // XXX: Once `rustls::ServerCertVerified` is exposed in Rustls's
-        // safe API, use it to pass proof to CertResolver::new....
+        // safe API, use it to pass proof to CertCertResolver::new....
         //
         // TODO: Restrict accepted signatutre algorithms.
         static NO_OCSP: &'static [u8] = &[];
@@ -255,7 +248,7 @@ impl TrustAnchors {
 
         let k = SigningKey(key.0.clone());
         let key = rustls::sign::CertifiedKey::new(crt.chain, Arc::new(Box::new(k)));
-        let resolver = Arc::new(Resolver(key));
+        let resolver = Arc::new(CertResolver(key));
 
         // Enable client authentication.
         client.client_auth_cert_resolver = resolver.clone();
@@ -269,8 +262,9 @@ impl TrustAnchors {
         // TODO: lock down the verification further.
         //
         // TODO: Change Rustls's API to Avoid needing to clone `root_cert_store`.
-        let client_verifier = rustls::AllowAnyAuthenticatedClient::new(self.0.root_store.clone());
-        let mut server = rustls::ServerConfig::new(client_verifier);
+        let mut server = rustls::ServerConfig::new(
+            rustls::AllowAnyAnonymousOrAuthenticatedClient::new(self.0.root_store.clone()),
+        );
         server.versions = TLS_VERSIONS.clone();
         server.cert_resolver = resolver;
 
@@ -283,7 +277,13 @@ impl TrustAnchors {
     }
 }
 
-// === CrtKey ===
+impl tls::HasClientConfig for TrustAnchors {
+    fn client_config(&self) -> Arc<rustls::ClientConfig> {
+        self.client_config.clone()
+    }
+}
+
+// === Crt ===
 
 impl Crt {
     pub fn new(name: Name, leaf: Vec<u8>, intermediates: Vec<Vec<u8>>, expiry: SystemTime) -> Self {
@@ -301,26 +301,21 @@ impl Crt {
 
 // === CrtKey ===
 
-impl CrtKey {
-    pub fn accept<Io>(&self, io: Io) -> Accept<Io>
-    where
-        Io: io::Read + io::Write,
-    {
-        self.acceptor.accept(io)
-    }
-
-    /// Connects with client authentication.
-    pub fn connect<Io>(&self, peer: &Name, io: Io) -> Connect<Io>
-    where
-        Io: io::Read + io::Write,
-    {
-        self.connector.connect(peer.as_dns_name_ref(), io)
+impl tls::HasClientConfig for CrtKey {
+    fn client_config(&self) -> Arc<rustls::ClientConfig> {
+        self.client_config.clone()
     }
 }
 
-// === impl Resolver ===
+impl tls::HasServerConfig for CrtKey {
+    fn server_config(&self) -> Arc<rustls::ServerConfig> {
+        self.server_config.clone()
+    }
+}
 
-impl rustls::ResolvesClientCert for Resolver {
+// === impl CertResolver ===
+
+impl rustls::ResolvesClientCert for CertResolver {
     fn resolve(
         &self,
         _acceptable_issuers: &[&[u8]],
@@ -336,7 +331,7 @@ impl rustls::ResolvesClientCert for Resolver {
     }
 }
 
-impl Resolver {
+impl CertResolver {
     fn resolve_(
         &self,
         sigschemes: &[rustls::SignatureScheme],
@@ -349,7 +344,7 @@ impl Resolver {
     }
 }
 
-impl rustls::ResolvesServerCert for Resolver {
+impl rustls::ResolvesServerCert for CertResolver {
     fn resolve(
         &self,
         server_name: Option<webpki::DNSNameRef>,

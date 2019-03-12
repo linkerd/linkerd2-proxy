@@ -148,7 +148,7 @@ where
             None => return Err(NoOriginalDst),
         };
 
-        let tls = Conditional::None(tls::ReasonForNoIdentity::NotHttp.into());
+        let tls = Conditional::None(tls::ReasonForNoPeerName::NotHttp.into());
         match self.0.make(&connect::Target::new(addr, tls)) {
             Ok(c) => Ok(c),
             // Matching never allows LLVM to eliminate this entirely.

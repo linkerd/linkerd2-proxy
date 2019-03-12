@@ -4,28 +4,37 @@ pub use self::tokio_connect::Connect;
 
 use std::{hash, io, net::SocketAddr};
 
+use super::tls;
 use never::Never;
 use svc;
 use Conditional;
 
 #[derive(Debug, Clone)]
-pub struct Stack(())
+pub struct Stack {}
 
 /// A TCP connection target, optionally with TLS.
-#[derive(Clone, Debug, Hash, PartialEq, Eq )]
-pub struct Target(SocketAddr)
+///
+/// Comparison operations ignore the TLS ClientConfig and only account for the
+/// TLS status.
+#[derive(Clone, Debug)]
+pub struct Target<T> {
+    pub addr: SocketAddr,
+    pub tls: Conditional<T, tls::ReasonFoNoTls>,
+}
 
 // ===== impl Target =====
 
-impl From<SocketAddr> for Target {
-    fn from(addr: SocketAddr) -> Self {
-        Target(addr)
+impl Target<T> {
+    pub fn new(addr: SocketAddr, tls: tls::ConditionalConnectionConfig<tls::ClientConfig>) -> Self {
+        Self { addr, tls }
     }
-}
 
-impl Into<SocketAddr> for Target {
-    fn into(self) -> SocketAddr {
-        self.0
+    pub fn tls_status(&self) -> tls::Status {
+        self.tls.as_ref().map(|_| {})
+    }
+
+    pub fn tls_server_identity(&self) -> Conditional<&identity::Name, tls::ReasonForNoTls> {
+        self.tls.as_ref().map(|config| &config.server_identity)
     }
 }
 
@@ -35,15 +44,34 @@ impl Connect for Target {
     type Future = connection::Connecting;
 
     fn connect(&self) -> Self::Future {
-        connection::connect(&self.addr)
+        connection::connect(&self.addr, self.tls.clone())
     }
 }
+
+impl hash::Hash for Target {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.addr.hash(state);
+        self.tls_status().is_some().hash(state);
+    }
+}
+
+impl PartialEq for Target {
+    fn eq(&self, other: &Target) -> bool {
+        self.addr.eq(&other.addr)
+            && self
+                .tls_status()
+                .is_some()
+                .eq(&other.tls_status().is_some())
+    }
+}
+
+impl Eq for Target {}
 
 // ===== impl Stack =====
 
 impl Stack {
     pub fn new() -> Self {
-        Stack(())
+        Self {}
     }
 }
 

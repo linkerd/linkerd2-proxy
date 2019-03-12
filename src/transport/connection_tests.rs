@@ -17,9 +17,9 @@ use super::{
 #[test]
 fn plaintext() {
     let (client_result, server_result) = run_test(
-        Conditional::None(tls::ReasonForNoTls::Disabled),
+        Conditional::None(tls::ReasonForNoIdentity::Disabled),
         |conn| write_then_read(conn, PING),
-        Conditional::None(tls::ReasonForNoTls::Disabled),
+        Conditional::None(tls::ReasonForNoIdentity::Disabled),
         |conn| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), false);

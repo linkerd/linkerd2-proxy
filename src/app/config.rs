@@ -574,7 +574,10 @@ fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
 }
 
 pub(super) fn parse_identity(s: &str) -> Result<identity::Name, ParseError> {
-    identity::Name::from_sni_hostname(s.as_bytes()).map_err(|_| ParseError::NameError)
+    identity::Name::from_sni_hostname(s.as_bytes()).map_err(|identity::InvalidName| {
+        error!("Not a valid identity name: {}", s);
+        ParseError::NameError
+    })
 }
 
 pub(super) fn parse<T, Parse>(

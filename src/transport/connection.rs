@@ -19,10 +19,10 @@ use identity::Name as Identity;
 use transport::{tls, AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive};
 use Conditional;
 
-pub struct BoundPort<G = ()> {
+pub struct BoundPort<T, G = ()> {
     inner: Option<std::net::TcpListener>,
     local_addr: SocketAddr,
-    tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>,
+    local_identity: T,
     disable_protocol_detection_ports: IndexSet<u16>,
     get_original_dst: G,
 }
@@ -400,7 +400,7 @@ impl ConditionallyUpgradeServerToTlsInner {
         Connection::plain_with_peek_buf(
             self.socket,
             self.peek_buf,
-            tls::ReasonForNoTls::NotProxyTls,
+            tls::ReasonForNoIdentity::NotProxyTls,
         )
     }
 }
@@ -452,13 +452,13 @@ impl Future for Connecting {
 // ===== impl Connection =====
 
 impl Connection {
-    fn plain(io: TcpStream, why_no_tls: tls::ReasonForNoTls) -> Self {
+    fn plain(io: TcpStream, why_no_tls: tls::ReasonForNoIdentity) -> Self {
         Self::plain_with_peek_buf(io, BytesMut::new(), why_no_tls)
     }
 
     fn without_protocol_detection(io: TcpStream) -> Self {
-        use self::tls::{ReasonForNoIdentity, ReasonForNoTls};
-        let reason = ReasonForNoTls::NoIdentity(ReasonForNoIdentity::NotHttp);
+        use self::tls::{ReasonForNoIdentity, ReasonForNoPeerName};
+        let reason = ReasonForNoIdentity::NoPeerName(ReasonForNoPeerName::NotHttp);
         Connection {
             io: BoxedIo::new(io),
             peek_buf: BytesMut::new(),
@@ -471,7 +471,7 @@ impl Connection {
     fn plain_with_peek_buf(
         io: TcpStream,
         peek_buf: BytesMut,
-        why_no_tls: tls::ReasonForNoTls,
+        why_no_tls: tls::ReasonForNoIdentity,
     ) -> Self {
         Connection {
             io: BoxedIo::new(io),
@@ -508,7 +508,7 @@ impl Connection {
         tls::Status::from(&self.tls_peer_identity)
     }
 
-    pub fn tls_peer_identity(&self) -> Conditional<&Identity, tls::ReasonForNoTls> {
+    pub fn tls_peer_identity(&self) -> Conditional<&Identity, tls::ReasonForNoIdentity> {
         self.tls_peer_identity.as_ref()
     }
 

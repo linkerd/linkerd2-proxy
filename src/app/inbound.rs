@@ -37,7 +37,7 @@ impl classify::CanClassify for Endpoint {
 
 impl Endpoint {
     fn target(&self) -> connect::Target {
-        let tls = Conditional::None(tls::ReasonForNoTls::InternalTraffic);
+        let tls = Conditional::None(tls::ReasonForNoIdentity::InternalTraffic);
         connect::Target::new(self.addr, tls)
     }
 }
@@ -56,11 +56,11 @@ impl tap::Inspect for Endpoint {
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoTls> {
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
         req.extensions()
             .get::<Source>()
             .map(|s| s.tls_peer.as_ref())
-            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled))
+            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
@@ -74,8 +74,8 @@ impl tap::Inspect for Endpoint {
     fn dst_tls<B>(
         &self,
         _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoTls> {
-        Conditional::None(tls::ReasonForNoTls::InternalTraffic)
+    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+        Conditional::None(tls::ReasonForNoIdentity::InternalTraffic)
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
@@ -115,7 +115,7 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
 
         let tls_client_id = src
             .map(|s| s.tls_peer.clone())
-            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled));
+            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled));
 
         let dst_name = req
             .extensions()
@@ -332,7 +332,8 @@ mod tests {
         }
     }
 
-    const TLS_DISABLED: tls::ConditionalIdentity = Conditional::None(tls::ReasonForNoTls::Disabled);
+    const TLS_DISABLED: tls::ConditionalIdentity =
+        Conditional::None(tls::ReasonForNoIdentity::Disabled);
 
     quickcheck! {
         fn recognize_orig_dst(

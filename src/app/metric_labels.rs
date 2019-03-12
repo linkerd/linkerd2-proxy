@@ -17,7 +17,7 @@ pub struct ControlLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EndpointLabels {
     direction: Direction,
-    tls_id: Conditional<TlsId, tls::ReasonForNoTls>,
+    tls_id: Conditional<TlsId, tls::ReasonForNoIdentity>,
     dst_name: Option<NameAddr>,
     labels: Option<String>,
 }
@@ -207,7 +207,7 @@ impl fmt::Display for classify::SuccessOrFailure {
 impl FmtLabels for tls::Status {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Conditional::None(tls::ReasonForNoTls::NoIdentity(why)) => {
+            Conditional::None(tls::ReasonForNoIdentity::NoPeerName(why)) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
             status => write!(f, "tls=\"{}\"", status),

@@ -261,7 +261,7 @@ where
             future::lazy(move || match dst_addr {
                 None => Ok(None),
                 Some(addr) => stack
-                    .make(&control::Config::new(addr, tls))
+                    .make(&addr)
                     .map(Some)
                     .map_err(|e| error!("failed to build controller: {}", e)),
             })

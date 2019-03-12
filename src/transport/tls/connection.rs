@@ -7,12 +7,13 @@ use tokio::net::TcpStream;
 use tokio::prelude::*;
 
 use dns;
-use identity::Name as Identity;
+use identity;
 use transport::{io::internal::Io, prefixed::Prefixed, AddrInfo, SetKeepalive};
 
 use super::{
     rustls,
     tokio_rustls::{self, TlsAcceptor, TlsConnector, TlsStream},
+    untrusted, webpki, HasPeerIdentity, PeerIdentity,
 };
 
 pub use self::rustls::Session;
@@ -71,14 +72,38 @@ where
 
 // === impl Connection ===
 
-impl Connection<Prefixed<TcpStream>, rustls::ServerSession> {
-    pub fn client_identity(&self) -> Option<Identity> {
+impl<S, C> Connection<S, C>
+where
+    S: Debug,
+    C: Session + Debug,
+{
+    fn peer_identity_(&self) -> Option<identity::Name> {
         let (_io, session) = self.0.get_ref();
         let certs = session.get_peer_certificates()?;
-        let end_cert = super::parse_end_entity_cert(&certs).ok()?;
+        let end_cert = {
+            let cert = cert_chain
+                .first()
+                .map(rustls::Certificate::as_ref)
+                .unwrap_or(&[]); // An empty input will fail to parse.
+            webpki::EndEntityCert::from(untrusted::Input::from(cert)).ok()?
+        };
         // Use the first DNS name ias the identity.
         let name: &str = end_cert.dns_names().ok()?.into_iter().next()?.into();
-        Identity::from_sni_hostname(name.as_bytes()).ok()
+        identity::Name::from_sni_hostname(name.as_bytes()).ok()
+    }
+}
+
+impl<S, C> HasPeerIdentity for Connection<S, C>
+where
+    S: Debug,
+    C: Session + Debug,
+{
+    fn peer_identity(&self) -> PeerIdentity {
+        use super::{Conditional, ReasonForNoPeerName};
+
+        self.peer_identity_()
+            .map(Conditional::Some)
+            .unwrap_or_else(|| Conditional::None(ReasonForNoPeerName::NotProvidedByRemote))
     }
 }
 

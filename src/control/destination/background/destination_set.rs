@@ -147,7 +147,7 @@ where
                             (
                                 SocketAddr::from((ip, authority.port())),
                                 Metadata::none(
-                                    tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery,
+                                    tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
                                 ),
                             )
                         }),
@@ -313,7 +313,7 @@ fn pb_to_addr_meta(
         .and_then(pb_to_id)
         .map(Conditional::Some)
         .unwrap_or_else(|| {
-            Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery)
+            Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)
         });
 
     let meta = Metadata::new(meta, proto_hint, tls_id);

@@ -50,8 +50,8 @@ impl tap::Inspect for Endpoint {
     fn src_tls<'a, B>(
         &self,
         _: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoTls> {
-        Conditional::None(tls::ReasonForNoTls::InternalTraffic)
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
+        Conditional::None(tls::ReasonForNoIdentity::InternalTraffic)
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<net::SocketAddr> {
@@ -65,7 +65,7 @@ impl tap::Inspect for Endpoint {
     fn dst_tls<B>(
         &self,
         _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoTls> {
+    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
         self.connect.tls_server_identity()
     }
 
@@ -150,7 +150,7 @@ pub mod discovery {
                         // provides TLS configuration.
                         let tls = match metadata.tls_identity() {
                             Conditional::None(reason) => reason.into(),
-                            Conditional::Some(_) => tls::ReasonForNoTls::NoConfig,
+                            Conditional::Some(_) => tls::ReasonForNoIdentity::NoConfig,
                         };
                         let ep = Endpoint {
                             dst_name: Some(name.clone()),
@@ -162,7 +162,7 @@ pub mod discovery {
                 },
                 Resolution::Addr(ref mut addr) => match addr.take() {
                     Some(addr) => {
-                        let tls = tls::ReasonForNoIdentity::NoAuthorityInHttpRequest;
+                        let tls = tls::ReasonForNoPeerName::NoAuthorityInHttpRequest;
                         let ep = Endpoint {
                             dst_name: None,
                             connect: connect::Target::new(addr, Conditional::None(tls.into())),

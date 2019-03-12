@@ -85,7 +85,7 @@ pub struct Metadata {
     protocol_hint: ProtocolHint,
 
     /// How to verify TLS for the endpoint.
-    tls_identity: Conditional<identity::Name, tls::ReasonForNoIdentity>,
+    identity: Option<identity::Name>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -172,7 +172,7 @@ impl Responder {
 // ===== impl Metadata =====
 
 impl Metadata {
-    pub fn none(tls: tls::ReasonForNoIdentity) -> Self {
+    pub fn none(tls: tls::ReasonForNoPeerName) -> Self {
         Self {
             labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
@@ -183,7 +183,7 @@ impl Metadata {
     pub fn new(
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
-        tls_identity: Conditional<identity::Name, tls::ReasonForNoIdentity>,
+        tls_identity: Conditional<identity::Name, tls::ReasonForNoPeerName>,
     ) -> Self {
         Self {
             labels,
@@ -201,7 +201,7 @@ impl Metadata {
         self.protocol_hint
     }
 
-    pub fn tls_identity(&self) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+    pub fn tls_identity(&self) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
         self.tls_identity.as_ref()
     }
 
