@@ -32,7 +32,7 @@ extern crate regex;
 extern crate tokio;
 extern crate tokio_timer;
 extern crate tower_grpc;
-extern crate tower_http;
+extern crate tower_http_service;
 extern crate tower_retry;
 extern crate tower_util;
 extern crate try_lock;

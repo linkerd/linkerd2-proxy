@@ -8,8 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay};
-use tower_grpc::{self as grpc, Body, BoxBody};
-use tower_http::HttpService;
+use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 
 use api::identity as api;
 use never::Never;
@@ -37,7 +36,7 @@ pub struct LocalIdentity {
 /// Drives updates.
 pub struct Daemon<T>
 where
-    T: HttpService<BoxBody>,
+    T: GrpcService<BoxBody>,
     T::ResponseBody: grpc::Body,
 {
     config: Config,
@@ -49,7 +48,7 @@ where
 
 enum Inner<T>
 where
-    T: HttpService<BoxBody>,
+    T: GrpcService<BoxBody>,
     T::ResponseBody: grpc::Body,
 {
     Waiting(Delay),
@@ -59,8 +58,7 @@ where
 
 pub fn new<T>(config: Config, client: T) -> (LocalIdentity, Daemon<T>)
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: grpc::Body,
+    T: GrpcService<BoxBody>,
 {
     let (ck_watch, ck_store) = Watch::new(None);
     let id = LocalIdentity {
@@ -105,9 +103,7 @@ impl Config {
 
 impl<T> Future for Daemon<T>
 where
-    T: HttpService<BoxBody> + Clone,
-    T::ResponseBody: Body,
-    T::Error: fmt::Debug,
+    T: GrpcService<BoxBody> + Clone,
 {
     type Item = ();
     type Error = Never;

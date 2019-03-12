@@ -1,6 +1,6 @@
 use support::*;
 
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 use linkerd2_proxy_api::tap as pb;
 
 pub fn client(addr: SocketAddr) -> Client {
@@ -16,7 +16,7 @@ impl Client {
     pub fn observe(
         &mut self,
         req: ObserveBuilder,
-    ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Error> {
+    ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Status> {
         let req = tower_grpc::Request::new(req.0);
         self.api
             .observe(req)
@@ -162,9 +162,9 @@ struct SyncSvc(client::Client);
 
 impl<B> tower_service::Service<http::Request<B>> for SyncSvc
 where
-    B: tower_grpc::Body<Data = Bytes>,
+    B: grpc::Body,
 {
-    type Response = http::Response<GrpcBody>;
+    type Response = http::Response<client::BytesBody>;
     type Error = String;
     type Future = Box<Future<Item = Self::Response, Error = Self::Error> + Send>;
 
@@ -175,33 +175,16 @@ where
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         let req = req.map(|mut body| {
             let mut buf = BytesMut::new();
-            while let Some(bytes) = future::poll_fn(|| body.poll_data())
+            while let Some(bytes) = future::poll_fn(|| body.poll_buf())
                 .wait()
+                .map_err(Into::into)
                 .expect("req body")
             {
-                buf.extend_from_slice(&bytes);
+                buf.put(bytes);
             }
 
             buf.freeze()
         });
-        Box::new(self.0.request_body_async(req).map(|res| res.map(GrpcBody)))
-    }
-}
-
-struct GrpcBody(client::BytesBody);
-
-impl tower_grpc::Body for GrpcBody {
-    type Data = Bytes;
-
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, tower_grpc::Error> {
-        self.0
-            .poll_data()
-            .map_err(|err| unimplemented!("grpc poll_data error: {}", err))
-    }
-
-    fn poll_metadata(&mut self) -> Poll<Option<http::HeaderMap>, tower_grpc::Error> {
-        self.0
-            .poll_trailers()
-            .map_err(|err| unimplemented!("grpc poll_trailers error: {}", err))
+        Box::new(self.0.request_body_async(req))
     }
 }

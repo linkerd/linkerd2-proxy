@@ -26,10 +26,8 @@
 
 use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use std::fmt;
 use std::sync::{Arc, Weak};
-use tower_grpc::{Body, BoxBody};
-use tower_http::HttpService;
+use tower_grpc::{generic::client::GrpcService, BoxBody};
 
 use dns;
 use identity;
@@ -112,9 +110,7 @@ pub fn new<T>(
     proxy_id: String,
 ) -> (Resolver, impl Future<Item = (), Error = ()>)
 where
-    T: HttpService<BoxBody>,
-    T::ResponseBody: Body,
-    T::Error: fmt::Debug,
+    T: GrpcService<BoxBody>,
 {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };

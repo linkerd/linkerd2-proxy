@@ -8,6 +8,7 @@ use self::tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
+use support::bytes::IntoBuf;
 use support::hyper::body::Payload;
 
 type Request = http::Request<Bytes>;
@@ -281,15 +282,18 @@ impl AsyncWrite for RunningIo {
     }
 }
 
-impl BytesBody {
-    pub fn poll_data(&mut self) -> Poll<Option<Bytes>, hyper::Error> {
+impl HttpBody for BytesBody {
+    type Item = <Bytes as IntoBuf>::Buf;
+    type Error = hyper::Error;
+
+    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         match try_ready!(self.0.poll_data()) {
-            Some(chunk) => Ok(Async::Ready(Some(chunk.into()))),
+            Some(chunk) => Ok(Async::Ready(Some(Bytes::from(chunk).into_buf()))),
             None => Ok(Async::Ready(None)),
         }
     }
 
-    pub fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, hyper::Error> {
+    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
         self.0.poll_trailers()
     }
 }
@@ -299,6 +303,9 @@ impl Stream for BytesBody {
     type Error = hyper::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.poll_data()
+        match try_ready!(self.0.poll_data()) {
+            Some(chunk) => Ok(Async::Ready(Some(chunk.into()))),
+            None => Ok(Async::Ready(None)),
+        }
     }
 }

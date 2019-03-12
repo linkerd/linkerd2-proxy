@@ -6,11 +6,12 @@ extern crate tower_service as svc;
 use futures::{Async, Future, Poll};
 
 use std::hash::Hash;
+use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{error, fmt, mem};
 
 mod cache;
+pub mod error;
 
 use self::cache::Cache;
 
@@ -38,19 +39,11 @@ pub trait Recognize<Request> {
     fn recognize(&self, req: &Request) -> Option<Self::Target>;
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Error<T, U> {
-    Inner(T),
-    Route(U),
-    NoCapacity(usize),
-    NotRecognized,
-}
-
-pub struct ResponseFuture<Req, Svc, E>
+pub struct ResponseFuture<Req, Svc>
 where
     Svc: svc::Service<Req>,
 {
-    state: State<Req, Svc, E>,
+    state: State<Req, Svc>,
 }
 
 struct Inner<Req, Rec, Stk>
@@ -64,13 +57,13 @@ where
     cache: Mutex<Cache<Rec::Target, Stk::Value>>,
 }
 
-enum State<Req, Svc, E>
+enum State<Req, Svc>
 where
     Svc: svc::Service<Req>,
 {
     NotReady(Req, Svc),
     Called(Svc::Future),
-    Error(Error<Svc::Error, E>),
+    Error(error::Error),
     Tmp,
 }
 
@@ -107,15 +100,17 @@ where
     }
 }
 
-impl<Req, Rec, Stk> svc::Service<Req> for Router<Req, Rec, Stk>
+impl<Req, Rec, Stk, Svc> svc::Service<Req> for Router<Req, Rec, Stk>
 where
     Rec: Recognize<Req>,
-    Stk: stack::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Req> + Clone,
+    Stk: stack::Stack<Rec::Target, Value = Svc>,
+    Stk::Error: Into<error::Error>,
+    Svc: svc::Service<Req> + Clone,
+    Svc::Error: Into<error::Error>,
 {
     type Response = <Stk::Value as svc::Service<Req>>::Response;
-    type Error = Error<<Stk::Value as svc::Service<Req>>::Error, Stk::Error>;
-    type Future = ResponseFuture<Req, Stk::Value, Stk::Error>;
+    type Error = error::Error;
+    type Future = ResponseFuture<Req, Stk::Value>;
 
     /// Always ready to serve.
     ///
@@ -181,7 +176,7 @@ where
 
 // ===== impl ResponseFuture =====
 
-impl<Req, Svc, E> ResponseFuture<Req, Svc, E>
+impl<Req, Svc> ResponseFuture<Req, Svc>
 where
     Svc: svc::Service<Req>,
 {
@@ -191,36 +186,37 @@ where
         }
     }
 
-    fn error(err: Error<Svc::Error, E>) -> Self {
+    fn error(err: error::Error) -> Self {
         ResponseFuture {
             state: State::Error(err),
         }
     }
 
-    fn route_error(err: E) -> Self {
-        Self::error(Error::Route(err))
+    fn route_error(err: impl Into<error::Error>) -> Self {
+        Self::error(err.into())
     }
 
     fn not_recognized() -> Self {
-        Self::error(Error::NotRecognized)
+        Self::error(error::NotRecognized.into())
     }
 
     fn no_capacity(capacity: usize) -> Self {
-        Self::error(Error::NoCapacity(capacity))
+        Self::error(error::NoCapacity(capacity).into())
     }
 }
 
-impl<Req, Svc, E> Future for ResponseFuture<Req, Svc, E>
+impl<Req, Svc> Future for ResponseFuture<Req, Svc>
 where
     Svc: svc::Service<Req>,
+    Svc::Error: Into<error::Error>,
 {
     type Item = Svc::Response;
-    type Error = Error<Svc::Error, E>;
+    type Error = error::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             match mem::replace(&mut self.state, State::Tmp) {
-                State::NotReady(req, mut svc) => match svc.poll_ready().map_err(Error::Inner)? {
+                State::NotReady(req, mut svc) => match svc.poll_ready().map_err(Into::into)? {
                     Async::Ready(()) => {
                         self.state = State::Called(svc.call(req));
                     }
@@ -229,7 +225,7 @@ where
                         return Ok(Async::NotReady);
                     }
                 },
-                State::Called(mut fut) => match fut.poll().map_err(Error::Inner)? {
+                State::Called(mut fut) => match fut.poll().map_err(Into::into)? {
                     Async::Ready(val) => return Ok(Async::Ready(val)),
                     Async::NotReady => {
                         self.state = State::Called(fut);
@@ -243,51 +239,12 @@ where
     }
 }
 
-// ===== impl Error =====
-
-impl<T, U> fmt::Display for Error<T, U>
-where
-    T: fmt::Display,
-    U: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::Inner(ref why) => fmt::Display::fmt(why, f),
-            Error::Route(ref why) => write!(f, "route recognition failed: {}", why),
-            Error::NotRecognized => f.pad("route not recognized"),
-            Error::NoCapacity(capacity) => write!(f, "router capacity reached ({})", capacity),
-        }
-    }
-}
-
-impl<T, U> error::Error for Error<T, U>
-where
-    T: error::Error + 'static,
-    U: error::Error + 'static,
-{
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match *self {
-            Error::Inner(ref why) => Some(why),
-            Error::Route(ref why) => Some(why),
-            _ => None,
-        }
-    }
-
-    fn description(&self) -> &str {
-        match *self {
-            Error::Inner(_) => "inner service error",
-            Error::Route(_) => "route recognition failed",
-            Error::NoCapacity(_) => "router capacity reached",
-            Error::NotRecognized => "route not recognized",
-        }
-    }
-}
-
 #[cfg(test)]
 mod test_util {
     use futures::{future, Poll};
     use stack::Stack;
     use std::cell::Cell;
+    use std::fmt;
     use std::rc::Rc;
     use svc::Service;
 
@@ -323,7 +280,7 @@ mod test_util {
 
     impl Stack<usize> for Recognize {
         type Value = MultiplyAndAssign;
-        type Error = ();
+        type Error = MulError;
 
         fn make(&self, _: &usize) -> Result<Self::Value, Self::Error> {
             Ok(MultiplyAndAssign::default())
@@ -346,7 +303,7 @@ mod test_util {
 
     impl Stack<usize> for MultiplyAndAssign {
         type Value = MultiplyAndAssign;
-        type Error = ();
+        type Error = MulError;
 
         fn make(&self, _: &usize) -> Result<Self::Value, Self::Error> {
             // Don't use a clone, so that they don't affect the original Stack...
@@ -388,11 +345,19 @@ mod test_util {
             Request::Recognized(n)
         }
     }
+
+    impl fmt::Display for MulError {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{:?}", self)
+        }
+    }
+
+    impl std::error::Error for MulError {}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Router};
+    use super::{error, Router};
     use futures::Future;
     use std::time::Duration;
     use std::usize;
@@ -401,7 +366,7 @@ mod tests {
 
     impl<Stk> Router<Request, Recognize, Stk>
     where
-        Stk: stack::Stack<usize, Error = ()>,
+        Stk: stack::Stack<usize, Error = MulError>,
         Stk::Value: svc::Service<Request, Response = usize, Error = MulError> + Clone,
     {
         fn call_ok(&mut self, req: impl Into<Request>) -> usize {
@@ -410,7 +375,7 @@ mod tests {
             self.call(req).wait().expect(&msg)
         }
 
-        fn call_err(&mut self, req: impl Into<Request>) -> super::Error<MulError, ()> {
+        fn call_err(&mut self, req: impl Into<Request>) -> error::Error {
             let req = req.into();
             let msg = format!("router.call({:?}) should error", req);
             self.call(req.into()).wait().expect_err(&msg)
@@ -422,7 +387,7 @@ mod tests {
         let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(0));
 
         let rsp = router.call_err(Request::NotRecognized);
-        assert_eq!(rsp, Error::NotRecognized);
+        assert!(rsp.is::<error::NotRecognized>());
     }
 
     #[test]
@@ -433,7 +398,12 @@ mod tests {
         assert_eq!(rsp, 2);
 
         let rsp = router.call_err(3);
-        assert_eq!(rsp, Error::NoCapacity(1));
+        assert_eq!(
+            rsp.downcast_ref::<error::NoCapacity>()
+                .expect("error should be NoCapacity")
+                .0,
+            1
+        );
     }
 
     #[test]
@@ -457,6 +427,9 @@ mod tests {
         );
 
         let err = router.call_err(2);
-        assert_eq!(err, Error::Inner(MulError::AtMax));
+        assert_eq!(
+            err.downcast_ref::<MulError>().expect("should be MulError"),
+            &MulError::AtMax,
+        );
     }
 }
