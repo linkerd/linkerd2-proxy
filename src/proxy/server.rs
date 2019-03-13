@@ -125,7 +125,7 @@ impl Source {
         remote: SocketAddr,
         local: SocketAddr,
         orig_dst: Option<SocketAddr>,
-        tls_peer: tls::ConditionalIdentity,
+        tls_peer: tls::PeerIdentity,
     ) -> Self {
         Self {
             remote,

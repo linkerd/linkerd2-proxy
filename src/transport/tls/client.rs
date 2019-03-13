@@ -153,10 +153,8 @@ where
                     future,
                     server_name,
                 } => {
-                    use super::connection::TlsIo;
-
                     let io = try_ready!(future.poll());
-                    let io = BoxedIo::new(TlsIo::from(io));
+                    let io = BoxedIo::new(super::TlsIo::from(io));
 
                     let c = Connection::tls(io, server_name.clone());
                     return Ok(Async::Ready(c));

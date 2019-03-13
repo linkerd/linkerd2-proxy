@@ -342,8 +342,7 @@ mod tests {
         }
     }
 
-    const TLS_DISABLED: tls::ConditionalIdentity =
-        Conditional::None(tls::ReasonForNoIdentity::Disabled);
+    const TLS_DISABLED: tls::PeerIdentity = Conditional::None(tls::ReasonForNoIdentity::Disabled);
 
     quickcheck! {
         fn recognize_orig_dst(

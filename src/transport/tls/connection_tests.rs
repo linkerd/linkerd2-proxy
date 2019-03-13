@@ -11,15 +11,14 @@ use Conditional;
 
 use super::{
     connection::{self, Connection},
-    tls,
 };
 
 #[test]
 fn plaintext() {
     let (client_result, server_result) = run_test(
-        Conditional::None(tls::ReasonForNoIdentity::Disabled),
+        Conditional::None(super::ReasonForNoIdentity::Disabled),
         |conn| write_then_read(conn, PING),
-        Conditional::None(tls::ReasonForNoIdentity::Disabled),
+        Conditional::None(super::ReasonForNoIdentity::Disabled),
         |conn| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), false);
@@ -30,8 +29,8 @@ fn plaintext() {
 
 #[test]
 fn proxy_to_proxy_tls_works() {
-    let server_tls = tls::config_test_util::FOO_NS1.server();
-    let client_tls = tls::config_test_util::BAR_NS1.client(server_tls.server_identity.clone());
+    let server_tls = super::config_test_util::FOO_NS1.server();
+    let client_tls = super::config_test_util::BAR_NS1.client(server_tls.server_identity.clone());
     let (client_result, server_result) = run_test(
         Conditional::Some(client_tls),
         |conn| write_then_read(conn, PING),
@@ -46,12 +45,12 @@ fn proxy_to_proxy_tls_works() {
 
 #[test]
 fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
-    let server_tls = tls::config_test_util::FOO_NS1.server();
+    let server_tls = super::config_test_util::FOO_NS1.server();
 
     // Misuse the client's identity instead of the server's identity. Any
     // identity other than `server_tls.server_identity` would work.
-    let client_tls = tls::config_test_util::BAR_NS1.client(
-        tls::config_test_util::BAR_NS1
+    let client_tls = super::config_test_util::BAR_NS1.client(
+        super::config_test_util::BAR_NS1
             .to_settings()
             .local_identity
             .clone(),
@@ -76,7 +75,7 @@ struct Transported<R> {
     /// The value of `Connection::tls_status()` for the established connection.
     ///
     /// This will be `None` if we never even get a `Connection`.
-    tls_status: Option<tls::Status>,
+    tls_status: Option<super::Status>,
 
     /// The connection's result.
     result: Result<R, io::Error>,
@@ -95,9 +94,9 @@ impl<R> Transported<R> {
 /// on the client side and `server` processes the connection on the server
 /// side.
 fn run_test<C, CF, CR, S, SF, SR>(
-    client_tls: tls::ConditionalConnectionConfig<tls::ClientConfigWatch>,
+    client_tls: super::Conditional<tls::client::Config>,
     client: C,
-    server_tls: tls::ConditionalConnectionConfig<tls::ServerConfigWatch>,
+    server_tls: super::Conditional<tls::listen::Config>,
     server: S,
 ) -> (Transported<CR>, Transported<SR>)
 where
@@ -122,13 +121,14 @@ where
         // tests to run at once, which wouldn't work if they all were bound on
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-        let server_bound = connection::BoundPort::new(addr, server_tls).unwrap();
+        let server_bound = super::Listen::bind(addr, server_tls).unwrap();
         let server_addr = server_bound.local_addr();
 
         let connection_limit = 1; // TODO: allow caller to set this.
 
         let server = server_bound
             .listen_and_fold_n(connection_limit, sender, move |sender, (conn, _)| {
+                use super::{HasPeerIdentity, HasStatus};
                 let tls_status = Some(conn.tls_status());
                 trace!("server tls_status: {:?}", tls_status);
                 server(conn).then(move |result| {

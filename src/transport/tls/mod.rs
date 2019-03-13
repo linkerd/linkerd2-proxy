@@ -14,15 +14,18 @@ use identity;
 pub mod client;
 mod conditional_accept;
 mod connection;
+mod io;
 pub mod listen;
+
+use self::io::TlsIo;
+
+#[cfg(test)]
+mod connection_tests;
 
 pub use self::connection::Connection;
 pub use self::listen::Listen;
 pub(super) use self::rustls::Session;
 pub use self::rustls::TLSError as Error;
-
-#[cfg(test)]
-pub use self::config::test_util as config_test_util;
 
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.

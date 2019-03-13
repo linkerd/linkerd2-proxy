@@ -2,8 +2,6 @@ use support::*;
 
 use std::sync::{Arc, Mutex};
 
-use convert::TryFrom;
-
 pub fn new() -> Proxy {
     Proxy::new()
 }
@@ -140,10 +138,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     let outbound = proxy.outbound;
     let mut mock_orig_dst = DstInner::default();
 
-    env.put(
-        app::config::ENV_CONTROL_URL,
-        format!("tcp://{}", controller.addr),
-    );
+    env.put(app::config::ENV_IDENTITY_DISABLED, "true".into());
+    env.put(app::config::ENV_DESTINATION_SVC_ADDR, format!("{}", controller.addr));
     env.put(
         app::config::ENV_OUTBOUND_LISTENER,
         "tcp://127.0.0.1:0".to_owned(),
@@ -195,7 +191,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         );
     }
 
-    let config = app::config::Config::try_from(&env).unwrap();
+    let config = app::config::Config::parse(&env).unwrap();
 
     let (running_tx, running_rx) = oneshot::channel();
     let (tx, mut rx) = shutdown_signal();

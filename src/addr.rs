@@ -18,7 +18,7 @@ pub struct NameAddr {
     port: u16,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     /// The host is not a valid DNS name or IP address.
     InvalidHost,

@@ -133,7 +133,7 @@ pub enum Error {
     InvalidEnvVar,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ParseError {
     EnvironmentUnsupported,
     NotADuration,
@@ -143,7 +143,7 @@ pub enum ParseError {
     NotUnicode,
     AddrError(addr::Error),
     NameError,
-    InvalidTokenSource(io::Error),
+    InvalidTokenSource,
     InvalidTrustAnchors,
 }
 
@@ -239,6 +239,7 @@ pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_MAX_REFRESH";
 pub const ENV_IDENTITY_SVC_BASE: &str = "LINKERD2_PROXY_IDENTITY_SVC";
 
 pub const ENV_DESTINATION_SVC_BASE: &str = "LINKERD2_PROXY_DESTINATION_SVC";
+pub const ENV_DESTINATION_SVC_ADDR: &str = "LINKERD2_PROXY_DESTINATION_SVC_ADDR";
 
 pub const ENV_DESTINATION_CONTEXT_TOKEN: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT_TOKEN";
 
@@ -680,8 +681,10 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
         Ok(PathBuf::from(s))
     });
     let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
-        identity::TokenSource::if_nonempty_file(s.to_string())
-            .map_err(ParseError::InvalidTokenSource)
+        identity::TokenSource::if_nonempty_file(s.to_string()).map_err(|e| {
+            error!("Could not read {}: {}", ENV_IDENTITY_TOKEN_FILE, e);
+            ParseError::InvalidTokenSource
+        })
     });
     let li = parse(strings, ENV_IDENTITY_LOCAL_IDENTITY, parse_identity);
     let min_refresh = parse(strings, ENV_IDENTITY_MIN_REFRESH, parse_duration);

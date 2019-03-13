@@ -293,10 +293,8 @@ impl Future for Handshake {
                     future,
                     server_name,
                 } => {
-                    use transport::tls::connection::TlsIo;
-
                     let io = try_ready!(future.poll());
-                    let io = BoxedIo::new(TlsIo::from(io));
+                    let io = BoxedIo::new(super::TlsIo::from(io));
 
                     return Ok(Async::Ready(Connection::tls(io, server_name.clone())));
                 }
