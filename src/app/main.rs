@@ -1,7 +1,6 @@
 use futures::{self, future, Future, Poll};
 use http;
 use hyper;
-use indexmap::IndexSet;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -64,12 +63,11 @@ struct ProxyParts<G> {
 
     start_time: SystemTime,
 
-    control_listener: BoundPort,
-    inbound_listener: BoundPort,
-    outbound_listener: BoundPort,
-    metrics_listener: BoundPort,
+    inbound_listener: BoundPort<G>,
+    outbound_listener: BoundPort<G>,
 
-    get_original_dst: G,
+    control_listener: BoundPort<()>,
+    metrics_listener: BoundPort<()>,
 }
 
 impl<G> Main<G>
@@ -84,13 +82,6 @@ where
 
         let tls_config_watch = tls::ConfigWatch::new(config.tls_settings.clone());
 
-        // TODO: Serve over TLS.
-        let control_listener = BoundPort::new(
-            config.control_listener.addr,
-            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForTap.into()),
-        )
-        .expect("controller listener bind");
-
         let inbound_listener = {
             let tls = config.tls_settings.as_ref().and_then(|settings| {
                 tls_config_watch
@@ -101,16 +92,32 @@ where
                         config: tls_server_config.clone(),
                     })
             });
-            BoundPort::new(config.inbound_listener.addr, tls).expect("public listener bind")
+            BoundPort::new(config.inbound_listener.addr, tls)
+                .expect("inbound listener bind")
+                .without_protocol_detection_for(
+                    config.inbound_ports_disable_protocol_detection.clone(),
+                )
+                .with_original_dst(get_original_dst.clone())
         };
 
-        let outbound_listener = BoundPort::new(
-            config.outbound_listener.addr,
-            Conditional::None(tls::ReasonForNoTls::InternalTraffic),
-        )
-        .expect("private listener bind");
+        let outbound_listener = {
+            BoundPort::new(
+                config.outbound_listener.addr,
+                Conditional::None(tls::ReasonForNoTls::InternalTraffic),
+            )
+            .expect("outbound listener bind")
+            .without_protocol_detection_for(
+                config.outbound_ports_disable_protocol_detection.clone(),
+            )
+            .with_original_dst(get_original_dst)
+        };
 
-        let runtime = runtime.into();
+        // TODO: Serve over TLS.
+        let control_listener = BoundPort::new(
+            config.control_listener.addr,
+            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForTap.into()),
+        )
+        .expect("controller listener bind");
 
         // TODO: Serve over TLS.
         let metrics_listener = BoundPort::new(
@@ -118,6 +125,8 @@ where
             Conditional::None(tls::ReasonForNoIdentity::NotImplementedForMetrics.into()),
         )
         .expect("metrics listener bind");
+
+        let runtime = runtime.into();
 
         let proxy_parts = ProxyParts {
             config,
@@ -127,7 +136,6 @@ where
             inbound_listener,
             outbound_listener,
             metrics_listener,
-            get_original_dst,
         };
 
         Main {
@@ -195,7 +203,6 @@ where
             inbound_listener,
             outbound_listener,
             metrics_listener,
-            get_original_dst,
         } = self;
 
         const MAX_IN_FLIGHT: usize = 10_000;
@@ -516,8 +523,6 @@ where
                 accept,
                 connect,
                 server_stack,
-                config.outbound_ports_disable_protocol_detection,
-                get_original_dst.clone(),
                 drain_rx.clone(),
             )
             .map_err(|e| error!("outbound proxy background task failed: {}", e))
@@ -663,8 +668,6 @@ where
                 accept,
                 connect,
                 source_stack,
-                config.inbound_ports_disable_protocol_detection,
-                get_original_dst.clone(),
                 drain_rx.clone(),
             )
             .map_err(|e| error!("inbound proxy background task failed: {}", e))
@@ -728,12 +731,10 @@ where
 
 fn serve<A, C, R, B, G>(
     proxy_name: &'static str,
-    bound_port: BoundPort,
+    bound_port: BoundPort<G>,
     accept: A,
     connect: C,
     router: R,
-    disable_protocol_detection_ports: IndexSet<u16>,
-    get_orig_dst: G,
     drain_rx: drain::Watch,
 ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
 where
@@ -765,20 +766,17 @@ where
     );
     let log = server.log().clone();
 
-    let accept = {
-        let bound_port = bound_port
-            .without_protocol_detection_for(disable_protocol_detection_ports)
-            .with_original_dst(get_orig_dst);
-        let fut = bound_port.listen_and_fold((), move |(), (connection, remote_addr)| {
+    let accept = log.future(bound_port.listen_and_fold(
+        (),
+        move |(), (connection, remote_addr)| {
             let s = server.serve(connection, remote_addr);
             // Logging context is configured by the server.
             let r = DefaultExecutor::current()
                 .spawn(Box::new(s))
                 .map_err(task::Error::into_io);
             future::result(r)
-        });
-        log.future(fut)
-    };
+        },
+    ));
 
     let accept_until = Cancelable {
         future: accept,
@@ -818,7 +816,7 @@ where
 }
 
 fn serve_tap<N, B>(
-    bound_port: BoundPort,
+    bound_port: BoundPort<()>,
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where
