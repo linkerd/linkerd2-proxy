@@ -14,7 +14,11 @@ use proxy::http::{
 use proxy::protocol::Protocol;
 use proxy::tcp;
 use svc::{Service, Stack};
-use transport::{connect, tls, Connection, Peek};
+use transport::{
+    connect,
+    tls::{self, HasPeerIdentity},
+    Connection, Peek,
+};
 use Conditional;
 
 /// A protocol-transparent Server!
@@ -236,7 +240,7 @@ where
             remote: remote_addr,
             local: connection.local_addr().unwrap_or(self.listen_addr),
             orig_dst,
-            tls_peer: connection.tls_peer_identity().cloned(),
+            tls_peer: connection.peer_identity(),
             _p: (),
         };
 

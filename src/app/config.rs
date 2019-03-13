@@ -8,6 +8,7 @@ use std::{fs, io};
 
 use indexmap::IndexSet;
 
+use super::control::ControlAddr;
 use super::identity;
 use addr;
 use convert::TryFrom;
@@ -115,20 +116,6 @@ pub struct Config {
     pub dns_max_ttl: Option<Duration>,
 
     pub dns_canonicalize_timeout: Duration,
-}
-
-#[derive(Clone, Debug)]
-pub struct ControlAddr {
-    pub addr: Addr,
-    pub identity: Conditional<identity::Name, NoControlIdentity>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum NoControlIdentity {
-    /// Identity is not needed on this localhost client.
-    Loopback,
-    /// Identity has been disabled on the entire process.
-    Disabled,
 }
 
 /// Configuration settings for binding a listener.
@@ -658,7 +645,7 @@ pub fn parse_control_addr<S: Strings>(
         (None, None) => Ok(None),
         (Some(addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr,
-            identity: Conditional::None(NoControlIdentity::Loopback),
+            identity: Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
@@ -680,10 +667,8 @@ pub fn parse_control_addr_disable_identity<S: Strings>(
     base: &str,
 ) -> Result<Option<ControlAddr>, Error> {
     let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
-    Ok(a.map(|addr| ControlAddr {
-        addr,
-        identity: Conditional::None(NoControlIdentity::Disabled),
-    }))
+    let identity = Conditional::None(tls::ReasonForNoIdentity::Disabled);
+    Ok(a.map(|addr| ControlAddr { addr, identity }))
 }
 
 pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity::Config>, Error> {

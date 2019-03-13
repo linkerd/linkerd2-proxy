@@ -39,6 +39,12 @@ pub trait HasStatus {
     fn tls_status(&self) -> Status;
 }
 
+impl<T: HasPeerIdentity> HasStatus for T {
+    fn tls_status(&self) -> Status {
+        self.peer_identity().map(|_| ())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReasonForNoIdentity {
     /// Identity is administratively disabled.

@@ -35,6 +35,18 @@ impl fmt::Display for Endpoint {
     }
 }
 
+impl tls::HasPeerIdentity for Endpoint {
+    fn peer_identity(&self) -> tls::PeerIdentity {
+        self.identity.clone()
+    }
+}
+
+impl connect::HasPeerAddr for Endpoint {
+    fn peer_addr(&self) -> net::SocketAddr {
+        self.addr
+    }
+}
+
 impl tap::Inspect for Endpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr> {
         use proxy::server::Source;

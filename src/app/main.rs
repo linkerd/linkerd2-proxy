@@ -264,6 +264,7 @@ where
             };
 
             connect::Stack::new()
+                .push(tls::client::layer(Conditional::None(TLS_FIXME.into())))
                 .push(keepalive::connect::layer(keepalive))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
@@ -327,6 +328,7 @@ where
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
             let connect = connect::Stack::new()
+                .push(tls::client::layer(Conditional::None(TLS_FIXME.into())))
                 .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                 .push(svc::timeout::layer(config.outbound_connect_timeout))
                 .push(transport_metrics.connect("outbound"));
@@ -507,6 +509,7 @@ where
             // Establishes connections to the local application (for both
             // TCP forwarding and HTTP proxying).
             let connect = connect::Stack::new()
+                .push(tls::client::layer(Conditional::None(TLS_FIXME.into())))
                 .push(keepalive::connect::layer(config.inbound_connect_keepalive))
                 .push(svc::timeout::layer(config.inbound_connect_timeout))
                 .push(transport_metrics.connect("inbound"))

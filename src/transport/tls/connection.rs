@@ -109,16 +109,14 @@ impl Connection {
         self.io.local_addr()
     }
 
-    pub fn tls_status(&self) -> tls::Status {
-        self.tls_peer_identity.as_ref().map(|_| ())
-    }
-
-    pub fn tls_peer_identity(&self) -> tls::Conditional<&identity::Name> {
-        self.tls_peer_identity.as_ref()
-    }
-
     pub fn should_detect_protocol(&self) -> bool {
         self.detect_protocol
+    }
+}
+
+impl super::HasPeerIdentity for Connection {
+    fn peer_identity(&self) -> super::PeerIdentity {
+        self.tls_peer_identity.clone()
     }
 }
 

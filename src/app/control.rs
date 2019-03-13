@@ -11,6 +11,12 @@ pub struct ControlAddr {
     pub identity: tls::PeerIdentity,
 }
 
+impl fmt::Display for ControlAddr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.addr, f)
+    }
+}
+
 /// Sets the request's URI from `Config`.
 pub mod add_origin {
     extern crate tower_add_origin;
@@ -323,6 +329,20 @@ pub mod client {
     pub struct Stack<C, B> {
         connect: C,
         _p: PhantomData<fn() -> B>,
+    }
+
+    // === impl Target ===
+
+    impl connect::HasPeerAddr for Target {
+        fn peer_addr(&self) -> SocketAddr {
+            self.addr
+        }
+    }
+
+    impl tls::HasPeerIdentity for Target {
+        fn peer_identity(&self) -> tls::PeerIdentity {
+            self.server_name.clone()
+        }
     }
 
     // === impl Layer ===

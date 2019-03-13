@@ -14,7 +14,7 @@ use transport::tls;
 
 #[derive(Debug)]
 pub struct Config {
-    pub svc_addr: super::config::ControlAddr,
+    pub svc_addr: super::control::ControlAddr,
     pub trust_anchors: TrustAnchors,
     pub key: Key,
     pub csr: CSR,
