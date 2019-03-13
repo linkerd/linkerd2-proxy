@@ -11,10 +11,10 @@ use identity;
 use transport::io::internal::Io;
 use transport::prefixed::Prefixed;
 use transport::tls::{
-    Conditional, HasPeerIdentity, PeerIdentity, ReasonForNoIdentity, ReasonForNoPeerName, Session,
-    Status,
+    self, HasPeerIdentity, PeerIdentity, ReasonForNoIdentity, ReasonForNoPeerName, Session,
 };
 use transport::{AddrInfo, BoxedIo, GetOriginalDst, Peek, SetKeepalive};
+use Conditional;
 
 /// Abstracts a plaintext socket vs. a TLS decorated one.
 ///
@@ -49,11 +49,11 @@ pub struct Connection {
 // === impl Connection ===
 
 impl Connection {
-    pub(super) fn plain(io: TcpStream, why_no_tls: ReasonForNoIdentity) -> Self {
+    pub(super) fn plain<I: Io + 'static>(io: I, why_no_tls: ReasonForNoIdentity) -> Self {
         Self::plain_with_peek_buf(io, BytesMut::new(), why_no_tls)
     }
 
-    pub(super) fn without_protocol_detection(io: TcpStream) -> Self {
+    pub(super) fn without_protocol_detection<I: Io + 'static>(io: I) -> Self {
         Connection {
             io: BoxedIo::new(io),
             peek_buf: BytesMut::new(),
@@ -65,8 +65,8 @@ impl Connection {
         }
     }
 
-    fn plain_with_peek_buf(
-        io: TcpStream,
+    pub(super) fn plain_with_peek_buf<I: Io + 'static>(
+        io: I,
         peek_buf: BytesMut,
         why_no_tls: ReasonForNoIdentity,
     ) -> Self {
@@ -101,11 +101,11 @@ impl Connection {
         self.io.local_addr()
     }
 
-    pub fn tls_status(&self) -> Status {
-        Status::from(&self.tls_peer_identity)
+    pub fn tls_status(&self) -> tls::Status {
+        self.tls_peer_identity.as_ref().map(|_| ())
     }
 
-    pub fn tls_peer_identity(&self) -> Conditional<&identity::Name> {
+    pub fn tls_peer_identity(&self) -> tls::Conditional<&identity::Name> {
         self.tls_peer_identity.as_ref()
     }
 

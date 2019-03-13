@@ -73,8 +73,8 @@ pub enum ReasonForNoPeerName {
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Conditional::Some(()) => write!(f, "true"),
-            Conditional::None(r) => fmt::Display::fmt(&r, f),
+            ::Conditional::Some(()) => write!(f, "true"),
+            ::Conditional::None(r) => fmt::Display::fmt(&r, f),
         }
     }
 }
@@ -89,8 +89,7 @@ impl fmt::Display for ReasonForNoIdentity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ReasonForNoIdentity::Disabled => write!(f, "disabled"),
-            ReasonForNoIdentity::InternalTraffic => write!(f, "internal_traffic"),
-            Conditional::None(ReasonForNoIdentity::NoPeerName(n)) => write!(f, "{}", n),
+            ReasonForNoIdentity::NoPeerName(n) => write!(f, "{}", n),
         }
     }
 }

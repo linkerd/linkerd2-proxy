@@ -324,7 +324,7 @@ where
 
 impl<T, M> LayerConnect<T, M>
 where
-    T: tls::HasStatus + Clone,
+    T: tls::HasPeerIdentity + Clone,
     M: svc::Stack<T>,
     M::Value: connect::Connect,
 {
@@ -339,7 +339,7 @@ where
 
 impl<T, M> Clone for LayerConnect<T, M>
 where
-    T: tls::HasStatus + Clone,
+    T: tls::HasPeerIdentity + Clone,
     M: svc::Stack<T>,
     M::Value: connect::Connect,
 {
@@ -350,7 +350,7 @@ where
 
 impl<T, M> svc::Layer<T, T, M> for LayerConnect<T, M>
 where
-    T: tls::HasStatus + Clone,
+    T: tls::HasPeerIdentity + Clone,
     M: svc::Stack<T>,
     M::Value: connect::Connect,
 {
@@ -370,7 +370,7 @@ where
 
 impl<T, M> Clone for StackConnect<T, M>
 where
-    T: tls::HasStatus + Clone,
+    T: tls::HasPeerIdentity + Clone,
     M: svc::Stack<T> + Clone,
     M::Value: connect::Connect,
 {
@@ -386,7 +386,7 @@ where
 
 impl<T, M> svc::Stack<T> for StackConnect<T, M>
 where
-    T: tls::HasStatus + Clone,
+    T: tls::HasPeerIdentity + Clone,
     M: svc::Stack<T>,
     M::Value: connect::Connect,
 {
@@ -395,7 +395,8 @@ where
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
         // TODO use target metadata in `key`
-        let key = Key::connect(self.direction, target.tls_status());
+        let tls_status = target.peer_identity().as_ref().map(|_| ());
+        let key = Key::connect(self.direction, tls_status);
         let metrics = match self.registry.lock() {
             Ok(mut inner) => Some(inner.get_or_default(key).clone()),
             Err(_) => {

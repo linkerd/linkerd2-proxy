@@ -41,6 +41,43 @@ where
         self.and_then(|c| Conditional::Some(f(c)))
     }
 
+    pub fn or_else<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
+    where
+        C: Into<CR>,
+        CR: Clone,
+        RR: Clone,
+        F: FnOnce(R) -> Conditional<CR, RR>,
+    {
+        match self {
+            Conditional::Some(c) => Conditional::Some(c.into()),
+            Conditional::None(n) => f(n),
+        }
+    }
+
+    pub fn map_reason<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
+    where
+        C: Into<CR>,
+        CR: Clone,
+        RR: Clone,
+        F: FnOnce(R) -> RR,
+    {
+        self.or_else(|r| Conditional::None(f(r)))
+    }
+
+    pub fn value(&self) -> Option<C> {
+        match self {
+            Conditional::Some(v) => Some(v),
+            Conditional::None(_) => None
+        }
+    }
+
+    pub fn reason(&self) -> Option<R> {
+        match self {
+            Conditional::Some(_) => None,
+            Conditional::None(n) => Some(n),
+        }
+    }
+
     pub fn is_none(&self) -> bool {
         match self {
             Conditional::None(_) => true,

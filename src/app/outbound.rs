@@ -13,7 +13,7 @@ use {Conditional, NameAddr};
 #[derive(Clone, Debug)]
 pub struct Endpoint {
     pub dst_name: Option<NameAddr>,
-    pub connect: connect::Target,
+    pub addr: net::SocketAddr,
     pub metadata: Metadata,
 }
 
@@ -30,7 +30,7 @@ impl Endpoint {
 
 impl fmt::Display for Endpoint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.connect.addr.fmt(f)
+        self.addr.fmt(f)
     }
 }
 
@@ -45,11 +45,11 @@ impl tap::Inspect for Endpoint {
         &self,
         _: &'a http::Request<B>,
     ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
-        Conditional::None(tls::ReasonForNoIdentity::InternalTraffic)
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<net::SocketAddr> {
-        Some(self.connect.addr)
+        Some(self.addr)
     }
 
     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
@@ -60,7 +60,7 @@ impl tap::Inspect for Endpoint {
         &self,
         _: &http::Request<B>,
     ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
-        self.connect.tls_server_identity()
+        self.metadata.tls_server_identity()
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
@@ -138,17 +138,9 @@ pub mod discovery {
                     }
                     resolve::Update::Add(addr, metadata) => {
                         debug!("adding {}", addr);
-                        // If the endpoint does not have TLS, note the reason.
-                        // Otherwise, indicate that we don't (yet) have a TLS
-                        // config. This value may be changed by a stack layer that
-                        // provides TLS configuration.
-                        let tls = match metadata.tls_identity() {
-                            Conditional::None(reason) => reason.into(),
-                            Conditional::Some(_) => tls::ReasonForNoIdentity::NoConfig,
-                        };
                         let ep = Endpoint {
                             dst_name: Some(name.clone()),
-                            connect: connect::Target::new(addr, Conditional::None(tls)),
+                            addr,
                             metadata,
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))

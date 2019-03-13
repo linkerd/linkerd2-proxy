@@ -13,7 +13,7 @@ use tokio::{
     reactor::Handle,
 };
 
-use identity::Name as Identity;
+use identity;
 use transport::prefixed::Prefixed;
 use transport::tls::{self, conditional_accept, Accept, Acceptor, Connection, ReasonForNoPeerName};
 use transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive};
@@ -22,6 +22,7 @@ use Conditional;
 pub use super::rustls::ServerConfig as Config;
 
 pub trait HasConfig {
+    fn tls_server_name(&self) -> identity::Name;
     fn tls_server_config(&self) -> Arc<Config>;
 }
 
@@ -36,19 +37,13 @@ pub struct Listen<L, G = ()> {
 /// A server socket that is in the process of conditionally upgrading to TLS.
 enum ConditionallyUpgradeServerToTls {
     Plaintext(Option<ConditionallyUpgradeServerToTlsInner>),
-    UpgradeToTls(super::Accept<TcpStream>),
+    UpgradeToTls(super::Accept<Prefixed<TcpStream>>),
 }
 
 struct ConditionallyUpgradeServerToTlsInner {
     socket: TcpStream,
     tls: Arc<Config>,
     peek_buf: BytesMut,
-}
-
-impl HasConfig for () {
-    fn tls_server_config(&self) -> Arc<Config> {
-        Arc::new(Config::new(rustls::NoClientAuth))
-    }
 }
 
 // === impl Listen ===
@@ -70,7 +65,7 @@ impl<L: HasConfig> Listen<L> {
     where
         G: GetOriginalDst,
     {
-        Self {
+        Listen {
             inner: self.inner,
             local_addr: self.local_addr,
             tls: self.tls,
@@ -287,7 +282,7 @@ impl Future for ConditionallyUpgradeServerToTls {
                 }
                 ConditionallyUpgradeServerToTls::UpgradeToTls(upgrading) => {
                     let tls_stream = try_ready!(upgrading.poll());
-                    let peer_identity = tls_stream.client_identity().ok_or_else(|| {
+                    let peer_identity = tls_stream.peer_identity().ok_or_else(|| {
                         io::Error::new(io::ErrorKind::Other, "tls identity missing")
                     })?;
                     return Ok(Async::Ready(Connection::tls(
@@ -319,8 +314,8 @@ impl ConditionallyUpgradeServerToTlsInner {
         Ok(conditional_accept::match_client_hello(buf, &self.tls.server_identity).into())
     }
 
-    fn into_tls_upgrade(self) -> Accept<TcpStream> {
-        Acceptor::from(self.tls).accept(Prefixed::new(self.peek_buf.freeze(), self.socket))
+    fn into_tls_upgrade(self) -> Accept<Prefixed<TcpStream>> {
+        Acceptor::from(self.tls.clone()).accept(Prefixed::new(self.peek_buf.freeze(), self.socket))
     }
 
     fn into_plaintext(self) -> Connection {

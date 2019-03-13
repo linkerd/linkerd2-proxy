@@ -1,10 +1,11 @@
 use futures::{Async, Future, Poll};
-use std::io;
 use std::sync::Arc;
+use std::{fmt, io};
 
 use identity;
 use svc;
 use transport::{connect, tls, BoxedIo, Connection};
+use Conditional;
 
 pub use super::rustls::ClientConfig as Config;
 
@@ -13,11 +14,11 @@ pub trait HasConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct Layer<L>(L);
+pub struct Layer<L>(tls::Conditional<L>);
 
 #[derive(Clone, Debug)]
 pub struct Stack<L, S> {
-    local: L,
+    local: tls::Conditional<L>,
     inner: S,
 }
 
@@ -33,7 +34,7 @@ pub enum ConnectFuture<L, F: Future> {
         future: F,
         tls: tls::Conditional<(identity::Name, L)>,
     },
-    Upgrade {
+    Handshake {
         future: tls::tokio_rustls::Connect<F::Item>,
         server_name: identity::Name,
     },
@@ -41,13 +42,13 @@ pub enum ConnectFuture<L, F: Future> {
 
 // === impl Layer ===
 
-pub fn layer<L: HasConfig + Clone>(local: L) -> Layer<L> {
-    Layer(local)
+pub fn layer<L: HasConfig + Clone>(l: tls::Conditional<L>) -> Layer<L> {
+    Layer(l)
 }
 
 impl<T, L, S> svc::Layer<T, T, S> for Layer<L>
 where
-    L: HasConfig + Clone,
+    L: HasConfig + fmt::Debug + Clone,
     T: tls::HasPeerIdentity,
     S: svc::Stack<T> + Clone,
     S::Value: connect::Connect + Clone + Send + Sync + 'static,
@@ -71,7 +72,7 @@ where
 
 impl<T, L, S> svc::Stack<T> for Stack<L, S>
 where
-    L: HasConfig + Clone,
+    L: HasConfig + fmt::Debug + Clone,
     T: tls::HasPeerIdentity,
     S: svc::Stack<T> + Clone,
     S::Value: connect::Connect + Clone + Send + Sync + 'static,
@@ -94,7 +95,7 @@ where
 
 impl<L, C> connect::Connect for Connect<L, C>
 where
-    L: HasConfig + Clone,
+    L: HasConfig + fmt::Debug + Clone,
     C: connect::Connect + Clone + Send + Sync + 'static,
     C::Connected: Send + 'static,
     C::Future: Send + 'static,
@@ -114,7 +115,7 @@ where
 
 // ===== impl ConnectFuture =====
 
-impl<L: HasConfig, F: Future> Future for ConnectFuture<L, F> {
+impl<L: HasConfig + fmt::Debug, F: Future> Future for ConnectFuture<L, F> {
     type Item = Connection;
     type Error = F::Error;
 
@@ -126,22 +127,22 @@ impl<L: HasConfig, F: Future> Future for ConnectFuture<L, F> {
 
                     trace!("ConnectFuture: state=plaintext; tls={:?};", tls);
                     match tls {
-                        tls::Conditional::Some((server_name, local_tls)) => {
+                        Conditional::Some((server_name, local_tls)) => {
                             trace!("plaintext connection established; trying to upgrade");
                             let future = tls::Connector::from(local_tls.tls_client_config())
-                                .connect(server_name.as_dns_name_ref());
-                            ConnectFuture::UpgradeToTls {
+                                .connect(server_name.as_dns_name_ref(), io);
+                            ConnectFuture::Handshake {
                                 future,
                                 server_name,
                             }
                         }
-                        tls::Conditional::None(why) => {
+                        Conditional::None(why) => {
                             trace!("plaintext connection established; no TLS ({:?})", why);
                             return Ok(Async::Ready(tls::Connection::plain(io, why)));
                         }
                     }
                 }
-                ConnectFuture::UpgradeToTls {
+                ConnectFuture::Handshake {
                     future,
                     server_name,
                 } => {

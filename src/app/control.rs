@@ -8,15 +8,7 @@ use {Addr, Conditional};
 #[derive(Clone, Debug)]
 pub struct ControlAddr {
     pub addr: Addr,
-    pub identity: Conditional<identity::Name, NoControlIdentity>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum NoControlIdentity {
-    /// Identity is not needed on this localhost client.
-    Loopback,
-    /// Identity has been disabled on the entire process.
-    Disabled,
+    pub identity: tls::PeerIdentity,
 }
 
 /// Sets the request's URI from `Config`.
@@ -277,7 +269,7 @@ pub mod resolve {
         fn make_inner(addr: SocketAddr, dst: &ControlAddr, stack: &M) -> Self {
             let target = client::Target {
                 addr,
-                server_name: dst.name.clone(),
+                server_name: dst.identity.clone(),
                 log_ctx: ::logging::admin().client("control", dst.addr),
             };
 
