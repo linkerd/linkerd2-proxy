@@ -77,6 +77,10 @@ where
 // === impl Local ===
 
 impl tls::listen::HasConfig for Local {
+    fn tls_server_name(&self) -> Name {
+        self.name.clone()
+    }
+
     fn tls_server_config(&self) -> Arc<tls::listen::Config> {
         use transport::tls::listen::HasConfig;
 

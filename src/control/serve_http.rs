@@ -3,7 +3,7 @@ use hyper::{server::conn::Http, service::Service, Body};
 use tokio::executor::current_thread::TaskExecutor;
 
 use task;
-use transport::Listen;
+use transport::{tls, Listen};
 
 pub fn serve_http<L, S>(
     name: &'static str,
@@ -11,6 +11,7 @@ pub fn serve_http<L, S>(
     service: S,
 ) -> impl Future<Item = (), Error = ()>
 where
+    L: tls::listen::HasConfig + Clone + Send + 'static,
     S: Service<ReqBody = Body> + Clone + Send + 'static,
     <S as Service>::Future: Send,
 {

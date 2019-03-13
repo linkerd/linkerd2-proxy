@@ -19,7 +19,7 @@ pub trait Peek {
     where
         Self: Sized,
     {
-        PeekFuture { inner: Some(self) }
+        PeekFuture(Some(self))
     }
 }
 
@@ -38,7 +38,7 @@ impl<T: Peek> Future for PeekFuture<T> {
         match io.poll_peek() {
             Ok(Async::Ready(_)) => Ok(Async::Ready(io)),
             Ok(Async::NotReady) => {
-                self.inner = Some(io);
+                self.0 = Some(io);
                 Ok(Async::NotReady)
             }
             Err(e) => Err(e),

@@ -3,6 +3,7 @@ use std::fmt::{self, Write};
 use metrics::FmtLabels;
 
 use identity;
+use transport::connect::HasPeerAddr;
 use transport::tls;
 use {Addr, Conditional, NameAddr};
 
@@ -45,11 +46,11 @@ struct Authority<'a>(&'a NameAddr);
 
 // === impl CtlLabels ===
 
-impl From<control::Config> for ControlLabels {
-    fn from(c: control::Config) -> Self {
+impl From<control::ControlAddr> for ControlLabels {
+    fn from(c: control::ControlAddr) -> Self {
         ControlLabels {
-            addr: c.addr().clone(),
-            tls_status: c.tls_status(),
+            addr: c.addr.clone(),
+            tls_status: c.identity.as_ref().map(|_| {}),
         }
     }
 }

@@ -202,7 +202,7 @@ where
     fn make(&self, config: &Config<T>) -> Result<Self::Value, Self::Error> {
         debug!("building client={:?}", config);
         let connect = self.connect.make(&config.target)?;
-        let executor = ::logging::Client::proxy(self.proxy_name, config.target.addr)
+        let executor = ::logging::Client::proxy(self.proxy_name, config.target.peer_addr())
             .with_settings(config.settings.clone())
             .executor();
         Ok(Client::new(&config.settings, connect, executor))

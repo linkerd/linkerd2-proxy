@@ -4,7 +4,7 @@ use std::{fmt, io};
 
 use identity;
 use svc;
-use transport::{connect, tls, BoxedIo, Connection};
+use transport::{connect, io::internal::Io, tls, BoxedIo, Connection};
 use Conditional;
 
 pub use super::rustls::ClientConfig as Config;
@@ -97,9 +97,10 @@ impl<L, C> connect::Connect for Connect<L, C>
 where
     L: HasConfig + fmt::Debug + Clone,
     C: connect::Connect + Clone + Send + Sync + 'static,
-    C::Connected: Send + 'static,
+    C::Connected: Io + Send + 'static,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,
+    C::Error: From<io::Error>,
 {
     type Connected = Connection;
     type Error = C::Error;
@@ -115,7 +116,13 @@ where
 
 // ===== impl ConnectFuture =====
 
-impl<L: HasConfig + fmt::Debug, F: Future> Future for ConnectFuture<L, F> {
+impl<L, F> Future for ConnectFuture<L, F>
+where
+    L: HasConfig + fmt::Debug,
+    F: Future,
+    F::Item: Io + 'static,
+    F::Error: From<io::Error>,
+{
     type Item = Connection;
     type Error = F::Error;
 
@@ -133,12 +140,12 @@ impl<L: HasConfig + fmt::Debug, F: Future> Future for ConnectFuture<L, F> {
                                 .connect(server_name.as_dns_name_ref(), io);
                             ConnectFuture::Handshake {
                                 future,
-                                server_name,
+                                server_name: server_name.clone(),
                             }
                         }
                         Conditional::None(why) => {
                             trace!("plaintext connection established; no TLS ({:?})", why);
-                            return Ok(Async::Ready(tls::Connection::plain(io, why)));
+                            return Ok(Async::Ready(tls::Connection::plain(io, *why)));
                         }
                     }
                 }
@@ -146,8 +153,12 @@ impl<L: HasConfig + fmt::Debug, F: Future> Future for ConnectFuture<L, F> {
                     future,
                     server_name,
                 } => {
+                    use super::connection::TlsIo;
+
                     let io = try_ready!(future.poll());
-                    let c = Connection::tls(BoxedIo::new(io), server_name.clone());
+                    let io = BoxedIo::new(TlsIo::from(io));
+
+                    let c = Connection::tls(io, server_name.clone());
                     return Ok(Async::Ready(c));
                 }
             };

@@ -25,7 +25,10 @@ pub struct Stack(());
 pub struct ConnectSocketAddr(SocketAddr);
 
 #[derive(Debug)]
-pub struct ConnectFuture(SocketAddr, tcp::ConnectFuture);
+pub struct ConnectFuture {
+    addr: SocketAddr,
+    future: tcp::ConnectFuture,
+}
 
 // ===== impl Stack =====
 
@@ -58,7 +61,10 @@ impl Connect for ConnectSocketAddr {
     type Future = ConnectFuture;
 
     fn connect(&self) -> Self::Future {
-        ConnectFuture(TcpStream::connect(self.0))
+        ConnectFuture {
+            addr: self.0,
+            future: TcpStream::connect(&self.0),
+        }
     }
 }
 
@@ -69,15 +75,11 @@ impl Future for ConnectFuture {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.1
-            .poll()
-            .map_err(|e| {
-                let details = format!("{} (address: {})", e, self.0);
-                io::Error::new(e.kind(), details)
-            })
-            .map(|s| {
-                super::set_nodelay_or_warn(&s);
-                s
-            })
+        let io = try_ready!(self.future.poll().map_err(|e| {
+            let details = format!("{} (address: {})", e, self.addr);
+            io::Error::new(e.kind(), details)
+        }));
+        super::set_nodelay_or_warn(&io);
+        Ok(io.into())
     }
 }

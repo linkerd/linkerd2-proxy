@@ -291,7 +291,8 @@ where
 
     fn make(&self, source: &proxy::Source) -> Result<Self::Value, Self::Error> {
         // TODO use source metadata in `key`
-        let key = Key::accept(self.direction, tls::Status::from(&source.tls_peer));
+        let tls_status = source.tls_peer.as_ref().map(|_| {});
+        let key = Key::accept(self.direction, tls_status);
         let metrics = match self.registry.lock() {
             Ok(mut inner) => Some(inner.get_or_default(key).clone()),
             Err(_) => {

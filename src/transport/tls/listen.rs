@@ -35,14 +35,18 @@ pub struct Listen<L, G = ()> {
 }
 
 /// A server socket that is in the process of conditionally upgrading to TLS.
-enum ConditionallyUpgradeServerToTls {
-    Plaintext(Option<ConditionallyUpgradeServerToTlsInner>),
-    UpgradeToTls(super::Accept<Prefixed<TcpStream>>),
+enum Handshake {
+    Init(Option<Inner>),
+    Upgrade {
+        future: super::Accept<Prefixed<TcpStream>>,
+        server_name: identity::Name,
+    },
 }
 
-struct ConditionallyUpgradeServerToTlsInner {
+struct Inner {
     socket: TcpStream,
-    tls: Arc<Config>,
+    config: Arc<Config>,
+    server_name: identity::Name,
     peek_buf: BytesMut,
 }
 
@@ -213,8 +217,7 @@ impl<L: HasConfig, G> Listen<L, G> {
             }
             // TLS is enabled. Try to accept a TLS handshake.
             (dst, Conditional::Some(tls)) => {
-                let handshake = ConditionallyUpgradeServerToTls::new(socket, tls)
-                    .map(move |c| c.with_original_dst(dst));
+                let handshake = Handshake::new(socket, tls).map(move |c| c.with_original_dst(dst));
                 Either::B(Either::A(handshake))
             }
             // TLS is disabled. Return a new plaintext connection.
@@ -238,11 +241,11 @@ impl<L, G: GetOriginalDst> GetOriginalDst for Listen<L, G> {
     }
 }
 
-// === impl ConditionallyUpgradeServerToTls ===
+// === impl Handshake ===
 
-impl ConditionallyUpgradeServerToTls {
-    fn new<T: HasConfig>(socket: TcpStream, tls: T) -> Self {
-        ConditionallyUpgradeServerToTls::Plaintext(Some(ConditionallyUpgradeServerToTlsInner {
+impl Handshake {
+    fn new<T: HasConfig>(socket: TcpStream, tls: &T) -> Self {
+        Handshake::Init(Some(Inner {
             socket,
             server_name: tls.tls_server_name(),
             config: tls.tls_server_config(),
@@ -251,14 +254,14 @@ impl ConditionallyUpgradeServerToTls {
     }
 }
 
-impl Future for ConditionallyUpgradeServerToTls {
+impl Future for Handshake {
     type Item = Connection;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             *self = match self {
-                ConditionallyUpgradeServerToTls::Plaintext(ref mut inner) => {
+                Handshake::Init(ref mut inner) => {
                     let poll_match = inner
                         .as_mut()
                         .expect("polled after ready")
@@ -279,22 +282,23 @@ impl Future for ConditionallyUpgradeServerToTls {
                         }
                     }
                 }
-                ConditionallyUpgradeServerToTls::UpgradeToTls(upgrading) => {
-                    let tls_stream = try_ready!(upgrading.poll());
-                    let server_nam = tls_stream.peer_identity().ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::Other, "tls identity missing")
-                    })?;
-                    return Ok(Async::Ready(Connection::tls(
-                        BoxedIo::new(tls_stream),
-                        peer_identity,
-                    )));
+                Handshake::Upgrade {
+                    future,
+                    server_name,
+                } => {
+                    use transport::tls::connection::TlsIo;
+
+                    let io = try_ready!(future.poll());
+                    let io = BoxedIo::new(TlsIo::from(io));
+
+                    return Ok(Async::Ready(Connection::tls(io, server_name.clone())));
                 }
             }
         }
     }
 }
 
-impl ConditionallyUpgradeServerToTlsInner {
+impl Inner {
     /// Polls the underlying socket for more data and buffers it.
     ///
     /// The buffer is matched for a TLS client hello message.
@@ -310,13 +314,16 @@ impl ConditionallyUpgradeServerToTlsInner {
         }
 
         let buf = self.peek_buf.as_ref();
-        Ok(conditional_accept::match_client_hello(buf, &self.tls.server_identity).into())
+        Ok(conditional_accept::match_client_hello(buf, &self.server_name).into())
     }
 
-    fn into_tls_upgrade(self) -> ConditionallyUpgradeServerToTls {
-        let upgrade = Acceptor::from(self.tls.clone())
+    fn into_tls_upgrade(self) -> Handshake {
+        let upgrade = Acceptor::from(self.config.clone())
             .accept(Prefixed::new(self.peek_buf.freeze(), self.socket));
-        ConditionallyUpgradeServerToTls::UpgradeToTls(upgrade)
+        Handshake::Upgrade {
+            future: upgrade,
+            server_name: self.server_name.clone(),
+        }
     }
 
     fn into_plaintext(self) -> Connection {

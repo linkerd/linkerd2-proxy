@@ -316,6 +316,10 @@ impl tls::client::HasConfig for CrtKey {
 }
 
 impl tls::listen::HasConfig for CrtKey {
+    fn tls_server_name(&self) -> Name {
+        self.name.clone()
+    }
+
     fn tls_server_config(&self) -> Arc<tls::listen::Config> {
         self.server_config.clone()
     }

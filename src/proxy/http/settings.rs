@@ -83,6 +83,7 @@ pub mod router {
     use futures::Poll;
     use http;
     use std::fmt;
+    use std::hash::Hash;
     use std::marker::PhantomData;
 
     use super::Settings;
@@ -100,6 +101,7 @@ pub mod router {
 
     pub struct Service<B, T, M>
     where
+        T: fmt::Debug + Clone + Hash + Eq,
         M: svc::Stack<Config<T>>,
         M::Value: svc::Service<http::Request<B>>,
     {
@@ -122,7 +124,8 @@ pub mod router {
 
     impl<B, T, M, Svc> svc::Layer<T, Config<T>, M> for Layer<T, B>
     where
-        T: fmt::Debug + Clone,
+        Stack<B, T, M>: svc::Stack<T>,
+        T: fmt::Debug + Clone + Hash + Eq,
         M: svc::Stack<Config<T>, Value = Svc> + Clone,
         M::Error: Into<Error>,
         Svc: svc::Service<http::Request<B>> + Clone,
@@ -137,7 +140,10 @@ pub mod router {
         }
     }
 
-    impl<B, T, M: Clone> Clone for Stack<B, T, M> {
+    impl<B, T, M: Clone> Clone for Stack<B, T, M>
+    where
+        T: fmt::Debug + Clone + Hash + Eq,
+    {
         fn clone(&self) -> Self {
             Stack(self.0.clone(), PhantomData)
         }
@@ -145,7 +151,7 @@ pub mod router {
 
     impl<B, T, M, Svc> svc::Stack<T> for Stack<T, B, M>
     where
-        T: fmt::Debug + Clone,
+        T: fmt::Debug + Clone + Hash + Eq,
         M: svc::Stack<Config<T>, Value = Svc> + Clone,
         M::Error: Into<Error>,
         Svc: svc::Service<http::Request<B>> + Clone,
@@ -169,7 +175,10 @@ pub mod router {
         }
     }
 
-    impl<T, B> rt::Recognize<http::Request<B>> for Recognize<T> {
+    impl<T, B> rt::Recognize<http::Request<B>> for Recognize<T>
+    where
+        T: fmt::Debug + Clone + Hash + Eq,
+    {
         type Target = Config<T>;
 
         fn recognize(&self, req: &http::Request<B>) -> Option<Self::Target> {
@@ -180,6 +189,7 @@ pub mod router {
 
     impl<B, T, M> Clone for Service<B, T, M>
     where
+        T: fmt::Debug + Clone + Hash + Eq,
         M: svc::Stack<Config<T>>,
         M::Value: svc::Service<http::Request<B>>,
     {
@@ -192,6 +202,7 @@ pub mod router {
 
     impl<B, T, M, Svc> svc::Service<http::Request<B>> for Service<B, T, M>
     where
+        T: fmt::Debug + Clone + Hash + Eq,
         M: svc::Stack<Config<T>, Value = Svc>,
         M::Error: Into<Error>,
         Svc: svc::Service<http::Request<B>> + Clone,
