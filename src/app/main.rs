@@ -89,13 +89,15 @@ where
         )
         .expect("outbound listener bind")
         .with_original_dst(get_original_dst.clone())
-        .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection);
+        .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection.clone());
 
         let inbound_listener =
             Listen::bind(config.inbound_listener.addr, Conditional::None(TLS_FIXME))
                 .expect("inbound listener bind")
                 .with_original_dst(get_original_dst.clone())
-                .without_protocol_detection_for(config.inbound_ports_disable_protocol_detection);
+                .without_protocol_detection_for(
+                    config.inbound_ports_disable_protocol_detection.clone(),
+                );
 
         // TODO: Serve over TLS.
         let control_listener =
@@ -250,7 +252,7 @@ where
         //let tls_client_config = tls_config_watch.client.clone();
         //let tls_cfg_bg = tls_config_watch.start(tls_config_sensor);
 
-        let controller = config.destination_addr.map(|addr| {
+        let controller = config.destination_addr.as_ref().map(|addr| {
             use super::control;
 
             //let tls_server_identity = config.destination_identity.clone();

@@ -73,7 +73,7 @@ const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
     rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
 const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
     rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
-const TLS_VERSIONS: Vec<rustls::ProtocolVersion> = vec![rustls::ProtocolVersion::TLSv1_2];
+const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
 
 // === impl CSR ===
 
@@ -206,7 +206,7 @@ impl TrustAnchors {
         }
 
         let mut c = rustls::ClientConfig::new();
-        c.versions = TLS_VERSIONS.clone();
+        c.versions = TLS_VERSIONS.to_vec();
 
         // XXX: Rustls's built-in verifiers don't let us tweak things as fully
         // as we'd like (e.g. controlling the set of trusted signature
@@ -267,7 +267,7 @@ impl TrustAnchors {
         let mut server = rustls::ServerConfig::new(
             rustls::AllowAnyAnonymousOrAuthenticatedClient::new(self.0.root_store.clone()),
         );
-        server.versions = TLS_VERSIONS.clone();
+        server.versions = TLS_VERSIONS.to_vec();
         server.cert_resolver = resolver;
 
         Ok(CrtKey {

@@ -276,7 +276,7 @@ pub mod resolve {
             let target = client::Target {
                 addr,
                 server_name: dst.identity.clone(),
-                log_ctx: ::logging::admin().client("control", dst.addr),
+                log_ctx: ::logging::admin().client("control", dst.addr.clone()),
             };
 
             match stack.make(&target) {

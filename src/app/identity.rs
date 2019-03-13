@@ -80,7 +80,7 @@ impl tls::client::HasConfig for Local {
     fn tls_client_config(&self) -> Arc<tls::client::Config> {
         use transport::tls::client::HasConfig;
 
-        if let Some(c) = *self.crt_key.borrow() {
+        if let Some(ref c) = *self.crt_key.borrow() {
             return c.tls_client_config();
         }
 
@@ -96,7 +96,7 @@ impl tls::listen::HasConfig for Local {
     fn tls_server_config(&self) -> Arc<tls::listen::Config> {
         use transport::tls::listen::HasConfig;
 
-        if let Some(c) = *self.crt_key.borrow() {
+        if let Some(ref c) = *self.crt_key.borrow() {
             return c.tls_server_config();
         }
 

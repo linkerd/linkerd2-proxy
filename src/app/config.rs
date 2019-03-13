@@ -644,7 +644,7 @@ pub fn parse_control_addr<S: Strings>(
     match (a?, n?) {
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
-            addr: *addr,
+            addr: addr.clone(),
             identity: Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {

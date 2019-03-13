@@ -192,12 +192,12 @@ pub mod discovery {
                 },
                 Resolution::Addr(ref mut addr) => match addr.take() {
                     Some(addr) => {
-                        const tls: tls::ReasonForNoPeerName =
-                            tls::ReasonForNoPeerName::NoAuthorityInHttpRequest;
                         let ep = Endpoint {
                             dst_name: None,
                             addr,
-                            identity: Conditional::None(tls.into()),
+                            identity: Conditional::None(
+                                tls::ReasonForNoPeerName::NoAuthorityInHttpRequest.into(),
+                            ),
                             metadata: Metadata::empty(),
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
