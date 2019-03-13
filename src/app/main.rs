@@ -94,18 +94,22 @@ where
             });
             BoundPort::new(config.inbound_listener.addr, tls)
                 .expect("inbound listener bind")
-                .without_protocol_detection_for(config.inbound_ports_disable_protocol_detection.clone())
+                .without_protocol_detection_for(
+                    config.inbound_ports_disable_protocol_detection.clone(),
+                )
                 .with_original_dst(get_original_dst.clone())
         };
 
         let outbound_listener = {
             BoundPort::new(
-            config.outbound_listener.addr,
-            Conditional::None(tls::ReasonForNoTls::InternalTraffic),
-        )
-        .expect("outbound listener bind")
-                .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection.clone())
-                .with_original_dst(get_original_dst)
+                config.outbound_listener.addr,
+                Conditional::None(tls::ReasonForNoTls::InternalTraffic),
+            )
+            .expect("outbound listener bind")
+            .without_protocol_detection_for(
+                config.outbound_ports_disable_protocol_detection.clone(),
+            )
+            .with_original_dst(get_original_dst)
         };
 
         // TODO: Serve over TLS.
@@ -762,17 +766,17 @@ where
     );
     let log = server.log().clone();
 
-    let accept =
-        log.future( bound_port.listen_and_fold((), move |(), (connection, remote_addr)| {
+    let accept = log.future(bound_port.listen_and_fold(
+        (),
+        move |(), (connection, remote_addr)| {
             let s = server.serve(connection, remote_addr);
             // Logging context is configured by the server.
             let r = DefaultExecutor::current()
                 .spawn(Box::new(s))
                 .map_err(task::Error::into_io);
             future::result(r)
-        })
-        )
-    ;
+        },
+    ));
 
     let accept_until = Cancelable {
         future: accept,
