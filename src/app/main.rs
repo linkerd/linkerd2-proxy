@@ -633,8 +633,6 @@ where
                 accept,
                 connect,
                 source_stack,
-                config.inbound_ports_disable_protocol_detection,
-                get_original_dst.clone(),
                 drain_rx.clone(),
             )
             .map_err(|e| error!("inbound proxy background task failed: {}", e))
@@ -705,7 +703,6 @@ fn serve<A, C, R, B, G>(
     drain_rx: drain::Watch,
 ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
 where
-    G: GetOriginalDst,
     A: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     A::Value: proxy::Accept<Connection>,
     <A::Value as proxy::Accept<Connection>>::Io: fmt::Debug + Send + transport::Peek + 'static,
@@ -721,6 +718,7 @@ where
         Into<Box<dyn error::Error + Send + Sync>> + Send,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
+    G: GetOriginalDst + Send + 'static,
 {
     let listen_addr = bound_port.local_addr();
     let server = proxy::Server::new(

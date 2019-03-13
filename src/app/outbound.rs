@@ -14,6 +14,7 @@ use {Conditional, NameAddr};
 pub struct Endpoint {
     pub dst_name: Option<NameAddr>,
     pub addr: net::SocketAddr,
+    pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
 }
 
@@ -60,7 +61,7 @@ impl tap::Inspect for Endpoint {
         &self,
         _: &http::Request<B>,
     ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
-        self.metadata.tls_server_identity()
+        self.identity.as_ref()
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
@@ -137,10 +138,20 @@ pub mod discovery {
                         Ok(Async::Ready(resolve::Update::Remove(addr)))
                     }
                     resolve::Update::Add(addr, metadata) => {
-                        debug!("adding {}", addr);
+                        let identity = metadata
+                            .identity()
+                            .cloned()
+                            .map(Conditional::Some)
+                            .unwrap_or_else(|| {
+                                Conditional::None(
+                                    tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+                                )
+                            });
+                        debug!("adding addr={}; identity={:?}", addr, identity);
                         let ep = Endpoint {
                             dst_name: Some(name.clone()),
                             addr,
+                            identity,
                             metadata,
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
@@ -148,11 +159,13 @@ pub mod discovery {
                 },
                 Resolution::Addr(ref mut addr) => match addr.take() {
                     Some(addr) => {
-                        let tls = tls::ReasonForNoPeerName::NoAuthorityInHttpRequest;
+                        const tls: tls::ReasonForNoPeerName =
+                            tls::ReasonForNoPeerName::NoAuthorityInHttpRequest;
                         let ep = Endpoint {
                             dst_name: None,
-                            connect: connect::Target::new(addr, Conditional::None(tls.into())),
-                            metadata: Metadata::none(tls),
+                            addr,
+                            identity: Conditional::None(tls.into()),
+                            metadata: Metadata::empty(),
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
                     }
@@ -255,7 +268,7 @@ pub mod add_server_id_on_rsp {
 
     pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
         add_header::response::layer(L5D_SERVER_ID, |endpoint: &Endpoint| {
-            if let Conditional::Some(id) = endpoint.connect.tls_server_identity() {
+            if let Conditional::Some(id) = endpoint.identity.as_ref() {
                 match HeaderValue::from_str(id.as_ref()) {
                     Ok(value) => {
                         debug!("l5d-server-id enabled for {:?}", endpoint);
@@ -283,7 +296,7 @@ pub mod add_remote_ip_on_rsp {
 
     pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
         add_header::response::layer(L5D_REMOTE_IP, |endpoint: &Endpoint| {
-            HeaderValue::from_shared(Bytes::from(endpoint.connect.addr.ip().to_string())).ok()
+            HeaderValue::from_shared(Bytes::from(endpoint.addr.ip().to_string())).ok()
         })
     }
 }

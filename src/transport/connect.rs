@@ -30,6 +30,12 @@ pub struct ConnectFuture {
     future: tcp::ConnectFuture,
 }
 
+impl HasPeerAddr for SocketAddr {
+    fn peer_addr(&self) -> SocketAddr {
+        *self
+    }
+}
+
 // ===== impl Stack =====
 
 impl Stack {

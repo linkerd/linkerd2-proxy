@@ -118,10 +118,7 @@ impl From<outbound::Endpoint> for EndpointLabels {
         Self {
             dst_name: ep.dst_name,
             direction: Direction::Out,
-            tls_id: ep
-                .connect
-                .tls_server_identity()
-                .map(|id| TlsId::ServerId(id.clone())),
+            tls_id: ep.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
             labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
         }
     }
@@ -137,7 +134,7 @@ impl FmtLabels for EndpointLabels {
         }
 
         write!(f, ",")?;
-        tls::Status::from(&self.tls_id).fmt_labels(f)?;
+        self.tls_id.as_ref().map(|_| ()).fmt_labels(f)?;
 
         if let Conditional::Some(ref id) = self.tls_id {
             write!(f, ",")?;

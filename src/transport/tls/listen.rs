@@ -13,6 +13,7 @@ use tokio::{
     reactor::Handle,
 };
 
+use super::rustls;
 use identity;
 use transport::prefixed::Prefixed;
 use transport::tls::{self, conditional_accept, Accept, Acceptor, Connection, ReasonForNoPeerName};
@@ -24,6 +25,12 @@ pub use super::rustls::ServerConfig as Config;
 pub trait HasConfig {
     fn tls_server_name(&self) -> identity::Name;
     fn tls_server_config(&self) -> Arc<Config>;
+}
+
+/// Produces a server config that fails to handshake all connections.
+pub fn empty_config() -> Arc<Config> {
+    let verifier = rustls::NoClientAuth::new();
+    Arc::new(Config::new(verifier))
 }
 
 pub struct Listen<L, G = ()> {
@@ -196,7 +203,7 @@ impl<L: HasConfig, G> Listen<L, G> {
         .map(|_| ())
     }
 
-    fn new_conn<I>(
+    fn new_conn(
         &self,
         socket: TcpStream,
     ) -> impl Future<Item = Connection, Error = io::Error> + Send + 'static

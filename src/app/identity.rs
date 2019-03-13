@@ -85,10 +85,10 @@ impl tls::listen::HasConfig for Local {
         use transport::tls::listen::HasConfig;
 
         if let Some(c) = *self.crt_key.borrow() {
-            return c.tcp_server_config();
+            return c.tls_server_config();
         }
 
-        return ().tls_server_config();
+        tls::listen::empty_config()
     }
 }
 
