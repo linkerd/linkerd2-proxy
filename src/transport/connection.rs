@@ -223,11 +223,8 @@ impl<G> BoundPort<G> {
             .expect("listener shouldn't be taken twice");
         future::lazy(move || {
             // Create the TCP listener lazily, so that it's not bound to a
-            // reactor until the future is run. This will avoid
-            // `Handle::current()` creating a new thread for the global
-            // background reactor if `listen_and_fold` is called before we've
-            // initialized the runtime.
-            TcpListener::from_std(inner, &Handle::current())
+            // reactor until the future is run.
+            TcpListener::from_std(inner, &Handle::default())
         })
         .and_then(move |mut listener| {
             let incoming = stream::poll_fn(move || {

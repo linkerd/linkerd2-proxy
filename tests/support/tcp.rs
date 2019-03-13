@@ -234,7 +234,7 @@ fn run_server(tcp: TcpServer) -> server::Listening {
             let mut core =
                 runtime::current_thread::Runtime::new().expect("support tcp server Runtime::new");
 
-            let bind = TcpListener::from_std(std_listener, &reactor::Handle::current())
+            let bind = TcpListener::from_std(std_listener, &reactor::Handle::default())
                 .expect("TcpListener::from_std");
 
             let mut accepts = tcp.accepts;
