@@ -273,15 +273,15 @@ impl TrustAnchors {
         Ok(CrtKey {
             name: crt.name,
             expiry: crt.expiry,
-            connector: Arc::new(client).into(),
-            acceptor: Arc::new(server).into(),
+            client_config: Arc::new(client),
+            server_config: Arc::new(server),
         })
     }
 }
 
 impl tls::client::HasConfig for TrustAnchors {
     fn tls_client_config(&self) -> Arc<rustls::ClientConfig> {
-        self.client_config.clone()
+        self.0.clone()
     }
 }
 

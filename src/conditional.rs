@@ -64,17 +64,17 @@ where
         self.or_else(|r| Conditional::None(f(r)))
     }
 
-    pub fn value(&self) -> Option<C> {
+    pub fn value(&self) -> Option<&C> {
         match self {
             Conditional::Some(v) => Some(v),
-            Conditional::None(_) => None
+            Conditional::None(_) => None,
         }
     }
 
     pub fn reason(&self) -> Option<R> {
         match self {
             Conditional::Some(_) => None,
-            Conditional::None(n) => Some(n),
+            Conditional::None(r) => Some(*r),
         }
     }
 

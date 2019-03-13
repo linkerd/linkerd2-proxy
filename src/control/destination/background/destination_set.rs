@@ -144,12 +144,7 @@ where
                     self.add(
                         authority,
                         ips.iter().map(|ip| {
-                            (
-                                SocketAddr::from((ip, authority.port())),
-                                Metadata::none(
-                                    tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
-                                ),
-                            )
+                            (SocketAddr::from((ip, authority.port())), Metadata::empty())
                         }),
                     );
 
@@ -308,14 +303,7 @@ fn pb_to_addr_meta(
         }
     }
 
-    let tls_id = pb
-        .tls_identity
-        .and_then(pb_to_id)
-        .map(Conditional::Some)
-        .unwrap_or_else(|| {
-            Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)
-        });
-
+    let tls_id = pb.tls_identity.and_then(pb_to_id);
     let meta = Metadata::new(meta, proto_hint, tls_id);
     Some((addr, meta))
 }

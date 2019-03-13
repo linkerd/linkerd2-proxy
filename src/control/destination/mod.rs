@@ -172,23 +172,23 @@ impl Responder {
 // ===== impl Metadata =====
 
 impl Metadata {
-    pub fn none(tls: tls::ReasonForNoPeerName) -> Self {
+    pub fn empty() -> Self {
         Self {
             labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
-            tls_identity: Conditional::None(tls),
+            identity: None,
         }
     }
 
     pub fn new(
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
-        tls_identity: Conditional<identity::Name, tls::ReasonForNoPeerName>,
+        identity: Option<identity::Name>,
     ) -> Self {
         Self {
             labels,
             protocol_hint,
-            tls_identity,
+            identity,
         }
     }
 
@@ -201,11 +201,7 @@ impl Metadata {
         self.protocol_hint
     }
 
-    pub fn tls_identity(&self) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
-        self.tls_identity.as_ref()
-    }
-
-    pub fn tls_status(&self) -> tls::Status {
-        self.tls_identity().map(|_| ())
+    pub fn identity(&self) -> Option<&identity::Name> {
+        self.identity.as_ref()
     }
 }
