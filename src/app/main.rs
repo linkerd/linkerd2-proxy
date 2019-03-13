@@ -34,11 +34,12 @@ use svc::{
 use tap;
 use task;
 use telemetry;
-use transport::{self, connect, keepalive, tls, BoundPort, Connection, GetOriginalDst};
+use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst};
 use {Addr, Conditional};
 
 use super::config::Config;
 use super::dst::DstAddr;
+use super::identity;
 use super::profiles::Client as ProfilesClient;
 
 /// Runs a sidecar proxy.
@@ -63,12 +64,11 @@ struct ProxyParts<G> {
 
     start_time: SystemTime,
 
-    control_listener: BoundPort,
-    inbound_listener: BoundPort,
-    outbound_listener: BoundPort,
-    metrics_listener: BoundPort,
+    metrics_listener: tls::Listener<identity::Local, ()>,
+    control_listener: tls::Listener<identity::Local, ()>,
 
-    get_original_dst: G,
+    inbound_listener: tls::Listener<identity::Local, G>,
+    outbound_listener: tls::Listener<identity::Local, G>,
 }
 
 const TLS_FIXME: tls::ReasonForNoIdentity = tls::ReasonForNoIdentity::NotConfigured;
@@ -84,28 +84,32 @@ where
         let start_time = SystemTime::now();
 
         // TODO: Serve over TLS.
-        let control_listener = BoundPort::new(
+        let control_listener = tls::Listener::new(
             config.control_listener.addr,
             Conditional::None(tls::ReasonForNoIdentity::NotImplementedForTap.into()),
         )
         .expect("controller listener bind");
 
-        let inbound_listener = BoundPort::new(
+        let inbound_listener = tls::Listener::new(
             config.inbound_listener.addr,
             Conditional::None(TLS_FIXME.into()),
         )
+        .with_original_dst(get_original_dst.clone())
+        .without_protocol_detection_for(config.inbound_ports_disable_protocol_detection)
         .expect("public listener bind");
 
-        let outbound_listener = BoundPort::new(
+        let outbound_listener = tls::Listener::new(
             config.outbound_listener.addr,
-            Conditional::None(tls::ReasonForNoTls::InternalTraffic),
+            Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
         )
+        .with_original_dst(get_original_dst.clone())
+        .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection)
         .expect("private listener bind");
 
         let runtime = runtime.into();
 
         // TODO: Serve over TLS.
-        let metrics_listener = BoundPort::new(
+        let metrics_listener = tls::Listener::new(
             config.metrics_listener.addr,
             Conditional::None(tls::ReasonForNoIdentity::NotImplementedForMetrics.into()),
         )
@@ -277,7 +281,6 @@ where
                     ctl_http_metrics,
                 ))
                 .push(proxy::grpc::req_body_as_payload::layer())
-                //.push(svc::watch::layer(tls_client_config.clone()))
                 .push(phantom_data::layer())
                 .push(control::add_origin::layer())
                 .push(buffer::layer(config.destination_concurrency_limit))
@@ -368,7 +371,6 @@ where
                 .push(metrics::layer::<_, classify::Response>(
                     endpoint_http_metrics,
                 ));
-            //.push(svc::watch::layer(tls_client_config));
 
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
@@ -494,8 +496,6 @@ where
                 accept,
                 connect,
                 server_stack,
-                config.outbound_ports_disable_protocol_detection,
-                get_original_dst.clone(),
                 drain_rx.clone(),
             )
             .map_err(|e| error!("outbound proxy background task failed: {}", e))
@@ -706,15 +706,14 @@ where
 
 fn serve<A, C, R, B, G>(
     proxy_name: &'static str,
-    bound_port: BoundPort,
+    bound_port: tls::Listener<identity::Local, G>,
     accept: A,
     connect: C,
     router: R,
-    disable_protocol_detection_ports: IndexSet<u16>,
-    get_orig_dst: G,
     drain_rx: drain::Watch,
 ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
 where
+    G: GetOriginalDst,
     A: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     A::Value: proxy::Accept<Connection>,
     <A::Value as proxy::Accept<Connection>>::Io: fmt::Debug + Send + transport::Peek + 'static,
@@ -730,7 +729,6 @@ where
         Into<Box<dyn error::Error + Send + Sync>> + Send,
     <R::Value as svc::Service<http::Request<proxy::http::Body>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
-    G: GetOriginalDst + Send + 'static,
 {
     let listen_addr = bound_port.local_addr();
     let server = proxy::Server::new(
@@ -744,9 +742,6 @@ where
     let log = server.log().clone();
 
     let accept = {
-        let bound_port = bound_port
-            .without_protocol_detection_for(disable_protocol_detection_ports)
-            .with_original_dst(get_orig_dst);
         let fut = bound_port.listen_and_fold((), move |(), (connection, remote_addr)| {
             let s = server.serve(connection, remote_addr);
             // Logging context is configured by the server.
@@ -796,7 +791,7 @@ where
 }
 
 fn serve_tap<N, B>(
-    bound_port: BoundPort,
+    bound_port: tls::Listener<identity::Local, G>,
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where

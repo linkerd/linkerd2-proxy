@@ -17,7 +17,7 @@ use {Conditional, NameAddr};
 pub struct Endpoint {
     pub addr: SocketAddr,
     pub dst_name: Option<NameAddr>,
-    pub tls_client_id: tls::ConditionalIdentity,
+    pub tls_client_id: tls::PeerIdentity,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -32,19 +32,6 @@ impl classify::CanClassify for Endpoint {
 
     fn classify(&self) -> classify::Request {
         classify::Request::default()
-    }
-}
-
-impl Endpoint {
-    fn target(&self) -> connect::Target {
-        let tls = Conditional::None(tls::ReasonForNoIdentity::InternalTraffic);
-        connect::Target::new(self.addr, tls)
-    }
-}
-
-impl settings::router::HasConnect for Endpoint {
-    fn connect(&self) -> connect::Target {
-        self.target()
     }
 }
 

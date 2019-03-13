@@ -286,7 +286,7 @@ pub mod resolve {
             });
 
             let target = client::Target {
-                connect: connect::Target::new(addr, tls),
+                connect: Target::new(addr, tls),
                 log_ctx: ::logging::admin().client("control", config.addr.clone()),
             };
 
@@ -317,15 +317,17 @@ pub mod resolve {
 pub mod client {
     use hyper::body::Payload;
     use std::marker::PhantomData;
+    use std::net::SocketAddr;
 
     use proxy::http;
     use svc;
-    use transport::connect;
+    use transport::{connect, tls};
     use Addr;
 
     #[derive(Clone, Debug)]
     pub struct Target {
-        pub(super) connect: connect::Target,
+        pub(super) addr: SocketAddr,
+        pub(super) peer_id: tls::PeerIdentity,
         pub(super) log_ctx: ::logging::Client<&'static str, Addr>,
     }
 
@@ -344,7 +346,7 @@ pub mod client {
 
     pub fn layer<C, B>() -> Layer<C, B>
     where
-        C: svc::Stack<connect::Target> + Clone,
+        C: svc::Stack<Target> + Clone,
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
@@ -360,9 +362,9 @@ pub mod client {
         }
     }
 
-    impl<C, B> svc::Layer<Target, connect::Target, C> for Layer<C, B>
+    impl<C, B> svc::Layer<Target, Target, C> for Layer<C, B>
     where
-        C: svc::Stack<connect::Target> + Clone,
+        C: svc::Stack<Target> + Clone,
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
@@ -397,7 +399,7 @@ pub mod client {
 
     impl<C, B> svc::Stack<Target> for Stack<C, B>
     where
-        C: svc::Stack<connect::Target> + Clone,
+        C: svc::Stack<Target> + Clone,
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
@@ -408,12 +410,8 @@ pub mod client {
         type Error = C::Error;
 
         fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
-            let c = self.connect.make(&target.connect)?;
-            let e = target
-                .log_ctx
-                .clone()
-                .with_remote(target.connect.addr)
-                .executor();
+            let c = self.connect.make(&target)?;
+            let e = target.log_ctx.clone().with_remote(target.addr).executor();
             Ok(http::h2::Connect::new(c, e))
         }
     }

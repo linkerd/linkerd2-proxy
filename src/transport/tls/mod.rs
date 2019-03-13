@@ -4,19 +4,22 @@ extern crate tokio_rustls;
 extern crate untrusted;
 extern crate webpki;
 
+use self::rustls::ServerConfig;
+use self::tokio_rustls::{Accept, Connect, TlsAcceptor as Acceptor, TlsConnector as Connector};
 use futures::Future;
 use std::sync::Arc;
 use std::{error, fmt};
 
 use identity;
 
+pub mod client;
 pub mod conditional_accept;
 mod connection;
+mod listener;
 
-pub use self::{
-    connection::{Connection, Session},
-    rustls::TLSError as Error,
-};
+pub use self::connection::Connection;
+pub use self::listener::Listener;
+pub use self::rustls::TLSError as Error;
 
 #[cfg(test)]
 pub use self::config::test_util as config_test_util;
@@ -36,10 +39,6 @@ pub trait HasStatus {
     fn tls_status(&self) -> Status;
 }
 
-pub trait HasClientConfig {
-    fn client_config(&self) -> Arc<rustls::ClientConfig>;
-}
-
 pub trait HasServerConfig {
     fn server_config(&self) -> Arc<rustls::ServerConfig>;
 }
@@ -48,9 +47,6 @@ pub trait HasServerConfig {
 pub enum ReasonForNoIdentity {
     /// Identity is administratively disabled.
     Disabled,
-
-    /// The connection is between the proxy and the service
-    InternalTraffic,
 
     /// The remote peer does not have a known identity name.
     NoPeerName(ReasonForNoPeerName),

@@ -19,6 +19,8 @@ use convert::TryFrom;
 use dns;
 use transport::tls;
 
+pub use dns::InvalidName;
+
 pub trait LocalIdentity {
     fn name(&self) -> &Name;
     fn credentials(&self) -> Option<&CrtKey>;
@@ -141,7 +143,7 @@ impl rustls::sign::Signer for Signer {
 // }
 
 impl Name {
-    pub fn from_sni_hostname(hostname: &[u8]) -> Result<Self, dns::InvalidName> {
+    pub fn from_sni_hostname(hostname: &[u8]) -> Result<Self, InvalidName> {
         if hostname.last() == Some(&b'.') {
             return Err(dns::InvalidName); // SNI hostnames are implicitly absolute.
         }
@@ -277,8 +279,8 @@ impl TrustAnchors {
     }
 }
 
-impl tls::HasClientConfig for TrustAnchors {
-    fn client_config(&self) -> Arc<rustls::ClientConfig> {
+impl tls::client::HasConfig for TrustAnchors {
+    fn tls_client_config(&self) -> Arc<rustls::ClientConfig> {
         self.client_config.clone()
     }
 }

@@ -1,89 +1,83 @@
 extern crate tokio_connect;
 
 pub use self::tokio_connect::Connect;
-
+use futures::{Future, Poll};
 use std::{hash, io, net::SocketAddr};
+use tokio::net::{tcp, TcpStream};
 
-use super::tls;
+use super::{connection, tls};
 use never::Never;
 use svc;
 use Conditional;
 
+pub trait PeerSocketAddr {
+    fn peer_socket_addr(&self) -> SocketAddr;
+}
+
 #[derive(Debug, Clone)]
-pub struct Stack {}
+pub struct Stack(());
 
 /// A TCP connection target, optionally with TLS.
 ///
 /// Comparison operations ignore the TLS ClientConfig and only account for the
 /// TLS status.
 #[derive(Clone, Debug)]
-pub struct Target<T> {
-    pub addr: SocketAddr,
-    pub tls: Conditional<T, tls::ReasonFoNoTls>,
-}
+pub struct ConnectSocketAddr(SocketAddr);
 
-// ===== impl Target =====
-
-impl Target<T> {
-    pub fn new(addr: SocketAddr, tls: tls::ConditionalConnectionConfig<tls::ClientConfig>) -> Self {
-        Self { addr, tls }
-    }
-
-    pub fn tls_status(&self) -> tls::Status {
-        self.tls.as_ref().map(|_| {})
-    }
-
-    pub fn tls_server_identity(&self) -> Conditional<&identity::Name, tls::ReasonForNoTls> {
-        self.tls.as_ref().map(|config| &config.server_identity)
-    }
-}
-
-impl Connect for Target {
-    type Connected = connection::Connection;
-    type Error = io::Error;
-    type Future = connection::Connecting;
-
-    fn connect(&self) -> Self::Future {
-        connection::connect(&self.addr, self.tls.clone())
-    }
-}
-
-impl hash::Hash for Target {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.addr.hash(state);
-        self.tls_status().is_some().hash(state);
-    }
-}
-
-impl PartialEq for Target {
-    fn eq(&self, other: &Target) -> bool {
-        self.addr.eq(&other.addr)
-            && self
-                .tls_status()
-                .is_some()
-                .eq(&other.tls_status().is_some())
-    }
-}
-
-impl Eq for Target {}
+#[derive(Debug)]
+pub struct ConnectFuture(SocketAddr, tcp::ConnectFuture);
 
 // ===== impl Stack =====
 
 impl Stack {
     pub fn new() -> Self {
-        Self {}
+        Stack(())
     }
 }
 
-impl<T> svc::Stack<T> for Stack
-where
-    T: Clone,
-    Target: From<T>,
-{
-    type Value = Target;
+impl<T: PeerSocketAddr> svc::Stack<T> for Stack {
+    type Value = ConnectSocketAddr;
     type Error = Never;
 
     fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
-        Ok(t.clone().into())
+        Ok(t.peer_socket_addr().into())
+    }
+}
+
+// === impl ConnectSocketAddr ===
+
+impl From<SocketAddr> for ConnectSocketAddr {
+    fn from(sa: SocketAddr) -> Self {
+        ConnectSocketAddr(sa)
+    }
+}
+
+impl Connect for ConnectSocketAddr {
+    type Connected = TcpStream;
+    type Error = io::Error;
+    type Future = ConnectFuture;
+
+    fn connect(&self) -> Self::Future {
+        ConnectFuture(TcpStream::connect(self.0))
+    }
+}
+
+// === impl ConnectFuture ===
+
+impl Future for ConnectFuture {
+    type Item = TcpStream;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        self.1
+            .poll()
+            .map_err(|e| {
+                let details = format!("{} (address: {})", e, self.0);
+                io::Error::new(e.kind(), details)
+            })
+            .map(|s| {
+                super::set_nodelay_or_warn(&s);
+                s
+            })
     }
 }

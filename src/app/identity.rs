@@ -8,7 +8,7 @@ use api::identity as api;
 use never::Never;
 
 use identity;
-pub use identity::{Crt, CrtKey, Key, Name, TokenSource, TrustAnchors, CSR};
+pub use identity::{Crt, CrtKey, InvalidName, Key, Name, TokenSource, TrustAnchors, CSR};
 
 #[derive(Debug)]
 pub struct Config {
@@ -23,7 +23,7 @@ pub struct Config {
 }
 
 #[derive(Clone)]
-pub struct LocalIdentity {
+pub struct Local {
     trust_anchors: TrustAnchors,
     name: Name,
     crt_key: Watch<Option<CrtKey>>,
@@ -52,12 +52,12 @@ where
     Pending(grpc::client::unary::ResponseFuture<api::CertifyResponse, T::Future, T::ResponseBody>),
 }
 
-pub fn new<T>(config: Config, client: T) -> (LocalIdentity, Daemon<T>)
+pub fn new<T>(config: Config, client: T) -> (Local, Daemon<T>)
 where
     T: GrpcService<BoxBody>,
 {
     let (ck_watch, ck_store) = Watch::new(None);
-    let id = LocalIdentity {
+    let id = Local {
         name: config.local_name.clone(),
         trust_anchors: config.trust_anchors.clone(),
         crt_key: ck_watch,
