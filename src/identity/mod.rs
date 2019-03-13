@@ -325,6 +325,15 @@ impl tls::listen::HasConfig for CrtKey {
     }
 }
 
+impl fmt::Debug for CrtKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        f.debug_struct("CrtKey")
+            .field("name", &self.name)
+            .field("expiry", &self.expiry)
+            .finish()
+    }
+}
+
 // === impl CertResolver ===
 
 impl rustls::ResolvesClientCert for CertResolver {

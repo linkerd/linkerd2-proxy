@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::{fmt, net};
+use std::{fmt, hash};
 
 use super::identity;
 use control::destination::{Metadata, ProtocolHint};
@@ -10,10 +11,10 @@ use tap;
 use transport::{connect, tls};
 use {Conditional, NameAddr};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Endpoint {
     pub dst_name: Option<NameAddr>,
-    pub addr: net::SocketAddr,
+    pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
 }
@@ -29,9 +30,29 @@ impl Endpoint {
     }
 }
 
+impl From<SocketAddr> for Endpoint {
+    fn from(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            dst_name: None,
+            identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
+            metadata: Metadata::empty(),
+        }
+    }
+}
+
 impl fmt::Display for Endpoint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.addr.fmt(f)
+    }
+}
+
+impl hash::Hash for Endpoint {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.dst_name.hash(state);
+        self.addr.hash(state);
+        self.identity.hash(state);
+        // Ignore metadata.
     }
 }
 
@@ -42,13 +63,13 @@ impl tls::HasPeerIdentity for Endpoint {
 }
 
 impl connect::HasPeerAddr for Endpoint {
-    fn peer_addr(&self) -> net::SocketAddr {
+    fn peer_addr(&self) -> SocketAddr {
         self.addr
     }
 }
 
 impl tap::Inspect for Endpoint {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr> {
+    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
         use proxy::server::Source;
 
         req.extensions().get::<Source>().map(|s| s.remote)
@@ -61,7 +82,7 @@ impl tap::Inspect for Endpoint {
         Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
     }
 
-    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<net::SocketAddr> {
+    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
         Some(self.addr)
     }
 

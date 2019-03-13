@@ -27,6 +27,28 @@ pub struct RecognizeEndpoint {
 
 // === impl Endpoint ===
 
+impl From<SocketAddr> for Endpoint {
+    fn from(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            dst_name: None,
+            tls_client_id: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
+        }
+    }
+}
+
+impl connect::HasPeerAddr for Endpoint {
+    fn peer_addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl tls::HasPeerIdentity for Endpoint {
+    fn peer_identity(&self) -> tls::PeerIdentity {
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+    }
+}
+
 impl classify::CanClassify for Endpoint {
     type Classify = classify::Request;
 
@@ -207,7 +229,7 @@ pub mod rewrite_loopback_addr {
     #[derive(Clone, Debug)]
     pub struct Stack<M>
     where
-        M: svc::Stack<SocketAddr>,
+        M: svc::Stack<super::Endpoint>,
     {
         inner: M,
     }
@@ -218,12 +240,12 @@ pub mod rewrite_loopback_addr {
         Layer
     }
 
-    impl<M> svc::Layer<SocketAddr, SocketAddr, M> for Layer
+    impl<M> svc::Layer<super::Endpoint, super::Endpoint, M> for Layer
     where
-        M: svc::Stack<SocketAddr>,
+        M: svc::Stack<super::Endpoint>,
     {
-        type Value = <Stack<M> as svc::Stack<SocketAddr>>::Value;
-        type Error = <Stack<M> as svc::Stack<SocketAddr>>::Error;
+        type Value = <Stack<M> as svc::Stack<super::Endpoint>>::Value;
+        type Error = <Stack<M> as svc::Stack<super::Endpoint>>::Error;
         type Stack = Stack<M>;
 
         fn bind(&self, inner: M) -> Self::Stack {
@@ -233,18 +255,20 @@ pub mod rewrite_loopback_addr {
 
     // === impl Stack ===
 
-    impl<M> svc::Stack<SocketAddr> for Stack<M>
+    impl<M> svc::Stack<super::Endpoint> for Stack<M>
     where
-        M: svc::Stack<SocketAddr>,
+        M: svc::Stack<super::Endpoint>,
     {
         type Value = M::Value;
         type Error = M::Error;
 
-        fn make(&self, addr: &SocketAddr) -> Result<Self::Value, Self::Error> {
-            debug!("rewriting inbound address to loopback; addr={:?}", addr);
+        fn make(&self, ep: &super::Endpoint) -> Result<Self::Value, Self::Error> {
+            debug!("rewriting inbound address to loopback; addr={:?}", ep.addr);
 
-            let rewritten = SocketAddr::from(([127, 0, 0, 1], addr.port()));
-            self.inner.make(&rewritten)
+            let mut ep = ep.clone();
+            ep.addr = SocketAddr::from(([127, 0, 0, 1], ep.addr.port()));
+
+            self.inner.make(&ep)
         }
     }
 }

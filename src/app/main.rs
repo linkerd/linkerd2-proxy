@@ -264,7 +264,10 @@ where
             };
 
             connect::Stack::new()
-                .push(tls::client::layer(Conditional::None(TLS_FIXME.into())))
+                .push(phantom_data::layer())
+                .push(tls::client::layer::<identity::Local>(Conditional::None(
+                    TLS_FIXME.into(),
+                )))
                 .push(keepalive::connect::layer(keepalive))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
@@ -328,7 +331,10 @@ where
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
             let connect = connect::Stack::new()
-                .push(tls::client::layer(Conditional::None(TLS_FIXME.into())))
+                .push(phantom_data::layer())
+                .push(tls::client::layer::<identity::Local>(Conditional::None(
+                    TLS_FIXME.into(),
+                )))
                 .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                 .push(svc::timeout::layer(config.outbound_connect_timeout))
                 .push(transport_metrics.connect("outbound"));
@@ -357,7 +363,7 @@ where
                 .push(buffer::layer(MAX_IN_FLIGHT))
                 .push(strip_header::response::layer(super::L5D_SERVER_ID))
                 .push(strip_header::response::layer(super::L5D_REMOTE_IP))
-                .push(settings::router::layer::<Endpoint, _>())
+                .push(settings::router::layer::<_, Endpoint>())
                 .push(add_server_id_on_rsp::layer())
                 .push(add_remote_ip_on_rsp::layer())
                 .push(orig_proto_upgrade::layer())
@@ -509,7 +515,10 @@ where
             // Establishes connections to the local application (for both
             // TCP forwarding and HTTP proxying).
             let connect = connect::Stack::new()
-                .push(tls::client::layer(Conditional::None(TLS_FIXME.into())))
+                .push(phantom_data::layer())
+                .push(tls::client::layer::<identity::Local>(Conditional::None(
+                    TLS_FIXME.into(),
+                )))
                 .push(keepalive::connect::layer(config.inbound_connect_keepalive))
                 .push(svc::timeout::layer(config.inbound_connect_timeout))
                 .push(transport_metrics.connect("inbound"))
@@ -530,7 +539,7 @@ where
             // `default_fwd_addr` may be used.
             let endpoint_router = client_stack
                 .push(buffer::layer(MAX_IN_FLIGHT))
-                .push(settings::router::layer::<Endpoint, _>())
+                .push(settings::router::layer::<_, Endpoint>())
                 .push(phantom_data::layer())
                 .push(tap_layer)
                 .push(http_metrics::layer::<_, classify::Response>(
@@ -697,7 +706,7 @@ where
     }
 }
 
-fn serve<A, C, R, B, G>(
+fn serve<A, T, C, R, B, G>(
     proxy_name: &'static str,
     bound_port: Listen<identity::Local, G>,
     accept: A,
@@ -709,7 +718,8 @@ where
     A: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     A::Value: proxy::Accept<Connection>,
     <A::Value as proxy::Accept<Connection>>::Io: fmt::Debug + Send + transport::Peek + 'static,
-    C: svc::Stack<SocketAddr, Error = Never> + Send + Clone + 'static,
+    T: From<SocketAddr> + Send + 'static,
+    C: svc::Stack<T, Error = Never> + Send + Clone + 'static,
     C::Value: connect::Connect + Send,
     <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,

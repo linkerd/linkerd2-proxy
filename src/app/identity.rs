@@ -24,7 +24,7 @@ pub struct Config {
     pub max_refresh: Duration,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Local {
     trust_anchors: TrustAnchors,
     name: Name,
@@ -75,6 +75,18 @@ where
 }
 
 // === impl Local ===
+
+impl tls::client::HasConfig for Local {
+    fn tls_client_config(&self) -> Arc<tls::client::Config> {
+        use transport::tls::client::HasConfig;
+
+        if let Some(c) = *self.crt_key.borrow() {
+            return c.tls_client_config();
+        }
+
+        self.trust_anchors.tls_client_config()
+    }
+}
 
 impl tls::listen::HasConfig for Local {
     fn tls_server_name(&self) -> Name {

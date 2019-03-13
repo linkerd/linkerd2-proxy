@@ -1,6 +1,7 @@
 use futures::{future::Either, Future};
 use http;
 use hyper;
+use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 
@@ -46,13 +47,14 @@ use Conditional;
 ///
 /// 6. Otherwise, an `R`-typed `Service` `Stack` is used to build a service that
 ///    can routeHTTP  requests for the `Source`.
-pub struct Server<A, C, R, B>
+pub struct Server<A, T, C, R, B>
 where
     // Prepares a server transport, e.g. with telemetry.
     A: Stack<Source, Error = Never> + Clone,
     A::Value: Accept<Connection>,
     // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
-    C: Stack<SocketAddr, Error = Never> + Clone,
+    T: From<SocketAddr>,
+    C: Stack<T, Error = Never> + Clone,
     C::Value: connect::Connect,
     // Prepares a route for each accepted HTTP connection.
     R: Stack<Source, Error = Never> + Clone,
@@ -63,7 +65,7 @@ where
     http: hyper::server::conn::Http,
     listen_addr: SocketAddr,
     accept: A,
-    connect: ForwardConnect<C>,
+    connect: ForwardConnect<T, C>,
     route: R,
     log: ::logging::Server,
 }
@@ -81,8 +83,11 @@ pub struct Source {
 /// Establishes connections for forwarded connections.
 ///
 /// Fails to produce a `Connect` if a `Source`'s `orig_dst` is None.
-#[derive(Clone, Debug)]
-struct ForwardConnect<C>(C);
+#[derive(Debug)]
+struct ForwardConnect<T, C>(C, PhantomData<T>)
+where
+    T: From<SocketAddr>,
+    C: Stack<T, Error = Never>;
 
 /// An error indicating an accepted socket did not have an SO_ORIGINAL_DST
 /// address and therefore could not be forwarded.
@@ -139,24 +144,35 @@ impl fmt::Display for Source {
     }
 }
 
-impl<C> Stack<Source> for ForwardConnect<C>
+impl<T, C> Stack<Source> for ForwardConnect<T, C>
 where
-    C: Stack<SocketAddr, Error = Never>,
+    T: From<SocketAddr>,
+    C: Stack<T, Error = Never>,
 {
     type Value = C::Value;
     type Error = NoOriginalDst;
 
     fn make(&self, s: &Source) -> Result<Self::Value, Self::Error> {
-        let addr = match s.orig_dst {
-            Some(addr) => addr,
+        let target = match s.orig_dst {
+            Some(addr) => T::from(addr),
             None => return Err(NoOriginalDst),
         };
 
-        match self.0.make(&addr) {
+        match self.0.make(&target) {
             Ok(c) => Ok(c),
             // Matching never allows LLVM to eliminate this entirely.
             Err(never) => match never {},
         }
+    }
+}
+
+impl<T, C> Clone for ForwardConnect<T, C>
+where
+    T: From<SocketAddr>,
+    C: Stack<T, Error = Never> + Clone,
+{
+    fn clone(&self) -> Self {
+        ForwardConnect(self.0.clone(), PhantomData)
     }
 }
 
@@ -177,12 +193,13 @@ impl Stack<Source> for () {
     }
 }
 
-impl<A, C, R, B> Server<A, C, R, B>
+impl<A, T, C, R, B> Server<A, T, C, R, B>
 where
     A: Stack<Source, Error = Never> + Clone,
     A::Value: Accept<Connection>,
     <A::Value as Accept<Connection>>::Io: fmt::Debug + Send + Peek + 'static,
-    C: Stack<SocketAddr, Error = Never> + Clone,
+    T: From<SocketAddr> + Send + 'static,
+    C: Stack<T, Error = Never> + Clone,
     C::Value: connect::Connect,
     <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,
@@ -204,13 +221,14 @@ where
         route: R,
         drain_signal: drain::Watch,
     ) -> Self {
+        let connect = ForwardConnect(connect, PhantomData);
         let log = ::logging::Server::proxy(proxy_name, listen_addr);
         Server {
             drain_signal,
             http: hyper::server::conn::Http::new(),
             listen_addr,
             accept,
-            connect: ForwardConnect(connect),
+            connect,
             route,
             log,
         }

@@ -94,7 +94,7 @@ pub mod router {
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     #[derive(Debug)]
-    pub struct Layer<T, B>(PhantomData<(T, fn(B))>);
+    pub struct Layer<B, T>(PhantomData<(T, fn(B))>);
 
     #[derive(Debug)]
     pub struct Stack<B, T, M>(M, PhantomData<fn(B, T)>);
@@ -112,17 +112,20 @@ pub mod router {
 
     type Router<B, T, M> = rt::Router<http::Request<B>, Recognize<T>, M>;
 
-    pub fn layer<T, B>() -> Layer<T, B> {
+    pub fn layer<B, T>() -> Layer<B, T>
+    where
+        T: fmt::Debug + Clone + Hash + Eq,
+    {
         Layer(PhantomData)
     }
 
-    impl<T, B> Clone for Layer<T, B> {
+    impl<B, T> Clone for Layer<B, T> {
         fn clone(&self) -> Self {
             Layer(PhantomData)
         }
     }
 
-    impl<B, T, M, Svc> svc::Layer<T, Config<T>, M> for Layer<T, B>
+    impl<B, T, M, Svc> svc::Layer<T, Config<T>, M> for Layer<B, T>
     where
         Stack<B, T, M>: svc::Stack<T>,
         T: fmt::Debug + Clone + Hash + Eq,
@@ -149,7 +152,7 @@ pub mod router {
         }
     }
 
-    impl<B, T, M, Svc> svc::Stack<T> for Stack<T, B, M>
+    impl<B, T, M, Svc> svc::Stack<T> for Stack<B, T, M>
     where
         T: fmt::Debug + Clone + Hash + Eq,
         M: svc::Stack<Config<T>, Value = Svc> + Clone,
@@ -175,7 +178,7 @@ pub mod router {
         }
     }
 
-    impl<T, B> rt::Recognize<http::Request<B>> for Recognize<T>
+    impl<B, T> rt::Recognize<http::Request<B>> for Recognize<T>
     where
         T: fmt::Debug + Clone + Hash + Eq,
     {

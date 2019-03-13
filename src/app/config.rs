@@ -643,8 +643,8 @@ pub fn parse_control_addr<S: Strings>(
     let n = parse(strings, &n_env, parse_identity);
     match (a?, n?) {
         (None, None) => Ok(None),
-        (Some(addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
-            addr,
+        (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
+            addr: *addr,
             identity: Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
