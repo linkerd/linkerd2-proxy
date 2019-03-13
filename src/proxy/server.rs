@@ -48,7 +48,7 @@ where
     A: Stack<Source, Error = Never> + Clone,
     A::Value: Accept<Connection>,
     // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
-    C: Stack<connect::Target, Error = Never> + Clone,
+    C: Stack<SocketAddr, Error = Never> + Clone,
     C::Value: connect::Connect,
     // Prepares a route for each accepted HTTP connection.
     R: Stack<Source, Error = Never> + Clone,
@@ -70,7 +70,7 @@ pub struct Source {
     pub remote: SocketAddr,
     pub local: SocketAddr,
     pub orig_dst: Option<SocketAddr>,
-    pub tls_peer: tls::ConditionalIdentity,
+    pub tls_peer: tls::PeerIdentity,
     _p: (),
 }
 
@@ -137,7 +137,7 @@ impl fmt::Display for Source {
 
 impl<C> Stack<Source> for ForwardConnect<C>
 where
-    C: Stack<connect::Target, Error = Never>,
+    C: Stack<SocketAddr, Error = Never>,
 {
     type Value = C::Value;
     type Error = NoOriginalDst;
@@ -148,8 +148,7 @@ where
             None => return Err(NoOriginalDst),
         };
 
-        let tls = Conditional::None(tls::ReasonForNoPeerName::NotHttp.into());
-        match self.0.make(&connect::Target::new(addr, tls)) {
+        match self.0.make(&addr) {
             Ok(c) => Ok(c),
             // Matching never allows LLVM to eliminate this entirely.
             Err(never) => match never {},
@@ -179,7 +178,7 @@ where
     A: Stack<Source, Error = Never> + Clone,
     A::Value: Accept<Connection>,
     <A::Value as Accept<Connection>>::Io: fmt::Debug + Send + Peek + 'static,
-    C: Stack<connect::Target, Error = Never> + Clone,
+    C: Stack<SocketAddr, Error = Never> + Clone,
     C::Value: connect::Connect,
     <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,

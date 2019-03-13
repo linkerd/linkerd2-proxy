@@ -274,20 +274,11 @@ pub mod resolve {
         M: svc::Stack<client::Target>,
         M::Value: svc::Service<()>,
     {
-        fn make_inner(addr: SocketAddr, config: &ControlAddr, stack: &M) -> Self {
-            let tls = config.tls_server_identity.as_ref().and_then(|id| {
-                config
-                    .tls_config
-                    .as_ref()
-                    .map(|config| tls::ConnectionConfig {
-                        server_identity: id.clone(),
-                        config: config.clone(),
-                    })
-            });
-
+        fn make_inner(addr: SocketAddr, dst: &ControlAddr, stack: &M) -> Self {
             let target = client::Target {
-                connect: Target::new(addr, tls),
-                log_ctx: ::logging::admin().client("control", config.addr.clone()),
+                addr,
+                server_name: dst.name.clone(),
+                log_ctx: ::logging::admin().client("control", dst.addr),
             };
 
             match stack.make(&target) {
@@ -327,7 +318,7 @@ pub mod client {
     #[derive(Clone, Debug)]
     pub struct Target {
         pub(super) addr: SocketAddr,
-        pub(super) peer_id: tls::PeerIdentity,
+        pub(super) server_name: tls::PeerIdentity,
         pub(super) log_ctx: ::logging::Client<&'static str, Addr>,
     }
 

@@ -4,7 +4,6 @@ extern crate tokio_rustls;
 extern crate untrusted;
 extern crate webpki;
 
-use self::rustls::ServerConfig;
 use self::tokio_rustls::{Accept, Connect, TlsAcceptor as Acceptor, TlsConnector as Connector};
 use futures::Future;
 use std::sync::Arc;
@@ -13,12 +12,13 @@ use std::{error, fmt};
 use identity;
 
 pub mod client;
-pub mod conditional_accept;
+mod conditional_accept;
 mod connection;
-mod listener;
+pub mod listen;
 
 pub use self::connection::Connection;
-pub use self::listener::Listener;
+pub use self::listen::Listen;
+pub(super) use self::rustls::Session;
 pub use self::rustls::TLSError as Error;
 
 #[cfg(test)]
@@ -37,10 +37,6 @@ pub trait HasPeerIdentity {
 
 pub trait HasStatus {
     fn tls_status(&self) -> Status;
-}
-
-pub trait HasServerConfig {
-    fn server_config(&self) -> Arc<rustls::ServerConfig>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -74,7 +70,7 @@ pub enum ReasonForNoPeerName {
     NotProvidedByRemote,
 }
 
-impl<T> fmt::Display for Status {
+impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Conditional::Some(()) => write!(f, "true"),

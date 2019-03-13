@@ -1,5 +1,6 @@
 use futures::{Async, Future, Poll, Stream};
 use futures_watch::{Store, Watch};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
@@ -9,6 +10,7 @@ use never::Never;
 
 use identity;
 pub use identity::{Crt, CrtKey, InvalidName, Key, Name, TokenSource, TrustAnchors, CSR};
+use transport::tls;
 
 #[derive(Debug)]
 pub struct Config {
@@ -72,9 +74,19 @@ where
     (id, d)
 }
 
-// === impl LocalIdentity ===
+// === impl Local ===
 
-impl LocalIdentity {}
+impl tls::listen::HasConfig for Local {
+    fn tls_server_config(&self) -> Arc<tls::listen::Config> {
+        use transport::tls::listen::HasConfig;
+
+        if let Some(c) = *self.crt_key.borrow() {
+            return c.tcp_server_config();
+        }
+
+        return ().tls_server_config();
+    }
+}
 
 // === impl Daemon ===
 

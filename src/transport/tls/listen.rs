@@ -15,14 +15,20 @@ use tokio::{
 
 use identity::Name as Identity;
 use transport::prefixed::Prefixed;
-use transport::{
-    set_nodelay_or_warn, tls, AddrInfo, BoxedIo, Connection, GetOriginalDst, SetKeepalive,
-};
+use transport::tls::{self, conditional_accept, Accept, Acceptor, Connection, ReasonForNoPeerName};
+use transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive};
+use Conditional;
 
-pub struct Listener<T, G = ()> {
-    inner: Option<TcpListener>,
+pub use super::rustls::ServerConfig as Config;
+
+pub trait HasConfig {
+    fn tls_server_config(&self) -> Arc<Config>;
+}
+
+pub struct Listen<L, G = ()> {
+    inner: Option<StdListener>,
     local_addr: SocketAddr,
-    tls: tls::Conditional<T>,
+    tls: tls::Conditional<L>,
     disable_protocol_detection_ports: IndexSet<u16>,
     get_original_dst: G,
 }
@@ -30,22 +36,28 @@ pub struct Listener<T, G = ()> {
 /// A server socket that is in the process of conditionally upgrading to TLS.
 enum ConditionallyUpgradeServerToTls {
     Plaintext(Option<ConditionallyUpgradeServerToTlsInner>),
-    UpgradeToTls(tls::Accept<TcpStream>),
+    UpgradeToTls(super::Accept<TcpStream>),
 }
 
 struct ConditionallyUpgradeServerToTlsInner {
     socket: TcpStream,
-    tls: Arc<tls::ServerConfig>,
+    tls: Arc<Config>,
     peek_buf: BytesMut,
 }
 
-// === impl Listener ===
+impl HasConfig for () {
+    fn tls_server_config(&self) -> Arc<Config> {
+        Arc::new(Config::new(rustls::NoClientAuth))
+    }
+}
 
-impl<T: tls::HasServerConfig> Listener<T> {
-    pub fn bind(addr: SocketAddr, tls: tls::Conditional<T>) -> Result<Self, io::Error> {
+// === impl Listen ===
+
+impl<L: HasConfig> Listen<L> {
+    pub fn bind(addr: SocketAddr, tls: tls::Conditional<L>) -> Result<Self, io::Error> {
         let inner = StdListener::bind(addr)?;
         let local_addr = inner.local_addr()?;
-        Ok(Listener {
+        Ok(Self {
             inner: Some(inner),
             local_addr,
             tls,
@@ -54,11 +66,11 @@ impl<T: tls::HasServerConfig> Listener<T> {
         })
     }
 
-    pub fn with_original_dst<G>(self, get_original_dst: G) -> Listener<G>
+    pub fn with_original_dst<G>(self, get_original_dst: G) -> Listen<L, G>
     where
         G: GetOriginalDst,
     {
-        Listener {
+        Self {
             inner: self.inner,
             local_addr: self.local_addr,
             tls: self.tls,
@@ -68,7 +80,7 @@ impl<T: tls::HasServerConfig> Listener<T> {
     }
 }
 
-impl<T: tls::HasServerConfig, G> Listener<T, G> {
+impl<L: HasConfig, G> Listen<L, G> {
     pub fn without_protocol_detection_for(
         self,
         disable_protocol_detection_ports: IndexSet<u16>,
@@ -96,6 +108,7 @@ impl<T: tls::HasServerConfig, G> Listener<T, G> {
     where
         F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
         T: Send + 'static,
+        L: Send + 'static,
         G: Send + 'static,
         Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
         <Fut as IntoFuture>::Future: Send,
@@ -114,6 +127,7 @@ impl<T: tls::HasServerConfig, G> Listener<T, G> {
     where
         F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
         T: Send + 'static,
+        L: Send + 'static,
         G: Send + 'static,
         Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
         <Fut as IntoFuture>::Future: Send,
@@ -131,6 +145,7 @@ impl<T: tls::HasServerConfig, G> Listener<T, G> {
     where
         F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
         T: Send + 'static,
+        L: Send + 'static,
         G: Send + 'static,
         Fut: IntoFuture<Item = T, Error = std::io::Error> + Send + 'static,
         <Fut as IntoFuture>::Future: Send,
@@ -202,14 +217,14 @@ impl<T: tls::HasServerConfig, G> Listener<T, G> {
                 Either::A(future::ok(conn))
             }
             // TLS is enabled. Try to accept a TLS handshake.
-            (dst, tls::Conditional::Some(tls)) => {
+            (dst, Conditional::Some(tls)) => {
                 let handshake =
                     ConditionallyUpgradeServerToTls::new(socket, tls.tls_server_config())
                         .map(move |c| c.with_original_dst(dst));
                 Either::B(Either::A(handshake))
             }
             // TLS is disabled. Return a new plaintext connection.
-            (dst, tls::Conditional::None(why_no_tls)) => {
+            (dst, Conditional::None(why_no_tls)) => {
                 let conn = Connection::plain(socket, *why_no_tls).with_original_dst(dst);
                 Either::B(Either::B(future::ok(conn)))
             }
@@ -217,16 +232,13 @@ impl<T: tls::HasServerConfig, G> Listener<T, G> {
     }
 }
 
-impl GetOriginalDst for Listener<()> {
+impl GetOriginalDst for Listen<()> {
     fn get_original_dst(&self, _socket: &AddrInfo) -> Option<SocketAddr> {
         None
     }
 }
 
-impl<G> GetOriginalDst for Listener<G>
-where
-    G: GetOriginalDst,
-{
+impl<G: GetOriginalDst> GetOriginalDst for Listen<G> {
     fn get_original_dst(&self, socket: &AddrInfo) -> Option<SocketAddr> {
         self.get_original_dst.get_original_dst(socket)
     }
@@ -235,7 +247,7 @@ where
 // === impl ConditionallyUpgradeServerToTls ===
 
 impl ConditionallyUpgradeServerToTls {
-    fn new(socket: TcpStream, tls: Arc<tls::ServerConfig>) -> Self {
+    fn new(socket: TcpStream, tls: Arc<Config>) -> Self {
         ConditionallyUpgradeServerToTls::Plaintext(Some(ConditionallyUpgradeServerToTlsInner {
             socket,
             tls,
@@ -258,17 +270,17 @@ impl Future for ConditionallyUpgradeServerToTls {
                         .poll_match_client_hello();
 
                     match try_ready!(poll_match) {
-                        tls::conditional_accept::Match::Matched => {
+                        conditional_accept::Match::Matched => {
                             trace!("upgrading accepted connection to TLS");
                             let upgrade = inner.take().unwrap().into_tls_upgrade();
                             ConditionallyUpgradeServerToTls::UpgradeToTls(upgrade)
                         }
-                        tls::conditional_accept::Match::NotMatched => {
+                        conditional_accept::Match::NotMatched => {
                             trace!("passing through accepted connection without TLS");
                             let conn = inner.take().unwrap().into_plaintext();
                             return Ok(Async::Ready(conn));
                         }
-                        tls::conditional_accept::Match::Incomplete => {
+                        conditional_accept::Match::Incomplete => {
                             continue;
                         }
                     }
@@ -294,28 +306,28 @@ impl ConditionallyUpgradeServerToTlsInner {
     /// The buffer is matched for a TLS client hello message.
     ///
     /// `NotMatched` is returned if the underlying socket has closed.
-    fn poll_match_client_hello(&mut self) -> Poll<tls::conditional_accept::Match, io::Error> {
+    fn poll_match_client_hello(&mut self) -> Poll<conditional_accept::Match, io::Error> {
         let sz = try_ready!(self.socket.read_buf(&mut self.peek_buf));
         if sz == 0 {
             // XXX: It is ambiguous whether this is the start of a TLS handshake or not.
             // For now, resolve the ambiguity in favor of plaintext. TODO: revisit this
             // when we add support for TLS policy.
-            return Ok(tls::conditional_accept::Match::NotMatched.into());
+            return Ok(conditional_accept::Match::NotMatched.into());
         }
 
         let buf = self.peek_buf.as_ref();
-        Ok(tls::conditional_accept::match_client_hello(buf, &self.tls.server_identity).into())
+        Ok(conditional_accept::match_client_hello(buf, &self.tls.server_identity).into())
     }
 
-    fn into_tls_upgrade(self) -> tls::Accept<TcpStream> {
-        tls::Acceptor::from(self.tls).accept(Prefixed::new(self.peek_buf.freeze(), self.socket))
+    fn into_tls_upgrade(self) -> Accept<TcpStream> {
+        Acceptor::from(self.tls).accept(Prefixed::new(self.peek_buf.freeze(), self.socket))
     }
 
     fn into_plaintext(self) -> Connection {
         Connection::plain_with_peek_buf(
             self.socket,
             self.peek_buf,
-            tls::ReasonForNoPeerName::NotProvidedByRemote.into(),
+            ReasonForNoPeerName::NotProvidedByRemote.into(),
         )
     }
 }

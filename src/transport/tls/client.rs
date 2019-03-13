@@ -6,8 +6,10 @@ use identity;
 use svc;
 use transport::{connect, tls, BoxedIo, Connection};
 
+pub use super::rustls::ClientConfig as Config;
+
 pub trait HasConfig {
-    fn tls_client_config(&self) -> Arc<rustls::ClientConfig>;
+    fn tls_client_config(&self) -> Arc<Config>;
 }
 
 #[derive(Clone, Debug)]
@@ -45,7 +47,7 @@ pub fn layer<L: HasConfig + Clone>(local: L) -> Layer<L> {
 
 impl<T, L, S> svc::Layer<T, T, S> for Layer<L>
 where
-    L: HasConfig,
+    L: HasConfig + Clone,
     T: tls::HasPeerIdentity,
     S: svc::Stack<T> + Clone,
     S::Value: connect::Connect + Clone + Send + Sync + 'static,
@@ -53,9 +55,9 @@ where
     <S::Value as connect::Connect>::Future: Send + 'static,
     <S::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
 {
-    type Value = <Stack<S> as svc::Stack<T>>::Value;
-    type Error = <Stack<S> as svc::Stack<T>>::Error;
-    type Stack = Stack<S>;
+    type Value = <Stack<L, S> as svc::Stack<T>>::Value;
+    type Error = <Stack<L, S> as svc::Stack<T>>::Error;
+    type Stack = Stack<L, S>;
 
     fn bind(&self, inner: S) -> Self::Stack {
         Stack {
@@ -69,7 +71,7 @@ where
 
 impl<T, L, S> svc::Stack<T> for Stack<L, S>
 where
-    L: HasConfig,
+    L: HasConfig + Clone,
     T: tls::HasPeerIdentity,
     S: svc::Stack<T> + Clone,
     S::Value: connect::Connect + Clone + Send + Sync + 'static,
@@ -77,7 +79,7 @@ where
     <S::Value as connect::Connect>::Future: Send + 'static,
     <S::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
 {
-    type Value = Connect<S::Value>;
+    type Value = Connect<L, S::Value>;
     type Error = S::Error;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
@@ -92,7 +94,7 @@ where
 
 impl<L, C> connect::Connect for Connect<L, C>
 where
-    L: HasConfig,
+    L: HasConfig + Clone,
     C: connect::Connect + Clone + Send + Sync + 'static,
     C::Connected: Send + 'static,
     C::Future: Send + 'static,
@@ -112,7 +114,7 @@ where
 
 // ===== impl ConnectFuture =====
 
-impl<F: Future> Future for ConnectFuture<F> {
+impl<L: HasConfig, F: Future> Future for ConnectFuture<L, F> {
     type Item = Connection;
     type Error = F::Error;
 

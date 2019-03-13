@@ -8,17 +8,16 @@ use tokio::prelude::*;
 
 use dns;
 use identity;
-use transport::connection::Peek;
 use transport::io::internal::Io;
 use transport::prefixed::Prefixed;
-use transport::{tls, AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive};
-
-use super::{
-    rustls::{self, Session},
-    untrusted, webpki, HasPeerIdentity, PeerIdentity,
+use transport::tls::{
+    Conditional, HasPeerIdentity, PeerIdentity, ReasonForNoIdentity, ReasonForNoPeerName, Session,
+    Status,
 };
+use transport::{AddrInfo, BoxedIo, GetOriginalDst, Peek, SetKeepalive};
 
 /// Abstracts a plaintext socket vs. a TLS decorated one.
+///
 ///
 /// A `Connection` has the `TCP_NODELAY` option set automatically. Also
 /// it strictly controls access to information about the underlying
@@ -27,6 +26,7 @@ use super::{
 #[derive(Debug)]
 pub struct Connection {
     io: BoxedIo,
+
     /// This buffer gets filled up when "peeking" bytes on this Connection.
     ///
     /// This is used instead of MSG_PEEK in order to support TLS streams.
@@ -48,139 +48,17 @@ pub struct Connection {
 
 // === impl Connection ===
 
-impl<S, C> Connection<S, C>
-where
-    S: Debug,
-    C: Session + Debug,
-{
-    fn peer_identity_(&self) -> Option<identity::Name> {
-        let (_io, session) = self.0.get_ref();
-        let certs = session.get_peer_certificates()?;
-        let end_cert = {
-            let c = certs.first().map(rustls::Certificate::as_ref)?;
-            webpki::EndEntityCert::from(untrusted::Input::from(c)).ok()?
-        };
-        // Use the first DNS name ias the identity.
-        let name: &str = end_cert.dns_names().ok()?.into_iter().next()?.into();
-        identity::Name::from_sni_hostname(name.as_bytes()).ok()
-    }
-}
-
-impl<S, C> HasPeerIdentity for Connection<S, C>
-where
-    S: Debug,
-    C: Session + Debug,
-{
-    fn peer_identity(&self) -> PeerIdentity {
-        use super::{Conditional, ReasonForNoPeerName};
-
-        self.peer_identity_()
-            .map(Conditional::Some)
-            .unwrap_or_else(|| Conditional::None(ReasonForNoPeerName::NotProvidedByRemote.into()))
-    }
-}
-
-impl<S, C> io::Read for Connection<S, C>
-where
-    S: Debug + io::Read + io::Write,
-    C: Session + Debug,
-{
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
-}
-
-impl<S, C> AsyncRead for Connection<S, C>
-where
-    S: AsyncRead + AsyncWrite + Debug + io::Read + io::Write,
-    C: Session + Debug,
-{
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
-        self.0.prepare_uninitialized_buffer(buf)
-    }
-}
-
-impl<S, C> io::Write for Connection<S, C>
-where
-    S: Debug + io::Read + io::Write,
-    C: Session + Debug,
-{
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
-    }
-}
-
-impl<S, C> AsyncWrite for Connection<S, C>
-where
-    S: AsyncRead + AsyncWrite + Debug + io::Read + io::Write,
-    C: Session + Debug,
-{
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.0.shutdown()
-    }
-
-    fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        self.0.write_buf(buf)
-    }
-}
-
-impl<S, C> AddrInfo for Connection<S, C>
-where
-    S: AddrInfo + Debug,
-    C: Session + Debug,
-{
-    fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.0.get_ref().0.local_addr()
-    }
-
-    fn get_original_dst(&self) -> Option<SocketAddr> {
-        self.0.get_ref().0.get_original_dst()
-    }
-}
-
-impl<S, C> SetKeepalive for Connection<S, C>
-where
-    S: SetKeepalive + Debug,
-    C: Session + Debug,
-{
-    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
-        self.0.get_ref().0.keepalive()
-    }
-
-    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
-        self.0.get_mut().0.set_keepalive(ka)
-    }
-}
-
-impl<S, C> Io for Connection<S, C>
-where
-    S: Io + Debug,
-    C: Session + Debug,
-{
-    fn shutdown_write(&mut self) -> Result<(), io::Error> {
-        self.0.get_mut().0.shutdown_write()
-    }
-
-    fn write_buf_erased(&mut self, mut buf: &mut Buf) -> Poll<usize, io::Error> {
-        self.0.write_buf(&mut buf)
-    }
-}
-
 impl Connection {
-    fn plain(io: TcpStream, why_no_tls: tls::ReasonForNoIdentity) -> Self {
+    pub(super) fn plain(io: TcpStream, why_no_tls: ReasonForNoIdentity) -> Self {
         Self::plain_with_peek_buf(io, BytesMut::new(), why_no_tls)
     }
 
-    fn without_protocol_detection(io: TcpStream) -> Self {
+    pub(super) fn without_protocol_detection(io: TcpStream) -> Self {
         Connection {
             io: BoxedIo::new(io),
             peek_buf: BytesMut::new(),
-            tls_peer_identity: tls::Conditional::None(tls::ReasonForNoIdentity::NoPeerName(
-                tls::ReasonForNoPeerName::NotHttp,
+            tls_peer_identity: Conditional::None(ReasonForNoIdentity::NoPeerName(
+                ReasonForNoPeerName::NotHttp,
             )),
             detect_protocol: false,
             orig_dst: None,
@@ -190,28 +68,28 @@ impl Connection {
     fn plain_with_peek_buf(
         io: TcpStream,
         peek_buf: BytesMut,
-        why_no_tls: tls::ReasonForNoIdentity,
+        why_no_tls: ReasonForNoIdentity,
     ) -> Self {
         Connection {
             io: BoxedIo::new(io),
             peek_buf,
-            tls_peer_identity: tls::Conditional::None(why_no_tls),
+            tls_peer_identity: Conditional::None(why_no_tls),
             detect_protocol: true,
             orig_dst: None,
         }
     }
 
-    fn tls(io: BoxedIo, peer_identity: identity::Name) -> Self {
+    pub(super) fn tls(io: BoxedIo, peer_identity: identity::Name) -> Self {
         Connection {
             io: io,
             peek_buf: BytesMut::new(),
-            tls_peer_identity: tls::Conditional::Some(peer_identity),
+            tls_peer_identity: Conditional::Some(peer_identity),
             detect_protocol: true,
             orig_dst: None,
         }
     }
 
-    fn with_original_dst(self, orig_dst: Option<SocketAddr>) -> Self {
+    pub(super) fn with_original_dst(self, orig_dst: Option<SocketAddr>) -> Self {
         Self { orig_dst, ..self }
     }
 
@@ -223,11 +101,11 @@ impl Connection {
         self.io.local_addr()
     }
 
-    pub fn tls_status(&self) -> tls::Status {
-        tls::Status::from(&self.tls_peer_identity)
+    pub fn tls_status(&self) -> Status {
+        Status::from(&self.tls_peer_identity)
     }
 
-    pub fn tls_peer_identity(&self) -> tls::Conditional<&identity::Name> {
+    pub fn tls_peer_identity(&self) -> Conditional<&identity::Name> {
         self.tls_peer_identity.as_ref()
     }
 

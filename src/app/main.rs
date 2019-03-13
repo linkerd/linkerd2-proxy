@@ -34,7 +34,7 @@ use svc::{
 use tap;
 use task;
 use telemetry;
-use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst};
+use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
 use {Addr, Conditional};
 
 use super::config::Config;
@@ -64,14 +64,14 @@ struct ProxyParts<G> {
 
     start_time: SystemTime,
 
-    metrics_listener: tls::Listener<identity::Local, ()>,
-    control_listener: tls::Listener<identity::Local, ()>,
+    metrics_listener: Listen<identity::Local, ()>,
+    control_listener: Listen<identity::Local, ()>,
 
-    inbound_listener: tls::Listener<identity::Local, G>,
-    outbound_listener: tls::Listener<identity::Local, G>,
+    inbound_listener: Listen<identity::Local, G>,
+    outbound_listener: Listen<identity::Local, G>,
 }
 
-const TLS_FIXME: tls::ReasonForNoIdentity = tls::ReasonForNoIdentity::NotConfigured;
+const TLS_FIXME: tls::ReasonForNoIdentity = tls::ReasonForNoIdentity::Disabled;
 
 impl<G> Main<G>
 where
@@ -83,46 +83,39 @@ where
     {
         let start_time = SystemTime::now();
 
-        // TODO: Serve over TLS.
-        let control_listener = tls::Listener::new(
-            config.control_listener.addr,
-            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForTap.into()),
-        )
-        .expect("controller listener bind");
-
-        let inbound_listener = tls::Listener::new(
-            config.inbound_listener.addr,
-            Conditional::None(TLS_FIXME.into()),
-        )
-        .with_original_dst(get_original_dst.clone())
-        .without_protocol_detection_for(config.inbound_ports_disable_protocol_detection)
-        .expect("public listener bind");
-
-        let outbound_listener = tls::Listener::new(
+        let outbound_listener = Listen::bind(
             config.outbound_listener.addr,
             Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
         )
+        .expect("outbound listener bind")
         .with_original_dst(get_original_dst.clone())
-        .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection)
-        .expect("private listener bind");
+        .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection);
 
-        let runtime = runtime.into();
+        let inbound_listener =
+            Listen::bind(config.inbound_listener.addr, Conditional::None(TLS_FIXME))
+                .expect("inbound listener bind")
+                .with_original_dst(get_original_dst.clone())
+                .without_protocol_detection_for(config.inbound_ports_disable_protocol_detection);
 
         // TODO: Serve over TLS.
-        let metrics_listener = tls::Listener::new(
-            config.metrics_listener.addr,
-            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForMetrics.into()),
-        )
-        .expect("metrics listener bind");
+        let control_listener =
+            Listen::bind(config.control_listener.addr, Conditional::None(TLS_FIXME))
+                .expect("controller listener bind");
+
+        // TODO: Serve over TLS.
+        let metrics_listener =
+            Listen::bind(config.metrics_listener.addr, Conditional::None(TLS_FIXME))
+                .expect("metrics listener bind");
+
+        let runtime = runtime.into();
 
         let proxy_parts = ProxyParts {
             config,
             start_time,
-            control_listener,
             inbound_listener,
             outbound_listener,
+            control_listener,
             metrics_listener,
-            get_original_dst,
         };
 
         Main {
@@ -189,7 +182,6 @@ where
             inbound_listener,
             outbound_listener,
             metrics_listener,
-            get_original_dst,
         } = self;
 
         const MAX_IN_FLIGHT: usize = 10_000;
@@ -272,7 +264,7 @@ where
             };
 
             connect::Stack::new()
-                .push(keepalive::connect::layer(c))
+                .push(keepalive::connect::layer(keepalive))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
                 .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
@@ -706,7 +698,7 @@ where
 
 fn serve<A, C, R, B, G>(
     proxy_name: &'static str,
-    bound_port: tls::Listener<identity::Local, G>,
+    bound_port: Listen<identity::Local, G>,
     accept: A,
     connect: C,
     router: R,
@@ -717,7 +709,7 @@ where
     A: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     A::Value: proxy::Accept<Connection>,
     <A::Value as proxy::Accept<Connection>>::Io: fmt::Debug + Send + transport::Peek + 'static,
-    C: svc::Stack<connect::Target, Error = Never> + Send + Clone + 'static,
+    C: svc::Stack<SocketAddr, Error = Never> + Send + Clone + 'static,
     C::Value: connect::Connect + Send,
     <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,
@@ -791,7 +783,7 @@ where
 }
 
 fn serve_tap<N, B>(
-    bound_port: tls::Listener<identity::Local, G>,
+    bound_port: Listen<identity::Local, ()>,
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where

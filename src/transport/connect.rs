@@ -5,13 +5,13 @@ use futures::{Future, Poll};
 use std::{hash, io, net::SocketAddr};
 use tokio::net::{tcp, TcpStream};
 
-use super::{connection, tls};
+use super::tls;
 use never::Never;
 use svc;
 use Conditional;
 
-pub trait PeerSocketAddr {
-    fn peer_socket_addr(&self) -> SocketAddr;
+pub trait HasPeerAddr {
+    fn peer_addr(&self) -> SocketAddr;
 }
 
 #[derive(Debug, Clone)]
@@ -35,12 +35,12 @@ impl Stack {
     }
 }
 
-impl<T: PeerSocketAddr> svc::Stack<T> for Stack {
+impl<T: HasPeerAddr> svc::Stack<T> for Stack {
     type Value = ConnectSocketAddr;
     type Error = Never;
 
     fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
-        Ok(t.peer_socket_addr().into())
+        Ok(t.peer_addr().into())
     }
 }
 

@@ -285,6 +285,12 @@ impl tls::client::HasConfig for TrustAnchors {
     }
 }
 
+impl fmt::Debug for TrustAnchors {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("TrustAnchors").finish()
+    }
+}
+
 // === Crt ===
 
 impl Crt {
@@ -303,14 +309,14 @@ impl Crt {
 
 // === CrtKey ===
 
-impl tls::HasClientConfig for CrtKey {
-    fn client_config(&self) -> Arc<rustls::ClientConfig> {
+impl tls::client::HasConfig for CrtKey {
+    fn tls_client_config(&self) -> Arc<tls::client::Config> {
         self.client_config.clone()
     }
 }
 
-impl tls::HasServerConfig for CrtKey {
-    fn server_config(&self) -> Arc<rustls::ServerConfig> {
+impl tls::listen::HasConfig for CrtKey {
+    fn tls_server_config(&self) -> Arc<tls::listen::Config> {
         self.server_config.clone()
     }
 }

@@ -62,7 +62,7 @@ impl tap::Inspect for Endpoint {
         &self,
         _: &http::Request<B>,
     ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
-        Conditional::None(tls::ReasonForNoIdentity::InternalTraffic)
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
@@ -124,6 +124,7 @@ pub mod orig_proto_downgrade {
     use proxy::http::orig_proto;
     use proxy::server::Source;
     use std::marker::PhantomData;
+    use std::net::SocketAddr;
     use svc;
 
     #[derive(Debug)]
@@ -194,12 +195,11 @@ pub mod orig_proto_downgrade {
     }
 }
 
-/// Rewrites connect `Target`s IP address to the loopback address (`127.0.0.1`),
+/// Rewrites connect `SocketAddr`s IP address to the loopback address (`127.0.0.1`),
 /// with the same port still set.
 pub mod rewrite_loopback_addr {
     use std::net::SocketAddr;
     use svc;
-    use transport::connect::Target;
 
     #[derive(Debug, Clone)]
     pub struct Layer;
@@ -207,7 +207,7 @@ pub mod rewrite_loopback_addr {
     #[derive(Clone, Debug)]
     pub struct Stack<M>
     where
-        M: svc::Stack<Target>,
+        M: svc::Stack<SocketAddr>,
     {
         inner: M,
     }
@@ -218,12 +218,12 @@ pub mod rewrite_loopback_addr {
         Layer
     }
 
-    impl<M> svc::Layer<Target, Target, M> for Layer
+    impl<M> svc::Layer<SocketAddr, SocketAddr, M> for Layer
     where
-        M: svc::Stack<Target>,
+        M: svc::Stack<SocketAddr>,
     {
-        type Value = <Stack<M> as svc::Stack<Target>>::Value;
-        type Error = <Stack<M> as svc::Stack<Target>>::Error;
+        type Value = <Stack<M> as svc::Stack<SocketAddr>>::Value;
+        type Error = <Stack<M> as svc::Stack<SocketAddr>>::Error;
         type Stack = Stack<M>;
 
         fn bind(&self, inner: M) -> Self::Stack {
@@ -233,19 +233,18 @@ pub mod rewrite_loopback_addr {
 
     // === impl Stack ===
 
-    impl<M> svc::Stack<Target> for Stack<M>
+    impl<M> svc::Stack<SocketAddr> for Stack<M>
     where
-        M: svc::Stack<Target>,
+        M: svc::Stack<SocketAddr>,
     {
         type Value = M::Value;
         type Error = M::Error;
 
-        fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
-            debug!("rewriting inbound address to loopback; target={:?}", target);
+        fn make(&self, addr: &SocketAddr) -> Result<Self::Value, Self::Error> {
+            debug!("rewriting inbound address to loopback; addr={:?}", addr);
 
-            let rewritten = SocketAddr::from(([127, 0, 0, 1], target.addr.port()));
-            let target = Target::new(rewritten, target.tls.clone());
-            self.inner.make(&target)
+            let rewritten = SocketAddr::from(([127, 0, 0, 1], addr.port()));
+            self.inner.make(&rewritten)
         }
     }
 }

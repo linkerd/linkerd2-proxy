@@ -28,12 +28,6 @@ impl Endpoint {
     }
 }
 
-impl settings::router::HasConnect for Endpoint {
-    fn connect(&self) -> connect::Target {
-        self.connect.clone()
-    }
-}
-
 impl fmt::Display for Endpoint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.connect.addr.fmt(f)
