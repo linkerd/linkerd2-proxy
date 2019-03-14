@@ -18,8 +18,8 @@ pub struct Config {
     pub trust_anchors: TrustAnchors,
     pub key: Key,
     pub csr: CSR,
-    pub local_name: Name,
     pub token: TokenSource,
+    pub local_name: Name,
     pub min_refresh: Duration,
     pub max_refresh: Duration,
 }
@@ -30,6 +30,8 @@ pub struct Local {
     name: Name,
     crt_key: Watch<Option<CrtKey>>,
 }
+
+pub type CrtKeyStore = Store<Option<CrtKey>>;
 
 /// Drives updates.
 pub struct Daemon<T>
@@ -54,27 +56,40 @@ where
     Pending(grpc::client::unary::ResponseFuture<api::CertifyResponse, T::Future, T::ResponseBody>),
 }
 
-pub fn new<T>(config: Config, client: T) -> (Local, Daemon<T>)
-where
-    T: GrpcService<BoxBody>,
-{
-    let (ck_watch, ck_store) = Watch::new(None);
-    let id = Local {
-        name: config.local_name.clone(),
-        trust_anchors: config.trust_anchors.clone(),
-        crt_key: ck_watch,
-    };
-    let d = Daemon {
-        config,
-        crt_key: ck_store,
-        inner: Inner::ShouldRefresh,
-        expiry: UNIX_EPOCH,
-        client: api::client::Identity::new(client),
-    };
-    (id, d)
+// === impl Config ===
+
+impl Config {
+    fn refresh(&self, expiry: SystemTime) -> Delay {
+        let now = clock::now();
+
+        let refresh = match expiry
+            .duration_since(SystemTime::now())
+            .ok()
+            .map(|d| d * 7 / 10)
+        {
+            None => self.min_refresh,
+            Some(lifetime) if lifetime < self.min_refresh => self.min_refresh,
+            Some(lifetime) if self.max_refresh < lifetime => self.max_refresh,
+            Some(lifetime) => lifetime,
+        };
+
+        Delay::new(now + refresh)
+    }
 }
 
 // === impl Local ===
+
+impl Local {
+    pub fn new(config: &Config) -> (Self, CrtKeyStore) {
+        let (w, s) = Watch::new(None);
+        let l = Local {
+            name: config.local_name.clone(),
+            trust_anchors: config.trust_anchors.clone(),
+            crt_key: w,
+        };
+        (l, s)
+    }
+}
 
 impl tls::client::HasConfig for Local {
     fn tls_client_config(&self) -> Arc<tls::client::Config> {
@@ -106,22 +121,18 @@ impl tls::listen::HasConfig for Local {
 
 // === impl Daemon ===
 
-impl Config {
-    fn refresh(&self, expiry: SystemTime) -> Delay {
-        let now = clock::now();
-
-        let refresh = match expiry
-            .duration_since(SystemTime::now())
-            .ok()
-            .map(|d| d * 7 / 10)
-        {
-            None => self.min_refresh,
-            Some(lifetime) if lifetime < self.min_refresh => self.min_refresh,
-            Some(lifetime) if self.max_refresh < lifetime => self.max_refresh,
-            Some(lifetime) => lifetime,
-        };
-
-        Delay::new(now + refresh)
+impl<T> Daemon<T>
+where
+    T: GrpcService<BoxBody> + Clone,
+{
+    pub fn new(config: Config, crt_key: CrtKeyStore, client: T) -> Self {
+        Self {
+            config,
+            crt_key,
+            inner: Inner::ShouldRefresh,
+            expiry: UNIX_EPOCH,
+            client: api::client::Identity::new(client),
+        }
     }
 }
 
