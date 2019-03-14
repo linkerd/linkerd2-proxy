@@ -141,7 +141,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     env.put(app::config::ENV_IDENTITY_DISABLED, "true".into());
     env.put(app::config::ENV_DESTINATION_SVC_ADDR, format!("{}", controller.addr));
     env.put(
-        app::config::ENV_OUTBOUND_LISTENER,
+        app::config::ENV_OUTBOUND_LISTEN_ADDR,
         "tcp://127.0.0.1:0".to_owned(),
     );
     if let Some(ref inbound) = inbound {
@@ -155,15 +155,15 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         mock_orig_dst.outbound_orig_addr = Some(outbound.addr);
     }
     env.put(
-        app::config::ENV_INBOUND_LISTENER,
+        app::config::ENV_INBOUND_LISTEN_ADDR,
         "tcp://127.0.0.1:0".to_owned(),
     );
     env.put(
-        app::config::ENV_CONTROL_LISTENER,
+        app::config::ENV_CONTROL_LISTEN_ADDR,
         "tcp://127.0.0.1:0".to_owned(),
     );
     env.put(
-        app::config::ENV_METRICS_LISTENER,
+        app::config::ENV_METRICS_LISTEN_ADDR,
         "tcp://127.0.0.1:0".to_owned(),
     );
 

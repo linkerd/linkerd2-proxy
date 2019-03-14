@@ -163,11 +163,11 @@ pub struct TestEnv {
 }
 
 // Environment variables to look at when loading the configuration
-pub const ENV_OUTBOUND_LISTENER: &str = "LINKERD2_PROXY_OUTBOUND_LISTENER";
+pub const ENV_OUTBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_LISTEN_ADDR";
 pub const ENV_INBOUND_FORWARD: &str = "LINKERD2_PROXY_INBOUND_FORWARD";
-pub const ENV_INBOUND_LISTENER: &str = "LINKERD2_PROXY_INBOUND_LISTENER";
-pub const ENV_CONTROL_LISTENER: &str = "LINKERD2_PROXY_CONTROL_LISTENER";
-pub const ENV_METRICS_LISTENER: &str = "LINKERD2_PROXY_METRICS_LISTENER";
+pub const ENV_INBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_INBOUND_LISTEN_ADDR";
+pub const ENV_CONTROL_LISTEN_ADDR: &str = "LINKERD2_PROXY_CONTROL_LISTEN_ADDR";
+pub const ENV_METRICS_LISTEN_ADDR: &str = "LINKERD2_PROXY_METRICS_LISTEN_ADDR";
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
@@ -178,7 +178,7 @@ const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEP
 const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEPALIVE";
 const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
 
-pub const DEPRECATED_ENV_PRIVATE_LISTENER: &str = "LINKERD2_PROXY_PRIVATE_LISTENER";
+pub const DEPRECATED_ENV_PRIVATE_LISTEN_ADDR: &str = "LINKERD2_PROXY_PRIVATE_LISTEN_ADDR";
 pub const DEPRECATED_ENV_PRIVATE_FORWARD: &str = "LINKERD2_PROXY_PRIVATE_FORWARD";
 
 // Limits the number of HTTP routes that may be active in the proxy at any time. There is
@@ -229,19 +229,19 @@ pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
-pub const ENV_IDENTITY_END_ENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_END_ENTITY_DIR";
+pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
-pub const ENV_IDENTITY_LOCAL_IDENTITY: &str = "LINKERD2_PROXY_LOCAL_IDENTITY";
-pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_TOKEN_FILE";
-pub const ENV_IDENTITY_MIN_REFRESH: &str = "LINKERD2_PROXY_MIN_REFRESH";
-pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_MAX_REFRESH";
+pub const ENV_IDENTITY_IDENTITY_LOCAL_NAME: &str = "LINKERD2_PROXY_IDENTITY_LOCAL_NAME";
+pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_IDENTITY_TOKEN_FILE";
+pub const ENV_IDENTITY_MIN_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MIN_REFRESH";
+pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MAX_REFRESH";
 
 pub const ENV_IDENTITY_SVC_BASE: &str = "LINKERD2_PROXY_IDENTITY_SVC";
 
 pub const ENV_DESTINATION_SVC_BASE: &str = "LINKERD2_PROXY_DESTINATION_SVC";
 pub const ENV_DESTINATION_SVC_ADDR: &str = "LINKERD2_PROXY_DESTINATION_SVC_ADDR";
 
-pub const ENV_DESTINATION_CONTEXT_TOKEN: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT_TOKEN";
+pub const ENV_DESTINATION_CONTEXT: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT";
 
 pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
@@ -261,10 +261,10 @@ const ENV_DNS_MAX_TTL: &str = "LINKERD2_PROXY_DNS_MAX_TTL";
 const ENV_DNS_CANONICALIZE_TIMEOUT: &str = "LINKERD2_PROXY_DNS_CANONICALIZE_TIMEOUT";
 
 // Default values for various configuration fields
-const DEFAULT_OUTBOUND_LISTENER: &str = "tcp://127.0.0.1:4140";
-const DEFAULT_INBOUND_LISTENER: &str = "tcp://0.0.0.0:4143";
-const DEFAULT_CONTROL_LISTENER: &str = "tcp://0.0.0.0:4190";
-const DEFAULT_METRICS_LISTENER: &str = "tcp://127.0.0.1:4191";
+const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "tcp://127.0.0.1:4140";
+const DEFAULT_INBOUND_LISTEN_ADDR: &str = "tcp://0.0.0.0:4143";
+const DEFAULT_CONTROL_LISTEN_ADDR: &str = "tcp://0.0.0.0:4190";
+const DEFAULT_METRICS_LISTEN_ADDR: &str = "tcp://127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(20);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
@@ -317,10 +317,10 @@ impl Config {
     pub fn parse<S: Strings>(strings: &S) -> Result<Self, Error> {
         // Parse all the environment variables. `parse` will log any errors so
         // defer returning any errors until all of them have been parsed.
-        let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTENER, parse_socket_addr);
-        let inbound_listener_addr = parse(strings, ENV_INBOUND_LISTENER, parse_socket_addr);
-        let control_listener_addr = parse(strings, ENV_CONTROL_LISTENER, parse_socket_addr);
-        let metrics_listener_addr = parse(strings, ENV_METRICS_LISTENER, parse_socket_addr);
+        let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTEN_ADDR, parse_socket_addr);
+        let inbound_listener_addr = parse(strings, ENV_INBOUND_LISTEN_ADDR, parse_socket_addr);
+        let control_listener_addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr);
+        let metrics_listener_addr = parse(strings, ENV_METRICS_LISTEN_ADDR, parse_socket_addr);
         let inbound_forward = parse(strings, ENV_INBOUND_FORWARD, parse_socket_addr);
 
         let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
@@ -382,7 +382,7 @@ impl Config {
             parse_control_addr(strings, ENV_DESTINATION_SVC_BASE)
         };
 
-        let dst_token = strings.get(ENV_DESTINATION_CONTEXT_TOKEN);
+        let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
         let dst_concurrency_limit = parse(
             strings,
@@ -399,19 +399,19 @@ impl Config {
         Ok(Config {
             outbound_listener: Listener {
                 addr: outbound_listener_addr?
-                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
             },
             inbound_listener: Listener {
                 addr: inbound_listener_addr?
-                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
             },
             control_listener: Listener {
                 addr: control_listener_addr?
-                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap()),
             },
             metrics_listener: Listener {
                 addr: metrics_listener_addr?
-                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_METRICS_LISTENER).unwrap()),
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_METRICS_LISTEN_ADDR).unwrap()),
             },
             inbound_forward: inbound_forward?,
 
@@ -677,16 +677,14 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |ref s| {
         identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
     });
-    let ee = parse(strings, ENV_IDENTITY_END_ENTITY_DIR, |ref s| {
-        Ok(PathBuf::from(s))
-    });
+    let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
     let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
         identity::TokenSource::if_nonempty_file(s.to_string()).map_err(|e| {
             error!("Could not read {}: {}", ENV_IDENTITY_TOKEN_FILE, e);
             ParseError::InvalidTokenSource
         })
     });
-    let li = parse(strings, ENV_IDENTITY_LOCAL_IDENTITY, parse_identity);
+    let li = parse(strings, ENV_IDENTITY_IDENTITY_LOCAL_NAME, parse_identity);
     let min_refresh = parse(strings, ENV_IDENTITY_MIN_REFRESH, parse_duration);
     let max_refresh = parse(strings, ENV_IDENTITY_MAX_REFRESH, parse_duration);
 
@@ -699,7 +697,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
         disabled,
         sa?,
         ta?,
-        ee?,
+        dir?,
         li?,
         tok?,
         min_refresh?,
@@ -773,7 +771,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
             }))
         }
-        (disabled, svc_addr, trust_anchors, end_entity_dir, local_id, token, minr, maxr) => {
+        (disabled, svc_addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
             if disabled {
                 error!(
                     "{} must be unset when other identity variables are set.",
@@ -785,11 +783,9 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
             for (unset, name) in &[
                 (svc_addr.is_none(), svc_env),
                 (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),
-                (end_entity_dir.is_none(), ENV_IDENTITY_END_ENTITY_DIR),
-                (local_id.is_none(), ENV_IDENTITY_LOCAL_IDENTITY),
+                (end_entity_dir.is_none(), ENV_IDENTITY_DIR),
+                (local_id.is_none(), ENV_IDENTITY_IDENTITY_LOCAL_NAME),
                 (token.is_none(), ENV_IDENTITY_TOKEN_FILE),
-                (minr.is_none(), ENV_IDENTITY_MIN_REFRESH),
-                (maxr.is_none(), ENV_IDENTITY_MAX_REFRESH),
             ] {
                 if *unset {
                     error!(
