@@ -38,7 +38,7 @@ ee() {
 
   openssl x509 -inform pem -outform der \
     -in "${ee}.pem" \
-    -out "${ee}.crt"
+    -out "${ee}/crt.der"
   rm "${ee}.pem"
 
   ## TODO DER-encode?
