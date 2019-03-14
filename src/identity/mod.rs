@@ -244,6 +244,7 @@ impl TrustAnchors {
         //
         // TODO: Restrict accepted signatutre algorithms.
         static NO_OCSP: &'static [u8] = &[];
+        debug!("certifying for {}", crt.name.as_ref());
         client
             .get_verifier()
             .verify_server_cert(
@@ -436,7 +437,7 @@ mod tests {
             trust_anchors: "ca2.pem",
             ..FOO_NS1
         };
-        assert!(s.validate().is_err(), "CA should not have validated");
+        assert!(s.validate().is_err(), "ca2 should not validate foo.ns1");
     }
 
     #[test]
