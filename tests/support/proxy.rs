@@ -138,19 +138,19 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     let outbound = proxy.outbound;
     let mut mock_orig_dst = DstInner::default();
 
-    env.put(app::config::ENV_IDENTITY_DISABLED, "true".into());
+    env.put(app::config::ENV_IDENTITY_DISABLED, "test".into());
     env.put(
         app::config::ENV_DESTINATION_SVC_ADDR,
         format!("{}", controller.addr),
     );
     env.put(
         app::config::ENV_OUTBOUND_LISTEN_ADDR,
-        "tcp://127.0.0.1:0".to_owned(),
+        "127.0.0.1:0".to_owned(),
     );
     if let Some(ref inbound) = inbound {
         env.put(
             app::config::ENV_INBOUND_FORWARD,
-            format!("tcp://{}", inbound.addr),
+            format!("{}", inbound.addr),
         );
         mock_orig_dst.inbound_orig_addr = Some(inbound.addr);
     }
@@ -159,15 +159,15 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     }
     env.put(
         app::config::ENV_INBOUND_LISTEN_ADDR,
-        "tcp://127.0.0.1:0".to_owned(),
+        "127.0.0.1:0".to_owned(),
     );
     env.put(
         app::config::ENV_CONTROL_LISTEN_ADDR,
-        "tcp://127.0.0.1:0".to_owned(),
+        "127.0.0.1:0".to_owned(),
     );
     env.put(
         app::config::ENV_METRICS_LISTEN_ADDR,
-        "tcp://127.0.0.1:0".to_owned(),
+        "127.0.0.1:0".to_owned(),
     );
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
