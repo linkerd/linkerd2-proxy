@@ -1,7 +1,6 @@
 use futures::{self, future, Future, Poll};
 use http;
 use hyper;
-use indexmap::IndexSet;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -105,6 +104,8 @@ where
             .without_protocol_detection_for(
                 config.inbound_ports_disable_protocol_detection.clone(),
             );
+
+        let runtime = runtime.into();
 
         let runtime = runtime.into();
 
@@ -793,9 +794,8 @@ where
                 .spawn(Box::new(s))
                 .map_err(task::Error::into_io);
             future::result(r)
-        });
-        log.future(fut)
-    };
+        },
+    ));
 
     let accept_until = Cancelable {
         future: accept,

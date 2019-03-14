@@ -239,7 +239,7 @@ fn run(
 
             let listener = listener.listen(1024).expect("Tcp::listen");
             let bind =
-                TcpListener::from_std(listener, &reactor::Handle::current()).expect("from_std");
+                TcpListener::from_std(listener, &reactor::Handle::default()).expect("from_std");
 
             if let Some(listening_tx) = listening_tx {
                 let _ = listening_tx.send(());
