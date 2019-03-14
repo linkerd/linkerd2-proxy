@@ -8,7 +8,6 @@ cache: cargo
 branches:
   only:
     - master
-    - identity/master
 
 jobs:
   include:
@@ -39,7 +38,7 @@ jobs:
       deploy:
         on:
           repo: linkerd/linkerd2-proxy
-          all_branches: true
+          branch: master
         skip_cleanup: true
         local-dir: target/release/package
         bucket: build.l5d.io
