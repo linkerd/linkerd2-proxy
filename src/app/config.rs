@@ -74,7 +74,7 @@ pub struct Config {
     /// The maximum amount of time to wait for a connection to the controller.
     pub control_connect_timeout: Duration,
 
-    pub identity_config: Option<identity::Config>,
+    pub identity_config: tls::Conditional<identity::Config>,
     //
     // Destination Config
     //
@@ -453,7 +453,9 @@ impl Config {
             destination_addr: dst_addr?,
             destination_context: dst_token?.unwrap_or_default(),
 
-            identity_config: identity_config?,
+            identity_config: identity_config?
+                .map(Conditional::Some)
+                .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled)),
 
             resolv_conf_path: resolv_conf_path?
                 .unwrap_or(DEFAULT_RESOLV_CONF.into())
@@ -716,7 +718,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
         }
         (
             false,
-            Some(svc_addr),
+            Some(svc),
             Some(trust_anchors),
             Some(dir),
             Some(local_name),
@@ -761,7 +763,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
             };
 
             Ok(Some(identity::Config {
-                svc_addr,
+                svc,
                 local_name,
                 token,
                 trust_anchors,
@@ -771,7 +773,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
             }))
         }
-        (disabled, svc_addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
+        (disabled, svc, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
             if disabled {
                 error!(
                     "{} must be unset when other identity variables are set.",
@@ -781,7 +783,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
             let svc_env: &str = &s.as_str();
             for (unset, name) in &[
-                (svc_addr.is_none(), svc_env),
+                (svc.is_none(), svc_env),
                 (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),
                 (end_entity_dir.is_none(), ENV_IDENTITY_DIR),
                 (local_id.is_none(), ENV_IDENTITY_IDENTITY_LOCAL_NAME),

@@ -8,12 +8,10 @@ pub enum Conditional<C, R> {
 
 impl<C, R> Conditional<C, R>
 where
-    C: Clone,
     R: Copy + Clone,
 {
     pub fn and_then<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
-        CR: Clone,
         R: Into<RR>,
         RR: Clone,
         F: FnOnce(C) -> Conditional<CR, RR>,
@@ -33,7 +31,6 @@ where
 
     pub fn map<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
-        CR: Clone,
         R: Into<RR>,
         RR: Clone,
         F: FnOnce(C) -> CR,
@@ -44,7 +41,6 @@ where
     pub fn or_else<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
         C: Into<CR>,
-        CR: Clone,
         RR: Clone,
         F: FnOnce(R) -> Conditional<CR, RR>,
     {
@@ -57,7 +53,6 @@ where
     pub fn map_reason<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
         C: Into<CR>,
-        CR: Clone,
         RR: Clone,
         F: FnOnce(R) -> RR,
     {

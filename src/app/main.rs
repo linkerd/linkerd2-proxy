@@ -102,7 +102,7 @@ where
         // TODO: Serve over TLS.
         let control_listener =
             Listen::bind(config.control_listener.addr, Conditional::None(TLS_FIXME))
-                .expect("controller listener bind");
+                .expect("dst_svc listener bind");
 
         // TODO: Serve over TLS.
         let metrics_listener =
@@ -249,16 +249,50 @@ where
             .and_then(ctl_http_report)
             .and_then(telemetry::process::Report::new(start_time));
 
-        //let tls_client_config = tls_config_watch.client.clone();
-        //let tls_cfg_bg = tls_config_watch.start(tls_config_sensor);
+        let local_identity = config.identity_config.clone().map(|id_config| {
+            use super::control;
 
-        let controller = config.destination_addr.as_ref().map(|addr| {
+            // If the service is on localhost, use the inbound keepalive.
+            // If the service. is remote, use the outbound keepalive.
+            let keepalive = if id_config.svc.addr.is_loopback() {
+                config.inbound_connect_keepalive
+            } else {
+                config.outbound_connect_keepalive
+            };
+
+            let svc = connect::Stack::new()
+                .push(phantom_data::layer())
+                .push(tls::client::layer(Conditional::Some(
+                    id_config.trust_anchors.clone(),
+                )))
+                .push(keepalive::connect::layer(keepalive))
+                .push(control::client::layer())
+                .push(control::resolve::layer(dns_resolver.clone()))
+                .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
+                .push(svc::timeout::layer(config.control_connect_timeout))
+                .push(http_metrics::layer::<_, classify::Response>(
+                    ctl_http_metrics.clone(),
+                ))
+                .push(proxy::grpc::req_body_as_payload::layer())
+                .push(phantom_data::layer())
+                .push(control::add_origin::layer())
+                .push(buffer::layer(config.destination_concurrency_limit))
+                .push(limit::layer(config.destination_concurrency_limit))
+                .make(&id_config.svc)
+                .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e));
+
+            let (local_identity, daemon) = identity::new(id_config, svc);
+            task::spawn(daemon.map_err(|_| error!("identity task failed")));
+            local_identity
+        });
+
+        let dst_svc = config.destination_addr.as_ref().map(|addr| {
             use super::control;
 
             //let tls_server_identity = config.destination_identity.clone();
 
-            // If the controller is on localhost, use the inbound keepalive.
-            // If the controller is remote, use the outbound keepalive.
+            // If the dst_svc is on localhost, use the inbound keepalive.
+            // If the dst_svc is remote, use the outbound keepalive.
             let keepalive = if addr.addr.is_loopback() {
                 config.inbound_connect_keepalive
             } else {
@@ -267,9 +301,7 @@ where
 
             connect::Stack::new()
                 .push(phantom_data::layer())
-                .push(tls::client::layer::<identity::Local>(Conditional::None(
-                    TLS_FIXME.into(),
-                )))
+                .push(tls::client::layer(local_identity.clone()))
                 .push(keepalive::connect::layer(keepalive))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
@@ -284,17 +316,17 @@ where
                 .push(buffer::layer(config.destination_concurrency_limit))
                 .push(limit::layer(config.destination_concurrency_limit))
                 .make(&addr)
-                .unwrap_or_else(|e| panic!("failed to build controller: {}", e))
+                .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e))
         });
 
         // The resolver is created in the proxy core but runs on the admin core.
         // This channel is used to move the task.
         let (resolver_bg_tx, resolver_bg_rx) = futures::sync::oneshot::channel();
 
-        // Build the outbound and inbound proxies using the controller client.
+        // Build the outbound and inbound proxies using the dst_svc client.
 
         let (resolver, resolver_bg) = control::destination::new(
-            controller.clone(),
+            dst_svc.clone(),
             dns_resolver.clone(),
             config.destination_get_suffixes,
             config.destination_concurrency_limit,
@@ -305,11 +337,8 @@ where
             .ok()
             .expect("admin thread must receive resolver task");
 
-        let profiles_client = ProfilesClient::new(
-            controller,
-            Duration::from_secs(3),
-            config.destination_context,
-        );
+        let profiles_client =
+            ProfilesClient::new(dst_svc, Duration::from_secs(3), config.destination_context);
 
         let outbound = {
             use super::outbound::{
@@ -688,8 +717,8 @@ where
                     rt.block_on(shutdown).expect("admin");
                     trace!("admin shutdown finished");
                 })
-                .expect("initialize controller api thread");
-            trace!("controller client thread spawned");
+                .expect("initialize dst_svc api thread");
+            trace!("dst_svc client thread spawned");
 
             // spawn a task to so that the admin shutdown signal is sent when
             // the main runtime drops (and thus this thread doesn't live forever).

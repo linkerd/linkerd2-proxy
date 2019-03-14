@@ -12,9 +12,9 @@ use identity;
 pub use identity::{Crt, CrtKey, InvalidName, Key, Name, TokenSource, TrustAnchors, CSR};
 use transport::tls;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
-    pub svc_addr: super::control::ControlAddr,
+    pub svc: super::control::ControlAddr,
     pub trust_anchors: TrustAnchors,
     pub key: Key,
     pub csr: CSR,
