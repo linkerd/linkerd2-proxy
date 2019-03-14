@@ -786,8 +786,9 @@ where
     );
     let log = server.log().clone();
 
-    let accept = {
-        let fut = bound_port.listen_and_fold((), move |(), (connection, remote_addr)| {
+    let future = log.future(bound_port.listen_and_fold(
+        (),
+        move |(), (connection, remote_addr)| {
             let s = server.serve(connection, remote_addr);
             // Logging context is configured by the server.
             let r = DefaultExecutor::current()
@@ -798,7 +799,7 @@ where
     ));
 
     let accept_until = Cancelable {
-        future: accept,
+        future,
         canceled: false,
     };
 
