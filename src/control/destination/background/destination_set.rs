@@ -312,7 +312,7 @@ fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
     use api::destination::tls_identity::Strategy;
 
     let Strategy::K8sPodIdentity(i) = pb.strategy?;
-    match identity::Name::from_sni_hostname(i.pod_identity.as_bytes()) {
+    match identity::Name::from_hostname(i.pod_identity.as_bytes()) {
         Ok(i) => Some(i),
         Err(_) => {
             warn!("Ignoring invalid identity: {}", i.pod_identity);

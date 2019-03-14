@@ -139,14 +139,14 @@ impl rustls::sign::Signer for Signer {
 
 // === impl Name ===
 
-// impl From<dns::Name> for Name {
-//     fn from(n: dns::Name) -> Self {
-//         Name(Arc::new(n))
-//     }
-// }
+impl From<dns::Name> for Name {
+    fn from(n: dns::Name) -> Self {
+        Name(Arc::new(n))
+    }
+}
 
 impl Name {
-    pub fn from_sni_hostname(hostname: &[u8]) -> Result<Self, InvalidName> {
+    pub fn from_hostname(hostname: &[u8]) -> Result<Self, InvalidName> {
         if hostname.last() == Some(&b'.') {
             return Err(dns::InvalidName); // SNI hostnames are implicitly absolute.
         }

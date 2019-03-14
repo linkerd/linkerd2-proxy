@@ -56,7 +56,7 @@ impl Strings {
     pub fn crt(&self) -> Crt {
         const HOUR: Duration = Duration::from_secs(60 * 60);
 
-        let n = Name::from_sni_hostname(self.name.as_bytes()).expect("name must be valid");
+        let n = Name::from_hostname(self.name.as_bytes()).expect("name must be valid");
         let der = Self::read(&self.crt);
         Crt::new(n, der, vec![], SystemTime::now() + HOUR)
     }

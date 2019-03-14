@@ -37,7 +37,7 @@ pub struct Connection {
     peek_buf: BytesMut,
 
     /// Whether or not the connection is secured with TLS.
-    tls_peer_identity: PeerIdentity,
+    tls_peer_identity: super::PeerIdentity,
 
     /// If true, the proxy should attempt to detect the protocol for this
     /// connection. If false, protocol detection should be skipped.
@@ -80,11 +80,14 @@ impl Connection {
         }
     }
 
-    pub(super) fn tls(io: BoxedIo, peer_identity: identity::Name) -> Self {
+    pub(super) fn tls(
+        io: BoxedIo,
+        tls_peer_identity: Conditional<identity::Name, super::ReasonForNoPeerName>,
+    ) -> Self {
         Connection {
             io: io,
             peek_buf: BytesMut::new(),
-            tls_peer_identity: Conditional::Some(peer_identity),
+            tls_peer_identity: tls_peer_identity.map_reason(|r| r.into()),
             detect_protocol: true,
             orig_dst: None,
         }

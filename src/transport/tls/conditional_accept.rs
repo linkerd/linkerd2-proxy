@@ -31,7 +31,7 @@ pub fn match_client_hello(input: &[u8], identity: &identity::Name) -> Match {
     });
     match r {
         Ok(Some(sni)) => {
-            let m = identity::Name::from_sni_hostname(sni.as_slice_less_safe())
+            let m = identity::Name::from_hostname(sni.as_slice_less_safe())
                 .map(|sni| {
                     if sni == *identity {
                         Match::Matched
@@ -241,7 +241,7 @@ mod tests {
     fn check_all_prefixes(expected_match: Match, identity: &str, input: &[u8]) {
         assert!(expected_match == Match::Matched || expected_match == Match::NotMatched);
 
-        let identity = identity::Name::from_sni_hostname(identity.as_bytes()).unwrap();
+        let identity = identity::Name::from_hostname(identity.as_bytes()).unwrap();
 
         let mut i = 0;
 

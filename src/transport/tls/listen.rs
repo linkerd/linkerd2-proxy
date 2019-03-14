@@ -13,7 +13,7 @@ use tokio::{
     reactor::Handle,
 };
 
-use super::rustls;
+use super::{rustls, tokio_rustls, webpki};
 use identity;
 use transport::prefixed::Prefixed;
 use transport::tls::{self, conditional_accept, Accept, Acceptor, Connection, ReasonForNoPeerName};
@@ -44,10 +44,7 @@ pub struct Listen<L, G = ()> {
 /// A server socket that is in the process of conditionally upgrading to TLS.
 enum Handshake {
     Init(Option<Inner>),
-    Upgrade {
-        future: super::Accept<Prefixed<TcpStream>>,
-        server_name: identity::Name,
-    },
+    Upgrade(super::Accept<Prefixed<TcpStream>>),
 }
 
 struct Inner {
@@ -259,6 +256,22 @@ impl Handshake {
             peek_buf: BytesMut::with_capacity(8192),
         }))
     }
+
+    fn client_identity<S>(
+        tls: &tokio_rustls::TlsStream<S, rustls::ServerSession>,
+    ) -> Option<identity::Name> {
+        use super::rustls::Session;
+        use dns;
+
+        let (_io, session) = tls.get_ref();
+        let certs = session.get_peer_certificates()?;
+        let c = certs.first().map(rustls::Certificate::as_ref)?;
+        let end_cert = webpki::EndEntityCert::from(untrusted::Input::from(c)).ok()?;
+        let dns_names = end_cert.dns_names().ok()?;
+
+        let n = dns_names.first()?.to_owned();
+        Some(identity::Name::from(dns::Name::from(n)))
+    }
 }
 
 impl Future for Handshake {
@@ -289,14 +302,16 @@ impl Future for Handshake {
                         }
                     }
                 }
-                Handshake::Upgrade {
-                    future,
-                    server_name,
-                } => {
+                Handshake::Upgrade(future) => {
                     let io = try_ready!(future.poll());
-                    let io = BoxedIo::new(super::TlsIo::from(io));
+                    let client_id = Self::client_identity(&io)
+                        .map(Conditional::Some)
+                        .unwrap_or_else(|| {
+                            Conditional::None(super::ReasonForNoPeerName::NotProvidedByRemote)
+                        });
 
-                    return Ok(Async::Ready(Connection::tls(io, server_name.clone())));
+                    let io = BoxedIo::new(super::TlsIo::from(io));
+                    return Ok(Async::Ready(Connection::tls(io, client_id)));
                 }
             }
         }
@@ -323,12 +338,9 @@ impl Inner {
     }
 
     fn into_tls_upgrade(self) -> Handshake {
-        let upgrade = Acceptor::from(self.config.clone())
+        let future = Acceptor::from(self.config.clone())
             .accept(Prefixed::new(self.peek_buf.freeze(), self.socket));
-        Handshake::Upgrade {
-            future: upgrade,
-            server_name: self.server_name.clone(),
-        }
+        Handshake::Upgrade(future)
     }
 
     fn into_plaintext(self) -> Connection {

@@ -156,7 +156,7 @@ where
                     let io = try_ready!(future.poll());
                     let io = BoxedIo::new(super::TlsIo::from(io));
 
-                    let c = Connection::tls(io, server_name.clone());
+                    let c = Connection::tls(io, Conditional::Some(server_name.clone()));
                     return Ok(Async::Ready(c));
                 }
             };
