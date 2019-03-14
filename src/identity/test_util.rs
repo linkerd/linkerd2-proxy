@@ -1,3 +1,5 @@
+extern crate webpki;
+
 use super::*;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -13,24 +15,24 @@ pub struct Strings {
 }
 
 pub static FOO_NS1: Strings = Strings {
-    name: "foo.ns1.serviceaccount.name.linkerd.cluster.local",
+    name: "foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     trust_anchors: "ca1.pem",
     crt: "foo-ns1-ca1.crt",
     key: "foo-ns1-ca1.p8",
-    csr: "foo-ns1.csr",
+    csr: "foo-ns1-ca1.csr",
 };
 
 pub static BAR_NS1: Strings = Strings {
-    name: "bar.ns1.serviceaccount.name.linkerd.cluster.local",
+    name: "bar.ns1.serviceaccount.identity.linkerd.cluster.local",
     trust_anchors: "ca1.pem",
     crt: "bar-ns1-ca1.crt",
     key: "bar-ns1-ca1.p8",
-    csr: "bar-ns1.csr",
+    csr: "bar-ns1-ca1.csr",
 };
 
 impl Strings {
     fn read(n: &str) -> Vec<u8> {
-        let dir = PathBuf::from("src/name/testdata");
+        let dir = PathBuf::from("src/identity/testdata");
         let p = dir.join(n);
         match fs::read(&p) {
             Ok(b) => b,
@@ -55,9 +57,7 @@ impl Strings {
         const HOUR: Duration = Duration::from_secs(60 * 60);
 
         let n = Name::from_sni_hostname(self.name.as_bytes()).expect("name must be valid");
-
         let der = Self::read(&self.crt);
-
         Crt::new(n, der, vec![], SystemTime::now() + HOUR)
     }
 
