@@ -11,23 +11,23 @@ pub struct Strings {
     pub trust_anchors: &'static str,
     pub crt: &'static str,
     pub key: &'static str,
-    pub csr: &'static str,
+    //pub csr: &'static str,
 }
 
 pub static FOO_NS1: Strings = Strings {
     name: "foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     trust_anchors: "ca1.pem",
-    crt: "foo-ns1-ca1.crt",
-    key: "foo-ns1-ca1.p8",
-    csr: "foo-ns1-ca1.csr",
+    crt: "foo-ns1-ca1/crt",
+    key: "foo-ns1-ca1/key.p8",
+    //csr: "foo-ns1-ca1/csr.der",
 };
 
 pub static BAR_NS1: Strings = Strings {
     name: "bar.ns1.serviceaccount.identity.linkerd.cluster.local",
     trust_anchors: "ca1.pem",
-    crt: "bar-ns1-ca1.crt",
-    key: "bar-ns1-ca1.p8",
-    csr: "bar-ns1-ca1.csr",
+    crt: "bar-ns1-ca1/crt.der",
+    key: "bar-ns1-ca1/csr.p8",
+    //csr: "bar-ns1-ca1/csr.der",
 };
 
 impl Strings {

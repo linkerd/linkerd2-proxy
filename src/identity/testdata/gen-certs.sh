@@ -29,16 +29,23 @@ ee() {
   echo '{}' \
     | cfssl gencert -ca "${ca_name}.pem" -ca-key "${ca_name}-key.pem" -hostname "${hostname}" - \
     | cfssljson -bare "${ee}"
+  mkdir -p "${ee}"
 
   openssl pkcs8 -topk8 -nocrypt -inform pem -outform der \
     -in "${ee}-key.pem" \
-    -out "${ee}.p8"
+    -out "${ee}/key.p8"
   rm "${ee}-key.pem"
 
   openssl x509 -inform pem -outform der \
     -in "${ee}.pem" \
     -out "${ee}.crt"
   rm "${ee}.pem"
+
+  ## TODO DER-encode?
+  #openssl x509 -inform pem -outform der \
+  #  -in "${ee}.csr" \
+  #  -out "${ee}/csr.der"
+  mv "${ee}.csr" "${ee}/csr.pem"
 }
 
 ca "Cluster-local CA 1" ca1
