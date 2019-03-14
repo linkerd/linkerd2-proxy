@@ -24,7 +24,6 @@ where
     S: Debug,
     C: Debug;
 
-
 // === imp TlsIo ===
 
 impl<S, C> From<TlsStream<S, C>> for TlsIo<S, C>

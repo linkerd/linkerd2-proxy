@@ -139,7 +139,10 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     let mut mock_orig_dst = DstInner::default();
 
     env.put(app::config::ENV_IDENTITY_DISABLED, "true".into());
-    env.put(app::config::ENV_DESTINATION_SVC_ADDR, format!("{}", controller.addr));
+    env.put(
+        app::config::ENV_DESTINATION_SVC_ADDR,
+        format!("{}", controller.addr),
+    );
     env.put(
         app::config::ENV_OUTBOUND_LISTEN_ADDR,
         "tcp://127.0.0.1:0".to_owned(),

@@ -295,11 +295,7 @@ where
 // ===== impl NewQuery =====
 
 impl NewQuery {
-    fn new(
-        suffixes: Vec<dns::Suffix>,
-        concurrency_limit: usize,
-        proxy_id: String,
-    ) -> Self {
+    fn new(suffixes: Vec<dns::Suffix>, concurrency_limit: usize, proxy_id: String) -> Self {
         Self {
             suffixes,
             concurrency_limit,

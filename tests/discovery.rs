@@ -822,10 +822,7 @@ mod proxy_to_proxy {
 
             let ctrl = controller::new();
             let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
-            dst.send(controller::destination_add_tls(
-                in_proxy.inbound,
-                id,
-            ));
+            dst.send(controller::destination_add_tls(in_proxy.inbound, id));
 
             let out_proxy = proxy::new()
                 .controller(ctrl.run())

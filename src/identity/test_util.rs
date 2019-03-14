@@ -1,7 +1,7 @@
 use super::*;
-use std::{io, fs};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
+use std::{fs, io};
 use Conditional;
 
 pub struct Strings {
@@ -30,9 +30,8 @@ pub static BAR_NS1: Strings = Strings {
 
 impl Strings {
     pub fn trust_anchors(&self) -> TrustAnchors {
-        let pem = fs::read(&self.trust_anchors)
-            .expect("failed to read trust anchors");
-            let pem = ::std::str::from_utf8(&pem).expect("utf-8");
+        let pem = fs::read(&self.trust_anchors).expect("failed to read trust anchors");
+        let pem = ::std::str::from_utf8(&pem).expect("utf-8");
         TrustAnchors::from_pem(pem).unwrap_or_else(|| TrustAnchors::empty())
     }
 
@@ -56,7 +55,6 @@ impl Strings {
     pub fn validate(&self) -> Result<CrtKey, InvalidCrt> {
         let k = self.key();
         let c = self.crt();
-        self.trust_anchors()
-        .certify(k, c)
+        self.trust_anchors().certify(k, c)
     }
 }
