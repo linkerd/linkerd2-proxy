@@ -291,9 +291,10 @@ where
                     .make(&id_config.svc)
                     .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e));
 
-                let daemon = identity::Daemon::new(id_config, crt_store, svc)
-                    .map_err(|_| error!("identity task failed"));
-                task::spawn(daemon);
+                task::spawn(
+                    identity::Daemon::new(id_config, crt_store, svc)
+                        .map_err(|_| error!("identity task failed")),
+                );
 
                 Conditional::Some(local_identity)
             }
