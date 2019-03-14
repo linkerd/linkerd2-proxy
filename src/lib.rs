@@ -4,7 +4,6 @@
 
 extern crate bytes;
 extern crate env_logger;
-extern crate linkerd2_fs_watch as fs_watch;
 #[macro_use]
 extern crate futures;
 extern crate futures_mpsc_lossy;

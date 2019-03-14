@@ -152,15 +152,21 @@ where
                     }
                     Inner::ShouldRefresh
                 }
-                Inner::ShouldRefresh => {
-                    let req = grpc::Request::new(api::CertifyRequest {
-                        identity: self.config.local_name.as_ref().to_owned(),
-                        token: self.config.token.load().expect("FIXME"),
-                        certificate_signing_request: self.config.csr.to_vec(),
-                    });
-                    let f = self.client.certify(req);
-                    Inner::Pending(f)
-                }
+                Inner::ShouldRefresh => match self.config.token.load() {
+                    Ok(token) => {
+                        let req = grpc::Request::new(api::CertifyRequest {
+                            token,
+                            identity: self.config.local_name.as_ref().to_owned(),
+                            certificate_signing_request: self.config.csr.to_vec(),
+                        });
+                        let f = self.client.certify(req);
+                        Inner::Pending(f)
+                    }
+                    Err(e) => {
+                        error!("Failed to read authentication token: {}", e);
+                        Inner::Waiting(self.config.refresh(self.expiry))
+                    }
+                },
                 Inner::Pending(ref mut p) => match p.poll() {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(rsp)) => {

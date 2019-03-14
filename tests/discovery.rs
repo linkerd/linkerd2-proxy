@@ -837,7 +837,7 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[ignore] // FIXMEyy}
+    #[ignore] // FIXME -- stub identity service in tests
     fn outbound_http1_l5d_server_id_l5d_client_id() {
         generate_l5d_tls_id_test! {
             server: server::http1,
@@ -846,7 +846,7 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[ignore] // FIXMEyy}
+    #[ignore] // FIXME -- stub identity service in tests
     fn outbound_http2_l5d_server_id_l5d_client_id() {
         generate_l5d_tls_id_test! {
             server: server::http2,
