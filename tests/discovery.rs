@@ -858,7 +858,7 @@ mod proxy_to_proxy {
     fn tls_env() -> app::config::TestEnv {
         use std::path::PathBuf;
 
-        let (cert, key, trust_anchors) = {
+        let (_cert, _key, _trust_anchors) = {
             let path_to_string = |path: &PathBuf| {
                 path.as_path()
                     .to_owned()
@@ -883,15 +883,17 @@ mod proxy_to_proxy {
             (cert, key, trust_anchors)
         };
 
-        let mut env = app::config::TestEnv::new();
+        let env = app::config::TestEnv::new();
 
-        env.put(app::config::ENV_TLS_CERT, cert);
-        env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
-        env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
-        env.put(
-            app::config::ENV_TLS_LOCAL_IDENTITY,
-            "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
-        );
+        // FIXME
+        //
+        // env.put(app::config::ENV_TLS_CERT, cert);
+        // env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
+        // env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
+        // env.put(
+        //     app::config::ENV_TLS_LOCAL_IDENTITY,
+        //     "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
+        // );
 
         env
     }

@@ -19,9 +19,6 @@ pub mod listen;
 
 use self::io::TlsIo;
 
-#[cfg(test)]
-mod connection_tests;
-
 pub use self::connection::Connection;
 pub use self::listen::Listen;
 pub(super) use self::rustls::Session;

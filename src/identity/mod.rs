@@ -19,6 +19,9 @@ use convert::TryFrom;
 use dns;
 use transport::tls;
 
+#[cfg(test)]
+pub mod test_util;
+
 pub use dns::InvalidName;
 
 pub trait LocalIdentity {
@@ -193,6 +196,10 @@ impl TokenSource {
 // === impl TrustAnchors ===
 
 impl TrustAnchors {
+    fn empty() -> Self {
+        TrustAnchors(Arc::new(rustls::ClientConfig::new()))
+    }
+
     pub fn from_pem(s: &str) -> Option<Self> {
         use std::io::Cursor;
 
@@ -206,7 +213,6 @@ impl TrustAnchors {
         }
 
         let mut c = rustls::ClientConfig::new();
-        c.versions = TLS_VERSIONS.to_vec();
 
         // XXX: Rustls's built-in verifiers don't let us tweak things as fully
         // as we'd like (e.g. controlling the set of trusted signature
@@ -412,5 +418,45 @@ impl Error for InvalidCrt {
 
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.0.source()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{test_util::*, Error};
+
+    #[test]
+    fn can_construct_client_and_server_config_from_valid_settings() {
+        FOO_NS1.validate().expect("foo.ns1 must be valid");
+    }
+
+    #[test]
+    fn recognize_ca_did_not_issue_cert() {
+        let s = Strings {
+            trust_anchors: "ca2.pem",
+            ..FOO_NS1
+        };
+        assert!(s.validate().is_err(), "CA should not have validated");
+    }
+
+    #[test]
+    fn recognize_cert_is_not_valid_for_identity() {
+        let s = Strings {
+            crt: BAR_NS1.crt,
+            key: BAR_NS1.key,
+            ..FOO_NS1
+        };
+        assert!(s.validate().is_err(), "identity should not be valid");
+    }
+
+    // XXX: The check that this tests hasn't been implemented yet.
+    #[test]
+    #[should_panic]
+    fn recognize_private_key_is_not_valid_for_cert() {
+        let s = Strings {
+            key: BAR_NS1.key,
+            ..FOO_NS1
+        };
+        assert!(s.validate().is_err(), "identity should not be valid");
     }
 }
