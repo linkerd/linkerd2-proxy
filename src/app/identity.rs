@@ -59,13 +59,17 @@ where
 // === impl Config ===
 
 impl Config {
+    /// Returns a future that fires when a refresh should occur.
+    ///
+    /// A refresh is scheduled at 70% of the current certificate's lifetime;
+    /// though it is never less than min_refresh or larger than max_refresh.
     fn refresh(&self, expiry: SystemTime) -> Delay {
         let now = clock::now();
 
         let refresh = match expiry
             .duration_since(SystemTime::now())
             .ok()
-            .map(|d| d * 7 / 10)
+            .map(|d| d * 7 / 10) // 70% duration
         {
             None => self.min_refresh,
             Some(lifetime) if lifetime < self.min_refresh => self.min_refresh,
