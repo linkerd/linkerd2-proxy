@@ -72,7 +72,7 @@ struct NewQuery {
     /// will go down accordingly.
     active_query_handle: Arc<()>,
     concurrency_limit: usize,
-    proxy_id: String,
+    context_token: String,
 }
 
 enum DestinationServiceQuery<T>
@@ -95,10 +95,10 @@ where
         dns_resolver: dns::Resolver,
         suffixes: Vec<dns::Suffix>,
         concurrency_limit: usize,
-        proxy_id: String,
+        context_token: String,
     ) -> Self {
         Self {
-            new_query: NewQuery::new(suffixes, concurrency_limit, proxy_id),
+            new_query: NewQuery::new(suffixes, concurrency_limit, context_token),
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -295,12 +295,12 @@ where
 // ===== impl NewQuery =====
 
 impl NewQuery {
-    fn new(suffixes: Vec<dns::Suffix>, concurrency_limit: usize, proxy_id: String) -> Self {
+    fn new(suffixes: Vec<dns::Suffix>, concurrency_limit: usize, context_token: String) -> Self {
         Self {
             suffixes,
             concurrency_limit,
             active_query_handle: Arc::new(()),
-            proxy_id,
+            context_token,
         }
     }
 
@@ -358,7 +358,7 @@ impl NewQuery {
                 let req = GetDestination {
                     scheme: "k8s".into(),
                     path: format!("{}", dst),
-                    proxy_id: self.proxy_id.clone(),
+                    context_token: self.context_token.clone(),
                 };
                 let mut svc = Destination::new(client.as_service());
                 let response = svc.get(grpc::Request::new(req));
