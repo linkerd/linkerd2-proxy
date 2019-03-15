@@ -8,7 +8,7 @@
 # runtime performance.
 
 ARG RUST_IMAGE=rust:1.32.0
-ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:git-5f48d93b
+ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:git-3140b404
 
 ## Builds the proxy as incrementally as possible.
 FROM $RUST_IMAGE as build

@@ -547,12 +547,18 @@ fn parse_duration(s: &str) -> Result<Duration, ParseError> {
 fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
     match parse_addr(s)? {
         Addr::Socket(a) => Ok(a),
-        _ => Err(ParseError::HostIsNotAnIpAddress),
+        _ => {
+            error!("Expected IP:PORT; found: {}", s);
+            Err(ParseError::HostIsNotAnIpAddress)
+        }
     }
 }
 
 fn parse_addr(s: &str) -> Result<Addr, ParseError> {
-    addr::Addr::from_str(s).map_err(ParseError::AddrError)
+    addr::Addr::from_str(s).map_err(|e| {
+        error!("Not a valid address: {}", s);
+        e
+    })
 }
 
 fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
