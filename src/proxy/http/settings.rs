@@ -89,7 +89,6 @@ pub mod router {
     use super::Settings;
     use proxy::http::client::Config;
     use svc;
-    use transport::connect;
 
     type Error = Box<dyn std::error::Error + Send + Sync>;
 

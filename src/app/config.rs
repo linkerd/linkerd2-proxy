@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
-use std::{fs, io};
+use std::{fs};
 
 use indexmap::IndexSet;
 

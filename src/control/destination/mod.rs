@@ -32,12 +32,11 @@ use tower_grpc::{generic::client::GrpcService, BoxBody};
 use dns;
 use identity;
 use proxy::resolve::{self, Resolve, Update};
-use transport::tls;
 
 pub mod background;
 
 use self::background::Background;
-use {Conditional, NameAddr};
+use {NameAddr};
 
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone)]

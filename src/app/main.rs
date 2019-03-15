@@ -304,8 +304,6 @@ where
         let dst_svc = config.destination_addr.as_ref().map(|addr| {
             use super::control;
 
-            //let tls_server_identity = config.destination_identity.clone();
-
             // If the dst_svc is on localhost, use the inbound keepalive.
             // If the dst_svc is remote, use the outbound keepalive.
             let keepalive = if addr.addr.is_loopback() {
@@ -721,8 +719,6 @@ where
                             .bg("resolver")
                             .future(resolver_bg_rx.map_err(|_| {}).flatten()),
                     );
-
-                    //rt.spawn(::logging::admin().bg("tls-config").future(tls_cfg_bg));
 
                     let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
                     rt.block_on(shutdown).expect("admin");

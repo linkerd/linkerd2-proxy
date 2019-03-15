@@ -24,8 +24,7 @@ use control::{
 };
 use dns::{self, IpAddrListFuture};
 use identity;
-use transport::tls;
-use {Conditional, NameAddr};
+use {NameAddr};
 
 use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 

@@ -14,7 +14,6 @@ use api::{http_types, pb_duration, tap as api};
 use super::match_::Match;
 use proxy::http::HasH2Reason;
 use tap::{iface, Inspect};
-use transport::tls;
 use Conditional;
 
 #[derive(Clone, Debug)]

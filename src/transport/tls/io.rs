@@ -1,21 +1,12 @@
-use bytes::{Buf, Bytes, BytesMut};
-use futures::Future;
+use bytes::{Buf};
 use std::fmt::Debug;
 use std::net::SocketAddr;
-use std::{cmp, io};
-use tokio::net::TcpStream;
+use std::{io};
 use tokio::prelude::*;
 
-use super::tokio_rustls::TlsStream;
-use dns;
-use identity;
+use super::{rustls::Session, tokio_rustls::TlsStream};
 use transport::io::internal::Io;
-use transport::prefixed::Prefixed;
-use transport::tls::{
-    self, HasPeerIdentity, PeerIdentity, ReasonForNoIdentity, ReasonForNoPeerName, Session,
-};
-use transport::{AddrInfo, BoxedIo, GetOriginalDst, Peek, SetKeepalive};
-use Conditional;
+use transport::{AddrInfo, SetKeepalive};
 
 /// Wraps a TLS stream to implement Io.
 #[derive(Debug)]

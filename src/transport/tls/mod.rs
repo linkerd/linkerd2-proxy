@@ -4,10 +4,8 @@ extern crate tokio_rustls;
 extern crate untrusted;
 extern crate webpki;
 
-use self::tokio_rustls::{Accept, Connect, TlsAcceptor as Acceptor, TlsConnector as Connector};
-use futures::Future;
-use std::sync::Arc;
-use std::{error, fmt};
+use self::tokio_rustls::{Accept, TlsAcceptor as Acceptor, TlsConnector as Connector};
+use std::{fmt};
 
 use identity;
 
@@ -21,7 +19,6 @@ use self::io::TlsIo;
 
 pub use self::connection::Connection;
 pub use self::listen::Listen;
-pub(super) use self::rustls::Session;
 pub use self::rustls::TLSError as Error;
 
 /// Describes whether or not a connection was secured with TLS and, if it was

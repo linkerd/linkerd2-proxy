@@ -1,4 +1,4 @@
-use futures::{Async, Future, Poll, Stream};
+use futures::{Async, Future, Poll};
 use futures_watch::{Store, Watch};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -8,7 +8,6 @@ use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 use api::identity as api;
 use never::Never;
 
-use identity;
 pub use identity::{Crt, CrtKey, InvalidName, Key, Name, TokenSource, TrustAnchors, CSR};
 use transport::tls;
 
@@ -97,8 +96,6 @@ impl Local {
 
 impl tls::client::HasConfig for Local {
     fn tls_client_config(&self) -> Arc<tls::client::Config> {
-        use transport::tls::client::HasConfig;
-
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.tls_client_config();
         }
@@ -113,8 +110,6 @@ impl tls::listen::HasConfig for Local {
     }
 
     fn tls_server_config(&self) -> Arc<tls::listen::Config> {
-        use transport::tls::listen::HasConfig;
-
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.tls_server_config();
         }

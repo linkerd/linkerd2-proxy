@@ -199,7 +199,6 @@ fn read_u16(input: &mut untrusted::Reader) -> Result<u16, untrusted::EndOfInput>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use transport::tls;
 
     /// From `cargo run --example tlsclient -- --http example.com`
     static VALID_EXAMPLE_COM: &[u8] = include_bytes!("testdata/example-com-client-hello.bin");

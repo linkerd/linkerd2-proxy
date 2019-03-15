@@ -1,20 +1,14 @@
-use bytes::{Buf, Bytes, BytesMut};
-use futures::Future;
-use std::fmt::Debug;
+use bytes::{Buf, BytesMut};
 use std::net::SocketAddr;
 use std::{cmp, io};
-use tokio::net::TcpStream;
 use tokio::prelude::*;
 
-use super::tokio_rustls::TlsStream;
-use dns;
 use identity;
 use transport::io::internal::Io;
-use transport::prefixed::Prefixed;
 use transport::tls::{
-    self, HasPeerIdentity, PeerIdentity, ReasonForNoIdentity, ReasonForNoPeerName, Session,
+    ReasonForNoIdentity, ReasonForNoPeerName,
 };
-use transport::{AddrInfo, BoxedIo, GetOriginalDst, Peek, SetKeepalive};
+use transport::{AddrInfo, BoxedIo, Peek, SetKeepalive};
 use Conditional;
 
 /// Abstracts a plaintext socket vs. a TLS decorated one.

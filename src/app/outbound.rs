@@ -5,8 +5,6 @@ use std::{fmt, hash};
 
 use super::identity;
 use control::destination::{Metadata, ProtocolHint};
-use proxy::http::settings;
-use svc;
 use tap;
 use transport::{connect, tls};
 use {Conditional, NameAddr};
@@ -116,7 +114,7 @@ pub mod discovery {
     use super::Endpoint;
     use control::destination::Metadata;
     use proxy::resolve;
-    use transport::{connect, tls};
+    use transport::{tls};
     use {Addr, Conditional, NameAddr};
 
     #[derive(Clone, Debug)]

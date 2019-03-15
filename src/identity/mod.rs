@@ -5,10 +5,7 @@ extern crate untrusted;
 
 use self::ring::rand;
 use self::ring::signature::EcdsaKeyPair;
-use self::rustls::RootCertStore;
-use self::tokio_rustls::{Accept, Connect, TlsAcceptor, TlsConnector};
 use std::error::Error;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::{fmt, fs, io};
@@ -196,6 +193,7 @@ impl TokenSource {
 // === impl TrustAnchors ===
 
 impl TrustAnchors {
+    #[cfg(test)]
     fn empty() -> Self {
         TrustAnchors(Arc::new(rustls::ClientConfig::new()))
     }
@@ -424,7 +422,7 @@ impl Error for InvalidCrt {
 
 #[cfg(test)]
 mod tests {
-    use super::{test_util::*, Error};
+    use super::test_util::*;
 
     #[test]
     fn can_construct_client_and_server_config_from_valid_settings() {

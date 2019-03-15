@@ -1,4 +1,4 @@
-use bytes::{Buf, BytesMut};
+use bytes::{BytesMut};
 use futures::{
     future::{self, Either},
     stream, Async, Future, IntoFuture, Poll, Stream,
@@ -6,18 +6,18 @@ use futures::{
 use indexmap::IndexSet;
 use std::net::{SocketAddr, TcpListener as StdListener};
 use std::sync::Arc;
-use std::{cmp, io, time};
+use std::{io};
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::{tcp::ConnectFuture, TcpListener, TcpStream},
+    io::AsyncRead,
+    net::{TcpListener, TcpStream},
     reactor::Handle,
 };
 
 use super::{rustls, tokio_rustls, webpki};
 use identity;
 use transport::prefixed::Prefixed;
-use transport::tls::{self, conditional_accept, Accept, Acceptor, Connection, ReasonForNoPeerName};
-use transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst, SetKeepalive};
+use transport::tls::{self, conditional_accept, Acceptor, Connection, ReasonForNoPeerName};
+use transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst};
 use Conditional;
 
 pub use super::rustls::ServerConfig as Config;

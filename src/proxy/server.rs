@@ -20,7 +20,6 @@ use transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
-use Conditional;
 
 /// A protocol-transparent Server!
 ///

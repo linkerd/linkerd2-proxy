@@ -1,9 +1,7 @@
 use std::fmt;
 
-use identity;
-use svc;
 use transport::tls;
-use {Addr, Conditional};
+use Addr;
 
 #[derive(Clone, Debug)]
 pub struct ControlAddr {
@@ -98,7 +96,6 @@ pub mod resolve {
     use super::{client, ControlAddr};
     use dns;
     use svc;
-    use transport::{connect, tls};
     use Addr;
 
     #[derive(Debug)]

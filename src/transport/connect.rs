@@ -2,13 +2,11 @@ extern crate tokio_connect;
 
 pub use self::tokio_connect::Connect;
 use futures::{Future, Poll};
-use std::{hash, io, net::SocketAddr};
+use std::{io, net::SocketAddr};
 use tokio::net::{tcp, TcpStream};
 
-use super::tls;
 use never::Never;
 use svc;
-use Conditional;
 
 pub trait HasPeerAddr {
     fn peer_addr(&self) -> SocketAddr;

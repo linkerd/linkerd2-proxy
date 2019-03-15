@@ -7,7 +7,7 @@ use std::sync::Arc;
 use super::classify;
 use super::dst::DstAddr;
 use super::identity;
-use proxy::http::{router, settings};
+use proxy::http::{router};
 use proxy::server::Source;
 use tap;
 use transport::{connect, tls};
@@ -146,7 +146,6 @@ pub mod orig_proto_downgrade {
     use proxy::http::orig_proto;
     use proxy::server::Source;
     use std::marker::PhantomData;
-    use std::net::SocketAddr;
     use svc;
 
     #[derive(Debug)]

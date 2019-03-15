@@ -3,7 +3,6 @@ use std::fmt::{self, Write};
 use metrics::FmtLabels;
 
 use identity;
-use transport::connect::HasPeerAddr;
 use transport::tls;
 use {Addr, Conditional, NameAddr};
 
