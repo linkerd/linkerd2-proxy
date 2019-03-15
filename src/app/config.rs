@@ -557,7 +557,7 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
 fn parse_addr(s: &str) -> Result<Addr, ParseError> {
     addr::Addr::from_str(s).map_err(|e| {
         error!("Not a valid address: {}", s);
-        e
+        ParseError::AddrError(e)
     })
 }
 
