@@ -60,7 +60,7 @@ impl Controller {
         let dst = pb::GetDestination {
             scheme: "k8s".into(),
             path,
-            proxy_id: String::new(),
+            ..Default::default()
         };
         self.expect_dst_calls
             .lock()
@@ -96,7 +96,7 @@ impl Controller {
         let dst = pb::GetDestination {
             scheme: "k8s".into(),
             path,
-            proxy_id: String::new(),
+            ..Default::default()
         };
         self.expect_profile_calls
             .lock()
@@ -322,10 +322,9 @@ pub fn destination_add_tls(addr: SocketAddr, local_id: &str) -> pb::Update {
                     port: u32::from(addr.port()),
                 }),
                 tls_identity: Some(pb::TlsIdentity {
-                    strategy: Some(pb::tls_identity::Strategy::K8sPodIdentity(
-                        pb::tls_identity::K8sPodIdentity {
-                            pod_identity: local_id.into(),
-                            ..Default::default()
+                    strategy: Some(pb::tls_identity::Strategy::DnsLikeIdentity(
+                        pb::tls_identity::DnsLikeIdentity {
+                            name: local_id.into(),
                         },
                     )),
                 }),
