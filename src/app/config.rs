@@ -751,12 +751,12 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
 
                 fs::read(p)
                     .map_err(|e| {
-                        error!("Failed to read CSR: {}", e);
+                        error!("Failed to read Csr: {}", e);
                         Error::InvalidEnvVar
                     })
                     .and_then(|b| {
-                        identity::CSR::from_der(b).ok_or_else(|| {
-                            error!("No CSR found");
+                        identity::Csr::from_der(b).ok_or_else(|| {
+                            error!("No Csr found");
                             Error::InvalidEnvVar
                         })
                     })

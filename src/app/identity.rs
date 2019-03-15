@@ -8,7 +8,7 @@ use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 use api::identity as api;
 use never::Never;
 
-pub use identity::{Crt, CrtKey, InvalidName, Key, Name, TokenSource, TrustAnchors, CSR};
+pub use identity::{Crt, CrtKey, InvalidName, Key, Name, TokenSource, TrustAnchors, Csr};
 use transport::tls;
 
 #[derive(Clone, Debug)]
@@ -16,7 +16,7 @@ pub struct Config {
     pub svc: super::control::ControlAddr,
     pub trust_anchors: TrustAnchors,
     pub key: Key,
-    pub csr: CSR,
+    pub csr: Csr,
     pub token: TokenSource,
     pub local_name: Name,
     pub min_refresh: Duration,
