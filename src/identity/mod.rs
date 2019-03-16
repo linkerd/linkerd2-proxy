@@ -251,7 +251,7 @@ impl TrustAnchors {
                 NO_OCSP,
             )
             .map_err(InvalidCrt)?;
-        println!("certified {}", crt.name.as_ref());
+        debug!("certified {}", crt.name.as_ref());
 
         let k = SigningKey(key.0.clone());
         let key = rustls::sign::CertifiedKey::new(crt.chain, Arc::new(Box::new(k)));
