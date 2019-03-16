@@ -11,6 +11,7 @@ use never::Never;
 pub use identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
 use transport::tls;
 
+/// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
 pub struct Config {
     pub svc: super::control::ControlAddr,
@@ -23,12 +24,22 @@ pub struct Config {
     pub max_refresh: Duration,
 }
 
+/// Holds the process's local TLS identity state.
+///
+/// Updates dynamically as certificates are provisioned from the Identity service.
 #[derive(Clone, Debug)]
 pub struct Local {
     trust_anchors: TrustAnchors,
     name: Name,
     crt_key: Watch<Option<CrtKey>>,
 }
+
+/// Produces a `Local` identity once a certificate is available.
+#[derive(Debug)]
+pub struct AwaitCrt(Option<Local>);
+
+#[derive(Copy, Clone, Debug)]
+pub struct LostDaemon;
 
 pub type CrtKeyStore = Store<Option<CrtKey>>;
 
@@ -91,6 +102,10 @@ impl Local {
             crt_key: w,
         };
         (l, s)
+    }
+
+    pub fn await_crt(self) -> AwaitCrt {
+        AwaitCrt(Some(self))
     }
 }
 
@@ -221,6 +236,33 @@ where
                     }
                 },
             };
+        }
+    }
+}
+
+// === impl AwaitCrt ===
+
+impl Future for AwaitCrt {
+    type Item = Local;
+    type Error = LostDaemon;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        use futures::Stream;
+
+        let mut local = self.0.take().expect("polled after ready");
+        loop {
+            if (*local.crt_key.borrow()).is_some() {
+                return Ok(Async::Ready(local));
+            }
+
+            match local.crt_key.poll() {
+                Ok(Async::NotReady) => {
+                    self.0 = Some(local);
+                    return Ok(Async::NotReady);
+                }
+                Ok(Async::Ready(Some(()))) => {} // continue
+                Err(_) | Ok(Async::Ready(None)) => return Err(LostDaemon),
+            }
         }
     }
 }
