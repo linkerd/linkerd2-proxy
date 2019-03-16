@@ -165,12 +165,14 @@ where
         loop {
             self.inner = match self.inner {
                 Inner::Waiting(ref mut d) => {
+                    trace!("daemon waiting");
                     if let Ok(Async::NotReady) = d.poll() {
                         return Ok(Async::NotReady);
                     }
                     Inner::ShouldRefresh
                 }
                 Inner::ShouldRefresh => {
+                    trace!("daemon refreshing");
                     try_ready!(self
                         .client
                         .poll_ready()
@@ -183,8 +185,8 @@ where
                                 identity: self.config.local_name.as_ref().to_owned(),
                                 certificate_signing_request: self.config.csr.to_vec(),
                             });
-                            let f = self.client.certify(req);
-                            Inner::Pending(f)
+                            trace!("daemon certifying");
+                            Inner::Pending(self.client.certify(req))
                         }
                         Err(e) => {
                             error!("Failed to read authentication token: {}", e);
@@ -192,53 +194,58 @@ where
                         }
                     }
                 }
-                Inner::Pending(ref mut p) => match p.poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Ok(Async::Ready(rsp)) => {
-                        let api::CertifyResponse {
-                            leaf_certificate,
-                            intermediate_certificates,
-                            valid_until,
-                        } = rsp.into_inner();
+                Inner::Pending(ref mut p) => {
+                    trace!("daemon pending certification");
+                    match p.poll() {
+                        Ok(Async::NotReady) => return Ok(Async::NotReady),
+                        Ok(Async::Ready(rsp)) => {
+                            let api::CertifyResponse {
+                                leaf_certificate,
+                                intermediate_certificates,
+                                valid_until,
+                            } = rsp.into_inner();
 
-                        match valid_until.and_then(|d| Result::<SystemTime, Duration>::from(d).ok())
-                        {
-                            None => error!(
-                                "Identity service did not specify a ceritificate expiration."
-                            ),
-                            Some(expiry) => {
-                                let key = self.config.key.clone();
-                                let crt = Crt::new(
-                                    self.config.local_name.clone(),
-                                    leaf_certificate,
-                                    intermediate_certificates,
-                                    expiry,
-                                );
+                            match valid_until
+                                .and_then(|d| Result::<SystemTime, Duration>::from(d).ok())
+                            {
+                                None => error!(
+                                    "Identity service did not specify a ceritificate expiration."
+                                ),
+                                Some(expiry) => {
+                                    let key = self.config.key.clone();
+                                    let crt = Crt::new(
+                                        self.config.local_name.clone(),
+                                        leaf_certificate,
+                                        intermediate_certificates,
+                                        expiry,
+                                    );
 
-                                match self.config.trust_anchors.certify(key, crt) {
-                                    Err(e) => {
-                                        error!("Received invalid ceritficate: {}", e);
-                                    }
-                                    Ok(crt_key) => {
-                                        if self.crt_key.store(Some(crt_key)).is_err() {
-                                            // If we can't store a value, than all observations
-                                            // have been dropped and we can stop refreshing.
-                                            return Ok(Async::Ready(()));
+                                    match self.config.trust_anchors.certify(key, crt) {
+                                        Err(e) => {
+                                            error!("Received invalid ceritficate: {}", e);
                                         }
+                                        Ok(crt_key) => {
+                                            debug!("daemon certified until {:?}", expiry);
+                                            if self.crt_key.store(Some(crt_key)).is_err() {
+                                                // If we can't store a value, than all observations
+                                                // have been dropped and we can stop refreshing.
+                                                return Ok(Async::Ready(()));
+                                            }
 
-                                        self.expiry = expiry;
+                                            self.expiry = expiry;
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        Inner::Waiting(self.config.refresh(self.expiry))
+                            Inner::Waiting(self.config.refresh(self.expiry))
+                        }
+                        Err(e) => {
+                            error!("Failed to certify identity: {}", e);
+                            Inner::Waiting(self.config.refresh(self.expiry))
+                        }
                     }
-                    Err(e) => {
-                        error!("Failed to certify identity: {}", e);
-                        Inner::Waiting(self.config.refresh(self.expiry))
-                    }
-                },
+                }
             };
         }
     }

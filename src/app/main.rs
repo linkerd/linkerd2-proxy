@@ -3,7 +3,7 @@ use http;
 use hyper;
 use std::net::SocketAddr;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 use std::{error, fmt, io};
 use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::runtime::current_thread;
@@ -297,15 +297,13 @@ where
                         .map_err(|_| error!("identity task failed")),
                 );
 
-                let t0 = Instant::now();
                 task::spawn(
                     local_identity
                         .clone()
                         .await_crt()
                         .map(move |id| {
                             info!(
-                                "Certified identity in {}s: {}",
-                                t0.elapsed().as_secs(),
+                                "Certified identity: {}",
                                 id.name().as_ref()
                             );
                         })
