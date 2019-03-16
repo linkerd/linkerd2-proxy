@@ -1,5 +1,3 @@
-#![cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
-
 use support::bytes::IntoBuf;
 use support::hyper::body::Payload;
 use support::*;
@@ -62,7 +60,7 @@ impl Controller {
         let dst = pb::GetDestination {
             scheme: "k8s".into(),
             path,
-            proxy_id: String::new(),
+            ..Default::default()
         };
         self.expect_dst_calls
             .lock()
@@ -98,7 +96,7 @@ impl Controller {
         let dst = pb::GetDestination {
             scheme: "k8s".into(),
             path,
-            proxy_id: String::new(),
+            ..Default::default()
         };
         self.expect_profile_calls
             .lock()
@@ -315,7 +313,7 @@ pub fn destination_add_labeled(
     }
 }
 
-pub fn destination_add_tls(addr: SocketAddr, pod: &str, controller_ns: &str) -> pb::Update {
+pub fn destination_add_tls(addr: SocketAddr, local_id: &str) -> pb::Update {
     pb::Update {
         update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
             addrs: vec![pb::WeightedAddr {
@@ -324,10 +322,9 @@ pub fn destination_add_tls(addr: SocketAddr, pod: &str, controller_ns: &str) -> 
                     port: u32::from(addr.port()),
                 }),
                 tls_identity: Some(pb::TlsIdentity {
-                    strategy: Some(pb::tls_identity::Strategy::K8sPodIdentity(
-                        pb::tls_identity::K8sPodIdentity {
-                            pod_identity: pod.into(),
-                            controller_ns: controller_ns.into(),
+                    strategy: Some(pb::tls_identity::Strategy::DnsLikeIdentity(
+                        pb::tls_identity::DnsLikeIdentity {
+                            name: local_id.into(),
                         },
                     )),
                 }),

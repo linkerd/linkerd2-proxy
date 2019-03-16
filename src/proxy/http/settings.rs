@@ -82,86 +82,91 @@ pub mod router {
 
     use futures::Poll;
     use http;
+    use std::fmt;
+    use std::hash::Hash;
     use std::marker::PhantomData;
 
     use super::Settings;
     use proxy::http::client::Config;
     use svc;
-    use transport::connect;
 
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
-    pub trait HasConnect {
-        fn connect(&self) -> connect::Target;
-    }
+    #[derive(Debug)]
+    pub struct Layer<B, T>(PhantomData<(T, fn(B))>);
 
     #[derive(Debug)]
-    pub struct Layer<T, B>(PhantomData<(T, fn(B))>);
+    pub struct Stack<B, T, M>(M, PhantomData<fn(B, T)>);
 
-    #[derive(Debug)]
-    pub struct Stack<B, M>(M, PhantomData<fn(B)>);
-
-    pub struct Service<B, M>
+    pub struct Service<B, T, M>
     where
-        M: svc::Stack<Config>,
+        T: fmt::Debug + Clone + Hash + Eq,
+        M: svc::Stack<Config<T>>,
         M::Value: svc::Service<http::Request<B>>,
     {
-        router: Router<B, M>,
+        router: Router<B, T, M>,
     }
 
-    pub struct Recognize(connect::Target);
+    pub struct Recognize<T>(T);
 
-    type Router<B, M> = rt::Router<http::Request<B>, Recognize, M>;
+    type Router<B, T, M> = rt::Router<http::Request<B>, Recognize<T>, M>;
 
-    pub fn layer<T: HasConnect, B>() -> Layer<T, B> {
+    pub fn layer<B, T>() -> Layer<B, T>
+    where
+        T: fmt::Debug + Clone + Hash + Eq,
+    {
         Layer(PhantomData)
     }
 
-    impl<T, B> Clone for Layer<T, B> {
+    impl<B, T> Clone for Layer<B, T> {
         fn clone(&self) -> Self {
             Layer(PhantomData)
         }
     }
 
-    impl<B, T, M, Svc> svc::Layer<T, Config, M> for Layer<T, B>
+    impl<B, T, M, Svc> svc::Layer<T, Config<T>, M> for Layer<B, T>
     where
-        T: HasConnect,
-        M: svc::Stack<Config, Value = Svc> + Clone,
+        Stack<B, T, M>: svc::Stack<T>,
+        T: fmt::Debug + Clone + Hash + Eq,
+        M: svc::Stack<Config<T>, Value = Svc> + Clone,
         M::Error: Into<Error>,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {
-        type Value = <Stack<B, M> as svc::Stack<T>>::Value;
-        type Error = <Stack<B, M> as svc::Stack<T>>::Error;
-        type Stack = Stack<B, M>;
+        type Value = <Stack<B, T, M> as svc::Stack<T>>::Value;
+        type Error = <Stack<B, T, M> as svc::Stack<T>>::Error;
+        type Stack = Stack<B, T, M>;
 
         fn bind(&self, inner: M) -> Self::Stack {
             Stack(inner, PhantomData)
         }
     }
 
-    impl<B, M: Clone> Clone for Stack<B, M> {
+    impl<B, T, M: Clone> Clone for Stack<B, T, M>
+    where
+        T: fmt::Debug + Clone + Hash + Eq,
+    {
         fn clone(&self) -> Self {
             Stack(self.0.clone(), PhantomData)
         }
     }
 
-    impl<B, T, M, Svc> svc::Stack<T> for Stack<B, M>
+    impl<B, T, M, Svc> svc::Stack<T> for Stack<B, T, M>
     where
-        T: HasConnect,
-        M: svc::Stack<Config, Value = Svc> + Clone,
+        T: fmt::Debug + Clone + Hash + Eq,
+        M: svc::Stack<Config<T>, Value = Svc> + Clone,
         M::Error: Into<Error>,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {
-        type Value = Service<B, M>;
+        type Value = Service<B, T, M>;
         type Error = M::Error;
 
         fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
             use std::time::Duration;
 
             let router = Router::new(
-                Recognize(target.connect()),
+                Recognize(target.clone()),
                 self.0.clone(),
                 Settings::ROUTER_CAPACITY,
                 // Doesn't matter, since we are guaranteed to have enough capacity.
@@ -172,8 +177,11 @@ pub mod router {
         }
     }
 
-    impl<B> rt::Recognize<http::Request<B>> for Recognize {
-        type Target = Config;
+    impl<B, T> rt::Recognize<http::Request<B>> for Recognize<T>
+    where
+        T: fmt::Debug + Clone + Hash + Eq,
+    {
+        type Target = Config<T>;
 
         fn recognize(&self, req: &http::Request<B>) -> Option<Self::Target> {
             let settings = Settings::from_request(req);
@@ -181,9 +189,10 @@ pub mod router {
         }
     }
 
-    impl<B, M> Clone for Service<B, M>
+    impl<B, T, M> Clone for Service<B, T, M>
     where
-        M: svc::Stack<Config>,
+        T: fmt::Debug + Clone + Hash + Eq,
+        M: svc::Stack<Config<T>>,
         M::Value: svc::Service<http::Request<B>>,
     {
         fn clone(&self) -> Self {
@@ -193,14 +202,15 @@ pub mod router {
         }
     }
 
-    impl<B, M, Svc> svc::Service<http::Request<B>> for Service<B, M>
+    impl<B, T, M, Svc> svc::Service<http::Request<B>> for Service<B, T, M>
     where
-        M: svc::Stack<Config, Value = Svc>,
+        T: fmt::Debug + Clone + Hash + Eq,
+        M: svc::Stack<Config<T>, Value = Svc>,
         M::Error: Into<Error>,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {
-        type Response = <Router<B, M> as svc::Service<http::Request<B>>>::Response;
+        type Response = <Router<B, T, M> as svc::Service<http::Request<B>>>::Response;
         type Error = Error;
         type Future = rt::ResponseFuture<http::Request<B>, Svc>;
 

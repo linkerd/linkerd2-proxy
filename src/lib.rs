@@ -1,11 +1,8 @@
-#![cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
-#![cfg_attr(feature = "cargo-clippy", allow(new_without_default_derive))]
 #![deny(warnings)]
 #![recursion_limit = "128"]
 
 extern crate bytes;
 extern crate env_logger;
-extern crate linkerd2_fs_watch as fs_watch;
 #[macro_use]
 extern crate futures;
 extern crate futures_mpsc_lossy;
@@ -30,14 +27,12 @@ extern crate prost_types;
 extern crate quickcheck;
 extern crate rand;
 extern crate regex;
-extern crate ring;
 extern crate tokio;
 extern crate tokio_timer;
 extern crate tower_grpc;
 extern crate tower_http_service;
 extern crate tower_retry;
 extern crate tower_util;
-extern crate trust_dns_resolver;
 extern crate try_lock;
 
 #[macro_use]
@@ -57,6 +52,7 @@ pub mod control;
 pub mod convert;
 mod dns;
 mod drain;
+mod identity;
 mod logging;
 mod proxy;
 mod svc;

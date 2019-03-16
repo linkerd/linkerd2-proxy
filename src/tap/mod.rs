@@ -3,7 +3,8 @@ use indexmap::IndexMap;
 use std::net;
 use std::sync::Arc;
 
-use transport::tls;
+use identity;
+use transport::tls::ReasonForNoIdentity;
 use Conditional;
 
 mod daemon;
@@ -46,14 +47,14 @@ pub trait Inspect {
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
-    ) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls>;
+    ) -> Conditional<&'a identity::Name, ReasonForNoIdentity>;
 
     fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
     fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<&IndexMap<String, String>>;
     fn dst_tls<B>(
         &self,
         req: &http::Request<B>,
-    ) -> Conditional<&tls::Identity, tls::ReasonForNoTls>;
+    ) -> Conditional<&identity::Name, ReasonForNoIdentity>;
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>>;
 

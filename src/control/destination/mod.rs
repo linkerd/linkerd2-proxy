@@ -30,14 +30,13 @@ use std::sync::{Arc, Weak};
 use tower_grpc::{generic::client::GrpcService, BoxBody};
 
 use dns;
+use identity;
 use proxy::resolve::{self, Resolve, Update};
-use transport::tls;
 
 pub mod background;
 
 use self::background::Background;
-use app::config::Namespaces;
-use {Conditional, NameAddr};
+use NameAddr;
 
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone)]
@@ -85,7 +84,7 @@ pub struct Metadata {
     protocol_hint: ProtocolHint,
 
     /// How to verify TLS for the endpoint.
-    tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
+    identity: Option<identity::Name>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -105,7 +104,6 @@ pub enum ProtocolHint {
 pub fn new<T>(
     mut client: Option<T>,
     dns_resolver: dns::Resolver,
-    namespaces: Namespaces,
     suffixes: Vec<dns::Suffix>,
     concurrency_limit: usize,
     proxy_id: String,
@@ -115,14 +113,7 @@ where
 {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
-    let mut bg = Background::new(
-        rx,
-        dns_resolver,
-        namespaces,
-        suffixes,
-        concurrency_limit,
-        proxy_id,
-    );
+    let mut bg = Background::new(rx, dns_resolver, suffixes, concurrency_limit, proxy_id);
     let task = future::poll_fn(move || bg.poll_rpc(&mut client));
     (disco, task)
 }
@@ -180,23 +171,23 @@ impl Responder {
 // ===== impl Metadata =====
 
 impl Metadata {
-    pub fn none(tls: tls::ReasonForNoIdentity) -> Self {
+    pub fn empty() -> Self {
         Self {
             labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
-            tls_identity: Conditional::None(tls),
+            identity: None,
         }
     }
 
     pub fn new(
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
-        tls_identity: Conditional<tls::Identity, tls::ReasonForNoIdentity>,
+        identity: Option<identity::Name>,
     ) -> Self {
         Self {
             labels,
             protocol_hint,
-            tls_identity,
+            identity,
         }
     }
 
@@ -209,11 +200,7 @@ impl Metadata {
         self.protocol_hint
     }
 
-    pub fn tls_identity(&self) -> Conditional<&tls::Identity, tls::ReasonForNoIdentity> {
-        self.tls_identity.as_ref()
-    }
-
-    pub fn tls_status(&self) -> tls::Status {
-        self.tls_identity().map(|_| ())
+    pub fn identity(&self) -> Option<&identity::Name> {
+        self.identity.as_ref()
     }
 }

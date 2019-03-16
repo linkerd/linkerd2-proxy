@@ -1,22 +1,29 @@
+extern crate trust_dns_resolver;
+extern crate untrusted;
+extern crate webpki;
+
+use self::trust_dns_resolver::{
+    config::ResolverConfig, lookup_ip::LookupIp, system_conf, AsyncResolver, BackgroundLookupIp,
+};
 use convert::TryFrom;
 use futures::prelude::*;
 use std::time::Instant;
 use std::{fmt, net};
 use tokio::timer::Delay;
-use trust_dns_resolver::{
-    config::{ResolverConfig, ResolverOpts},
-    lookup_ip::LookupIp,
-    system_conf, AsyncResolver, BackgroundLookupIp,
-};
 
-pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
+mod name;
 
-use app::config::Config;
-use transport::tls;
+pub use self::name::{InvalidName, Name};
+pub use self::trust_dns_resolver::config::ResolverOpts;
+pub use self::trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 
 #[derive(Clone)]
 pub struct Resolver {
     resolver: AsyncResolver,
+}
+
+pub trait ConfigureResolver {
+    fn configure_resolver(&self, &mut ResolverOpts);
 }
 
 #[derive(Debug)]
@@ -35,13 +42,6 @@ pub struct IpAddrFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 pub struct RefineFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 
 pub type IpAddrListFuture = Box<Future<Item = Response, Error = ResolveError> + Send>;
-
-/// A valid DNS name.
-///
-/// This is an alias of the strictly-validated `tls::DnsName` based on the
-/// premise that we only need to support DNS names for which one could get a
-/// valid certificate.
-pub type Name = tls::DnsName;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Suffix {
@@ -120,11 +120,11 @@ impl Resolver {
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_and_env(
-        env_config: &Config,
+    pub fn from_system_config_with<C: ConfigureResolver>(
+        c: &C,
     ) -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError> {
-        let (config, opts) = system_conf::read_system_conf()?;
-        let opts = env_config.configure_resolver_opts(opts);
+        let (config, mut opts) = system_conf::read_system_conf()?;
+        c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
         Ok(Self::new(config, opts))

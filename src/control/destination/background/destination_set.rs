@@ -11,7 +11,9 @@ use futures::{Async, Future, Stream};
 use tower_grpc::{generic::client::GrpcService, BoxBody};
 
 use api::{
-    destination::{protocol_hint::Protocol, update::Update as PbUpdate2, WeightedAddr},
+    destination::{
+        protocol_hint::Protocol, update::Update as PbUpdate2, TlsIdentity, WeightedAddr,
+    },
     net::TcpAddress,
 };
 
@@ -21,8 +23,8 @@ use control::{
     remote_stream::Remote,
 };
 use dns::{self, IpAddrListFuture};
-use transport::tls;
-use {Conditional, NameAddr};
+use identity;
+use NameAddr;
 
 use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
@@ -66,7 +68,6 @@ where
         &mut self,
         auth: &NameAddr,
         mut rx: UpdateRx<T>,
-        tls_controller_namespace: Option<&str>,
     ) -> (ActiveQuery<T>, Exists<()>) {
         let mut exists = Exists::Unknown;
 
@@ -75,9 +76,10 @@ where
                 Ok(Async::Ready(Some(update))) => match update.update {
                     Some(PbUpdate2::Add(a_set)) => {
                         let set_labels = a_set.metric_labels;
-                        let addrs = a_set.addrs.into_iter().filter_map(|pb| {
-                            pb_to_addr_meta(pb, &set_labels, tls_controller_namespace)
-                        });
+                        let addrs = a_set
+                            .addrs
+                            .into_iter()
+                            .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
                         self.add(auth, addrs)
                     }
                     Some(PbUpdate2::Remove(r_set)) => {
@@ -141,12 +143,7 @@ where
                     self.add(
                         authority,
                         ips.iter().map(|ip| {
-                            (
-                                SocketAddr::from((ip, authority.port())),
-                                Metadata::none(
-                                    tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery,
-                                ),
-                            )
+                            (SocketAddr::from((ip, authority.port())), Metadata::empty())
                         }),
                     );
 
@@ -276,7 +273,6 @@ where
 fn pb_to_addr_meta(
     pb: WeightedAddr,
     set_labels: &HashMap<String, String>,
-    tls_controller_namespace: Option<&str>,
 ) -> Option<(SocketAddr, Metadata)> {
     let addr = pb.addr.and_then(pb_to_sock_addr)?;
 
@@ -295,25 +291,7 @@ fn pb_to_addr_meta(
         m
     };
 
-    let mut tls_identity =
-        Conditional::None(tls::ReasonForNoIdentity::NotProvidedByServiceDiscovery);
-    if let Some(pb) = pb.tls_identity {
-        match tls::Identity::maybe_from_protobuf(tls_controller_namespace, pb) {
-            Ok(Some(identity)) => {
-                tls_identity = Conditional::Some(identity);
-            }
-            Ok(None) => (),
-            Err(e) => {
-                error!("Failed to parse TLS identity: {:?}", e);
-                // XXX: Wallpaper over the error and keep going without TLS.
-                // TODO: Hard fail here once the TLS infrastructure has been
-                // validated.
-            }
-        }
-    };
-
     let mut proto_hint = ProtocolHint::Unknown;
-
     if let Some(hint) = pb.protocol_hint {
         if let Some(proto) = hint.protocol {
             match proto {
@@ -324,8 +302,22 @@ fn pb_to_addr_meta(
         }
     }
 
-    let meta = Metadata::new(meta, proto_hint, tls_identity);
+    let tls_id = pb.tls_identity.and_then(pb_to_id);
+    let meta = Metadata::new(meta, proto_hint, tls_id);
     Some((addr, meta))
+}
+
+fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
+    use api::destination::tls_identity::Strategy;
+
+    let Strategy::DnsLikeIdentity(i) = pb.strategy?;
+    match identity::Name::from_hostname(i.name.as_bytes()) {
+        Ok(i) => Some(i),
+        Err(_) => {
+            warn!("Ignoring invalid identity: {}", i.name);
+            None
+        }
+    }
 }
 
 fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {

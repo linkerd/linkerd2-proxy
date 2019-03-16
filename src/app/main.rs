@@ -33,11 +33,12 @@ use svc::{
 use tap;
 use task;
 use telemetry;
-use transport::{self, connect, keepalive, tls, BoundPort, Connection, GetOriginalDst};
+use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
 use {Addr, Conditional};
 
 use super::config::Config;
 use super::dst::DstAddr;
+use super::identity;
 use super::profiles::Client as ProfilesClient;
 
 /// Runs a sidecar proxy.
@@ -59,15 +60,15 @@ pub struct Main<G> {
 
 struct ProxyParts<G> {
     config: Config,
-    tls_config_watch: tls::ConfigWatch,
+    identity: tls::Conditional<(identity::Local, identity::CrtKeyStore)>,
 
     start_time: SystemTime,
 
-    inbound_listener: BoundPort<G>,
-    outbound_listener: BoundPort<G>,
+    metrics_listener: Listen<identity::Local, ()>,
+    control_listener: Listen<identity::Local, ()>,
 
-    control_listener: BoundPort<()>,
-    metrics_listener: BoundPort<()>,
+    inbound_listener: Listen<identity::Local, G>,
+    outbound_listener: Listen<identity::Local, G>,
 }
 
 impl<G> Main<G>
@@ -80,61 +81,41 @@ where
     {
         let start_time = SystemTime::now();
 
-        let tls_config_watch = tls::ConfigWatch::new(config.tls_settings.clone());
+        let identity = config.identity_config.as_ref().map(identity::Local::new);
+        let local_identity = identity.as_ref().map(|(l, _)| l.clone());
 
-        let inbound_listener = {
-            let tls = config.tls_settings.as_ref().and_then(|settings| {
-                tls_config_watch
-                    .server
-                    .as_ref()
-                    .map(|tls_server_config| tls::ConnectionConfig {
-                        server_identity: settings.pod_identity.clone(),
-                        config: tls_server_config.clone(),
-                    })
-            });
-            BoundPort::new(config.inbound_listener.addr, tls)
-                .expect("inbound listener bind")
-                .without_protocol_detection_for(
-                    config.inbound_ports_disable_protocol_detection.clone(),
-                )
-                .with_original_dst(get_original_dst.clone())
-        };
+        let control_listener = Listen::bind(config.control_listener.addr, local_identity.clone())
+            .expect("dst_svc listener bind");
 
-        let outbound_listener = {
-            BoundPort::new(
-                config.outbound_listener.addr,
-                Conditional::None(tls::ReasonForNoTls::InternalTraffic),
-            )
-            .expect("outbound listener bind")
+        let metrics_listener = Listen::bind(config.metrics_listener.addr, local_identity.clone())
+            .expect("metrics listener bind");
+
+        let outbound_listener = Listen::bind(
+            config.outbound_listener.addr,
+            Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
+        )
+        .expect("outbound listener bind")
+        .with_original_dst(get_original_dst.clone())
+        .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection.clone());
+
+        let inbound_listener = Listen::bind(config.inbound_listener.addr, local_identity)
+            .expect("inbound listener bind")
+            .with_original_dst(get_original_dst.clone())
             .without_protocol_detection_for(
-                config.outbound_ports_disable_protocol_detection.clone(),
-            )
-            .with_original_dst(get_original_dst)
-        };
+                config.inbound_ports_disable_protocol_detection.clone(),
+            );
 
-        // TODO: Serve over TLS.
-        let control_listener = BoundPort::new(
-            config.control_listener.addr,
-            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForTap.into()),
-        )
-        .expect("controller listener bind");
-
-        // TODO: Serve over TLS.
-        let metrics_listener = BoundPort::new(
-            config.metrics_listener.addr,
-            Conditional::None(tls::ReasonForNoIdentity::NotImplementedForMetrics.into()),
-        )
-        .expect("metrics listener bind");
+        let runtime = runtime.into();
 
         let runtime = runtime.into();
 
         let proxy_parts = ProxyParts {
             config,
+            identity,
             start_time,
-            tls_config_watch,
-            control_listener,
             inbound_listener,
             outbound_listener,
+            control_listener,
             metrics_listener,
         };
 
@@ -197,8 +178,8 @@ where
     fn build_proxy_task(self, drain_rx: drain::Watch) {
         let ProxyParts {
             config,
+            identity,
             start_time,
-            tls_config_watch,
             control_listener,
             inbound_listener,
             outbound_listener,
@@ -210,9 +191,11 @@ where
         const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
         const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-        let control_host_and_port = config.control_host_and_port.clone();
-
-        info!("using controller at {:?}", control_host_and_port);
+        info!("using destination service at {:?}", config.destination_addr);
+        match config.identity_config.as_ref() {
+            Conditional::Some(config) => info!("using identity service at {:?}", config.svc.addr),
+            Conditional::None(reason) => info!("identity is DISABLED: {}", reason),
+        }
         info!("routing on {:?}", outbound_listener.local_addr());
         info!(
             "proxying on {:?} to {:?}",
@@ -232,7 +215,7 @@ where
             config.outbound_ports_disable_protocol_detection,
         );
 
-        let (dns_resolver, dns_bg) = dns::Resolver::from_system_config_and_env(&config)
+        let (dns_resolver, dns_bg) = dns::Resolver::from_system_config_with(&config)
             .unwrap_or_else(|e| {
                 // FIXME: DNS configuration should be infallible.
                 panic!("invalid DNS configuration: {:?}", e);
@@ -260,38 +243,78 @@ where
 
         let (transport_metrics, transport_report) = transport::metrics::new();
 
-        let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
+        //let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
 
         let report = endpoint_http_report
             .and_then(route_http_report)
             .and_then(retry_http_report)
             .and_then(transport_report)
-            .and_then(tls_config_report)
+            //.and_then(tls_config_report)
             .and_then(ctl_http_report)
             .and_then(telemetry::process::Report::new(start_time));
 
-        let tls_client_config = tls_config_watch.client.clone();
-        let tls_cfg_bg = tls_config_watch.start(tls_config_sensor);
+        let local_identity = match identity {
+            Conditional::None(r) => Conditional::None(r),
+            Conditional::Some((local_identity, crt_store)) => {
+                use super::control;
 
-        let controller = {
-            use super::control;
+                let id_config = match config.identity_config.as_ref() {
+                    Conditional::Some(c) => c.clone(),
+                    Conditional::None(_) => unreachable!(),
+                };
 
-            let tls_server_identity = config
-                .tls_settings
-                .as_ref()
-                .and_then(|s| s.controller_identity.clone().map(|id| id));
-
-            // If the controller is on localhost, use the inbound keepalive.
-            // If the controller is remote, use the outbound keepalive.
-            let keepalive = control_host_and_port.as_ref().and_then(|a| {
-                if a.is_loopback() {
+                // If the service is on localhost, use the inbound keepalive.
+                // If the service. is remote, use the outbound keepalive.
+                let keepalive = if id_config.svc.addr.is_loopback() {
                     config.inbound_connect_keepalive
                 } else {
                     config.outbound_connect_keepalive
-                }
-            });
+                };
 
-            let stack = connect::Stack::new()
+                let svc = connect::Stack::new()
+                    .push(phantom_data::layer())
+                    .push(tls::client::layer(Conditional::Some(
+                        id_config.trust_anchors.clone(),
+                    )))
+                    .push(keepalive::connect::layer(keepalive))
+                    .push(control::client::layer())
+                    .push(control::resolve::layer(dns_resolver.clone()))
+                    .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
+                    .push(svc::timeout::layer(config.control_connect_timeout))
+                    .push(http_metrics::layer::<_, classify::Response>(
+                        ctl_http_metrics.clone(),
+                    ))
+                    .push(proxy::grpc::req_body_as_payload::layer())
+                    .push(phantom_data::layer())
+                    .push(control::add_origin::layer())
+                    .push(buffer::layer(config.destination_concurrency_limit))
+                    .push(limit::layer(config.destination_concurrency_limit))
+                    .make(&id_config.svc)
+                    .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e));
+
+                task::spawn(
+                    identity::Daemon::new(id_config, crt_store, svc)
+                        .map_err(|_| error!("identity task failed")),
+                );
+
+                Conditional::Some(local_identity)
+            }
+        };
+
+        let dst_svc = config.destination_addr.as_ref().map(|addr| {
+            use super::control;
+
+            // If the dst_svc is on localhost, use the inbound keepalive.
+            // If the dst_svc is remote, use the outbound keepalive.
+            let keepalive = if addr.addr.is_loopback() {
+                config.inbound_connect_keepalive
+            } else {
+                config.outbound_connect_keepalive
+            };
+
+            connect::Stack::new()
+                .push(phantom_data::layer())
+                .push(tls::client::layer(local_identity.clone()))
                 .push(keepalive::connect::layer(keepalive))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
@@ -301,35 +324,26 @@ where
                     ctl_http_metrics,
                 ))
                 .push(proxy::grpc::req_body_as_payload::layer())
-                .push(svc::watch::layer(tls_client_config.clone()))
                 .push(phantom_data::layer())
                 .push(control::add_origin::layer())
                 .push(buffer::layer(config.destination_concurrency_limit))
-                .push(limit::layer(config.destination_concurrency_limit));
-
-            match control_host_and_port {
-                None => None,
-                Some(addr) => Some(
-                    stack
-                        .make(&control::Config::new(addr, tls_server_identity))
-                        .unwrap_or_else(|e| panic!("failed to build controller: {}", e)),
-                ),
-            }
-        };
+                .push(limit::layer(config.destination_concurrency_limit))
+                .make(&addr)
+                .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e))
+        });
 
         // The resolver is created in the proxy core but runs on the admin core.
         // This channel is used to move the task.
         let (resolver_bg_tx, resolver_bg_rx) = futures::sync::oneshot::channel();
 
-        // Build the outbound and inbound proxies using the controller client.
+        // Build the outbound and inbound proxies using the dst_svc client.
 
         let (resolver, resolver_bg) = control::destination::new(
-            controller.clone(),
+            dst_svc.clone(),
             dns_resolver.clone(),
-            config.namespaces.clone(),
             config.destination_get_suffixes,
             config.destination_concurrency_limit,
-            config.proxy_id.clone(),
+            config.destination_context.clone(),
         );
         resolver_bg_tx
             .send(resolver_bg)
@@ -337,7 +351,7 @@ where
             .expect("admin thread must receive resolver task");
 
         let profiles_client =
-            ProfilesClient::new(controller, Duration::from_secs(3), config.proxy_id);
+            ProfilesClient::new(dst_svc, Duration::from_secs(3), config.destination_context);
 
         let outbound = {
             use super::outbound::{
@@ -361,6 +375,8 @@ where
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
             let connect = connect::Stack::new()
+                .push(phantom_data::layer())
+                .push(tls::client::layer(local_identity.clone()))
                 .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                 .push(svc::timeout::layer(config.outbound_connect_timeout))
                 .push(transport_metrics.connect("outbound"));
@@ -389,15 +405,14 @@ where
                 .push(buffer::layer(MAX_IN_FLIGHT))
                 .push(strip_header::response::layer(super::L5D_SERVER_ID))
                 .push(strip_header::response::layer(super::L5D_REMOTE_IP))
-                .push(settings::router::layer::<Endpoint, _>())
+                .push(settings::router::layer::<_, Endpoint>())
                 .push(add_server_id_on_rsp::layer())
                 .push(add_remote_ip_on_rsp::layer())
                 .push(orig_proto_upgrade::layer())
                 .push(tap_layer.clone())
                 .push(metrics::layer::<_, classify::Response>(
                     endpoint_http_metrics,
-                ))
-                .push(svc::watch::layer(tls_client_config));
+                ));
 
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
@@ -542,6 +557,8 @@ where
             // Establishes connections to the local application (for both
             // TCP forwarding and HTTP proxying).
             let connect = connect::Stack::new()
+                .push(phantom_data::layer())
+                .push(tls::client::layer(local_identity))
                 .push(keepalive::connect::layer(config.inbound_connect_keepalive))
                 .push(svc::timeout::layer(config.inbound_connect_timeout))
                 .push(transport_metrics.connect("inbound"))
@@ -562,7 +579,7 @@ where
             // `default_fwd_addr` may be used.
             let endpoint_router = client_stack
                 .push(buffer::layer(MAX_IN_FLIGHT))
-                .push(settings::router::layer::<Endpoint, _>())
+                .push(settings::router::layer::<_, Endpoint>())
                 .push(phantom_data::layer())
                 .push(tap_layer)
                 .push(http_metrics::layer::<_, classify::Response>(
@@ -703,14 +720,12 @@ where
                             .future(resolver_bg_rx.map_err(|_| {}).flatten()),
                     );
 
-                    rt.spawn(::logging::admin().bg("tls-config").future(tls_cfg_bg));
-
                     let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
                     rt.block_on(shutdown).expect("admin");
                     trace!("admin shutdown finished");
                 })
-                .expect("initialize controller api thread");
-            trace!("controller client thread spawned");
+                .expect("initialize dst_svc api thread");
+            trace!("dst_svc client thread spawned");
 
             // spawn a task to so that the admin shutdown signal is sent when
             // the main runtime drops (and thus this thread doesn't live forever).
@@ -729,9 +744,9 @@ where
     }
 }
 
-fn serve<A, C, R, B, G>(
+fn serve<A, T, C, R, B, G>(
     proxy_name: &'static str,
-    bound_port: BoundPort<G>,
+    bound_port: Listen<identity::Local, G>,
     accept: A,
     connect: C,
     router: R,
@@ -741,7 +756,8 @@ where
     A: svc::Stack<proxy::server::Source, Error = Never> + Send + Clone + 'static,
     A::Value: proxy::Accept<Connection>,
     <A::Value as proxy::Accept<Connection>>::Io: fmt::Debug + Send + transport::Peek + 'static,
-    C: svc::Stack<connect::Target, Error = Never> + Send + Clone + 'static,
+    T: From<SocketAddr> + Send + 'static,
+    C: svc::Stack<T, Error = Never> + Send + Clone + 'static,
     C::Value: connect::Connect + Send,
     <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
     <C::Value as connect::Connect>::Future: Send + 'static,
@@ -766,7 +782,7 @@ where
     );
     let log = server.log().clone();
 
-    let accept = log.future(bound_port.listen_and_fold(
+    let future = log.future(bound_port.listen_and_fold(
         (),
         move |(), (connection, remote_addr)| {
             let s = server.serve(connection, remote_addr);
@@ -779,7 +795,7 @@ where
     ));
 
     let accept_until = Cancelable {
-        future: accept,
+        future,
         canceled: false,
     };
 
@@ -816,7 +832,7 @@ where
 }
 
 fn serve_tap<N, B>(
-    bound_port: BoundPort<()>,
+    bound_port: Listen<identity::Local, ()>,
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where

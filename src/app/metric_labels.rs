@@ -2,6 +2,7 @@ use std::fmt::{self, Write};
 
 use metrics::FmtLabels;
 
+use identity;
 use transport::tls;
 use {Addr, Conditional, NameAddr};
 
@@ -16,7 +17,7 @@ pub struct ControlLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EndpointLabels {
     direction: Direction,
-    tls_id: Conditional<TlsId, tls::ReasonForNoTls>,
+    tls_id: Conditional<TlsId, tls::ReasonForNoIdentity>,
     dst_name: Option<NameAddr>,
     labels: Option<String>,
 }
@@ -35,8 +36,8 @@ enum Direction {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum TlsId {
-    ClientId(tls::Identity),
-    ServerId(tls::Identity),
+    ClientId(identity::Name),
+    ServerId(identity::Name),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -44,11 +45,11 @@ struct Authority<'a>(&'a NameAddr);
 
 // === impl CtlLabels ===
 
-impl From<control::Config> for ControlLabels {
-    fn from(c: control::Config) -> Self {
+impl From<control::ControlAddr> for ControlLabels {
+    fn from(c: control::ControlAddr) -> Self {
         ControlLabels {
-            addr: c.addr().clone(),
-            tls_status: c.tls_status(),
+            addr: c.addr.clone(),
+            tls_status: c.identity.as_ref().map(|_| {}),
         }
     }
 }
@@ -116,10 +117,7 @@ impl From<outbound::Endpoint> for EndpointLabels {
         Self {
             dst_name: ep.dst_name,
             direction: Direction::Out,
-            tls_id: ep
-                .connect
-                .tls_server_identity()
-                .map(|id| TlsId::ServerId(id.clone())),
+            tls_id: ep.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
             labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
         }
     }
@@ -135,7 +133,7 @@ impl FmtLabels for EndpointLabels {
         }
 
         write!(f, ",")?;
-        tls::Status::from(&self.tls_id).fmt_labels(f)?;
+        self.tls_id.as_ref().map(|_| ()).fmt_labels(f)?;
 
         if let Conditional::Some(ref id) = self.tls_id {
             write!(f, ",")?;
@@ -206,7 +204,7 @@ impl fmt::Display for classify::SuccessOrFailure {
 impl FmtLabels for tls::Status {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Conditional::None(tls::ReasonForNoTls::NoIdentity(why)) => {
+            Conditional::None(tls::ReasonForNoIdentity::NoPeerName(why)) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
             status => write!(f, "tls=\"{}\"", status),

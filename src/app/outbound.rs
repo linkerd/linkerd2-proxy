@@ -1,18 +1,19 @@
 use indexmap::IndexMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::{fmt, net};
+use std::{fmt, hash};
 
+use super::identity;
 use control::destination::{Metadata, ProtocolHint};
-use proxy::http::settings;
-use svc;
 use tap;
 use transport::{connect, tls};
 use {Conditional, NameAddr};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Endpoint {
     pub dst_name: Option<NameAddr>,
-    pub connect: connect::Target,
+    pub addr: SocketAddr,
+    pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
 }
 
@@ -27,35 +28,46 @@ impl Endpoint {
     }
 }
 
-impl settings::router::HasConnect for Endpoint {
-    fn connect(&self) -> connect::Target {
-        self.connect.clone()
+impl From<SocketAddr> for Endpoint {
+    fn from(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            dst_name: None,
+            identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
+            metadata: Metadata::empty(),
+        }
     }
 }
 
 impl fmt::Display for Endpoint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.connect.addr.fmt(f)
+        self.addr.fmt(f)
     }
 }
 
-impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Endpoint {
-    type Updated = Self;
+impl hash::Hash for Endpoint {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.dst_name.hash(state);
+        self.addr.hash(state);
+        self.identity.hash(state);
+        // Ignore metadata.
+    }
+}
 
-    fn with_update(&self, client_config: &tls::ConditionalClientConfig) -> Self::Updated {
-        let mut ep = self.clone();
-        ep.connect.tls = ep.metadata.tls_identity().and_then(|identity| {
-            client_config.as_ref().map(|config| tls::ConnectionConfig {
-                server_identity: identity.clone(),
-                config: config.clone(),
-            })
-        });
-        ep
+impl tls::HasPeerIdentity for Endpoint {
+    fn peer_identity(&self) -> tls::PeerIdentity {
+        self.identity.clone()
+    }
+}
+
+impl connect::HasPeerAddr for Endpoint {
+    fn peer_addr(&self) -> SocketAddr {
+        self.addr
     }
 }
 
 impl tap::Inspect for Endpoint {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr> {
+    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
         use proxy::server::Source;
 
         req.extensions().get::<Source>().map(|s| s.remote)
@@ -64,20 +76,23 @@ impl tap::Inspect for Endpoint {
     fn src_tls<'a, B>(
         &self,
         _: &'a http::Request<B>,
-    ) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
-        Conditional::None(tls::ReasonForNoTls::InternalTraffic)
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
     }
 
-    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<net::SocketAddr> {
-        Some(self.connect.addr)
+    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
+        Some(self.addr)
     }
 
     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
         Some(self.metadata.labels())
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
-        self.connect.tls_server_identity()
+    fn dst_tls<B>(
+        &self,
+        _: &http::Request<B>,
+    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+        self.identity.as_ref()
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
@@ -99,7 +114,7 @@ pub mod discovery {
     use super::Endpoint;
     use control::destination::Metadata;
     use proxy::resolve;
-    use transport::{connect, tls};
+    use transport::tls;
     use {Addr, Conditional, NameAddr};
 
     #[derive(Clone, Debug)]
@@ -154,18 +169,20 @@ pub mod discovery {
                         Ok(Async::Ready(resolve::Update::Remove(addr)))
                     }
                     resolve::Update::Add(addr, metadata) => {
-                        debug!("adding {}", addr);
-                        // If the endpoint does not have TLS, note the reason.
-                        // Otherwise, indicate that we don't (yet) have a TLS
-                        // config. This value may be changed by a stack layer that
-                        // provides TLS configuration.
-                        let tls = match metadata.tls_identity() {
-                            Conditional::None(reason) => reason.into(),
-                            Conditional::Some(_) => tls::ReasonForNoTls::NoConfig,
-                        };
+                        let identity = metadata
+                            .identity()
+                            .cloned()
+                            .map(Conditional::Some)
+                            .unwrap_or_else(|| {
+                                Conditional::None(
+                                    tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+                                )
+                            });
+                        debug!("adding addr={}; identity={:?}", addr, identity);
                         let ep = Endpoint {
                             dst_name: Some(name.clone()),
-                            connect: connect::Target::new(addr, Conditional::None(tls)),
+                            addr,
+                            identity,
                             metadata,
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
@@ -173,11 +190,13 @@ pub mod discovery {
                 },
                 Resolution::Addr(ref mut addr) => match addr.take() {
                     Some(addr) => {
-                        let tls = tls::ReasonForNoIdentity::NoAuthorityInHttpRequest;
                         let ep = Endpoint {
                             dst_name: None,
-                            connect: connect::Target::new(addr, Conditional::None(tls.into())),
-                            metadata: Metadata::none(tls),
+                            addr,
+                            identity: Conditional::None(
+                                tls::ReasonForNoPeerName::NoAuthorityInHttpRequest.into(),
+                            ),
+                            metadata: Metadata::empty(),
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
                     }
@@ -280,7 +299,7 @@ pub mod add_server_id_on_rsp {
 
     pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
         add_header::response::layer(L5D_SERVER_ID, |endpoint: &Endpoint| {
-            if let Conditional::Some(id) = endpoint.connect.tls_server_identity() {
+            if let Conditional::Some(id) = endpoint.identity.as_ref() {
                 match HeaderValue::from_str(id.as_ref()) {
                     Ok(value) => {
                         debug!("l5d-server-id enabled for {:?}", endpoint);
@@ -308,7 +327,7 @@ pub mod add_remote_ip_on_rsp {
 
     pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
         add_header::response::layer(L5D_REMOTE_IP, |endpoint: &Endpoint| {
-            HeaderValue::from_shared(Bytes::from(endpoint.connect.addr.ip().to_string())).ok()
+            HeaderValue::from_shared(Bytes::from(endpoint.addr.ip().to_string())).ok()
         })
     }
 }

@@ -3,14 +3,15 @@ use hyper::{server::conn::Http, service::Service, Body};
 use tokio::executor::current_thread::TaskExecutor;
 
 use task;
-use transport::BoundPort;
+use transport::{tls, Listen};
 
-pub fn serve_http<S>(
+pub fn serve_http<L, S>(
     name: &'static str,
-    bound_port: BoundPort,
+    bound_port: Listen<L, ()>,
     service: S,
 ) -> impl Future<Item = (), Error = ()>
 where
+    L: tls::listen::HasConfig + Clone + Send + 'static,
     S: Service<ReqBody = Body> + Clone + Send + 'static,
     <S as Service>::Future: Send,
 {

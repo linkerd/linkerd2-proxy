@@ -16,8 +16,8 @@ use transport::{connect, tls};
 ///
 /// `settings` determines whether an HTTP/1 or HTTP/2 client is used.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Config {
-    pub target: connect::Target,
+pub struct Config<T> {
+    pub target: T,
     pub settings: Settings,
     _p: (),
 }
@@ -26,24 +26,24 @@ pub struct Config {
 ///
 /// The `proxy_name` is used for diagnostics (logging, mostly).
 #[derive(Debug)]
-pub struct Layer<B> {
+pub struct Layer<T, B> {
     proxy_name: &'static str,
-    _p: PhantomData<fn() -> B>,
+    _p: PhantomData<fn(T) -> B>,
 }
 
 /// Configurs an HTTP client that uses a `C`-typed connector
 ///
 /// The `proxy_name` is used for diagnostics (logging, mostly).
 #[derive(Debug)]
-pub struct Stack<C, B>
+pub struct Stack<T, C, B>
 where
-    C: svc::Stack<connect::Target>,
+    C: svc::Stack<T>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     B: hyper::body::Payload + 'static,
 {
     connect: C,
     proxy_name: &'static str,
-    _p: PhantomData<fn() -> B>,
+    _p: PhantomData<fn(T) -> B>,
 }
 
 type HyperClient<C, B> = hyper::Client<HyperConnect<C>, B>;
@@ -93,8 +93,8 @@ pub enum ClientServiceFuture {
 
 // === impl Config ===
 
-impl Config {
-    pub fn new(target: connect::Target, settings: Settings) -> Self {
+impl<T> Config<T> {
+    pub fn new(target: T, settings: Settings) -> Self {
         Config {
             target,
             settings,
@@ -103,27 +103,27 @@ impl Config {
     }
 }
 
-impl ShouldNormalizeUri for Config {
+impl<T> ShouldNormalizeUri for Config<T> {
     fn should_normalize_uri(&self) -> bool {
         !self.settings.is_http2() && !self.settings.was_absolute_form()
     }
 }
 
-impl ShouldStackPerRequest for Config {
+impl<T> ShouldStackPerRequest for Config<T> {
     fn should_stack_per_request(&self) -> bool {
         !self.settings.is_http2() && !self.settings.can_reuse_clients()
     }
 }
 
-impl fmt::Display for Config {
+impl<T: fmt::Display> fmt::Display for Config<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.target.addr.fmt(f)
+        fmt::Display::fmt(&self.target, f)
     }
 }
 
 // === impl Layer ===
 
-pub fn layer<B>(proxy_name: &'static str) -> Layer<B>
+pub fn layer<T, B>(proxy_name: &'static str) -> Layer<T, B>
 where
     B: hyper::body::Payload + Send + 'static,
 {
@@ -133,7 +133,7 @@ where
     }
 }
 
-impl<B> Clone for Layer<B>
+impl<T, B> Clone for Layer<T, B>
 where
     B: hyper::body::Payload + Send + 'static,
 {
@@ -145,18 +145,19 @@ where
     }
 }
 
-impl<C, B> svc::Layer<Config, connect::Target, C> for Layer<B>
+impl<T, C, B> svc::Layer<Config<T>, T, C> for Layer<T, B>
 where
-    C: svc::Stack<connect::Target>,
+    T: connect::HasPeerAddr + fmt::Debug,
+    C: svc::Stack<T>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     <C::Value as connect::Connect>::Connected: tls::HasStatus + Send,
     <C::Value as connect::Connect>::Future: Send + 'static,
     <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync>>,
     B: hyper::body::Payload + Send + 'static,
 {
-    type Value = <Stack<C, B> as svc::Stack<Config>>::Value;
-    type Error = <Stack<C, B> as svc::Stack<Config>>::Error;
-    type Stack = Stack<C, B>;
+    type Value = <Stack<T, C, B> as svc::Stack<Config<T>>>::Value;
+    type Error = <Stack<T, C, B> as svc::Stack<Config<T>>>::Error;
+    type Stack = Stack<T, C, B>;
 
     fn bind(&self, connect: C) -> Self::Stack {
         Stack {
@@ -169,9 +170,10 @@ where
 
 // === impl Stack ===
 
-impl<C, B> Clone for Stack<C, B>
+impl<T, C, B> Clone for Stack<T, C, B>
 where
-    C: svc::Stack<connect::Target> + Clone,
+    T: connect::HasPeerAddr + fmt::Debug,
+    C: svc::Stack<T> + Clone,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     B: hyper::body::Payload + Send + 'static,
 {
@@ -184,9 +186,10 @@ where
     }
 }
 
-impl<C, B> svc::Stack<Config> for Stack<C, B>
+impl<T, C, B> svc::Stack<Config<T>> for Stack<T, C, B>
 where
-    C: svc::Stack<connect::Target>,
+    T: connect::HasPeerAddr + fmt::Debug,
+    C: svc::Stack<T>,
     C::Value: connect::Connect + Clone + Send + Sync + 'static,
     <C::Value as connect::Connect>::Connected: tls::HasStatus + Send,
     <C::Value as connect::Connect>::Future: Send + 'static,
@@ -196,10 +199,10 @@ where
     type Value = Client<C::Value, B>;
     type Error = C::Error;
 
-    fn make(&self, config: &Config) -> Result<Self::Value, Self::Error> {
+    fn make(&self, config: &Config<T>) -> Result<Self::Value, Self::Error> {
         debug!("building client={:?}", config);
         let connect = self.connect.make(&config.target)?;
-        let executor = ::logging::Client::proxy(self.proxy_name, config.target.addr)
+        let executor = ::logging::Client::proxy(self.proxy_name, config.target.peer_addr())
             .with_settings(config.settings.clone())
             .executor();
         Ok(Client::new(&config.settings, connect, executor))

@@ -8,12 +8,10 @@ pub enum Conditional<C, R> {
 
 impl<C, R> Conditional<C, R>
 where
-    C: Clone,
     R: Copy + Clone,
 {
     pub fn and_then<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
-        CR: Clone,
         R: Into<RR>,
         RR: Clone,
         F: FnOnce(C) -> Conditional<CR, RR>,
@@ -33,12 +31,46 @@ where
 
     pub fn map<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
-        CR: Clone,
         R: Into<RR>,
         RR: Clone,
         F: FnOnce(C) -> CR,
     {
         self.and_then(|c| Conditional::Some(f(c)))
+    }
+
+    pub fn or_else<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
+    where
+        C: Into<CR>,
+        RR: Clone,
+        F: FnOnce(R) -> Conditional<CR, RR>,
+    {
+        match self {
+            Conditional::Some(c) => Conditional::Some(c.into()),
+            Conditional::None(n) => f(n),
+        }
+    }
+
+    pub fn map_reason<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
+    where
+        C: Into<CR>,
+        RR: Clone,
+        F: FnOnce(R) -> RR,
+    {
+        self.or_else(|r| Conditional::None(f(r)))
+    }
+
+    pub fn value(&self) -> Option<&C> {
+        match self {
+            Conditional::Some(v) => Some(v),
+            Conditional::None(_) => None,
+        }
+    }
+
+    pub fn reason(&self) -> Option<R> {
+        match self {
+            Conditional::Some(_) => None,
+            Conditional::None(r) => Some(*r),
+        }
     }
 
     pub fn is_none(&self) -> bool {

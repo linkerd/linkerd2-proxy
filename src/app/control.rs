@@ -1,48 +1,15 @@
 use std::fmt;
 
-use svc;
 use transport::tls;
-use {Addr, Conditional};
+use Addr;
 
 #[derive(Clone, Debug)]
-pub struct Config {
-    addr: Addr,
-    tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
-    tls_config: tls::ConditionalClientConfig,
+pub struct ControlAddr {
+    pub addr: Addr,
+    pub identity: tls::PeerIdentity,
 }
 
-impl Config {
-    pub fn new(
-        addr: Addr,
-        tls_server_identity: Conditional<tls::Identity, tls::ReasonForNoTls>,
-    ) -> Self {
-        Self {
-            addr,
-            tls_server_identity,
-            tls_config: Conditional::None(tls::ReasonForNoTls::Disabled),
-        }
-    }
-
-    pub fn addr(&self) -> &Addr {
-        &self.addr
-    }
-
-    pub fn tls_status(&self) -> tls::Status {
-        self.tls_config.as_ref().map(|_| ())
-    }
-}
-
-impl svc::watch::WithUpdate<tls::ConditionalClientConfig> for Config {
-    type Updated = Self;
-
-    fn with_update(&self, tls_config: &tls::ConditionalClientConfig) -> Self::Updated {
-        let mut c = self.clone();
-        c.tls_config = tls_config.clone();
-        c
-    }
-}
-
-impl fmt::Display for Config {
+impl fmt::Display for ControlAddr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.addr, f)
     }
@@ -57,6 +24,7 @@ pub mod add_origin {
     use http::uri;
     use std::marker::PhantomData;
 
+    use super::ControlAddr;
     use svc;
 
     #[derive(Debug)]
@@ -73,26 +41,26 @@ pub mod add_origin {
 
     pub fn layer<M>() -> Layer<M>
     where
-        M: svc::Stack<super::Config>,
+        M: svc::Stack<ControlAddr>,
     {
         Layer { _p: PhantomData }
     }
 
     impl<M> Clone for Layer<M>
     where
-        M: svc::Stack<super::Config>,
+        M: svc::Stack<ControlAddr>,
     {
         fn clone(&self) -> Self {
             layer()
         }
     }
 
-    impl<M> svc::Layer<super::Config, super::Config, M> for Layer<M>
+    impl<M> svc::Layer<ControlAddr, ControlAddr, M> for Layer<M>
     where
-        M: svc::Stack<super::Config>,
+        M: svc::Stack<ControlAddr>,
     {
-        type Value = <Stack<M> as svc::Stack<super::Config>>::Value;
-        type Error = <Stack<M> as svc::Stack<super::Config>>::Error;
+        type Value = <Stack<M> as svc::Stack<ControlAddr>>::Value;
+        type Error = <Stack<M> as svc::Stack<ControlAddr>>::Error;
         type Stack = Stack<M>;
 
         fn bind(&self, inner: M) -> Self::Stack {
@@ -102,14 +70,14 @@ pub mod add_origin {
 
     // === impl Stack ===
 
-    impl<M> svc::Stack<super::Config> for Stack<M>
+    impl<M> svc::Stack<ControlAddr> for Stack<M>
     where
-        M: svc::Stack<super::Config>,
+        M: svc::Stack<ControlAddr>,
     {
         type Value = AddOrigin<M::Value>;
         type Error = M::Error;
 
-        fn make(&self, config: &super::Config) -> Result<Self::Value, Self::Error> {
+        fn make(&self, config: &ControlAddr) -> Result<Self::Value, Self::Error> {
             let inner = self.inner.make(config)?;
             let scheme = uri::Scheme::from_shared(Bytes::from_static(b"http")).unwrap();
             let authority = config.addr.as_authority();
@@ -125,10 +93,9 @@ pub mod resolve {
     use std::net::SocketAddr;
     use std::{error, fmt};
 
-    use super::client;
+    use super::{client, ControlAddr};
     use dns;
     use svc;
-    use transport::{connect, tls};
     use Addr;
 
     #[derive(Debug)]
@@ -144,7 +111,7 @@ pub mod resolve {
     }
 
     pub struct NewService<M> {
-        config: super::Config,
+        config: ControlAddr,
         dns: dns::Resolver,
         stack: M,
     }
@@ -164,7 +131,7 @@ pub mod resolve {
     {
         Resolve {
             future: dns::IpAddrFuture,
-            config: super::Config,
+            config: ControlAddr,
             stack: M,
         },
         Inner(<M::Value as svc::Service<()>>::Future),
@@ -199,12 +166,12 @@ pub mod resolve {
         }
     }
 
-    impl<M> svc::Layer<super::Config, client::Target, M> for Layer<M>
+    impl<M> svc::Layer<ControlAddr, client::Target, M> for Layer<M>
     where
         M: svc::Stack<client::Target> + Clone,
     {
-        type Value = <Stack<M> as svc::Stack<super::Config>>::Value;
-        type Error = <Stack<M> as svc::Stack<super::Config>>::Error;
+        type Value = <Stack<M> as svc::Stack<ControlAddr>>::Value;
+        type Error = <Stack<M> as svc::Stack<ControlAddr>>::Error;
         type Stack = Stack<M>;
 
         fn bind(&self, inner: M) -> Self::Stack {
@@ -217,14 +184,14 @@ pub mod resolve {
 
     // === impl Stack ===
 
-    impl<M> svc::Stack<super::Config> for Stack<M>
+    impl<M> svc::Stack<ControlAddr> for Stack<M>
     where
         M: svc::Stack<client::Target> + Clone,
     {
         type Value = NewService<M>;
         type Error = M::Error;
 
-        fn make(&self, config: &super::Config) -> Result<Self::Value, Self::Error> {
+        fn make(&self, config: &ControlAddr) -> Result<Self::Value, Self::Error> {
             Ok(NewService {
                 dns: self.dns.clone(),
                 config: config.clone(),
@@ -302,20 +269,11 @@ pub mod resolve {
         M: svc::Stack<client::Target>,
         M::Value: svc::Service<()>,
     {
-        fn make_inner(addr: SocketAddr, config: &super::Config, stack: &M) -> Self {
-            let tls = config.tls_server_identity.as_ref().and_then(|id| {
-                config
-                    .tls_config
-                    .as_ref()
-                    .map(|config| tls::ConnectionConfig {
-                        server_identity: id.clone(),
-                        config: config.clone(),
-                    })
-            });
-
+        fn make_inner(addr: SocketAddr, dst: &ControlAddr, stack: &M) -> Self {
             let target = client::Target {
-                connect: connect::Target::new(addr, tls),
-                log_ctx: ::logging::admin().client("control", config.addr.clone()),
+                addr,
+                server_name: dst.identity.clone(),
+                log_ctx: ::logging::admin().client("control", dst.addr.clone()),
             };
 
             match stack.make(&target) {
@@ -345,15 +303,17 @@ pub mod resolve {
 pub mod client {
     use hyper::body::Payload;
     use std::marker::PhantomData;
+    use std::net::SocketAddr;
 
     use proxy::http;
     use svc;
-    use transport::connect;
+    use transport::{connect, tls};
     use Addr;
 
     #[derive(Clone, Debug)]
     pub struct Target {
-        pub(super) connect: connect::Target,
+        pub(super) addr: SocketAddr,
+        pub(super) server_name: tls::PeerIdentity,
         pub(super) log_ctx: ::logging::Client<&'static str, Addr>,
     }
 
@@ -368,11 +328,25 @@ pub mod client {
         _p: PhantomData<fn() -> B>,
     }
 
+    // === impl Target ===
+
+    impl connect::HasPeerAddr for Target {
+        fn peer_addr(&self) -> SocketAddr {
+            self.addr
+        }
+    }
+
+    impl tls::HasPeerIdentity for Target {
+        fn peer_identity(&self) -> tls::PeerIdentity {
+            self.server_name.clone()
+        }
+    }
+
     // === impl Layer ===
 
     pub fn layer<C, B>() -> Layer<C, B>
     where
-        C: svc::Stack<connect::Target> + Clone,
+        C: svc::Stack<Target> + Clone,
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
@@ -388,9 +362,9 @@ pub mod client {
         }
     }
 
-    impl<C, B> svc::Layer<Target, connect::Target, C> for Layer<C, B>
+    impl<C, B> svc::Layer<Target, Target, C> for Layer<C, B>
     where
-        C: svc::Stack<connect::Target> + Clone,
+        C: svc::Stack<Target> + Clone,
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
@@ -425,7 +399,7 @@ pub mod client {
 
     impl<C, B> svc::Stack<Target> for Stack<C, B>
     where
-        C: svc::Stack<connect::Target> + Clone,
+        C: svc::Stack<Target> + Clone,
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
@@ -436,12 +410,8 @@ pub mod client {
         type Error = C::Error;
 
         fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
-            let c = self.connect.make(&target.connect)?;
-            let e = target
-                .log_ctx
-                .clone()
-                .with_remote(target.connect.addr)
-                .executor();
+            let c = self.connect.make(&target)?;
+            let e = target.log_ctx.clone().with_remote(target.addr).executor();
             Ok(http::h2::Connect::new(c, e))
         }
     }

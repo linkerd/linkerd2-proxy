@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use super::classify;
 use super::dst::DstAddr;
-use proxy::http::{router, settings};
+use super::identity;
+use proxy::http::router;
 use proxy::server::Source;
 use tap;
 use transport::{connect, tls};
@@ -16,7 +17,7 @@ use {Conditional, NameAddr};
 pub struct Endpoint {
     pub addr: SocketAddr,
     pub dst_name: Option<NameAddr>,
-    pub tls_client_id: tls::ConditionalIdentity,
+    pub tls_client_id: tls::PeerIdentity,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -26,24 +27,33 @@ pub struct RecognizeEndpoint {
 
 // === impl Endpoint ===
 
+impl From<SocketAddr> for Endpoint {
+    fn from(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            dst_name: None,
+            tls_client_id: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
+        }
+    }
+}
+
+impl connect::HasPeerAddr for Endpoint {
+    fn peer_addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl tls::HasPeerIdentity for Endpoint {
+    fn peer_identity(&self) -> tls::PeerIdentity {
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+    }
+}
+
 impl classify::CanClassify for Endpoint {
     type Classify = classify::Request;
 
     fn classify(&self) -> classify::Request {
         classify::Request::default()
-    }
-}
-
-impl Endpoint {
-    fn target(&self) -> connect::Target {
-        let tls = Conditional::None(tls::ReasonForNoTls::InternalTraffic);
-        connect::Target::new(self.addr, tls)
-    }
-}
-
-impl settings::router::HasConnect for Endpoint {
-    fn connect(&self) -> connect::Target {
-        self.target()
     }
 }
 
@@ -55,11 +65,11 @@ impl tap::Inspect for Endpoint {
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
-    ) -> Conditional<&'a tls::Identity, tls::ReasonForNoTls> {
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
         req.extensions()
             .get::<Source>()
             .map(|s| s.tls_peer.as_ref())
-            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled))
+            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
@@ -70,8 +80,11 @@ impl tap::Inspect for Endpoint {
         None
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&tls::Identity, tls::ReasonForNoTls> {
-        Conditional::None(tls::ReasonForNoTls::InternalTraffic)
+    fn dst_tls<B>(
+        &self,
+        _: &http::Request<B>,
+    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
@@ -111,7 +124,7 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
 
         let tls_client_id = src
             .map(|s| s.tls_peer.clone())
-            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoTls::Disabled));
+            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled));
 
         let dst_name = req
             .extensions()
@@ -203,12 +216,11 @@ pub mod orig_proto_downgrade {
     }
 }
 
-/// Rewrites connect `Target`s IP address to the loopback address (`127.0.0.1`),
+/// Rewrites connect `SocketAddr`s IP address to the loopback address (`127.0.0.1`),
 /// with the same port still set.
 pub mod rewrite_loopback_addr {
     use std::net::SocketAddr;
     use svc;
-    use transport::connect::Target;
 
     #[derive(Debug, Clone)]
     pub struct Layer;
@@ -216,7 +228,7 @@ pub mod rewrite_loopback_addr {
     #[derive(Clone, Debug)]
     pub struct Stack<M>
     where
-        M: svc::Stack<Target>,
+        M: svc::Stack<super::Endpoint>,
     {
         inner: M,
     }
@@ -227,12 +239,12 @@ pub mod rewrite_loopback_addr {
         Layer
     }
 
-    impl<M> svc::Layer<Target, Target, M> for Layer
+    impl<M> svc::Layer<super::Endpoint, super::Endpoint, M> for Layer
     where
-        M: svc::Stack<Target>,
+        M: svc::Stack<super::Endpoint>,
     {
-        type Value = <Stack<M> as svc::Stack<Target>>::Value;
-        type Error = <Stack<M> as svc::Stack<Target>>::Error;
+        type Value = <Stack<M> as svc::Stack<super::Endpoint>>::Value;
+        type Error = <Stack<M> as svc::Stack<super::Endpoint>>::Error;
         type Stack = Stack<M>;
 
         fn bind(&self, inner: M) -> Self::Stack {
@@ -242,19 +254,20 @@ pub mod rewrite_loopback_addr {
 
     // === impl Stack ===
 
-    impl<M> svc::Stack<Target> for Stack<M>
+    impl<M> svc::Stack<super::Endpoint> for Stack<M>
     where
-        M: svc::Stack<Target>,
+        M: svc::Stack<super::Endpoint>,
     {
         type Value = M::Value;
         type Error = M::Error;
 
-        fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
-            debug!("rewriting inbound address to loopback; target={:?}", target);
+        fn make(&self, ep: &super::Endpoint) -> Result<Self::Value, Self::Error> {
+            debug!("rewriting inbound address to loopback; addr={:?}", ep.addr);
 
-            let rewritten = SocketAddr::from(([127, 0, 0, 1], target.addr.port()));
-            let target = Target::new(rewritten, target.tls.clone());
-            self.inner.make(&target)
+            let mut ep = ep.clone();
+            ep.addr = SocketAddr::from(([127, 0, 0, 1], ep.addr.port()));
+
+            self.inner.make(&ep)
         }
     }
 }
@@ -328,7 +341,7 @@ mod tests {
         }
     }
 
-    const TLS_DISABLED: tls::ConditionalIdentity = Conditional::None(tls::ReasonForNoTls::Disabled);
+    const TLS_DISABLED: tls::PeerIdentity = Conditional::None(tls::ReasonForNoIdentity::Disabled);
 
     quickcheck! {
         fn recognize_orig_dst(

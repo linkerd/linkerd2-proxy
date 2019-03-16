@@ -25,7 +25,6 @@ flaky_tests = []
 [dependencies]
 futures-mpsc-lossy = { path = "lib/futures-mpsc-lossy" }
 hyper-balance      = { path = "lib/hyper-balance" }
-linkerd2-fs-watch  = { path = "lib/fs-watch" }
 linkerd2-metrics   = { path = "lib/metrics" }
 linkerd2-never     = { path = "lib/never" }
 linkerd2-router    = { path = "lib/router" }
@@ -33,7 +32,7 @@ linkerd2-stack     = { path = "lib/stack" }
 linkerd2-task      = { path = "lib/task" }
 linkerd2-timeout   = { path = "lib/timeout" }
 
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.6" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.7" }
 
 bytes = "0.4"
 env_logger = { version = "0.5", default-features = false }
@@ -90,7 +89,7 @@ net2 = "0.2"
 quickcheck = { version = "0.8", default-features = false }
 linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
 linkerd2-task    = { path = "lib/task", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.6" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.7", features = ["arbitrary"] }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.
