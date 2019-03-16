@@ -1,12 +1,12 @@
-use bytes::{BytesMut};
+use bytes::BytesMut;
 use futures::{
     future::{self, Either},
     stream, Async, Future, IntoFuture, Poll, Stream,
 };
 use indexmap::IndexSet;
+use std::io;
 use std::net::{SocketAddr, TcpListener as StdListener};
 use std::sync::Arc;
-use std::{io};
 use tokio::{
     io::AsyncRead,
     net::{TcpListener, TcpStream},

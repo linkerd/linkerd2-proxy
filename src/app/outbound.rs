@@ -114,7 +114,7 @@ pub mod discovery {
     use super::Endpoint;
     use control::destination::Metadata;
     use proxy::resolve;
-    use transport::{tls};
+    use transport::tls;
     use {Addr, Conditional, NameAddr};
 
     #[derive(Clone, Debug)]

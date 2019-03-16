@@ -5,7 +5,7 @@ extern crate untrusted;
 extern crate webpki;
 
 use self::tokio_rustls::{Accept, TlsAcceptor as Acceptor, TlsConnector as Connector};
-use std::{fmt};
+use std::fmt;
 
 use identity;
 

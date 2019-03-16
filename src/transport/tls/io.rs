@@ -1,7 +1,7 @@
-use bytes::{Buf};
+use bytes::Buf;
 use std::fmt::Debug;
+use std::io;
 use std::net::SocketAddr;
-use std::{io};
 use tokio::prelude::*;
 
 use super::{rustls::Session, tokio_rustls::TlsStream};

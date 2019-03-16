@@ -7,7 +7,7 @@ use std::sync::Arc;
 use super::classify;
 use super::dst::DstAddr;
 use super::identity;
-use proxy::http::{router};
+use proxy::http::router;
 use proxy::server::Source;
 use tap;
 use transport::{connect, tls};

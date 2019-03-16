@@ -36,7 +36,7 @@ use proxy::resolve::{self, Resolve, Update};
 pub mod background;
 
 use self::background::Background;
-use {NameAddr};
+use NameAddr;
 
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone)]

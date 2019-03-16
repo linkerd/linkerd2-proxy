@@ -1,10 +1,10 @@
 use std::collections::HashMap;
+use std::fs;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
-use std::{fs};
 
 use indexmap::IndexSet;
 
@@ -261,10 +261,10 @@ const ENV_DNS_MAX_TTL: &str = "LINKERD2_PROXY_DNS_MAX_TTL";
 const ENV_DNS_CANONICALIZE_TIMEOUT: &str = "LINKERD2_PROXY_DNS_CANONICALIZE_TIMEOUT";
 
 // Default values for various configuration fields
-const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "tcp://127.0.0.1:4140";
-const DEFAULT_INBOUND_LISTEN_ADDR: &str = "tcp://0.0.0.0:4143";
-const DEFAULT_CONTROL_LISTEN_ADDR: &str = "tcp://0.0.0.0:4190";
-const DEFAULT_METRICS_LISTEN_ADDR: &str = "tcp://127.0.0.1:4191";
+const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";
+const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
+const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
+const DEFAULT_METRICS_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(20);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);

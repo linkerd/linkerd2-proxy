@@ -5,9 +5,7 @@ use tokio::prelude::*;
 
 use identity;
 use transport::io::internal::Io;
-use transport::tls::{
-    ReasonForNoIdentity, ReasonForNoPeerName,
-};
+use transport::tls::{ReasonForNoIdentity, ReasonForNoPeerName};
 use transport::{AddrInfo, BoxedIo, Peek, SetKeepalive};
 use Conditional;
 

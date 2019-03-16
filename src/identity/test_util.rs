@@ -1,9 +1,9 @@
 extern crate webpki;
 
 use super::*;
+use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
-use std::{fs};
 
 pub struct Strings {
     pub name: &'static str,

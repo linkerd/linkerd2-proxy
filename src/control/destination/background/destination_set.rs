@@ -24,7 +24,7 @@ use control::{
 };
 use dns::{self, IpAddrListFuture};
 use identity;
-use {NameAddr};
+use NameAddr;
 
 use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
