@@ -243,8 +243,6 @@ where
 
         let (transport_metrics, transport_report) = transport::metrics::new();
 
-        //let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
-
         let report = endpoint_http_report
             .and_then(route_http_report)
             .and_then(retry_http_report)
@@ -253,6 +251,7 @@ where
             .and_then(ctl_http_report)
             .and_then(telemetry::process::Report::new(start_time));
 
+        let mut identity_daemon = None;
         let local_identity = match identity {
             Conditional::None(r) => Conditional::None(r),
             Conditional::Some((local_identity, crt_store)) => {
@@ -292,22 +291,17 @@ where
                     .make(&id_config.svc)
                     .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e));
 
-                task::spawn(
-                    identity::Daemon::new(id_config, crt_store, svc)
-                        .map_err(|_| error!("identity task failed")),
-                );
+                identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
 
                 task::spawn(
                     local_identity
                         .clone()
                         .await_crt()
                         .map(move |id| {
-                            info!(
-                                "Certified identity: {}",
-                                id.name().as_ref()
-                            );
+                            info!("Certified identity: {}", id.name().as_ref());
                         })
                         .map_err(|_| {
+                            // The daemon task was lost?!
                             panic!("Failed to certify identity!");
                         }),
                 );
@@ -380,6 +374,14 @@ where
                             .bg("resolver")
                             .future(resolver_bg_rx.map_err(|_| {}).flatten()),
                     );
+
+                    if let Some(d) = identity_daemon {
+                        rt.spawn(
+                            ::logging::admin()
+                                .bg("identity")
+                                .future(d.map_err(|_| error!("identity task failed"))),
+                        );
+                    }
 
                     let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
                     rt.block_on(shutdown).expect("admin");
