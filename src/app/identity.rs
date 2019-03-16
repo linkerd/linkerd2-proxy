@@ -104,6 +104,10 @@ impl Local {
         (l, s)
     }
 
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
     pub fn await_crt(self) -> AwaitCrt {
         AwaitCrt(Some(self))
     }
