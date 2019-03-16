@@ -762,7 +762,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
                     })
                     .and_then(|b| {
                         identity::Csr::from_der(b).ok_or_else(|| {
-                            error!("No Csr found");
+                            error!("No CSR found");
                             Error::InvalidEnvVar
                         })
                     })
