@@ -302,6 +302,7 @@ pub mod resolve {
 /// Creates a client suitable for gRPC.
 pub mod client {
     use hyper::body::Payload;
+    use std::error;
     use std::marker::PhantomData;
     use std::net::SocketAddr;
 
@@ -350,7 +351,7 @@ pub mod client {
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
-        <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
+        <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync + 'static>>,
         B: Payload,
     {
         Layer { _p: PhantomData }
@@ -368,7 +369,7 @@ pub mod client {
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
-        <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
+        <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync + 'static>>,
         B: Payload,
     {
         type Value = <Stack<C, B> as svc::Stack<Target>>::Value;
@@ -403,7 +404,7 @@ pub mod client {
         C::Value: connect::Connect + Clone + Send + Sync + 'static,
         <C::Value as connect::Connect>::Connected: Send + 'static,
         <C::Value as connect::Connect>::Future: Send + 'static,
-        <C::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
+        <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync + 'static>>,
         B: Payload,
     {
         type Value = http::h2::Connect<C::Value, B>;

@@ -268,8 +268,8 @@ const DEFAULT_METRICS_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(20);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
-const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(5);
-const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(3);
+const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
