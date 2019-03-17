@@ -166,7 +166,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         "127.0.0.1:0".to_owned(),
     );
     env.put(
-        app::config::ENV_METRICS_LISTEN_ADDR,
+        app::config::ENV_ADMIN_LISTEN_ADDR,
         "127.0.0.1:0".to_owned(),
     );
 

@@ -70,3 +70,46 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+    use task::test_util::BlockOnFor;
+    use tokio::runtime::current_thread::Runtime;
+
+    use super::*;
+    use http::method::Method;
+
+        const TIMEOUT: Duration = Duration::from_secs(1);
+
+    #[test]
+    fn ready_when_latches_dropped() {
+        let (r, l0) = Readiness::new();
+        let l1 = l0.clone();
+
+        let mut rt = Runtime::new().unwrap();
+        let mut srv = Admin::new((), r);
+        macro_rules! call {
+            () => {{
+                let r = Request::builder()
+                    .method(Method::GET)
+                    .uri("http://4.3.2.1:5678/ready")
+                    .body(Body::empty())
+                    .unwrap();
+                let f = srv.call(r);
+                rt.block_on_for(TIMEOUT, f).expect("call")
+            };};
+        }
+
+        let rsp = call!();
+        assert_eq!(rsp.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        drop(l0);
+        let rsp = call!();
+        assert_eq!(rsp.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        drop(l1);
+        let rsp = call!();
+        assert_eq!(rsp.status(), StatusCode::OK);
+    }
+}
