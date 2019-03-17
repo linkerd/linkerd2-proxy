@@ -101,15 +101,12 @@ mod tests {
             };};
         }
 
-        let rsp = call!();
-        assert_eq!(rsp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(call!().status(), StatusCode::SERVICE_UNAVAILABLE);
 
         drop(l0);
-        let rsp = call!();
-        assert_eq!(rsp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(call!().status(), StatusCode::SERVICE_UNAVAILABLE);
 
         drop(l1);
-        let rsp = call!();
-        assert_eq!(rsp.status(), StatusCode::OK);
+        assert_eq!(call!().status(), StatusCode::OK);
     }
 }
