@@ -80,7 +80,7 @@ mod tests {
     use super::*;
     use http::method::Method;
 
-        const TIMEOUT: Duration = Duration::from_secs(1);
+    const TIMEOUT: Duration = Duration::from_secs(1);
 
     #[test]
     fn ready_when_latches_dropped() {
