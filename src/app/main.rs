@@ -15,7 +15,7 @@ use control;
 use dns;
 use drain;
 use logging;
-use metrics::{self, FmtMetrics};
+use metrics::FmtMetrics;
 use never::Never;
 use proxy::{
     self, buffer,
@@ -36,6 +36,7 @@ use telemetry;
 use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
 use {Addr, Conditional};
 
+use super::admin::{Admin, Readiness};
 use super::config::Config;
 use super::dst::DstAddr;
 use super::identity;
@@ -64,7 +65,7 @@ struct ProxyParts<G> {
 
     start_time: SystemTime,
 
-    metrics_listener: Listen<identity::Local, ()>,
+    admin_listener: Listen<identity::Local, ()>,
     control_listener: Listen<identity::Local, ()>,
 
     inbound_listener: Listen<identity::Local, G>,
@@ -87,7 +88,7 @@ where
         let control_listener = Listen::bind(config.control_listener.addr, local_identity.clone())
             .expect("dst_svc listener bind");
 
-        let metrics_listener = Listen::bind(config.metrics_listener.addr, local_identity.clone())
+        let admin_listener = Listen::bind(config.admin_listener.addr, local_identity.clone())
             .expect("metrics listener bind");
 
         let outbound_listener = Listen::bind(
@@ -116,7 +117,7 @@ where
             inbound_listener,
             outbound_listener,
             control_listener,
-            metrics_listener,
+            admin_listener,
         };
 
         Main {
@@ -138,7 +139,7 @@ where
     }
 
     pub fn metrics_addr(&self) -> SocketAddr {
-        self.proxy_parts.metrics_listener.local_addr()
+        self.proxy_parts.admin_listener.local_addr()
     }
 
     pub fn run_until<F>(self, shutdown_signal: F)
@@ -183,7 +184,7 @@ where
             control_listener,
             inbound_listener,
             outbound_listener,
-            metrics_listener,
+            admin_listener,
         } = self;
 
         const MAX_IN_FLIGHT: usize = 10_000;
@@ -204,7 +205,7 @@ where
         );
         info!(
             "serving Prometheus metrics on {:?}",
-            metrics_listener.local_addr(),
+            admin_listener.local_addr(),
         );
         info!(
             "protocol detection disabled for inbound ports {:?}",
@@ -252,8 +253,12 @@ where
             .and_then(telemetry::process::Report::new(start_time));
 
         let mut identity_daemon = None;
+        let (readiness, ready_latch) = Readiness::new();
         let local_identity = match identity {
-            Conditional::None(r) => Conditional::None(r),
+            Conditional::None(r) => {
+                drop(ready_latch);
+                Conditional::None(r)
+            }
             Conditional::Some((local_identity, crt_store)) => {
                 use super::control;
 
@@ -298,6 +303,7 @@ where
                         .clone()
                         .await_crt()
                         .map(move |id| {
+                            drop(ready_latch);
                             info!("Certified identity: {}", id.name().as_ref());
                         })
                         .map_err(|_| {
@@ -360,16 +366,14 @@ where
                     let mut rt =
                         current_thread::Runtime::new().expect("initialize admin thread runtime");
 
-                    let metrics = control::serve_http(
-                        "metrics",
-                        metrics_listener,
-                        metrics::Serve::new(report),
-                    );
+                    rt.spawn(control::serve_http(
+                        "admin",
+                        admin_listener,
+                        Admin::new(report, readiness),
+                    ));
 
                     rt.spawn(tap_daemon.map_err(|_| ()));
                     rt.spawn(serve_tap(control_listener, TapServer::new(tap_grpc)));
-
-                    rt.spawn(metrics);
 
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
 
