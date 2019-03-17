@@ -204,7 +204,7 @@ where
             config.inbound_forward
         );
         info!(
-            "serving Prometheus metrics on {:?}",
+            "serving admin endpoint metrics on {:?}",
             admin_listener.local_addr(),
         );
         info!(
