@@ -341,9 +341,13 @@ where
                 .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e))
         });
 
-        // The resolver is created in the proxy core but runs on the admin core.
-        // This channel is used to move the task.
-        let (resolver_bg_tx, resolver_bg_rx) = futures::sync::oneshot::channel();
+        let (resolver, resolver_bg) = control::destination::new(
+            dst_svc.clone(),
+            dns_resolver.clone(),
+            config.destination_get_suffixes,
+            config.destination_concurrency_limit,
+            config.destination_context.clone(),
+        );
 
         // Spawn a separate thread to handle the admin stuff.
         {
@@ -369,11 +373,7 @@ where
 
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
 
-                    rt.spawn(
-                        ::logging::admin()
-                            .bg("resolver")
-                            .future(resolver_bg_rx.map_err(|_| {}).flatten()),
-                    );
+                    rt.spawn(::logging::admin().bg("resolver").future(resolver_bg));
 
                     if let Some(d) = identity_daemon {
                         rt.spawn(
@@ -403,18 +403,6 @@ where
         }
 
         // Build the outbound and inbound proxies using the dst_svc client.
-
-        let (resolver, resolver_bg) = control::destination::new(
-            dst_svc.clone(),
-            dns_resolver.clone(),
-            config.destination_get_suffixes,
-            config.destination_concurrency_limit,
-            config.destination_context.clone(),
-        );
-        resolver_bg_tx
-            .send(resolver_bg)
-            .ok()
-            .expect("admin thread must receive resolver task");
 
         let profiles_client =
             ProfilesClient::new(dst_svc, Duration::from_secs(3), config.destination_context);
