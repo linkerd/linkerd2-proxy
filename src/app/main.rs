@@ -243,8 +243,6 @@ where
 
         let (transport_metrics, transport_report) = transport::metrics::new();
 
-        //let (tls_config_sensor, tls_config_report) = telemetry::tls_config_reload::new();
-
         let report = endpoint_http_report
             .and_then(route_http_report)
             .and_then(retry_http_report)
@@ -253,6 +251,7 @@ where
             .and_then(ctl_http_report)
             .and_then(telemetry::process::Report::new(start_time));
 
+        let mut identity_daemon = None;
         let local_identity = match identity {
             Conditional::None(r) => Conditional::None(r),
             Conditional::Some((local_identity, crt_store)) => {
@@ -292,9 +291,19 @@ where
                     .make(&id_config.svc)
                     .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e));
 
+                identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
+
                 task::spawn(
-                    identity::Daemon::new(id_config, crt_store, svc)
-                        .map_err(|_| error!("identity task failed")),
+                    local_identity
+                        .clone()
+                        .await_crt()
+                        .map(move |id| {
+                            info!("Certified identity: {}", id.name().as_ref());
+                        })
+                        .map_err(|_| {
+                            // The daemon task was lost?!
+                            panic!("Failed to certify identity!");
+                        }),
                 );
 
                 Conditional::Some(local_identity)
@@ -332,12 +341,6 @@ where
                 .unwrap_or_else(|e| panic!("failed to build dst_svc: {}", e))
         });
 
-        // The resolver is created in the proxy core but runs on the admin core.
-        // This channel is used to move the task.
-        let (resolver_bg_tx, resolver_bg_rx) = futures::sync::oneshot::channel();
-
-        // Build the outbound and inbound proxies using the dst_svc client.
-
         let (resolver, resolver_bg) = control::destination::new(
             dst_svc.clone(),
             dns_resolver.clone(),
@@ -345,10 +348,61 @@ where
             config.destination_concurrency_limit,
             config.destination_context.clone(),
         );
-        resolver_bg_tx
-            .send(resolver_bg)
-            .ok()
-            .expect("admin thread must receive resolver task");
+
+        // Spawn a separate thread to handle the admin stuff.
+        {
+            let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
+            thread::Builder::new()
+                .name("admin".into())
+                .spawn(move || {
+                    use api::tap::server::TapServer;
+
+                    let mut rt =
+                        current_thread::Runtime::new().expect("initialize admin thread runtime");
+
+                    let metrics = control::serve_http(
+                        "metrics",
+                        metrics_listener,
+                        metrics::Serve::new(report),
+                    );
+
+                    rt.spawn(tap_daemon.map_err(|_| ()));
+                    rt.spawn(serve_tap(control_listener, TapServer::new(tap_grpc)));
+
+                    rt.spawn(metrics);
+
+                    rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
+
+                    rt.spawn(::logging::admin().bg("resolver").future(resolver_bg));
+
+                    if let Some(d) = identity_daemon {
+                        rt.spawn(
+                            ::logging::admin()
+                                .bg("identity")
+                                .future(d.map_err(|_| error!("identity task failed"))),
+                        );
+                    }
+
+                    let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
+                    rt.block_on(shutdown).expect("admin");
+                    trace!("admin shutdown finished");
+                })
+                .expect("initialize dst_svc api thread");
+            trace!("dst_svc client thread spawned");
+
+            // spawn a task to so that the admin shutdown signal is sent when
+            // the main runtime drops (and thus this thread doesn't live forever).
+            // This is mostly to help out the tests.
+            let admin_shutdown = future::poll_fn(move || {
+                // never ready, we only want to be dropped when the whole
+                // runtime drops.
+                Ok(futures::Async::NotReady)
+            })
+            .map(|()| drop(tx));
+            task::spawn(admin_shutdown);
+        }
+
+        // Build the outbound and inbound proxies using the dst_svc client.
 
         let profiles_client =
             ProfilesClient::new(dst_svc, Duration::from_secs(3), config.destination_context);
@@ -542,6 +596,7 @@ where
             )
             .map_err(|e| error!("outbound proxy background task failed: {}", e))
         };
+        task::spawn(outbound);
 
         let inbound = {
             use super::inbound::{
@@ -689,58 +744,7 @@ where
             )
             .map_err(|e| error!("inbound proxy background task failed: {}", e))
         };
-
-        // Spawn a separate thread to handle the admin stuff.
-        {
-            let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
-            thread::Builder::new()
-                .name("admin".into())
-                .spawn(move || {
-                    use api::tap::server::TapServer;
-
-                    let mut rt =
-                        current_thread::Runtime::new().expect("initialize admin thread runtime");
-
-                    let metrics = control::serve_http(
-                        "metrics",
-                        metrics_listener,
-                        metrics::Serve::new(report),
-                    );
-
-                    rt.spawn(tap_daemon.map_err(|_| ()));
-                    rt.spawn(serve_tap(control_listener, TapServer::new(tap_grpc)));
-
-                    rt.spawn(metrics);
-
-                    rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
-
-                    rt.spawn(
-                        ::logging::admin()
-                            .bg("resolver")
-                            .future(resolver_bg_rx.map_err(|_| {}).flatten()),
-                    );
-
-                    let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
-                    rt.block_on(shutdown).expect("admin");
-                    trace!("admin shutdown finished");
-                })
-                .expect("initialize dst_svc api thread");
-            trace!("dst_svc client thread spawned");
-
-            // spawn a task to so that the admin shutdown signal is sent when
-            // the main runtime drops (and thus this thread doesn't live forever).
-            // This is mostly to help out the tests.
-            let admin_shutdown = future::poll_fn(move || {
-                // never ready, we only want to be dropped when the whole
-                // runtime drops.
-                Ok(futures::Async::NotReady)
-            })
-            .map(|()| drop(tx));
-            task::spawn(admin_shutdown);
-        }
-
         task::spawn(inbound);
-        task::spawn(outbound);
     }
 }
 

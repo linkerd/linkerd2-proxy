@@ -65,6 +65,7 @@ impl Connect for ConnectSocketAddr {
     type Future = ConnectFuture;
 
     fn connect(&self) -> Self::Future {
+        debug!("connecting to {}", self.0);
         ConnectFuture {
             addr: self.0,
             future: TcpStream::connect(&self.0),
@@ -83,6 +84,7 @@ impl Future for ConnectFuture {
             let details = format!("{} (address: {})", e, self.addr);
             io::Error::new(e.kind(), details)
         }));
+        debug!("connection established to {}", self.addr);
         super::set_nodelay_or_warn(&io);
         Ok(io.into())
     }
