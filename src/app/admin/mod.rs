@@ -34,7 +34,7 @@ where
     }
 
     fn ready_rsp(&self) -> Response<Body> {
-        if self.ready.ready() {
+        if self.ready.is_ready() {
             Response::builder()
                 .status(StatusCode::OK)
                 .body("ready\n".into())

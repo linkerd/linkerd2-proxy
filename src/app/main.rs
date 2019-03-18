@@ -256,7 +256,7 @@ where
         let (readiness, ready_latch) = Readiness::new();
         let local_identity = match identity {
             Conditional::None(r) => {
-                drop(ready_latch);
+                ready_latch.release();
                 Conditional::None(r)
             }
             Conditional::Some((local_identity, crt_store)) => {
@@ -303,7 +303,7 @@ where
                         .clone()
                         .await_crt()
                         .map(move |id| {
-                            drop(ready_latch);
+                            ready_latch.release();
                             info!("Certified identity: {}", id.name().as_ref());
                         })
                         .map_err(|_| {
