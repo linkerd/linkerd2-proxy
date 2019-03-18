@@ -132,10 +132,9 @@ where
                 ConnectFuture::Init { future, tls } => {
                     let io = try_ready!(future.poll());
 
-                    trace!("ConnectFuture: state=plaintext; tls={:?};", tls);
                     match tls {
                         Conditional::Some((server_name, local_tls)) => {
-                            trace!("plaintext connection established; trying to upgrade");
+                            trace!("initiating TLS to {}", server_name.as_ref());
                             let future = tls::Connector::from(local_tls.tls_client_config())
                                 .connect(server_name.as_dns_name_ref(), io);
                             ConnectFuture::Handshake {
@@ -144,7 +143,7 @@ where
                             }
                         }
                         Conditional::None(why) => {
-                            trace!("plaintext connection established; no TLS ({:?})", why);
+                            trace!("skipping TLS ({:?})", why);
                             return Ok(Async::Ready(tls::Connection::plain(io, *why)));
                         }
                     }
@@ -155,7 +154,7 @@ where
                 } => {
                     let io = try_ready!(future.poll());
                     let io = BoxedIo::new(super::TlsIo::from(io));
-
+                    trace!("established TLS to {}", server_name.as_ref());
                     let c = Connection::tls(io, Conditional::Some(server_name.clone()));
                     return Ok(Async::Ready(c));
                 }

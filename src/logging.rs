@@ -1,14 +1,14 @@
+use env_logger;
+use futures::future::{ExecuteError, Executor};
+use futures::{Future, Poll};
+use log::Level;
 use std::cell::RefCell;
 use std::env;
 use std::fmt;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
-
-use env_logger;
-use futures::future::{ExecuteError, Executor};
-use futures::{Future, Poll};
-use log::Level;
+use tokio_timer::clock;
 
 const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 
@@ -17,9 +17,10 @@ thread_local! {
 }
 
 pub fn init() {
+    let start_time = clock::now();
     env_logger::Builder::new()
-        .format(|fmt, record| {
-            CONTEXT.with(|ctxt| {
+        .format(move |fmt, record| {
+            CONTEXT.with(move |ctxt| {
                 let level = match record.level() {
                     Level::Trace => "TRCE",
                     Level::Debug => "DBUG",
@@ -27,10 +28,13 @@ pub fn init() {
                     Level::Warn => "WARN",
                     Level::Error => "ERR!",
                 };
+                let uptime = clock::now() - start_time;
                 writeln!(
                     fmt,
-                    "{} {}{} {}",
+                    "{} [{:>6}.{:06}s] {}{} {}",
                     level,
+                    uptime.as_secs(),
+                    uptime.subsec_micros(),
                     Context(&ctxt.borrow()),
                     record.target(),
                     record.args()

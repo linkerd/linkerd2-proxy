@@ -183,7 +183,8 @@ impl<L: HasConfig, G> Listen<L, G> {
                     // do it here.
                     set_nodelay_or_warn(&socket);
 
-                    self.new_conn(socket).map(move |conn| (conn, remote_addr))
+                    self.new_conn(socket, remote_addr)
+                        .map(move |conn| (conn, remote_addr))
                 })
                 .then(|r| {
                     future::ok(match r {
@@ -203,6 +204,7 @@ impl<L: HasConfig, G> Listen<L, G> {
     fn new_conn(
         &self,
         socket: TcpStream,
+        remote_addr: SocketAddr,
     ) -> impl Future<Item = Connection, Error = io::Error> + Send + 'static
     where
         Self: GetOriginalDst,
@@ -215,17 +217,29 @@ impl<L: HasConfig, G> Listen<L, G> {
             // Protocol detection is disabled for the original port. Return a
             // new connection without protocol detection.
             (Some(addr), _) if self.disable_protocol_detection_ports.contains(&addr.port()) => {
+                debug!(
+                    "accepted connection from {} to {}; skipping protocol detection",
+                    remote_addr, addr,
+                );
                 let conn =
                     Connection::without_protocol_detection(socket).with_original_dst(Some(addr));
                 Either::A(future::ok(conn))
             }
             // TLS is enabled. Try to accept a TLS handshake.
             (dst, Conditional::Some(tls)) => {
+                debug!(
+                    "accepted connection from {} to {:?}; attempting TLS handshake",
+                    remote_addr, dst,
+                );
                 let handshake = Handshake::new(socket, tls).map(move |c| c.with_original_dst(dst));
                 Either::B(Either::A(handshake))
             }
             // TLS is disabled. Return a new plaintext connection.
             (dst, Conditional::None(why_no_tls)) => {
+                debug!(
+                    "accepted connection from {} to {:?}; skipping TLS ({})",
+                    remote_addr, dst, why_no_tls,
+                );
                 let conn = Connection::plain(socket, *why_no_tls).with_original_dst(dst);
                 Either::B(Either::B(future::ok(conn)))
             }
@@ -309,6 +323,7 @@ impl Future for Handshake {
                         .unwrap_or_else(|| {
                             Conditional::None(super::ReasonForNoPeerName::NotProvidedByRemote)
                         });
+                    trace!("accepted TLS connection; client={:?}", client_id);
 
                     let io = BoxedIo::new(super::TlsIo::from(io));
                     return Ok(Async::Ready(Connection::tls(io, client_id)));

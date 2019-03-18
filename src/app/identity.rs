@@ -11,6 +11,7 @@ use never::Never;
 pub use identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
 use transport::tls;
 
+/// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
 pub struct Config {
     pub svc: super::control::ControlAddr,
@@ -23,12 +24,22 @@ pub struct Config {
     pub max_refresh: Duration,
 }
 
+/// Holds the process's local TLS identity state.
+///
+/// Updates dynamically as certificates are provisioned from the Identity service.
 #[derive(Clone, Debug)]
 pub struct Local {
     trust_anchors: TrustAnchors,
     name: Name,
     crt_key: Watch<Option<CrtKey>>,
 }
+
+/// Produces a `Local` identity once a certificate is available.
+#[derive(Debug)]
+pub struct AwaitCrt(Option<Local>);
+
+#[derive(Copy, Clone, Debug)]
+pub struct LostDaemon;
 
 pub type CrtKeyStore = Store<Option<CrtKey>>;
 
@@ -92,6 +103,14 @@ impl Local {
         };
         (l, s)
     }
+
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn await_crt(self) -> AwaitCrt {
+        AwaitCrt(Some(self))
+    }
 }
 
 impl tls::client::HasConfig for Local {
@@ -146,12 +165,14 @@ where
         loop {
             self.inner = match self.inner {
                 Inner::Waiting(ref mut d) => {
+                    trace!("daemon waiting");
                     if let Ok(Async::NotReady) = d.poll() {
                         return Ok(Async::NotReady);
                     }
                     Inner::ShouldRefresh
                 }
                 Inner::ShouldRefresh => {
+                    trace!("daemon refreshing");
                     try_ready!(self
                         .client
                         .poll_ready()
@@ -164,8 +185,8 @@ where
                                 identity: self.config.local_name.as_ref().to_owned(),
                                 certificate_signing_request: self.config.csr.to_vec(),
                             });
-                            let f = self.client.certify(req);
-                            Inner::Pending(f)
+                            trace!("daemon certifying");
+                            Inner::Pending(self.client.certify(req))
                         }
                         Err(e) => {
                             error!("Failed to read authentication token: {}", e);
@@ -173,54 +194,86 @@ where
                         }
                     }
                 }
-                Inner::Pending(ref mut p) => match p.poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Ok(Async::Ready(rsp)) => {
-                        let api::CertifyResponse {
-                            leaf_certificate,
-                            intermediate_certificates,
-                            valid_until,
-                        } = rsp.into_inner();
+                Inner::Pending(ref mut p) => {
+                    trace!("daemon pending certification");
+                    match p.poll() {
+                        Ok(Async::NotReady) => return Ok(Async::NotReady),
+                        Ok(Async::Ready(rsp)) => {
+                            let api::CertifyResponse {
+                                leaf_certificate,
+                                intermediate_certificates,
+                                valid_until,
+                            } = rsp.into_inner();
 
-                        match valid_until.and_then(|d| Result::<SystemTime, Duration>::from(d).ok())
-                        {
-                            None => error!(
-                                "Identity service did not specify a ceritificate expiration."
-                            ),
-                            Some(expiry) => {
-                                let key = self.config.key.clone();
-                                let crt = Crt::new(
-                                    self.config.local_name.clone(),
-                                    leaf_certificate,
-                                    intermediate_certificates,
-                                    expiry,
-                                );
+                            match valid_until
+                                .and_then(|d| Result::<SystemTime, Duration>::from(d).ok())
+                            {
+                                None => error!(
+                                    "Identity service did not specify a certificate expiration."
+                                ),
+                                Some(expiry) => {
+                                    let key = self.config.key.clone();
+                                    let crt = Crt::new(
+                                        self.config.local_name.clone(),
+                                        leaf_certificate,
+                                        intermediate_certificates,
+                                        expiry,
+                                    );
 
-                                match self.config.trust_anchors.certify(key, crt) {
-                                    Err(e) => {
-                                        error!("Received invalid ceritficate: {}", e);
-                                    }
-                                    Ok(crt_key) => {
-                                        if self.crt_key.store(Some(crt_key)).is_err() {
-                                            // If we can't store a value, than all observations
-                                            // have been dropped and we can stop refreshing.
-                                            return Ok(Async::Ready(()));
+                                    match self.config.trust_anchors.certify(key, crt) {
+                                        Err(e) => {
+                                            error!("Received invalid ceritficate: {}", e);
                                         }
+                                        Ok(crt_key) => {
+                                            debug!("daemon certified until {:?}", expiry);
+                                            if self.crt_key.store(Some(crt_key)).is_err() {
+                                                // If we can't store a value, than all observations
+                                                // have been dropped and we can stop refreshing.
+                                                return Ok(Async::Ready(()));
+                                            }
 
-                                        self.expiry = expiry;
+                                            self.expiry = expiry;
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        Inner::Waiting(self.config.refresh(self.expiry))
+                            Inner::Waiting(self.config.refresh(self.expiry))
+                        }
+                        Err(e) => {
+                            error!("Failed to certify identity: {}", e);
+                            Inner::Waiting(self.config.refresh(self.expiry))
+                        }
                     }
-                    Err(e) => {
-                        error!("Failed to certify identity: {}", e);
-                        Inner::Waiting(self.config.refresh(self.expiry))
-                    }
-                },
+                }
             };
+        }
+    }
+}
+
+// === impl AwaitCrt ===
+
+impl Future for AwaitCrt {
+    type Item = Local;
+    type Error = LostDaemon;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        use futures::Stream;
+
+        let mut local = self.0.take().expect("polled after ready");
+        loop {
+            if (*local.crt_key.borrow()).is_some() {
+                return Ok(Async::Ready(local));
+            }
+
+            match local.crt_key.poll() {
+                Ok(Async::NotReady) => {
+                    self.0 = Some(local);
+                    return Ok(Async::NotReady);
+                }
+                Ok(Async::Ready(Some(()))) => {} // continue
+                Err(_) | Ok(Async::Ready(None)) => return Err(LostDaemon),
+            }
         }
     }
 }
