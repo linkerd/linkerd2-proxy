@@ -167,3 +167,9 @@ impl<A: FmtMetrics, B: FmtMetrics> FmtMetrics for AndThen<A, B> {
         Ok(())
     }
 }
+
+impl FmtMetrics for () {
+    fn fmt_metrics(&self, _: &mut fmt::Formatter) -> fmt::Result {
+        Ok(())
+    }
+}

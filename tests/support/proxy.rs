@@ -165,10 +165,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         app::config::ENV_CONTROL_LISTEN_ADDR,
         "127.0.0.1:0".to_owned(),
     );
-    env.put(
-        app::config::ENV_METRICS_LISTEN_ADDR,
-        "127.0.0.1:0".to_owned(),
-    );
+    env.put(app::config::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports
