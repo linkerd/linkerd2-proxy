@@ -281,10 +281,10 @@ where
                         id_config.trust_anchors.clone(),
                     )))
                     .push(keepalive::connect::layer(keepalive))
+                    .push(svc::timeout::layer(config.control_connect_timeout))
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns_resolver.clone()))
                     .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
-                    .push(svc::timeout::layer(config.control_connect_timeout))
                     .push(http_metrics::layer::<_, classify::Response>(
                         ctl_http_metrics.clone(),
                     ))
@@ -331,10 +331,10 @@ where
                 .push(phantom_data::layer())
                 .push(tls::client::layer(local_identity.clone()))
                 .push(keepalive::connect::layer(keepalive))
+                .push(svc::timeout::layer(config.control_connect_timeout))
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
                 .push(reconnect::layer().with_fixed_backoff(config.control_backoff_delay))
-                .push(svc::timeout::layer(config.control_connect_timeout))
                 .push(http_metrics::layer::<_, classify::Response>(
                     ctl_http_metrics,
                 ))
