@@ -209,7 +209,7 @@ where
                                 .and_then(|d| Result::<SystemTime, Duration>::from(d).ok())
                             {
                                 None => error!(
-                                    "Identity service did not specify a ceritificate expiration."
+                                    "Identity service did not specify a certificate expiration."
                                 ),
                                 Some(expiry) => {
                                     let key = self.config.key.clone();
