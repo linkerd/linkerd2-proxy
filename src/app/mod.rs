@@ -2,6 +2,7 @@
 
 use http;
 
+mod admin;
 mod classify;
 pub mod config;
 mod control;
