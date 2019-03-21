@@ -140,7 +140,7 @@ where
 
             match rx.poll() {
                 Ok(Async::NotReady) => match hangup.poll() {
-                    Ok(Async::Ready(_)) => unreachable!(),
+                    Ok(Async::Ready(never)) => match never {}, // unreachable!
                     Ok(Async::NotReady) => {
                         // We are now scheduled to be notified if the hangup tx
                         // is dropped.
