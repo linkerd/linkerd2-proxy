@@ -1,4 +1,4 @@
-use futures::sync::mpsc;
+use futures::sync::{mpsc, oneshot};
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use http;
 use regex::Regex;
@@ -22,7 +22,10 @@ pub struct Client<T> {
     context_token: String,
 }
 
-pub struct Rx(mpsc::Receiver<profiles::Routes>);
+pub struct Rx {
+    rx: mpsc::Receiver<profiles::Routes>,
+    _hangup: oneshot::Sender<Never>,
+}
 
 struct Daemon<T>
 where
@@ -34,6 +37,7 @@ where
     state: State<T>,
     tx: mpsc::Sender<profiles::Routes>,
     context_token: String,
+    hangup: oneshot::Receiver<Never>,
 }
 
 enum State<T>
@@ -78,9 +82,13 @@ where
 
     fn get_routes(&self, dst: &NameAddr) -> Option<Self::Stream> {
         let (tx, rx) = mpsc::channel(1);
+        // This oneshot allows the daemon to be notified when the Self::Stream
+        // is dropped.
+        let (hangup_tx, hangup_rx) = oneshot::channel();
 
         let daemon = Daemon {
             tx,
+            hangup: hangup_rx,
             dst: format!("{}", dst),
             state: State::Disconnected,
             service: self.service.clone(),
@@ -89,7 +97,10 @@ where
         };
         let spawn = DefaultExecutor::current().spawn(Box::new(daemon.map_err(|_| ())));
 
-        spawn.ok().map(|_| Rx(rx))
+        spawn.ok().map(|_| Rx {
+            rx,
+            _hangup: hangup_tx,
+        })
     }
 }
 
@@ -100,7 +111,7 @@ impl Stream for Rx {
     type Error = Never;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.0.poll().or_else(|_| Ok(None.into()))
+        self.rx.poll().or_else(|_| Ok(None.into()))
     }
 }
 
@@ -118,6 +129,7 @@ where
     fn proxy_stream(
         rx: &mut grpc::Streaming<api::DestinationProfile, T::ResponseBody>,
         tx: &mut mpsc::Sender<profiles::Routes>,
+        hangup: &mut oneshot::Receiver<Never>,
     ) -> Async<StreamState> {
         loop {
             match tx.poll_ready() {
@@ -127,7 +139,19 @@ where
             }
 
             match rx.poll() {
-                Ok(Async::NotReady) => return Async::NotReady,
+                Ok(Async::NotReady) => match hangup.poll() {
+                    Ok(Async::Ready(never)) => match never {}, // unreachable!
+                    Ok(Async::NotReady) => {
+                        // We are now scheduled to be notified if the hangup tx
+                        // is dropped.
+                        return Async::NotReady;
+                    }
+                    Err(_) => {
+                        // Hangup tx has been dropped.
+                        debug!("profile stream cancelled");
+                        return StreamState::SendLost.into();
+                    }
+                },
                 Ok(Async::Ready(None)) => return StreamState::RecvDone.into(),
                 Ok(Async::Ready(Some(profile))) => {
                     debug!("profile received: {:?}", profile);
@@ -206,13 +230,15 @@ where
                         State::Backoff(Delay::new(clock::now() + self.backoff))
                     }
                 },
-                State::Streaming(ref mut s) => match Self::proxy_stream(s, &mut self.tx) {
-                    Async::NotReady => return Ok(Async::NotReady),
-                    Async::Ready(StreamState::SendLost) => return Ok(().into()),
-                    Async::Ready(StreamState::RecvDone) => {
-                        State::Backoff(Delay::new(clock::now() + self.backoff))
+                State::Streaming(ref mut s) => {
+                    match Self::proxy_stream(s, &mut self.tx, &mut self.hangup) {
+                        Async::NotReady => return Ok(Async::NotReady),
+                        Async::Ready(StreamState::SendLost) => return Ok(().into()),
+                        Async::Ready(StreamState::RecvDone) => {
+                            State::Backoff(Delay::new(clock::now() + self.backoff))
+                        }
                     }
-                },
+                }
                 State::Backoff(ref mut f) => match f.poll() {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Err(_) | Ok(Async::Ready(())) => State::Disconnected,
