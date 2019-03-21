@@ -24,7 +24,7 @@ pub struct Client<T> {
 
 pub struct Rx {
     rx: mpsc::Receiver<profiles::Routes>,
-    _hangup: oneshot::Sender<()>,
+    _hangup: oneshot::Sender<Never>,
 }
 
 struct Daemon<T>
@@ -37,7 +37,7 @@ where
     state: State<T>,
     tx: mpsc::Sender<profiles::Routes>,
     context_token: String,
-    hangup: oneshot::Receiver<()>,
+    hangup: oneshot::Receiver<Never>,
 }
 
 enum State<T>
@@ -129,7 +129,7 @@ where
     fn proxy_stream(
         rx: &mut grpc::Streaming<api::DestinationProfile, T::ResponseBody>,
         tx: &mut mpsc::Sender<profiles::Routes>,
-        hangup: &mut oneshot::Receiver<()>,
+        hangup: &mut oneshot::Receiver<Never>,
     ) -> Async<StreamState> {
         loop {
             match tx.poll_ready() {
@@ -140,12 +140,7 @@ where
 
             match rx.poll() {
                 Ok(Async::NotReady) => match hangup.poll() {
-                    Ok(Async::Ready(_)) => {
-                        // We should never get here, the hangup tx should never
-                        // be written to.
-                        warn!("profile stream hangup");
-                        return StreamState::SendLost.into();
-                    }
+                    Ok(Async::Ready(_)) => unreachable!(),
                     Ok(Async::NotReady) => {
                         // We are now scheduled to be notified if the hangup tx
                         // is dropped.
