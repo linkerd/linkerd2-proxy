@@ -140,7 +140,7 @@ where
         // services to match requests. The response stream strongly holds the
         // match until the response is complete. This way, services never
         // evaluate matches for taps that have been completed or canceled.
-        let match_handle = match Match::try_new(req.match_) {
+        let match_handle = match Match::try_new(req.r#match) {
             Ok(m) => Arc::new(m),
             Err(e) => {
                 warn!("invalid tap request: {} ", e);

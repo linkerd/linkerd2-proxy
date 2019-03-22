@@ -29,13 +29,13 @@ impl Client {
 pub fn observe_request() -> ObserveBuilder {
     ObserveBuilder(pb::ObserveRequest {
         limit: 100,
-        match_: Some(pb::observe_request::Match {
-            match_: Some(pb::observe_request::match_::Match::Http(
-                pb::observe_request::match_::Http {
-                    match_: Some(pb::observe_request::match_::http::Match::Path(
-                        pb::observe_request::match_::http::StringMatch {
-                            match_: Some(
-                                pb::observe_request::match_::http::string_match::Match::Prefix(
+        r#match: Some(pb::observe_request::Match {
+            r#match: Some(pb::observe_request::r#match::Match::Http(
+                pb::observe_request::r#match::Http {
+                    r#match: Some(pb::observe_request::r#match::http::Match::Path(
+                        pb::observe_request::r#match::http::StringMatch {
+                            r#match: Some(
+                                pb::observe_request::r#match::http::string_match::Match::Prefix(
                                     "/".to_string(),
                                 ),
                             ),
@@ -57,11 +57,11 @@ impl ObserveBuilder {
     }
 
     pub fn ports(mut self, min: u16, max: u16) -> Self {
-        self.0.match_ = Some(pb::observe_request::Match {
-            match_: Some(pb::observe_request::match_::Match::Destination(
-                pb::observe_request::match_::Tcp {
-                    match_: Some(pb::observe_request::match_::tcp::Match::Ports(
-                        pb::observe_request::match_::tcp::PortRange {
+        self.0.r#match = Some(pb::observe_request::Match {
+            r#match: Some(pb::observe_request::r#match::Match::Destination(
+                pb::observe_request::r#match::Tcp {
+                    r#match: Some(pb::observe_request::r#match::tcp::Match::Ports(
+                        pb::observe_request::r#match::tcp::PortRange {
                             min: min.into(),
                             max: max.into(),
                         },
