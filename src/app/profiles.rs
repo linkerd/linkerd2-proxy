@@ -292,7 +292,7 @@ fn set_route_timeout(route: &mut profiles::Route, timeout: Result<Duration, Dura
 }
 
 fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> {
-    let m = match orig.match_? {
+    let m = match orig.r#match? {
         api::request_match::Match::All(ms) => {
             let ms = ms.matches.into_iter().filter_map(convert_req_match);
             profiles::RequestMatch::All(ms.collect())
@@ -319,7 +319,7 @@ fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> 
             profiles::RequestMatch::Path(re)
         }
         api::request_match::Match::Method(mm) => {
-            let m = mm.type_.and_then(|m| m.try_as_http().ok())?;
+            let m = mm.r#type.and_then(|m| m.try_as_http().ok())?;
             profiles::RequestMatch::Method(m)
         }
     };
@@ -333,7 +333,7 @@ fn convert_rsp_class(orig: api::ResponseClass) -> Option<profiles::ResponseClass
 }
 
 fn convert_rsp_match(orig: api::ResponseMatch) -> Option<profiles::ResponseMatch> {
-    let m = match orig.match_? {
+    let m = match orig.r#match? {
         api::response_match::Match::All(ms) => {
             let ms = ms
                 .matches

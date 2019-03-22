@@ -32,7 +32,7 @@ linkerd2-stack     = { path = "lib/stack" }
 linkerd2-task      = { path = "lib/task" }
 linkerd2-timeout   = { path = "lib/timeout" }
 
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.7" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "0d04051e5867c26cb41c7fe3eb9289df6de87428" } #tag = "v0.1.7" }
 
 bytes = "0.4"
 env_logger = { version = "0.5", default-features = false }
@@ -45,8 +45,8 @@ hyper = "0.12.3"
 ipnet = "1.0"
 log = "0.4.1"
 indexmap = "1.0.0"
-prost = "0.4.0"
-prost-types = "0.4.0"
+prost = "0.5.0"
+prost-types = "0.5.0"
 rand = "0.6.3"
 try-lock = "0.2"
 
@@ -66,7 +66,7 @@ tower-in-flight-limit = { git = "https://github.com/tower-rs/tower" }
 tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
 tower-retry           = { git = "https://github.com/tower-rs/tower" }
 tower-service         = "0.2"
-tower-util            = { git = "https://github.com/tower-rs/tower" }
+tower-service-util    = { git = "https://github.com/tower-rs/tower" }
 tower-http-service    = { git = "https://github.com/tower-rs/tower-http" }
 tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
 
@@ -89,7 +89,7 @@ net2 = "0.2"
 quickcheck = { version = "0.8", default-features = false }
 linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
 linkerd2-task    = { path = "lib/task", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.7", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], rev = "0d04051e5867c26cb41c7fe3eb9289df6de87428" } #tag = "v0.1.7" }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.
@@ -104,7 +104,4 @@ debug = false
 debug = false
 
 [patch.crates-io]
-prost = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
-prost-derive = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
-prost-build = { git = "https://github.com/hawkw/prost", branch = "s/tempdir/tempfile"}
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }

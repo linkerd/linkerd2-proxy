@@ -400,7 +400,7 @@ impl RouteBuilder {
             regex: String::from(path),
         };
         self.route.condition = Some(pb::RequestMatch {
-            match_: Some(pb::request_match::Match::Path(path_match)),
+            r#match: Some(pb::request_match::Match::Path(path_match)),
         });
         self
     }
@@ -435,7 +435,7 @@ impl RouteBuilder {
         assert!(max <= 599);
         let range = pb::HttpStatusRange { min, max };
         let condition = pb::ResponseMatch {
-            match_: Some(pb::response_match::Match::Status(range)),
+            r#match: Some(pb::response_match::Match::Status(range)),
         };
         self.response_class(condition, is_failure)
     }

@@ -55,16 +55,16 @@ pub enum NetMatch {
 pub enum HttpMatch {
     Scheme(http::uri::Scheme),
     Method(http::Method),
-    Path(observe_request::match_::http::string_match::Match),
-    Authority(observe_request::match_::http::string_match::Match),
+    Path(observe_request::r#match::http::string_match::Match),
+    Authority(observe_request::r#match::http::string_match::Match),
 }
 
 // ===== impl Match ======
 
 impl Match {
-    fn from_seq(seq: observe_request::match_::Seq) -> Result<Vec<Self>, InvalidMatch> {
+    fn from_seq(seq: observe_request::r#match::Seq) -> Result<Vec<Self>, InvalidMatch> {
         let mut new = Vec::with_capacity(seq.matches.len());
-        for m in seq.matches.into_iter().filter_map(|m| m.match_) {
+        for m in seq.matches.into_iter().filter_map(|m| m.r#match) {
             new.push(Self::try_from(m)?);
         }
 
@@ -99,34 +99,34 @@ impl Match {
 
 impl Match {
     pub fn try_new(m: Option<observe_request::Match>) -> Result<Self, InvalidMatch> {
-        m.and_then(|m| m.match_)
+        m.and_then(|m| m.r#match)
             .map(Self::try_from)
             .unwrap_or_else(|| Err(InvalidMatch::Empty))
     }
 }
 
-impl TryFrom<observe_request::match_::Match> for Match {
+impl TryFrom<observe_request::r#match::Match> for Match {
     type Err = InvalidMatch;
 
     #[allow(unconditional_recursion)]
-    fn try_from(m: observe_request::match_::Match) -> Result<Self, Self::Err> {
-        use api::tap::observe_request::match_;
+    fn try_from(m: observe_request::r#match::Match) -> Result<Self, Self::Err> {
+        use api::tap::observe_request::r#match;
 
         match m {
-            match_::Match::All(seq) => Self::from_seq(seq).map(Match::All),
-            match_::Match::Any(seq) => Self::from_seq(seq).map(Match::Any),
-            match_::Match::Not(m) => m
-                .match_
+            r#match::Match::All(seq) => Self::from_seq(seq).map(Match::All),
+            r#match::Match::Any(seq) => Self::from_seq(seq).map(Match::Any),
+            r#match::Match::Not(m) => m
+                .r#match
                 .ok_or(InvalidMatch::Empty)
                 .and_then(Self::try_from)
                 .map(|m| Match::Not(Box::new(m))),
-            match_::Match::Source(src) => TcpMatch::try_from(src).map(Match::Source),
-            match_::Match::Destination(dst) => TcpMatch::try_from(dst).map(Match::Destination),
-            match_::Match::DestinationLabel(l) => {
+            r#match::Match::Source(src) => TcpMatch::try_from(src).map(Match::Source),
+            r#match::Match::Destination(dst) => TcpMatch::try_from(dst).map(Match::Destination),
+            r#match::Match::DestinationLabel(l) => {
                 LabelMatch::try_from(l).map(Match::DestinationLabel)
             }
-            match_::Match::RouteLabel(l) => LabelMatch::try_from(l).map(Match::RouteLabel),
-            match_::Match::Http(http) => HttpMatch::try_from(http).map(Match::Http),
+            r#match::Match::RouteLabel(l) => LabelMatch::try_from(l).map(Match::RouteLabel),
+            r#match::Match::Http(http) => HttpMatch::try_from(http).map(Match::Http),
         }
     }
 }
@@ -139,10 +139,10 @@ impl LabelMatch {
     }
 }
 
-impl TryFrom<observe_request::match_::Label> for LabelMatch {
+impl TryFrom<observe_request::r#match::Label> for LabelMatch {
     type Err = InvalidMatch;
 
-    fn try_from(m: observe_request::match_::Label) -> Result<Self, InvalidMatch> {
+    fn try_from(m: observe_request::r#match::Label) -> Result<Self, InvalidMatch> {
         if m.key.is_empty() || m.value.is_empty() {
             return Err(InvalidMatch::Empty);
         }
@@ -167,13 +167,13 @@ impl TcpMatch {
     }
 }
 
-impl TryFrom<observe_request::match_::Tcp> for TcpMatch {
+impl TryFrom<observe_request::r#match::Tcp> for TcpMatch {
     type Err = InvalidMatch;
 
-    fn try_from(m: observe_request::match_::Tcp) -> Result<Self, InvalidMatch> {
-        use api::tap::observe_request::match_::tcp;
+    fn try_from(m: observe_request::r#match::Tcp) -> Result<Self, InvalidMatch> {
+        use api::tap::observe_request::r#match::tcp;
 
-        m.match_.ok_or(InvalidMatch::Empty).and_then(|t| match t {
+        m.r#match.ok_or(InvalidMatch::Empty).and_then(|t| match t {
             tcp::Match::Ports(range) => {
                 // If either a minimum or maximum is not specified, the range is considered to
                 // be over a discrete value.
@@ -210,10 +210,10 @@ impl NetMatch {
     }
 }
 
-impl TryFrom<observe_request::match_::tcp::Netmask> for NetMatch {
+impl TryFrom<observe_request::r#match::tcp::Netmask> for NetMatch {
     type Err = InvalidMatch;
 
-    fn try_from(m: observe_request::match_::tcp::Netmask) -> Result<Self, InvalidMatch> {
+    fn try_from(m: observe_request::r#match::tcp::Netmask) -> Result<Self, InvalidMatch> {
         let mask = if m.mask == 0 {
             return Err(InvalidMatch::Empty);
         } else if m.mask > u32::from(::std::u8::MAX) {
@@ -260,10 +260,10 @@ impl HttpMatch {
     }
 
     fn matches_string(
-        string_match: &observe_request::match_::http::string_match::Match,
+        string_match: &observe_request::r#match::http::string_match::Match,
         value: &str,
     ) -> bool {
-        use api::tap::observe_request::match_::http::string_match::Match::*;
+        use api::tap::observe_request::r#match::http::string_match::Match::*;
 
         match string_match {
             Exact(ref exact) => value == exact,
@@ -272,14 +272,14 @@ impl HttpMatch {
     }
 }
 
-impl TryFrom<observe_request::match_::Http> for HttpMatch {
+impl TryFrom<observe_request::r#match::Http> for HttpMatch {
     type Err = InvalidMatch;
-    fn try_from(m: observe_request::match_::Http) -> Result<Self, InvalidMatch> {
+    fn try_from(m: observe_request::r#match::Http) -> Result<Self, InvalidMatch> {
         use api::http_types::scheme::{Registered, Type};
-        use api::tap::observe_request::match_::http::Match as Pb;
+        use api::tap::observe_request::r#match::http::Match as Pb;
 
-        m.match_.ok_or(InvalidMatch::Empty).and_then(|m| match m {
-            Pb::Scheme(s) => s.type_.ok_or(InvalidMatch::Empty).and_then(|s| match s {
+        m.r#match.ok_or(InvalidMatch::Empty).and_then(|m| match m {
+            Pb::Scheme(s) => s.r#type.ok_or(InvalidMatch::Empty).and_then(|s| match s {
                 Type::Registered(reg) if reg == Registered::Http.into() => {
                     Ok(HttpMatch::Scheme(http::uri::Scheme::HTTP))
                 }
@@ -293,18 +293,18 @@ impl TryFrom<observe_request::match_::Http> for HttpMatch {
             }),
 
             Pb::Method(m) => m
-                .type_
+                .r#type
                 .ok_or(InvalidMatch::Empty)
                 .and_then(|m| m.try_as_http().map_err(|_| InvalidMatch::InvalidHttpMethod))
                 .map(HttpMatch::Method),
 
             Pb::Authority(a) => a
-                .match_
+                .r#match
                 .ok_or(InvalidMatch::Empty)
                 .map(|a| HttpMatch::Authority(a)),
 
             Pb::Path(p) => p
-                .match_
+                .r#match
                 .ok_or(InvalidMatch::Empty)
                 .map(|p| HttpMatch::Path(p)),
         })
@@ -357,11 +357,11 @@ mod tests {
     }
 
     quickcheck! {
-        fn tcp_from_proto(tcp: observe_request::match_::Tcp) -> bool {
-            use self::observe_request::match_::tcp;
+        fn tcp_from_proto(tcp: observe_request::r#match::Tcp) -> bool {
+            use self::observe_request::r#match::tcp;
 
             let err: Option<InvalidMatch> =
-                tcp.match_.as_ref()
+                tcp.r#match.as_ref()
                     .map(|m| match m {
                         tcp::Match::Ports(ps) => {
                             let ok = 0 < ps.min &&
@@ -398,7 +398,7 @@ mod tests {
             m.matches(addr) == matches
         }
 
-        fn labels_from_proto(label: observe_request::match_::Label) -> bool {
+        fn labels_from_proto(label: observe_request::r#match::Label) -> bool {
             let err: Option<InvalidMatch> =
                 if label.key.is_empty() || label.value.is_empty() {
                     Some(InvalidMatch::Empty)
@@ -416,13 +416,13 @@ mod tests {
             l.matches(&IndexMap::from_iter(labels.into_iter())) == matches
         }
 
-        fn http_from_proto(http: observe_request::match_::Http) -> bool {
-            use self::observe_request::match_::http;
+        fn http_from_proto(http: observe_request::r#match::Http) -> bool {
+            use self::observe_request::r#match::http;
 
-            let err = match http.match_.as_ref() {
+            let err = match http.r#match.as_ref() {
                 None => Some(InvalidMatch::Empty),
                 Some(http::Match::Method(ref m)) => {
-                    match m.type_.as_ref() {
+                    match m.r#type.as_ref() {
                         None => Some(InvalidMatch::Empty),
                         Some(http_types::http_method::Type::Unregistered(ref m)) if m.len() > 15 => {
                             Some(InvalidMatch::InvalidHttpMethod)
@@ -438,17 +438,17 @@ mod tests {
                         Some(http_types::http_method::Type::Registered(_)) => None,
                     }
                 }
-                Some(http::Match::Scheme(m)) => match m.type_.as_ref() {
+                Some(http::Match::Scheme(m)) => match m.r#type.as_ref() {
                     None => Some(InvalidMatch::Empty),
                     Some(http_types::scheme::Type::Unregistered(_)) => None,
                     Some(http_types::scheme::Type::Registered(m)) if *m < 2 => None,
                     Some(http_types::scheme::Type::Registered(_)) => Some(InvalidMatch::InvalidScheme),
                 }
-                Some(http::Match::Authority(m)) => match m.match_.as_ref() {
+                Some(http::Match::Authority(m)) => match m.r#match.as_ref() {
                     None => Some(InvalidMatch::Empty),
                     Some(_) => None,
                 }
-                Some(http::Match::Path(m)) => match m.match_.as_ref() {
+                Some(http::Match::Path(m)) => match m.r#match.as_ref() {
                     None => Some(InvalidMatch::Empty),
                     Some(_) => None,
                 }

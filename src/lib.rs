@@ -32,7 +32,6 @@ extern crate tokio_timer;
 extern crate tower_grpc;
 extern crate tower_http_service;
 extern crate tower_retry;
-extern crate tower_util;
 extern crate try_lock;
 
 #[macro_use]
