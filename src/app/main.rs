@@ -443,7 +443,7 @@ where
             let client_stack = connect
                 .clone()
                 .push(client::layer("out"))
-                .push(reconnect::layer())
+                .push(reconnect::layer().with_fixed_backoff(config.outbound_connect_backoff))
                 .push(svc::stack_per_request::layer())
                 .push(normalize_uri::layer());
 
@@ -627,7 +627,7 @@ where
             let client_stack = connect
                 .clone()
                 .push(client::layer("in"))
-                .push(reconnect::layer())
+                .push(reconnect::layer().with_fixed_backoff(config.inbound_connect_backoff))
                 .push(svc::stack_per_request::layer())
                 .push(normalize_uri::layer());
 
