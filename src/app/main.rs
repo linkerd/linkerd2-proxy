@@ -582,7 +582,9 @@ where
             // Instantiates an HTTP service for each `Source` using the
             // shared `addr_router`. The `Source` is stored in the request's
             // extensions so that it can be used by the `addr_router`.
-            let server_stack = addr_router.push(insert_target::layer());
+            let server_stack = addr_router
+                .push(insert_target::layer())
+                .push(super::errors::layer());
 
             // Instantiated for each TCP connection received from the local
             // application (including HTTP connections).
@@ -730,7 +732,8 @@ where
                 .push(set_client_id_on_req::layer())
                 .push(strip_header::request::layer(super::L5D_CLIENT_ID))
                 .push(strip_header::response::layer(super::L5D_SERVER_ID))
-                .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER));
+                .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
+                .push(super::errors::layer());
 
             // As the inbound proxy accepts connections, we don't do any
             // special transport-level handling.
