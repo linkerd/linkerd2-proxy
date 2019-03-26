@@ -11,13 +11,14 @@
 
 use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
 use std::time::Duration;
-use std::{error, fmt};
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay, Timeout};
 
 use dns;
 use svc;
 use {Addr, NameAddr};
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Duration to wait before polling DNS again after an error (or a NXDOMAIN
 /// response with no TTL).
@@ -69,12 +70,6 @@ enum State {
     Init,
     Pending(Timeout<dns::RefineFuture>),
     ValidUntil(Delay),
-}
-
-#[derive(Debug)]
-pub enum Error<M, S> {
-    Stack(M),
-    Service(S),
 }
 
 // === Layer ===
@@ -255,13 +250,15 @@ impl Cache {
 
 // === impl Service ===
 
-impl<M, Req> svc::Service<Req> for Service<M>
+impl<M, Req, Svc> svc::Service<Req> for Service<M>
 where
-    M: svc::Stack<Addr>,
-    M::Value: svc::Service<Req>,
+    M: svc::Stack<Addr, Value = Svc>,
+    M::Error: Into<Error>,
+    Svc: svc::Service<Req>,
+    Svc::Error: Into<Error>,
 {
     type Response = <M::Value as svc::Service<Req>>::Response;
-    type Error = Error<M::Error, <M::Value as svc::Service<Req>>::Error>;
+    type Error = Error;
     type Future = future::MapErr<
         <M::Value as svc::Service<Req>>::Future,
         fn(<M::Value as svc::Service<Req>>::Error) -> Self::Error,
@@ -270,12 +267,12 @@ where
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         while let Ok(Async::Ready(Some(addr))) = self.rx.poll() {
             debug!("refined: {}", addr);
-            let svc = self.stack.make(&addr.into()).map_err(Error::Stack)?;
+            let svc = self.stack.make(&addr.into()).map_err(Into::into)?;
             self.service = Some(svc);
         }
 
         match self.service.as_mut() {
-            Some(ref mut svc) => svc.poll_ready().map_err(Error::Service),
+            Some(ref mut svc) => svc.poll_ready().map_err(Into::into),
             None => {
                 trace!("resolution has not completed");
                 Ok(Async::NotReady)
@@ -288,26 +285,6 @@ where
             .as_mut()
             .expect("poll_ready must be called first")
             .call(req)
-            .map_err(Error::Service)
-    }
-}
-
-// === impl Error ===
-
-impl<M: fmt::Display, S: fmt::Display> fmt::Display for Error<M, S> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::Stack(e) => e.fmt(f),
-            Error::Service(e) => e.fmt(f),
-        }
-    }
-}
-
-impl<M: error::Error, S: error::Error> error::Error for Error<M, S> {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match self {
-            Error::Stack(e) => e.source(),
-            Error::Service(e) => e.source(),
-        }
+            .map_err(Into::into)
     }
 }
