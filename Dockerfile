@@ -7,8 +7,8 @@
 # This reduces build time and produces binaries with debug symbols, at the expense of
 # runtime performance.
 
-ARG RUST_IMAGE=rust:1.32.0
-ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:git-3140b404
+ARG RUST_IMAGE=rust:1.33.0
+ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.3.3
 
 ## Builds the proxy as incrementally as possible.
 FROM $RUST_IMAGE as build
@@ -43,5 +43,5 @@ RUN if [ -n "$PROXY_UNOPTIMIZED" ]; \
 ## Install the proxy binary into the base runtime image.
 FROM $RUNTIME_IMAGE as runtime
 WORKDIR /linkerd
-COPY --from=build /usr/src/linkerd2-proxy/target/linkerd2-proxy /var/lib/linkerd/bin/linkerd2-proxy
+COPY --from=build /usr/src/linkerd2-proxy/target/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
 ENV LINKERD2_PROXY_LOG=warn,linkerd2_proxy=info
