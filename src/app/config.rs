@@ -40,6 +40,12 @@ pub struct Config {
     /// The maximum amount of time to wait for a connection to a remote peer.
     pub outbound_connect_timeout: Duration,
 
+    /// The amount of time to wait between connection attempts.
+    pub inbound_connect_backoff: Duration,
+
+    /// The amount of time to wait between connection attempts.
+    pub outbound_connect_backoff: Duration,
+
     // TCP Keepalive set on accepted inbound connections.
     pub inbound_accept_keepalive: Option<Duration>,
 
@@ -171,6 +177,8 @@ pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
+const ENV_INBOUND_CONNECT_BACKOFF: &str = "LINKERD2_PROXY_INBOUND_CONNECT_BACKOFF";
+const ENV_OUTBOUND_CONNECT_BACKOFF: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_BACKOFF";
 
 const ENV_INBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_ACCEPT_KEEPALIVE";
 const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEPALIVE";
@@ -267,7 +275,9 @@ const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
+const DEFAULT_INBOUND_CONNECT_BACKOFF: Duration = Duration::from_millis(100);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
+const DEFAULT_OUTBOUND_CONNECT_BACKOFF: Duration = Duration::from_millis(100);
 const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(1);
 const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
@@ -325,6 +335,9 @@ impl Config {
 
         let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
         let outbound_connect_timeout = parse(strings, ENV_OUTBOUND_CONNECT_TIMEOUT, parse_duration);
+
+        let inbound_connect_backoff = parse(strings, ENV_INBOUND_CONNECT_BACKOFF, parse_duration);
+        let outbound_connect_backoff = parse(strings, ENV_OUTBOUND_CONNECT_BACKOFF, parse_duration);
 
         let inbound_accept_keepalive = parse(strings, ENV_INBOUND_ACCEPT_KEEPALIVE, parse_duration);
         let outbound_accept_keepalive =
@@ -419,6 +432,11 @@ impl Config {
                 .unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
             outbound_connect_timeout: outbound_connect_timeout?
                 .unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
+
+            inbound_connect_backoff: inbound_connect_backoff?
+                .unwrap_or(DEFAULT_INBOUND_CONNECT_BACKOFF),
+            outbound_connect_backoff: outbound_connect_backoff?
+                .unwrap_or(DEFAULT_OUTBOUND_CONNECT_BACKOFF),
 
             inbound_accept_keepalive: inbound_accept_keepalive?,
             outbound_accept_keepalive: outbound_accept_keepalive?,

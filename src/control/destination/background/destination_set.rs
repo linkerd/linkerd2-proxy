@@ -125,7 +125,6 @@ where
         // (or a NXDOMAIN response with no TTL).
         const DNS_ERROR_TTL: Duration = Duration::from_secs(5);
 
-        trace!("checking DNS for {:?}", authority);
         while let Some(mut query) = self.dns_query.take() {
             trace!("polling DNS for {:?}", authority);
             let deadline = match query.poll() {
