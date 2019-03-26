@@ -100,9 +100,13 @@ where
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
     use proxy::http::router::error as router;
+    use proxy::shed::error as shed;
 
     if let Some(ref c) = e.downcast_ref::<router::NoCapacity>() {
         warn!("router at capacity ({})", c.0);
+        http::StatusCode::SERVICE_UNAVAILABLE
+    } else if let Some(_) = e.downcast_ref::<shed::Overloaded>() {
+        warn!("server overloaded, max-in-flight reached");
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if let Some(ref r) = e.downcast_ref::<router::MakeRoute>() {
         error!("router error: {:?}", r);

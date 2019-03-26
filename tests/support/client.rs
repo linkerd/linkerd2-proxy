@@ -213,7 +213,7 @@ impl Conn {
             .lock()
             .expect("running lock")
             .take()
-            .expect("connected more than once");
+            .expect("support client cannot connect more than once");
         let c = TcpStream::connect(&self.addr)
             .and_then(|tcp| tcp.set_nodelay(true).map(move |_| tcp))
             .map(move |tcp| RunningIo {

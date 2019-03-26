@@ -23,7 +23,7 @@ use proxy::{
         client, insert_target, metrics as http_metrics, normalize_uri, profiles, router, settings,
         strip_header,
     },
-    limit, reconnect,
+    limit, reconnect, shed,
 };
 use svc::{
     self, shared,
@@ -186,8 +186,6 @@ where
             outbound_listener,
             admin_listener,
         } = self;
-
-        const MAX_IN_FLIGHT: usize = 10_000;
 
         const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
         const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -427,6 +425,7 @@ where
             let profiles_client = profiles_client.clone();
             let capacity = config.outbound_router_capacity;
             let max_idle_age = config.outbound_router_max_idle_age;
+            let max_in_flight = config.outbound_max_requests_in_flight;
             let endpoint_http_metrics = endpoint_http_metrics.clone();
             let route_http_metrics = route_http_metrics.clone();
             let profile_suffixes = config.destination_profile_suffixes.clone();
@@ -462,7 +461,7 @@ where
             // 6. Strips any `l5d-server-id` that may have been received from
             //    the server, before we apply our own.
             let endpoint_stack = client_stack
-                .push(buffer::layer(MAX_IN_FLIGHT))
+                .push(buffer::layer(max_in_flight))
                 .push(strip_header::response::layer(super::L5D_SERVER_ID))
                 .push(strip_header::response::layer(super::L5D_REMOTE_IP))
                 .push(settings::router::layer::<_, Endpoint>())
@@ -505,7 +504,7 @@ where
             let dst_stack = endpoint_stack
                 .push(resolve::layer(Resolve::new(resolver)))
                 .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .push(buffer::layer(MAX_IN_FLIGHT))
+                .push(buffer::layer(max_in_flight))
                 .push(profiles::router::layer(
                     profile_suffixes,
                     profiles_client,
@@ -523,7 +522,7 @@ where
             // But for now it's more important to use the request router's
             // caching logic.
             let dst_router = dst_stack
-                .push(buffer::layer(MAX_IN_FLIGHT))
+                .push(buffer::layer(max_in_flight))
                 .push(router::layer(|req: &http::Request<_>| {
                     let addr = req.extensions().get::<DstAddr>().cloned();
                     debug!("outbound dst={:?}", addr);
@@ -557,8 +556,7 @@ where
             // 4. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
             // address is used.
             let addr_router = addr_stack
-                .push(buffer::layer(MAX_IN_FLIGHT))
-                .push(limit::layer(MAX_IN_FLIGHT))
+                .push(buffer::layer(max_in_flight))
                 .push(strip_header::request::layer(super::L5D_CLIENT_ID))
                 .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                 .push(router::layer(|req: &http::Request<_>| {
@@ -576,6 +574,9 @@ where
                         })
                         .ok()
                 }))
+                // `limit` must be shared to apply to all connections...
+                .push(limit::layer(max_in_flight))
+                .push(shed::layer())
                 .make(&router::Config::new("out addr", capacity, max_idle_age))
                 .map(shared::stack)
                 .expect("outbound addr router")
@@ -618,6 +619,7 @@ where
 
             let capacity = config.inbound_router_capacity;
             let max_idle_age = config.inbound_router_max_idle_age;
+            let max_in_flight = config.inbound_max_requests_in_flight;
             let profile_suffixes = config.destination_profile_suffixes;
             let default_fwd_addr = config.inbound_forward.map(|a| a.into());
 
@@ -645,14 +647,14 @@ where
             // If there is no `SO_ORIGINAL_DST` for an inbound socket,
             // `default_fwd_addr` may be used.
             let endpoint_router = client_stack
-                .push(buffer::layer(MAX_IN_FLIGHT))
+                .push(buffer::layer(max_in_flight))
                 .push(settings::router::layer::<_, Endpoint>())
                 .push(phantom_data::layer())
                 .push(tap_layer)
                 .push(http_metrics::layer::<_, classify::Response>(
                     endpoint_http_metrics,
                 ))
-                .push(buffer::layer(MAX_IN_FLIGHT))
+                .push(buffer::layer(max_in_flight))
                 .push(router::layer(RecognizeEndpoint::new(default_fwd_addr)))
                 .make(&router::Config::new("in endpoint", capacity, max_idle_age))
                 .map(shared::stack)
@@ -680,7 +682,7 @@ where
             let dst_stack = endpoint_router
                 .push(phantom_data::layer())
                 .push(insert_target::layer())
-                .push(buffer::layer(MAX_IN_FLIGHT))
+                .push(buffer::layer(max_in_flight))
                 .push(profiles::router::layer(
                     profile_suffixes,
                     profiles_client,
@@ -703,8 +705,7 @@ where
             // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
             // address is used.
             let dst_router = dst_stack
-                .push(buffer::layer(MAX_IN_FLIGHT))
-                .push(limit::layer(MAX_IN_FLIGHT))
+                .push(buffer::layer(max_in_flight))
                 .push(router::layer(|req: &http::Request<_>| {
                     let canonical = req
                         .headers()
@@ -720,6 +721,9 @@ where
                     debug!("inbound dst={:?}", dst);
                     dst.map(DstAddr::inbound)
                 }))
+                // `limit` must be shared to apply to all connections...
+                .push(limit::layer(max_in_flight))
+                .push(shed::layer())
                 .make(&router::Config::new("in dst", capacity, max_idle_age))
                 .map(shared::stack)
                 .expect("inbound dst router");

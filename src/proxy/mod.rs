@@ -11,6 +11,7 @@ mod protocol;
 pub mod reconnect;
 pub mod resolve;
 pub mod server;
+pub mod shed;
 mod tcp;
 
 pub use self::resolve::{Resolution, Resolve};
