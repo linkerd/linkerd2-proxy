@@ -76,7 +76,7 @@ trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7
 # tls
 ring = "0.14.6"
 webpki = "0.19"
-rustls = "0.15"
+rustls = { version = "0.15", features = ["logging"] }
 tokio-rustls = "0.9"
 untrusted = "0.6"
 

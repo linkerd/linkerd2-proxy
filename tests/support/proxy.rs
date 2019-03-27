@@ -8,6 +8,7 @@ pub fn new() -> Proxy {
 
 pub struct Proxy {
     controller: Option<controller::Listening>,
+    identity: Option<controller::Listening>,
     inbound: Option<server::Listening>,
     outbound: Option<server::Listening>,
 
@@ -35,6 +36,7 @@ impl Proxy {
             controller: None,
             inbound: None,
             outbound: None,
+            identity: None,
 
             inbound_disable_ports_protocol_detection: None,
             outbound_disable_ports_protocol_detection: None,
@@ -47,6 +49,11 @@ impl Proxy {
     /// If not used, a default controller will be used.
     pub fn controller(mut self, c: controller::Listening) -> Self {
         self.controller = Some(c);
+        self
+    }
+
+    pub fn identity(mut self, i: controller::Listening) -> Self {
+        self.identity = Some(i);
         self
     }
 
@@ -136,9 +143,9 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
+    let identity = proxy.identity;
     let mut mock_orig_dst = DstInner::default();
 
-    env.put(app::config::ENV_IDENTITY_DISABLED, "test".into());
     env.put(
         app::config::ENV_DESTINATION_SVC_ADDR,
         format!("{}", controller.addr),
@@ -166,6 +173,12 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         "127.0.0.1:0".to_owned(),
     );
     env.put(app::config::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+
+    if let Some(ref identity) = identity {
+        env.put(app::config::ENV_IDENTITY_SVC_BASE, format!("{}", identity.addr));
+    } else {
+        env.put(app::config::ENV_IDENTITY_DISABLED, "test".to_owned());
+    }
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports

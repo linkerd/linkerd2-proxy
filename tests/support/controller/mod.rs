@@ -17,6 +17,10 @@ pub fn new() -> Controller {
     Controller::new()
 }
 
+pub fn identity() -> identity::Identity {
+    identity::Identity::new()
+}
+
 pub type Labels = HashMap<String, String>;
 
 #[derive(Debug)]

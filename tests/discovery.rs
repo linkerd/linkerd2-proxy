@@ -810,6 +810,8 @@ mod proxy_to_proxy {
         (server: $make_server:path, client: $make_client:path) => {
             let _ = env_logger_init();
             let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+            let id_svc = controller::identity()
+                .run();
 
             let srv = $make_server()
                 .route_fn("/hallo", move |req| {
@@ -818,14 +820,17 @@ mod proxy_to_proxy {
                 })
                 .run();
 
-            let in_proxy = proxy::new().inbound(srv).run_with_test_env(tls_env());
+            let in_proxy = proxy::new().inbound(srv).identity(id_svc).run_with_test_env(tls_env());
 
             let ctrl = controller::new();
             let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
             dst.send(controller::destination_add_tls(in_proxy.inbound, id));
+            let id_svc = controller::identity()
+                .run();
 
             let out_proxy = proxy::new()
                 .controller(ctrl.run())
+                .identity(id_svc)
                 .run_with_test_env(tls_env());
 
             let client = $make_client(out_proxy.outbound, "disco.test.svc.cluster.local");
@@ -846,7 +851,6 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[ignore] // FIXME -- stub identity service in tests
     fn outbound_http2_l5d_server_id_l5d_client_id() {
         generate_l5d_tls_id_test! {
             server: server::http2,
@@ -857,7 +861,7 @@ mod proxy_to_proxy {
     fn tls_env() -> app::config::TestEnv {
         use std::path::PathBuf;
 
-        let (_cert, _key, _trust_anchors) = {
+        let (id_dir, token, trust_anchors) = {
             let path_to_string = |path: &PathBuf| {
                 path.as_path()
                     .to_owned()
@@ -865,28 +869,28 @@ mod proxy_to_proxy {
                     .into_string()
                     .unwrap()
             };
-            let mut tls = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            tls.push("src");
-            tls.push("transport");
-            tls.push("tls");
-            tls.push("testdata");
+            let mut id = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            id.push("tests");
+            id.push("support");
+            id.push("data");
 
-            tls.push("foo-ns1-ca1.crt");
-            let cert = path_to_string(&tls);
+            id.push("ca1.pem");
+            let trust_anchors = std::fs::read_to_string(&id).expect("read trust anchors");
 
-            tls.set_file_name("foo-ns1-ca1.p8");
-            let key = path_to_string(&tls);
+            id.set_file_name("foo-ns1");
+            let id_dir = path_to_string(&id);
 
-            tls.set_file_name("ca1.pem");
-            let trust_anchors = path_to_string(&tls);
-            (cert, key, trust_anchors)
+            id.push("token.txt");
+            let token = path_to_string(&id);
+
+            (id_dir, token, trust_anchors)
         };
 
         let mut env = app::config::TestEnv::new();
 
-        // env.put(app::config::ENV_TLS_CERT, cert);
-        // env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
-        // env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
+        env.put(app::config::ENV_IDENTITY_DIR, id_dir);
+        env.put(app::config::ENV_IDENTITY_TOKEN_FILE, token);
+        env.put(app::config::ENV_IDENTITY_TRUST_ANCHORS, trust_anchors);
         env.put(
             app::config::ENV_IDENTITY_IDENTITY_LOCAL_NAME,
             "foo.ns1.serviceaccount.identity.linkerd.cluster.local".to_string(),

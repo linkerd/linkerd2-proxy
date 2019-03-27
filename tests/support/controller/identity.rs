@@ -24,6 +24,11 @@ type Certify = Box<
 + Send>;
 
 impl Identity {
+    pub fn new() -> Self {
+        Self {
+            expect_calls: Arc::new(Mutex::new(VecDeque::new()))
+        }
+    }
 
     pub fn certify<F>(self, f: F) -> Self
     where
