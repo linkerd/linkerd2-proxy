@@ -41,7 +41,7 @@ use self::tokio_connect::Connect;
 use self::tokio_current_thread as current_thread;
 use self::tower_grpc as grpc;
 use self::tower_http_service::Body as HttpBody;
-use self::tower_service::Service;
+pub use self::tower_service::Service;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";

@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 
+pub mod identity;
+
 pub fn new() -> Controller {
     Controller::new()
 }
@@ -83,7 +85,11 @@ impl Controller {
     where
         F: Future<Item = (), Error = ()> + Send + 'static,
     {
-        run(self, Some(Box::new(f.then(|_| Ok(())))))
+        run(
+            pb::server::DestinationServer::new(self),
+            "support destination service",
+            Some(Box::new(f.then(|_| Ok(()))))
+        )
     }
 
     pub fn profile_tx(&self, dest: &str) -> ProfileSender {
@@ -106,7 +112,11 @@ impl Controller {
     }
 
     pub fn run(self) -> Listening {
-        run(self, None)
+        run(
+            pb::server::DestinationServer::new(self),
+            "support destination service",
+            None
+        )
     }
 }
 
@@ -212,10 +222,19 @@ impl pb::server::Destination for Controller {
     }
 }
 
-fn run(
-    controller: Controller,
+fn run<T, B>(
+    svc: T,
+    name: &'static str,
     delay: Option<Box<Future<Item = (), Error = ()> + Send>>,
-) -> Listening {
+) -> Listening
+where
+    T: Service<http::Request<tower_grpc::BoxBody>, Response = http::Response<B>>,
+    T: Clone + Send + Sync + 'static,
+    T::Error: ::std::error::Error + Send + Sync,
+    T::Future: Send,
+    B: grpc::Body + Send + 'static,
+    B::Item: Send + 'static,
+{
     let (tx, rx) = shutdown_signal();
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -227,15 +246,14 @@ fn run(
     let mut listening_tx = Some(listening_tx);
 
     ::std::thread::Builder::new()
-        .name("support controller".into())
+        .name(name.into())
         .spawn(move || {
             if let Some(delay) = delay {
                 let _ = listening_tx.take().unwrap().send(());
                 delay.wait().expect("support server delay wait");
             }
-            let dst_svc = pb::server::DestinationServer::new(controller);
             let mut runtime =
-                runtime::current_thread::Runtime::new().expect("support controller runtime");
+                runtime::current_thread::Runtime::new().expect("support runtime");
 
             let listener = listener.listen(1024).expect("Tcp::listen");
             let bind =
@@ -245,24 +263,25 @@ fn run(
                 let _ = listening_tx.send(());
             }
 
+            let name = name.clone();
             let serve = hyper::Server::builder(bind.incoming())
                 .http2_only(true)
                 .serve(move || {
-                    let dst_svc = Mutex::new(dst_svc.clone());
+                    let svc = Mutex::new(svc.clone());
                     hyper::service::service_fn(move |req| {
                         let req =
                             req.map(|body| tower_grpc::BoxBody::map_from(PayloadToGrpc(body)));
-                        dst_svc
+                        svc
                             .lock()
-                            .expect("dst_svc lock")
+                            .expect("svc lock")
                             .call(req)
                             .map(|res| res.map(GrpcToPayload))
                     })
                 })
-                .map_err(|e| println!("controller error: {:?}", e));
+                .map_err(move |e| println!("{} error: {:?}", name, e));
 
             runtime.spawn(serve);
-            runtime.block_on(rx).expect("support controller run");
+            runtime.block_on(rx).expect(name);
         })
         .unwrap();
 
