@@ -1,9 +1,8 @@
 use support::*;
 
 use std::{
-    collections::{VecDeque},
-    fs,
-    io,
+    collections::VecDeque,
+    fs, io,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
@@ -22,10 +21,12 @@ pub struct Controller {
 }
 
 type Certify = Box<
-    Fn(pb::CertifyRequest) -> Box<
-        Future<Item=grpc::Response<pb::CertifyResponse>, Error=grpc::Status> + Send
-    >
-+ Send>;
+    Fn(
+            pb::CertifyRequest,
+        )
+            -> Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>
+        + Send,
+>;
 
 pub fn rsp_from_cert<P>(p: P) -> Result<pb::CertifyResponse, io::Error>
 where
@@ -34,28 +35,19 @@ where
     let f = fs::File::open(p)?;
     let mut r = io::BufReader::new(f);
     let certs = rustls::internal::pemfile::certs(&mut r)
-        .map_err(|_| io::Error::new(
-            io::ErrorKind::Other,
-            "rustls error reading certs",
-        ))?;
+        .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?;
     let leaf_certificate = certs
         .get(0)
-        .ok_or_else(|| io::Error::new(
-            io::ErrorKind::Other,
-            "no certs in pemfile",
-        ))?
-        .as_ref().into();
-    let intermediate_certificates = certs[1..]
-        .iter()
-        .map(|i| i.as_ref().into())
-        .collect();
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no certs in pemfile"))?
+        .as_ref()
+        .into();
+    let intermediate_certificates = certs[1..].iter().map(|i| i.as_ref().into()).collect();
     let rsp = pb::CertifyResponse {
         leaf_certificate,
         intermediate_certificates,
         ..Default::default()
     };
     Ok(rsp)
-
 }
 
 impl Identity {
@@ -99,10 +91,7 @@ impl Identity {
             // "foo.ns1.serviceaccount.identity.linkerd.cluster.local".to_string(),
         );
 
-        Self {
-            env,
-            certify_rsp,
-        }
+        Self { env, certify_rsp }
     }
 
     pub fn service(&self) -> Controller {
@@ -120,7 +109,7 @@ impl Identity {
 impl Controller {
     pub fn new() -> Self {
         Self {
-            expect_calls: Arc::new(Mutex::new(VecDeque::new()))
+            expect_calls: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -139,7 +128,8 @@ impl Controller {
         <U::Future as Future>::Error: Into<grpc::Status> + Send,
     {
         let func: Certify = Box::new(move |req| {
-            let fut = f(req).into_future()
+            let fut = f(req)
+                .into_future()
                 .map(grpc::Response::new)
                 .map_err(Into::into);
             Box::new(fut)
@@ -150,12 +140,17 @@ impl Controller {
 
     pub fn run(self) -> controller::Listening {
         println!("running support identity service");
-        controller::run(pb::server::IdentityServer::new(self), "support identity service", None)
+        controller::run(
+            pb::server::IdentityServer::new(self),
+            "support identity service",
+            None,
+        )
     }
 }
 
 impl pb::server::Identity for Controller {
-    type CertifyFuture = Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
+    type CertifyFuture =
+        Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
     fn certify(&mut self, req: grpc::Request<pb::CertifyRequest>) -> Self::CertifyFuture {
         if let Some(f) = self.expect_calls.lock().unwrap().pop_front() {
             return f(req.into_inner());

@@ -247,7 +247,13 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             // slip the running tx into the shutdown future, since the first time
             // the shutdown future is polled, that means all of the proxy is now
             // running.
-            let addrs = (control_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr);
+            let addrs = (
+                control_addr,
+                identity_addr,
+                inbound_addr,
+                outbound_addr,
+                metrics_addr,
+            );
             let mut running = Some((running_tx, addrs));
             let on_shutdown = future::poll_fn(move || {
                 if let Some((tx, addrs)) = running.take() {
@@ -261,7 +267,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         })
         .unwrap();
 
-    let (control_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) = running_rx.wait().unwrap();
+    let (control_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
+        running_rx.wait().unwrap();
 
     // printlns will show if the test fails...
     println!(

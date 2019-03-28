@@ -90,7 +90,7 @@ impl Controller {
         run(
             pb::server::DestinationServer::new(self),
             "support destination service",
-            Some(Box::new(f.then(|_| Ok(()))))
+            Some(Box::new(f.then(|_| Ok(())))),
         )
     }
 
@@ -117,7 +117,7 @@ impl Controller {
         run(
             pb::server::DestinationServer::new(self),
             "support destination service",
-            None
+            None,
         )
     }
 }
@@ -254,8 +254,7 @@ where
                 let _ = listening_tx.take().unwrap().send(());
                 delay.wait().expect("support server delay wait");
             }
-            let mut runtime =
-                runtime::current_thread::Runtime::new().expect("support runtime");
+            let mut runtime = runtime::current_thread::Runtime::new().expect("support runtime");
 
             let listener = listener.listen(1024).expect("Tcp::listen");
             let bind =
@@ -273,8 +272,7 @@ where
                     hyper::service::service_fn(move |req| {
                         let req =
                             req.map(|body| tower_grpc::BoxBody::map_from(PayloadToGrpc(body)));
-                        svc
-                            .lock()
+                        svc.lock()
                             .expect("svc lock")
                             .call(req)
                             .map(|res| res.map(GrpcToPayload))
