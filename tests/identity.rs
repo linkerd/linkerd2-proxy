@@ -18,25 +18,26 @@ fn ready() {
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
     let (tx, rx) = oneshot::channel();
-    let mut rx = Some(rx);
     let id_svc = controller::identity()
-        // It's a shame how FnBox isn't actually a thing yet...
-        .certify_async(move |_| rx.take().expect("called twice?"))
+        .certify_async(move |_| rx)
         .run();
 
     let proxy = proxy::new().identity(id_svc).run_with_test_env(env);
 
     let client = client::http1(proxy.metrics, "localhost");
-    let ready = client.request(client.request_builder("/ready").method("GET"));
+
+    let ready = || {
+        client.request(client.request_builder("/ready").method("GET"))
+    };
+
+    // The proxy's identity has not yet been verified, so it should not be
+    // considered ready.
     assert_ne!(ready.status(), http::StatusCode::OK);
 
+    // Make the mock identity service respond to the certify request.
     tx.send(certify_rsp)
         .expect("certify rx should not be dropped");
 
-    assert_eventually!(
-        client
-            .request(client.request_builder("/ready").method("GET"),)
-            .status()
-            == http::StatusCode::OK
-    );
+    // Now, the proxy should be ready.
+    assert_eventually!(ready.status() == http::StatusCode::OK);
 }

@@ -120,14 +120,18 @@ impl Controller {
         self.certify_async(move |req| Ok::<_, grpc::Status>(f(req)))
     }
 
-    pub fn certify_async<F, U>(self, mut f: F) -> Self
+    pub fn certify_async<F, U>(self, f: F) -> Self
     where
-        F: FnMut(pb::CertifyRequest) -> U + Send + 'static,
+        F: FnOnce(pb::CertifyRequest) -> U + Send + 'static,
         U: IntoFuture<Item = pb::CertifyResponse> + Send + 'static,
         U::Future: Send + 'static,
         <U::Future as Future>::Error: fmt::Display + Send,
     {
+        let mut f = Some(f);
         let func: Certify = Box::new(move |req| {
+            // It's a shame how `FnBox` isn't actually a thing yet, otherwise this
+            // closure could be one (and not a `FnMut`).
+            let f = f.take().expect("called twice?");
             let fut = f(req)
                 .into_future()
                 .map(grpc::Response::new)
