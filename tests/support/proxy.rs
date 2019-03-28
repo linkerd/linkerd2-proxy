@@ -174,8 +174,12 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     );
     env.put(app::config::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
 
+    static IDENTITY_SVC_NAME: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_NAME";
+    static IDENTITY_SVC_ADDR: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_ADDR";
+
     if let Some(ref identity) = identity {
-        env.put(app::config::ENV_IDENTITY_SVC_BASE, format!("{}", identity.addr));
+        env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());
+        env.put(IDENTITY_SVC_ADDR, format!("{}", identity.addr));
     } else {
         env.put(app::config::ENV_IDENTITY_DISABLED, "test".to_owned());
     }

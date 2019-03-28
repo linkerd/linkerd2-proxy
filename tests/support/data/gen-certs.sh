@@ -32,9 +32,13 @@ ee() {
 
   openssl pkcs8 -topk8 -nocrypt -inform pem -outform der \
     -in "${ee_name}-key.pem" \
-    -out "${ee_name}/key.p8"
+    -out "${ee_name}-key.p8"
+  openssl x509 -inform pem -outform der \
+    -in "${ee_name}.pem" \
+    -out "${ee_name}-csr.der"
 
-  rm "${ee_name}.csr"
+  mv "${ee_name}-csr.der" "${ee_name}/csr.der"
+  mv "${ee_name}-key.p8" "${ee_name}/key.p8"
   rm "${ee_name}-key.pem"
   rm "${ee_name}.pem"
 }
