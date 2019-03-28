@@ -177,12 +177,14 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     static IDENTITY_SVC_NAME: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_NAME";
     static IDENTITY_SVC_ADDR: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_ADDR";
 
-    if let Some(ref identity) = identity {
+    let identity_addr = if let Some(ref identity) = identity {
         env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());
         env.put(IDENTITY_SVC_ADDR, format!("{}", identity.addr));
+        Some(identity.addr)
     } else {
         env.put(app::config::ENV_IDENTITY_DISABLED, "test".to_owned());
-    }
+        None
+    };
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports
@@ -222,6 +224,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         .name(tname)
         .spawn(move || {
             let _c = controller;
+            let _i = identity;
 
             let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
             // TODO: a mock timer could be injected here?
@@ -230,6 +233,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             let main = linkerd2_proxy::app::Main::new(config, mock_orig_dst.clone(), runtime);
 
             let control_addr = main.control_addr();
+            let identity_addr = identity_addr;
             let inbound_addr = main.inbound_addr();
             let outbound_addr = main.outbound_addr();
             let metrics_addr = main.metrics_addr();
@@ -243,7 +247,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             // slip the running tx into the shutdown future, since the first time
             // the shutdown future is polled, that means all of the proxy is now
             // running.
-            let addrs = (control_addr, inbound_addr, outbound_addr, metrics_addr);
+            let addrs = (control_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr);
             let mut running = Some((running_tx, addrs));
             let on_shutdown = future::poll_fn(move || {
                 if let Some((tx, addrs)) = running.take() {
@@ -257,12 +261,13 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         })
         .unwrap();
 
-    let (control_addr, inbound_addr, outbound_addr, metrics_addr) = running_rx.wait().unwrap();
+    let (control_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) = running_rx.wait().unwrap();
 
     // printlns will show if the test fails...
     println!(
-        "proxy running; control={}, inbound={}{}, outbound={}{}, metrics={}",
+        "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
         control_addr,
+        identity_addr,
         inbound_addr,
         inbound
             .as_ref()

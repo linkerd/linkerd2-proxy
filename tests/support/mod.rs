@@ -17,6 +17,7 @@ extern crate linkerd2_task;
 extern crate log;
 pub extern crate net2;
 extern crate prost;
+pub extern crate rustls;
 extern crate tokio;
 extern crate tokio_connect;
 extern crate tokio_current_thread;
@@ -154,6 +155,7 @@ macro_rules! assert_eventually_contains {
 
 pub mod client;
 pub mod controller;
+pub mod identity;
 pub mod proxy;
 pub mod server;
 pub mod tap;

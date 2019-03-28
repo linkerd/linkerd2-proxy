@@ -11,14 +11,12 @@ use std::sync::{Arc, Mutex};
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 
-pub mod identity;
-
 pub fn new() -> Controller {
     Controller::new()
 }
 
-pub fn identity() -> identity::Identity {
-    identity::Identity::new()
+pub fn identity() -> identity::Controller {
+    identity::Controller::new()
 }
 
 pub type Labels = HashMap<String, String>;
@@ -226,7 +224,7 @@ impl pb::server::Destination for Controller {
     }
 }
 
-fn run<T, B>(
+pub(in support) fn run<T, B>(
     svc: T,
     name: &'static str,
     delay: Option<Box<Future<Item = (), Error = ()> + Send>>,
@@ -290,6 +288,7 @@ where
         .unwrap();
 
     listening_rx.wait().expect("listening_rx");
+    println!("{} listening; addr={:?}", name, addr);
 
     Listening { addr, shutdown: tx }
 }

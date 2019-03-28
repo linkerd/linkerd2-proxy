@@ -24,23 +24,26 @@ ee() {
 
   ee_name=${ee_serviceaccount}-${ee_namespace}
   hostname=${ee_serviceaccount}.${ee_namespace}.serviceaccount.identity.${controller_namespace}.cluster.local
+  dir_name=${ee_name}
 
-  mkdir -p "${ee_name}"
+  mkdir -p "${dir_name}"
+
   echo '{}' \
     | cfssl gencert -ca "${ca_name}.pem" -ca-key "${ca_name}-key.pem" -hostname="${hostname}" - \
     | cfssljson -bare "${ee_name}"
 
   openssl pkcs8 -topk8 -nocrypt -inform pem -outform der \
     -in "${ee_name}-key.pem" \
-    -out "${ee_name}-key.p8"
-  openssl x509 -inform pem -outform der \
-    -in "${ee_name}.pem" \
-    -out "${ee_name}-csr.der"
+    -out "${dir_name}/key.p8"
+  openssl req -inform pem -outform der \
+    -in "${ee_name}.csr" \
+    -out "${dir_name}/csr.der"
 
-  mv "${ee_name}-csr.der" "${ee_name}/csr.der"
-  mv "${ee_name}-key.p8" "${ee_name}/key.p8"
+  mv "${ee_name}.pem" "${dir_name}/${ca_name}-cert.pem"
+  mv "${ee_name}.csr" "${dir_name}/${ca_name}-cert.csr"
+
   rm "${ee_name}-key.pem"
-  rm "${ee_name}.pem"
+    # "${ee_name}.csr"
 }
 
 ca "Cluster-local CA 1" ca1
