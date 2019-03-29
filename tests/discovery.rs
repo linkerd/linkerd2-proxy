@@ -10,7 +10,9 @@ use self::support::*;
 // requires prior knowledge.
 macro_rules! generate_outbound_dns_limit_test {
     (server: $make_server:path, client: $make_client:path) => {
+        //Flaky: Any test that contacts httpbin.org is inherently flaky
         #[test]
+        #[cfg_attr(not(feature = "flaky_tests"), ignore)]
         fn outbound_dest_limit_does_not_limit_dns() {
             let _ = env_logger_init();
             let srv = $make_server().route("/", "hello").run();
