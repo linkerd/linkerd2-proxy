@@ -7,6 +7,7 @@
 # This reduces build time and produces binaries with debug symbols, at the expense of
 # runtime performance.
 
+# rather than updating this manually, run update-rust-version.sh
 ARG RUST_IMAGE=rust:1.33.0
 ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.3.3
 
