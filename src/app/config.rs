@@ -122,6 +122,14 @@ pub struct Config {
     pub dns_max_ttl: Option<Duration>,
 
     pub dns_canonicalize_timeout: Duration,
+
+    pub h2_settings: H2Settings,
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct H2Settings {
+    pub initial_stream_window_size: Option<u32>,
+    pub initial_connection_window_size: Option<u32>,
 }
 
 /// Configuration settings for binding a listener.
@@ -268,6 +276,13 @@ const ENV_DNS_MAX_TTL: &str = "LINKERD2_PROXY_DNS_MAX_TTL";
 /// an uncanonicalized address.
 const ENV_DNS_CANONICALIZE_TIMEOUT: &str = "LINKERD2_PROXY_DNS_CANONICALIZE_TIMEOUT";
 
+/// Configure the stream or connection level flow control setting for HTTP2.
+///
+/// If unspecified, the default value of 65,535 is used.
+const ENV_INITIAL_STREAM_WINDOW_SIZE: &str = "LINKERD2_PROXY_HTTP2_INITIAL_STREAM_WINDOW_SIZE";
+const ENV_INITIAL_CONNECTION_WINDOW_SIZE: &str =
+    "LINKERD2_PROXY_HTTP2_INITIAL_CONNECTION_WINDOW_SIZE";
+
 // Default values for various configuration fields
 const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";
 const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
@@ -409,6 +424,11 @@ impl Config {
             parse_dns_suffixes,
         );
 
+        let initial_stream_window_size =
+            parse(strings, ENV_INITIAL_STREAM_WINDOW_SIZE, parse_number);
+        let initial_connection_window_size =
+            parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
+
         Ok(Config {
             outbound_listener: Listener {
                 addr: outbound_listener_addr?
@@ -489,6 +509,11 @@ impl Config {
 
             dns_canonicalize_timeout: dns_canonicalize_timeout?
                 .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT),
+
+            h2_settings: H2Settings {
+                initial_stream_window_size: initial_stream_window_size?,
+                initial_connection_window_size: initial_connection_window_size?,
+            },
         })
     }
 }

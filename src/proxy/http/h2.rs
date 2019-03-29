@@ -9,6 +9,7 @@ use hyper::{
 };
 
 use super::{Body, ClientUsedTls, Error};
+use app::config::H2Settings;
 use svc;
 use task::{ArcExecutor, BoxSendFuture, Executor};
 use transport::{connect, tls::HasStatus as HasTlsStatus};
@@ -17,6 +18,7 @@ use transport::{connect, tls::HasStatus as HasTlsStatus};
 pub struct Connect<C, B> {
     connect: C,
     executor: ArcExecutor,
+    h2_settings: H2Settings,
     _marker: PhantomData<fn() -> B>,
 }
 
@@ -29,6 +31,7 @@ pub struct Connection<B> {
 pub struct ConnectFuture<C: connect::Connect, B> {
     executor: ArcExecutor,
     state: ConnectState<C, B>,
+    h2_settings: H2Settings,
 }
 
 enum ConnectState<C: connect::Connect, B> {
@@ -53,13 +56,14 @@ pub enum ConnectError<E> {
 // ===== impl Connect =====
 
 impl<C, B> Connect<C, B> {
-    pub fn new<E>(connect: C, executor: E) -> Self
+    pub fn new<E>(connect: C, executor: E, h2_settings: H2Settings) -> Self
     where
         E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
     {
         Connect {
             connect,
             executor: ArcExecutor::new(executor),
+            h2_settings,
             _marker: PhantomData,
         }
     }
@@ -83,6 +87,7 @@ where
         ConnectFuture {
             executor: self.executor.clone(),
             state: ConnectState::Connect(self.connect.connect()),
+            h2_settings: self.h2_settings,
         }
     }
 }
@@ -127,6 +132,10 @@ where
             let hs = conn::Builder::new()
                 .executor(self.executor.clone())
                 .http2_only(true)
+                .http2_initial_stream_window_size(self.h2_settings.initial_stream_window_size)
+                .http2_initial_connection_window_size(
+                    self.h2_settings.initial_connection_window_size,
+                )
                 .handshake(io);
             self.state = ConnectState::Handshake {
                 client_used_tls,
