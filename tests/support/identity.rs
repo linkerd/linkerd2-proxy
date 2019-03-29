@@ -88,7 +88,6 @@ impl Identity {
         env.put(
             app::config::ENV_IDENTITY_IDENTITY_LOCAL_NAME,
             local_name,
-            // "foo.ns1.serviceaccount.identity.linkerd.cluster.local".to_string(),
         );
 
         Self { env, certify_rsp }
