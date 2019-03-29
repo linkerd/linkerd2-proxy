@@ -32,12 +32,12 @@ fn ready() {
 
     // The proxy's identity has not yet been verified, so it should not be
     // considered ready.
-    assert_ne!(ready.status(), http::StatusCode::OK);
+    assert_ne!(ready().status(), http::StatusCode::OK);
 
     // Make the mock identity service respond to the certify request.
     tx.send(certify_rsp)
         .expect("certify rx should not be dropped");
 
     // Now, the proxy should be ready.
-    assert_eventually!(ready.status() == http::StatusCode::OK);
+    assert_eventually!(ready().status() == http::StatusCode::OK);
 }
