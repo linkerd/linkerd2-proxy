@@ -86,7 +86,7 @@ impl Config {
             Some(lifetime) if self.max_refresh < lifetime => self.max_refresh,
             Some(lifetime) => lifetime,
         };
-
+        trace!("will refresh in {:?}", refresh);
         Delay::new(now + refresh)
     }
 }
