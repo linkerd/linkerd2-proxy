@@ -503,6 +503,7 @@ where
             // 3. Creates a load balancer , configured by resolving the
             //   `DstAddr` with a resolver.
             let dst_stack = endpoint_stack
+                .push(balance::weight::layer())
                 .push(resolve::layer(Resolve::new(resolver)))
                 .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                 .push(buffer::layer(MAX_IN_FLIGHT))

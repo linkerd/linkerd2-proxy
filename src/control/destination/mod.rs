@@ -77,6 +77,8 @@ pub struct Resolution {
 /// Metadata describing an endpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
+    weight: u32,
+
     /// Arbitrary endpoint labels. Primarily used for telemetry.
     labels: IndexMap<String, String>,
 
@@ -180,6 +182,7 @@ impl Metadata {
             labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
             identity: None,
+            weight: 1000,
         }
     }
 
@@ -187,11 +190,13 @@ impl Metadata {
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
         identity: Option<identity::Name>,
+        weight: u32,
     ) -> Self {
         Self {
             labels,
             protocol_hint,
             identity,
+            weight,
         }
     }
 
@@ -206,5 +211,9 @@ impl Metadata {
 
     pub fn identity(&self) -> Option<&identity::Name> {
         self.identity.as_ref()
+    }
+
+    pub fn weight(&self) -> u32 {
+        self.weight
     }
 }

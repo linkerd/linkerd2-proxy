@@ -5,6 +5,7 @@ use std::{fmt, hash};
 
 use super::identity;
 use control::destination::{Metadata, ProtocolHint};
+use proxy::http::balance::{HasWeight, Weight};
 use tap;
 use transport::{connect, tls};
 use {Conditional, NameAddr};
@@ -63,6 +64,17 @@ impl tls::HasPeerIdentity for Endpoint {
 impl connect::HasPeerAddr for Endpoint {
     fn peer_addr(&self) -> SocketAddr {
         self.addr
+    }
+}
+
+impl HasWeight for Endpoint {
+    fn weight(&self) -> Weight {
+        let w =self.metadata.weight();
+        if w == 0 {
+            1.0.into()
+        } else {
+            ((w as f64) / 1000.0).into()
+        }
     }
 }
 
