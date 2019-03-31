@@ -40,6 +40,8 @@ pub struct Stack<R, M> {
     inner: M,
 }
 
+type Error = Box<dyn error::Error + Send + Sync>;
+
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
 #[derive(Clone, Debug)]
@@ -63,6 +65,7 @@ where
     R: Resolve<T> + Clone,
     R::Endpoint: fmt::Debug,
     M: svc::Stack<R::Endpoint> + Clone,
+    Error: From<<R::Resolution as Resolution>::Error> + From<M::Error>,
 {
     type Value = <Stack<R, M> as svc::Stack<T>>::Value;
     type Error = <Stack<R, M> as svc::Stack<T>>::Error;
@@ -83,6 +86,7 @@ where
     R: Resolve<T>,
     R::Endpoint: fmt::Debug,
     M: svc::Stack<R::Endpoint> + Clone,
+    Error: From<<R::Resolution as Resolution>::Error> + From<M::Error>,
 {
     type Value = Discover<R::Resolution, M>;
     type Error = M::Error;
@@ -103,14 +107,15 @@ where
     R: Resolution,
     R::Endpoint: fmt::Debug,
     M: svc::Stack<R::Endpoint>,
+    Error: From<R::Error> + From<M::Error>,
 {
     type Key = SocketAddr;
     type Service = M::Value;
-    type Error = Error<R::Error, M::Error>;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
         loop {
-            let up = try_ready!(self.resolution.poll().map_err(Error::Resolve));
+            let up = try_ready!(self.resolution.poll().map_err(Error::from));
             trace!("watch: {:?}", up);
             match up {
                 Update::Add(addr, target) => {
@@ -118,7 +123,7 @@ where
                     // by replacing the old endpoint with the new one, so
                     // insertions of new endpoints and metadata changes for
                     // existing ones can be handled in the same way.
-                    let svc = self.make.make(&target).map_err(Error::Stack)?;
+                    let svc = self.make.make(&target).map_err(Error::from)?;
                     return Ok(Async::Ready(Change::Insert(addr, svc)));
                 }
                 Update::Remove(addr) => {
@@ -128,25 +133,3 @@ where
         }
     }
 }
-
-// === impl Error ===
-
-#[derive(Debug)]
-pub enum Error<R, M> {
-    Resolve(R),
-    Stack(M),
-}
-
-impl<M> fmt::Display for Error<(), M>
-where
-    M: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::Resolve(()) => unreachable!("resolution must succeed"),
-            Error::Stack(e) => e.fmt(f),
-        }
-    }
-}
-
-impl<M> error::Error for Error<(), M> where M: error::Error {}

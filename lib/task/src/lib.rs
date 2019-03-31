@@ -4,17 +4,17 @@ extern crate futures;
 #[macro_use]
 extern crate log;
 extern crate tokio;
+extern crate tokio_executor;
 
 use std::{error::Error as StdError, fmt, io, sync::Arc};
 
 pub use futures::future::Executor;
 use futures::future::{ExecuteError, ExecuteErrorKind, Future};
 
+pub use tokio::executor::{DefaultExecutor, Executor as TokioExecutor, SpawnError};
+use tokio::runtime::{self as thread_pool, current_thread};
 pub use tokio::spawn;
-use tokio::{
-    executor::{DefaultExecutor, Executor as TokioExecutor, SpawnError},
-    runtime::{self as thread_pool, current_thread},
-};
+pub use tokio_executor::TypedExecutor;
 
 pub type BoxSendFuture = Box<Future<Item = (), Error = ()> + Send>;
 
@@ -76,13 +76,22 @@ pub enum Error {
 
 // ===== impl LazyExecutor =====;
 
+impl<F> TypedExecutor<F> for LazyExecutor
+where
+    F: Future<Item = (), Error = ()> + Send + 'static,
+{
+    fn spawn(&mut self, future: F) -> Result<(), SpawnError> {
+        TypedExecutor::spawn(&mut DefaultExecutor::current(), future)
+    }
+}
+
 impl TokioExecutor for LazyExecutor {
     fn spawn(&mut self, future: BoxSendFuture) -> Result<(), SpawnError> {
-        DefaultExecutor::current().spawn(future)
+        TokioExecutor::spawn(&mut DefaultExecutor::current(), future)
     }
 
     fn status(&self) -> Result<(), SpawnError> {
-        DefaultExecutor::current().status()
+        TokioExecutor::status(&DefaultExecutor::current())
     }
 }
 
@@ -96,7 +105,7 @@ where
         // future in the `ExecuteError`. If we just called `spawn` and
         // `map_err`ed the error into an `ExecuteError`, we'd have to move the
         // future into the closure, but it was already moved into `spawn`.
-        if let Err(e) = executor.status() {
+        if let Err(e) = TypedExecutor::<F>::status(&executor) {
             if e.is_at_capacity() {
                 return Err(ExecuteError::new(ExecuteErrorKind::NoCapacity, future));
             } else if e.is_shutdown() {
@@ -105,9 +114,7 @@ where
                 panic!("unexpected `SpawnError`: {:?}", e);
             }
         };
-        executor
-            .spawn(Box::new(future))
-            .expect("spawn() errored but status() was Ok");
+        TypedExecutor::spawn(&mut executor, future).expect("spawn() errored but status() was Ok");
         Ok(())
     }
 }

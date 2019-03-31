@@ -22,10 +22,7 @@ pub struct Stack<M, Req> {
     _marker: PhantomData<fn(Req)>,
 }
 
-pub enum Error<M> {
-    Stack(M),
-    Spawn,
-}
+type Error = Box<dyn error::Error + Send + Sync>;
 
 // === impl Layer ===
 
@@ -50,9 +47,10 @@ where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
     M::Value: svc::Service<Req> + Send + 'static,
-    <M::Value as svc::Service<Req>>::Future: Send,
-    <M::Value as svc::Service<Req>>::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     Req: Send + 'static,
+    <M::Value as svc::Service<Req>>::Future: Send,
+    <M::Value as svc::Service<Req>>::Error: Send + Sync,
+    Error: From<M::Error> + From<<M::Value as svc::Service<Req>>::Error>,
 {
     type Value = <Stack<M, Req> as svc::Stack<T>>::Value;
     type Error = <Stack<M, Req> as svc::Stack<T>>::Error;
@@ -84,45 +82,17 @@ where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Stack<T>,
     M::Value: svc::Service<Req> + Send + 'static,
-    <M::Value as svc::Service<Req>>::Future: Send,
-    <M::Value as svc::Service<Req>>::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     Req: Send + 'static,
+    <M::Value as svc::Service<Req>>::Future: Send,
+    <M::Value as svc::Service<Req>>::Error: Send + Sync,
+    Error: From<M::Error> + From<<M::Value as svc::Service<Req>>::Error>,
 {
     type Value = Buffer<M::Value, Req>;
-    type Error = Error<M::Error>;
+    type Error = Error;
 
     fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(&target).map_err(Error::Stack)?;
-        let executor = logging::context_executor(target.clone());
-        Buffer::with_executor(inner, self.capacity, &executor).map_err(|_| Error::Spawn)
-    }
-}
-
-// === impl Error ===
-
-impl<M: fmt::Debug> fmt::Debug for Error<M> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::Stack(e) => fmt.debug_tuple("buffer::Error::Stack").field(e).finish(),
-            Error::Spawn => fmt.debug_tuple("buffer::Error::Spawn").finish(),
-        }
-    }
-}
-
-impl<M: fmt::Display> fmt::Display for Error<M> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::Stack(e) => fmt::Display::fmt(e, fmt),
-            Error::Spawn => write!(fmt, "Stack built without an executor"),
-        }
-    }
-}
-
-impl<M: error::Error> error::Error for Error<M> {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match self {
-            Error::Stack(e) => e.source(),
-            Error::Spawn => None,
-        }
+        let inner = self.inner.make(&target).map_err(Error::from)?;
+        let mut executor = logging::context_executor(target.clone());
+        Buffer::with_executor(inner, self.capacity, &mut executor)
     }
 }

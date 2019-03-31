@@ -10,6 +10,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio_timer::clock;
 
+use task;
+
 const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 
 thread_local! {
@@ -111,7 +113,18 @@ pub struct ContextualExecutor<T> {
     context: Arc<T>,
 }
 
-impl<T> ::tokio::executor::Executor for ContextualExecutor<T>
+impl<C, T> task::TypedExecutor<T> for ContextualExecutor<C>
+where
+    T: Future<Item = (), Error = ()> + Send + 'static,
+    C: fmt::Display + 'static + Send + Sync,
+{
+    fn spawn(&mut self, future: T) -> Result<(), tokio::executor::SpawnError> {
+        let fut = context_future(self.context.clone(), future);
+        ::task::LazyExecutor.spawn(fut)
+    }
+}
+
+impl<T> task::TokioExecutor for ContextualExecutor<T>
 where
     T: fmt::Display + 'static + Send + Sync,
 {
@@ -120,7 +133,7 @@ where
         future: Box<Future<Item = (), Error = ()> + 'static + Send>,
     ) -> ::std::result::Result<(), ::tokio::executor::SpawnError> {
         let fut = context_future(self.context.clone(), future);
-        ::task::LazyExecutor.spawn(Box::new(fut))
+        task::LazyExecutor.spawn(Box::new(fut))
     }
 }
 
