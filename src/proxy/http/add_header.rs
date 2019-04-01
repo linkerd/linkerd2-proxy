@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO #2597
+
 use std::{fmt, marker::PhantomData};
 
 use http::header::{AsHeaderName, HeaderValue};
