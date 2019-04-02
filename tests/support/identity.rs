@@ -152,7 +152,7 @@ impl pb::server::Identity for Controller {
     type CertifyFuture =
         Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
     fn certify(&mut self, req: grpc::Request<pb::CertifyRequest>) -> Self::CertifyFuture {
-        if let Some(mut f) = self.expect_calls.lock().unwrap().pop_front()
+        if let Some(mut f) = self.expect_calls.lock().unwrap().pop_front() {
             return f(req.into_inner());
         }
 
