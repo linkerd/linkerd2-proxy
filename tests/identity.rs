@@ -5,8 +5,11 @@ mod support;
 use self::support::*;
 
 use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, SystemTime},
-    sync::{Arc, atomic::{AtomicBool, Ordering}},
 };
 
 #[test]
