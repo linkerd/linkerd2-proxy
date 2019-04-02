@@ -18,17 +18,13 @@ fn ready() {
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
     let (tx, rx) = oneshot::channel();
-    let id_svc = controller::identity()
-        .certify_async(move |_| rx)
-        .run();
+    let id_svc = controller::identity().certify_async(move |_| rx).run();
 
     let proxy = proxy::new().identity(id_svc).run_with_test_env(env);
 
     let client = client::http1(proxy.metrics, "localhost");
 
-    let ready = || {
-        client.request(client.request_builder("/ready").method("GET"))
-    };
+    let ready = || client.request(client.request_builder("/ready").method("GET"));
 
     // The proxy's identity has not yet been verified, so it should not be
     // considered ready.
