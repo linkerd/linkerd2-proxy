@@ -111,7 +111,7 @@ impl Controller {
 
     pub fn certify<F>(self, f: F) -> Self
     where
-        F: Fn(pb::CertifyRequest) -> pb::CertifyResponse + Send + 'static,
+        F: FnOnce(pb::CertifyRequest) -> pb::CertifyResponse + Send + 'static,
     {
         self.certify_async(move |req| Ok::<_, grpc::Status>(f(req)))
     }
