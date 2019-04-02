@@ -419,6 +419,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
+            #[ignore] // #2597
             fn outbound_should_set() {
                 let _ = env_logger_init();
                 let header = HeaderValue::from_static(IP_2);
@@ -434,6 +435,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
+            #[ignore] // #2597
             fn inbound_should_set() {
                 let _ = env_logger_init();
 
