@@ -21,7 +21,7 @@ pub struct Controller {
 }
 
 type Certify = Box<
-    Fn(
+    FnMut(
             pb::CertifyRequest,
         )
             -> Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>
@@ -118,16 +118,20 @@ impl Controller {
 
     pub fn certify_async<F, U>(self, f: F) -> Self
     where
-        F: Fn(pb::CertifyRequest) -> U + Send + 'static,
+        F: FnOnce(pb::CertifyRequest) -> U + Send + 'static,
         U: IntoFuture<Item = pb::CertifyResponse> + Send + 'static,
         U::Future: Send + 'static,
-        <U::Future as Future>::Error: Into<grpc::Status> + Send,
+        <U::Future as Future>::Error: fmt::Display + Send,
     {
+        let mut f = Some(f);
         let func: Certify = Box::new(move |req| {
+            // It's a shame how `FnBox` isn't actually a thing yet, otherwise this
+            // closure could be one (and not a `FnMut`).
+            let f = f.take().expect("called twice?");
             let fut = f(req)
                 .into_future()
                 .map(grpc::Response::new)
-                .map_err(Into::into);
+                .map_err(|e| grpc::Status::new(grpc::Code::Internal, format!("{}", e)));
             Box::new(fut)
         });
         self.expect_calls.lock().unwrap().push_back(func);
@@ -148,7 +152,7 @@ impl pb::server::Identity for Controller {
     type CertifyFuture =
         Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
     fn certify(&mut self, req: grpc::Request<pb::CertifyRequest>) -> Self::CertifyFuture {
-        if let Some(f) = self.expect_calls.lock().unwrap().pop_front() {
+        if let Some(mut f) = self.expect_calls.lock().unwrap().pop_front() {
             return f(req.into_inner());
         }
 
