@@ -306,6 +306,7 @@ pub mod client {
     use std::marker::PhantomData;
     use std::net::SocketAddr;
 
+    use super::super::config::H2Settings;
     use proxy::http;
     use svc;
     use transport::{connect, tls};
@@ -413,7 +414,7 @@ pub mod client {
         fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
             let c = self.connect.make(&target)?;
             let e = target.log_ctx.clone().with_remote(target.addr).executor();
-            Ok(http::h2::Connect::new(c, e))
+            Ok(http::h2::Connect::new(c, e, H2Settings::default()))
         }
     }
 }

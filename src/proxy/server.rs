@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::{error, fmt};
 
 use super::Accept;
+use app::config::H2Settings;
 use drain;
 use never::Never;
 use proxy::http::{
@@ -45,7 +46,7 @@ use transport::{
 ///    instrumented with telemetry, etc).
 ///
 /// 6. Otherwise, an `R`-typed `Service` `Stack` is used to build a service that
-///    can routeHTTP  requests for the `Source`.
+///    can route HTTP  requests for the `Source`.
 pub struct Server<A, T, C, R, B>
 where
     // Prepares a server transport, e.g. with telemetry.
@@ -247,6 +248,7 @@ where
         &self,
         connection: Connection,
         remote_addr: SocketAddr,
+        h2_settings: H2Settings,
     ) -> impl Future<Item = (), Error = ()> {
         let orig_dst = connection.original_dst_addr();
         let disable_protocol_detection = !connection.should_detect_protocol();
@@ -329,6 +331,12 @@ where
                             let conn = http
                                 .with_executor(log_clone.executor())
                                 .http2_only(true)
+                                .http2_initial_stream_window_size(
+                                    h2_settings.initial_stream_window_size,
+                                )
+                                .http2_initial_connection_window_size(
+                                    h2_settings.initial_connection_window_size,
+                                )
                                 .serve_connection(io, svc);
                             drain_signal
                                 .watch(conn, |conn| {

@@ -7,6 +7,7 @@ mod classify;
 pub mod config;
 mod control;
 mod dst;
+mod errors;
 mod identity;
 mod inbound;
 mod main;

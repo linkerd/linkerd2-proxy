@@ -37,7 +37,7 @@ use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Liste
 use {Addr, Conditional};
 
 use super::admin::{Admin, Readiness};
-use super::config::Config;
+use super::config::{Config, H2Settings};
 use super::dst::DstAddr;
 use super::identity;
 use super::profiles::Client as ProfilesClient;
@@ -413,7 +413,9 @@ where
 
         let outbound = {
             use super::outbound::{
-                add_remote_ip_on_rsp, add_server_id_on_rsp, discovery::Resolve, orig_proto_upgrade,
+                //add_remote_ip_on_rsp, add_server_id_on_rsp,
+                discovery::Resolve,
+                orig_proto_upgrade,
                 Endpoint,
             };
             use proxy::{
@@ -442,8 +444,8 @@ where
             // Instantiates an HTTP client for for a `client::Config`
             let client_stack = connect
                 .clone()
-                .push(client::layer("out"))
-                .push(reconnect::layer())
+                .push(client::layer("out", config.h2_settings))
+                .push(reconnect::layer().with_fixed_backoff(config.outbound_connect_backoff))
                 .push(svc::stack_per_request::layer())
                 .push(normalize_uri::layer());
 
@@ -464,8 +466,8 @@ where
                 .push(strip_header::response::layer(super::L5D_SERVER_ID))
                 .push(strip_header::response::layer(super::L5D_REMOTE_IP))
                 .push(settings::router::layer::<_, Endpoint>())
-                .push(add_server_id_on_rsp::layer())
-                .push(add_remote_ip_on_rsp::layer())
+                //.push(add_server_id_on_rsp::layer())
+                //.push(add_remote_ip_on_rsp::layer())
                 .push(orig_proto_upgrade::layer())
                 .push(tap_layer.clone())
                 .push(metrics::layer::<_, classify::Response>(
@@ -582,7 +584,9 @@ where
             // Instantiates an HTTP service for each `Source` using the
             // shared `addr_router`. The `Source` is stored in the request's
             // extensions so that it can be used by the `addr_router`.
-            let server_stack = addr_router.push(insert_target::layer());
+            let server_stack = addr_router
+                .push(insert_target::layer())
+                .push(super::errors::layer());
 
             // Instantiated for each TCP connection received from the local
             // application (including HTTP connections).
@@ -596,6 +600,7 @@ where
                 accept,
                 connect,
                 server_stack,
+                config.h2_settings,
                 drain_rx.clone(),
             )
             .map_err(|e| error!("outbound proxy background task failed: {}", e))
@@ -604,8 +609,11 @@ where
 
         let inbound = {
             use super::inbound::{
-                orig_proto_downgrade, rewrite_loopback_addr, set_client_id_on_req,
-                set_remote_ip_on_req, Endpoint, RecognizeEndpoint,
+                orig_proto_downgrade,
+                rewrite_loopback_addr,
+                Endpoint,
+                RecognizeEndpoint,
+                // set_client_id_on_req, set_remote_ip_on_req,
             };
 
             let capacity = config.inbound_router_capacity;
@@ -626,8 +634,8 @@ where
             // Instantiates an HTTP client for for a `client::Config`
             let client_stack = connect
                 .clone()
-                .push(client::layer("in"))
-                .push(reconnect::layer())
+                .push(client::layer("in", config.h2_settings))
+                .push(reconnect::layer().with_fixed_backoff(config.inbound_connect_backoff))
                 .push(svc::stack_per_request::layer())
                 .push(normalize_uri::layer());
 
@@ -725,12 +733,13 @@ where
             let source_stack = dst_router
                 .push(orig_proto_downgrade::layer())
                 .push(insert_target::layer())
-                .push(set_remote_ip_on_req::layer())
+                //.push(set_remote_ip_on_req::layer())
+                //.push(set_client_id_on_req::layer())
                 .push(strip_header::request::layer(super::L5D_REMOTE_IP))
-                .push(set_client_id_on_req::layer())
                 .push(strip_header::request::layer(super::L5D_CLIENT_ID))
                 .push(strip_header::response::layer(super::L5D_SERVER_ID))
-                .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER));
+                .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
+                .push(super::errors::layer());
 
             // As the inbound proxy accepts connections, we don't do any
             // special transport-level handling.
@@ -744,6 +753,7 @@ where
                 accept,
                 connect,
                 source_stack,
+                config.h2_settings,
                 drain_rx.clone(),
             )
             .map_err(|e| error!("inbound proxy background task failed: {}", e))
@@ -758,6 +768,7 @@ fn serve<A, T, C, R, B, G>(
     accept: A,
     connect: C,
     router: R,
+    h2_settings: H2Settings,
     drain_rx: drain::Watch,
 ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
 where
@@ -793,7 +804,7 @@ where
     let future = log.future(bound_port.listen_and_fold(
         (),
         move |(), (connection, remote_addr)| {
-            let s = server.serve(connection, remote_addr);
+            let s = server.serve(connection, remote_addr, h2_settings);
             // Logging context is configured by the server.
             let r = DefaultExecutor::current()
                 .spawn(Box::new(s))

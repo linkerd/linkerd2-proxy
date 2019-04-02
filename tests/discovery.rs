@@ -10,7 +10,9 @@ use self::support::*;
 // requires prior knowledge.
 macro_rules! generate_outbound_dns_limit_test {
     (server: $make_server:path, client: $make_client:path) => {
+        //Flaky: Any test that contacts httpbin.org is inherently flaky
         #[test]
+        #[cfg_attr(not(feature = "flaky_tests"), ignore)]
         fn outbound_dest_limit_does_not_limit_dns() {
             let _ = env_logger_init();
             let srv = $make_server().route("/", "hello").run();
@@ -164,6 +166,51 @@ macro_rules! generate_tests {
             println!("trying {}th destination again...", num_dests);
             let client = $make_client(proxy.outbound, &*nth_host);
             assert_eq!(client.get("/"), "hello");
+        }
+
+        #[test]
+        fn outbound_router_capacity() {
+            let _ = env_logger_init();
+            let srv = $make_server().route("/", "hello").run();
+            let srv_addr = srv.addr;
+
+            let mut env = app::config::TestEnv::new();
+
+            // Testing what happens if we go over the router capacity...
+            let router_cap = 2;
+            env.put(app::config::ENV_OUTBOUND_ROUTER_CAPACITY, router_cap.to_string());
+
+            let ctrl = controller::new();
+            let _txs = (0..=router_cap).map(|n| {
+                let disco_n = format!("disco{}.test.svc.cluster.local", n);
+                let tx = ctrl.destination_tx(&disco_n);
+                tx.send_addr(srv_addr);
+                tx // This will go into a vec, to keep the stream open.
+            }).collect::<Vec<_>>();
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv)
+                .run_with_test_env(env);
+
+            // Make requests that go through service discovery, to reach the
+            // router capacity.
+            for n in 0..router_cap {
+                let route = format!("disco{}.test.svc.cluster.local", n);
+                let client = $make_client(proxy.outbound, route);
+                println!("trying disco{}...", n);
+                assert_eq!(client.get("/"), "hello");
+            }
+
+            // The next request will fail, because we have reached the
+            // router capacity.
+            let nth_host = format!("disco{}.test.svc.cluster.local", router_cap);
+            let client = $make_client(proxy.outbound, &*nth_host);
+            println!("disco{} should fail...", router_cap);
+            let rsp = client.request(&mut client.request_builder("/"));
+
+            // We should have gotten an HTTP response, not an error.
+            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
         }
 
         #[test]
@@ -372,6 +419,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
+            #[ignore] // #2597
             fn outbound_should_set() {
                 let _ = env_logger_init();
                 let header = HeaderValue::from_static(IP_2);
@@ -387,6 +435,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
+            #[ignore] // #2597
             fn inbound_should_set() {
                 let _ = env_logger_init();
 

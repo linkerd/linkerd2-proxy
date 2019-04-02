@@ -85,11 +85,7 @@ impl Identity {
         env.put(app::config::ENV_IDENTITY_DIR, id_dir);
         env.put(app::config::ENV_IDENTITY_TOKEN_FILE, token);
         env.put(app::config::ENV_IDENTITY_TRUST_ANCHORS, trust_anchors);
-        env.put(
-            app::config::ENV_IDENTITY_IDENTITY_LOCAL_NAME,
-            local_name,
-            // "foo.ns1.serviceaccount.identity.linkerd.cluster.local".to_string(),
-        );
+        env.put(app::config::ENV_IDENTITY_IDENTITY_LOCAL_NAME, local_name);
 
         Self { env, certify_rsp }
     }
@@ -156,7 +152,7 @@ impl pb::server::Identity for Controller {
     type CertifyFuture =
         Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
     fn certify(&mut self, req: grpc::Request<pb::CertifyRequest>) -> Self::CertifyFuture {
-        if let Some(mut f) = self.expect_calls.lock().unwrap().pop_front() {
+        if let Some(mut f) = self.expect_calls.lock().unwrap().pop_front()
             return f(req.into_inner());
         }
 

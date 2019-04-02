@@ -1,7 +1,5 @@
-use futures::{Future, Poll};
-use h2;
+use futures::Poll;
 use http;
-use http::header::CONTENT_LENGTH;
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -11,8 +9,10 @@ use svc;
 
 extern crate linkerd2_router;
 
-pub use self::linkerd2_router::{Recognize, Router};
+pub use self::linkerd2_router::{error, Recognize, Router};
 
+// compiler doesn't notice this type is used in where bounds below...
+#[allow(unused)]
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Clone, Debug)]
@@ -47,11 +47,6 @@ where
     Stk::Value: svc::Service<Req>,
 {
     inner: Router<Req, Rec, Stk>,
-}
-
-/// Catches errors from the inner future and maps them to 500 responses.
-pub struct ResponseFuture<F> {
-    inner: F,
 }
 
 // === impl Config ===
@@ -132,27 +127,6 @@ where
     }
 }
 
-fn route_err_to_5xx(e: Error) -> http::StatusCode {
-    use self::linkerd2_router::error;
-
-    if let Some(ref r) = e.downcast_ref::<error::MakeRoute>() {
-        error!("router error: {:?}", r);
-        http::StatusCode::INTERNAL_SERVER_ERROR
-    } else if let Some(_) = e.downcast_ref::<error::NotRecognized>() {
-        error!("could not recognize request");
-        http::StatusCode::INTERNAL_SERVER_ERROR
-    } else if let Some(ref c) = e.downcast_ref::<error::NoCapacity>() {
-        // TODO For H2 streams, we should probably signal a protocol-level
-        // capacity change.
-        error!("router at capacity ({})", c.0);
-        http::StatusCode::SERVICE_UNAVAILABLE
-    } else {
-        // Inner
-        error!("service error: {}", e);
-        http::StatusCode::INTERNAL_SERVER_ERROR
-    }
-}
-
 // === impl Service ===
 
 impl<Req, Rec, Stk, B> svc::Service<Req> for Service<Req, Rec, Stk>
@@ -165,20 +139,16 @@ where
     B: Default + Send + 'static,
 {
     type Response = <Router<Req, Rec, Stk> as svc::Service<Req>>::Response;
-    type Error = h2::Error;
-    type Future = ResponseFuture<<Router<Req, Rec, Stk> as svc::Service<Req>>::Future>;
+    type Error = <Router<Req, Rec, Stk> as svc::Service<Req>>::Error;
+    type Future = <Router<Req, Rec, Stk> as svc::Service<Req>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready().map_err(|e| {
-            error!("router failed to become ready: {:?}", e);
-            h2::Reason::INTERNAL_ERROR.into()
-        })
+        self.inner.poll_ready()
     }
 
     fn call(&mut self, request: Req) -> Self::Future {
         trace!("routing...");
-        let inner = self.inner.call(request);
-        ResponseFuture { inner }
+        self.inner.call(request)
     }
 }
 
@@ -193,28 +163,5 @@ where
         Self {
             inner: self.inner.clone(),
         }
-    }
-}
-
-// === impl ResponseFuture ===
-
-impl<F, B> Future for ResponseFuture<F>
-where
-    F: Future<Item = http::Response<B>, Error = Error>,
-    B: Default,
-{
-    type Item = F::Item;
-    type Error = h2::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.inner.poll().or_else(|e| {
-            let response = http::Response::builder()
-                .status(route_err_to_5xx(e))
-                .header(CONTENT_LENGTH, "0")
-                .body(B::default())
-                .unwrap();
-
-            Ok(response.into())
-        })
     }
 }
