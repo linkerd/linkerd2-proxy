@@ -8,6 +8,7 @@ pub fn new() -> Proxy {
 
 pub struct Proxy {
     controller: Option<controller::Listening>,
+    identity: Option<controller::Listening>,
     inbound: Option<server::Listening>,
     outbound: Option<server::Listening>,
 
@@ -35,6 +36,7 @@ impl Proxy {
             controller: None,
             inbound: None,
             outbound: None,
+            identity: None,
 
             inbound_disable_ports_protocol_detection: None,
             outbound_disable_ports_protocol_detection: None,
@@ -47,6 +49,11 @@ impl Proxy {
     /// If not used, a default controller will be used.
     pub fn controller(mut self, c: controller::Listening) -> Self {
         self.controller = Some(c);
+        self
+    }
+
+    pub fn identity(mut self, i: controller::Listening) -> Self {
+        self.identity = Some(i);
         self
     }
 
@@ -136,9 +143,9 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
+    let identity = proxy.identity;
     let mut mock_orig_dst = DstInner::default();
 
-    env.put(app::config::ENV_IDENTITY_DISABLED, "test".into());
     env.put(
         app::config::ENV_DESTINATION_SVC_ADDR,
         format!("{}", controller.addr),
@@ -166,6 +173,18 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         "127.0.0.1:0".to_owned(),
     );
     env.put(app::config::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+
+    static IDENTITY_SVC_NAME: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_NAME";
+    static IDENTITY_SVC_ADDR: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_ADDR";
+
+    let identity_addr = if let Some(ref identity) = identity {
+        env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());
+        env.put(IDENTITY_SVC_ADDR, format!("{}", identity.addr));
+        Some(identity.addr)
+    } else {
+        env.put(app::config::ENV_IDENTITY_DISABLED, "test".to_owned());
+        None
+    };
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports
@@ -205,6 +224,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         .name(tname)
         .spawn(move || {
             let _c = controller;
+            let _i = identity;
 
             let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
             // TODO: a mock timer could be injected here?
@@ -213,6 +233,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             let main = linkerd2_proxy::app::Main::new(config, mock_orig_dst.clone(), runtime);
 
             let control_addr = main.control_addr();
+            let identity_addr = identity_addr;
             let inbound_addr = main.inbound_addr();
             let outbound_addr = main.outbound_addr();
             let metrics_addr = main.metrics_addr();
@@ -226,7 +247,13 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             // slip the running tx into the shutdown future, since the first time
             // the shutdown future is polled, that means all of the proxy is now
             // running.
-            let addrs = (control_addr, inbound_addr, outbound_addr, metrics_addr);
+            let addrs = (
+                control_addr,
+                identity_addr,
+                inbound_addr,
+                outbound_addr,
+                metrics_addr,
+            );
             let mut running = Some((running_tx, addrs));
             let on_shutdown = future::poll_fn(move || {
                 if let Some((tx, addrs)) = running.take() {
@@ -240,12 +267,14 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         })
         .unwrap();
 
-    let (control_addr, inbound_addr, outbound_addr, metrics_addr) = running_rx.wait().unwrap();
+    let (control_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
+        running_rx.wait().unwrap();
 
     // printlns will show if the test fails...
     println!(
-        "proxy running; control={}, inbound={}{}, outbound={}{}, metrics={}",
+        "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
         control_addr,
+        identity_addr,
         inbound_addr,
         inbound
             .as_ref()

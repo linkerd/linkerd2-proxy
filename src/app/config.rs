@@ -172,6 +172,7 @@ pub trait Strings {
 /// An implementation of `Strings` that reads the values from environment variables.
 pub struct Env;
 
+#[derive(Clone)]
 pub struct TestEnv {
     values: HashMap<&'static str, String>,
 }

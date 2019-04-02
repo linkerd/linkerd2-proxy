@@ -17,6 +17,7 @@ extern crate linkerd2_task;
 extern crate log;
 pub extern crate net2;
 extern crate prost;
+pub extern crate rustls;
 extern crate tokio;
 extern crate tokio_connect;
 extern crate tokio_current_thread;
@@ -41,7 +42,7 @@ use self::tokio_connect::Connect;
 use self::tokio_current_thread as current_thread;
 use self::tower_grpc as grpc;
 use self::tower_http_service::Body as HttpBody;
-use self::tower_service::Service;
+pub use self::tower_service::Service;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";
@@ -154,6 +155,7 @@ macro_rules! assert_eventually_contains {
 
 pub mod client;
 pub mod controller;
+pub mod identity;
 pub mod proxy;
 pub mod server;
 pub mod tap;
