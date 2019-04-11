@@ -108,8 +108,6 @@ where
 
         let runtime = runtime.into();
 
-        let runtime = runtime.into();
-
         let proxy_parts = ProxyParts {
             config,
             identity,
