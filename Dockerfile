@@ -9,7 +9,7 @@
 
 # rather than updating this manually, run update-rust-version.sh
 ARG RUST_IMAGE=rust:1.33.0
-ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.3.3
+ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.4.3
 
 ## Builds the proxy as incrementally as possible.
 FROM $RUST_IMAGE as build

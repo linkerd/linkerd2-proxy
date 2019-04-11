@@ -117,13 +117,13 @@ impl<L: HasConfig, G> Listen<L, G> {
         <Fut as IntoFuture>::Future: Send,
         Self: GetOriginalDst + Send + 'static,
     {
-        self.listen_and_fold_inner(std::u64::MAX, initial, f)
+        self.listen_and_fold_inner(std::usize::MAX, initial, f)
     }
 
     #[cfg(test)]
     pub fn listen_and_fold_n<T, F, Fut>(
         self,
-        connection_limit: u64,
+        connection_limit: usize,
         initial: T,
         f: F,
     ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
@@ -141,7 +141,7 @@ impl<L: HasConfig, G> Listen<L, G> {
 
     fn listen_and_fold_inner<T, F, Fut>(
         mut self,
-        connection_limit: u64,
+        connection_limit: usize,
         initial: T,
         f: F,
     ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
@@ -173,8 +173,7 @@ impl<L: HasConfig, G> Listen<L, G> {
             });
 
             incoming
-                .take(connection_limit)
-                .and_then(move |(socket, remote_addr)| {
+                .map(move |(socket, remote_addr)| {
                     // TODO: On Linux and most other platforms it would be better
                     // to set the `TCP_NODELAY` option on the bound socket and
                     // then have the listening sockets inherit it. However, that
@@ -183,18 +182,17 @@ impl<L: HasConfig, G> Listen<L, G> {
                     // do it here.
                     set_nodelay_or_warn(&socket);
 
-                    self.new_conn(socket, remote_addr)
-                        .map(move |conn| (conn, remote_addr))
-                })
-                .then(|r| {
-                    future::ok(match r {
-                        Ok(r) => Some(r),
-                        Err(err) => {
-                            debug!("error handshaking: {}", err);
-                            None
-                        }
+                    self.new_conn(socket, remote_addr).then(move |r| {
+                        future::ok(match r {
+                            Ok(conn) => Some((conn, remote_addr)),
+                            Err(err) => {
+                                debug!("error handshaking with {}: {}", remote_addr, err);
+                                None
+                            }
+                        })
                     })
                 })
+                .buffer_unordered(connection_limit)
                 .filter_map(|x| x)
                 .fold(initial, f)
         })
