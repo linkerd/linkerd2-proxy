@@ -25,14 +25,14 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 const DNS_ERROR_TTL: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
-pub struct Layer {
-    resolver: dns::Resolver,
+pub struct Layer<R> {
+    resolver: R,
     timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
-pub struct Stack<M: svc::Stack<Addr>> {
-    resolver: dns::Resolver,
+pub struct Stack<M: svc::Stack<Addr>, R> {
+    resolver: R,
     inner: M,
     timeout: Duration,
 }
@@ -43,11 +43,11 @@ pub struct Service<M: svc::Stack<Addr>> {
     service: Option<M::Value>,
 }
 
-struct Task {
+struct Task<R: dns::Refine> {
     original: NameAddr,
     resolved: Cache,
-    resolver: dns::Resolver,
-    state: State,
+    resolver: R,
+    state: State<R::Future>,
     timeout: Duration,
     tx: mpsc::Sender<NameAddr>,
 }
@@ -66,27 +66,31 @@ enum Cache {
     Resolved(NameAddr),
 }
 
-enum State {
+enum State<F> {
     Init,
-    Pending(Timeout<dns::RefineFuture>),
+    Pending(Timeout<F>),
     ValidUntil(Delay),
 }
 
 // === Layer ===
 
-// FIXME the resolver should be abstracted to a trait so that this can be tested
-// without a real DNS service.
-pub fn layer(resolver: dns::Resolver, timeout: Duration) -> Layer {
+pub fn layer<R>(resolver: R, timeout: Duration) -> Layer<R>
+where
+    R: dns::Refine + Clone + Send + 'static,
+    R::Future: Send + 'static,
+{
     Layer { resolver, timeout }
 }
 
-impl<M> svc::Layer<Addr, Addr, M> for Layer
+impl<M, R> svc::Layer<Addr, Addr, M> for Layer<R>
 where
     M: svc::Stack<Addr> + Clone,
+    R: dns::Refine + Clone + Send + 'static,
+    R::Future: Send + 'static,
 {
-    type Value = <Stack<M> as svc::Stack<Addr>>::Value;
-    type Error = <Stack<M> as svc::Stack<Addr>>::Error;
-    type Stack = Stack<M>;
+    type Value = <Stack<M, R> as svc::Stack<Addr>>::Value;
+    type Error = <Stack<M, R> as svc::Stack<Addr>>::Error;
+    type Stack = Stack<M, R>;
 
     fn bind(&self, inner: M) -> Self::Stack {
         Stack {
@@ -99,9 +103,11 @@ where
 
 // === impl Stack ===
 
-impl<M> svc::Stack<Addr> for Stack<M>
+impl<M, R> svc::Stack<Addr> for Stack<M, R>
 where
     M: svc::Stack<Addr> + Clone,
+    R: dns::Refine + Clone + Send + 'static,
+    R::Future: Send + 'static,
 {
     type Value = svc::Either<Service<M>, M::Value>;
     type Error = M::Error;
@@ -134,10 +140,13 @@ where
 
 // === impl Task ===
 
-impl Task {
+impl<R> Task<R>
+where
+    R: dns::Refine,
+{
     fn new(
         original: NameAddr,
-        resolver: dns::Resolver,
+        resolver: R,
         timeout: Duration,
         tx: mpsc::Sender<NameAddr>,
     ) -> Self {
@@ -152,7 +161,10 @@ impl Task {
     }
 }
 
-impl Future for Task {
+impl<R> Future for Task<R>
+where
+    R: dns::Refine,
+{
     type Item = ();
     type Error = ();
 
