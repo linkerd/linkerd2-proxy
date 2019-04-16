@@ -38,6 +38,14 @@ pub trait Refine {
     fn refine(&self, name: &Name) -> Self::Future;
 }
 
+pub trait MakeRefine: Send + 'static {
+    type Refine: Refine + Clone + Send + Sync + 'static;
+    fn make(self, resolver: &Resolver) -> Self::Refine;
+}
+
+#[derive(Debug)]
+pub struct DefaultRefine;
+
 #[derive(Debug)]
 pub enum Error {
     NoAddressesFound,
@@ -203,6 +211,13 @@ impl Refine for Resolver {
     fn refine(&self, name: &Name) -> Self::Future {
         let f = self.resolver.lookup_ip(name.as_ref());
         RefineFuture(::logging::context_future(Ctx(name.clone()), f))
+    }
+}
+
+impl MakeRefine for DefaultRefine {
+    type Refine = Resolver;
+    fn make(self, resolver: &Resolver) -> Self::Refine {
+        resolver.clone()
     }
 }
 

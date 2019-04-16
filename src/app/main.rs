@@ -54,12 +54,12 @@ use super::profiles::Client as ProfilesClient;
 ///
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
-pub struct Main<G> {
-    proxy_parts: ProxyParts<G>,
+pub struct Main<G, R=dns::DefaultRefine> {
+    proxy_parts: ProxyParts<G, R>,
     runtime: task::MainRuntime,
 }
 
-struct ProxyParts<G> {
+struct ProxyParts<G, R=dns::DefaultRefine> {
     config: Config,
     identity: tls::Conditional<(identity::Local, identity::CrtKeyStore)>,
 
@@ -70,6 +70,8 @@ struct ProxyParts<G> {
 
     inbound_listener: Listen<identity::Local, G>,
     outbound_listener: Listen<identity::Local, G>,
+
+    make_refine: R,
 }
 
 impl<G> Main<G>
@@ -116,11 +118,39 @@ where
             outbound_listener,
             control_listener,
             admin_listener,
+            make_refine: dns::DefaultRefine,
         };
 
         Main {
             proxy_parts,
             runtime,
+        }
+    }
+}
+
+impl<G, R> Main<G, R>
+where
+    G: GetOriginalDst + Clone + Send + 'static,
+    R: dns::MakeRefine,
+    <R::Refine as dns::Refine>::Future: Send + 'static,
+{
+    pub fn with_refine<R2>(self, make_refine: R2) -> Main<G, R2>
+    where
+        R2: dns::MakeRefine,
+        <R2::Refine as dns::Refine>::Future: Send + 'static,
+    {
+        Main {
+            proxy_parts: ProxyParts {
+                config: self.proxy_parts.config,
+                identity: self.proxy_parts.identity,
+                start_time: self.proxy_parts.start_time,
+                inbound_listener: self.proxy_parts.inbound_listener,
+                outbound_listener: self.proxy_parts.outbound_listener,
+                control_listener: self.proxy_parts.control_listener,
+                admin_listener: self.proxy_parts.admin_listener,
+                make_refine,
+            },
+            runtime: self.runtime,
         }
     }
 
@@ -168,9 +198,11 @@ where
     }
 }
 
-impl<G> ProxyParts<G>
+impl<G, R> ProxyParts<G, R>
 where
     G: GetOriginalDst + Clone + Send + 'static,
+    R: dns::MakeRefine,
+    <R::Refine as dns::Refine>::Future: Send + 'static,
 {
     /// This is run inside a `futures::lazy`, so the default Executor is
     /// setup for use in here.
@@ -183,6 +215,7 @@ where
             inbound_listener,
             outbound_listener,
             admin_listener,
+            make_refine,
         } = self;
 
         const MAX_IN_FLIGHT: usize = 10_000;
@@ -219,6 +252,8 @@ where
                 // FIXME: DNS configuration should be infallible.
                 panic!("invalid DNS configuration: {:?}", e);
             });
+
+        let refine = make_refine.make(&dns_resolver);
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
@@ -540,7 +575,7 @@ where
                 .push(map_target::layer(|addr: &Addr| {
                     DstAddr::outbound(addr.clone())
                 }))
-                .push(canonicalize::layer(dns_resolver, canonicalize_timeout));
+                .push(canonicalize::layer(refine, canonicalize_timeout));
 
             // Routes requests to an `Addr`:
             //
