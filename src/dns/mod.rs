@@ -26,6 +26,18 @@ pub trait ConfigureResolver {
     fn configure_resolver(&self, &mut ResolverOpts);
 }
 
+pub trait Refine {
+    type Future: Future<Item = RefinedName, Error = ResolveError>;
+    /// Attempts to refine `name` to a fully-qualified name.
+    ///
+    /// This method does DNS resolution for `name` and ignores the IP address
+    /// result, instead returning the `Name` that was resolved.
+    ///
+    /// For example, a name like `web` may be refined to `web.example.com.`,
+    /// depending on the DNS search path.
+    fn refine(&self, name: &Name) -> Self::Future;
+}
+
 #[derive(Debug)]
 pub enum Error {
     NoAddressesFound,
@@ -51,7 +63,7 @@ pub enum Suffix {
 
 struct Ctx(Name);
 
-pub struct Refine {
+pub struct RefinedName {
     pub name: Name,
     pub valid_until: Instant,
 }
@@ -173,18 +185,6 @@ impl Resolver {
         let f = self.resolver.lookup_ip(name.as_ref());
         IpAddrFuture(::logging::context_future(Ctx(name.clone()), f))
     }
-
-    /// Attempts to refine `name` to a fully-qualified name.
-    ///
-    /// This method does DNS resolution for `name` and ignores the IP address
-    /// result, instead returning the `Name` that was resolved.
-    ///
-    /// For example, a name like `web` may be refined to `web.example.com.`,
-    /// depending on the DNS search path.
-    pub fn refine(&self, name: &Name) -> RefineFuture {
-        let f = self.resolver.lookup_ip(name.as_ref());
-        RefineFuture(::logging::context_future(Ctx(name.clone()), f))
-    }
 }
 
 /// Note: `AsyncResolver` does not implement `Debug`, so we must manually
@@ -194,6 +194,15 @@ impl fmt::Debug for Resolver {
         f.debug_struct("Resolver")
             .field("resolver", &"...")
             .finish()
+    }
+}
+
+impl Refine for Resolver {
+    type Future = RefineFuture;
+
+    fn refine(&self, name: &Name) -> Self::Future {
+        let f = self.resolver.lookup_ip(name.as_ref());
+        RefineFuture(::logging::context_future(Ctx(name.clone()), f))
     }
 }
 
@@ -211,7 +220,7 @@ impl Future for IpAddrFuture {
 }
 
 impl Future for RefineFuture {
-    type Item = Refine;
+    type Item = RefinedName;
     type Error = ResolveError;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -222,7 +231,7 @@ impl Future for RefineFuture {
         let name = Name::try_from(n.to_ascii().as_bytes())
             .expect("Name returned from resolver must be valid");
 
-        let refine = Refine { name, valid_until };
+        let refine = RefinedName { name, valid_until };
         Ok(Async::Ready(refine))
     }
 }
