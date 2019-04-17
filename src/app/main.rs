@@ -5,7 +5,6 @@ use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
 use std::{error, fmt, io};
-use std::marker::PhantomData;
 use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::runtime::current_thread;
 use tower_grpc as grpc;
@@ -55,10 +54,10 @@ use super::profiles::Client as ProfilesClient;
 ///
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
-pub struct Main<G, R = dns::Resolver> {
+pub struct Main<G, R = dns::DefaultResolver> {
     proxy_parts: ProxyParts<G>,
     runtime: task::MainRuntime,
-    _resolver: PhantomData<R>,
+    dns: R
 }
 
 struct ProxyParts<G> {
@@ -123,7 +122,7 @@ where
         Main {
             proxy_parts,
             runtime,
-            _resolver: PhantomData,
+            dns: dns::DefaultResolver,
         }
     }
 }
@@ -131,10 +130,10 @@ where
 impl<G, R> Main<G, R>
 where
     G: GetOriginalDst + Clone + Send + 'static,
-    R: dns::NewResolver + Send,
+    R: dns::NewResolver + Send + 'static,
     R::Resolver: Clone + Send + Sync + 'static,
 {
-    pub fn with_dns<R2>(self) -> Main<G, R2>
+    pub fn with_dns<R2>(self, dns: R2) -> Main<G, R2>
     where
         R2: dns::NewResolver + Send,
         R2::Resolver: Clone + Send + Sync + 'static,
@@ -142,7 +141,7 @@ where
         Main {
             proxy_parts: self.proxy_parts,
             runtime: self.runtime,
-            _resolver: PhantomData,
+            dns,
         }
     }
 
@@ -169,13 +168,13 @@ where
         let Main {
             proxy_parts,
             mut runtime,
-            ..
+            dns,
         } = self;
 
         let (drain_tx, drain_rx) = drain::channel();
 
         runtime.spawn(futures::lazy(move || {
-            proxy_parts.build_proxy_task::<R>(drain_rx);
+            proxy_parts.build_proxy_task(drain_rx, dns);
             trace!("main task spawned");
             Ok(())
         }));
@@ -197,7 +196,7 @@ where
 {
     /// This is run inside a `futures::lazy`, so the default Executor is
     /// setup for use in here.
-    fn build_proxy_task<R>(self, drain_rx: drain::Watch)
+    fn build_proxy_task<R>(self, drain_rx: drain::Watch, dns: R)
     where
         R: dns::NewResolver + Send,
         R::Resolver: Clone + Send + Sync + 'static,
@@ -241,7 +240,7 @@ where
             config.outbound_ports_disable_protocol_detection,
         );
 
-        let (dns_resolver, dns_bg) = R::from_system_config_with(&config)
+        let (dns_resolver, dns_bg) = dns.from_system_config_with(&config)
             .unwrap_or_else(|e| {
                 // FIXME: DNS configuration should be infallible.
                 panic!("invalid DNS configuration: {:?}", e);

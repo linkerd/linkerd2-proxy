@@ -3,7 +3,7 @@ extern crate untrusted;
 extern crate webpki;
 
 use self::trust_dns_resolver::{
-    config::ResolverConfig, lookup_ip::LookupIp, system_conf, AsyncResolver, BackgroundLookupIp,
+    lookup_ip::LookupIp, system_conf, AsyncResolver, BackgroundLookupIp,
 };
 use convert::TryFrom;
 use futures::prelude::*;
@@ -14,7 +14,7 @@ use tokio::timer::Delay;
 mod name;
 
 pub use self::name::{InvalidName, Name};
-pub use self::trust_dns_resolver::config::ResolverOpts;
+pub use self::trust_dns_resolver::config::{ResolverOpts, ResolverConfig};
 pub use self::trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 
 #[derive(Clone)]
@@ -40,19 +40,20 @@ pub trait NewResolver {
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
     fn from_system_config_with<C: ConfigureResolver>(
-        c: &C,
+        &self, c: &C,
     ) -> Result<(Self::Resolver, Self::Background), ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Ok(Self::new_resolver(config, opts))
+        Ok(self.new_resolver(config, opts))
     }
 
     /// NOTE: It would be nice to be able to return a named type rather than
     ///       `impl Future` for the background future; it would be called
     ///       `Background` or `ResolverBackground` if that were possible.
     fn new_resolver(
+        &self,
         config: ResolverConfig,
         opts: ResolverOpts,
     ) -> (Self::Resolver, Self::Background);
@@ -108,6 +109,9 @@ pub struct RefinedName {
     pub valid_until: Instant,
 }
 
+#[derive(Debug)]
+pub struct DefaultResolver;
+
 impl fmt::Display for Ctx {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "dns={}", self.0)
@@ -161,17 +165,18 @@ impl Suffix {
     }
 }
 
-impl NewResolver for Resolver {
-    type Resolver = Self;
+impl NewResolver for DefaultResolver {
+    type Resolver = Resolver;
     type Background = Box<Future<Item = (), Error = ()> + Send + 'static>;
 
     /// NOTE: It would be nice to be able to return a named type rather than
     ///       `impl Future` for the background future; it would be called
     ///       `Background` or `ResolverBackground` if that were possible.
     fn new_resolver(
+        &self,
         config: ResolverConfig,
         mut opts: ResolverOpts,
-    ) -> (Self, Self::Background) {
+    ) -> (Self::Resolver, Self::Background) {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
         let (resolver, background) = AsyncResolver::new(config, opts);

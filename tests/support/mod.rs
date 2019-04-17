@@ -155,6 +155,7 @@ macro_rules! assert_eventually_contains {
 
 pub mod client;
 pub mod controller;
+pub mod dns;
 pub mod identity;
 pub mod proxy;
 pub mod server;

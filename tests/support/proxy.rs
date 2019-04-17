@@ -1,16 +1,12 @@
-use self::linkerd2_proxy::dns;
 use support::*;
 
-use std::{
-    marker::PhantomData,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 pub fn new() -> Proxy {
     Proxy::new()
 }
 
-pub struct Proxy<R = dns::Resolver> {
+pub struct Proxy<R = dns::DefaultResolver> {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
     inbound: Option<server::Listening>,
@@ -21,7 +17,7 @@ pub struct Proxy<R = dns::Resolver> {
 
     shutdown_signal: Option<Box<Future<Item = (), Error = ()> + Send>>,
 
-    _dns: PhantomData<R>,
+    dns: R,
 }
 
 pub struct Listening {
@@ -48,14 +44,14 @@ impl Proxy {
             outbound_disable_ports_protocol_detection: None,
             shutdown_signal: None,
 
-            _dns: PhantomData,
+            dns: dns::DefaultResolver,
         }
     }
 }
 
 impl<R> Proxy<R>
 where
-    R: dns::NewResolver + Send,
+    R: dns::NewResolver + Send + 'static,
     R::Resolver: Clone + Send + Sync + 'static,
 {
     /// Pass a customized support `Controller` for this proxy to use.
@@ -153,7 +149,7 @@ impl linkerd2_proxy::transport::GetOriginalDst for MockOriginalDst {
 
 fn run<R>(proxy: Proxy<R>, mut env: app::config::TestEnv) -> Listening
 where
-    R: dns::NewResolver + Send,
+    R: dns::NewResolver + Send + 'static,
     R::Resolver: Clone + Send + Sync + 'static,
 {
     use self::linkerd2_proxy::app;
@@ -162,6 +158,7 @@ where
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
     let identity = proxy.identity;
+    let dns = proxy.dns;
     let mut mock_orig_dst = DstInner::default();
 
     env.put(
@@ -249,7 +246,7 @@ where
             let runtime =
                 tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
             let main = linkerd2_proxy::app::Main::new(config, mock_orig_dst.clone(), runtime)
-                .with_dns::<R>();
+                .with_dns(dns);
 
             let control_addr = main.control_addr();
             let identity_addr = identity_addr;
