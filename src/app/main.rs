@@ -134,7 +134,7 @@ where
     R: dns::NewResolver + Send,
     R::Resolver: Clone + Send + Sync + 'static,
 {
-    pub fn with_refine<R2>(self, make_refine: R2) -> Main<G, R2>
+    pub fn with_dns<R2>(self) -> Main<G, R2>
     where
         R2: dns::NewResolver + Send,
         R2::Resolver: Clone + Send + Sync + 'static,
@@ -210,7 +210,6 @@ where
             inbound_listener,
             outbound_listener,
             admin_listener,
-            make_refine,
         } = self;
 
         const MAX_IN_FLIGHT: usize = 10_000;
@@ -247,8 +246,6 @@ where
                 // FIXME: DNS configuration should be infallible.
                 panic!("invalid DNS configuration: {:?}", e);
             });
-
-        let refine = make_refine.make(&dns_resolver);
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
@@ -570,7 +567,7 @@ where
                 .push(map_target::layer(|addr: &Addr| {
                     DstAddr::outbound(addr.clone())
                 }))
-                .push(canonicalize::layer(refine, canonicalize_timeout));
+                .push(canonicalize::layer(dns_resolver.clone(), canonicalize_timeout));
 
             // Routes requests to an `Addr`:
             //

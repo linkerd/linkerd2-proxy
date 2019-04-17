@@ -120,13 +120,6 @@ macro_rules! profile_test {
         let proxy = proxy::new()
             .controller(ctrl)
             .outbound(srv)
-            .refine(|_| {
-                use std::time::{Instant, Duration};
-                let name = support::dns_name(b"profiles.test.svc.cluster.local");
-                linkerd2_proxy::dns::RefinedName {
-                    name, valid_until: Instant::now() + Duration::from_secs(666)
-                }
-            })
             .run_with_test_env($env);
 
         let client = client::$http(proxy.outbound, host);

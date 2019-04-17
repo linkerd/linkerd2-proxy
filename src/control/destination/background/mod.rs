@@ -34,13 +34,14 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 /// service is healthy, it reads requests from `request_rx`, determines how to resolve the
 /// provided authority to a set of addresses, and ensures that resolution updates are
 /// propagated to all requesters.
-pub(super) struct Background<T>
+pub(super) struct Background<T, R>
 where
     T: GrpcService<BoxBody>,
+    R: dns::Resolve + Clone,
 {
     new_query: NewQuery,
-    dns_resolver: dns::Resolver,
-    dsts: DestinationCache<T>,
+    dns_resolver: R,
+    dsts: DestinationCache<T, R>,
     /// The Destination.Get RPC client service.
     /// Each poll, records whether the rpc service was till ready.
     rpc_ready: bool,
@@ -51,11 +52,12 @@ where
 /// Holds the currently active `DestinationSet`s and a list of any destinations
 /// which require reconnects.
 #[derive(Default)]
-struct DestinationCache<T>
+struct DestinationCache<T, R>
 where
     T: GrpcService<BoxBody>,
+    R: dns::Resolve,
 {
-    destinations: HashMap<NameAddr, DestinationSet<T>>,
+    destinations: HashMap<NameAddr, DestinationSet<T, R>>,
     /// A queue of authorities that need to be reconnected.
     reconnects: VecDeque<NameAddr>,
 }
@@ -86,13 +88,14 @@ where
 
 // ==== impl Background =====
 
-impl<T> Background<T>
+impl<T, R> Background<T, R>
 where
     T: GrpcService<BoxBody>,
+    R: dns::Resolve + Clone,
 {
     pub(super) fn new(
         request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
-        dns_resolver: dns::Resolver,
+        dns_resolver: R,
         suffixes: Vec<dns::Suffix>,
         concurrency_limit: usize,
         context_token: String,
@@ -377,9 +380,10 @@ impl NewQuery {
 
 // ===== impl DestinationCache =====
 
-impl<T> DestinationCache<T>
+impl<T, R> DestinationCache<T, R>
 where
     T: GrpcService<BoxBody>,
+    R: dns::Resolve,
 {
     fn new() -> Self {
         Self {

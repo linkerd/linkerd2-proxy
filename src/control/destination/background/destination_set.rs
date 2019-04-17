@@ -22,32 +22,34 @@ use control::{
     destination::{Metadata, ProtocolHint, Responder, Update},
     remote_stream::Remote,
 };
-use dns::{self, IpAddrListFuture};
+use dns;
 use identity;
 use NameAddr;
 
 use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
 
 /// Holds the state of a single resolution.
-pub(super) struct DestinationSet<T>
+pub(super) struct DestinationSet<T, R>
 where
     T: GrpcService<BoxBody>,
+    R: dns::Resolve,
 {
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
     pub query: DestinationServiceQuery<T>,
-    pub dns_query: Option<IpAddrListFuture>,
+    pub dns_query: Option<R::ListFuture>,
     pub responders: Vec<Responder>,
 }
 
 // ===== impl DestinationSet =====
 
-impl<T> DestinationSet<T>
+impl<T, R> DestinationSet<T, R>
 where
     T: GrpcService<BoxBody>,
+    R: dns::Resolve,
 {
     pub(super) fn reset_dns_query(
         &mut self,
-        dns_resolver: &dns::Resolver,
+        dns_resolver: &R,
         deadline: Instant,
         authority: &NameAddr,
     ) {
@@ -120,7 +122,7 @@ where
         }
     }
 
-    pub(super) fn poll_dns(&mut self, dns_resolver: &dns::Resolver, authority: &NameAddr) {
+    pub(super) fn poll_dns(&mut self, dns_resolver: &R, authority: &NameAddr) {
         // Duration to wait before polling DNS again after an error
         // (or a NXDOMAIN response with no TTL).
         const DNS_ERROR_TTL: Duration = Duration::from_secs(5);
@@ -173,9 +175,10 @@ where
     }
 }
 
-impl<T> DestinationSet<T>
+impl<T, R> DestinationSet<T, R>
 where
     T: GrpcService<BoxBody>,
+    R: dns::Resolve,
 {
     /// Returns `true` if the authority that created this query _should_ query
     /// the Destination service, but was unable to due to insufficient capaacity.

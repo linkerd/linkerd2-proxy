@@ -176,7 +176,7 @@ impl NewResolver for Resolver {
         opts.cache_size = 0;
         let (resolver, background) = AsyncResolver::new(config, opts);
         let resolver = Resolver { resolver };
-        (resolver, background)
+        (resolver, Box::new(background))
     }
 }
 

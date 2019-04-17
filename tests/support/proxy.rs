@@ -1,14 +1,16 @@
 use self::linkerd2_proxy::dns;
-use support::tokio::prelude::future::FutureResult;
 use support::*;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+};
 
 pub fn new() -> Proxy {
     Proxy::new()
 }
 
-pub struct Proxy<R = dns::DefaultRefine> {
+pub struct Proxy<R = dns::Resolver> {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
     inbound: Option<server::Listening>,
@@ -17,9 +19,9 @@ pub struct Proxy<R = dns::DefaultRefine> {
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
     outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
 
-    refine: R,
-
     shutdown_signal: Option<Box<Future<Item = (), Error = ()> + Send>>,
+
+    _dns: PhantomData<R>,
 }
 
 pub struct Listening {
@@ -45,15 +47,16 @@ impl Proxy {
             inbound_disable_ports_protocol_detection: None,
             outbound_disable_ports_protocol_detection: None,
             shutdown_signal: None,
-            refine: dns::DefaultRefine,
+
+            _dns: PhantomData,
         }
     }
 }
 
 impl<R> Proxy<R>
 where
-    R: dns::MakeRefine,
-    <R::Refine as dns::Refine>::Future: Send + 'static,
+    R: dns::NewResolver + Send,
+    R::Resolver: Clone + Send + Sync + 'static,
 {
     /// Pass a customized support `Controller` for this proxy to use.
     ///
@@ -113,25 +116,6 @@ where
         self
     }
 
-    pub fn refine<F>(self, refine: F) -> Proxy<MockRefine>
-    where
-        F: Fn(&dns::Name) -> dns::RefinedName + Send + Sync + 'static,
-    {
-        let refine = MockRefine(Arc::new(refine));
-        Proxy {
-            controller: self.controller,
-            inbound: self.inbound,
-            outbound: self.outbound,
-            identity: self.identity,
-
-            inbound_disable_ports_protocol_detection: self.inbound_disable_ports_protocol_detection,
-            outbound_disable_ports_protocol_detection: self
-                .outbound_disable_ports_protocol_detection,
-            shutdown_signal: self.shutdown_signal,
-            refine,
-        }
-    }
-
     pub fn run(self) -> Listening {
         self.run_with_test_env(app::config::TestEnv::new())
     }
@@ -167,27 +151,10 @@ impl linkerd2_proxy::transport::GetOriginalDst for MockOriginalDst {
     }
 }
 
-#[derive(Clone)]
-pub struct MockRefine(Arc<Fn(&dns::Name) -> dns::RefinedName + Send + Sync + 'static>);
-
-impl dns::Refine for MockRefine {
-    type Future = FutureResult<dns::RefinedName, dns::ResolveError>;
-    fn refine(&self, name: &dns::Name) -> Self::Future {
-        future::ok((self.0)(name))
-    }
-}
-
-impl dns::MakeRefine for MockRefine {
-    type Refine = MockRefine;
-    fn make(self, _: &dns::Resolver) -> Self::Refine {
-        self
-    }
-}
-
 fn run<R>(proxy: Proxy<R>, mut env: app::config::TestEnv) -> Listening
 where
-    R: dns::MakeRefine,
-    <R::Refine as dns::Refine>::Future: Send + 'static,
+    R: dns::NewResolver + Send,
+    R::Resolver: Clone + Send + Sync + 'static,
 {
     use self::linkerd2_proxy::app;
 
@@ -195,7 +162,6 @@ where
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
     let identity = proxy.identity;
-    let refine = proxy.refine;
     let mut mock_orig_dst = DstInner::default();
 
     env.put(
@@ -283,7 +249,7 @@ where
             let runtime =
                 tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
             let main = linkerd2_proxy::app::Main::new(config, mock_orig_dst.clone(), runtime)
-                .with_refine(refine);
+                .with_dns::<R>();
 
             let control_addr = main.control_addr();
             let identity_addr = identity_addr;

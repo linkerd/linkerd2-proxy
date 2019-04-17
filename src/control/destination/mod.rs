@@ -101,15 +101,16 @@ pub enum ProtocolHint {
 /// The `Resolver` is used by a listener to request resolutions, while
 /// the background future is executed on the controller thread's executor
 /// to drive the background task.
-pub fn new<T>(
+pub fn new<T, R>(
     mut client: Option<T>,
-    dns_resolver: dns::Resolver,
+    dns_resolver: R,
     suffixes: Vec<dns::Suffix>,
     concurrency_limit: usize,
     proxy_id: String,
 ) -> (Resolver, impl Future<Item = (), Error = ()>)
 where
     T: GrpcService<BoxBody>,
+    R: dns::Resolve + Clone,
 {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };

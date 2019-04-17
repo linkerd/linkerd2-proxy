@@ -90,7 +90,7 @@ pub mod add_origin {
 pub mod resolve {
     use futures::{Future, Poll};
     use std::marker::PhantomData;
-    use std::net::SocketAddr;
+    use std::net::{IpAddr, SocketAddr};
     use std::{error, fmt};
 
     use super::{client, ControlAddr};
@@ -99,38 +99,38 @@ pub mod resolve {
     use Addr;
 
     #[derive(Debug)]
-    pub struct Layer<M> {
-        dns: dns::Resolver,
+    pub struct Layer<M, R> {
+        dns: R,
         _p: PhantomData<fn() -> M>,
     }
 
     #[derive(Clone, Debug)]
-    pub struct Stack<M> {
-        dns: dns::Resolver,
+    pub struct Stack<M, R> {
+        dns: R,
         inner: M,
     }
 
-    pub struct NewService<M> {
+    pub struct NewService<M, R> {
         config: ControlAddr,
-        dns: dns::Resolver,
+        dns: R,
         stack: M,
     }
 
-    pub struct Init<M>
+    pub struct Init<M, F>
     where
         M: svc::Stack<client::Target>,
         M::Value: svc::Service<()>,
     {
-        state: State<M>,
+        state: State<M, F>,
     }
 
-    enum State<M>
+    enum State<M, F>
     where
         M: svc::Stack<client::Target>,
         M::Value: svc::Service<()>,
     {
         Resolve {
-            future: dns::IpAddrFuture,
+            future: F,
             config: ControlAddr,
             stack: M,
         },
@@ -147,9 +147,10 @@ pub mod resolve {
 
     // === impl Layer ===
 
-    pub fn layer<M>(dns: dns::Resolver) -> Layer<M>
+    pub fn layer<M, R>(dns: R) -> Layer<M, R>
     where
         M: svc::Stack<client::Target> + Clone,
+        R: dns::Resolve + Clone,
     {
         Layer {
             dns,
@@ -157,22 +158,24 @@ pub mod resolve {
         }
     }
 
-    impl<M> Clone for Layer<M>
+    impl<M, R> Clone for Layer<M, R>
     where
         M: svc::Stack<client::Target> + Clone,
+        R: dns::Resolve + Clone,
     {
         fn clone(&self) -> Self {
             layer(self.dns.clone())
         }
     }
 
-    impl<M> svc::Layer<ControlAddr, client::Target, M> for Layer<M>
+    impl<M, R> svc::Layer<ControlAddr, client::Target, M> for Layer<M, R>
     where
         M: svc::Stack<client::Target> + Clone,
+        R: dns::Resolve + Clone,
     {
-        type Value = <Stack<M> as svc::Stack<ControlAddr>>::Value;
-        type Error = <Stack<M> as svc::Stack<ControlAddr>>::Error;
-        type Stack = Stack<M>;
+        type Value = <Stack<M, R> as svc::Stack<ControlAddr>>::Value;
+        type Error = <Stack<M, R> as svc::Stack<ControlAddr>>::Error;
+        type Stack = Stack<M, R>;
 
         fn bind(&self, inner: M) -> Self::Stack {
             Stack {
@@ -184,11 +187,12 @@ pub mod resolve {
 
     // === impl Stack ===
 
-    impl<M> svc::Stack<ControlAddr> for Stack<M>
+    impl<M, R> svc::Stack<ControlAddr> for Stack<M, R>
     where
         M: svc::Stack<client::Target> + Clone,
+        R: dns::Resolve + Clone,
     {
-        type Value = NewService<M>;
+        type Value = NewService<M, R>;
         type Error = M::Error;
 
         fn make(&self, config: &ControlAddr) -> Result<Self::Value, Self::Error> {
@@ -202,14 +206,15 @@ pub mod resolve {
 
     // === impl NewService ===
 
-    impl<M> svc::Service<()> for NewService<M>
+    impl<M, R> svc::Service<()> for NewService<M, R>
     where
         M: svc::Stack<client::Target> + Clone,
         M::Value: svc::Service<()>,
+        R: dns::Resolve + Clone,
     {
         type Response = <M::Value as svc::Service<()>>::Response;
-        type Error = <Init<M> as Future>::Error;
-        type Future = Init<M>;
+        type Error = <Init<M, R::Future> as Future>::Error;
+        type Future = Init<M, R::Future>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             Ok(().into())
@@ -231,10 +236,11 @@ pub mod resolve {
 
     // === impl Init ===
 
-    impl<M> Future for Init<M>
+    impl<M, F> Future for Init<M, F>
     where
         M: svc::Stack<client::Target>,
         M::Value: svc::Service<()>,
+        F: Future<Item=IpAddr, Error=dns::Error>,
     {
         type Item = <M::Value as svc::Service<()>>::Response;
         type Error = Error<M::Error, <M::Value as svc::Service<()>>::Error>;
@@ -264,10 +270,11 @@ pub mod resolve {
         }
     }
 
-    impl<M> State<M>
+    impl<M, F> State<M, F>
     where
         M: svc::Stack<client::Target>,
         M::Value: svc::Service<()>,
+        F: Future<Item=IpAddr, Error=dns::Error>,
     {
         fn make_inner(addr: SocketAddr, dst: &ControlAddr, stack: &M) -> Self {
             let target = client::Target {
