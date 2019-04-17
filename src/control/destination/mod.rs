@@ -31,6 +31,7 @@ use tower_grpc::{generic::client::GrpcService, BoxBody};
 
 use dns;
 use identity;
+use never::Never;
 use proxy::resolve::{self, Resolve, Update};
 
 pub mod background;
@@ -152,11 +153,14 @@ impl Resolve<NameAddr> for Resolver {
 
 impl resolve::Resolution for Resolution {
     type Endpoint = Metadata;
-    type Error = ();
+    type Error = Never;
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-        let up = try_ready!(self.update_rx.poll()).expect("resolution stream must be infinite");
-        Ok(Async::Ready(up))
+        match self.update_rx.poll() {
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Ok(Async::Ready(Some(up))) => Ok(Async::Ready(up)),
+            Err(()) | Ok(Async::Ready(None)) => panic!("resolution stream must be infinite"),
+        }
     }
 }
 

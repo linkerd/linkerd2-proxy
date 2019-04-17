@@ -87,7 +87,9 @@ where
     T: Clone + fmt::Debug,
     M: svc::Stack<T, Value = N>,
     N: svc::Service<(), Response = S>,
+    N::Error: Send + Sync,
     S: svc::Service<Req>,
+    S::Error: Send + Sync,
     Error: From<N::Error> + From<S::Error>,
 {
     type Value = <Stack<Req, M> as svc::Stack<T>>::Value;
@@ -120,7 +122,9 @@ where
     T: Clone + fmt::Debug,
     M: svc::Stack<T, Value = N>,
     N: svc::Service<(), Response = S>,
+    N::Error: Send + Sync,
     S: svc::Service<Req>,
+    S::Error: Send + Sync,
     Error: From<N::Error> + From<S::Error>,
 {
     type Value = Service<T, M::Value>;
@@ -144,7 +148,9 @@ where
 impl<N, S> Service<&'static str, N>
 where
     N: svc::Service<(), Response = S>,
+    N::Error: Send + Sync,
     S: svc::Service<()>,
+    S::Error: Send + Sync,
     Error: From<N::Error> + From<S::Error>,
 {
     fn for_test(new_service: N) -> Self {
@@ -169,7 +175,9 @@ impl<T, N, S, Req> svc::Service<Req> for Service<T, N>
 where
     T: fmt::Debug,
     N: svc::Service<(), Response = S>,
+    N::Error: Send + Sync + ::std::error::Error,
     S: svc::Service<Req>,
+    S::Error: Send + Sync + ::std::error::Error,
     Error: From<N::Error> + From<S::Error>,
 {
     type Response = S::Response;
@@ -206,6 +214,7 @@ where
                 // errors are logged at debug.
                 if !self.mute_connect_error_log {
                     self.mute_connect_error_log = true;
+                    let err: Error = err;
                     warn!("connect error to {:?}: {}", self.target, err);
                 } else {
                     debug!("connect error to {:?}: {}", self.target, err);
