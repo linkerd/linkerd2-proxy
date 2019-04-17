@@ -54,12 +54,12 @@ use super::profiles::Client as ProfilesClient;
 ///
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
-pub struct Main<G, R=dns::DefaultRefine> {
+pub struct Main<G, R = dns::DefaultRefine> {
     proxy_parts: ProxyParts<G, R>,
     runtime: task::MainRuntime,
 }
 
-struct ProxyParts<G, R=dns::DefaultRefine> {
+struct ProxyParts<G, R = dns::DefaultRefine> {
     config: Config,
     identity: tls::Conditional<(identity::Local, identity::CrtKeyStore)>,
 

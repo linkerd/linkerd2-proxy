@@ -1,6 +1,6 @@
-use support::*;
 use self::linkerd2_proxy::dns;
 use support::tokio::prelude::future::FutureResult;
+use support::*;
 
 use std::sync::{Arc, Mutex};
 
@@ -113,11 +113,11 @@ where
         self
     }
 
-   pub fn refine<R2>(self, refine: R2) -> Proxy<R2>
-   where
-        R2: dns::MakeRefine,
-        <R2::Refine as dns::Refine>::Future: Send + 'static,
+    pub fn refine<F>(self, refine: F) -> Proxy<MockRefine>
+    where
+        F: Fn(&dns::Name) -> dns::RefinedName + Send + Sync + 'static,
     {
+        let refine = MockRefine(Arc::new(refine));
         Proxy {
             controller: self.controller,
             inbound: self.inbound,
@@ -125,7 +125,8 @@ where
             identity: self.identity,
 
             inbound_disable_ports_protocol_detection: self.inbound_disable_ports_protocol_detection,
-            outbound_disable_ports_protocol_detection: self.outbound_disable_ports_protocol_detection,
+            outbound_disable_ports_protocol_detection: self
+                .outbound_disable_ports_protocol_detection,
             shutdown_signal: self.shutdown_signal,
             refine,
         }
@@ -166,11 +167,20 @@ impl linkerd2_proxy::transport::GetOriginalDst for MockOriginalDst {
     }
 }
 
-struct MockRefine(Box<Fn(&dns::Name) -> dns::RefinedName>);
+#[derive(Clone)]
+pub struct MockRefine(Arc<Fn(&dns::Name) -> dns::RefinedName + Send + Sync + 'static>);
+
 impl dns::Refine for MockRefine {
     type Future = FutureResult<dns::RefinedName, dns::ResolveError>;
     fn refine(&self, name: &dns::Name) -> Self::Future {
         future::ok((self.0)(name))
+    }
+}
+
+impl dns::MakeRefine for MockRefine {
+    type Refine = MockRefine;
+    fn make(self, _: &dns::Resolver) -> Self::Refine {
+        self
     }
 }
 

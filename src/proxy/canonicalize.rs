@@ -144,12 +144,7 @@ impl<R> Task<R>
 where
     R: dns::Refine,
 {
-    fn new(
-        original: NameAddr,
-        resolver: R,
-        timeout: Duration,
-        tx: mpsc::Sender<NameAddr>,
-    ) -> Self {
+    fn new(original: NameAddr, resolver: R, timeout: Duration, tx: mpsc::Sender<NameAddr>) -> Self {
         Self {
             original,
             resolved: Cache::AwaitingInitial,

@@ -299,3 +299,7 @@ impl<T: fmt::Debug, E: fmt::Debug> ResultWaitedExt for Result<T, Waited<E>> {
         }
     }
 }
+
+pub fn dns_name(name: &[u8]) -> dns::Name {
+    linkerd2_proxy::convert::TryFrom::try_from(name).expect("invalid dns name")
+}
