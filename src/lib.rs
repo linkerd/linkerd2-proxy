@@ -49,7 +49,7 @@ pub mod app;
 mod conditional;
 pub mod control;
 pub mod convert;
-mod dns;
+pub mod dns;
 mod drain;
 mod identity;
 mod logging;
