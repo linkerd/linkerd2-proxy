@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
 use std::{error, fmt, io};
+use std::marker::PhantomData;
 use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::runtime::current_thread;
 use tower_grpc as grpc;
@@ -54,12 +55,13 @@ use super::profiles::Client as ProfilesClient;
 ///
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
-pub struct Main<G, R = dns::DefaultRefine> {
-    proxy_parts: ProxyParts<G, R>,
+pub struct Main<G, R = dns::Resolver> {
+    proxy_parts: ProxyParts<G>,
     runtime: task::MainRuntime,
+    _resolver: PhantomData<R>,
 }
 
-struct ProxyParts<G, R = dns::DefaultRefine> {
+struct ProxyParts<G> {
     config: Config,
     identity: tls::Conditional<(identity::Local, identity::CrtKeyStore)>,
 
@@ -70,8 +72,6 @@ struct ProxyParts<G, R = dns::DefaultRefine> {
 
     inbound_listener: Listen<identity::Local, G>,
     outbound_listener: Listen<identity::Local, G>,
-
-    make_refine: R,
 }
 
 impl<G> Main<G>
@@ -118,12 +118,12 @@ where
             outbound_listener,
             control_listener,
             admin_listener,
-            make_refine: dns::DefaultRefine,
         };
 
         Main {
             proxy_parts,
             runtime,
+            _resolver: PhantomData,
         }
     }
 }
@@ -131,26 +131,18 @@ where
 impl<G, R> Main<G, R>
 where
     G: GetOriginalDst + Clone + Send + 'static,
-    R: dns::MakeRefine,
-    <R::Refine as dns::Refine>::Future: Send + 'static,
+    R: dns::NewResolver + Send,
+    R::Resolver: Clone + Send + Sync + 'static,
 {
     pub fn with_refine<R2>(self, make_refine: R2) -> Main<G, R2>
     where
-        R2: dns::MakeRefine,
-        <R2::Refine as dns::Refine>::Future: Send + 'static,
+        R2: dns::NewResolver + Send,
+        R2::Resolver: Clone + Send + Sync + 'static,
     {
         Main {
-            proxy_parts: ProxyParts {
-                config: self.proxy_parts.config,
-                identity: self.proxy_parts.identity,
-                start_time: self.proxy_parts.start_time,
-                inbound_listener: self.proxy_parts.inbound_listener,
-                outbound_listener: self.proxy_parts.outbound_listener,
-                control_listener: self.proxy_parts.control_listener,
-                admin_listener: self.proxy_parts.admin_listener,
-                make_refine,
-            },
+            proxy_parts: self.proxy_parts,
             runtime: self.runtime,
+            _resolver: PhantomData,
         }
     }
 
@@ -177,12 +169,13 @@ where
         let Main {
             proxy_parts,
             mut runtime,
+            ..
         } = self;
 
         let (drain_tx, drain_rx) = drain::channel();
 
         runtime.spawn(futures::lazy(move || {
-            proxy_parts.build_proxy_task(drain_rx);
+            proxy_parts.build_proxy_task::<R>(drain_rx);
             trace!("main task spawned");
             Ok(())
         }));
@@ -198,15 +191,17 @@ where
     }
 }
 
-impl<G, R> ProxyParts<G, R>
+impl<G> ProxyParts<G>
 where
     G: GetOriginalDst + Clone + Send + 'static,
-    R: dns::MakeRefine,
-    <R::Refine as dns::Refine>::Future: Send + 'static,
 {
     /// This is run inside a `futures::lazy`, so the default Executor is
     /// setup for use in here.
-    fn build_proxy_task(self, drain_rx: drain::Watch) {
+    fn build_proxy_task<R>(self, drain_rx: drain::Watch)
+    where
+        R: dns::NewResolver + Send,
+        R::Resolver: Clone + Send + Sync + 'static,
+    {
         let ProxyParts {
             config,
             identity,
@@ -247,7 +242,7 @@ where
             config.outbound_ports_disable_protocol_detection,
         );
 
-        let (dns_resolver, dns_bg) = dns::Resolver::from_system_config_with(&config)
+        let (dns_resolver, dns_bg) = R::from_system_config_with(&config)
             .unwrap_or_else(|e| {
                 // FIXME: DNS configuration should be infallible.
                 panic!("invalid DNS configuration: {:?}", e);

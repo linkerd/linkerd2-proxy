@@ -26,8 +26,40 @@ pub trait ConfigureResolver {
     fn configure_resolver(&self, &mut ResolverOpts);
 }
 
+pub trait NewResolver {
+    type Resolver: Resolve + Refine;
+    type Background: Future<Item=(), Error=()> + Send + 'static;
+    /// Construct a new `Resolver` from environment variables and system
+    /// configuration.
+    ///
+    /// # Returns
+    ///
+    /// Either a tuple containing a new `Resolver` and the background task to
+    /// drive that resolver's futures, or an error if the system configuration
+    /// could not be parsed.
+    ///
+    /// TODO: This should be infallible like it is in the `domain` crate.
+    fn from_system_config_with<C: ConfigureResolver>(
+        c: &C,
+    ) -> Result<(Self::Resolver, Self::Background), ResolveError> {
+        let (config, mut opts) = system_conf::read_system_conf()?;
+        c.configure_resolver(&mut opts);
+        trace!("DNS config: {:?}", &config);
+        trace!("DNS opts: {:?}", &opts);
+        Ok(Self::new_resolver(config, opts))
+    }
+
+    /// NOTE: It would be nice to be able to return a named type rather than
+    ///       `impl Future` for the background future; it would be called
+    ///       `Background` or `ResolverBackground` if that were possible.
+    fn new_resolver(
+        config: ResolverConfig,
+        opts: ResolverOpts,
+    ) -> (Self::Resolver, Self::Background);
+}
+
 pub trait Refine {
-    type Future: Future<Item = RefinedName, Error = ResolveError>;
+    type Future: Future<Item = RefinedName, Error = ResolveError>  + Send + 'static;
     /// Attempts to refine `name` to a fully-qualified name.
     ///
     /// This method does DNS resolution for `name` and ignores the IP address
@@ -38,13 +70,13 @@ pub trait Refine {
     fn refine(&self, name: &Name) -> Self::Future;
 }
 
-pub trait MakeRefine: Send + 'static {
-    type Refine: Refine + Clone + Send + Sync + 'static;
-    fn make(self, resolver: &Resolver) -> Self::Refine;
+pub trait Resolve {
+    type Future: Future<Item = net::IpAddr, Error = Error> + Send + 'static;
+    type ListFuture: Future<Item = Response, Error = ResolveError> + Send + 'static;
+    fn resolve_one_ip(&self, name: &Name) -> Self::Future;
+    fn resolve_all_ips(&self, deadline: Instant, name: &Name) -> Self::ListFuture;
 }
 
-#[derive(Debug)]
-pub struct DefaultRefine;
 
 #[derive(Debug)]
 pub enum Error {
@@ -129,42 +161,30 @@ impl Suffix {
     }
 }
 
-impl Resolver {
-    /// Construct a new `Resolver` from environment variables and system
-    /// configuration.
-    ///
-    /// # Returns
-    ///
-    /// Either a tuple containing a new `Resolver` and the background task to
-    /// drive that resolver's futures, or an error if the system configuration
-    /// could not be parsed.
-    ///
-    /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_with<C: ConfigureResolver>(
-        c: &C,
-    ) -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError> {
-        let (config, mut opts) = system_conf::read_system_conf()?;
-        c.configure_resolver(&mut opts);
-        trace!("DNS config: {:?}", &config);
-        trace!("DNS opts: {:?}", &opts);
-        Ok(Self::new(config, opts))
-    }
+impl NewResolver for Resolver {
+    type Resolver = Self;
+    type Background = Box<Future<Item = (), Error = ()> + Send + 'static>;
 
     /// NOTE: It would be nice to be able to return a named type rather than
     ///       `impl Future` for the background future; it would be called
     ///       `Background` or `ResolverBackground` if that were possible.
-    pub fn new(
+    fn new_resolver(
         config: ResolverConfig,
         mut opts: ResolverOpts,
-    ) -> (Self, impl Future<Item = (), Error = ()> + Send) {
+    ) -> (Self, Self::Background) {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
         let (resolver, background) = AsyncResolver::new(config, opts);
         let resolver = Resolver { resolver };
         (resolver, background)
     }
+}
 
-    pub fn resolve_all_ips(&self, deadline: Instant, name: &Name) -> IpAddrListFuture {
+impl Resolve for Resolver {
+    type Future = IpAddrFuture;
+    type ListFuture = Box<Future<Item = Response, Error = ResolveError> + Send + 'static>;
+
+    fn resolve_all_ips(&self, deadline: Instant, name: &Name) -> Self::ListFuture {
         let lookup = self.resolver.lookup_ip(name.as_ref());
 
         // FIXME this delay logic is really confusing...
@@ -189,19 +209,9 @@ impl Resolver {
         Box::new(::logging::context_future(Ctx(name.clone()), f))
     }
 
-    pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {
+    fn resolve_one_ip(&self, name: &Name) -> Self::Future {
         let f = self.resolver.lookup_ip(name.as_ref());
         IpAddrFuture(::logging::context_future(Ctx(name.clone()), f))
-    }
-}
-
-/// Note: `AsyncResolver` does not implement `Debug`, so we must manually
-///       implement this.
-impl fmt::Debug for Resolver {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Resolver")
-            .field("resolver", &"...")
-            .finish()
     }
 }
 
@@ -214,10 +224,13 @@ impl Refine for Resolver {
     }
 }
 
-impl MakeRefine for DefaultRefine {
-    type Refine = Resolver;
-    fn make(self, resolver: &Resolver) -> Self::Refine {
-        resolver.clone()
+/// Note: `AsyncResolver` does not implement `Debug`, so we must manually
+///       implement this.
+impl fmt::Debug for Resolver {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Resolver")
+            .field("resolver", &"...")
+            .finish()
     }
 }
 
