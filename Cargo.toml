@@ -62,6 +62,7 @@ tower-balance         = { git = "https://github.com/tower-rs/tower" }
 tower-buffer          = { git = "https://github.com/tower-rs/tower" }
 tower-discover        = { git = "https://github.com/tower-rs/tower" }
 tower-in-flight-limit = { git = "https://github.com/tower-rs/tower" }
+tower-load-shed       = { git = "https://github.com/tower-rs/tower" }
 tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
 tower-retry           = { git = "https://github.com/tower-rs/tower" }
 tower-service         = "0.2"

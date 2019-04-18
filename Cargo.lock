@@ -557,6 +557,7 @@ dependencies = [
  "tower-grpc 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
  "tower-http-service 0.1.0 (git+https://github.com/tower-rs/tower-http)",
  "tower-in-flight-limit 0.1.0 (git+https://github.com/tower-rs/tower)",
+ "tower-load-shed 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tower-reconnect 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tower-retry 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1573,6 +1574,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tower-load-shed"
+version = "0.1.0"
+source = "git+https://github.com/tower-rs/tower#db2f0ecfb3f53b0d286748382de442194008508b"
+dependencies = [
+ "futures 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-layer 0.1.0 (git+https://github.com/tower-rs/tower)",
+ "tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "tower-reconnect"
 version = "0.1.0"
 source = "git+https://github.com/tower-rs/tower#aa8d024fc9704ac47c742268f563f1946125f1cc"
@@ -1977,6 +1988,7 @@ dependencies = [
 "checksum tower-http-service 0.1.0 (git+https://github.com/tower-rs/tower-http)" = "<none>"
 "checksum tower-in-flight-limit 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
 "checksum tower-layer 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
+"checksum tower-load-shed 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
 "checksum tower-reconnect 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
 "checksum tower-retry 0.1.0 (git+https://github.com/tower-rs/tower)" = "<none>"
 "checksum tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "2cc0c98637d23732f8de6dfd16494c9f1559c3b9e20b4a46462c8f9b9e827bfa"

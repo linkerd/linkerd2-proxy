@@ -152,6 +152,10 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.service.poll_ready()
+    }
+
     fn call(&mut self, req: http::Request<Self::ReqBody>) -> Self::Future {
         self.service.call(req.map(|b| HttpBody {
             body: Some(b),
