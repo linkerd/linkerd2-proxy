@@ -2,20 +2,50 @@ pub use support::linkerd2_proxy::dns::*;
 use support::tokio::prelude::future;
 
 use std::{
-    collections::{VecDeque, HashMap},
+    collections::HashMap,
     net::IpAddr,
     sync::{Arc, Mutex},
-    time::{Instant, Duration}
+    time::{Instant, Duration},iter,
 };
+
+pub fn new() -> MockDns {
+    MockDns {
+        inner: Arc::new(Mutex::new(Inner {
+            resolutions: HashMap::new(),
+            refines: HashMap::new(),
+        }))
+    }
+}
 
 #[derive(Clone)]
 pub struct MockDns {
     inner: Arc<Mutex<Inner>>,
 }
 
+#[derive(Debug)]
+pub struct MockIpList {
+    ip: IpAddr,
+    valid_until: Instant,
+}
+
 struct Inner {
-    resolvutions: HashMap<String, VecDeque<IpAddr>>,
-    refines: HashMap<String, VecDeque<Name>>,
+    resolutions: HashMap<String, IpAddr>,
+    refines: HashMap<String, Name>,
+}
+
+impl MockDns {
+    pub fn refine(self, name: &str, refined: &str) -> Self {
+        let name = name.to_string();
+        let fqdn = linkerd2_proxy::convert::TryFrom::try_from(refined.as_bytes()).expect("bad dns name");
+        self.inner.lock().unwrap().refines.insert(name, fqdn);
+        self
+    }
+
+    pub fn resolve(self, name: &str, addr: impl Into<IpAddr>) -> Self {
+        let name = name.to_string();
+        self.inner.lock().unwrap().resolutions.insert(name, addr.into());
+        self
+    }
 }
 
 impl NewResolver for MockDns {
@@ -39,8 +69,9 @@ impl Refine for MockDns {
     type Future = future::FutureResult<RefinedName, ResolveError>;
 
     fn refine(&self, name: &Name) -> Self::Future {
-        let mut lock = self.inner.lock().unwrap();
-        if let Some(name) = lock.refines.get_mut(name.without_trailing_dot()).and_then(|names| names.pop_front()) {
+        println!("refine: {}", name);
+        let lock = self.inner.lock().unwrap();
+        if let Some(name) = lock.refines.get(name.without_trailing_dot()).cloned() {
             return future::ok(RefinedName {
                 name,
                 // TODO: customize?
@@ -55,11 +86,41 @@ impl Refine for MockDns {
 
 impl Resolve for MockDns {
     type Future = future::FutureResult<IpAddr, Error>;
-    type ListFuture = future::FutureResult<Response, ResolveError>;
-    fn resolve_one_ip(&self, _: &Name) -> Self::Future {
-        unimplemented!()
+    type List = MockIpList;
+    type ListFuture = future::FutureResult<Response<Self::List>, ResolveError>;
+
+    fn resolve_one_ip(&self, name: &Name) -> Self::Future {
+        let lock = self.inner.lock().unwrap();
+        if let Some(addr) = lock.resolutions.get(name.without_trailing_dot()).cloned() {
+            return future::ok(addr);
+        } else {
+            future::err(Error::NoAddressesFound)
+        }
     }
-    fn resolve_all_ips(&self, _: Instant, _: &Name) -> Self::ListFuture {
-        unimplemented!()
+
+    fn resolve_all_ips(&self, dead: Instant, name: &Name) -> Self::ListFuture {
+        println!("resolve_all_ips: {}", name);
+        let lock = self.inner.lock().unwrap();
+        if let Some(ip) = lock.resolutions.get(name.without_trailing_dot()).cloned() {
+            future::ok(Response::Exists(MockIpList {
+            ip,
+            // TODO: customize?
+            valid_until: (dead + Duration::from_secs(666))
+        }))
+        } else {
+            future::ok(Response::DoesNotExist { retry_after: Some(Instant::now() + Duration::from_secs(6000)) })
+        }
+    }
+}
+
+impl<'a> IpList<'a> for MockIpList {
+    type Iter = Box<Iterator<Item=IpAddr>>;
+
+    fn iter(&'a self) -> Self::Iter {
+        Box::new(iter::once(self.ip.clone()))
+    }
+
+    fn valid_until(&self) -> Instant {
+        Instant::now() + Duration::from_secs(666)
     }
 }

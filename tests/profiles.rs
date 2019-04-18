@@ -117,9 +117,13 @@ macro_rules! profile_test {
         profile_tx.send(controller::profile(routes, $budget));
 
         let ctrl = ctrl.run();
+        let dns = dns::new()
+            .refine("profiles.test.svc.cluster.local", "profiles.test.svc.cluster.local")
+            .resolve("profiles.test.svc.cluster.local", srv.addr.ip());
         let proxy = proxy::new()
             .controller(ctrl)
             .outbound(srv)
+            .dns(dns)
             .run_with_test_env($env);
 
         let client = client::$http(proxy.outbound, host);

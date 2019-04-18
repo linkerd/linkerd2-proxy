@@ -73,9 +73,17 @@ pub trait Refine {
 
 pub trait Resolve {
     type Future: Future<Item = net::IpAddr, Error = Error> + Send + 'static;
-    type ListFuture: Future<Item = Response, Error = ResolveError> + Send + 'static;
+    type List: for<'a> IpList<'a>;
+    type ListFuture: Future<Item = Response<Self::List>, Error = ResolveError> + Send + 'static;
     fn resolve_one_ip(&self, name: &Name) -> Self::Future;
     fn resolve_all_ips(&self, deadline: Instant, name: &Name) -> Self::ListFuture;
+}
+
+pub trait IpList<'a>: fmt::Debug {
+    type Iter: Iterator<Item = net::IpAddr>;
+    fn iter(&'a self) -> Self::Iter;
+    /// Returns the `Instant` at which this lookup is no longer valid.
+    fn valid_until(&self) -> Instant;
 }
 
 
@@ -85,8 +93,8 @@ pub enum Error {
     ResolutionFailed(ResolveError),
 }
 
-pub enum Response {
-    Exists(LookupIp),
+pub enum Response<T> {
+    Exists(T),
     DoesNotExist { retry_after: Option<Instant> },
 }
 
@@ -94,7 +102,7 @@ pub struct IpAddrFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 
 pub struct RefineFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 
-pub type IpAddrListFuture = Box<Future<Item = Response, Error = ResolveError> + Send>;
+pub type IpAddrListFuture = Box<Future<Item = Response<LookupIp>, Error = ResolveError> + Send>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Suffix {
@@ -187,7 +195,8 @@ impl NewResolver for DefaultResolver {
 
 impl Resolve for Resolver {
     type Future = IpAddrFuture;
-    type ListFuture = Box<Future<Item = Response, Error = ResolveError> + Send + 'static>;
+    type List = LookupIp;
+    type ListFuture = Box<Future<Item = Response<Self::List>, Error = ResolveError> + Send + 'static>;
 
     fn resolve_all_ips(&self, deadline: Instant, name: &Name) -> Self::ListFuture {
         let lookup = self.resolver.lookup_ip(name.as_ref());
@@ -266,6 +275,17 @@ impl Future for RefineFuture {
 
         let refine = RefinedName { name, valid_until };
         Ok(Async::Ready(refine))
+    }
+}
+
+impl<'a> IpList<'a> for LookupIp {
+    type Iter = trust_dns_resolver::lookup_ip::LookupIpIter<'a>;
+    fn iter(&'a self) -> Self::Iter {
+        LookupIp::iter(self)
+    }
+    /// Returns the `Instant` at which this lookup is no longer valid.
+    fn valid_until(&self) -> Instant {
+        LookupIp::valid_until(self)
     }
 }
 

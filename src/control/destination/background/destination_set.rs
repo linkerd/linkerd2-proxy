@@ -22,7 +22,7 @@ use control::{
     destination::{Metadata, ProtocolHint, Responder, Update},
     remote_stream::Remote,
 };
-use dns;
+use dns::{self, IpList};
 use identity;
 use NameAddr;
 

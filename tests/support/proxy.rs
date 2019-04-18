@@ -72,6 +72,26 @@ where
         self
     }
 
+    pub fn dns<R2>(self, dns: R2) -> Proxy<R2>
+    where
+        R2: dns::NewResolver + Send + 'static,
+        R2::Resolver: Clone + Send + Sync + 'static,
+    {
+        Proxy {
+            controller: self.controller,
+            identity: self.identity,
+            inbound: self.inbound,
+            outbound: self.outbound,
+
+            inbound_disable_ports_protocol_detection: self.inbound_disable_ports_protocol_detection,
+            outbound_disable_ports_protocol_detection: self.outbound_disable_ports_protocol_detection,
+
+            shutdown_signal: self.shutdown_signal,
+
+            dns,
+        }
+    }
+
     /// Adjust the server's 'addr'. This won't actually re-bind the server,
     /// it will just affect what the proxy think is the so_original_dst.
     ///
