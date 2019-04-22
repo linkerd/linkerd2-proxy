@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use super::Timeout;
-use linkerd2_stack as svc;
+use futures::{Future, Poll};
+use linkerd2_stack as stk;
+use svc;
 
 /// Creates a layer that *always* applies the timeout to every request.
 ///
@@ -22,15 +24,15 @@ pub struct Stack<M> {
     timeout: Duration,
 }
 
-impl<T, M> svc::Layer<T, T, M> for Layer
-where
-    M: svc::Stack<T>,
-{
-    type Value = <Stack<M> as svc::Stack<T>>::Value;
-    type Error = <Stack<M> as svc::Stack<T>>::Error;
-    type Stack = Stack<M>;
+pub struct MakeFuture<F> {
+    inner: F,
+    timeout: Duration,
+}
 
-    fn bind(&self, inner: M) -> Self::Stack {
+impl<M> stk::Layer<M> for Layer {
+    type Service = Stack<M>;
+
+    fn layer(&self, inner: M) -> Self::Service {
         Stack {
             inner,
             timeout: self.timeout,
@@ -38,15 +40,33 @@ where
     }
 }
 
-impl<T, M> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Service<T> for Stack<M>
 where
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = Timeout<M::Value>;
+    type Response = Timeout<M::Response>;
     type Error = M::Error;
+    type Future = MakeFuture<M::Future>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(target)?;
-        Ok(Timeout::new(inner, self.timeout))
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let inner = self.inner.call(target);
+        MakeFuture {
+            inner,
+            timeout: self.timeout,
+        }
+    }
+}
+
+impl<F: Future> Future for MakeFuture<F> {
+    type Item = Timeout<F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        Ok(Timeout::new(inner, self.timeout).into())
     }
 }

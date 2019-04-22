@@ -10,10 +10,10 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_retry::budget::Budget;
 
 use never::Never;
 
+use super::retry::Budget;
 use NameAddr;
 
 pub type Routes = Vec<(RequestMatch, Route)>;
@@ -277,21 +277,14 @@ pub mod router {
 
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
-    pub fn layer<T, G, M, R, B>(
+    pub fn layer<G, M, R, B>(
         suffixes: Vec<dns::Suffix>,
         get_routes: G,
-        route_layer: R,
+        route_layer: svc::ServiceBuilder<R>,
     ) -> Layer<G, M, R, B>
     where
-        T: CanGetDestination + WithRoute + Clone,
-        M: svc::Stack<T>,
-        M::Value: Clone,
         G: GetRoutes + Clone,
-        R: svc::Layer<
-                <T as WithRoute>::Output,
-                <T as WithRoute>::Output,
-                svc::shared::Stack<M::Value>,
-            > + Clone,
+        R: Clone,
     {
         Layer {
             suffixes,
@@ -305,7 +298,7 @@ pub mod router {
     #[derive(Debug)]
     pub struct Layer<G, M, R, B> {
         get_routes: G,
-        route_layer: R,
+        route_layer: svc::ServiceBuilder<R>,
         suffixes: Vec<dns::Suffix>,
         /// This is saved into a field so that the same `Arc`s are used and
         /// cloned, instead of calling `Route::default()` every time.
@@ -314,10 +307,10 @@ pub mod router {
     }
 
     #[derive(Debug)]
-    pub struct Stack<G, M, R, B> {
+    pub struct MakeSvc<G, M, R, B> {
         inner: M,
         get_routes: G,
-        route_layer: R,
+        route_layer: svc::ServiceBuilder<R>,
         suffixes: Vec<dns::Suffix>,
         default_route: Route,
         _p: ::std::marker::PhantomData<fn(B)>,
@@ -327,7 +320,7 @@ pub mod router {
     where
         T: WithRoute + Clone,
         T::Output: Eq + Hash,
-        R: svc::Stack<T::Output>,
+        R: rt::Make<T::Output>,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
         target: T,
@@ -365,28 +358,15 @@ pub mod router {
         }
     }
 
-    impl<T, G, M, R, B> svc::Layer<T, T, M> for Layer<G, M, R, B>
+    impl<G, M, R, B> svc::Layer<M> for Layer<G, M, R, B>
     where
-        T: CanGetDestination + WithRoute + Clone,
-        <T as WithRoute>::Output: Eq + Hash,
         G: GetRoutes + Clone,
-        M: svc::Stack<T>,
-        M::Value: Clone,
-        R: svc::Layer<
-                <T as WithRoute>::Output,
-                <T as WithRoute>::Output,
-                svc::shared::Stack<M::Value>,
-            > + Clone,
-        R::Stack: Clone,
-        <R::Stack as svc::Stack<<T as WithRoute>::Output>>::Value:
-            svc::Service<http::Request<B>> + Clone,
+        R: Clone,
     {
-        type Value = <Stack<G, M, R, B> as svc::Stack<T>>::Value;
-        type Error = <Stack<G, M, R, B> as svc::Stack<T>>::Error;
-        type Stack = Stack<G, M, R, B>;
+        type Service = MakeSvc<G, M, R, B>;
 
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack {
+        fn layer(&self, inner: M) -> Self::Service {
+            MakeSvc {
                 inner,
                 get_routes: self.get_routes.clone(),
                 route_layer: self.route_layer.clone(),
@@ -413,28 +393,29 @@ pub mod router {
         }
     }
 
-    impl<T, G, M, R, B> svc::Stack<T> for Stack<G, M, R, B>
+    impl<T, G, M, R, B, RMk, RSvc> svc::Service<T> for MakeSvc<G, M, R, B>
     where
         T: CanGetDestination + WithRoute + Clone,
-        <T as WithRoute>::Output: Eq + Hash,
-        M: svc::Stack<T>,
+        <T as WithRoute>::Output: Eq + Hash + Clone,
+        M: rt::Make<T>,
         M::Value: Clone,
         G: GetRoutes,
-        R: svc::Layer<
-                <T as WithRoute>::Output,
-                <T as WithRoute>::Output,
-                svc::shared::Stack<M::Value>,
-            > + Clone,
-        R::Stack: Clone,
-        <R::Stack as svc::Stack<<T as WithRoute>::Output>>::Value:
-            svc::Service<http::Request<B>> + Clone,
+        R: svc::Layer<svc::shared::Shared<M::Value>, Service = RMk> + Clone,
+        RMk: rt::Make<<T as WithRoute>::Output, Value = RSvc> + Clone,
+        RSvc: svc::Service<http::Request<B>> + Clone,
+        RSvc::Error: Into<Error>,
     {
-        type Value = Service<G::Stream, T, R::Stack, B>;
-        type Error = M::Error;
+        type Response = Service<G::Stream, T, RMk, B>;
+        type Error = never::Never;
+        type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
-        fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-            let inner = self.inner.make(&target)?;
-            let stack = self.route_layer.bind(svc::shared::stack(inner));
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            Ok(().into()) // always ready to make a Router
+        }
+
+        fn call(&mut self, target: T) -> Self::Future {
+            let inner = self.inner.make(&target);
+            let stack = self.route_layer.clone().service(svc::shared(inner));
 
             let router = Router::new(
                 Recognize {
@@ -465,7 +446,7 @@ pub mod router {
                 }
             };
 
-            Ok(Service {
+            futures::future::ok(Service {
                 target: target.clone(),
                 stack,
                 route_stream,
@@ -475,14 +456,14 @@ pub mod router {
         }
     }
 
-    impl<G, M, R, B> Clone for Stack<G, M, R, B>
+    impl<G, M, R, B> Clone for MakeSvc<G, M, R, B>
     where
         G: Clone,
         M: Clone,
         R: Clone,
     {
         fn clone(&self) -> Self {
-            Stack {
+            MakeSvc {
                 inner: self.inner.clone(),
                 get_routes: self.get_routes.clone(),
                 route_layer: self.route_layer.clone(),
@@ -498,7 +479,7 @@ pub mod router {
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
         T::Output: Eq + Hash,
-        R: svc::Stack<T::Output> + Clone,
+        R: rt::Make<T::Output> + Clone,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
         fn update_routes(&mut self, routes: Routes) {
@@ -528,8 +509,7 @@ pub mod router {
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
         T::Output: Eq + Hash,
-        Stk: svc::Stack<T::Output, Value = Svc> + Clone,
-        Stk::Error: Into<Error>,
+        Stk: rt::Make<T::Output, Value = Svc> + Clone,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {

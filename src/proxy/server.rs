@@ -5,6 +5,9 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 
+use futures::{future, Poll};
+use tokio::io::{AsyncRead, AsyncWrite};
+
 use super::Accept;
 use app::config::H2Settings;
 use drain;
@@ -15,12 +18,13 @@ use proxy::http::{
 };
 use proxy::protocol::Protocol;
 use proxy::tcp;
-use svc::{Service, Stack};
+use svc::{MakeService, Service};
 use transport::{
-    connect,
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// A protocol-transparent Server!
 ///
@@ -49,16 +53,15 @@ use transport::{
 ///    can route HTTP  requests for the `Source`.
 pub struct Server<A, T, C, R, B>
 where
-    // Prepares a server transport, e.g. with telemetry.
-    A: Stack<Source, Error = Never> + Clone,
-    A::Value: Accept<Connection>,
     // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
     T: From<SocketAddr>,
-    C: Stack<T, Error = Never> + Clone,
-    C::Value: connect::Connect,
     // Prepares a route for each accepted HTTP connection.
-    R: Stack<Source, Error = Never> + Clone,
-    R::Value: Service<http::Request<HttpBody>, Response = http::Response<B>>,
+    R: MakeService<
+            Source,
+            http::Request<HttpBody>,
+            Response = http::Response<B>,
+            MakeError = Never,
+        > + Clone,
     B: hyper::body::Payload,
 {
     drain_signal: drain::Watch,
@@ -84,10 +87,7 @@ pub struct Source {
 ///
 /// Fails to produce a `Connect` if a `Source`'s `orig_dst` is None.
 #[derive(Debug)]
-struct ForwardConnect<T, C>(C, PhantomData<T>)
-where
-    T: From<SocketAddr>,
-    C: Stack<T, Error = Never>;
+struct ForwardConnect<T, C>(C, PhantomData<T>);
 
 /// An error indicating an accepted socket did not have an SO_ORIGINAL_DST
 /// address and therefore could not be forwarded.
@@ -144,33 +144,34 @@ impl fmt::Display for Source {
     }
 }
 
-impl<T, C> Stack<Source> for ForwardConnect<T, C>
+impl<T, C> Service<Source> for ForwardConnect<T, C>
 where
     T: From<SocketAddr>,
-    C: Stack<T, Error = Never>,
+    C: Service<T>,
+    C::Error: Into<Error>,
 {
-    type Value = C::Value;
-    type Error = NoOriginalDst;
+    type Response = C::Response;
+    type Error = Error;
+    type Future = future::Either<
+        future::FutureResult<C::Response, Error>,
+        future::MapErr<C::Future, fn(C::Error) -> Error>,
+    >;
 
-    fn make(&self, s: &Source) -> Result<Self::Value, Self::Error> {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.0.poll_ready().map_err(Into::into)
+    }
+
+    fn call(&mut self, s: Source) -> Self::Future {
         let target = match s.orig_dst {
             Some(addr) => T::from(addr),
-            None => return Err(NoOriginalDst),
+            None => return future::Either::A(future::err(NoOriginalDst.into())),
         };
 
-        match self.0.make(&target) {
-            Ok(c) => Ok(c),
-            // Matching never allows LLVM to eliminate this entirely.
-            Err(never) => match never {},
-        }
+        future::Either::B(self.0.call(target).map_err(Into::into))
     }
 }
 
-impl<T, C> Clone for ForwardConnect<T, C>
-where
-    T: From<SocketAddr>,
-    C: Stack<T, Error = Never> + Clone,
-{
+impl<T, C: Clone> Clone for ForwardConnect<T, C> {
     fn clone(&self) -> Self {
         ForwardConnect(self.0.clone(), PhantomData)
     }
@@ -184,32 +185,27 @@ impl fmt::Display for NoOriginalDst {
     }
 }
 
-// Allows `()` to be used for `Accept`.
-impl Stack<Source> for () {
-    type Value = ();
-    type Error = Never;
-    fn make(&self, _: &Source) -> Result<(), Never> {
-        Ok(())
-    }
-}
-
 impl<A, T, C, R, B> Server<A, T, C, R, B>
 where
-    A: Stack<Source, Error = Never> + Clone,
-    A::Value: Accept<Connection>,
-    <A::Value as Accept<Connection>>::Io: fmt::Debug + Send + Peek + 'static,
+    A: Accept<Connection>,
+    A::Io: fmt::Debug + Send + Peek + 'static,
+
     T: From<SocketAddr> + Send + 'static,
-    C: Stack<T, Error = Never> + Clone,
-    C::Value: connect::Connect,
-    <C::Value as connect::Connect>::Connected: fmt::Debug + Send + 'static,
-    <C::Value as connect::Connect>::Future: Send + 'static,
-    <C::Value as connect::Connect>::Error: fmt::Debug + 'static,
-    R: Stack<Source, Error = Never> + Clone,
-    R::Value: Service<http::Request<HttpBody>, Response = http::Response<B>>,
-    R::Value: 'static,
-    <R::Value as Service<http::Request<HttpBody>>>::Error:
-        Into<Box<dyn std::error::Error + Send + Sync>> + Send,
-    <R::Value as Service<http::Request<HttpBody>>>::Future: Send + 'static,
+
+    C: Service<T> + Clone + Send + 'static,
+    C::Response: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
+    C::Future: Send + 'static,
+    C::Error: Into<Error>,
+
+    R: MakeService<
+            Source,
+            http::Request<HttpBody>,
+            Response = http::Response<B>,
+            MakeError = Never,
+        > + Clone,
+    R::Error: Into<Error> + Send + 'static,
+    R::Service: 'static,
+    <R::Service as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
 {
     /// Creates a new `Server`.
@@ -263,15 +259,13 @@ where
             _p: (),
         };
 
-        let io = match self.accept.make(&source) {
-            Ok(accept) => accept.accept(connection),
-            // Matching never allows LLVM to eliminate this entirely.
-            Err(never) => match never {},
-        };
+        let io = self.accept.accept(&source, connection);
+
+        let connect = self.connect.clone();
 
         if disable_protocol_detection {
             trace!("protocol detection disabled for {:?}", orig_dst);
-            let fwd = tcp::forward(io, &self.connect, &source);
+            let fwd = tcp::forward(io, connect, source);
             let fut = self.drain_signal.clone().watch(fwd, |_| {});
             return log.future(Either::B(fut));
         }
@@ -285,23 +279,23 @@ where
             });
 
         let mut http = self.http.clone();
-        let route = self.route.clone();
-        let connect = self.connect.clone();
+        let mut route = self.route.clone();
         let drain_signal = self.drain_signal.clone();
         let log_clone = log.clone();
         let serve = detect_protocol.and_then(move |(proto, io)| match proto {
             None => Either::A({
                 trace!("did not detect protocol; forwarding TCP");
-                let fwd = tcp::forward(io, &connect, &source);
+                let fwd = tcp::forward(io, connect, source);
                 drain_signal.watch(fwd, |_| {})
             }),
 
             Some(proto) => Either::B(match proto {
                 Protocol::Http1 => Either::A({
                     trace!("detected HTTP/1");
-                    match route.make(&source) {
-                        Err(never) => match never {},
-                        Ok(s) => {
+                    route
+                        .make_service(source)
+                        .map_err(|never| match never {})
+                        .and_then(move |s| {
                             // Enable support for HTTP upgrades (CONNECT and websockets).
                             let svc = upgrade::Service::new(
                                 s,
@@ -319,14 +313,14 @@ where
                                 })
                                 .map(|_| ())
                                 .map_err(|e| trace!("http1 server error: {:?}", e))
-                        }
-                    }
+                        })
                 }),
                 Protocol::Http2 => Either::B({
                     trace!("detected HTTP/2");
-                    match route.make(&source) {
-                        Err(never) => match never {},
-                        Ok(s) => {
+                    route
+                        .make_service(source)
+                        .map_err(|never| match never {})
+                        .and_then(move |s| {
                             let svc = HyperServerSvc::new(s);
                             let conn = http
                                 .with_executor(log_clone.executor())
@@ -344,8 +338,7 @@ where
                                 })
                                 .map(|_| ())
                                 .map_err(|e| trace!("http2 server error: {:?}", e))
-                        }
-                    }
+                        })
                 }),
             }),
         });

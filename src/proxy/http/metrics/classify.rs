@@ -1,4 +1,4 @@
-use futures::Poll;
+use futures::{Future, Poll};
 use http;
 
 use svc;
@@ -72,6 +72,11 @@ pub struct Stack<M> {
     inner: M,
 }
 
+pub struct MakeFuture<C, F> {
+    classify: Option<C>,
+    inner: F,
+}
+
 #[derive(Clone, Debug)]
 pub struct Service<C, S> {
     classify: C,
@@ -82,32 +87,42 @@ pub fn layer() -> Layer {
     Layer()
 }
 
-impl<T, M> svc::Layer<T, T, M> for Layer
-where
-    T: CanClassify,
-    M: svc::Stack<T>,
-{
-    type Value = <Stack<M> as svc::Stack<T>>::Value;
-    type Error = <Stack<M> as svc::Stack<T>>::Error;
-    type Stack = Stack<M>;
+impl<M> svc::Layer<M> for Layer {
+    type Service = Stack<M>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack { inner }
     }
 }
 
-impl<T, M> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Service<T> for Stack<M>
 where
     T: CanClassify,
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = Service<T::Classify, M::Value>;
+    type Response = Service<T::Classify, M::Response>;
     type Error = M::Error;
+    type Future = MakeFuture<T::Classify, M::Future>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(target)?;
-        let classify = target.classify();
-        Ok(Service { classify, inner })
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let classify = Some(target.classify());
+        let inner = self.inner.call(target);
+        MakeFuture { classify, inner }
+    }
+}
+
+impl<C, F: Future> Future for MakeFuture<C, F> {
+    type Item = Service<C, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        let classify = self.classify.take().expect("polled more than once");
+        Ok(Service { classify, inner }.into())
     }
 }
 

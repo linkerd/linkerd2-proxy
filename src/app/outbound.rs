@@ -210,6 +210,7 @@ pub mod discovery {
 pub mod orig_proto_upgrade {
     use std::marker::PhantomData;
 
+    use futures::{Future, Poll};
     use http;
 
     use super::Endpoint;
@@ -220,8 +221,14 @@ pub mod orig_proto_upgrade {
     pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
 
     #[derive(Debug)]
-    pub struct Stack<M, A, B> {
+    pub struct MakeSvc<M, A, B> {
         inner: M,
+        _marker: PhantomData<fn(A) -> B>,
+    }
+
+    pub struct MakeFuture<F, A, B> {
+        can_upgrade: bool,
+        inner: F,
         _marker: PhantomData<fn(A) -> B>,
     }
 
@@ -235,54 +242,80 @@ pub mod orig_proto_upgrade {
         }
     }
 
-    impl<M, A, B> svc::Layer<Endpoint, Endpoint, M> for Layer<A, B>
+    impl<M, A, B> svc::Layer<M> for Layer<A, B>
     where
-        M: svc::Stack<Endpoint>,
-        M::Value: svc::Service<http::Request<A>, Response = http::Response<B>>,
+        M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
     {
-        type Value = <Stack<M, A, B> as svc::Stack<Endpoint>>::Value;
-        type Error = <Stack<M, A, B> as svc::Stack<Endpoint>>::Error;
-        type Stack = Stack<M, A, B>;
+        type Service = MakeSvc<M, A, B>;
 
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack {
+        fn layer(&self, inner: M) -> Self::Service {
+            MakeSvc {
                 inner,
                 _marker: PhantomData,
             }
         }
     }
 
-    // === impl Stack ===
+    // === impl MakeSvc ===
 
-    impl<M: Clone, A, B> Clone for Stack<M, A, B> {
+    impl<M: Clone, A, B> Clone for MakeSvc<M, A, B> {
         fn clone(&self) -> Self {
-            Stack {
+            MakeSvc {
                 inner: self.inner.clone(),
                 _marker: PhantomData,
             }
         }
     }
 
-    impl<M, A, B> svc::Stack<Endpoint> for Stack<M, A, B>
+    impl<M, A, B> svc::Service<Endpoint> for MakeSvc<M, A, B>
     where
-        M: svc::Stack<Endpoint>,
-        M::Value: svc::Service<http::Request<A>, Response = http::Response<B>>,
+        M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
     {
-        type Value = svc::Either<orig_proto::Upgrade<M::Value>, M::Value>;
-        type Error = M::Error;
+        type Response = svc::Either<orig_proto::Upgrade<M::Service>, M::Service>;
+        type Error = M::MakeError;
+        type Future = MakeFuture<M::Future, A, B>;
 
-        fn make(&self, endpoint: &Endpoint) -> Result<Self::Value, Self::Error> {
-            if endpoint.can_use_orig_proto() {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, endpoint: Endpoint) -> Self::Future {
+            let can_upgrade = endpoint.can_use_orig_proto();
+
+            if can_upgrade {
                 trace!(
                     "supporting {} upgrades for endpoint={:?}",
                     orig_proto::L5D_ORIG_PROTO,
                     endpoint,
                 );
-                self.inner
-                    .make(&endpoint)
-                    .map(|i| svc::Either::A(orig_proto::Upgrade::new(i)))
+            }
+
+            let inner = self.inner.make_service(endpoint);
+            MakeFuture {
+                can_upgrade,
+                inner,
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    // === impl MakeFuture ===
+
+    impl<F, A, B> Future for MakeFuture<F, A, B>
+    where
+        F: Future,
+        F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>,
+    {
+        type Item = svc::Either<orig_proto::Upgrade<F::Item>, F::Item>;
+        type Error = F::Error;
+
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            let inner = try_ready!(self.inner.poll());
+
+            if self.can_upgrade {
+                Ok(svc::Either::A(orig_proto::Upgrade::new(inner)).into())
             } else {
-                self.inner.make(&endpoint).map(svc::Either::B)
+                Ok(svc::Either::B(inner).into())
             }
         }
     }

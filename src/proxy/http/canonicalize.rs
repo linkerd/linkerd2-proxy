@@ -9,16 +9,15 @@
 //! DNS TTLs are honored and, if the resolution changes, the inner stack is
 //! rebuilt with the updated value.
 
-use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
+use futures::{sync::mpsc, Async, Future, Poll, Stream};
+use http;
 use std::time::Duration;
-use tokio::executor::{DefaultExecutor, Executor};
+use tokio;
 use tokio_timer::{clock, Delay, Timeout};
 
 use dns;
 use svc;
 use {Addr, NameAddr};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Duration to wait before polling DNS again after an error (or a NXDOMAIN
 /// response with no TTL).
@@ -31,16 +30,21 @@ pub struct Layer {
 }
 
 #[derive(Clone, Debug)]
-pub struct Stack<M: svc::Stack<Addr>> {
+pub struct Stack<M> {
     resolver: dns::Resolver,
     inner: M,
     timeout: Duration,
 }
 
-pub struct Service<M: svc::Stack<Addr>> {
+pub struct MakeFuture<F> {
+    inner: F,
+    task: Option<(NameAddr, dns::Resolver, Duration)>,
+}
+
+pub struct Service<S> {
+    canonicalized: Option<Addr>,
+    inner: S,
     rx: mpsc::Receiver<NameAddr>,
-    stack: M,
-    service: Option<M::Value>,
 }
 
 struct Task {
@@ -80,15 +84,13 @@ pub fn layer(resolver: dns::Resolver, timeout: Duration) -> Layer {
     Layer { resolver, timeout }
 }
 
-impl<M> svc::Layer<Addr, Addr, M> for Layer
+impl<M> svc::Layer<M> for Layer
 where
-    M: svc::Stack<Addr> + Clone,
+    M: svc::Service<Addr> + Clone,
 {
-    type Value = <Stack<M> as svc::Stack<Addr>>::Value;
-    type Error = <Stack<M> as svc::Stack<Addr>>::Error;
-    type Stack = Stack<M>;
+    type Service = Stack<M>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack {
             inner,
             resolver: self.resolver.clone(),
@@ -99,36 +101,55 @@ where
 
 // === impl Stack ===
 
-impl<M> svc::Stack<Addr> for Stack<M>
+impl<M> svc::Service<Addr> for Stack<M>
 where
-    M: svc::Stack<Addr> + Clone,
+    M: svc::Service<Addr>,
 {
-    type Value = svc::Either<Service<M>, M::Value>;
+    type Response = svc::Either<Service<M::Response>, M::Response>;
     type Error = M::Error;
+    type Future = MakeFuture<M::Future>;
 
-    fn make(&self, addr: &Addr) -> Result<Self::Value, Self::Error> {
-        match addr {
-            Addr::Name(na) => {
-                let (tx, rx) = mpsc::channel(2);
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
 
-                DefaultExecutor::current()
-                    .spawn(Box::new(Task::new(
-                        na.clone(),
-                        self.resolver.clone(),
-                        self.timeout,
-                        tx,
-                    )))
-                    .expect("must be able to spawn");
+    fn call(&mut self, addr: Addr) -> Self::Future {
+        let task = match addr {
+            Addr::Name(ref na) => Some((na.clone(), self.resolver.clone(), self.timeout)),
+            Addr::Socket(_) => None,
+        };
 
-                let svc = Service {
-                    rx,
-                    stack: self.inner.clone(),
-                    service: None,
-                };
-                Ok(svc::Either::A(svc))
-            }
-            Addr::Socket(_) => self.inner.make(&addr).map(svc::Either::B),
-        }
+        let inner = self.inner.call(addr);
+        MakeFuture { inner, task }
+    }
+}
+
+// === impl MakeFuture ===
+
+impl<F> Future for MakeFuture<F>
+where
+    F: Future,
+{
+    type Item = svc::Either<Service<F::Item>, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        let svc = if let Some((na, resolver, timeout)) = self.task.take() {
+            let (tx, rx) = mpsc::channel(2);
+
+            tokio::spawn(Task::new(na, resolver, timeout, tx));
+
+            svc::Either::A(Service {
+                canonicalized: None,
+                inner,
+                rx,
+            })
+        } else {
+            svc::Either::B(inner)
+        };
+
+        Ok(svc.into())
     }
 }
 
@@ -250,41 +271,35 @@ impl Cache {
 
 // === impl Service ===
 
-impl<M, Req, Svc> svc::Service<Req> for Service<M>
+impl<S, B> svc::Service<http::Request<B>> for Service<S>
 where
-    M: svc::Stack<Addr, Value = Svc>,
-    M::Error: Into<Error>,
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<Error>,
+    S: svc::Service<http::Request<B>>,
 {
-    type Response = <M::Value as svc::Service<Req>>::Response;
-    type Error = Error;
-    type Future = future::MapErr<
-        <M::Value as svc::Service<Req>>::Future,
-        fn(<M::Value as svc::Service<Req>>::Error) -> Self::Error,
-    >;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        try_ready!(self.inner.poll_ready());
+
         while let Ok(Async::Ready(Some(addr))) = self.rx.poll() {
             debug!("refined: {}", addr);
-            let svc = self.stack.make(&addr.into()).map_err(Into::into)?;
-            self.service = Some(svc);
+            self.canonicalized = Some(addr.into());
         }
 
-        match self.service.as_mut() {
-            Some(ref mut svc) => svc.poll_ready().map_err(Into::into),
-            None => {
-                trace!("resolution has not completed");
-                Ok(Async::NotReady)
-            }
+        if self.canonicalized.is_some() {
+            Ok(Async::Ready(()))
+        } else {
+            Ok(Async::NotReady)
         }
     }
 
-    fn call(&mut self, req: Req) -> Self::Future {
-        self.service
-            .as_mut()
-            .expect("poll_ready must be called first")
-            .call(req)
-            .map_err(Into::into)
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        let addr = self
+            .canonicalized
+            .clone()
+            .expect("called before canonicalized address");
+        req.extensions_mut().insert(addr);
+        self.inner.call(req)
     }
 }

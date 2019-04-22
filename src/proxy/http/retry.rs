@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 
-use futures::future;
+use futures::{future, Future, Poll};
 use http::{Request, Response};
-use tower_retry;
+use tower::retry as tower_retry;
+pub use tower::retry::budget::Budget;
 
 use proxy::http::metrics::{Scoped, Stats};
 use svc;
@@ -37,6 +38,11 @@ pub struct Stack<M, S, K, A, B> {
     _p: PhantomData<(K, fn(A) -> B)>,
 }
 
+pub struct MakeFuture<F, R, S> {
+    inner: F,
+    policy: Option<Policy<R, S>>,
+}
+
 pub type Service<R, Svc, St> = tower_retry::Retry<Policy<R, St>, Svc>;
 
 #[derive(Clone)]
@@ -60,21 +66,15 @@ impl<S: Clone, K, A, B> Clone for Layer<S, K, A, B> {
     }
 }
 
-impl<T, M, S, K, A, B> svc::Layer<T, T, M> for Layer<S, K, A, B>
+impl<M, S, K, A, B> svc::Layer<M> for Layer<S, K, A, B>
 where
-    T: CanRetry + Clone,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<Request<A>, Response = Response<B>> + Clone,
     S: Scoped<K> + Clone,
     S::Scope: Clone,
-    K: From<T>,
     A: TryClone,
 {
-    type Value = <Stack<M, S, K, A, B> as svc::Stack<T>>::Value;
-    type Error = <Stack<M, S, K, A, B> as svc::Stack<T>>::Error;
-    type Stack = Stack<M, S, K, A, B>;
+    type Service = Stack<M, S, K, A, B>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack {
             inner,
             registry: self.registry.clone(),
@@ -95,37 +95,61 @@ impl<M: Clone, S: Clone, K, A, B> Clone for Stack<M, S, K, A, B> {
     }
 }
 
-impl<T, M, S, K, A, B> svc::Stack<T> for Stack<M, S, K, A, B>
+/// impl MakeService
+impl<T, M, S, K, A, B> svc::Service<T> for Stack<M, S, K, A, B>
 where
     T: CanRetry + Clone,
-    M: svc::Stack<T>,
-    M::Value: svc::Service<Request<A>, Response = Response<B>> + Clone,
+    M: svc::MakeService<T, Request<A>, Response = Response<B>>,
+    M::Service: Clone,
     S: Scoped<K>,
     S::Scope: Clone,
     K: From<T>,
     A: TryClone,
 {
-    type Value = svc::Either<Service<T::Retry, M::Value, S::Scope>, M::Value>;
-    type Error = M::Error;
+    type Response = svc::Either<Service<T::Retry, M::Service, S::Scope>, M::Service>;
+    type Error = M::MakeError;
+    type Future = MakeFuture<M::Future, T::Retry, S::Scope>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(target)?;
-        if let Some(retries) = target.can_retry() {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let policy = if let Some(retries) = target.can_retry() {
             trace!("stack is retryable");
             let stats = self.registry.scoped(target.clone().into());
-            Ok(svc::Either::A(tower_retry::Retry::new(
-                Policy(retries, stats),
-                inner,
-            )))
+            Some(Policy(retries, stats))
         } else {
-            Ok(svc::Either::B(inner))
+            None
+        };
+
+        let inner = self.inner.make_service(target);
+        MakeFuture { inner, policy }
+    }
+}
+
+// === impl MakeFuture ===
+
+impl<F, R, S> Future for MakeFuture<F, R, S>
+where
+    F: Future,
+{
+    type Item = svc::Either<Service<R, F::Item, S>, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        if let Some(policy) = self.policy.take() {
+            Ok(svc::Either::A(tower_retry::Retry::new(policy, inner)).into())
+        } else {
+            Ok(svc::Either::B(inner).into())
         }
     }
 }
 
 // === impl Policy ===
 
-impl<R, S, A, B, E> ::tower_retry::Policy<Request<A>, Response<B>, E> for Policy<R, S>
+impl<R, S, A, B, E> tower_retry::Policy<Request<A>, Response<B>, E> for Policy<R, S>
 where
     R: Retry + Clone,
     S: Stats + Clone,

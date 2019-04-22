@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use futures::{Future, Poll};
 use http::header::AsHeaderName;
 
 use svc;
@@ -18,6 +19,12 @@ pub struct Layer<H, R> {
 pub struct Stack<H, M, R> {
     header: H,
     inner: M,
+    _req_or_res: PhantomData<fn(R)>,
+}
+
+pub struct MakeFuture<H, F, R> {
+    header: H,
+    inner: F,
     _req_or_res: PhantomData<fn(R)>,
 }
 
@@ -42,16 +49,13 @@ where
     }
 }
 
-impl<H, T, M, R> svc::Layer<T, T, M> for Layer<H, R>
+impl<H, M, R> svc::Layer<M> for Layer<H, R>
 where
     H: AsHeaderName + Clone,
-    M: svc::Stack<T>,
 {
-    type Value = <Stack<H, M, R> as svc::Stack<T>>::Value;
-    type Error = <Stack<H, M, R> as svc::Stack<T>>::Error;
-    type Stack = Stack<H, M, R>;
+    type Service = Stack<H, M, R>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack {
             header: self.header.clone(),
             inner,
@@ -62,22 +66,48 @@ where
 
 // === impl Stack ===
 
-impl<H, T, M, R> svc::Stack<T> for Stack<H, M, R>
+impl<H, T, M, R> svc::Service<T> for Stack<H, M, R>
 where
     H: AsHeaderName + Clone,
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = Service<H, M::Value, R>;
+    type Response = Service<H, M::Response, R>;
     type Error = M::Error;
+    type Future = MakeFuture<H, M::Future, R>;
 
-    fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(t)?;
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, t: T) -> Self::Future {
+        let inner = self.inner.call(t);
         let header = self.header.clone();
-        Ok(Service {
+        MakeFuture {
             header,
             inner,
             _req_or_res: PhantomData,
-        })
+        }
+    }
+}
+
+// === impl MakeFuture ===
+
+impl<H, F, R> Future for MakeFuture<H, F, R>
+where
+    H: Clone,
+    F: Future,
+{
+    type Item = Service<H, F::Item, R>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        Ok(Service {
+            header: self.header.clone(),
+            inner,
+            _req_or_res: PhantomData,
+        }
+        .into())
     }
 }
 

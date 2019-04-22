@@ -2,6 +2,7 @@
 
 use std::{fmt, marker::PhantomData};
 
+use futures::{Future, Poll};
 use http::header::{AsHeaderName, HeaderValue};
 
 use svc;
@@ -28,6 +29,12 @@ pub struct Stack<H, T, M, R> {
     _req_or_res: PhantomData<fn(R)>,
 }
 
+pub struct MakeFuture<F, H, R> {
+    header: Option<(H, HeaderValue)>,
+    inner: F,
+    _req_or_res: PhantomData<fn(R)>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Service<H, S, R> {
     header: H,
@@ -51,17 +58,15 @@ where
     }
 }
 
-impl<H, T, M, R> svc::Layer<T, T, M> for Layer<H, T, R>
+impl<H, T, M, R> svc::Layer<M> for Layer<H, T, R>
 where
     H: AsHeaderName + Clone + fmt::Debug,
     T: fmt::Debug,
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = <Stack<H, T, M, R> as svc::Stack<T>>::Value;
-    type Error = <Stack<H, T, M, R> as svc::Stack<T>>::Error;
-    type Stack = Stack<H, T, M, R>;
+    type Service = Stack<H, T, M, R>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack {
             header: self.header.clone(),
             get_header: self.get_header,
@@ -73,29 +78,42 @@ where
 
 // === impl Stack ===
 
-impl<H, T, M, R> svc::Stack<T> for Stack<H, T, M, R>
+/// impl MakeService
+impl<H, T, M, R> svc::Service<T> for Stack<H, T, M, R>
 where
     H: AsHeaderName + Clone + fmt::Debug,
     T: fmt::Debug,
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = svc::Either<Service<H, M::Value, R>, M::Value>;
+    type Response = svc::Either<Service<H, M::Response, R>, M::Response>;
     type Error = M::Error;
+    type Future = MakeFuture<M::Future, H, R>;
 
-    fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(t)?;
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
 
-        if let Some(value) = (self.get_header)(t) {
-            return Ok(svc::Either::A(Service {
-                header: self.header.clone(),
-                value,
-                inner,
-                _req_or_res: PhantomData,
-            }));
+    fn call(&mut self, t: T) -> Self::Future {
+        let header = if let Some(value) = (self.get_header)(&t) {
+            Some((self.header.clone(), value))
+        /*
+        svc::Either::A(Service {
+            header: self.header.clone(),
+            value,
+            inner,
+            _req_or_res: PhantomData,
+        }));
+        */
+        } else {
+            trace!("{:?} not enabled for {:?}", self.header, t);
+            None
+        };
+        let inner = self.inner.call(t);
+        MakeFuture {
+            inner,
+            header,
+            _req_or_res: PhantomData,
         }
-
-        trace!("{:?} not enabled for {:?}", self.header, t);
-        Ok(svc::Either::B(inner))
     }
 }
 
@@ -111,6 +129,31 @@ where
             .field("get_header", &format_args!("{}", "..."))
             .field("inner", &self.inner)
             .finish()
+    }
+}
+
+// === impl MakeFuture ===
+
+impl<F, H, R> Future for MakeFuture<F, H, R>
+where
+    F: Future,
+{
+    type Item = svc::Either<Service<H, F::Item, R>, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        let svc = if let Some((header, value)) = self.header.take() {
+            svc::Either::A(Service {
+                header,
+                value,
+                inner,
+                _req_or_res: PhantomData,
+            })
+        } else {
+            svc::Either::B(inner)
+        };
+        Ok(svc.into())
     }
 }
 

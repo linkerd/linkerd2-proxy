@@ -1,11 +1,10 @@
-extern crate tower_reconnect;
-
-pub use self::tower_reconnect::Reconnect;
-use futures::{task, Async, Future, Poll};
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
+
+use futures::{task, Async, Future, Poll};
 use tokio_timer::{clock, Delay};
+use tower::reconnect::Reconnect;
 
 use svc;
 
@@ -20,22 +19,17 @@ pub struct Layer<Req> {
 }
 
 #[derive(Debug)]
-pub struct Stack<Req, M> {
+pub struct MakeReconnect<Req, M> {
     backoff: Backoff,
     inner: M,
     _req: PhantomData<fn(Req)>,
 }
 
-/// Wraps `tower_reconnect`, handling errors.
-///
-/// Ensures that the underlying service is ready and, if the underlying service
-/// fails to become ready, rebuilds the inner stack.
-pub struct Service<T, N>
+pub struct Service<M, T>
 where
-    T: fmt::Debug,
-    N: svc::Service<()>,
+    M: svc::Service<T>,
 {
-    inner: Reconnect<N, ()>,
+    inner: Reconnect<M, T>,
 
     /// The target, used for debug logging.
     target: T,
@@ -73,6 +67,18 @@ impl<Req> Layer<Req> {
     }
 }
 
+impl<Req, M> svc::Layer<M> for Layer<Req> {
+    type Service = MakeReconnect<Req, M>;
+
+    fn layer(&self, inner: M) -> Self::Service {
+        MakeReconnect {
+            inner,
+            backoff: self.backoff.clone(),
+            _req: PhantomData,
+        }
+    }
+}
+
 impl<Req> Clone for Layer<Req> {
     fn clone(&self) -> Self {
         Layer {
@@ -82,34 +88,13 @@ impl<Req> Clone for Layer<Req> {
     }
 }
 
-impl<Req, T, M, N, S> svc::Layer<T, T, M> for Layer<Req>
-where
-    T: Clone + fmt::Debug,
-    M: svc::Stack<T, Value = N>,
-    N: svc::Service<(), Response = S>,
-    N::Error: Send + Sync,
-    S: svc::Service<Req>,
-    S::Error: Send + Sync,
-    Error: From<N::Error> + From<S::Error>,
-{
-    type Value = <Stack<Req, M> as svc::Stack<T>>::Value;
-    type Error = <Stack<Req, M> as svc::Stack<T>>::Error;
-    type Stack = Stack<Req, M>;
+// === impl Service ===
 
-    fn bind(&self, inner: M) -> Self::Stack {
-        Stack {
-            inner,
-            backoff: self.backoff.clone(),
-            _req: PhantomData,
-        }
-    }
-}
+// === impl MakeReconnect ===
 
-// === impl Stack ===
-
-impl<Req, M: Clone> Clone for Stack<Req, M> {
+impl<Req, M: Clone> Clone for MakeReconnect<Req, M> {
     fn clone(&self) -> Self {
-        Stack {
+        MakeReconnect {
             inner: self.inner.clone(),
             backoff: self.backoff.clone(),
             _req: PhantomData,
@@ -117,24 +102,25 @@ impl<Req, M: Clone> Clone for Stack<Req, M> {
     }
 }
 
-impl<T, Req, M, N, S> svc::Stack<T> for Stack<Req, M>
+impl<Req, M, T, S> svc::Service<T> for MakeReconnect<Req, M>
 where
-    T: Clone + fmt::Debug,
-    M: svc::Stack<T, Value = N>,
-    N: svc::Service<(), Response = S>,
-    N::Error: Send + Sync,
+    T: fmt::Debug + Clone,
+    M: svc::Service<T, Response = S> + Clone,
     S: svc::Service<Req>,
-    S::Error: Send + Sync,
-    Error: From<N::Error> + From<S::Error>,
+    Error: From<M::Error> + From<S::Error>,
 {
-    type Value = Service<T, M::Value>;
-    type Error = M::Error;
+    type Response = Service<M, T>;
+    type Error = never::Never;
+    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let new_service = self.inner.make(target)?;
-        Ok(Service {
-            inner: Reconnect::new(new_service, ()),
-            target: target.clone(),
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        Ok(().into())
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        futures::future::ok(Service {
+            inner: Reconnect::new(self.inner.clone(), target.clone()),
+            target,
             backoff: self.backoff.clone(),
             active_backoff: None,
             mute_connect_error_log: false,
@@ -145,25 +131,25 @@ where
 // === impl Service ===
 
 #[cfg(test)]
-impl<N, S> Service<&'static str, N>
+impl<M, S> Service<M, ()>
 where
-    N: svc::Service<(), Response = S>,
-    N::Error: Send + Sync,
+    M: svc::Service<(), Response = S>,
+    M::Error: Send + Sync,
     S: svc::Service<()>,
     S::Error: Send + Sync,
-    Error: From<N::Error> + From<S::Error>,
+    Error: From<M::Error> + From<S::Error>,
 {
-    fn for_test(new_service: N) -> Self {
+    fn for_test(new_service: M) -> Self {
         Self {
             inner: Reconnect::new(new_service, ()),
-            target: "test",
+            target: (),
             backoff: Backoff::None,
             active_backoff: None,
             mute_connect_error_log: false,
         }
     }
 
-    fn with_fixed_backoff(self, wait: Duration) -> Self {
+    pub fn with_fixed_backoff(self, wait: Duration) -> Self {
         Self {
             backoff: Backoff::Fixed(wait),
             ..self
@@ -171,18 +157,16 @@ where
     }
 }
 
-impl<T, N, S, Req> svc::Service<Req> for Service<T, N>
+impl<T, M, S, Req> svc::Service<Req> for Service<M, T>
 where
-    T: fmt::Debug,
-    N: svc::Service<(), Response = S>,
-    N::Error: Send + Sync + ::std::error::Error,
+    T: fmt::Debug + Clone,
+    M: svc::Service<T, Response = S>,
     S: svc::Service<Req>,
-    S::Error: Send + Sync + ::std::error::Error,
-    Error: From<N::Error> + From<S::Error>,
+    Error: From<M::Error> + From<S::Error>,
 {
     type Response = S::Response;
-    type Error = <Reconnect<N, ()> as svc::Service<Req>>::Error;
-    type Future = <Reconnect<N, ()> as svc::Service<Req>>::Future;
+    type Error = <Reconnect<M, T> as svc::Service<Req>>::Error;
+    type Future = <Reconnect<M, T> as svc::Service<Req>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match self.backoff {
@@ -214,7 +198,6 @@ where
                 // errors are logged at debug.
                 if !self.mute_connect_error_log {
                     self.mute_connect_error_log = true;
-                    let err: Error = err;
                     warn!("connect error to {:?}: {}", self.target, err);
                 } else {
                     debug!("connect error to {:?}: {}", self.target, err);
@@ -244,18 +227,6 @@ where
 
     fn call(&mut self, request: Req) -> Self::Future {
         self.inner.call(request)
-    }
-}
-
-impl<T, N> fmt::Debug for Service<T, N>
-where
-    T: fmt::Debug,
-    N: svc::Service<()>,
-{
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("Reconnect")
-            .field("target", &self.target)
-            .finish()
     }
 }
 
