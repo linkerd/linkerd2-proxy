@@ -32,7 +32,11 @@ use tap;
 use task;
 use telemetry;
 use trace;
-use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
+use transport::{
+    self, connect, keepalive,
+    tls::{self, HasPeerIdentity},
+    Connection, GetOriginalDst, Listen,
+};
 use {Addr, Conditional};
 
 use super::admin::{Admin, Readiness};
@@ -243,8 +247,6 @@ where
                 panic!("invalid DNS configuration: {:?}", e);
             });
 
-        let (tap_layer, tap_grpc, tap_daemon) = tap::new();
-
         let (ctl_http_metrics, ctl_http_report) = {
             let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("control"))
@@ -374,8 +376,11 @@ where
             config.destination_context.clone(),
         );
 
+        let (tap_layer, tap_grpc, tap_daemon) = tap::new();
+
         // Spawn a separate thread to handle the admin stuff.
         {
+            let tap_identity = config.tap_identity.clone();
             let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
             thread::Builder::new()
                 .name("admin".into())
@@ -393,7 +398,7 @@ where
 
                     if let Some(listener) = control_listener {
                         rt.spawn(tap_daemon.map_err(|_| ()));
-                        rt.spawn(serve_tap(listener, TapServer::new(tap_grpc)));
+                        rt.spawn(serve_tap(listener, tap_identity, TapServer::new(tap_grpc)));
                     }
 
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
@@ -956,6 +961,7 @@ where
 
 fn serve_tap<N, B>(
     bound_port: Listen<identity::Local, ()>,
+    tap_identity: tls::PeerIdentity,
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where
@@ -972,11 +978,36 @@ where
 
     let fut = {
         let log = log.clone();
-        // TODO: serve over TLS.
         bound_port
             .listen_and_fold(new_service, move |mut new_service, (session, remote)| {
                 let log = log.clone().with_remote(remote);
                 let log_clone = log.clone();
+
+                // If there is an expected controller identity, then we
+                // assert that it is the client identity of the incoming
+                // connection; otherwise, we serve tap
+                if let Conditional::Some(tap_identity) = tap_identity.as_ref() {
+                    match session.peer_identity() {
+                        Conditional::Some(ref peer_identity) => {
+                            // If the expected peer identity does not equal the
+                            // connection's client identity, then we do not
+                            // make a new tap service; we continue listening
+                            // for new connections
+                            if peer_identity != tap_identity {
+                                debug!(
+                                    "tap client identity is not authorized: {:?}",
+                                    peer_identity
+                                );
+                                return future::ok(new_service);
+                            }
+                        }
+                        Conditional::None(reason) => {
+                            debug!("missing tap client identity: {}", reason);
+                            return future::ok(new_service);
+                        }
+                    }
+                }
+
                 let serve = new_service
                     .make_service(())
                     .map_err(|err| error!("tap MakeService error: {}", err))

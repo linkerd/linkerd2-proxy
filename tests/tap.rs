@@ -5,6 +5,38 @@ mod support;
 use self::support::*;
 use support::tap::TapEventExt;
 
+#[test]
+#[ignore]
+/// The tap server accepts a connection from a client with the expected
+/// identity.
+fn tap_accepts_identity() {
+    unimplemented!();
+}
+
+#[test]
+#[ignore]
+/// The tap server accepts a connection from a client with the expected
+/// identity through discovery.
+fn tap_accepts_identity_through_discovery() {
+    unimplemented!();
+}
+
+#[test]
+#[ignore]
+/// The tap server rejects a connection from a client with an unexpected
+/// identity.
+fn tap_rejects_identity() {
+    unimplemented!();
+}
+
+#[test]
+#[ignore]
+/// The tap server rejects a connection from a client with an unexpected
+/// identity through discovery.
+fn tap_rejects_identity_through_discovery() {
+    unimplemented!();
+}
+
 // Flaky: sometimes the admin thread hasn't had a chance to register
 // the Taps before the `client.get` is called.
 #[test]
