@@ -1,31 +1,17 @@
 use bytes::Buf;
-use futures::{Async, Future, Poll};
+use futures::{Async, Poll};
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use transport::{connect, tls, Peek};
+use transport::{tls, Peek};
 
-use super::{Eos, NewSensor, Sensor};
+use super::{Eos, Sensor};
 
 /// Wraps a transport with telemetry.
 #[derive(Debug)]
 pub struct Io<T> {
     io: T,
     sensor: Sensor,
-}
-
-/// Builds client transports with telemetry.
-#[derive(Clone, Debug)]
-pub struct Connect<C> {
-    underlying: C,
-    new_sensor: NewSensor,
-}
-
-/// Adds telemetry to a pending client transport.
-#[derive(Clone, Debug)]
-pub struct Connecting<C: connect::Connect> {
-    underlying: C::Future,
-    new_sensor: Option<NewSensor>,
 }
 
 // === impl Io ===
@@ -114,59 +100,5 @@ impl<T: AsyncRead + AsyncWrite + Peek> Peek for Io<T> {
 impl<T: tls::HasStatus> tls::HasStatus for Io<T> {
     fn tls_status(&self) -> tls::Status {
         self.io.tls_status()
-    }
-}
-
-// === impl Connect ===
-
-impl<C> Connect<C>
-where
-    C: connect::Connect,
-{
-    /// Returns a `Connect` to `addr` and `handle`.
-    pub(super) fn new(underlying: C, new_sensor: NewSensor) -> Self {
-        Self {
-            underlying,
-            new_sensor,
-        }
-    }
-}
-
-impl<C> connect::Connect for Connect<C>
-where
-    C: connect::Connect,
-{
-    type Connected = Io<C::Connected>;
-    type Error = C::Error;
-    type Future = Connecting<C>;
-
-    fn connect(&self) -> Self::Future {
-        Connecting {
-            underlying: self.underlying.connect(),
-            new_sensor: Some(self.new_sensor.clone()),
-        }
-    }
-}
-
-// === impl Connecting ===
-
-impl<C> Future for Connecting<C>
-where
-    C: connect::Connect,
-{
-    type Item = Io<C::Connected>;
-    type Error = C::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let io = try_ready!(self.underlying.poll());
-        debug!("client connection open");
-
-        let sensor = self
-            .new_sensor
-            .take()
-            .expect("future must not be polled after ready")
-            .new_sensor();
-        let t = Io::new(io, sensor);
-        Ok(t.into())
     }
 }

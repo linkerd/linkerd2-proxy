@@ -142,6 +142,7 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
 }
 
 pub mod orig_proto_downgrade {
+    use futures::{Future, Poll};
     use http;
     use proxy::http::orig_proto;
     use proxy::server::Source;
@@ -169,16 +170,13 @@ pub mod orig_proto_downgrade {
         }
     }
 
-    impl<M, A, B> svc::Layer<Source, Source, M> for Layer<A, B>
+    impl<M, A, B> svc::Layer<M> for Layer<A, B>
     where
-        M: svc::Stack<Source>,
-        M::Value: svc::Service<http::Request<A>, Response = http::Response<B>>,
+        M: svc::MakeService<Source, http::Request<A>, Response = http::Response<B>>,
     {
-        type Value = <Stack<M, A, B> as svc::Stack<Source>>::Value;
-        type Error = <Stack<M, A, B> as svc::Stack<Source>>::Error;
-        type Stack = Stack<M, A, B>;
+        type Service = Stack<M, A, B>;
 
-        fn bind(&self, inner: M) -> Self::Stack {
+        fn layer(&self, inner: M) -> Self::Service {
             Stack {
                 inner,
                 _marker: PhantomData,
@@ -197,21 +195,27 @@ pub mod orig_proto_downgrade {
         }
     }
 
-    impl<M, A, B> svc::Stack<Source> for Stack<M, A, B>
+    impl<M, A, B> svc::Service<Source> for Stack<M, A, B>
     where
-        M: svc::Stack<Source>,
-        M::Value: svc::Service<http::Request<A>, Response = http::Response<B>>,
+        M: svc::MakeService<Source, http::Request<A>, Response = http::Response<B>>,
     {
-        type Value = orig_proto::Downgrade<M::Value>;
-        type Error = M::Error;
+        type Response = orig_proto::Downgrade<M::Service>;
+        type Error = M::MakeError;
+        type Future = futures::future::Map<M::Future, fn(M::Service) -> Self::Response>;
 
-        fn make(&self, target: &Source) -> Result<Self::Value, Self::Error> {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, target: Source) -> Self::Future {
             trace!(
                 "supporting {} downgrades for source={:?}",
                 orig_proto::L5D_ORIG_PROTO,
                 target,
             );
-            self.inner.make(&target).map(orig_proto::Downgrade::new)
+            self.inner
+                .make_service(target)
+                .map(orig_proto::Downgrade::new)
         }
     }
 }
@@ -219,56 +223,16 @@ pub mod orig_proto_downgrade {
 /// Rewrites connect `SocketAddr`s IP address to the loopback address (`127.0.0.1`),
 /// with the same port still set.
 pub mod rewrite_loopback_addr {
+    use super::Endpoint;
     use std::net::SocketAddr;
-    use svc;
+    use svc::stack::map_target;
 
-    #[derive(Debug, Clone)]
-    pub struct Layer;
-
-    #[derive(Clone, Debug)]
-    pub struct Stack<M>
-    where
-        M: svc::Stack<super::Endpoint>,
-    {
-        inner: M,
-    }
-
-    // === impl Layer ===
-
-    pub fn layer() -> Layer {
-        Layer
-    }
-
-    impl<M> svc::Layer<super::Endpoint, super::Endpoint, M> for Layer
-    where
-        M: svc::Stack<super::Endpoint>,
-    {
-        type Value = <Stack<M> as svc::Stack<super::Endpoint>>::Value;
-        type Error = <Stack<M> as svc::Stack<super::Endpoint>>::Error;
-        type Stack = Stack<M>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack { inner }
-        }
-    }
-
-    // === impl Stack ===
-
-    impl<M> svc::Stack<super::Endpoint> for Stack<M>
-    where
-        M: svc::Stack<super::Endpoint>,
-    {
-        type Value = M::Value;
-        type Error = M::Error;
-
-        fn make(&self, ep: &super::Endpoint) -> Result<Self::Value, Self::Error> {
+    pub fn layer() -> map_target::Layer<impl Fn(Endpoint) -> Endpoint + Copy> {
+        map_target::layer(|mut ep: Endpoint| {
             debug!("rewriting inbound address to loopback; addr={:?}", ep.addr);
-
-            let mut ep = ep.clone();
             ep.addr = SocketAddr::from(([127, 0, 0, 1], ep.addr.port()));
-
-            self.inner.make(&ep)
-        }
+            ep
+        })
     }
 }
 

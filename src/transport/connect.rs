@@ -1,26 +1,29 @@
 extern crate tokio_connect;
 
-pub use self::tokio_connect::Connect;
 use futures::{Future, Poll};
 use std::{io, net::SocketAddr};
 use tokio::net::{tcp, TcpStream};
 
-use never::Never;
 use svc;
 
 pub trait HasPeerAddr {
     fn peer_addr(&self) -> SocketAddr;
 }
 
-#[derive(Debug, Clone)]
-pub struct Stack(());
-
-/// A TCP connection target, optionally with TLS.
-///
-/// Comparison operations ignore the TLS ClientConfig and only account for the
-/// TLS status.
-#[derive(Clone, Debug)]
-pub struct ConnectSocketAddr(SocketAddr);
+pub fn svc<T>(
+) -> impl svc::Service<T, Response = TcpStream, Error = io::Error, Future = ConnectFuture> + Clone
+where
+    T: HasPeerAddr,
+{
+    svc::mk(|target: T| {
+        let addr = target.peer_addr();
+        debug!("connecting to {}", addr);
+        ConnectFuture {
+            addr,
+            future: TcpStream::connect(&addr),
+        }
+    })
+}
 
 #[derive(Debug)]
 pub struct ConnectFuture {
@@ -31,45 +34,6 @@ pub struct ConnectFuture {
 impl HasPeerAddr for SocketAddr {
     fn peer_addr(&self) -> SocketAddr {
         *self
-    }
-}
-
-// ===== impl Stack =====
-
-impl Stack {
-    pub fn new() -> Self {
-        Stack(())
-    }
-}
-
-impl<T: HasPeerAddr> svc::Stack<T> for Stack {
-    type Value = ConnectSocketAddr;
-    type Error = Never;
-
-    fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
-        Ok(t.peer_addr().into())
-    }
-}
-
-// === impl ConnectSocketAddr ===
-
-impl From<SocketAddr> for ConnectSocketAddr {
-    fn from(sa: SocketAddr) -> Self {
-        ConnectSocketAddr(sa)
-    }
-}
-
-impl Connect for ConnectSocketAddr {
-    type Connected = TcpStream;
-    type Error = io::Error;
-    type Future = ConnectFuture;
-
-    fn connect(&self) -> Self::Future {
-        debug!("connecting to {}", self.0);
-        ConnectFuture {
-            addr: self.0,
-            future: TcpStream::connect(&self.0),
-        }
     }
 }
 

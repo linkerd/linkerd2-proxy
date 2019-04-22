@@ -7,9 +7,9 @@ use std::time::Duration;
 use never::Never;
 use svc;
 
-extern crate linkerd2_router;
+extern crate linkerd2_router as rt;
 
-pub use self::linkerd2_router::{error, Recognize, Router};
+pub use self::rt::{error, Recognize, Router};
 
 // compiler doesn't notice this type is used in where bounds below...
 #[allow(unused)]
@@ -26,7 +26,7 @@ pub struct Config {
 ///
 /// A `Rec`-typed `Recognize` instance is used to produce a target for each
 /// `Req`-typed request. If the router doesn't already have a `Service` for this
-/// target, it uses a `Stk`-typed `Service` stack.
+/// target, it uses a `Mk`-typed `Service` stack.
 #[derive(Clone, Debug)]
 pub struct Layer<Req, Rec: Recognize<Req>> {
     recognize: Rec,
@@ -34,19 +34,19 @@ pub struct Layer<Req, Rec: Recognize<Req>> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Stack<Req, Rec: Recognize<Req>, Stk> {
+pub struct Stack<Req, Rec: Recognize<Req>, Mk> {
     recognize: Rec,
-    inner: Stk,
+    inner: Mk,
     _p: PhantomData<fn() -> Req>,
 }
 
-pub struct Service<Req, Rec, Stk>
+pub struct Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
-    Stk: svc::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Req>,
+    Mk: rt::Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
 {
-    inner: Router<Req, Rec, Stk>,
+    inner: Router<Req, Rec, Mk>,
 }
 
 // === impl Config ===
@@ -80,20 +80,17 @@ where
     }
 }
 
-impl<Req, Rec, Stk, B> svc::Layer<Config, Rec::Target, Stk> for Layer<Req, Rec>
+impl<Req, Rec, Mk, B> svc::Layer<Mk> for Layer<Req, Rec>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
-    Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
-    <Stk::Value as svc::Service<Req>>::Error: Into<Error>,
-    Stk::Error: Into<Error>,
+    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
-    type Value = <Stack<Req, Rec, Stk> as svc::Stack<Config>>::Value;
-    type Error = <Stack<Req, Rec, Stk> as svc::Stack<Config>>::Error;
-    type Stack = Stack<Req, Rec, Stk>;
+    type Service = Stack<Req, Rec, Mk>;
 
-    fn bind(&self, inner: Stk) -> Self::Stack {
+    fn layer(&self, inner: Mk) -> Self::Service {
         Stack {
             inner,
             recognize: self.recognize.clone(),
@@ -104,43 +101,59 @@ where
 
 // === impl Stack ===
 
-impl<Req, Rec, Stk, B> svc::Stack<Config> for Stack<Req, Rec, Stk>
+impl<Req, Rec, Mk, B> Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    Stk: svc::Stack<Rec::Target> + Clone + Send + Sync + 'static,
-    Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
-    <Stk::Value as svc::Service<Req>>::Error: Into<Error>,
-    Stk::Error: Into<Error>,
+    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
-    type Value = Service<Req, Rec, Stk>;
-    type Error = Never;
-
-    fn make(&self, config: &Config) -> Result<Self::Value, Self::Error> {
+    pub fn make(&self, config: &Config) -> Service<Req, Rec, Mk> {
         let inner = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
             config.capacity,
             config.max_idle_age,
         );
-        Ok(Service { inner })
+        Service { inner }
+    }
+}
+
+impl<Req, Rec, Mk, B> svc::Service<Config> for Stack<Req, Rec, Mk>
+where
+    Rec: Recognize<Req> + Clone + Send + Sync + 'static,
+    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
+    B: Default + Send + 'static,
+{
+    type Response = Service<Req, Rec, Mk>;
+    type Error = Never;
+    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        Ok(().into()) // always ready to make a Router
+    }
+
+    fn call(&mut self, config: Config) -> Self::Future {
+        futures::future::ok(self.make(&config))
     }
 }
 
 // === impl Service ===
 
-impl<Req, Rec, Stk, B> svc::Service<Req> for Service<Req, Rec, Stk>
+impl<Req, Rec, Mk, B> svc::Service<Req> for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Send + Sync + 'static,
-    Stk: svc::Stack<Rec::Target> + Send + Sync + 'static,
-    Stk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
-    <Stk::Value as svc::Service<Req>>::Error: Into<Error>,
-    Stk::Error: Into<Error>,
+    Mk: rt::Make<Rec::Target> + Send + Sync + 'static,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
-    type Response = <Router<Req, Rec, Stk> as svc::Service<Req>>::Response;
-    type Error = <Router<Req, Rec, Stk> as svc::Service<Req>>::Error;
-    type Future = <Router<Req, Rec, Stk> as svc::Service<Req>>::Future;
+    type Response = <Router<Req, Rec, Mk> as svc::Service<Req>>::Response;
+    type Error = <Router<Req, Rec, Mk> as svc::Service<Req>>::Error;
+    type Future = <Router<Req, Rec, Mk> as svc::Service<Req>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
@@ -152,12 +165,12 @@ where
     }
 }
 
-impl<Req, Rec, Stk> Clone for Service<Req, Rec, Stk>
+impl<Req, Rec, Mk> Clone for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
-    Stk: svc::Stack<Rec::Target>,
-    Stk::Value: svc::Service<Req>,
-    Router<Req, Rec, Stk>: Clone,
+    Mk: rt::Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    Router<Req, Rec, Mk>: Clone,
 {
     fn clone(&self) -> Self {
         Self {

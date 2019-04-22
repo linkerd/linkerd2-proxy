@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_retry::budget::Budget;
 
 use proxy::http::{
     metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
@@ -27,7 +26,7 @@ pub struct Route {
 
 #[derive(Clone, Debug)]
 pub struct Retry {
-    budget: Arc<Budget>,
+    budget: Arc<retry::Budget>,
     response_classes: profiles::ResponseClasses,
 }
 
@@ -163,5 +162,11 @@ impl profiles::WithRoute for DstAddr {
 impl Route {
     pub fn labels(&self) -> &Arc<IndexMap<String, String>> {
         self.route.labels()
+    }
+}
+
+impl fmt::Display for Route {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.dst_addr.fmt(f)
     }
 }

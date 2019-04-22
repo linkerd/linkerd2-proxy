@@ -4,7 +4,7 @@ use std::{fmt, io};
 
 use identity;
 use svc;
-use transport::{connect, io::internal::Io, tls, BoxedIo, Connection};
+use transport::{io::internal::Io, tls, BoxedIo, Connection};
 use Conditional;
 
 pub use super::rustls::ClientConfig as Config;
@@ -17,15 +17,9 @@ pub trait HasConfig {
 pub struct Layer<L>(tls::Conditional<L>);
 
 #[derive(Clone, Debug)]
-pub struct Stack<L, S> {
-    local: tls::Conditional<L>,
-    inner: S,
-}
-
-#[derive(Clone, Debug)]
 pub struct Connect<L, C> {
+    local: tls::Conditional<L>,
     inner: C,
-    tls: tls::Conditional<(identity::Name, L)>,
 }
 
 /// A socket that is in the process of connecting.
@@ -46,70 +40,47 @@ pub fn layer<L: HasConfig + Clone>(l: tls::Conditional<L>) -> Layer<L> {
     Layer(l)
 }
 
-impl<T, L, S> svc::Layer<T, T, S> for Layer<L>
+impl<L, C> svc::Layer<C> for Layer<L>
 where
     L: HasConfig + fmt::Debug + Clone,
-    T: tls::HasPeerIdentity,
-    S: svc::Stack<T> + Clone,
-    S::Value: connect::Connect + Clone + Send + Sync + 'static,
-    <S::Value as connect::Connect>::Connected: Send + 'static,
-    <S::Value as connect::Connect>::Future: Send + 'static,
-    <S::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
 {
-    type Value = <Stack<L, S> as svc::Stack<T>>::Value;
-    type Error = <Stack<L, S> as svc::Stack<T>>::Error;
-    type Stack = Stack<L, S>;
+    type Service = Connect<L, C>;
 
-    fn bind(&self, inner: S) -> Self::Stack {
-        Stack {
-            inner,
+    fn layer(&self, inner: C) -> Self::Service {
+        Connect {
             local: self.0.clone(),
+            inner,
         }
-    }
-}
-
-// === impl Stack ===
-
-impl<T, L, S> svc::Stack<T> for Stack<L, S>
-where
-    L: HasConfig + fmt::Debug + Clone,
-    T: tls::HasPeerIdentity,
-    S: svc::Stack<T> + Clone,
-    S::Value: connect::Connect + Clone + Send + Sync + 'static,
-    <S::Value as connect::Connect>::Connected: Send + 'static,
-    <S::Value as connect::Connect>::Future: Send + 'static,
-    <S::Value as connect::Connect>::Error: ::std::error::Error + Send + Sync + 'static,
-{
-    type Value = Connect<L, S::Value>;
-    type Error = S::Error;
-
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(&target)?;
-        let server_name = target.peer_identity();
-        let tls = self.local.clone().and_then(|l| server_name.map(|n| (n, l)));
-        Ok(Connect { inner, tls })
     }
 }
 
 // === impl Connect ===
 
-impl<L, C> connect::Connect for Connect<L, C>
+/// impl MakeConnection
+impl<L, C, Target> svc::Service<Target> for Connect<L, C>
 where
+    Target: tls::HasPeerIdentity,
     L: HasConfig + fmt::Debug + Clone,
-    C: connect::Connect + Clone + Send + Sync + 'static,
-    C::Connected: Io + Send + 'static,
+    C: svc::MakeConnection<Target>,
+    C::Connection: Io + Send + 'static,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,
     C::Error: From<io::Error>,
 {
-    type Connected = Connection;
+    type Response = Connection;
     type Error = C::Error;
     type Future = ConnectFuture<L, C::Future>;
 
-    fn connect(&self) -> Self::Future {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: Target) -> Self::Future {
+        let server_name = target.peer_identity();
+        let tls = self.local.clone().and_then(|l| server_name.map(|n| (n, l)));
         ConnectFuture::Init {
-            future: self.inner.connect(),
-            tls: self.tls.clone(),
+            future: self.inner.make_connection(target),
+            tls,
         }
     }
 }

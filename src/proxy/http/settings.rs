@@ -8,8 +8,8 @@ use http::{self, header::HOST};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Settings {
     Http1 {
-        /// Indicates whether a new service must be created for each request.
-        stack_per_request: bool,
+        /// Indicates whether connections can be reused for each request.
+        keep_alive: bool,
         /// Whether or not the request URI was in absolute form.
         ///
         /// This is used to configure Hyper's behaviour at the connection
@@ -45,7 +45,7 @@ impl Settings {
             .unwrap_or(true);
 
         Settings::Http1 {
-            stack_per_request: is_missing_authority,
+            keep_alive: !is_missing_authority,
             was_absolute_form: super::h1::is_absolute_form(req.uri()),
         }
     }
@@ -57,15 +57,6 @@ impl Settings {
                 was_absolute_form, ..
             } => *was_absolute_form,
             Settings::Http2 => false,
-        }
-    }
-
-    pub fn can_reuse_clients(&self) -> bool {
-        match self {
-            Settings::Http1 {
-                stack_per_request, ..
-            } => !stack_per_request,
-            Settings::Http2 => true,
         }
     }
 
@@ -96,12 +87,12 @@ pub mod router {
     pub struct Layer<B, T>(PhantomData<(T, fn(B))>);
 
     #[derive(Debug)]
-    pub struct Stack<B, T, M>(M, PhantomData<fn(B, T)>);
+    pub struct MakeSvc<B, T, M>(M, PhantomData<fn(B, T)>);
 
     pub struct Service<B, T, M>
     where
         T: fmt::Debug + Clone + Hash + Eq,
-        M: svc::Stack<Config<T>>,
+        M: rt::Make<Config<T>>,
         M::Value: svc::Service<http::Request<B>>,
     {
         router: Router<B, T, M>,
@@ -124,56 +115,57 @@ pub mod router {
         }
     }
 
-    impl<B, T, M, Svc> svc::Layer<T, Config<T>, M> for Layer<B, T>
+    impl<B, T, M, Svc> svc::Layer<M> for Layer<B, T>
     where
-        Stack<B, T, M>: svc::Stack<T>,
+        MakeSvc<B, T, M>: svc::Service<T>,
         T: fmt::Debug + Clone + Hash + Eq,
-        M: svc::Stack<Config<T>, Value = Svc> + Clone,
-        M::Error: Into<Error>,
+        M: rt::Make<Config<T>, Value = Svc> + Clone,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {
-        type Value = <Stack<B, T, M> as svc::Stack<T>>::Value;
-        type Error = <Stack<B, T, M> as svc::Stack<T>>::Error;
-        type Stack = Stack<B, T, M>;
+        type Service = MakeSvc<B, T, M>;
 
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack(inner, PhantomData)
+        fn layer(&self, inner: M) -> Self::Service {
+            MakeSvc(inner, PhantomData)
         }
     }
 
-    impl<B, T, M: Clone> Clone for Stack<B, T, M>
+    impl<B, T, M: Clone> Clone for MakeSvc<B, T, M>
     where
         T: fmt::Debug + Clone + Hash + Eq,
     {
         fn clone(&self) -> Self {
-            Stack(self.0.clone(), PhantomData)
+            MakeSvc(self.0.clone(), PhantomData)
         }
     }
 
-    impl<B, T, M, Svc> svc::Stack<T> for Stack<B, T, M>
+    impl<B, T, M, Svc> svc::Service<T> for MakeSvc<B, T, M>
     where
         T: fmt::Debug + Clone + Hash + Eq,
-        M: svc::Stack<Config<T>, Value = Svc> + Clone,
-        M::Error: Into<Error>,
+        M: rt::Make<Config<T>, Value = Svc> + Clone,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {
-        type Value = Service<B, T, M>;
-        type Error = M::Error;
+        type Response = Service<B, T, M>;
+        type Error = never::Never;
+        type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
-        fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            Ok(().into()) // always ready to make a Router
+        }
+
+        fn call(&mut self, target: T) -> Self::Future {
             use std::time::Duration;
 
             let router = Router::new(
-                Recognize(target.clone()),
+                Recognize(target),
                 self.0.clone(),
                 Settings::ROUTER_CAPACITY,
                 // Doesn't matter, since we are guaranteed to have enough capacity.
                 Duration::from_secs(0),
             );
 
-            Ok(Service { router })
+            futures::future::ok(Service { router })
         }
     }
 
@@ -192,7 +184,7 @@ pub mod router {
     impl<B, T, M> Clone for Service<B, T, M>
     where
         T: fmt::Debug + Clone + Hash + Eq,
-        M: svc::Stack<Config<T>>,
+        M: rt::Make<Config<T>>,
         M::Value: svc::Service<http::Request<B>>,
     {
         fn clone(&self) -> Self {
@@ -205,8 +197,7 @@ pub mod router {
     impl<B, T, M, Svc> svc::Service<http::Request<B>> for Service<B, T, M>
     where
         T: fmt::Debug + Clone + Hash + Eq,
-        M: svc::Stack<Config<T>, Value = Svc>,
-        M::Error: Into<Error>,
+        M: rt::Make<Config<T>, Value = Svc>,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {

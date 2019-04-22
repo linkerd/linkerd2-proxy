@@ -1,3 +1,4 @@
+use futures::{Future, Poll};
 use indexmap::IndexMap;
 use std::fmt;
 use std::marker::PhantomData;
@@ -10,11 +11,11 @@ use metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogr
 use proxy;
 use svc;
 use telemetry::Errno;
-use transport::{connect, tls};
+use transport::tls;
 
 mod io;
 
-pub use self::io::{Connect, Connecting, Io};
+pub use self::io::Io;
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
@@ -39,25 +40,9 @@ pub struct Report(Arc<Mutex<Inner>>);
 pub struct Registry(Arc<Mutex<Inner>>);
 
 #[derive(Debug)]
-pub struct LayerAccept<I, M> {
+pub struct Accept {
     direction: Direction,
     registry: Arc<Mutex<Inner>>,
-    _p: PhantomData<fn() -> (I, M)>,
-}
-
-#[derive(Debug)]
-pub struct StackAccept<I, M> {
-    inner: M,
-    direction: Direction,
-    registry: Arc<Mutex<Inner>>,
-    _p: PhantomData<fn() -> (I)>,
-}
-
-#[derive(Debug)]
-pub struct Accept<I, A> {
-    inner: A,
-    metrics: Option<Arc<Mutex<Metrics>>>,
-    _p: PhantomData<fn() -> (I)>,
 }
 
 #[derive(Debug)]
@@ -68,11 +53,16 @@ pub struct LayerConnect<T, M> {
 }
 
 #[derive(Debug)]
-pub struct StackConnect<T, M> {
+pub struct Connect<T, M> {
     inner: M,
     direction: Direction,
     registry: Arc<Mutex<Inner>>,
     _p: PhantomData<fn() -> (T)>,
+}
+
+pub struct Connecting<F> {
+    underlying: F,
+    new_sensor: Option<NewSensor>,
 }
 
 /// Describes a class of transport.
@@ -199,98 +189,29 @@ impl Inner {
 // ===== impl Registry =====
 
 impl Registry {
-    pub fn accept<I, M>(&self, direction: &'static str) -> LayerAccept<I, M>
-    where
-        I: AsyncRead + AsyncWrite,
-        M: svc::Stack<proxy::Source>,
-        M::Value: proxy::Accept<I>,
-    {
-        LayerAccept::new(direction, self.0.clone())
+    pub fn accept(&self, direction: &'static str) -> Accept {
+        Accept {
+            direction: Direction(direction),
+            registry: self.0.clone(),
+        }
     }
 
     pub fn connect<T, M>(&self, direction: &'static str) -> LayerConnect<T, M>
     where
-        T: tls::HasPeerIdentity + Clone,
-        M: svc::Stack<T>,
-        M::Value: connect::Connect,
+        T: tls::HasPeerIdentity,
+        M: svc::MakeConnection<T>,
     {
         LayerConnect::new(direction, self.0.clone())
     }
 }
 
-impl<I, M> LayerAccept<I, M>
+impl<I> proxy::Accept<I> for Accept
 where
     I: AsyncRead + AsyncWrite,
-    M: svc::Stack<proxy::Source>,
-    M::Value: proxy::Accept<I>,
 {
-    fn new(d: &'static str, registry: Arc<Mutex<Inner>>) -> Self {
-        Self {
-            direction: Direction(d),
-            registry,
-            _p: PhantomData,
-        }
-    }
-}
+    type Io = Io<I>;
 
-impl<I, M> Clone for LayerAccept<I, M>
-where
-    I: AsyncRead + AsyncWrite,
-    M: svc::Stack<proxy::Source>,
-    M::Value: proxy::Accept<I>,
-{
-    fn clone(&self) -> Self {
-        Self::new(self.direction.0, self.registry.clone())
-    }
-}
-
-impl<I, M> svc::Layer<proxy::Source, proxy::Source, M> for LayerAccept<I, M>
-where
-    I: AsyncRead + AsyncWrite,
-    M: svc::Stack<proxy::Source>,
-    M::Value: proxy::Accept<I>,
-{
-    type Value = <StackAccept<I, M> as svc::Stack<proxy::Source>>::Value;
-    type Error = <StackAccept<I, M> as svc::Stack<proxy::Source>>::Error;
-    type Stack = StackAccept<I, M>;
-
-    fn bind(&self, inner: M) -> Self::Stack {
-        StackAccept {
-            inner,
-            direction: self.direction,
-            registry: self.registry.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<I, M> Clone for StackAccept<I, M>
-where
-    I: AsyncRead + AsyncWrite,
-    M: svc::Stack<proxy::Source> + Clone,
-    M::Value: proxy::Accept<I>,
-{
-    fn clone(&self) -> Self {
-        StackAccept {
-            inner: self.inner.clone(),
-            direction: self.direction,
-            registry: self.registry.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<I, M> svc::Stack<proxy::Source> for StackAccept<I, M>
-where
-    I: AsyncRead + AsyncWrite,
-    M: svc::Stack<proxy::Source>,
-    M::Value: proxy::Accept<I>,
-{
-    type Value = Accept<I, M::Value>;
-    type Error = M::Error;
-
-    fn make(&self, source: &proxy::Source) -> Result<Self::Value, Self::Error> {
-        // TODO use source metadata in `key`
+    fn accept(&self, source: &proxy::Source, io: I) -> Self::Io {
         let tls_status = source.tls_peer.as_ref().map(|_| {});
         let key = Key::accept(self.direction, tls_status);
         let metrics = match self.registry.lock() {
@@ -300,35 +221,11 @@ where
                 None
             }
         };
-
-        let inner = self.inner.make(&source)?;
-        Ok(Accept {
-            inner,
-            metrics,
-            _p: PhantomData,
-        })
+        Io::new(io, Sensor::open(metrics))
     }
 }
 
-impl<I, A> proxy::Accept<I> for Accept<I, A>
-where
-    I: AsyncRead + AsyncWrite,
-    A: proxy::Accept<I>,
-{
-    type Io = Io<A::Io>;
-
-    fn accept(&self, io: I) -> Self::Io {
-        let io = self.inner.accept(io);
-        Io::new(io, Sensor::open(self.metrics.clone()))
-    }
-}
-
-impl<T, M> LayerConnect<T, M>
-where
-    T: tls::HasPeerIdentity + Clone,
-    M: svc::Stack<T>,
-    M::Value: connect::Connect,
-{
+impl<T, M> LayerConnect<T, M> {
     fn new(d: &'static str, registry: Arc<Mutex<Inner>>) -> Self {
         Self {
             direction: Direction(d),
@@ -340,27 +237,22 @@ where
 
 impl<T, M> Clone for LayerConnect<T, M>
 where
-    T: tls::HasPeerIdentity + Clone,
-    M: svc::Stack<T>,
-    M::Value: connect::Connect,
+    T: Clone,
 {
     fn clone(&self) -> Self {
         Self::new(self.direction.0, self.registry.clone())
     }
 }
 
-impl<T, M> svc::Layer<T, T, M> for LayerConnect<T, M>
+impl<T, M> svc::Layer<M> for LayerConnect<T, M>
 where
-    T: tls::HasPeerIdentity + Clone,
-    M: svc::Stack<T>,
-    M::Value: connect::Connect,
+    T: tls::HasPeerIdentity,
+    M: svc::MakeConnection<T>,
 {
-    type Value = <StackConnect<T, M> as svc::Stack<T>>::Value;
-    type Error = <StackConnect<T, M> as svc::Stack<T>>::Error;
-    type Stack = StackConnect<T, M>;
+    type Service = Connect<T, M>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
-        StackConnect {
+    fn layer(&self, inner: M) -> Self::Service {
+        Connect {
             inner,
             direction: self.direction,
             registry: self.registry.clone(),
@@ -369,14 +261,12 @@ where
     }
 }
 
-impl<T, M> Clone for StackConnect<T, M>
+impl<T, M> Clone for Connect<T, M>
 where
-    T: tls::HasPeerIdentity + Clone,
-    M: svc::Stack<T> + Clone,
-    M::Value: connect::Connect,
+    M: Clone,
 {
     fn clone(&self) -> Self {
-        StackConnect {
+        Connect {
             inner: self.inner.clone(),
             direction: self.direction,
             registry: self.registry.clone(),
@@ -385,16 +275,21 @@ where
     }
 }
 
-impl<T, M> svc::Stack<T> for StackConnect<T, M>
+/// impl MakeConnection
+impl<T, M> svc::Service<T> for Connect<T, M>
 where
     T: tls::HasPeerIdentity + Clone,
-    M: svc::Stack<T>,
-    M::Value: connect::Connect,
+    M: svc::MakeConnection<T>,
 {
-    type Value = Connect<M::Value>;
+    type Response = Io<M::Connection>;
     type Error = M::Error;
+    type Future = Connecting<M::Future>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
         // TODO use target metadata in `key`
         let tls_status = target.peer_identity().as_ref().map(|_| ());
         let key = Key::connect(self.direction, tls_status);
@@ -405,9 +300,36 @@ where
                 None
             }
         };
+        let underlying = self.inner.make_connection(target);
 
-        let inner = self.inner.make(&target)?;
-        Ok(Connect::new(inner, NewSensor(metrics)))
+        Connecting {
+            new_sensor: Some(NewSensor(metrics)),
+            underlying,
+        }
+    }
+}
+
+// === impl Connecting ===
+
+impl<F> Future for Connecting<F>
+where
+    F: Future,
+    F::Item: AsyncRead + AsyncWrite,
+{
+    type Item = Io<F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let io = try_ready!(self.underlying.poll());
+        debug!("client connection open");
+
+        let sensor = self
+            .new_sensor
+            .take()
+            .expect("future must not be polled after ready")
+            .new_sensor();
+        let t = Io::new(io, sensor);
+        Ok(t.into())
     }
 }
 
