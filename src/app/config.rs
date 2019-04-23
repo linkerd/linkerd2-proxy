@@ -40,11 +40,21 @@ pub struct Config {
     /// The maximum amount of time to wait for a connection to a remote peer.
     pub outbound_connect_timeout: Duration,
 
-    /// The amount of time to wait between connection attempts.
-    pub inbound_connect_backoff: Duration,
+    /// Settings for the exponential back-off used to determine the time the
+    /// amount of time to wait between connection attempts.
+    pub inbound_connect_exp_backoff_min: Duration,
 
-    /// The amount of time to wait between connection attempts.
-    pub outbound_connect_backoff: Duration,
+    pub inbound_connect_exp_backoff_max: Duration,
+
+    pub inbound_connect_exp_backofff_max_jitter: f64,
+
+    /// Settings for the exponential back-off used to determine the time the
+    /// amount of time to wait between connection attempts.
+    pub outbound_connect_exp_backoff_min: Duration,
+
+    pub outbound_connect_exp_backoff_max: Duration,
+
+    pub outbound_connect_exp_backofff_max_jitter: f64,
 
     // TCP Keepalive set on accepted inbound connections.
     pub inbound_accept_keepalive: Option<Duration>,
@@ -77,9 +87,14 @@ pub struct Config {
     /// Age after which metrics may be dropped.
     pub metrics_retain_idle: Duration,
 
-    /// Time to wait when encountering errors talking to control plane before
+    /// Settings for the exponential back-off used to determine the time to
+    /// wait when encountering errors talking to control plane before
     /// a new connection.
-    pub control_backoff_delay: Duration,
+    pub control_exp_backoff_min: Duration,
+
+    pub control_exp_backoff_max: Duration,
+
+    pub control_exp_backoff_max_jitter: f64,
 
     /// The maximum amount of time to wait for a connection to the controller.
     pub control_connect_timeout: Duration,
@@ -190,8 +205,16 @@ pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
-const ENV_INBOUND_CONNECT_BACKOFF: &str = "LINKERD2_PROXY_INBOUND_CONNECT_BACKOFF";
-const ENV_OUTBOUND_CONNECT_BACKOFF: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_BACKOFF";
+const ENV_INBOUND_CONNECT_EXP_BACKOFF_MIN: &str = "LINKERD2_PROXY_INBOUND_CONNECT_EXP_BACKOFF_MIN";
+const ENV_INBOUND_CONNECT_EXP_BACKOFF_MAX: &str = "LINKERD2_PROXY_INBOUND_CONNECT_EXP_BACKOFF_MAX";
+const ENV_INBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER: &str =
+    "LINKERD2_PROXY_INBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER";
+const ENV_OUTBOUND_CONNECT_EXP_BACKOFF_MIN: &str =
+    "LINKERD2_PROXY_OUTBOUND_CONNECT_EXP_BACKOFF_MIN";
+const ENV_OUTBOUND_CONNECT_EXP_BACKOFF_MAX: &str =
+    "LINKERD2_PROXY_OUTBOUND_CONNECT_EXP_BACKOFF_MAX";
+const ENV_OUTBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER: &str =
+    "LINKERD2_PROXY_OUTBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER";
 
 const ENV_INBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_ACCEPT_KEEPALIVE";
 const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEPALIVE";
@@ -267,7 +290,11 @@ pub const ENV_DESTINATION_SVC_ADDR: &str = "LINKERD2_PROXY_DESTINATION_SVC_ADDR"
 
 pub const ENV_DESTINATION_CONTEXT: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT";
 
-pub const ENV_CONTROL_BACKOFF_DELAY: &str = "LINKERD2_PROXY_CONTROL_BACKOFF_DELAY";
+pub const ENV_CONTROL_EXP_BACKOFF_MIN: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MIN";
+pub const ENV_CONTROL_EXP_BACKOFF_MAX: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MAX";
+pub const ENV_CONTROL_EXP_BACKOFF_MAX_JITTER: &str =
+    "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MAX_JITTER";
+
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
 
@@ -298,10 +325,16 @@ const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
-const DEFAULT_INBOUND_CONNECT_BACKOFF: Duration = Duration::from_millis(100);
+const DEFAULT_INBOUND_CONNECT_EXP_BACKOFF_MIN: Duration = Duration::from_millis(100);
+const DEFAULT_INBOUND_CONNECT_EXP_BACKOFF_MAX: Duration = Duration::from_millis(500);
+const DEFAULT_INBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER: f64 = 0.1;
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
-const DEFAULT_OUTBOUND_CONNECT_BACKOFF: Duration = Duration::from_millis(100);
-const DEFAULT_CONTROL_BACKOFF_DELAY: Duration = Duration::from_secs(1);
+const DEFAULT_OUTBOUND_CONNECT_EXP_BACKOFF_MIN: Duration = Duration::from_millis(100);
+const DEFAULT_OUTBOUND_CONNECT_EXP_BACKOFF_MAX: Duration = Duration::from_millis(500);
+const DEFAULT_OUTBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER: f64 = 0.1;
+const DEFAULT_CONTROL_EXP_BACKOFF_MIN: Duration = Duration::from_secs(1);
+const DEFAULT_CONTROL_EXP_BACKOFF_MAX: Duration = Duration::from_secs(5);
+const DEFAULT_CONTROL_EXP_BACKOFF_MAX_JITTER: f64 = 0.1;
 const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
@@ -363,8 +396,31 @@ impl Config {
         let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
         let outbound_connect_timeout = parse(strings, ENV_OUTBOUND_CONNECT_TIMEOUT, parse_duration);
 
-        let inbound_connect_backoff = parse(strings, ENV_INBOUND_CONNECT_BACKOFF, parse_duration);
-        let outbound_connect_backoff = parse(strings, ENV_OUTBOUND_CONNECT_BACKOFF, parse_duration);
+        let inbound_connect_exp_backoff_min =
+            parse(strings, ENV_INBOUND_CONNECT_EXP_BACKOFF_MIN, parse_duration);
+        let inbound_connect_exp_backoff_max =
+            parse(strings, ENV_INBOUND_CONNECT_EXP_BACKOFF_MAX, parse_duration);
+        let inbound_connect_exp_backoff_max_jitter = parse(
+            strings,
+            ENV_INBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER,
+            parse_number::<f64>,
+        );
+
+        let outbound_connect_exp_backoff_min = parse(
+            strings,
+            ENV_OUTBOUND_CONNECT_EXP_BACKOFF_MIN,
+            parse_duration,
+        );
+        let outbound_connect_exp_backoff_max = parse(
+            strings,
+            ENV_OUTBOUND_CONNECT_EXP_BACKOFF_MAX,
+            parse_duration,
+        );
+        let outbound_connect_exp_backoff_max_jitter = parse(
+            strings,
+            ENV_OUTBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER,
+            parse_number::<f64>,
+        );
 
         let inbound_accept_keepalive = parse(strings, ENV_INBOUND_ACCEPT_KEEPALIVE, parse_duration);
         let outbound_accept_keepalive =
@@ -408,8 +464,19 @@ impl Config {
 
         let dns_canonicalize_timeout = parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration);
 
-        let control_backoff_delay = parse(strings, ENV_CONTROL_BACKOFF_DELAY, parse_duration)?
-            .unwrap_or(DEFAULT_CONTROL_BACKOFF_DELAY);
+        let control_exp_backoff_min = parse(strings, ENV_CONTROL_EXP_BACKOFF_MIN, parse_duration)?
+            .unwrap_or(DEFAULT_CONTROL_EXP_BACKOFF_MIN);
+
+        let control_exp_backoff_max = parse(strings, ENV_CONTROL_EXP_BACKOFF_MAX, parse_duration)?
+            .unwrap_or(DEFAULT_CONTROL_EXP_BACKOFF_MAX);
+
+        let control_exp_backoff_max_jitter = parse(
+            strings,
+            ENV_CONTROL_EXP_BACKOFF_MAX_JITTER,
+            parse_number::<f64>,
+        )?
+        .unwrap_or(DEFAULT_CONTROL_EXP_BACKOFF_MAX_JITTER);
+
         let control_connect_timeout = parse(strings, ENV_CONTROL_CONNECT_TIMEOUT, parse_duration)?
             .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT);
 
@@ -468,10 +535,23 @@ impl Config {
             outbound_connect_timeout: outbound_connect_timeout?
                 .unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
 
-            inbound_connect_backoff: inbound_connect_backoff?
-                .unwrap_or(DEFAULT_INBOUND_CONNECT_BACKOFF),
-            outbound_connect_backoff: outbound_connect_backoff?
-                .unwrap_or(DEFAULT_OUTBOUND_CONNECT_BACKOFF),
+            inbound_connect_exp_backoff_min: inbound_connect_exp_backoff_min?
+                .unwrap_or(DEFAULT_INBOUND_CONNECT_EXP_BACKOFF_MIN),
+
+            inbound_connect_exp_backoff_max: inbound_connect_exp_backoff_max?
+                .unwrap_or(DEFAULT_INBOUND_CONNECT_EXP_BACKOFF_MAX),
+
+            inbound_connect_exp_backofff_max_jitter: inbound_connect_exp_backoff_max_jitter?
+                .unwrap_or(DEFAULT_INBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER),
+
+            outbound_connect_exp_backoff_min: outbound_connect_exp_backoff_min?
+                .unwrap_or(DEFAULT_OUTBOUND_CONNECT_EXP_BACKOFF_MIN),
+
+            outbound_connect_exp_backoff_max: outbound_connect_exp_backoff_max?
+                .unwrap_or(DEFAULT_OUTBOUND_CONNECT_EXP_BACKOFF_MAX),
+
+            outbound_connect_exp_backofff_max_jitter: outbound_connect_exp_backoff_max_jitter?
+                .unwrap_or(DEFAULT_OUTBOUND_CONNECT_EXP_BACKOFF_MAX_JITTER),
 
             inbound_accept_keepalive: inbound_accept_keepalive?,
             outbound_accept_keepalive: outbound_accept_keepalive?,
@@ -518,7 +598,13 @@ impl Config {
             resolv_conf_path: resolv_conf_path?
                 .unwrap_or(DEFAULT_RESOLV_CONF.into())
                 .into(),
-            control_backoff_delay,
+
+            control_exp_backoff_min: control_exp_backoff_min,
+
+            control_exp_backoff_max: control_exp_backoff_max,
+
+            control_exp_backoff_max_jitter: control_exp_backoff_max_jitter,
+
             control_connect_timeout,
 
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),

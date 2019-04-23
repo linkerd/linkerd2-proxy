@@ -1,5 +1,7 @@
+use rand;
 use std::fmt;
 use std::marker::PhantomData;
+use std::ops::Mul;
 use std::time::Duration;
 
 use futures::{task, Async, Future, Poll};
@@ -36,6 +38,7 @@ where
 
     backoff: Backoff,
     active_backoff: Option<Delay>,
+    failed_attempts: u32,
 
     /// Prevents logging repeated connect errors.
     ///
@@ -46,7 +49,7 @@ where
 #[derive(Clone, Debug)]
 enum Backoff {
     None,
-    Fixed(Duration),
+    Exponential(Duration, Duration, f64),
 }
 
 // === impl Layer ===
@@ -59,9 +62,9 @@ pub fn layer<Req>() -> Layer<Req> {
 }
 
 impl<Req> Layer<Req> {
-    pub fn with_fixed_backoff(self, wait: Duration) -> Self {
+    pub fn with_exp_backoff(self, min: Duration, max: Duration, max_jitter: f64) -> Self {
         Self {
-            backoff: Backoff::Fixed(wait),
+            backoff: Backoff::Exponential(min, max, max_jitter),
             _req: PhantomData,
         }
     }
@@ -124,6 +127,7 @@ where
             backoff: self.backoff.clone(),
             active_backoff: None,
             mute_connect_error_log: false,
+            failed_attempts: 0,
         })
     }
 }
@@ -146,12 +150,13 @@ where
             backoff: Backoff::None,
             active_backoff: None,
             mute_connect_error_log: false,
+            failed_attempts: 0,
         }
     }
 
-    pub fn with_fixed_backoff(self, wait: Duration) -> Self {
+    fn with_exp_backoff(self, min: Duration, max: Duration, max_jitter: f64) -> Self {
         Self {
-            backoff: Backoff::Fixed(wait),
+            backoff: Backoff::Exponential(min, max, max_jitter),
             ..self
         }
     }
@@ -169,9 +174,21 @@ where
     type Future = <Reconnect<M, T> as svc::Service<Req>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        fn apply_jitter(duration: Duration, max_jitter: f64) -> Duration {
+            let jitter = rand::random::<f64>() * max_jitter;
+            let secs = (duration.as_secs() as f64) * jitter;
+            let nanos = (duration.subsec_nanos() as f64) * jitter;
+            let millis = (secs * 1000f64) + (nanos / 1000000f64);
+            duration + Duration::from_millis(millis as u64)
+        }
+
+        fn next_backoff(failed_attempts: u32, min: &Duration, max: &Duration) -> Duration {
+            Duration::min(min.mul(2_u32.pow(failed_attempts)), *max)
+        }
+
         match self.backoff {
             Backoff::None => {}
-            Backoff::Fixed(_) => {
+            Backoff::Exponential(_, _, _) => {
                 if let Some(delay) = self.active_backoff.as_mut() {
                     match delay.poll() {
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
@@ -188,6 +205,7 @@ where
         match self.inner.poll_ready() {
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Ok(ready) => {
+                self.failed_attempts = 0;
                 self.mute_connect_error_log = false;
                 Ok(ready)
             }
@@ -209,8 +227,18 @@ where
                 // task is notified below.
                 self.active_backoff = match self.backoff {
                     Backoff::None => None,
-                    Backoff::Fixed(ref wait) => Some(Delay::new(clock::now() + *wait)),
+                    Backoff::Exponential(ref min, ref max, max_jitter) if max_jitter != 0.0 => {
+                        let jittered_backoff =
+                            apply_jitter(next_backoff(self.failed_attempts, min, max), max_jitter);
+                        Some(Delay::new(clock::now() + jittered_backoff))
+                    }
+
+                    Backoff::Exponential(ref min, ref max, _) => Some(Delay::new(
+                        clock::now() + next_backoff(self.failed_attempts, min, max),
+                    )),
                 };
+
+                self.failed_attempts += 1;
 
                 // The inner service is now idle and will renew its internal
                 // state on the next poll. Instead of doing this immediately,
@@ -304,18 +332,20 @@ mod tests {
     impl error::Error for InitErr {}
 
     #[test]
-    fn reconnects_with_backoff() {
-        let mock = NewService { fails: 2.into() };
-        let mut backoff =
-            super::Service::for_test(mock).with_fixed_backoff(Duration::from_millis(100));
+    fn reconnects_with_exp_backoff() {
+        let mock = NewService { fails: 3.into() };
+        let mut backoff = super::Service::for_test(mock).with_exp_backoff(
+            Duration::from_millis(100),
+            Duration::from_millis(300),
+            0.0,
+        );
         let mut rt = Runtime::new().unwrap();
 
-        // Checks that, after the inner NewService fails to connect twice, it
-        // succeeds on a third attempt.
+        // Checks that, after the inner NewService fails to connect three times, it
+        // succeeds on a fourth attempt.
         let t0 = time::Instant::now();
         let f = future::poll_fn(|| backoff.poll_ready());
         rt.block_on(f).unwrap();
-
-        assert!(t0.elapsed() >= Duration::from_millis(200))
+        assert!(t0.elapsed() >= Duration::from_millis(600));
     }
 }
