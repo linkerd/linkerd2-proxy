@@ -32,6 +32,11 @@ pub struct Stack<M> {
     inner: M,
 }
 
+pub struct MakeFuture<F> {
+    inner: F,
+    timeout: Option<Duration>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Service<S>(Timeout<S>);
 
@@ -40,35 +45,48 @@ pub struct Service<S>(Timeout<S>);
 #[derive(Debug)]
 pub struct ProxyTimedOut(());
 
-impl<T, M> svc::Layer<T, T, M> for Layer
-where
-    M: svc::Stack<T>,
-    T: HasTimeout,
-{
-    type Value = <Stack<M> as svc::Stack<T>>::Value;
-    type Error = <Stack<M> as svc::Stack<T>>::Error;
-    type Stack = Stack<M>;
+impl<M> svc::Layer<M> for Layer {
+    type Service = Stack<M>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack { inner }
     }
 }
 
-impl<T, M> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Service<T> for Stack<M>
 where
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
     T: HasTimeout,
 {
-    type Value = svc::Either<Service<M::Value>, M::Value>;
+    type Response = svc::Either<Service<M::Response>, M::Response>;
     type Error = M::Error;
+    type Future = MakeFuture<M::Future>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(target)?;
-        if let Some(timeout) = target.timeout() {
-            Ok(svc::Either::A(Service(Timeout::new(inner, timeout))))
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let timeout = target.timeout();
+        let inner = self.inner.call(target);
+
+        MakeFuture { inner, timeout }
+    }
+}
+
+impl<F: Future> Future for MakeFuture<F> {
+    type Item = svc::Either<Service<F::Item>, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+
+        let svc = if let Some(timeout) = self.timeout {
+            svc::Either::A(Service(Timeout::new(inner, timeout)))
         } else {
-            Ok(svc::Either::B(inner))
-        }
+            svc::Either::B(inner)
+        };
+        Ok(svc.into())
     }
 }
 

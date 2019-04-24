@@ -1,11 +1,10 @@
 use bytes::{Buf, BufMut};
-use futures::future::{self, Either};
 use futures::{Async, Future, Poll};
 use std::{fmt, io};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use svc;
-use transport::connect::Connect;
+use svc::ServiceExt;
 
 /// Attempt to proxy the `server_io` stream to a `T`-typed target.
 ///
@@ -13,35 +12,23 @@ use transport::connect::Connect;
 /// dropped.
 pub(super) fn forward<I, C, T>(
     server_io: I,
-    connect: &C,
-    target: &T,
+    connect: C,
+    target: T,
 ) -> impl Future<Item = (), Error = ()> + Send + 'static
 where
-    T: fmt::Debug,
+    T: Send + 'static,
     I: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
-    C: svc::Stack<T>,
-    C::Value: Connect,
+    C: svc::Service<T> + Send + 'static,
     C::Error: fmt::Debug,
-    <C::Value as Connect>::Future: Send + 'static,
-    <C::Value as Connect>::Error: fmt::Debug,
-    <C::Value as Connect>::Connected: fmt::Debug + Send + 'static,
+    C::Future: Send + 'static,
+    C::Response: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
 {
-    let connect = match connect.make(&target) {
-        Ok(c) => c,
-        Err(e) => {
-            error!("forward stack error: {:?}: {:?}", target, e);
-            return Either::A(future::ok(()));
-        }
-    };
-
-    let fwd = connect
-        .connect()
+    connect
+        .oneshot(target)
         .map_err(|e| info!("forward connect failure: {:?}", e))
         .and_then(move |io| {
             Duplex::new(server_io, io).map_err(|e| debug!("forward duplex complete: {}", e))
-        });
-
-    Either::B(fwd)
+        })
 }
 
 /// A future piping data bi-directionally to In and Out.

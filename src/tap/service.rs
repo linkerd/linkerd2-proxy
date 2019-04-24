@@ -8,17 +8,23 @@ use super::Inspect;
 use proxy::http::HasH2Reason;
 use svc;
 
-/// A stack module that wraps services to record taps.
+/// A layer that wraps MakeServices to record taps.
 #[derive(Clone, Debug)]
 pub struct Layer<R: Register> {
     registry: R,
 }
 
-/// Wraps services to record taps.
+/// Makes wrapped Services to record taps.
 #[derive(Clone, Debug)]
 pub struct Stack<R: Register, T> {
     registry: R,
     inner: T,
+}
+
+/// Future returned by `Stack`.
+pub struct MakeFuture<F, R, T> {
+    inner: F,
+    next: Option<(R, T)>,
 }
 
 /// A middleware that records HTTP taps.
@@ -86,17 +92,13 @@ where
     }
 }
 
-impl<R, T, M> svc::Layer<T, T, M> for Layer<R>
+impl<R, M> svc::Layer<M> for Layer<R>
 where
-    T: Inspect + Clone,
     R: Register + Clone,
-    M: svc::Stack<T>,
 {
-    type Value = <Stack<R, M> as svc::Stack<T>>::Value;
-    type Error = M::Error;
-    type Stack = Stack<R, M>;
+    type Service = Stack<R, M>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack {
             inner,
             registry: self.registry.clone(),
@@ -106,24 +108,51 @@ where
 
 // === Stack ===
 
-impl<R, T, M> svc::Stack<T> for Stack<R, M>
+impl<R, T, M> svc::Service<T> for Stack<R, M>
 where
     T: Inspect + Clone,
-    R: Register + Clone,
-    M: svc::Stack<T>,
+    R: Register,
+    M: svc::Service<T>,
 {
-    type Value = Service<T, R::Taps, R::Tap, M::Value>;
+    type Response = Service<T, R::Taps, R::Tap, M::Response>;
     type Error = M::Error;
+    type Future = MakeFuture<M::Future, R::Taps, T>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(&target)?;
-        let tap_rx = self.registry.clone().register();
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let inspect = target.clone();
+        let inner = self.inner.call(target);
+        let tap_rx = self.registry.register();
+        MakeFuture {
+            inner,
+            next: Some((tap_rx, inspect)),
+        }
+    }
+}
+
+// === MakeFuture ===
+
+impl<F, Taps, I> Future for MakeFuture<F, Taps, I>
+where
+    F: Future,
+    Taps: Stream,
+{
+    type Item = Service<I, Taps, Taps::Item, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        let (tap_rx, inspect) = self.next.take().expect("poll more than once");
         Ok(Service {
             inner,
             tap_rx,
             taps: Vec::default(),
-            inspect: target.clone(),
-        })
+            inspect,
+        }
+        .into())
     }
 }
 

@@ -7,7 +7,7 @@ use std::{error::Error as StdError, fmt};
 
 use proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
 use svc;
-use transport::{tls::HasStatus as HasTlsStatus, Connect};
+use transport::tls::HasStatus as HasTlsStatus;
 use Conditional;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
@@ -27,9 +27,10 @@ pub struct HyperServerSvc<S> {
 
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
 #[derive(Debug, Clone)]
-pub struct HyperConnect<C> {
+pub struct HyperConnect<C, T> {
     connect: C,
     absolute_form: bool,
+    target: T,
 }
 
 /// Future returned by `HyperConnect`.
@@ -166,33 +167,31 @@ where
 
 // ===== impl HyperConnect =====
 
-impl<C> HyperConnect<C>
-where
-    C: Connect,
-    C::Future: 'static,
-{
-    pub(in proxy) fn new(connect: C, absolute_form: bool) -> Self {
+impl<C, T> HyperConnect<C, T> {
+    pub(super) fn new(connect: C, target: T, absolute_form: bool) -> Self {
         HyperConnect {
             connect,
             absolute_form,
+            target,
         }
     }
 }
 
-impl<C> hyper_connect::Connect for HyperConnect<C>
+impl<C, T> hyper_connect::Connect for HyperConnect<C, T>
 where
-    C: Connect + Send + Sync,
+    C: svc::MakeConnection<T> + Clone + Send + Sync,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: Into<Box<dyn StdError + Send + Sync>>,
-    C::Connected: HasTlsStatus + Send + 'static,
+    C::Connection: HasTlsStatus + Send + 'static,
+    T: Clone + Send + Sync,
 {
-    type Transport = C::Connected;
+    type Transport = C::Connection;
     type Error = <C::Future as Future>::Error;
     type Future = HyperConnectFuture<C::Future>;
 
     fn connect(&self, _dst: hyper_connect::Destination) -> Self::Future {
         HyperConnectFuture {
-            inner: self.connect.connect(),
+            inner: self.connect.clone().make_connection(self.target.clone()),
             absolute_form: self.absolute_form,
         }
     }

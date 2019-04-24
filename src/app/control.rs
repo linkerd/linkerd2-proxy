@@ -20,7 +20,7 @@ pub mod add_origin {
     extern crate tower_add_origin;
 
     use self::tower_add_origin::AddOrigin;
-    use bytes::Bytes;
+    use futures::{Future, Poll};
     use http::uri;
     use std::marker::PhantomData;
 
@@ -37,51 +37,70 @@ pub mod add_origin {
         inner: M,
     }
 
+    pub struct MakeFuture<F> {
+        authority: uri::Authority,
+        inner: F,
+    }
+
     // === impl Layer ===
 
     pub fn layer<M>() -> Layer<M>
     where
-        M: svc::Stack<ControlAddr>,
+        M: svc::Service<ControlAddr>,
     {
         Layer { _p: PhantomData }
     }
 
     impl<M> Clone for Layer<M>
     where
-        M: svc::Stack<ControlAddr>,
+        M: svc::Service<ControlAddr>,
     {
         fn clone(&self) -> Self {
             layer()
         }
     }
 
-    impl<M> svc::Layer<ControlAddr, ControlAddr, M> for Layer<M>
+    impl<M> svc::Layer<M> for Layer<M>
     where
-        M: svc::Stack<ControlAddr>,
+        M: svc::Service<ControlAddr>,
     {
-        type Value = <Stack<M> as svc::Stack<ControlAddr>>::Value;
-        type Error = <Stack<M> as svc::Stack<ControlAddr>>::Error;
-        type Stack = Stack<M>;
+        type Service = Stack<M>;
 
-        fn bind(&self, inner: M) -> Self::Stack {
+        fn layer(&self, inner: M) -> Self::Service {
             Stack { inner }
         }
     }
 
     // === impl Stack ===
 
-    impl<M> svc::Stack<ControlAddr> for Stack<M>
+    impl<M> svc::Service<ControlAddr> for Stack<M>
     where
-        M: svc::Stack<ControlAddr>,
+        M: svc::Service<ControlAddr>,
     {
-        type Value = AddOrigin<M::Value>;
+        type Response = AddOrigin<M::Response>;
         type Error = M::Error;
+        type Future = MakeFuture<M::Future>;
 
-        fn make(&self, config: &ControlAddr) -> Result<Self::Value, Self::Error> {
-            let inner = self.inner.make(config)?;
-            let scheme = uri::Scheme::from_shared(Bytes::from_static(b"http")).unwrap();
-            let authority = config.addr.as_authority();
-            Ok(AddOrigin::new(inner, scheme, authority))
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, target: ControlAddr) -> Self::Future {
+            let authority = target.addr.as_authority();
+            let inner = self.inner.call(target);
+            MakeFuture { authority, inner }
+        }
+    }
+
+    // === impl MakeFuture ===
+
+    impl<F: Future> Future for MakeFuture<F> {
+        type Item = AddOrigin<F::Item>;
+        type Error = F::Error;
+
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            let inner = try_ready!(self.inner.poll());
+            Ok(AddOrigin::new(inner, uri::Scheme::HTTP, self.authority.clone()).into())
         }
     }
 }
@@ -89,7 +108,6 @@ pub mod add_origin {
 /// Resolves the controller's `addr` once before building a client.
 pub mod resolve {
     use futures::{Future, Poll};
-    use std::marker::PhantomData;
     use std::net::SocketAddr;
     use std::{error, fmt};
 
@@ -98,130 +116,75 @@ pub mod resolve {
     use svc;
     use Addr;
 
-    #[derive(Debug)]
-    pub struct Layer<M> {
+    #[derive(Clone, Debug)]
+    pub struct Layer {
         dns: dns::Resolver,
-        _p: PhantomData<fn() -> M>,
     }
 
     #[derive(Clone, Debug)]
-    pub struct Stack<M> {
+    pub struct Resolve<M> {
         dns: dns::Resolver,
         inner: M,
     }
 
-    pub struct NewService<M> {
-        config: ControlAddr,
-        dns: dns::Resolver,
-        stack: M,
-    }
-
     pub struct Init<M>
     where
-        M: svc::Stack<client::Target>,
-        M::Value: svc::Service<()>,
+        M: svc::Service<client::Target>,
     {
         state: State<M>,
     }
 
     enum State<M>
     where
-        M: svc::Stack<client::Target>,
-        M::Value: svc::Service<()>,
+        M: svc::Service<client::Target>,
     {
         Resolve {
             future: dns::IpAddrFuture,
             config: ControlAddr,
             stack: M,
         },
-        Inner(<M::Value as svc::Service<()>>::Future),
-        Invalid(Option<M::Error>),
+        Inner(M::Future),
     }
 
     #[derive(Debug)]
-    pub enum Error<S, I> {
+    pub enum Error<I> {
         Dns(dns::Error),
-        Invalid(S),
         Inner(I),
     }
 
     // === impl Layer ===
 
-    pub fn layer<M>(dns: dns::Resolver) -> Layer<M>
+    pub fn layer<M>(dns: dns::Resolver) -> impl svc::Layer<M, Service = Resolve<M>> + Clone
     where
-        M: svc::Stack<client::Target> + Clone,
+        M: svc::Service<client::Target> + Clone,
     {
-        Layer {
-            dns,
-            _p: PhantomData,
-        }
+        svc::layer::mk(move |inner| Resolve {
+            dns: dns.clone(),
+            inner,
+        })
     }
 
-    impl<M> Clone for Layer<M>
+    // === impl Resolve ===
+
+    impl<M> svc::Service<ControlAddr> for Resolve<M>
     where
-        M: svc::Stack<client::Target> + Clone,
+        M: svc::Service<client::Target> + Clone,
     {
-        fn clone(&self) -> Self {
-            layer(self.dns.clone())
-        }
-    }
-
-    impl<M> svc::Layer<ControlAddr, client::Target, M> for Layer<M>
-    where
-        M: svc::Stack<client::Target> + Clone,
-    {
-        type Value = <Stack<M> as svc::Stack<ControlAddr>>::Value;
-        type Error = <Stack<M> as svc::Stack<ControlAddr>>::Error;
-        type Stack = Stack<M>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack {
-                inner,
-                dns: self.dns.clone(),
-            }
-        }
-    }
-
-    // === impl Stack ===
-
-    impl<M> svc::Stack<ControlAddr> for Stack<M>
-    where
-        M: svc::Stack<client::Target> + Clone,
-    {
-        type Value = NewService<M>;
-        type Error = M::Error;
-
-        fn make(&self, config: &ControlAddr) -> Result<Self::Value, Self::Error> {
-            Ok(NewService {
-                dns: self.dns.clone(),
-                config: config.clone(),
-                stack: self.inner.clone(),
-            })
-        }
-    }
-
-    // === impl NewService ===
-
-    impl<M> svc::Service<()> for NewService<M>
-    where
-        M: svc::Stack<client::Target> + Clone,
-        M::Value: svc::Service<()>,
-    {
-        type Response = <M::Value as svc::Service<()>>::Response;
+        type Response = M::Response;
         type Error = <Init<M> as Future>::Error;
         type Future = Init<M>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            Ok(().into())
+            self.inner.poll_ready().map_err(Error::Inner)
         }
 
-        fn call(&mut self, _target: ()) -> Self::Future {
-            let state = match self.config.addr {
-                Addr::Socket(sa) => State::make_inner(sa, &self.config, &self.stack),
+        fn call(&mut self, target: ControlAddr) -> Self::Future {
+            let state = match target.addr {
+                Addr::Socket(sa) => State::make_inner(sa, &target, &mut self.inner),
                 Addr::Name(ref na) => State::Resolve {
                     future: self.dns.resolve_one_ip(na.name()),
-                    stack: self.stack.clone(),
-                    config: self.config.clone(),
+                    stack: self.inner.clone(),
+                    config: target.clone(),
                 },
             };
 
@@ -233,11 +196,10 @@ pub mod resolve {
 
     impl<M> Future for Init<M>
     where
-        M: svc::Stack<client::Target>,
-        M::Value: svc::Service<()>,
+        M: svc::Service<client::Target>,
     {
-        type Item = <M::Value as svc::Service<()>>::Response;
-        type Error = Error<M::Error, <M::Value as svc::Service<()>>::Error>;
+        type Item = M::Response;
+        type Error = Error<M::Error>;
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             loop {
@@ -248,16 +210,11 @@ pub mod resolve {
                     State::Resolve {
                         ref mut future,
                         ref config,
-                        ref stack,
+                        ref mut stack,
                     } => {
                         let ip = try_ready!(future.poll().map_err(Error::Dns));
                         let sa = SocketAddr::from((ip, config.addr.port()));
-                        State::make_inner(sa, &config, &stack)
-                    }
-                    State::Invalid(ref mut e) => {
-                        return Err(Error::Invalid(
-                            e.take().expect("future polled after failure"),
-                        ));
+                        State::make_inner(sa, config, stack)
                     }
                 };
             }
@@ -266,45 +223,39 @@ pub mod resolve {
 
     impl<M> State<M>
     where
-        M: svc::Stack<client::Target>,
-        M::Value: svc::Service<()>,
+        M: svc::Service<client::Target>,
     {
-        fn make_inner(addr: SocketAddr, dst: &ControlAddr, stack: &M) -> Self {
+        fn make_inner(addr: SocketAddr, dst: &ControlAddr, mk_svc: &mut M) -> Self {
             let target = client::Target {
                 addr,
                 server_name: dst.identity.clone(),
                 log_ctx: ::logging::admin().client("control", dst.addr.clone()),
             };
 
-            match stack.make(&target) {
-                Ok(mut n) => State::Inner(svc::Service::call(&mut n, ())),
-                Err(e) => State::Invalid(Some(e)),
-            }
+            State::Inner(mk_svc.call(target))
         }
     }
 
     // === impl Error ===
 
-    impl<S: fmt::Display, I: fmt::Display> fmt::Display for Error<S, I> {
+    impl<I: fmt::Display> fmt::Display for Error<I> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 Error::Dns(dns::Error::NoAddressesFound) => write!(f, "no addresses found"),
                 Error::Dns(dns::Error::ResolutionFailed(e)) => fmt::Display::fmt(&e, f),
-                Error::Invalid(ref e) => fmt::Display::fmt(&e, f),
                 Error::Inner(ref e) => fmt::Display::fmt(&e, f),
             }
         }
     }
 
-    impl<S: error::Error, I: error::Error> error::Error for Error<S, I> {}
+    impl<I: fmt::Debug + fmt::Display> error::Error for Error<I> {}
 }
 
 /// Creates a client suitable for gRPC.
 pub mod client {
-    use hyper::body::Payload;
-    use std::error;
-    use std::marker::PhantomData;
     use std::net::SocketAddr;
+
+    use futures::Poll;
 
     use super::super::config::H2Settings;
     use proxy::http;
@@ -320,14 +271,8 @@ pub mod client {
     }
 
     #[derive(Debug)]
-    pub struct Layer<C, B> {
-        _p: PhantomData<(fn() -> C, fn() -> B)>,
-    }
-
-    #[derive(Debug)]
-    pub struct Stack<C, B> {
-        connect: C,
-        _p: PhantomData<fn() -> B>,
+    pub struct Client<C, B> {
+        inner: http::h2::Connect<C, B>,
     }
 
     // === impl Target ===
@@ -346,75 +291,48 @@ pub mod client {
 
     // === impl Layer ===
 
-    pub fn layer<C, B>() -> Layer<C, B>
+    pub fn layer<C, B>() -> impl svc::Layer<C, Service = Client<C, B>> + Copy
     where
-        C: svc::Stack<Target> + Clone,
-        C::Value: connect::Connect + Clone + Send + Sync + 'static,
-        <C::Value as connect::Connect>::Connected: Send + 'static,
-        <C::Value as connect::Connect>::Future: Send + 'static,
-        <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync + 'static>>,
-        B: Payload,
+        http::h2::Connect<C, B>: svc::Service<Target>,
     {
-        Layer { _p: PhantomData }
+        svc::layer::mk(|mk_conn| {
+            let inner =
+                http::h2::Connect::new(mk_conn, ::task::LazyExecutor, H2Settings::default());
+            Client { inner }
+        })
     }
 
-    impl<C, B> Clone for Layer<C, B> {
-        fn clone(&self) -> Self {
-            Layer { _p: PhantomData }
+    // === impl Client ===
+
+    impl<C, B> svc::Service<Target> for Client<C, B>
+    where
+        http::h2::Connect<C, B>: svc::Service<Target>,
+    {
+        type Response = <http::h2::Connect<C, B> as svc::Service<Target>>::Response;
+        type Error = <http::h2::Connect<C, B> as svc::Service<Target>>::Error;
+        type Future = <http::h2::Connect<C, B> as svc::Service<Target>>::Future;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, target: Target) -> Self::Future {
+            let exe = target.log_ctx.clone().with_remote(target.addr).executor();
+            self.inner.set_executor(exe);
+            self.inner.call(target)
         }
     }
 
-    impl<C, B> svc::Layer<Target, Target, C> for Layer<C, B>
+    // A manual impl is needed since derive adds `B: Clone`, but that's just
+    // a PhantomData.
+    impl<C, B> Clone for Client<C, B>
     where
-        C: svc::Stack<Target> + Clone,
-        C::Value: connect::Connect + Clone + Send + Sync + 'static,
-        <C::Value as connect::Connect>::Connected: Send + 'static,
-        <C::Value as connect::Connect>::Future: Send + 'static,
-        <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync + 'static>>,
-        B: Payload,
-    {
-        type Value = <Stack<C, B> as svc::Stack<Target>>::Value;
-        type Error = <Stack<C, B> as svc::Stack<Target>>::Error;
-        type Stack = Stack<C, B>;
-
-        fn bind(&self, connect: C) -> Self::Stack {
-            Stack {
-                connect,
-                _p: PhantomData,
-            }
-        }
-    }
-
-    // === impl Stack ===
-
-    impl<C, B> Clone for Stack<C, B>
-    where
-        C: Clone,
+        http::h2::Connect<C, B>: Clone,
     {
         fn clone(&self) -> Self {
-            Stack {
-                connect: self.connect.clone(),
-                _p: PhantomData,
+            Client {
+                inner: self.inner.clone(),
             }
-        }
-    }
-
-    impl<C, B> svc::Stack<Target> for Stack<C, B>
-    where
-        C: svc::Stack<Target> + Clone,
-        C::Value: connect::Connect + Clone + Send + Sync + 'static,
-        <C::Value as connect::Connect>::Connected: Send + 'static,
-        <C::Value as connect::Connect>::Future: Send + 'static,
-        <C::Value as connect::Connect>::Error: Into<Box<dyn error::Error + Send + Sync + 'static>>,
-        B: Payload,
-    {
-        type Value = http::h2::Connect<C::Value, B>;
-        type Error = C::Error;
-
-        fn make(&self, target: &Target) -> Result<Self::Value, Self::Error> {
-            let c = self.connect.make(&target)?;
-            let e = target.log_ctx.clone().with_remote(target.addr).executor();
-            Ok(http::h2::Connect::new(c, e, H2Settings::default()))
         }
     }
 }

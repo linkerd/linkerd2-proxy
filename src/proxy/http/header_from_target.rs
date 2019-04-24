@@ -1,10 +1,10 @@
-use futures::Poll;
+use futures::{Future, Poll};
 use http;
 use http::header::{HeaderValue, IntoHeaderName};
 
 use svc;
 
-/// Wraps HTTP `Service` `Stack<T>`s so that a displayable `T` is cloned into each request's
+/// Wraps HTTP `Service`s  so that a displayable `T` is cloned into each request's
 /// extensions.
 #[derive(Debug, Clone)]
 pub struct Layer<H> {
@@ -12,9 +12,9 @@ pub struct Layer<H> {
 }
 
 /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
-/// each request's extensions.
+/// each request's headers.
 #[derive(Clone, Debug)]
-pub struct Stack<H, M> {
+pub struct MakeSvc<H, M> {
     header: H,
     inner: M,
 }
@@ -35,46 +35,66 @@ where
     Layer { header }
 }
 
-impl<H, T, M> svc::Layer<T, T, M> for Layer<H>
+impl<H, M> svc::Layer<M> for Layer<H>
 where
     H: IntoHeaderName + Clone,
-    T: Clone + Send + Sync + 'static,
-    HeaderValue: for<'t> From<&'t T>,
-    M: svc::Stack<T>,
 {
-    type Value = <Stack<H, M> as svc::Stack<T>>::Value;
-    type Error = <Stack<H, M> as svc::Stack<T>>::Error;
-    type Stack = Stack<H, M>;
+    type Service = MakeSvc<H, M>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
-        Stack {
+    fn layer(&self, inner: M) -> Self::Service {
+        MakeSvc {
             header: self.header.clone(),
             inner,
         }
     }
 }
 
-// === impl Stack ===
+// === impl MakeSvc ===
 
-impl<H, T, M> svc::Stack<T> for Stack<H, M>
+impl<H, T, M> svc::Service<T> for MakeSvc<H, M>
 where
     H: IntoHeaderName + Clone,
     T: Clone + Send + Sync + 'static,
     HeaderValue: for<'t> From<&'t T>,
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = Service<H, M::Value>;
+    type Response = Service<H, M::Response>;
     type Error = M::Error;
+    type Future = MakeSvc<(H, HeaderValue), M::Future>;
 
-    fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(t)?;
+    fn poll_ready(&mut self) -> Poll<(), M::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, t: T) -> Self::Future {
         let header = self.header.clone();
-        let value = t.into();
+        let value = (&t).into();
+        let inner = self.inner.call(t);
+
+        MakeSvc {
+            header: (header, value),
+            inner,
+        }
+    }
+}
+
+impl<H, F> Future for MakeSvc<(H, HeaderValue), F>
+where
+    H: Clone,
+    F: Future,
+{
+    type Item = Service<H, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        let (header, value) = self.header.clone();
         Ok(Service {
             header,
             inner,
             value,
-        })
+        }
+        .into())
     }
 }
 

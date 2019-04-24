@@ -2,10 +2,13 @@ extern crate hyper_balance;
 extern crate tower_balance;
 extern crate tower_discover;
 
-use self::tower_discover::Discover;
-use hyper::body::Payload;
 use std::marker::PhantomData;
 use std::time::Duration;
+
+use futures::{Future, Poll};
+use hyper::body::Payload;
+
+use self::tower_discover::Discover;
 
 pub use self::hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
 pub use self::tower_balance::{choose::PowerOfTwoChoices, load::WithPeakEwma, Balance};
@@ -24,7 +27,7 @@ pub struct Layer<A, B> {
 
 /// Resolves `T` typed targets to balance requests over `M`-typed endpoint stacks.
 #[derive(Debug)]
-pub struct Stack<M, A, B> {
+pub struct MakeSvc<M, A, B> {
     decay: Duration,
     default_rtt: Duration,
     inner: M,
@@ -51,20 +54,15 @@ impl<A, B> Clone for Layer<A, B> {
     }
 }
 
-impl<T, M, A, B> svc::Layer<T, T, M> for Layer<A, B>
+impl<M, A, B> svc::Layer<M> for Layer<A, B>
 where
-    M: svc::Stack<T> + Clone,
-    M::Value: Discover,
-    <M::Value as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
     A: Payload,
     B: Payload,
 {
-    type Value = <Stack<M, A, B> as svc::Stack<T>>::Value;
-    type Error = <Stack<M, A, B> as svc::Stack<T>>::Error;
-    type Stack = Stack<M, A, B>;
+    type Service = MakeSvc<M, A, B>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
-        Stack {
+    fn layer(&self, inner: M) -> Self::Service {
+        MakeSvc {
             decay: self.decay,
             default_rtt: self.default_rtt,
             inner,
@@ -73,11 +71,11 @@ where
     }
 }
 
-// === impl Stack ===
+// === impl MakeSvc ===
 
-impl<M: Clone, A, B> Clone for Stack<M, A, B> {
+impl<M: Clone, A, B> Clone for MakeSvc<M, A, B> {
     fn clone(&self) -> Self {
-        Stack {
+        MakeSvc {
             decay: self.decay,
             default_rtt: self.default_rtt,
             inner: self.inner.clone(),
@@ -86,21 +84,50 @@ impl<M: Clone, A, B> Clone for Stack<M, A, B> {
     }
 }
 
-impl<T, M, A, B> svc::Stack<T> for Stack<M, A, B>
+impl<T, M, A, B> svc::Service<T> for MakeSvc<M, A, B>
 where
-    M: svc::Stack<T> + Clone,
-    M::Value: Discover,
-    <M::Value as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
+    M: svc::Service<T>,
+    M::Response: Discover,
+    <M::Response as Discover>::Service:
+        svc::Service<http::Request<A>, Response = http::Response<B>>,
     A: Payload,
     B: Payload,
 {
-    type Value = Balance<WithPeakEwma<M::Value, PendingUntilFirstData>, PowerOfTwoChoices>;
+    type Response = Balance<WithPeakEwma<M::Response, PendingUntilFirstData>, PowerOfTwoChoices>;
     type Error = M::Error;
+    type Future = MakeSvc<M::Future, A, B>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let discover = self.inner.make(target)?;
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let inner = self.inner.call(target);
+
+        MakeSvc {
+            decay: self.decay,
+            default_rtt: self.default_rtt,
+            inner,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F, A, B> Future for MakeSvc<F, A, B>
+where
+    F: Future,
+    F::Item: Discover,
+    <F::Item as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
+    A: Payload,
+    B: Payload,
+{
+    type Item = Balance<WithPeakEwma<F::Item, PendingUntilFirstData>, PowerOfTwoChoices>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let discover = try_ready!(self.inner.poll());
         let instrument = PendingUntilFirstData::default();
         let loaded = WithPeakEwma::new(discover, self.default_rtt, self.decay, instrument);
-        Ok(Balance::p2c(loaded))
+        Ok(Balance::p2c(loaded).into())
     }
 }

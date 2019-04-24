@@ -1,4 +1,4 @@
-use futures::Poll;
+use futures::{Future, Poll};
 use http;
 
 use svc;
@@ -13,6 +13,11 @@ pub struct Layer;
 #[derive(Clone, Debug)]
 pub struct Stack<M>(M);
 
+pub struct MakeFuture<F, T> {
+    inner: F,
+    target: T,
+}
+
 #[derive(Clone, Debug)]
 pub struct Service<T, S> {
     target: T,
@@ -25,34 +30,53 @@ pub fn layer() -> Layer {
     Layer
 }
 
-impl<T, M> svc::Layer<T, T, M> for Layer
-where
-    T: Clone + Send + Sync + 'static,
-    M: svc::Stack<T>,
-{
-    type Value = <Stack<M> as svc::Stack<T>>::Value;
-    type Error = <Stack<M> as svc::Stack<T>>::Error;
-    type Stack = Stack<M>;
+impl<M> svc::Layer<M> for Layer {
+    type Service = Stack<M>;
 
-    fn bind(&self, next: M) -> Self::Stack {
+    fn layer(&self, next: M) -> Self::Service {
         Stack(next)
     }
 }
 
 // === impl Stack ===
 
-impl<T, M> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Service<T> for Stack<M>
 where
     T: Clone + Send + Sync + 'static,
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = Service<T, M::Value>;
+    type Response = Service<T, M::Response>;
     type Error = M::Error;
+    type Future = MakeFuture<M::Future, T>;
 
-    fn make(&self, t: &T) -> Result<Self::Value, Self::Error> {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.0.poll_ready()
+    }
+
+    fn call(&mut self, t: T) -> Self::Future {
         let target = t.clone();
-        let inner = self.0.make(t)?;
-        Ok(Service { inner, target })
+        let inner = self.0.call(t);
+        MakeFuture { inner, target }
+    }
+}
+
+// === impl MakeFuture ===
+
+impl<F, T> Future for MakeFuture<F, T>
+where
+    F: Future,
+    T: Clone,
+{
+    type Item = Service<T, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        Ok(Service {
+            inner,
+            target: self.target.clone(),
+        }
+        .into())
     }
 }
 

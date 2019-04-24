@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate futures;
 extern crate linkerd2_stack;
 extern crate tokio_connect;

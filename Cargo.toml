@@ -57,14 +57,10 @@ tokio = "0.1.14"
 tokio-signal = "0.2"
 tokio-timer = "0.2.6"   # for tokio_timer::clock
 tokio-connect         = { git = "https://github.com/carllerche/tokio-connect" }
+tower                 = { git = "https://github.com/tower-rs/tower" }
 tower-add-origin      = { git = "https://github.com/tower-rs/tower-http" }
 tower-balance         = { git = "https://github.com/tower-rs/tower" }
-tower-buffer          = { git = "https://github.com/tower-rs/tower" }
 tower-discover        = { git = "https://github.com/tower-rs/tower" }
-tower-in-flight-limit = { git = "https://github.com/tower-rs/tower" }
-tower-load-shed       = { git = "https://github.com/tower-rs/tower" }
-tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
-tower-retry           = { git = "https://github.com/tower-rs/tower" }
 tower-service         = "0.2"
 tower-util            = { git = "https://github.com/tower-rs/tower" }
 tower-http-service    = { git = "https://github.com/tower-rs/tower-http" }

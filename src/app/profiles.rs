@@ -7,12 +7,11 @@ use std::time::Duration;
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tower_retry::budget::Budget;
 
 use api::destination as api;
 use never::Never;
 
-use proxy::http::profiles;
+use proxy::http::{profiles, retry::Budget};
 use NameAddr;
 
 #[derive(Clone, Debug)]
@@ -222,7 +221,7 @@ where
                 State::Waiting(ref mut f) => match f.poll() {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(rsp)) => {
-                        debug!("response received");
+                        trace!("response received");
                         State::Streaming(rsp.into_inner())
                     }
                     Err(e) => {

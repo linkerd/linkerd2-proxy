@@ -131,7 +131,7 @@ where
     fn spawn(
         &mut self,
         future: Box<Future<Item = (), Error = ()> + 'static + Send>,
-    ) -> ::std::result::Result<(), ::tokio::executor::SpawnError> {
+    ) -> Result<(), ::tokio::executor::SpawnError> {
         let fut = context_future(self.context.clone(), future);
         task::LazyExecutor.spawn(Box::new(fut))
     }
@@ -142,7 +142,7 @@ where
     T: fmt::Display + 'static + Send + Sync,
     F: Future<Item = (), Error = ()> + 'static + Send,
 {
-    fn execute(&self, future: F) -> ::std::result::Result<(), ExecuteError<F>> {
+    fn execute(&self, future: F) -> Result<(), ExecuteError<F>> {
         let fut = context_future(self.context.clone(), future);
         match ::task::LazyExecutor.execute(fut) {
             Ok(()) => Ok(()),

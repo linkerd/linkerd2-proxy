@@ -1,5 +1,6 @@
 pub mod add_header;
 pub mod balance;
+pub mod canonicalize;
 pub mod client;
 pub(super) mod glue;
 pub mod h1;

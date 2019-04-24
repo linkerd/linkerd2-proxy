@@ -1,38 +1,16 @@
 //! Tools for building a transparent TCP/HTTP proxy.
 
-use tokio::io::{AsyncRead, AsyncWrite};
-
+pub mod accept;
 pub mod buffer;
-pub mod canonicalize;
 pub mod grpc;
 pub mod http;
-pub mod limit;
+pub mod pending;
 mod protocol;
 pub mod reconnect;
 pub mod resolve;
 pub mod server;
-pub mod shed;
 mod tcp;
 
+pub use self::accept::Accept;
 pub use self::resolve::{Resolution, Resolve};
 pub use self::server::{Server, Source};
-
-/// Wraps serverside transports with additional functionality.
-pub trait Accept<T: AsyncRead + AsyncWrite> {
-    type Io: AsyncRead + AsyncWrite;
-
-    fn accept(&self, inner: T) -> Self::Io;
-}
-
-/// The identity `Accept`.
-impl<T> Accept<T> for ()
-where
-    T: AsyncRead + AsyncWrite,
-{
-    type Io = T;
-
-    #[inline]
-    fn accept(&self, inner: T) -> T {
-        inner
-    }
-}
