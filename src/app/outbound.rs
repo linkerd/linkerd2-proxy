@@ -164,6 +164,7 @@ pub mod discovery {
         fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
             match self {
                 Resolution::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
+                    resolve::Update::NoEndpoints => Ok(Async::Ready(resolve::Update::NoEndpoints)),
                     resolve::Update::Remove(addr) => {
                         debug!("removing {}", addr);
                         Ok(Async::Ready(resolve::Update::Remove(addr)))

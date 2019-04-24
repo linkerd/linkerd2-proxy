@@ -3,7 +3,7 @@ extern crate tower_discover;
 
 use futures::{Async, Poll};
 use std::net::SocketAddr;
-use std::{error, fmt};
+use std::{error, fmt, sync::{Arc, atomic::{AtomicBool, Ordering}}};
 
 pub use self::tower_discover::Change;
 use svc;
@@ -23,6 +23,13 @@ pub trait Resolution {
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
 }
+
+pub trait HasEndpointStatus {
+    fn endpoint_status(&self) -> EndpointStatus;
+}
+
+#[derive(Clone, Debug)]
+pub struct EndpointStatus(Arc<AtomicBool>);
 
 #[derive(Clone, Debug)]
 pub enum Update<T> {
@@ -50,7 +57,7 @@ type Error = Box<dyn error::Error + Send + Sync>;
 pub struct Discover<R, M> {
     resolution: R,
     make: M,
-    is_empty: bool,
+    is_empty: Arc<AtomicBool>,
 }
 
 // === impl Layer ===
@@ -95,33 +102,22 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let resolution = self.resolve.resolve(&target);
-        futures::future::ok(Discover::new(resolution, self.inner.clone()))
+        futures::future::ok(Discover {
+            resolution,
+            make: self.inner.clone(),
+            is_empty: Arc::new(AtomicBool::new(true)),
+        })
     }
 }
 
-// === impl Discover ===
-impl<R, M> Discover<R, M>
+impl<R, M> HasEndpointStatus for Discover<R, M>
 where
     R: Resolution,
-    R::Endpoint: fmt::Debug,
-    R::Error: Into<Error>,
-    M: rt::Make<R::Endpoint>,
 {
-    /// Returns `true` if there are currently endpoints for this resolution.
-    pub fn is_empty(&self) -> bool {
-        self.is_empty
-    }
-
-    fn new(resolution: R, make: &M) -> Self {
-        Discover {
-            resolution,
-            make: &make.clone(),
-            is_empty: true,
-        }
+    fn endpoint_status(&self) -> EndpointStatus {
+        EndpointStatus(self.is_empty.clone())
     }
 }
-
-
 
 impl<R, M> tower_discover::Discover for Discover<R, M>
 where
@@ -145,16 +141,22 @@ where
                     // insertions of new endpoints and metadata changes for
                     // existing ones can be handled in the same way.
                     let svc = self.make.make(&target);
+                    self.is_empty.store(false, Ordering::Release);
                     return Ok(Async::Ready(Change::Insert(addr, svc)))
                 }
                 Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
                 Update::NoEndpoints => {
-                    self.is_empty = true;
+                    self.is_empty.store(true, Ordering::Release);
                     // Keep polling as we should now start to see removals.
                     continue;
                 }
             }
         }
     }
+}
 
+impl EndpointStatus {
+    pub fn is_empty(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
 }
