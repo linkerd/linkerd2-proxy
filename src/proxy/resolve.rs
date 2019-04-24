@@ -28,6 +28,7 @@ pub trait Resolution {
 pub enum Update<T> {
     Add(SocketAddr, T),
     Remove(SocketAddr),
+    NoEndpoints,
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +50,7 @@ type Error = Box<dyn error::Error + Send + Sync>;
 pub struct Discover<R, M> {
     resolution: R,
     make: M,
+    is_empty: bool,
 }
 
 // === impl Layer ===
@@ -93,14 +95,33 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let resolution = self.resolve.resolve(&target);
-        futures::future::ok(Discover {
-            resolution,
-            make: self.inner.clone(),
-        })
+        futures::future::ok(Discover::new(resolution, self.inner.clone()))
     }
 }
 
 // === impl Discover ===
+impl<R, M> Discover<R, M>
+where
+    R: Resolution,
+    R::Endpoint: fmt::Debug,
+    R::Error: Into<Error>,
+    M: rt::Make<R::Endpoint>,
+{
+    /// Returns `true` if there are currently endpoints for this resolution.
+    pub fn is_empty(&self) -> bool {
+        self.is_empty
+    }
+
+    fn new(resolution: R, make: &M) -> Self {
+        Discover {
+            resolution,
+            make: &make.clone(),
+            is_empty: true,
+        }
+    }
+}
+
+
 
 impl<R, M> tower_discover::Discover for Discover<R, M>
 where
@@ -114,18 +135,26 @@ where
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
-        let up = try_ready!(self.resolution.poll().map_err(Into::into));
-        trace!("watch: {:?}", up);
-        match up {
-            Update::Add(addr, target) => {
-                // We expect the load balancer to handle duplicate inserts
-                // by replacing the old endpoint with the new one, so
-                // insertions of new endpoints and metadata changes for
-                // existing ones can be handled in the same way.
-                let svc = self.make.make(&target);
-                Ok(Async::Ready(Change::Insert(addr, svc)))
+        loop {
+            let up = try_ready!(self.resolution.poll().map_err(Into::into));
+            trace!("watch: {:?}", up);
+            match up {
+                Update::Add(addr, target) => {
+                    // We expect the load balancer to handle duplicate inserts
+                    // by replacing the old endpoint with the new one, so
+                    // insertions of new endpoints and metadata changes for
+                    // existing ones can be handled in the same way.
+                    let svc = self.make.make(&target);
+                    return Ok(Async::Ready(Change::Insert(addr, svc)))
+                }
+                Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
+                Update::NoEndpoints => {
+                    self.is_empty = true;
+                    // Keep polling as we should now start to see removals.
+                    continue;
+                }
             }
-            Update::Remove(addr) => Ok(Async::Ready(Change::Remove(addr))),
         }
     }
+
 }
