@@ -20,9 +20,10 @@ use svc;
 /// Configures a stack to resolve `T` typed targets to balance requests over
 /// `M`-typed endpoint stacks.
 #[derive(Debug)]
-pub struct Layer<A, B> {
+pub struct Layer<A, B, D> {
     decay: Duration,
     default_rtt: Duration,
+    discover: D,
     _marker: PhantomData<fn(A) -> B>,
 }
 
@@ -43,36 +44,50 @@ pub struct Service<S> {
 
 // === impl Layer ===
 
-pub fn layer<A, B>(default_rtt: Duration, decay: Duration) -> Layer<A, B> {
+pub fn layer<A, B>(default_rtt: Duration, decay: Duration) -> Layer<A, B, svc::layer::util::Identity> {
     Layer {
         decay,
         default_rtt,
+        discover: svc::layer::util::Identity::new(),
         _marker: PhantomData,
     }
 }
 
-impl<A, B> Clone for Layer<A, B> {
+impl<A, B, D: Clone> Clone for Layer<A, B, D> {
     fn clone(&self) -> Self {
         Layer {
             decay: self.decay,
             default_rtt: self.default_rtt,
+            discover: self.discover.clone(),
             _marker: PhantomData,
         }
     }
 }
 
-impl<M, A, B> svc::Layer<M> for Layer<A, B>
+impl<A, B, D> Layer<A, B, D> {
+    pub fn with_discover<D2>(self, discover: D2) -> Layer<A, B, D2> {
+        Layer {
+            decay: self.decay,
+            default_rtt: self.default_rtt,
+            discover,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<M, A, B, D> svc::Layer<M> for Layer<A, B, D>
 where
     A: Payload,
     B: Payload,
+    D: svc::Layer<M>,
 {
-    type Service = MakeSvc<M, A, B>;
+    type Service = MakeSvc<D::Service, A, B>;
 
     fn layer(&self, inner: M) -> Self::Service {
         MakeSvc {
             decay: self.decay,
             default_rtt: self.default_rtt,
-            inner,
+            inner: self.discover.layer(inner),
             _marker: PhantomData,
         }
     }

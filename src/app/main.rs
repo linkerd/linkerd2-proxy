@@ -502,8 +502,8 @@ where
                 ))
                 .layer(buffer::layer(max_in_flight))
                 .layer(pending::layer())
-                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)))
+                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)
+                    .with_discover(resolve::layer(Resolve::new(resolver))))
                 .layer(pending::layer())
                 .service(endpoint_stack);
 
