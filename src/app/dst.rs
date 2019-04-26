@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use proxy::http::{
     metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
-    profiles, retry, timeout,
+    profiles, retry, settings, timeout,
 };
 use {Addr, NameAddr};
 
@@ -34,6 +34,7 @@ pub struct Retry {
 pub struct DstAddr {
     addr: Addr,
     direction: Direction,
+    pub(super) http_settings: settings::Settings,
 }
 
 // === impl Route ===
@@ -109,17 +110,19 @@ impl AsRef<Addr> for DstAddr {
 }
 
 impl DstAddr {
-    pub fn outbound(addr: Addr) -> Self {
+    pub fn outbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
             addr,
             direction: Direction::Out,
+            http_settings,
         }
     }
 
-    pub fn inbound(addr: Addr) -> Self {
+    pub fn inbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
             addr,
             direction: Direction::In,
+            http_settings,
         }
     }
 

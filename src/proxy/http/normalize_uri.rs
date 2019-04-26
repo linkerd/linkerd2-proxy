@@ -1,12 +1,11 @@
 use futures::{Future, Poll};
 use http;
 
-use super::h1;
+use super::{
+    h1,
+    settings::{HasSettings, Settings},
+};
 use svc;
-
-pub trait ShouldNormalizeUri {
-    fn should_normalize_uri(&self) -> bool;
-}
 
 #[derive(Clone, Debug)]
 pub struct Stack<N> {
@@ -23,6 +22,10 @@ pub struct Service<S> {
     inner: S,
 }
 
+fn should_normalize_uri(settings: &Settings) -> bool {
+    !settings.is_http2() && !settings.was_absolute_form()
+}
+
 // === impl Layer ===
 
 pub fn layer<M>() -> impl svc::Layer<M, Service = Stack<M>> + Copy {
@@ -33,7 +36,7 @@ pub fn layer<M>() -> impl svc::Layer<M, Service = Stack<M>> + Copy {
 
 impl<T, M> svc::Service<T> for Stack<M>
 where
-    T: ShouldNormalizeUri,
+    T: HasSettings,
     M: svc::Service<T>,
 {
     type Response = svc::Either<Service<M::Response>, M::Response>;
@@ -45,7 +48,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let should_normalize_uri = target.should_normalize_uri();
+        let should_normalize_uri = should_normalize_uri(target.http_settings());
         let inner = self.inner.call(target);
 
         MakeFuture {

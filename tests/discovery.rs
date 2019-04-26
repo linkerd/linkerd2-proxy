@@ -663,6 +663,56 @@ mod http2 {
 
     generate_tests! { server: server::new, client: client::new }
 
+    #[test]
+    fn outbound_balancer_waits_for_ready_endpoint() {
+        // See https://github.com/linkerd/linkerd2/issues/2550
+        let _ = env_logger_init();
+
+        let srv1 = server::http2()
+            .route("/", "hello")
+            .route("/bye", "bye")
+            .run();
+
+        let srv2 = server::http2()
+            .route("/", "hello")
+            .route("/bye", "bye")
+            .run();
+
+        let host = "disco.test.svc.cluster.local";
+        let ctrl = controller::new();
+        let dst = ctrl.destination_tx(host);
+        // Start by "knowing" the first server...
+        dst.send_addr(srv1.addr);
+
+        let proxy = proxy::new().controller(ctrl.run()).run();
+        let client = client::http2(proxy.outbound, host);
+        let metrics = client::http1(proxy.metrics, "localhost");
+
+        assert_eq!(client.get("/"), "hello");
+
+        // Simulate the first server falling over without discovery
+        // knowing about it...
+        drop(srv1);
+
+        // Wait until the proxy has seen the `srv1` disconnect...
+        assert_eventually_contains!(
+            metrics.get("/metrics"),
+            "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1"
+        );
+
+        // Start a new request to the destination, now that the server is dead.
+        // This request should be waiting at the balancer for a ready endpoint.
+        //
+        // The only one it knows about is dead, so it won't have progressed.
+        let fut = client.request_async(&mut client.request_builder("/bye"));
+
+        // When we tell the balancer about a new endpoint, it should have added
+        // it and then dispatched the request...
+        dst.send_addr(srv2.addr);
+
+        let res = fut.wait().expect("/bye response");
+        assert_eq!(res.status(), http::StatusCode::OK);
+    }
 }
 
 mod http1 {
