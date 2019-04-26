@@ -47,9 +47,34 @@ where
 }
 
 #[derive(Clone, Debug)]
-enum Backoff {
+pub enum Backoff {
     None,
-    Exponential(Duration, Duration, f64),
+    Exponential {
+        min: Duration,
+        max: Duration,
+        jitter: f64,
+    },
+}
+
+impl Backoff {
+    fn for_failures<R: rand::Rng>(&self, failures: u32, mut rng: R) -> Option<Duration> {
+        match self {
+            Backoff::None => None,
+            Backoff::Exponential { max, min, jitter } => {
+                let backoff = Duration::min(min.mul(2_u32.pow(failures)), *max);
+
+                if *jitter != 0.0 {
+                    Some(backoff)
+                } else {
+                    let rand_jitter = rng.gen::<f64>() * jitter;
+                    let secs = (backoff.as_secs() as f64) * rand_jitter;
+                    let nanos = (backoff.subsec_nanos() as f64) * rand_jitter;
+                    let millis = secs.mul_add(secs * 1000f64, nanos / 1000000f64);
+                    Some(backoff + Duration::from_millis(millis as u64))
+                }
+            }
+        }
+    }
 }
 
 // === impl Layer ===
@@ -62,9 +87,9 @@ pub fn layer<Req>() -> Layer<Req> {
 }
 
 impl<Req> Layer<Req> {
-    pub fn with_exp_backoff(self, min: Duration, max: Duration, max_jitter: f64) -> Self {
+    pub fn with_backoff(self, backoff: Backoff) -> Self {
         Self {
-            backoff: Backoff::Exponential(min, max, max_jitter),
+            backoff,
             _req: PhantomData,
         }
     }
@@ -154,11 +179,8 @@ where
         }
     }
 
-    fn with_exp_backoff(self, min: Duration, max: Duration, max_jitter: f64) -> Self {
-        Self {
-            backoff: Backoff::Exponential(min, max, max_jitter),
-            ..self
-        }
+    fn with_backoff(self, backoff: Backoff) -> Self {
+        Self { backoff, ..self }
     }
 }
 
@@ -174,21 +196,9 @@ where
     type Future = <Reconnect<M, T> as svc::Service<Req>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        fn apply_jitter(duration: Duration, max_jitter: f64) -> Duration {
-            let jitter = rand::random::<f64>() * max_jitter;
-            let secs = (duration.as_secs() as f64) * jitter;
-            let nanos = (duration.subsec_nanos() as f64) * jitter;
-            let millis = (secs * 1000f64) + (nanos / 1000000f64);
-            duration + Duration::from_millis(millis as u64)
-        }
-
-        fn next_backoff(failed_attempts: u32, min: &Duration, max: &Duration) -> Duration {
-            Duration::min(min.mul(2_u32.pow(failed_attempts)), *max)
-        }
-
         match self.backoff {
             Backoff::None => {}
-            Backoff::Exponential(_, _, _) => {
+            Backoff::Exponential { .. } => {
                 if let Some(delay) = self.active_backoff.as_mut() {
                     match delay.poll() {
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
@@ -225,18 +235,10 @@ where
                 //
                 // This future need not be polled immediately because the
                 // task is notified below.
-                self.active_backoff = match self.backoff {
-                    Backoff::None => None,
-                    Backoff::Exponential(ref min, ref max, max_jitter) if max_jitter != 0.0 => {
-                        let jittered_backoff =
-                            apply_jitter(next_backoff(self.failed_attempts, min, max), max_jitter);
-                        Some(Delay::new(clock::now() + jittered_backoff))
-                    }
-
-                    Backoff::Exponential(ref min, ref max, _) => Some(Delay::new(
-                        clock::now() + next_backoff(self.failed_attempts, min, max),
-                    )),
-                };
+                self.active_backoff = self
+                    .backoff
+                    .for_failures(self.failed_attempts, rand::thread_rng())
+                    .map(|backoff| Delay::new(clock::now() + backoff));
 
                 self.failed_attempts += 1;
 
@@ -334,11 +336,11 @@ mod tests {
     #[test]
     fn reconnects_with_exp_backoff() {
         let mock = NewService { fails: 3.into() };
-        let mut backoff = super::Service::for_test(mock).with_exp_backoff(
-            Duration::from_millis(100),
-            Duration::from_millis(300),
-            0.0,
-        );
+        let mut backoff = super::Service::for_test(mock).with_backoff(Backoff::Exponential {
+            min: Duration::from_millis(100),
+            max: Duration::from_millis(300),
+            jitter: 0.0,
+        });
         let mut rt = Runtime::new().unwrap();
 
         // Checks that, after the inner NewService fails to connect three times, it

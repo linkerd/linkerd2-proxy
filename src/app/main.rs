@@ -276,11 +276,7 @@ where
                     .layer(http_metrics::layer::<_, classify::Response>(
                         ctl_http_metrics.clone(),
                     ))
-                    .layer(reconnect::layer().with_exp_backoff(
-                        config.control_exp_backoff_min,
-                        config.control_exp_backoff_max,
-                        config.control_exp_backoff_max_jitter,
-                    ))
+                    .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
                     .layer(control::resolve::layer(dns_resolver.clone()))
                     .layer(control::client::layer())
                     .timeout(config.control_connect_timeout)
@@ -330,11 +326,7 @@ where
                 .layer(http_metrics::layer::<_, classify::Response>(
                     ctl_http_metrics.clone(),
                 ))
-                .layer(reconnect::layer().with_exp_backoff(
-                    config.control_exp_backoff_min,
-                    config.control_exp_backoff_max,
-                    config.control_exp_backoff_max_jitter,
-                ))
+                .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
                 .layer(control::resolve::layer(dns_resolver.clone()))
                 .layer(control::client::layer())
                 .timeout(config.control_connect_timeout)
@@ -441,11 +433,7 @@ where
             // Instantiates an HTTP client for for a `client::Config`
             let client_stack = svc::builder()
                 .layer(normalize_uri::layer())
-                .layer(reconnect::layer().with_exp_backoff(
-                    config.outbound_connect_exp_backoff_min,
-                    config.outbound_connect_exp_backoff_max,
-                    config.outbound_connect_exp_backofff_max_jitter,
-                ))
+                .layer(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
                 .layer(client::layer("out", config.h2_settings))
                 .service(connect.clone());
 
@@ -643,11 +631,7 @@ where
             // Instantiates an HTTP client for a `client::Config`
             let client_stack = svc::builder()
                 .layer(normalize_uri::layer())
-                .layer(reconnect::layer().with_exp_backoff(
-                    config.inbound_connect_exp_backoff_min,
-                    config.inbound_connect_exp_backoff_max,
-                    config.inbound_connect_exp_backofff_max_jitter,
-                ))
+                .layer(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
                 .layer(client::layer("in", config.h2_settings))
                 .service(connect.clone());
 
