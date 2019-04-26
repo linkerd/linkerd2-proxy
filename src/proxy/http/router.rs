@@ -7,7 +7,7 @@ use std::time::Duration;
 use never::Never;
 use svc;
 
-extern crate linkerd2_router as rt;
+pub extern crate linkerd2_router as rt;
 
 pub use self::rt::{error, Recognize, Router};
 
@@ -58,6 +58,14 @@ impl Config {
             capacity,
             max_idle_age,
         }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn max_idle_age(&self) -> Duration {
+        self.max_idle_age()
     }
 }
 

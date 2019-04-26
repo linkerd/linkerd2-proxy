@@ -411,6 +411,7 @@ where
                 http::{balance, canonicalize, header_from_target, metrics, retry},
                 resolve,
             };
+            use svc::stack::Layer;
 
             let profiles_client = profiles_client.clone();
             let capacity = config.outbound_router_capacity;
@@ -486,6 +487,10 @@ where
                 .layer(metrics::layer::<_, classify::Response>(retry_http_metrics))
                 .layer(insert_target::layer());
 
+            // let dst_balancer = svc::builder()
+            //     .layer(buffer::layer(max_in_flight))
+            //     .layer(pending::layer())
+
             // A per-`DstAddr` stack that does the following:
             //
             // 1. Adds the `CANONICAL_DST_HEADER` from the `DstAddr`.
@@ -494,16 +499,46 @@ where
             // 3. Creates a load balancer , configured by resolving the
             //   `DstAddr` with a resolver.
             let dst_stack = svc::builder()
+                .layer(buffer::layer(max_in_flight))
+                .layer(pending::layer())
                 .layer(header_from_target::layer(super::CANONICAL_DST_HEADER))
                 .layer(profiles::router::layer(
                     profile_suffixes,
                     profiles_client,
                     dst_route_layer,
                 ))
-                .layer(buffer::layer(max_in_flight))
+                // .layer(buffer::layer(max_in_flight))
                 .layer(pending::layer())
-                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)
-                    .with_discover(resolve::layer(Resolve::new(resolver))))
+                .layer(
+                    // balance::fallback::layer(
+                    //     router::Config::new("out ep", capacity, max_idle_age),
+                    //     |req: &http::Request<_>| {
+                    //         let ep = req
+                    //             .extensions()
+                    //             .get::<proxy::Source>()
+                    //             .and_then(|src| src.orig_dst_if_not_local())
+                    //             .map(|addr| Endpoint {
+                    //                 dst_name: None,
+                    //                 addr,
+                    //                 identity: Conditional::None(
+                    //                     tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery
+                    //                         .into(),
+                    //                 ),
+                    //                 metadata: control::destination::Metadata::empty(),
+                    //             });
+                    //         debug!("outbound ep={:?}", ep);
+                    //         ep
+                    //     },
+                    // )
+                    // .with_balance(
+                    balance::layer(
+                        EWMA_DEFAULT_RTT,
+                        EWMA_DECAY,
+                        resolve::layer(Resolve::new(resolver)),
+                        // )),
+                    ),
+                )
+                .layer(buffer::layer(max_in_flight))
                 .layer(pending::layer())
                 .service(endpoint_stack);
 

@@ -16,8 +16,6 @@ use http;
 use proxy::resolve::{EndpointStatus, HasEndpointStatus};
 use svc;
 
-// compiler doesn't notice this type is used in where bounds below...
-#[allow(unused)]
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
@@ -39,7 +37,7 @@ pub struct MakeSvc<M, A, B> {
     _marker: PhantomData<fn(A) -> B>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Service<S> {
     balance: S,
     status: EndpointStatus,
@@ -52,14 +50,14 @@ pub struct NoEndpoints {
 
 // === impl Layer ===
 
-pub fn layer<A, B>(
-    default_rtt: Duration,
-    decay: Duration,
-) -> Layer<A, B, svc::layer::util::Identity> {
+pub fn layer<A, B, D>(default_rtt: Duration, decay: Duration, discover: D) -> Layer<A, B, D>
+where
+    D: Clone + Send + 'static,
+{
     Layer {
         decay,
         default_rtt,
-        discover: svc::layer::util::Identity::new(),
+        discover,
         _marker: PhantomData,
     }
 }
@@ -75,25 +73,13 @@ impl<A, B, D: Clone> Clone for Layer<A, B, D> {
     }
 }
 
-impl<A, B, D> Layer<A, B, D> {
-    pub fn with_discover<D2>(self, discover: D2) -> Layer<A, B, D2>
-    where
-        D2: Clone + Send + 'static,
-    {
-        Layer {
-            decay: self.decay,
-            default_rtt: self.default_rtt,
-            discover,
-            _marker: PhantomData,
-        }
-    }
-}
-
 impl<M, A, B, D> svc::Layer<M> for Layer<A, B, D>
 where
     A: Payload,
     B: Payload,
-    D: svc::Layer<M> + Clone + Send + 'static,
+    D: svc::Layer<M>,
+    // D::Service: svc::Service<T>,
+    // <D::Service as svc::Service<T>>::Response: Discover + HasEndpointStatus,
 {
     type Service = MakeSvc<D::Service, A, B>;
 
@@ -125,7 +111,7 @@ where
     M: svc::Service<T>,
     M::Response: Discover + HasEndpointStatus,
     <M::Response as Discover>::Service:
-        svc::Service<http::Request<A>, Response = http::Response<B>>,
+        svc::Service<http::Request<A>, Response = http::Response<B>> + HasEndpointStatus,
     <<M::Response as Discover>::Service as svc::Service<http::Request<A>>>::Error: Into<Error>,
     A: Payload,
     B: Payload,
@@ -155,6 +141,7 @@ impl<F, A, B> Future for MakeSvc<F, A, B>
 where
     F: Future,
     F::Item: Discover + HasEndpointStatus,
+    // F::Error: Into<Error>,
     <F::Item as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
     <<F::Item as Discover>::Service as svc::Service<http::Request<A>>>::Error: Into<Error>,
     A: Payload,
@@ -197,6 +184,12 @@ where
     }
 }
 
+impl<S> HasEndpointStatus for Service<S> {
+    fn endpoint_status(&self) -> EndpointStatus {
+        self.status.clone()
+    }
+}
+
 impl fmt::Display for NoEndpoints {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt("load balancer has no endpoints", f)
@@ -204,3 +197,328 @@ impl fmt::Display for NoEndpoints {
 }
 
 impl ::std::error::Error for NoEndpoints {}
+
+pub mod fallback {
+    use bytes::Buf;
+    use futures::{future, Async, Future, Poll};
+    use hyper::body::Payload;
+
+    use http;
+    use proxy::{
+        http::router::{self, Router},
+        resolve::{EndpointStatus, HasEndpointStatus},
+    };
+    use svc;
+
+    use super::Error;
+
+    use std::marker::PhantomData;
+
+    extern crate linkerd2_router as rt;
+
+    #[derive(Debug, Clone)]
+    pub struct Layer<Rec, Bal, A, T> {
+        recognize: Rec,
+        config: router::Config,
+        balance_layer: Bal,
+        _marker: PhantomData<fn(T) -> A>,
+    }
+
+    #[derive(Debug)]
+    pub struct MakeSvc<Rec, M, Bal, A, B, C>
+    where
+        Rec: router::Recognize<http::Request<A>>,
+    {
+        recognize: Rec,
+        config: router::Config,
+        inner: M,
+        balance: Bal,
+        _marker: PhantomData<fn(A) -> (B, C)>,
+    }
+
+    #[derive(Debug)]
+    pub struct MakeFuture<R, F, A, B, C>
+    where
+        F: Future,
+        F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>, //+ HasEndpointStatus,
+        <F::Item as svc::Service<http::Request<A>>>::Error: Into<Error>,
+        R: svc::Service<http::Request<A>, Response = http::Response<C>>,
+        R::Error: Into<Error>,
+    {
+        fallback: Option<R>,
+        mk_balance: F,
+        _marker: PhantomData<fn(A) -> (B, C)>,
+    }
+
+    pub struct Service<F, Bal, A, B, C>
+    where
+        Bal: svc::Service<http::Request<A>, Response = http::Response<B>>,
+        F: svc::Service<http::Request<A>, Response = http::Response<C>>,
+    {
+        fallback: F,
+        balance: Bal,
+        // status: EndpointStatus,
+        _marker: PhantomData<fn(A) -> (B, C)>,
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum Body<A, B> {
+        A(A),
+        B(B),
+    }
+
+    pub fn layer<Rec, A, T>(config: router::Config, recognize: Rec) -> Layer<Rec, (), A, T>
+    where
+        Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
+    {
+        Layer {
+            recognize,
+            config,
+            balance_layer: (),
+            _marker: PhantomData,
+        }
+    }
+
+    impl<Rec, A, T> Layer<Rec, (), A, T>
+    where
+        Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
+    {
+        pub fn with_balance<B, D>(
+            self,
+            balance_layer: super::Layer<A, B, D>,
+        ) -> Layer<Rec, super::Layer<A, B, D>, A, T> {
+            Layer {
+                recognize: self.recognize,
+                config: self.config,
+                balance_layer,
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<R, M, A, B, C, D, E, T> svc::Layer<M> for Layer<R, super::Layer<A, E, D>, A, T>
+    where
+        R: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
+        super::Layer<A, E, D>: svc::Layer<M>,
+        <super::Layer<A, E, D> as svc::Layer<M>>::Service: svc::Service<T>,
+        <<super::Layer<A, E, D> as svc::Layer<M>>::Service as svc::Service<T>>::Response:
+            svc::Service<http::Request<A>, Response = http::Response<B>> + 'static,
+        M: Clone,
+        M: rt::Make<R::Target> + Clone + Send + Sync + 'static,
+        M::Value: svc::Service<http::Request<A>, Response = http::Response<C>>,
+    {
+        type Service = MakeSvc<R, M, <super::Layer<A, E, D> as svc::Layer<M>>::Service, A, B, C>;
+
+        fn layer(&self, inner: M) -> Self::Service {
+            MakeSvc {
+                inner,
+                recognize: self.recognize.clone(),
+                config: self.config.clone(),
+                balance: self.balance_layer.layer(inner.clone()),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<Rec, Mk, Bal, A, B, C, T> svc::Service<T> for MakeSvc<Rec, Mk, Bal, A, B, C>
+    where
+        Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
+        Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
+        Mk::Value: svc::Service<http::Request<A>, Response = http::Response<C>> + Clone,
+        <Mk::Value as svc::Service<http::Request<A>>>::Error: Into<Error>,
+        <Mk::Value as svc::Service<http::Request<A>>>::Future: Send,
+        Bal: svc::Service<T>,
+        Bal::Response: svc::Service<http::Request<A>, Response = http::Response<B>>, // + Send,
+        <Bal::Response as svc::Service<http::Request<A>>>::Error: Into<Error>,
+        <Bal::Response as svc::Service<http::Request<A>>>::Future: Send,
+        Bal::Error: Into<Error>,
+        // B: Default + Send + 'static,
+    {
+        type Response = Service<Router<http::Request<A>, Rec, Mk>, Bal::Response, A, B, C>;
+        type Error = Error;
+        type Future = MakeFuture<Router<http::Request<A>, Rec, Mk>, Bal::Future, A, B, C>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.balance.poll_ready().map_err(Into::into)
+        }
+
+        fn call(&mut self, target: T) -> Self::Future {
+            let router = Router::new(
+                self.recognize.clone(),
+                self.inner.clone(),
+                self.config.capacity(),
+                self.config.max_idle_age(),
+            );
+            MakeFuture {
+                fallback: Some(router),
+                mk_balance: self.balance.call(target),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<Rec, M, Bal, A, B, C> Clone for MakeSvc<Rec, M, Bal, A, B, C>
+    where
+        Rec: router::Recognize<http::Request<A>> + Clone,
+        M: Clone,
+        Bal: Clone,
+    {
+        fn clone(&self) -> Self {
+            Self {
+                inner: self.inner.clone(),
+                recognize: self.recognize.clone(),
+                config: self.config.clone(),
+                balance: self.balance.clone(),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<R, F, A, B, C> Future for MakeFuture<R, F, A, B, C>
+    where
+        F: Future,
+        F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>, // + HasEndpointStatus,
+        <F::Item as svc::Service<http::Request<A>>>::Error: Into<Error>,
+        R: svc::Service<http::Request<A>, Response = http::Response<C>>,
+        R::Error: Into<Error>,
+    {
+        type Item = Service<R, F::Item, A, B, C>;
+        type Error = Error;
+
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            let balance = try_ready!(self.mk_balance.poll().map_err(Into::into));
+            // let status = balance.endpoint_status();
+            let fallback = self.fallback.take().expect("polled after ready");
+            Ok(Async::Ready(Service {
+                fallback,
+                balance,
+                // status,
+                _marker: PhantomData,
+            }))
+        }
+    }
+
+    impl<R, Bal, A, B, C> svc::Service<http::Request<A>> for Service<R, Bal, A, B, C>
+    where
+        R: svc::Service<http::Request<A>, Response = http::Response<C>>,
+        R::Error: Into<Error>,
+        Bal: svc::Service<http::Request<A>, Response = http::Response<B>>,
+        Bal::Error: Into<Error>,
+        B: Payload,
+        C: Payload,
+    {
+        type Response = http::Response<Body<B, C>>;
+        type Error = Error;
+        type Future = future::Either<
+            future::Map<
+                future::MapErr<R::Future, fn(R::Error) -> Self::Error>,
+                fn(R::Response) -> Self::Response,
+            >,
+            future::Map<
+                future::MapErr<Bal::Future, fn(Bal::Error) -> Self::Error>,
+                fn(Bal::Response) -> Self::Response,
+            >,
+        >;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            // Always drive the balancer.
+            self.balance.poll_ready().map_err(Into::into)?;
+            // if the balancer is not ready, we can fall back to the router.
+            self.fallback.poll_ready().map_err(Into::into)
+        }
+
+        fn call(&mut self, req: http::Request<A>) -> Self::Future {
+            // if self.status.is_empty() {
+            //     let f = self
+            //         .fallback
+            //         .call(req)
+            //         .map_err(Into::into as fn(_) -> _)
+            //         .map(Body::rsp_b as fn(_) -> _);
+            //     return future::Either::A(f);
+            // }
+            let f = self
+                .balance
+                .call(req)
+                .map_err(Into::into as fn(_) -> _)
+                .map(Body::rsp_a as fn(_) -> _);
+            future::Either::B(f)
+        }
+    }
+
+    impl<A, B> Payload for Body<A, B>
+    where
+        A: Payload,
+        B: Payload,
+    {
+        type Data = Body<A::Data, B::Data>;
+        type Error = super::Error;
+
+        fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+            match self {
+                Body::A(ref mut body) => body
+                    .poll_data()
+                    .map_err(Into::into)
+                    .map(|r| r.map(|o| o.map(Body::A))),
+                Body::B(ref mut body) => body
+                    .poll_data()
+                    .map_err(Into::into)
+                    .map(|r| r.map(|o| o.map(Body::B))),
+            }
+        }
+
+        fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+            match self {
+                Body::A(ref mut body) => body.poll_trailers().map_err(Into::into),
+                Body::B(ref mut body) => body.poll_trailers().map_err(Into::into),
+            }
+        }
+
+        fn is_end_stream(&self) -> bool {
+            match self {
+                Body::A(ref body) => body.is_end_stream(),
+                Body::B(ref body) => body.is_end_stream(),
+            }
+        }
+    }
+
+    impl<A, B> Body<A, B>
+    where
+        A: Payload,
+        B: Payload,
+    {
+        fn rsp_a(rsp: http::Response<A>) -> http::Response<Self> {
+            rsp.map(Body::A)
+        }
+
+        fn rsp_b(rsp: http::Response<B>) -> http::Response<Self> {
+            rsp.map(Body::B)
+        }
+    }
+
+    impl<A, B> Buf for Body<A, B>
+    where
+        A: Buf,
+        B: Buf,
+    {
+        fn remaining(&self) -> usize {
+            match self {
+                Body::A(ref buf) => buf.remaining(),
+                Body::B(ref buf) => buf.remaining(),
+            }
+        }
+
+        fn bytes(&self) -> &[u8] {
+            match self {
+                Body::A(ref buf) => buf.bytes(),
+                Body::B(ref buf) => buf.bytes(),
+            }
+        }
+
+        fn advance(&mut self, cnt: usize) {
+            match self {
+                Body::A(ref mut buf) => buf.advance(cnt),
+                Body::B(ref mut buf) => buf.advance(cnt),
+            }
+        }
+    }
+}

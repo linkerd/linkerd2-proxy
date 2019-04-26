@@ -1,11 +1,17 @@
-extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
 use futures::{Async, Poll};
 use std::net::SocketAddr;
-use std::{error, fmt, sync::{Arc, atomic::{AtomicBool, Ordering}}};
+use std::{
+    error, fmt,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 pub use self::tower_discover::Change;
+use proxy::http::router::rt;
 use svc;
 
 /// Resolves `T`-typed names/addresses as a `Resolution`.
@@ -142,7 +148,7 @@ where
                     // existing ones can be handled in the same way.
                     let svc = self.make.make(&target);
                     self.is_empty.store(false, Ordering::Release);
-                    return Ok(Async::Ready(Change::Insert(addr, svc)))
+                    return Ok(Async::Ready(Change::Insert(addr, svc)));
                 }
                 Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
                 Update::NoEndpoints => {
