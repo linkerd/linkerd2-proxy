@@ -17,6 +17,10 @@ use proxy::reconnect::Backoff;
 use transport::tls;
 use {Addr, Conditional};
 
+const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
+const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
+pub const CONTROL_BASE: &str = "CONTROL";
+
 /// Tracks all configuration settings for the process.
 #[derive(Debug)]
 pub struct Config {
@@ -194,8 +198,6 @@ pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
-const ENV_INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
-const ENV_OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
 const ENV_INBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_ACCEPT_KEEPALIVE";
 const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEPALIVE";
 
@@ -270,7 +272,6 @@ pub const ENV_DESTINATION_SVC_ADDR: &str = "LINKERD2_PROXY_DESTINATION_SVC_ADDR"
 
 pub const ENV_DESTINATION_CONTEXT: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT";
 
-pub const ENV_CONTROL_BASE: &str = "CONTROL";
 pub const ENV_CONTROL_EXP_BACKOFF_MIN: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MIN";
 pub const ENV_CONTROL_EXP_BACKOFF_MAX: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MAX";
 pub const ENV_CONTROL_EXP_BACKOFF_JITTER: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_JITTER";
@@ -483,13 +484,13 @@ impl Config {
 
             inbound_connect_backoff: parse_backoff(
                 strings,
-                ENV_INBOUND_CONNECT_BASE,
+                INBOUND_CONNECT_BASE,
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
 
             outbound_connect_backoff: parse_backoff(
                 strings,
-                ENV_OUTBOUND_CONNECT_BASE,
+                OUTBOUND_CONNECT_BASE,
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
 
@@ -539,7 +540,7 @@ impl Config {
                 .unwrap_or(DEFAULT_RESOLV_CONF.into())
                 .into(),
 
-            control_backoff: parse_backoff(strings, ENV_CONTROL_BASE, DEFAULT_CONTROL_BACKOFF)?,
+            control_backoff: parse_backoff(strings, CONTROL_BASE, DEFAULT_CONTROL_BACKOFF)?,
 
             control_connect_timeout,
 
@@ -750,9 +751,16 @@ pub fn parse_backoff<S: Strings>(
 
         match (min?, max?, jitter?) {
             (None, None, None) => Ok(default),
-            (Some(min), Some(max), Some(jitter)) => Ok(Backoff::Exponential { min, max, jitter }),
+            (Some(min), Some(max), Some(jitter)) => {
+                if jitter < 0.0 {
+                    error!("{} needs to be positive", jitter_env);
+                    Err(Error::InvalidEnvVar)
+                } else {
+                    Ok(Backoff::Exponential { min, max, jitter })
+                }
+            }
             _ => {
-                error!("You need to specify either all of {} {} {} or non of them to use the default backoff", min_env, max_env,jitter_env );
+                error!("You need to specify either all of {} {} {} or none of them to use the default backoff", min_env, max_env,jitter_env );
                 Err(Error::InvalidEnvVar)
             }
         }

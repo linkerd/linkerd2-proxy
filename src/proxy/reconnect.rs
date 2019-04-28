@@ -61,12 +61,17 @@ impl Backoff {
         match self {
             Backoff::None => None,
             Backoff::Exponential { max, min, jitter } => {
-                let backoff = Duration::min(min.mul(2_u32.pow(failures)), *max);
+                let backoff = Duration::min(min.mul(2_u32.saturating_pow(failures)), *max);
 
                 if *jitter != 0.0 {
                     Some(backoff)
                 } else {
-                    let rand_jitter = rng.gen::<f64>() * jitter;
+                    let jitter_factor = rng.gen::<f64>();
+                    debug_assert!(
+                        jitter_factor > 0.0,
+                        "rng returns values between 0.0 and 1.0"
+                    );
+                    let rand_jitter = jitter_factor * jitter;
                     let secs = (backoff.as_secs() as f64) * rand_jitter;
                     let nanos = (backoff.subsec_nanos() as f64) * rand_jitter;
                     let millis = secs.mul_add(secs * 1000f64, nanos / 1000000f64);
@@ -265,6 +270,7 @@ mod tests {
     use super::*;
     use futures::{future, Future};
     use never::Never;
+    use quickcheck::*;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::{error, fmt, time};
     use svc::Service as _Service;
@@ -349,5 +355,20 @@ mod tests {
         let f = future::poll_fn(|| backoff.poll_ready());
         rt.block_on(f).unwrap();
         assert!(t0.elapsed() >= Duration::from_millis(600));
+    }
+
+    quickcheck! {
+        fn backoff_for_failures(
+            exp: bool,
+            min: u64,
+            max: u64,
+            failures: u32,
+            jitter: f64
+        ) -> bool {
+            let backoff = if exp {Backoff::Exponential {min: Duration::from_millis(min),max: Duration::from_millis(max), jitter }} else { Backoff::None};
+            backoff.for_failures(failures,rand::thread_rng());
+
+            true
+        }
     }
 }
