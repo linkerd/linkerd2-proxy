@@ -1,3 +1,4 @@
+extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
 use futures::{Async, Poll};
@@ -11,7 +12,6 @@ use std::{
 };
 
 pub use self::tower_discover::Change;
-use proxy::http::router::rt;
 use svc;
 
 /// Resolves `T`-typed names/addresses as a `Resolution`.

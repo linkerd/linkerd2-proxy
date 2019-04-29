@@ -1,5 +1,6 @@
+extern crate linkerd2_router as rt;
+
 use futures::{Future, Poll};
-use proxy::http::router::rt;
 
 use svc::{self, ServiceExt};
 

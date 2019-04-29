@@ -450,7 +450,6 @@ where
             // 6. Strips any `l5d-server-id` that may have been received from
             //    the server, before we apply our own.
             let endpoint_stack = svc::builder()
-                .layer(buffer::layer(max_in_flight))
                 .layer(metrics::layer::<_, classify::Response>(
                     endpoint_http_metrics,
                 ))

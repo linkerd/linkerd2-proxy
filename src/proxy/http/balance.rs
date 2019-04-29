@@ -6,8 +6,7 @@ use std::{fmt, marker::PhantomData, time::Duration};
 
 use futures::{future, Async, Future, Poll};
 use hyper::body::Payload;
-
-use self::tower_discover::Discover;
+use tower::discover::Discover;
 
 pub use self::hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
 pub use self::tower_balance::{choose::PowerOfTwoChoices, load::WithPeakEwma, Balance};

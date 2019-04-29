@@ -1,4 +1,5 @@
-use proxy::http::router::rt;
+extern crate linkerd2_router as rt;
+
 use std::{fmt, marker::PhantomData};
 
 use futures::{Future, Poll};
