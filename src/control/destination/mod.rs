@@ -182,7 +182,7 @@ impl Metadata {
             labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
             identity: None,
-            weight: 1000,
+            weight: 10_000,
         }
     }
 
