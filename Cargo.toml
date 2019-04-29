@@ -31,7 +31,7 @@ linkerd2-stack     = { path = "lib/stack" }
 linkerd2-task      = { path = "lib/task" }
 linkerd2-timeout   = { path = "lib/timeout" }
 
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tower-update" } # tag = "v0.1.7" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.8" }
 
 bytes = "0.4"
 env_logger = { version = "0.5", default-features = false }
@@ -57,13 +57,10 @@ tokio = "0.1.14"
 tokio-signal = "0.2"
 tokio-timer = "0.2.6"   # for tokio_timer::clock
 tokio-connect         = { git = "https://github.com/carllerche/tokio-connect" }
+tower                 = { git = "https://github.com/tower-rs/tower" }
 tower-add-origin      = { git = "https://github.com/tower-rs/tower-http" }
 tower-balance         = { git = "https://github.com/tower-rs/tower" }
-tower-buffer          = { git = "https://github.com/tower-rs/tower" }
 tower-discover        = { git = "https://github.com/tower-rs/tower" }
-tower-in-flight-limit = { git = "https://github.com/tower-rs/tower" }
-tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
-tower-retry           = { git = "https://github.com/tower-rs/tower" }
 tower-service         = "0.2"
 tower-util            = { git = "https://github.com/tower-rs/tower" }
 tower-http-service    = { git = "https://github.com/tower-rs/tower-http" }
@@ -88,7 +85,7 @@ net2 = "0.2"
 quickcheck = { version = "0.8", default-features = false }
 linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
 linkerd2-task    = { path = "lib/task", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], branch = "ver/tower-update" } # tag = "v0.1.7" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.8" }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.

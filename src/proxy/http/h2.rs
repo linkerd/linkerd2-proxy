@@ -7,12 +7,13 @@ use hyper::{
     body::Payload,
     client::conn::{self, Handshake, SendRequest},
 };
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use super::{Body, ClientUsedTls, Error};
 use app::config::H2Settings;
 use svc;
 use task::{ArcExecutor, BoxSendFuture, Executor};
-use transport::{connect, tls::HasStatus as HasTlsStatus};
+use transport::tls::HasStatus as HasTlsStatus;
 
 #[derive(Debug)]
 pub struct Connect<C, B> {
@@ -28,17 +29,17 @@ pub struct Connection<B> {
     tx: SendRequest<B>,
 }
 
-pub struct ConnectFuture<C: connect::Connect, B> {
+pub struct ConnectFuture<F: Future, B> {
     executor: ArcExecutor,
-    state: ConnectState<C, B>,
+    state: ConnectState<F, B>,
     h2_settings: H2Settings,
 }
 
-enum ConnectState<C: connect::Connect, B> {
-    Connect(C::Future),
+enum ConnectState<F: Future, B> {
+    Connect(F),
     Handshake {
         client_used_tls: bool,
-        hs: Handshake<C::Connected, B>,
+        hs: Handshake<F::Item, B>,
     },
 }
 
@@ -67,26 +68,44 @@ impl<C, B> Connect<C, B> {
             _marker: PhantomData,
         }
     }
+
+    pub fn set_executor<E>(&mut self, executor: E)
+    where
+        E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
+    {
+        self.executor = ArcExecutor::new(executor);
+    }
 }
 
-impl<C, B> svc::Service<()> for Connect<C, B>
+impl<C: Clone, B> Clone for Connect<C, B> {
+    fn clone(&self) -> Self {
+        Connect {
+            connect: self.connect.clone(),
+            executor: self.executor.clone(),
+            h2_settings: self.h2_settings.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<C, B, Target> svc::Service<Target> for Connect<C, B>
 where
-    C: connect::Connect,
-    C::Connected: HasTlsStatus + Send + 'static,
+    C: svc::MakeConnection<Target>,
+    C::Connection: HasTlsStatus + Send + 'static,
     B: Payload,
 {
     type Response = Connection<B>;
     type Error = ConnectError<C::Error>;
-    type Future = ConnectFuture<C, B>;
+    type Future = ConnectFuture<C::Future, B>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+        self.connect.poll_ready().map_err(ConnectError::Connect)
     }
 
-    fn call(&mut self, _target: ()) -> Self::Future {
+    fn call(&mut self, target: Target) -> Self::Future {
         ConnectFuture {
             executor: self.executor.clone(),
-            state: ConnectState::Connect(self.connect.connect()),
+            state: ConnectState::Connect(self.connect.make_connection(target)),
             h2_settings: self.h2_settings,
         }
     }
@@ -94,14 +113,14 @@ where
 
 // ===== impl ConnectFuture =====
 
-impl<C, B> Future for ConnectFuture<C, B>
+impl<F, B> Future for ConnectFuture<F, B>
 where
-    C: connect::Connect,
-    C::Connected: HasTlsStatus + Send + 'static,
+    F: Future,
+    F::Item: HasTlsStatus + AsyncRead + AsyncWrite + Send + 'static,
     B: Payload,
 {
     type Item = Connection<B>;
-    type Error = ConnectError<C::Error>;
+    type Error = ConnectError<F::Error>;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {

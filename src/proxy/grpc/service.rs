@@ -6,49 +6,15 @@ pub mod req_body_as_payload {
     use super::super::GrpcBody;
     use svc;
 
-    #[derive(Clone, Debug)]
-    pub struct Layer;
-
-    #[derive(Clone, Debug)]
-    pub struct Stack<M> {
-        inner: M,
-    }
-
     #[derive(Debug)]
     pub struct Service<S>(S);
 
-    // === impl Layer ===
-
-    pub fn layer() -> Layer {
-        Layer
-    }
-
-    impl<T, M> svc::Layer<T, T, M> for Layer
+    pub fn layer<S, B>() -> impl svc::Layer<S, Service = Service<S>> + Copy
     where
-        M: svc::Stack<T>,
+        GrpcBody<B>: Payload,
+        S: svc::Service<http::Request<GrpcBody<B>>>,
     {
-        type Value = <Stack<M> as svc::Stack<T>>::Value;
-        type Error = <Stack<M> as svc::Stack<T>>::Error;
-        type Stack = Stack<M>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack { inner }
-        }
-    }
-
-    // === impl Stack ===
-
-    impl<T, M> svc::Stack<T> for Stack<M>
-    where
-        M: svc::Stack<T>,
-    {
-        type Value = Service<M::Value>;
-        type Error = M::Error;
-
-        fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-            let inner = self.inner.make(target)?;
-            Ok(Service(inner))
-        }
+        svc::layer::mk(Service)
     }
 
     // === impl Service ===

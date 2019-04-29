@@ -18,8 +18,8 @@ use svc;
 #[derive(Debug)]
 pub struct Layer<K, C>
 where
-    K: Clone + Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error> + Clone,
+    K: Hash + Eq,
+    C: ClassifyResponse<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     registry: Arc<Mutex<Registry<K, C::Class>>>,
@@ -28,10 +28,10 @@ where
 
 /// Wraps services to record metrics.
 #[derive(Debug)]
-pub struct Stack<M, K, C>
+pub struct MakeSvc<M, K, C>
 where
-    K: Clone + Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error> + Clone,
+    K: Hash + Eq,
+    C: ClassifyResponse<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     registry: Arc<Mutex<Registry<K, C::Class>>>,
@@ -39,11 +39,21 @@ where
     _p: PhantomData<fn() -> C>,
 }
 
+pub struct MakeFuture<F, C>
+where
+    C: ClassifyResponse<Error = h2::Error>,
+    C::Class: Hash + Eq,
+{
+    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
+    inner: F,
+    _p: PhantomData<fn() -> C>,
+}
+
 /// A middleware that records HTTP metrics.
 #[derive(Debug)]
 pub struct Service<S, C>
 where
-    C: ClassifyResponse<Error = h2::Error> + Clone,
+    C: ClassifyResponse<Error = h2::Error>,
     C::Class: Hash + Eq,
 {
     metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
@@ -103,8 +113,8 @@ where
 
 impl<K, C> Clone for Layer<K, C>
 where
-    K: Clone + Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    K: Hash + Eq,
+    C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     fn clone(&self) -> Self {
@@ -115,20 +125,16 @@ where
     }
 }
 
-impl<T, M, K, C> svc::Layer<T, T, M> for Layer<K, C>
+impl<M, K, C> svc::Layer<M> for Layer<K, C>
 where
-    T: Clone + Debug,
-    K: Clone + Hash + Eq + From<T>,
-    M: svc::Stack<T>,
+    K: Clone + Hash + Eq,
     C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Value = <Stack<M, K, C> as svc::Stack<T>>::Value;
-    type Error = M::Error;
-    type Stack = Stack<M, K, C>;
+    type Service = MakeSvc<M, K, C>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
-        Stack {
+    fn layer(&self, inner: M) -> Self::Service {
+        MakeSvc {
             inner,
             registry: self.registry.clone(),
             _p: PhantomData,
@@ -136,13 +142,13 @@ where
     }
 }
 
-// === impl Stack ===
+// === impl MakeSvc ===
 
-impl<M, K, C> Clone for Stack<M, K, C>
+impl<M, K, C> Clone for MakeSvc<M, K, C>
 where
     M: Clone,
     K: Clone + Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     fn clone(&self) -> Self {
@@ -154,21 +160,24 @@ where
     }
 }
 
-impl<T, M, K, C> svc::Stack<T> for Stack<M, K, C>
+impl<T, M, K, C> svc::Service<T> for MakeSvc<M, K, C>
 where
     T: Clone + Debug,
-    K: Clone + Hash + Eq + From<T>,
-    M: svc::Stack<T>,
-    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    K: Hash + Eq + From<T>,
+    M: svc::Service<T>,
+    C: ClassifyResponse<Error = h2::Error> + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Value = Service<M::Value, C>;
+    type Response = Service<M::Response, C>;
     type Error = M::Error;
+    type Future = MakeFuture<M::Future, C>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
         trace!("make: target={:?}", target);
-        let inner = self.inner.make(target)?;
-
         let metrics = match self.registry.lock() {
             Ok(mut r) => Some(
                 r.by_target
@@ -178,13 +187,37 @@ where
             ),
             Err(_) => None,
         };
-
         trace!("make: metrics={}", metrics.is_some());
-        Ok(Service {
+
+        let inner = self.inner.call(target);
+
+        MakeFuture {
             metrics,
             inner,
             _p: PhantomData,
-        })
+        }
+    }
+}
+
+// === impl MakeFuture ===
+
+impl<C, F> Future for MakeFuture<F, C>
+where
+    F: Future,
+    C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
+    C::Class: Hash + Eq,
+{
+    type Item = Service<F::Item, C>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+        Ok(Service {
+            inner,
+            metrics: self.metrics.clone(),
+            _p: PhantomData,
+        }
+        .into())
     }
 }
 

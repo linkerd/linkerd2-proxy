@@ -9,7 +9,6 @@ pub mod tls;
 
 pub use self::{
     addr_info::{AddrInfo, GetOriginalDst, SoOriginalDst},
-    connect::Connect,
     io::BoxedIo,
     keepalive::SetKeepalive,
     peek::Peek,

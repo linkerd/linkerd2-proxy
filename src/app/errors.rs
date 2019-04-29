@@ -28,28 +28,27 @@ pub struct ResponseFuture<F> {
     inner: F,
 }
 
-impl<T, M> svc::Layer<T, T, M> for Layer
-where
-    M: svc::Stack<T>,
-{
-    type Value = <Stack<M> as svc::Stack<T>>::Value;
-    type Error = <Stack<M> as svc::Stack<T>>::Error;
-    type Stack = Stack<M>;
+impl<M> svc::Layer<M> for Layer {
+    type Service = Stack<M>;
 
-    fn bind(&self, inner: M) -> Self::Stack {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack { inner }
     }
 }
 
-impl<T, M> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Service<T> for Stack<M>
 where
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = Service<M::Value>;
+    type Response = Service<M::Response>;
     type Error = M::Error;
+    type Future = futures::future::Map<M::Future, fn(M::Response) -> Self::Response>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        self.inner.make(target).map(Service)
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.inner.poll_ready()
+    }
+    fn call(&mut self, target: T) -> Self::Future {
+        self.inner.call(target).map(Service)
     }
 }
 
@@ -100,13 +99,14 @@ where
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
     use proxy::http::router::error as router;
+    use tower::load_shed::error as shed;
 
     if let Some(ref c) = e.downcast_ref::<router::NoCapacity>() {
         warn!("router at capacity ({})", c.0);
         http::StatusCode::SERVICE_UNAVAILABLE
-    } else if let Some(ref r) = e.downcast_ref::<router::MakeRoute>() {
-        error!("router error: {:?}", r);
-        http::StatusCode::BAD_GATEWAY
+    } else if let Some(_) = e.downcast_ref::<shed::Overloaded>() {
+        warn!("server overloaded, max-in-flight reached");
+        http::StatusCode::SERVICE_UNAVAILABLE
     } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
         error!("could not recognize request");
         http::StatusCode::BAD_GATEWAY

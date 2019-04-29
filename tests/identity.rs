@@ -13,6 +13,41 @@ use std::{
 };
 
 #[test]
+fn nonblocking_identity_detection() {
+    let _ = env_logger_init();
+
+    let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let identity::Identity {
+        env,
+        mut certify_rsp,
+    } = identity::Identity::new("foo-ns1", id.to_string());
+    certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
+
+    let id_svc = controller::identity().certify(move |_| certify_rsp).run();
+    let proxy = proxy::new().identity(id_svc);
+
+    let msg1 = "custom tcp hello";
+    let msg2 = "custom tcp bye";
+    let srv = server::tcp()
+        .accept(move |read| {
+            assert_eq!(read, msg1.as_bytes());
+            msg2
+        })
+        .run();
+
+    let proxy = proxy.inbound(srv).run_with_test_env(env);
+    let client = client::tcp(proxy.inbound);
+
+    // Create an idle connection and then an active connection. Ensure that
+    // protocol detection on the idle connection does not block communication on
+    // the active connection.
+    let _idle = client.connect();
+    let active = client.connect();
+    active.write(msg1);
+    assert_eq!(active.read_timeout(Duration::from_secs(2)), msg2.as_bytes());
+}
+
+#[test]
 fn ready() {
     let _ = env_logger_init();
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";

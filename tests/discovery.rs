@@ -127,8 +127,8 @@ macro_rules! generate_tests {
             // maximum number of Destination resolutions.
             for n in 1..num_dests {
                 let route = format!("disco{}.test.svc.cluster.local", n);
-                let client = $make_client(proxy.outbound, route);
-                println!("trying {}th destination...", n);
+                let client = $make_client(proxy.outbound, &*route);
+                println!("expecting GET {} to be OK", route);
                 assert_eq!(client.get("/"), "hello");
             }
 
@@ -139,7 +139,7 @@ macro_rules! generate_tests {
             // active.
             let nth_host = format!("disco{}.test.svc.cluster.local", num_dests);
             let client = $make_client(proxy.outbound, &*nth_host);
-            println!("trying {}th destination...", num_dests);
+            println!("expecting GET {} destination to HANG...", nth_host);
             let mut req = client.request_builder("/");
             client
                 .request_async(req.method("GET"))
@@ -163,7 +163,7 @@ macro_rules! generate_tests {
             // requests that add a new route will evict an inactive route. This
             // should drop their Destination resolutions, so we should now be
             // able to open a new one.
-            println!("trying {}th destination again...", num_dests);
+            println!("expecting GET {} destination to be OK", nth_host);
             let client = $make_client(proxy.outbound, &*nth_host);
             assert_eq!(client.get("/"), "hello");
         }
@@ -332,6 +332,26 @@ macro_rules! generate_tests {
                 // used as a backup
                 .run();
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+
+            assert_eq!(client.get("/"), "hello");
+            assert_eq!(client.get("/bye"), "bye");
+        }
+
+        #[test]
+        fn outbound_skips_controller_if_destination_is_address() {
+            let _ = init_env();
+
+            let srv = $make_server()
+                .route("/", "hello")
+                .route("/bye", "bye")
+                .run();
+
+            let host = srv.addr.to_string();
+
+            // don't set outbound() or controller()
+            let proxy = proxy::new()
+                .run();
+            let client = $make_client(proxy.outbound, &*host);
 
             assert_eq!(client.get("/"), "hello");
             assert_eq!(client.get("/bye"), "bye");

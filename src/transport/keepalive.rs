@@ -22,74 +22,28 @@ pub mod accept {
     use tokio::io::{AsyncRead, AsyncWrite};
 
     use super::SetKeepalive;
-    use svc;
 
-    pub fn layer(keepalive: Option<Duration>) -> Layer {
-        Layer { keepalive }
+    pub fn layer(keepalive: Option<Duration>) -> Accept {
+        Accept { keepalive }
     }
 
     #[derive(Clone, Debug)]
-    pub struct Layer {
+    pub struct Accept {
         keepalive: Option<Duration>,
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Stack<M> {
-        keepalive: Option<Duration>,
-        inner: M,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct Accept<T> {
-        keepalive: Option<Duration>,
-        inner: T,
-    }
-
-    impl<T, M> svc::Layer<T, T, M> for Layer
-    where
-        M: svc::Stack<T>,
-    {
-        type Value = <Stack<M> as svc::Stack<T>>::Value;
-        type Error = <Stack<M> as svc::Stack<T>>::Error;
-        type Stack = Stack<M>;
-
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack {
-                inner,
-                keepalive: self.keepalive,
-            }
-        }
-    }
-
-    impl<T, M> svc::Stack<T> for Stack<M>
-    where
-        M: svc::Stack<T>,
-    {
-        type Value = Accept<M::Value>;
-        type Error = M::Error;
-
-        fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-            let inner = self.inner.make(target)?;
-            Ok(Accept {
-                inner,
-                keepalive: self.keepalive,
-            })
-        }
-    }
-
-    impl<I, A> ::proxy::Accept<I> for Accept<A>
+    impl<I> ::proxy::Accept<I> for Accept
     where
         I: AsyncRead + AsyncWrite + SetKeepalive,
-        A: ::proxy::Accept<I>,
     {
-        type Io = A::Io;
+        type Io = I;
 
-        fn accept(&self, mut io: I) -> Self::Io {
+        fn accept(&self, _: &::proxy::Source, mut io: I) -> Self::Io {
             if let Err(e) = io.set_keepalive(self.keepalive) {
                 debug!("failed to set keepalive: {}", e);
             }
 
-            self.inner.accept(io)
+            io
         }
     }
 }
@@ -100,7 +54,6 @@ pub mod connect {
 
     use super::SetKeepalive;
     use svc;
-    use transport::connect;
 
     pub fn layer(keepalive: Option<Duration>) -> Layer {
         Layer { keepalive }
@@ -112,65 +65,39 @@ pub mod connect {
     }
 
     #[derive(Clone, Debug)]
-    pub struct Stack<M> {
-        keepalive: Option<Duration>,
-        inner: M,
-    }
-
-    #[derive(Clone, Debug)]
     pub struct Connect<T> {
         keepalive: Option<Duration>,
         inner: T,
     }
 
-    impl<T, M> svc::Layer<T, T, M> for Layer
-    where
-        M: svc::Stack<T>,
-        M::Value: connect::Connect,
-        <M::Value as connect::Connect>::Connected: SetKeepalive,
-    {
-        type Value = <Stack<M> as svc::Stack<T>>::Value;
-        type Error = <Stack<M> as svc::Stack<T>>::Error;
-        type Stack = Stack<M>;
+    impl<C> svc::Layer<C> for Layer {
+        type Service = Connect<C>;
 
-        fn bind(&self, inner: M) -> Self::Stack {
-            Stack {
+        fn layer(&self, inner: C) -> Self::Service {
+            Connect {
                 inner,
                 keepalive: self.keepalive,
             }
         }
     }
 
-    impl<T, M> svc::Stack<T> for Stack<M>
+    /// impl MakeConnection
+    impl<C, T> svc::Service<T> for Connect<C>
     where
-        M: svc::Stack<T>,
-        M::Value: connect::Connect,
-        <M::Value as connect::Connect>::Connected: SetKeepalive,
+        C: svc::MakeConnection<T>,
+        C::Connection: SetKeepalive,
     {
-        type Value = Connect<M::Value>;
-        type Error = M::Error;
-
-        fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-            let inner = self.inner.make(target)?;
-            Ok(Connect {
-                inner,
-                keepalive: self.keepalive,
-            })
-        }
-    }
-
-    impl<C> connect::Connect for Connect<C>
-    where
-        C: connect::Connect,
-        C::Connected: SetKeepalive,
-    {
-        type Connected = C::Connected;
+        type Response = C::Connection;
         type Error = C::Error;
         type Future = Connect<C::Future>;
 
-        fn connect(&self) -> Self::Future {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, target: T) -> Self::Future {
             let keepalive = self.keepalive;
-            let inner = self.inner.connect();
+            let inner = self.inner.make_connection(target);
             Connect { keepalive, inner }
         }
     }

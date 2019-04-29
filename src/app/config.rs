@@ -70,6 +70,10 @@ pub struct Config {
 
     pub outbound_router_max_idle_age: Duration,
 
+    pub inbound_max_requests_in_flight: usize,
+
+    pub outbound_max_requests_in_flight: usize,
+
     /// Age after which metrics may be dropped.
     pub metrics_retain_idle: Duration,
 
@@ -207,6 +211,9 @@ pub const ENV_OUTBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_C
 pub const ENV_INBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_INBOUND_ROUTER_MAX_IDLE_AGE";
 pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_MAX_IDLE_AGE";
 
+pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
+pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
+
 /// Constrains which destination names are resolved through the destination
 /// service.
 ///
@@ -302,10 +309,14 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 /// It's assumed that a typical proxy can serve inbound traffic for up to 100 pod-local
 /// HTTP services and may communicate with up to 10K external HTTP domains.
 const DEFAULT_INBOUND_ROUTER_CAPACITY: usize = 100;
-const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 10000;
+const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 10_000;
 
 const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
+
+// 10_000 is arbitrarily chosen for now...
+const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = 10_000;
+const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 10_000;
 
 const DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT: usize = 100;
 
@@ -382,6 +393,9 @@ impl Config {
             parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
         let outbound_router_max_idle_age =
             parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
+
+        let inbound_max_in_flight = parse(strings, ENV_INBOUND_MAX_IN_FLIGHT, parse_number);
+        let outbound_max_in_flight = parse(strings, ENV_OUTBOUND_MAX_IN_FLIGHT, parse_number);
 
         let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
 
@@ -479,6 +493,11 @@ impl Config {
                 .unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE),
             outbound_router_max_idle_age: outbound_router_max_idle_age?
                 .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
+
+            inbound_max_requests_in_flight: inbound_max_in_flight?
+                .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
+            outbound_max_requests_in_flight: outbound_max_in_flight?
+                .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
 
             destination_concurrency_limit: dst_concurrency_limit?
                 .unwrap_or(DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT),

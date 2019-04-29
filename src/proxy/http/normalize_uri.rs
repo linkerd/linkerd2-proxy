@@ -1,4 +1,4 @@
-use futures::Poll;
+use futures::{Future, Poll};
 use http;
 
 use super::h1;
@@ -9,11 +9,13 @@ pub trait ShouldNormalizeUri {
 }
 
 #[derive(Clone, Debug)]
-pub struct Layer();
-
-#[derive(Clone, Debug)]
 pub struct Stack<N> {
     inner: N,
+}
+
+pub struct MakeFuture<F> {
+    inner: F,
+    should_normalize_uri: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -23,40 +25,49 @@ pub struct Service<S> {
 
 // === impl Layer ===
 
-pub fn layer() -> Layer {
-    Layer()
-}
-
-impl<T, M> svc::Layer<T, T, M> for Layer
-where
-    T: ShouldNormalizeUri,
-    M: svc::Stack<T>,
-{
-    type Value = <Stack<M> as svc::Stack<T>>::Value;
-    type Error = <Stack<M> as svc::Stack<T>>::Error;
-    type Stack = Stack<M>;
-
-    fn bind(&self, inner: M) -> Self::Stack {
-        Stack { inner }
-    }
+pub fn layer<M>() -> impl svc::Layer<M, Service = Stack<M>> + Copy {
+    svc::layer::mk(|inner| Stack { inner })
 }
 
 // === impl Stack ===
 
-impl<T, M> svc::Stack<T> for Stack<M>
+impl<T, M> svc::Service<T> for Stack<M>
 where
     T: ShouldNormalizeUri,
-    M: svc::Stack<T>,
+    M: svc::Service<T>,
 {
-    type Value = svc::Either<Service<M::Value>, M::Value>;
+    type Response = svc::Either<Service<M::Response>, M::Response>;
     type Error = M::Error;
+    type Future = MakeFuture<M::Future>;
 
-    fn make(&self, target: &T) -> Result<Self::Value, Self::Error> {
-        let inner = self.inner.make(&target)?;
-        if target.should_normalize_uri() {
-            Ok(svc::Either::A(Service { inner }))
+    fn poll_ready(&mut self) -> Poll<(), M::Error> {
+        self.inner.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let should_normalize_uri = target.should_normalize_uri();
+        let inner = self.inner.call(target);
+
+        MakeFuture {
+            inner,
+            should_normalize_uri,
+        }
+    }
+}
+
+// === impl MakeFuture ===
+
+impl<F: Future> Future for MakeFuture<F> {
+    type Item = svc::Either<Service<F::Item>, F::Item>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = try_ready!(self.inner.poll());
+
+        if self.should_normalize_uri {
+            Ok(svc::Either::A(Service { inner }).into())
         } else {
-            Ok(svc::Either::B(inner))
+            Ok(svc::Either::B(inner).into())
         }
     }
 }
