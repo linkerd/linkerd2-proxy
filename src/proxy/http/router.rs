@@ -33,7 +33,7 @@ pub struct Layer<Req, Rec: Recognize<Req>> {
     _p: PhantomData<fn() -> Req>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Stack<Req, Rec: Recognize<Req>, Mk> {
     recognize: Rec,
     inner: Mk,
@@ -65,7 +65,7 @@ impl Config {
     }
 
     pub fn max_idle_age(&self) -> Duration {
-        self.max_idle_age()
+        self.max_idle_age
     }
 }
 
@@ -146,6 +146,16 @@ where
 
     fn call(&mut self, config: Config) -> Self::Future {
         futures::future::ok(self.make(&config))
+    }
+}
+
+impl<Req, Rec: Recognize<Req> + Clone, Mk: Clone> Clone for Stack<Req, Rec, Mk> {
+    fn clone(&self) -> Self {
+        Stack {
+            inner: self.inner.clone(),
+            recognize: self.recognize.clone(),
+            _p: PhantomData,
+        }
     }
 }
 

@@ -213,13 +213,14 @@ pub mod fallback {
     use http;
     use proxy::{
         http::router::{self, Router},
+        pending,
         resolve::{EndpointStatus, HasEndpointStatus},
     };
     use svc;
 
     use super::Error;
 
-    use std::marker::PhantomData;
+    use std::{fmt, marker::PhantomData};
 
     extern crate linkerd2_router as rt;
 
@@ -277,6 +278,8 @@ pub mod fallback {
     pub fn layer<Rec, A, T>(config: router::Config, recognize: Rec) -> Layer<Rec, (), A, T>
     where
         Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
+        http::Request<A>: Send + 'static,
+        T: fmt::Display + Clone + Send + Sync + 'static,
     {
         Layer {
             recognize,
@@ -289,6 +292,8 @@ pub mod fallback {
     impl<Rec, A, T> Layer<Rec, (), A, T>
     where
         Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
+        http::Request<A>: Send + 'static,
+        T: fmt::Display + Clone + Send + Sync + 'static,
     {
         pub fn with_balance<B, D>(
             self,
@@ -305,23 +310,30 @@ pub mod fallback {
 
     impl<R, M, A, B, C, D, E, T> svc::Layer<M> for Layer<R, super::Layer<A, E, D>, A, T>
     where
+        T: fmt::Display + Clone + Send + Sync + 'static,
         R: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
         super::Layer<A, E, D>: svc::Layer<M>,
         <super::Layer<A, E, D> as svc::Layer<M>>::Service: svc::Service<T>,
         <<super::Layer<A, E, D> as svc::Layer<M>>::Service as svc::Service<T>>::Response:
             svc::Service<http::Request<A>, Response = http::Response<B>>, // + 'static,
+        <<super::Layer<A, E, D> as svc::Layer<M>>::Service as svc::Service<T>>::Error: Into<Error>,
         M: Clone,
-        M: rt::Make<R::Target> + Clone + Send + Sync + 'static,
-        M::Value: svc::Service<http::Request<A>, Response = http::Response<C>>,
+        M: rt::Make<R::Target> + Clone,
+        M::Value:
+            svc::Service<http::Request<A>, Response = http::Response<C>> + Clone + Send + 'static,
+        <M::Value as svc::Service<http::Request<A>>>::Error: Into<Error>,
+        <M::Value as svc::Service<http::Request<A>>>::Future: Send,
+        http::Request<A>: Send + 'static,
     {
         type Service = MakeSvc<R, M, <super::Layer<A, E, D> as svc::Layer<M>>::Service, A, B, C>;
 
         fn layer(&self, inner: M) -> Self::Service {
+            let balance = self.balance_layer.layer(inner.clone());
             MakeSvc {
-                inner: inner.clone(),
+                inner,
                 recognize: self.recognize.clone(),
                 config: self.config.clone(),
-                balance: self.balance_layer.layer(inner),
+                balance,
                 _marker: PhantomData,
             }
         }
@@ -329,6 +341,7 @@ pub mod fallback {
 
     impl<Rec, Mk, Bal, A, B, C, T> svc::Service<T> for MakeSvc<Rec, Mk, Bal, A, B, C>
     where
+        T: fmt::Display + Clone + Send + Sync + 'static,
         Rec: router::Recognize<http::Request<A>> + Clone, // + Send + Sync + 'static,
         Mk: rt::Make<Rec::Target> + Clone,                // + Send + Sync + 'static,
         Mk::Value:
@@ -340,6 +353,8 @@ pub mod fallback {
             svc::Service<http::Request<A>, Response = http::Response<B>> + Send + 'static, // + Send,
         <Bal::Response as svc::Service<http::Request<A>>>::Error: Into<Error>,
         <Bal::Response as svc::Service<http::Request<A>>>::Future: Send,
+        http::Request<A>: Send + 'static,
+        // ::proxy::buffer::MakeBuffer<Mk, http::Request<A>>: rt::Make<Rec::Target>,
         Bal::Error: Into<Error>,
     {
         type Response = Service<Router<http::Request<A>, Rec, Mk>, Bal::Response, A, B, C>;
@@ -554,6 +569,13 @@ mod tests {
 
     }
 
+    fn assert_svc<A, T>(svc: A)
+    where
+        A: svc::Service<T>,
+    {
+
+    }
+
     #[derive(Clone)]
     struct MockResolve;
     #[derive(Clone, Debug)]
@@ -602,6 +624,12 @@ mod tests {
         }
     }
 
+    impl fmt::Display for MockEp {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            unimplemented!()
+        }
+    }
+
     impl HasEndpointStatus for MockEp {
         fn endpoint_status(&self) -> EndpointStatus {
             unimplemented!()
@@ -642,7 +670,6 @@ mod tests {
     #[test]
     fn balancer_is_make() {
         let stack = svc::builder()
-            // .layer(buffer::layer(666))
             .layer(pending::layer())
             .layer(
                 layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
@@ -655,9 +682,29 @@ mod tests {
     }
 
     #[test]
-    fn fallback_is_make() {
+    fn balancer_is_svc() {
         let stack = svc::builder()
+            .layer(
+                layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
+                    .with_discover(resolve::layer(MockResolve)),
+            )
+            // .layer(buffer::layer(666))
             .layer(pending::layer())
+            .service(MockStack);
+
+        assert_svc(stack);
+    }
+
+    #[test]
+    fn fallback_is_svc() {
+        // let inner = svc::builder()
+        //     .layer(buffer::layer(666))
+        //     .layer(pending::layer())
+        //     .service(MockStack);
+
+        // assert_make(inner);
+
+        let stack = svc::builder()
             .layer(
                 fallback::layer(
                     router::Config::new("test", 666, Duration::from_secs(666)),
@@ -668,9 +715,10 @@ mod tests {
                         .with_discover(resolve::layer(MockResolve)),
                 ),
             )
+            .layer(buffer::layer(666))
             .layer(pending::layer())
-            .service(MockStack);
+            .service(MockStack);;
 
-        assert_make(stack);
+        assert_svc(stack);
     }
 }
