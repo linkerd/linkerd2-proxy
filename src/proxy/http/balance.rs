@@ -135,8 +135,8 @@ where
 }
 
 pub mod weight {
-    use futures::{Poll,Future};
     use super::tower_balance::{HasWeight, Weight, Weighted};
+    use futures::{Future, Poll};
     use svc;
 
     #[derive(Clone, Debug)]
@@ -174,7 +174,7 @@ pub mod weight {
         type Error = M::Error;
         type Future = MakeFuture<M::Future>;
 
-        fn poll_ready(&mut self) -> Poll<(),Self::Error> {
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             self.inner.poll_ready()
         }
 
