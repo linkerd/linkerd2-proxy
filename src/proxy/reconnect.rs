@@ -198,7 +198,6 @@ where
                 // errors are logged at debug.
                 if !self.mute_connect_error_log {
                     self.mute_connect_error_log = true;
-                    let err: Error = err;
                     warn!("connect error to {:?}: {}", self.target, err);
                 } else {
                     debug!("connect error to {:?}: {}", self.target, err);
