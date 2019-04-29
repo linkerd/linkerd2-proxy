@@ -16,6 +16,8 @@ use http;
 use proxy::resolve::{EndpointStatus, HasEndpointStatus};
 use svc;
 
+// compiler doesn't notice this type is used in where bounds below...
+#[allow(unused)]
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
@@ -37,7 +39,7 @@ pub struct MakeSvc<M, A, B> {
     _marker: PhantomData<fn(A) -> B>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Service<S> {
     balance: S,
     status: EndpointStatus,
@@ -50,14 +52,14 @@ pub struct NoEndpoints {
 
 // === impl Layer ===
 
-pub fn layer<A, B, D>(default_rtt: Duration, decay: Duration, discover: D) -> Layer<A, B, D>
-where
-    D: Clone + Send + 'static,
-{
+pub fn layer<A, B>(
+    default_rtt: Duration,
+    decay: Duration,
+) -> Layer<A, B, svc::layer::util::Identity> {
     Layer {
         decay,
         default_rtt,
-        discover,
+        discover: svc::layer::util::Identity::new(),
         _marker: PhantomData,
     }
 }
@@ -73,13 +75,25 @@ impl<A, B, D: Clone> Clone for Layer<A, B, D> {
     }
 }
 
+impl<A, B, D> Layer<A, B, D> {
+    pub fn with_discover<D2>(self, discover: D2) -> Layer<A, B, D2>
+    where
+        D2: Clone + Send + 'static,
+    {
+        Layer {
+            decay: self.decay,
+            default_rtt: self.default_rtt,
+            discover,
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<M, A, B, D> svc::Layer<M> for Layer<A, B, D>
 where
     A: Payload,
     B: Payload,
-    D: svc::Layer<M>,
-    // D::Service: svc::Service<T>,
-    // <D::Service as svc::Service<T>>::Response: Discover + HasEndpointStatus,
+    D: svc::Layer<M> + Clone + Send + 'static,
 {
     type Service = MakeSvc<D::Service, A, B>;
 
@@ -111,8 +125,8 @@ where
     M: svc::Service<T>,
     M::Response: Discover + HasEndpointStatus,
     <M::Response as Discover>::Service:
-        svc::Service<http::Request<A>, Response = http::Response<B>> + HasEndpointStatus,
-    <<M::Response as Discover>::Service as svc::Service<http::Request<A>>>::Error: Into<Error>,
+        svc::Service<http::Request<A>, Response = http::Response<B>>,
+    // <<M::Response as Discover>::Service as svc::Service<http::Request<A>>>::Error: Into<Error>,
     A: Payload,
     B: Payload,
 {
@@ -141,9 +155,8 @@ impl<F, A, B> Future for MakeSvc<F, A, B>
 where
     F: Future,
     F::Item: Discover + HasEndpointStatus,
-    // F::Error: Into<Error>,
     <F::Item as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
-    <<F::Item as Discover>::Service as svc::Service<http::Request<A>>>::Error: Into<Error>,
+    // <<F::Item as Discover>::Service as svc::Service<http::Request<A>>>::Error: Into<Error>,
     A: Payload,
     B: Payload,
 {
@@ -181,12 +194,6 @@ where
             return future::Either::A(future::err(Box::new(NoEndpoints { _p: () })));
         }
         future::Either::B(self.balance.call(req).map_err(Into::into))
-    }
-}
-
-impl<S> HasEndpointStatus for Service<S> {
-    fn endpoint_status(&self) -> EndpointStatus {
-        self.status.clone()
     }
 }
 
@@ -302,7 +309,7 @@ pub mod fallback {
         super::Layer<A, E, D>: svc::Layer<M>,
         <super::Layer<A, E, D> as svc::Layer<M>>::Service: svc::Service<T>,
         <<super::Layer<A, E, D> as svc::Layer<M>>::Service as svc::Service<T>>::Response:
-            svc::Service<http::Request<A>, Response = http::Response<B>> + 'static,
+            svc::Service<http::Request<A>, Response = http::Response<B>>, // + 'static,
         M: Clone,
         M: rt::Make<R::Target> + Clone + Send + Sync + 'static,
         M::Value: svc::Service<http::Request<A>, Response = http::Response<C>>,
@@ -311,10 +318,10 @@ pub mod fallback {
 
         fn layer(&self, inner: M) -> Self::Service {
             MakeSvc {
-                inner,
+                inner: inner.clone(),
                 recognize: self.recognize.clone(),
                 config: self.config.clone(),
-                balance: self.balance_layer.layer(inner.clone()),
+                balance: self.balance_layer.layer(inner),
                 _marker: PhantomData,
             }
         }
@@ -322,24 +329,25 @@ pub mod fallback {
 
     impl<Rec, Mk, Bal, A, B, C, T> svc::Service<T> for MakeSvc<Rec, Mk, Bal, A, B, C>
     where
-        Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
-        Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-        Mk::Value: svc::Service<http::Request<A>, Response = http::Response<C>> + Clone,
+        Rec: router::Recognize<http::Request<A>> + Clone, // + Send + Sync + 'static,
+        Mk: rt::Make<Rec::Target> + Clone,                // + Send + Sync + 'static,
+        Mk::Value:
+            svc::Service<http::Request<A>, Response = http::Response<C>> + Clone + Send + 'static,
         <Mk::Value as svc::Service<http::Request<A>>>::Error: Into<Error>,
         <Mk::Value as svc::Service<http::Request<A>>>::Future: Send,
         Bal: svc::Service<T>,
-        Bal::Response: svc::Service<http::Request<A>, Response = http::Response<B>>, // + Send,
+        Bal::Response:
+            svc::Service<http::Request<A>, Response = http::Response<B>> + Send + 'static, // + Send,
         <Bal::Response as svc::Service<http::Request<A>>>::Error: Into<Error>,
         <Bal::Response as svc::Service<http::Request<A>>>::Future: Send,
         Bal::Error: Into<Error>,
-        // B: Default + Send + 'static,
     {
         type Response = Service<Router<http::Request<A>, Rec, Mk>, Bal::Response, A, B, C>;
-        type Error = Error;
+        type Error = Bal::Error;
         type Future = MakeFuture<Router<http::Request<A>, Rec, Mk>, Bal::Future, A, B, C>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.balance.poll_ready().map_err(Into::into)
+            self.balance.poll_ready()
         }
 
         fn call(&mut self, target: T) -> Self::Future {
@@ -383,10 +391,10 @@ pub mod fallback {
         R::Error: Into<Error>,
     {
         type Item = Service<R, F::Item, A, B, C>;
-        type Error = Error;
+        type Error = F::Error;
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            let balance = try_ready!(self.mk_balance.poll().map_err(Into::into));
+            let balance = try_ready!(self.mk_balance.poll());
             // let status = balance.endpoint_status();
             let fallback = self.fallback.take().expect("polled after ready");
             Ok(Async::Ready(Service {
@@ -481,6 +489,12 @@ pub mod fallback {
         }
     }
 
+    impl<A, B: Default> Default for Body<A, B> {
+        fn default() -> Self {
+            Body::B(Default::default())
+        }
+    }
+
     impl<A, B> Body<A, B>
     where
         A: Payload,
@@ -520,5 +534,143 @@ pub mod fallback {
                 Body::B(ref mut buf) => buf.advance(cnt),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proxy::{
+        buffer,
+        http::router::{self, rt},
+        pending,
+        resolve::{self, Resolution, Resolve},
+    };
+
+    fn assert_make<A, T: Clone>(make: A)
+    where
+        A: rt::Make<T>,
+    {
+
+    }
+
+    #[derive(Clone)]
+    struct MockResolve;
+    #[derive(Clone, Debug)]
+    struct MockEp;
+    #[derive(Clone, Debug)]
+    struct MockSvc;
+    #[derive(Clone, Debug)]
+    struct MockStack;
+
+    #[derive(Debug, Clone)]
+    struct MockError;
+
+    impl fmt::Display for MockError {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            unimplemented!()
+        }
+    }
+
+    impl ::std::error::Error for MockError {}
+
+    impl Resolve<usize> for MockResolve {
+        type Endpoint = MockEp;
+        type Resolution = MockResolve;
+
+        fn resolve(&self, _: &usize) -> Self::Resolution {
+            MockResolve
+        }
+    }
+
+    impl Resolution for MockResolve {
+        type Endpoint = MockEp;
+        type Error = MockError;
+
+        fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
+            unimplemented!()
+        }
+    }
+
+    impl Discover for MockEp {
+        type Key = usize;
+        type Service = MockSvc;
+        type Error = MockError;
+
+        fn poll(&mut self) -> Poll<tower_discover::Change<Self::Key, Self::Service>, Self::Error> {
+            unimplemented!()
+        }
+    }
+
+    impl HasEndpointStatus for MockEp {
+        fn endpoint_status(&self) -> EndpointStatus {
+            unimplemented!()
+        }
+    }
+
+    impl<A> svc::Service<http::Request<A>> for MockSvc
+    where
+        A: Payload,
+    {
+        type Response = http::Response<hyper::Body>;
+        type Error = MockError;
+        type Future = future::FutureResult<Self::Response, Self::Error>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            unimplemented!()
+        }
+
+        fn call(&mut self, req: http::Request<A>) -> Self::Future {
+            unimplemented!()
+        }
+    }
+
+    impl<T> svc::Service<T> for MockStack {
+        type Response = MockSvc;
+        type Error = MockError;
+        type Future = future::FutureResult<Self::Response, Self::Error>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            unimplemented!()
+        }
+
+        fn call(&mut self, req: T) -> Self::Future {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn balancer_is_make() {
+        let stack = svc::builder()
+            // .layer(buffer::layer(666))
+            .layer(pending::layer())
+            .layer(
+                layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
+                    .with_discover(resolve::layer(MockResolve)),
+            )
+            .layer(pending::layer())
+            .service(MockStack);
+
+        assert_make(stack);
+    }
+
+    #[test]
+    fn fallback_is_make() {
+        let stack = svc::builder()
+            .layer(pending::layer())
+            .layer(
+                fallback::layer(
+                    router::Config::new("test", 666, Duration::from_secs(666)),
+                    |req: &http::Request<_>| Some(666),
+                )
+                .with_balance(
+                    layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
+                        .with_discover(resolve::layer(MockResolve)),
+                ),
+            )
+            .layer(pending::layer())
+            .service(MockStack);
+
+        assert_make(stack);
     }
 }
