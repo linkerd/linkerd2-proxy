@@ -20,7 +20,11 @@ pub enum Pending<F, S> {
 
 pub type Svc<M, T> = Pending<svc::Oneshot<M, T>, <M as svc::Service<T>>::Response>;
 
-pub fn layer<M>() -> impl svc::Layer<M, Service = MakePending<M>> + Copy {
+pub fn layer<M, T, Req>() -> impl svc::Layer<M, Service = MakePending<M>> + Copy
+where
+    MakePending<M>: rt::Make<T>,
+    <MakePending<M> as rt::Make<T>>::Value: svc::Service<Req>,
+{
     svc::layer::mk(|inner| MakePending { inner })
 }
 
