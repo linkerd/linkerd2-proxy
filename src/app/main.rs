@@ -35,7 +35,7 @@ use {Addr, Conditional};
 
 use super::admin::{Admin, Readiness};
 use super::config::{Config, H2Settings};
-use super::dst::DstAddr;
+use super::dst::{self, DstAddr};
 use super::identity;
 use super::profiles::Client as ProfilesClient;
 
@@ -478,7 +478,7 @@ where
             //    is retryable.
             let dst_route_layer = svc::builder()
                 .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
+                .layer(pending::layer::<_, dst::Route, _>())
                 .layer(classify::layer())
                 .layer(metrics::layer::<_, classify::Response>(route_http_metrics))
                 .layer(proxy::http::timeout::layer())
@@ -690,7 +690,7 @@ where
             // implementations can use the route-specific configuration.
             let dst_route_stack = svc::builder()
                 .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
+                .layer(pending::layer::<_, dst::Route, _>())
                 .layer(classify::layer())
                 .layer(http_metrics::layer::<_, classify::Response>(
                     route_http_metrics,
@@ -710,7 +710,7 @@ where
                     dst_route_stack,
                 ))
                 .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
+                .layer(pending::layer::<_, DstAddr, _>())
                 .layer(insert_target::layer())
                 .service(svc::shared(endpoint_router));
 

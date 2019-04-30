@@ -656,12 +656,12 @@ mod tests {
     #[test]
     fn balancer_is_make() {
         let stack = svc::builder()
-            .layer(pending::layer())
+            .layer(pending::layer::<_, _, http::Request<hyper::Body>>())
             .layer(
                 layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
                     .with_discover(resolve::layer(MockResolve)),
             )
-            .layer(pending::layer())
+            .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
             .service(MockStack);
 
         assert_make(stack);
@@ -674,8 +674,7 @@ mod tests {
                 layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
                     .with_discover(resolve::layer(MockResolve)),
             )
-            // .layer(buffer::layer(666))
-            .layer(pending::layer())
+            .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
             .service(MockStack);
 
         assert_svc(stack);
@@ -683,13 +682,6 @@ mod tests {
 
     #[test]
     fn fallback_is_svc() {
-        // let inner = svc::builder()
-        //     .layer(buffer::layer(666))
-        //     .layer(pending::layer())
-        //     .service(MockStack);
-
-        // assert_make(inner);
-
         let stack = svc::builder()
             .layer(
                 fallback::layer(
@@ -702,8 +694,8 @@ mod tests {
                 ),
             )
             .layer(buffer::layer(666))
-            .layer(pending::layer())
-            .service(MockStack);;
+            .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
+            .service(MockStack);
 
         assert_svc(stack);
     }
