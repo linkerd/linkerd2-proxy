@@ -91,7 +91,6 @@ mod iface {
     use futures::{Future, Stream};
     use http;
     use hyper::body::Payload;
-    use never::Never;
 
     use proxy::http::HasH2Reason;
 
@@ -113,46 +112,23 @@ mod iface {
         fn subscribe(&mut self, tap: T) -> Self::Future;
     }
 
-    ///
     pub trait Tap: Clone {
-        type TapRequest: TapRequest<
-            TapPayload = Self::TapRequestPayload,
-            TapResponse = Self::TapResponse,
-            TapResponsePayload = Self::TapResponsePayload,
-        >;
         type TapRequestPayload: TapPayload;
         type TapResponse: TapResponse<TapPayload = Self::TapResponsePayload>;
         type TapResponsePayload: TapPayload;
-        type Future: Future<Item = Option<Self::TapRequest>, Error = Never>;
 
         /// Returns `true` as l
         fn can_tap_more(&self) -> bool;
 
-        /// Determines whether a request should be tapped.
-        fn should_tap<B: Payload, I: super::Inspect>(
-            &self,
-            req: &http::Request<B>,
-            inspect: &I,
-        ) -> bool;
-
-        /// Initiate a tap.
+        /// Initiate a tap, if it matches.
         ///
         /// If the tap cannot be initialized, for instance because the tap has
         /// completed or been canceled, then `None` is returned.
-        fn tap(&mut self) -> Self::Future;
-    }
-
-    pub trait TapRequest {
-        type TapPayload: TapPayload;
-        type TapResponse: TapResponse<TapPayload = Self::TapResponsePayload>;
-        type TapResponsePayload: TapPayload;
-
-        /// Start tapping a request, obtaining handles to tap its body and response.
-        fn open<B: Payload, I: super::Inspect>(
-            self,
+        fn tap<B: Payload, I: super::Inspect>(
+            &mut self,
             req: &http::Request<B>,
             inspect: &I,
-        ) -> (Self::TapPayload, Self::TapResponse);
+        ) -> Option<(Self::TapRequestPayload, Self::TapResponse)>;
     }
 
     pub trait TapPayload {

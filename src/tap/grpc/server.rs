@@ -1,8 +1,7 @@
 use bytes::Buf;
-use futures::sync::{mpsc, oneshot};
+use futures::sync::mpsc;
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
-use never::Never;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
@@ -25,24 +24,22 @@ pub struct Server<T> {
 #[derive(Debug)]
 pub struct ResponseFuture<F> {
     subscribe: F,
-    dispatch: Option<Dispatch>,
     events_rx: Option<mpsc::Receiver<api::TapEvent>>,
+    shared: Option<Arc<Shared>>,
 }
 
 #[derive(Debug)]
 pub struct ResponseStream {
-    dispatch: Option<Dispatch>,
     events_rx: mpsc::Receiver<api::TapEvent>,
+    shared: Option<Arc<Shared>>,
 }
 
 #[derive(Debug)]
-struct Dispatch {
+struct Shared {
     base_id: u32,
-    count: usize,
+    count: AtomicUsize,
     limit: usize,
-    taps_rx: mpsc::Receiver<oneshot::Sender<TapTx>>,
-    events_tx: mpsc::Sender<api::TapEvent>,
-    match_handle: Arc<Match>,
+    match_: Match,
 }
 
 #[derive(Clone, Debug)]
@@ -53,29 +50,8 @@ struct TapTx {
 
 #[derive(Clone, Debug)]
 pub struct Tap {
-    match_: Weak<Match>,
-    taps_tx: mpsc::Sender<oneshot::Sender<TapTx>>,
-}
-
-#[derive(Debug)]
-pub struct TapFuture(FutState);
-
-#[derive(Debug)]
-enum FutState {
-    Init {
-        request_init_at: Instant,
-        taps_tx: mpsc::Sender<oneshot::Sender<TapTx>>,
-    },
-    Pending {
-        request_init_at: Instant,
-        rx: oneshot::Receiver<TapTx>,
-    },
-}
-
-#[derive(Debug)]
-pub struct TapRequest {
-    request_init_at: Instant,
-    tap: TapTx,
+    events_tx: mpsc::Sender<api::TapEvent>,
+    shared: Weak<Shared>,
 }
 
 #[derive(Debug)]
@@ -140,8 +116,8 @@ where
         // services to match requests. The response stream strongly holds the
         // match until the response is complete. This way, services never
         // evaluate matches for taps that have been completed or canceled.
-        let match_handle = match Match::try_new(req.r#match) {
-            Ok(m) => Arc::new(m),
+        let match_ = match Match::try_new(req.r#match) {
+            Ok(m) => m,
             Err(e) => {
                 warn!("invalid tap request: {} ", e);
                 let err = Self::invalid_arg(e.to_string());
@@ -151,24 +127,8 @@ where
 
         // Wrapping is okay. This is realy just to disambiguate events within a
         // single tap session (i.e. that may consist of several tap requests).
-        let base_id = self.base_id.fetch_add(1, Ordering::AcqRel) as u32;
-        debug!("tap; id={}; match={:?}", base_id, match_handle);
-
-        // The taps channel is used by services to acquire a `TapTx` for
-        // `Dispatch`, i.e. ensuring that no more than the requested number of
-        // taps are executed.
-        //
-        // The read side of this channel (held by `dispatch`) is dropped by the
-        // `ResponseStream` once the `limit` has been reached. This is dropped
-        // with the strong reference to `match_` so that services can determine
-        // when a Tap should be dropped.
-        //
-        // The response stream continues to process events for open streams
-        // until all streams have been completed.
-        let (taps_tx, taps_rx) = mpsc::channel(super::super::TAP_CAPACITY);
-
-        let tap = Tap::new(Arc::downgrade(&match_handle), taps_tx);
-        let subscribe = self.subscribe.subscribe(tap);
+        let base_id = self.base_id.fetch_add(1, Ordering::Relaxed) as u32;
+        debug!("tap; id={}; match={:?}", base_id, match_);
 
         // The events channel is used to emit tap events to the response stream.
         //
@@ -179,20 +139,25 @@ where
         let (events_tx, events_rx) =
             mpsc::channel(super::super::PER_RESPONSE_EVENT_BUFFER_CAPACITY);
 
+        let shared = Arc::new(Shared {
+            base_id,
+            count: AtomicUsize::new(0),
+            limit,
+            match_,
+        });
+
+        let tap = Tap {
+            shared: Arc::downgrade(&shared),
+            events_tx,
+        };
+        let subscribe = self.subscribe.subscribe(tap);
+
         // Reads up to `limit` requests from from `taps_rx` and satisfies them
         // with a cpoy of `events_tx`.
-        let dispatch = Dispatch {
-            base_id,
-            count: 0,
-            limit,
-            taps_rx,
-            events_tx,
-            match_handle,
-        };
 
         future::Either::B(ResponseFuture {
             subscribe,
-            dispatch: Some(dispatch),
+            shared: Some(shared),
             events_rx: Some(events_rx),
         })
     }
@@ -215,7 +180,7 @@ impl<F: Future<Item = ()>> Future for ResponseFuture<F> {
         }
 
         let rsp = ResponseStream {
-            dispatch: self.dispatch.take(),
+            shared: self.shared.take(),
             events_rx: self.events_rx.take().expect("events_rx must be set"),
         };
 
@@ -230,14 +195,17 @@ impl Stream for ResponseStream {
     type Error = grpc::Status;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        // Drop the dispatch future once it completes so that services do not do
+        // Drop the Shared handle once at our limit so that services do not do
         // any more matching against this tap.
         //
         // Furthermore, this drops the event sender so that `events_rx` closes
         // gracefully when all open taps are complete.
-        self.dispatch = self.dispatch.take().and_then(|mut d| match d.poll() {
-            Ok(Async::NotReady) => Some(d),
-            Ok(Async::Ready(())) | Err(_) => None,
+        self.shared = self.shared.take().and_then(|shared| {
+            if shared.is_under_limit() {
+                Some(shared)
+            } else {
+                None
+            }
         });
 
         // Read events from taps. The receiver can't actually error, but we need
@@ -246,141 +214,58 @@ impl Stream for ResponseStream {
     }
 }
 
-// === impl Dispatch ===
+// === impl Shared ===
 
-impl Future for Dispatch {
-    type Item = ();
-    type Error = ();
-
-    /// Read tap requests, assign each an ID and send it back to the requesting
-    /// service with an event sender so that it may emittap events.
-    ///
-    /// Becomes ready when the limit has been reached.
-    fn poll(&mut self) -> Poll<(), Self::Error> {
-        while let Some(tx) = try_ready!(self.taps_rx.poll().map_err(|_| ())) {
-            debug_assert!(self.count < self.limit - 1);
-
-            self.count += 1;
-            let tap = TapTx {
-                tx: self.events_tx.clone(),
-                id: api::tap_event::http::StreamId {
-                    base: self.base_id,
-                    stream: self.count as u64,
-                },
-            };
-            if tx.send(tap).is_err() {
-                // If the tap isn't sent, then restore the count.
-                self.count -= 1;
-            }
-
-            if self.count == self.limit - 1 {
-                return Ok(Async::Ready(()));
-            }
-        }
-
-        Ok(Async::Ready(()))
+impl Shared {
+    fn is_under_limit(&self) -> bool {
+        self.count.load(Ordering::Relaxed) < self.limit
     }
 }
 
 // === impl Tap ===
 
-impl Tap {
-    fn new(match_: Weak<Match>, taps_tx: mpsc::Sender<oneshot::Sender<TapTx>>) -> Self {
-        Self { match_, taps_tx }
-    }
-}
-
 impl iface::Tap for Tap {
-    type TapRequest = TapRequest;
     type TapRequestPayload = TapRequestPayload;
     type TapResponse = TapResponse;
     type TapResponsePayload = TapResponsePayload;
-    type Future = TapFuture;
 
     fn can_tap_more(&self) -> bool {
-        self.match_.upgrade().is_some()
-    }
-
-    fn should_tap<B: Payload, I: Inspect>(&self, req: &http::Request<B>, inspect: &I) -> bool {
-        self.match_
+        self.shared
             .upgrade()
-            .map(|m| m.matches(req, inspect))
+            .map(|shared| shared.is_under_limit())
             .unwrap_or(false)
     }
 
-    fn tap(&mut self) -> Self::Future {
-        TapFuture(FutState::Init {
-            request_init_at: clock::now(),
-            taps_tx: self.taps_tx.clone(),
-        })
-    }
-}
-
-// === impl TapFuture ===
-
-impl Future for TapFuture {
-    type Item = Option<TapRequest>;
-    type Error = Never;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            self.0 = match self.0 {
-                FutState::Init {
-                    ref request_init_at,
-                    ref mut taps_tx,
-                } => {
-                    match taps_tx.poll_ready() {
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Ok(Async::Ready(())) => {}
-                        Err(_) => return Ok(Async::Ready(None)),
-                    }
-                    let (tx, rx) = oneshot::channel();
-
-                    // If this fails, polling `rx` will fail below.
-                    let _ = taps_tx.try_send(tx);
-
-                    FutState::Pending {
-                        request_init_at: *request_init_at,
-                        rx,
-                    }
-                }
-                FutState::Pending {
-                    ref request_init_at,
-                    ref mut rx,
-                } => {
-                    return match rx.poll() {
-                        Ok(Async::NotReady) => Ok(Async::NotReady),
-                        Ok(Async::Ready(tap)) => {
-                            let t = TapRequest {
-                                request_init_at: *request_init_at,
-                                tap,
-                            };
-                            Ok(Some(t).into())
-                        }
-                        Err(_) => Ok(None.into()),
-                    };
-                }
-            }
-        }
-    }
-}
-
-// === impl TapRequest ===
-
-impl iface::TapRequest for TapRequest {
-    type TapPayload = TapRequestPayload;
-    type TapResponse = TapResponse;
-    type TapResponsePayload = TapResponsePayload;
-
-    fn open<B: Payload, I: Inspect>(
-        mut self,
+    fn tap<B, I>(
+        &mut self,
         req: &http::Request<B>,
         inspect: &I,
-    ) -> (TapRequestPayload, TapResponse) {
+    ) -> Option<(TapRequestPayload, TapResponse)>
+    where
+        B: Payload,
+        I: Inspect,
+    {
+        let id = self.shared.upgrade().and_then(|shared| {
+            if !shared.match_.matches(req, inspect) {
+                return None;
+            }
+            let next_id = shared.count.fetch_add(1, Ordering::Relaxed);
+            if next_id < shared.limit {
+                Some(api::tap_event::http::StreamId {
+                    base: shared.base_id,
+                    stream: next_id as u64,
+                })
+            } else {
+                None
+            }
+        })?;
+
+        let request_init_at = clock::now();
+
         let base_event = base_event(req, inspect);
 
         let init = api::tap_event::http::RequestInit {
-            id: Some(self.tap.id.clone()),
+            id: Some(id.clone()),
             method: Some(req.method().into()),
             scheme: req.uri().scheme_part().map(http_types::Scheme::from),
             authority: inspect.authority(req).unwrap_or_default(),
@@ -393,18 +278,25 @@ impl iface::TapRequest for TapRequest {
             })),
             ..base_event.clone()
         };
-        let _ = self.tap.tx.try_send(event);
+
+        // If try_send fails, just return `None`...
+        self.events_tx.try_send(event).ok()?;
+
+        let tap = TapTx {
+            id,
+            tx: self.events_tx.clone(),
+        };
 
         let req = TapRequestPayload {
-            tap: self.tap.clone(),
+            tap: tap.clone(),
             base_event: base_event.clone(),
         };
         let rsp = TapResponse {
-            tap: self.tap,
+            tap,
             base_event,
-            request_init_at: self.request_init_at,
+            request_init_at,
         };
-        (req, rsp)
+        Some((req, rsp))
     }
 }
 
