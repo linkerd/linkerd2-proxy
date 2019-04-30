@@ -374,7 +374,9 @@ macro_rules! generate_tests {
             dst_tx.send_addr(srv.addr);
             // but don't drop, to not trigger stream closing reconnects
 
-            env.put(app::config::ENV_CONTROL_BACKOFF_DELAY, "100ms".to_owned());
+            env.put(app::config::ENV_CONTROL_EXP_BACKOFF_MIN, "100ms".to_owned());
+            env.put(app::config::ENV_CONTROL_EXP_BACKOFF_MAX, "300ms".to_owned());
+            env.put(app::config::ENV_CONTROL_EXP_BACKOFF_JITTER, "0.1".to_owned());
 
             let proxy = proxy::new()
                 .controller(ctrl.delay_listen(rx.map_err(|_| ())))
