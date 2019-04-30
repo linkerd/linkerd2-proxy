@@ -551,14 +551,14 @@ mod tests {
         resolve::{self, Resolution, Resolve},
     };
 
-    fn assert_make<A, T: Clone>(make: A)
+    fn assert_make<A, T: Clone>(_: A)
     where
         A: rt::Make<T>,
     {
 
     }
 
-    fn assert_svc<A, T>(svc: A)
+    fn assert_svc<A, T>(_: A)
     where
         A: svc::Service<T>,
     {
@@ -578,7 +578,7 @@ mod tests {
     struct MockError;
 
     impl fmt::Display for MockError {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
             unimplemented!()
         }
     }
@@ -614,7 +614,7 @@ mod tests {
     }
 
     impl fmt::Display for MockEp {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
             unimplemented!()
         }
     }
@@ -637,7 +637,7 @@ mod tests {
             unimplemented!()
         }
 
-        fn call(&mut self, req: http::Request<A>) -> Self::Future {
+        fn call(&mut self, _: http::Request<A>) -> Self::Future {
             unimplemented!()
         }
     }
@@ -651,7 +651,7 @@ mod tests {
             unimplemented!()
         }
 
-        fn call(&mut self, req: T) -> Self::Future {
+        fn call(&mut self, _: T) -> Self::Future {
             unimplemented!()
         }
     }
