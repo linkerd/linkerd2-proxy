@@ -196,6 +196,12 @@ where
     }
 }
 
+impl<S> HasEndpointStatus for Service<S> {
+    fn endpoint_status(&self) -> EndpointStatus {
+        self.status.clone()
+    }
+}
+
 impl fmt::Display for NoEndpoints {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt("load balancer has no endpoints", f)
@@ -212,7 +218,6 @@ pub mod fallback {
     use http;
     use proxy::{
         http::router::{self, Router},
-        pending,
         resolve::{EndpointStatus, HasEndpointStatus},
     };
     use svc;
@@ -247,7 +252,7 @@ pub mod fallback {
     pub struct MakeFuture<R, F, A, B, C>
     where
         F: Future,
-        F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>, //+ HasEndpointStatus,
+        F::Item: svc::Service<http::Request<A>, Response = http::Response<B>> + HasEndpointStatus,
         <F::Item as svc::Service<http::Request<A>>>::Error: Into<Error>,
         R: svc::Service<http::Request<A>, Response = http::Response<C>>,
         R::Error: Into<Error>,
@@ -264,7 +269,7 @@ pub mod fallback {
     {
         fallback: F,
         balance: Bal,
-        // status: EndpointStatus,
+        status: EndpointStatus,
         _marker: PhantomData<fn(A) -> (B, C)>,
     }
 
@@ -314,7 +319,7 @@ pub mod fallback {
         super::Layer<A, E, D>: svc::Layer<M>,
         <super::Layer<A, E, D> as svc::Layer<M>>::Service: svc::Service<T>,
         <<super::Layer<A, E, D> as svc::Layer<M>>::Service as svc::Service<T>>::Response:
-            svc::Service<http::Request<A>, Response = http::Response<B>>, // + 'static,
+            svc::Service<http::Request<A>, Response = http::Response<B>>,
         <<super::Layer<A, E, D> as svc::Layer<M>>::Service as svc::Service<T>>::Error: Into<Error>,
         M: Clone,
         M: rt::Make<R::Target> + Clone,
@@ -348,8 +353,10 @@ pub mod fallback {
         <Mk::Value as svc::Service<http::Request<A>>>::Error: Into<Error>,
         <Mk::Value as svc::Service<http::Request<A>>>::Future: Send,
         Bal: svc::Service<T>,
-        Bal::Response:
-            svc::Service<http::Request<A>, Response = http::Response<B>> + Send + 'static, // + Send,
+        Bal::Response: svc::Service<http::Request<A>, Response = http::Response<B>>
+            + HasEndpointStatus
+            + Send
+            + 'static, // + Send,
         <Bal::Response as svc::Service<http::Request<A>>>::Error: Into<Error>,
         <Bal::Response as svc::Service<http::Request<A>>>::Future: Send,
         http::Request<A>: Send + 'static,
@@ -399,7 +406,7 @@ pub mod fallback {
     impl<R, F, A, B, C> Future for MakeFuture<R, F, A, B, C>
     where
         F: Future,
-        F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>, // + HasEndpointStatus,
+        F::Item: svc::Service<http::Request<A>, Response = http::Response<B>> + HasEndpointStatus,
         <F::Item as svc::Service<http::Request<A>>>::Error: Into<Error>,
         R: svc::Service<http::Request<A>, Response = http::Response<C>>,
         R::Error: Into<Error>,
@@ -409,12 +416,12 @@ pub mod fallback {
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             let balance = try_ready!(self.mk_balance.poll());
-            // let status = balance.endpoint_status();
+            let status = balance.endpoint_status();
             let fallback = self.fallback.take().expect("polled after ready");
             Ok(Async::Ready(Service {
                 fallback,
                 balance,
-                // status,
+                status,
                 _marker: PhantomData,
             }))
         }
@@ -436,27 +443,23 @@ pub mod fallback {
         >;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            // Always drive the balancer.
-            self.balance.poll_ready()?;
-            // if the balancer is not ready, we can fall back to the router.
-            self.fallback.poll_ready()
+            // Drive the fallback router too, but only return `Ready` when the
+            // LB is ready.
+            // Note that `linkerd2-router`'s router is always `Ready` & doesn't
+            // currently need to be driven by `poll_ready`, but this may not be
+            // the case for all implementations.
+            let _ = self.fallback.poll_ready();
+            self.balance.poll_ready()
         }
 
         fn call(&mut self, req: http::Request<A>) -> Self::Future {
-            // if self.status.is_empty() {
-            //     let f = self
-            //         .fallback
-            //         .call(req)
-            //         .map_err(Into::into as fn(_) -> _)
-            //         .map(Body::rsp_b as fn(_) -> _);
-            //     return future::Either::A(f);
-            // }
-            let f = self
-                .balance
-                .call(req)
-                // .map_err(Into::into as fn(_) -> _)
-                .map(Body::rsp_a as fn(_) -> _);
-            future::Either::B(f)
+            if self.status.is_empty() {
+                let f = self.fallback.call(req).map(Body::rsp_b as fn(_) -> _);
+                future::Either::A(f)
+            } else {
+                let f = self.balance.call(req).map(Body::rsp_a as fn(_) -> _);
+                future::Either::B(f)
+            }
         }
     }
 
