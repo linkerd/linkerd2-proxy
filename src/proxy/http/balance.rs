@@ -11,7 +11,9 @@ use hyper::body::Payload;
 use self::tower_discover::Discover;
 
 pub use self::hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
-pub use self::tower_balance::{choose::PowerOfTwoChoices, load::WithPeakEwma, Balance};
+pub use self::tower_balance::{
+    choose::PowerOfTwoChoices, load::WithPeakEwma, Balance, HasWeight, Weight, WithWeighted,
+};
 
 use http;
 use svc;
@@ -129,5 +131,60 @@ where
         let instrument = PendingUntilFirstData::default();
         let loaded = WithPeakEwma::new(discover, self.default_rtt, self.decay, instrument);
         Ok(Balance::p2c(loaded).into())
+    }
+}
+
+pub mod weight {
+    use super::tower_balance::{HasWeight, Weight, Weighted};
+    use futures::{Future, Poll};
+    use svc;
+
+    #[derive(Clone, Debug)]
+    pub struct MakeSvc<M> {
+        inner: M,
+    }
+
+    #[derive(Debug)]
+    pub struct MakeFuture<F> {
+        inner: F,
+        weight: Weight,
+    }
+
+    pub fn layer<M>() -> impl svc::Layer<M, Service = MakeSvc<M>> + Copy {
+        svc::layer::mk(|inner| MakeSvc { inner })
+    }
+
+    impl<T, M> svc::Service<T> for MakeSvc<M>
+    where
+        T: HasWeight,
+        M: svc::Service<T>,
+    {
+        type Response = Weighted<M::Response>;
+        type Error = M::Error;
+        type Future = MakeFuture<M::Future>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.inner.poll_ready()
+        }
+
+        fn call(&mut self, target: T) -> Self::Future {
+            MakeFuture {
+                weight: target.weight(),
+                inner: self.inner.call(target),
+            }
+        }
+    }
+
+    impl<F> Future for MakeFuture<F>
+    where
+        F: Future,
+    {
+        type Item = Weighted<F::Item>;
+        type Error = F::Error;
+
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            let svc = try_ready!(self.inner.poll());
+            Ok(Weighted::new(svc, self.weight).into())
+        }
     }
 }

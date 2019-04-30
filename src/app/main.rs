@@ -505,6 +505,7 @@ where
                 .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                 .layer(resolve::layer(Resolve::new(resolver)))
                 .layer(pending::layer())
+                .layer(balance::weight::layer())
                 .service(endpoint_stack);
 
             // Routes request using the `DstAddr` extension.
