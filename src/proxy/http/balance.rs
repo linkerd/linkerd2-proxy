@@ -735,7 +735,7 @@ mod tests {
                 )
                 .with_fallback(
                     router::Config::new("test", 666, Duration::from_secs(666)),
-                    |req: &http::Request<_>| Some(666),
+                    |_: &http::Request<_>| Some(666),
                 ),
             )
             .layer(buffer::layer(666))
