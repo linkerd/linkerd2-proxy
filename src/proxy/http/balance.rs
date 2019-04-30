@@ -422,31 +422,24 @@ pub mod fallback {
 
     impl<R, Bal, A, B, C> svc::Service<http::Request<A>> for Service<R, Bal, A, B, C>
     where
-        R: svc::Service<http::Request<A>, Response = http::Response<C>>,
-        R::Error: Into<Error>,
+        R: svc::Service<http::Request<A>, Response = http::Response<C>, Error = Bal::Error>,
         Bal: svc::Service<http::Request<A>, Response = http::Response<B>>,
         Bal::Error: Into<Error>,
         B: Payload,
-        C: Payload,
+        C: Payload<Error = B::Error>,
     {
         type Response = http::Response<Body<B, C>>;
-        type Error = Error;
+        type Error = Bal::Error;
         type Future = future::Either<
-            future::Map<
-                future::MapErr<R::Future, fn(R::Error) -> Self::Error>,
-                fn(R::Response) -> Self::Response,
-            >,
-            future::Map<
-                future::MapErr<Bal::Future, fn(Bal::Error) -> Self::Error>,
-                fn(Bal::Response) -> Self::Response,
-            >,
+            future::Map<R::Future, fn(R::Response) -> Self::Response>,
+            future::Map<Bal::Future, fn(Bal::Response) -> Self::Response>,
         >;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             // Always drive the balancer.
-            self.balance.poll_ready().map_err(Into::into)?;
+            self.balance.poll_ready()?;
             // if the balancer is not ready, we can fall back to the router.
-            self.fallback.poll_ready().map_err(Into::into)
+            self.fallback.poll_ready()
         }
 
         fn call(&mut self, req: http::Request<A>) -> Self::Future {
@@ -461,7 +454,7 @@ pub mod fallback {
             let f = self
                 .balance
                 .call(req)
-                .map_err(Into::into as fn(_) -> _)
+                // .map_err(Into::into as fn(_) -> _)
                 .map(Body::rsp_a as fn(_) -> _);
             future::Either::B(f)
         }
@@ -470,28 +463,22 @@ pub mod fallback {
     impl<A, B> Payload for Body<A, B>
     where
         A: Payload,
-        B: Payload,
+        B: Payload<Error = A::Error>,
     {
         type Data = Body<A::Data, B::Data>;
-        type Error = super::Error;
+        type Error = A::Error;
 
         fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
             match self {
-                Body::A(ref mut body) => body
-                    .poll_data()
-                    .map_err(Into::into)
-                    .map(|r| r.map(|o| o.map(Body::A))),
-                Body::B(ref mut body) => body
-                    .poll_data()
-                    .map_err(Into::into)
-                    .map(|r| r.map(|o| o.map(Body::B))),
+                Body::A(ref mut body) => body.poll_data().map(|r| r.map(|o| o.map(Body::A))),
+                Body::B(ref mut body) => body.poll_data().map(|r| r.map(|o| o.map(Body::B))),
             }
         }
 
         fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
             match self {
-                Body::A(ref mut body) => body.poll_trailers().map_err(Into::into),
-                Body::B(ref mut body) => body.poll_trailers().map_err(Into::into),
+                Body::A(ref mut body) => body.poll_trailers(),
+                Body::B(ref mut body) => body.poll_trailers(),
             }
         }
 
@@ -512,7 +499,7 @@ pub mod fallback {
     impl<A, B> Body<A, B>
     where
         A: Payload,
-        B: Payload,
+        B: Payload<Error = A::Error>,
     {
         fn rsp_a(rsp: http::Response<A>) -> http::Response<Self> {
             rsp.map(Body::A)
