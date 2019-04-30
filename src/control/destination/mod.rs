@@ -36,6 +36,7 @@ use proxy::resolve::{self, Resolve, Update};
 
 pub mod background;
 
+use proxy::http::balance::Weight;
 use self::background::Background;
 use NameAddr;
 
@@ -222,7 +223,8 @@ impl Metadata {
         self.identity.as_ref()
     }
 
-    pub fn weight(&self) -> u32 {
-        self.weight
+    pub fn weight(&self) -> Weight {
+        let w: f64 = self.weight.into();
+        (w / 10_000.0).into()
     }
 }

@@ -69,8 +69,7 @@ impl connect::HasPeerAddr for Endpoint {
 
 impl HasWeight for Endpoint {
     fn weight(&self) -> Weight {
-        let w = self.metadata.weight();
-        ((w as f64) / 10_000.0).into()
+        self.metadata.weight()
     }
 }
 
