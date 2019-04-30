@@ -12,11 +12,12 @@ pub use self::hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
 pub use self::tower_balance::{choose::PowerOfTwoChoices, load::WithPeakEwma, Balance};
 
 use http;
-use proxy::resolve::{EndpointStatus, HasEndpointStatus};
+use proxy::{
+    http::router,
+    resolve::{EndpointStatus, HasEndpointStatus},
+};
 use svc;
 
-// compiler doesn't notice this type is used in where bounds below...
-#[allow(unused)]
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
@@ -51,14 +52,11 @@ pub struct NoEndpoints {
 
 // === impl Layer ===
 
-pub fn layer<A, B>(
-    default_rtt: Duration,
-    decay: Duration,
-) -> Layer<A, B, svc::layer::util::Identity> {
+pub fn layer<A, B, D>(default_rtt: Duration, decay: Duration, discover: D) -> Layer<A, B, D> {
     Layer {
         decay,
         default_rtt,
-        discover: svc::layer::util::Identity::new(),
+        discover,
         _marker: PhantomData,
     }
 }
@@ -74,25 +72,11 @@ impl<A, B, D: Clone> Clone for Layer<A, B, D> {
     }
 }
 
-impl<A, B, D> Layer<A, B, D> {
-    pub fn with_discover<D2>(self, discover: D2) -> Layer<A, B, D2>
-    where
-        D2: Clone + Send + 'static,
-    {
-        Layer {
-            decay: self.decay,
-            default_rtt: self.default_rtt,
-            discover,
-            _marker: PhantomData,
-        }
-    }
-}
-
 impl<M, A, B, D> svc::Layer<M> for Layer<A, B, D>
 where
     A: Payload,
     B: Payload,
-    D: svc::Layer<M> + Clone + Send + 'static,
+    D: svc::Layer<M> + Clone,
 {
     type Service = MakeSvc<D::Service, A, B>;
 
@@ -103,6 +87,21 @@ where
             inner: self.discover.layer(inner),
             _marker: PhantomData,
         }
+    }
+}
+
+impl<A, B, D> Layer<A, B, D> {
+    pub fn with_fallback<Rec, T>(
+        self,
+        config: router::Config,
+        recognize: Rec,
+    ) -> fallback::Layer<Rec, Self, A, T>
+    where
+        Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
+        http::Request<A>: Send + 'static,
+        T: fmt::Display + Clone + Send + Sync + 'static,
+    {
+        fallback::layer(config, self, recognize)
     }
 }
 
@@ -125,7 +124,6 @@ where
     M::Response: Discover + HasEndpointStatus,
     <M::Response as Discover>::Service:
         svc::Service<http::Request<A>, Response = http::Response<B>>,
-    // <<M::Response as Discover>::Service as svc::Service<http::Request<A>>>::Error: Into<Error>,
     A: Payload,
     B: Payload,
 {
@@ -155,7 +153,6 @@ where
     F: Future,
     F::Item: Discover + HasEndpointStatus,
     <F::Item as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
-    // <<F::Item as Discover>::Service as svc::Service<http::Request<A>>>::Error: Into<Error>,
     A: Payload,
     B: Payload,
 {
@@ -279,7 +276,11 @@ pub mod fallback {
         B(B),
     }
 
-    pub fn layer<Rec, A, T>(config: router::Config, recognize: Rec) -> Layer<Rec, (), A, T>
+    pub fn layer<Rec, A, T, B, D>(
+        config: router::Config,
+        balance_layer: super::Layer<A, B, D>,
+        recognize: Rec,
+    ) -> Layer<Rec, super::Layer<A, B, D>, A, T>
     where
         Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
         http::Request<A>: Send + 'static,
@@ -288,27 +289,8 @@ pub mod fallback {
         Layer {
             recognize,
             config,
-            balance_layer: (),
+            balance_layer,
             _marker: PhantomData,
-        }
-    }
-
-    impl<Rec, A, T> Layer<Rec, (), A, T>
-    where
-        Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
-        http::Request<A>: Send + 'static,
-        T: fmt::Display + Clone + Send + Sync + 'static,
-    {
-        pub fn with_balance<B, D>(
-            self,
-            balance_layer: super::Layer<A, B, D>,
-        ) -> Layer<Rec, super::Layer<A, B, D>, A, T> {
-            Layer {
-                recognize: self.recognize,
-                config: self.config,
-                balance_layer,
-                _marker: PhantomData,
-            }
         }
     }
 
@@ -660,10 +642,11 @@ mod tests {
     fn balancer_is_make() {
         let stack = svc::builder()
             .layer(pending::layer::<_, _, http::Request<hyper::Body>>())
-            .layer(
-                layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
-                    .with_discover(resolve::layer(MockResolve)),
-            )
+            .layer(layer::<hyper::Body, _, _>(
+                Duration::from_secs(666),
+                Duration::from_secs(666),
+                resolve::layer(MockResolve),
+            ))
             .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
             .service(MockStack);
 
@@ -673,10 +656,11 @@ mod tests {
     #[test]
     fn balancer_is_svc() {
         let stack = svc::builder()
-            .layer(
-                layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
-                    .with_discover(resolve::layer(MockResolve)),
-            )
+            .layer(layer::<hyper::Body, _, _>(
+                Duration::from_secs(666),
+                Duration::from_secs(666),
+                resolve::layer(MockResolve),
+            ))
             .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
             .service(MockStack);
 
@@ -687,13 +671,14 @@ mod tests {
     fn fallback_is_svc() {
         let stack = svc::builder()
             .layer(
-                fallback::layer(
+                layer::<hyper::Body, _, _>(
+                    Duration::from_secs(666),
+                    Duration::from_secs(666),
+                    resolve::layer(MockResolve),
+                )
+                .with_fallback(
                     router::Config::new("test", 666, Duration::from_secs(666)),
                     |req: &http::Request<_>| Some(666),
-                )
-                .with_balance(
-                    layer::<hyper::Body, _>(Duration::from_secs(666), Duration::from_secs(666))
-                        .with_discover(resolve::layer(MockResolve)),
                 ),
             )
             .layer(buffer::layer(666))

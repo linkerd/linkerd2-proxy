@@ -488,7 +488,12 @@ where
 
             let balancer = svc::builder()
                 .layer(
-                    balance::fallback::layer::<_, _, DstAddr>(
+                    balance::layer(
+                        EWMA_DEFAULT_RTT,
+                        EWMA_DECAY,
+                        resolve::layer(Resolve::new(resolver)),
+                    )
+                    .with_fallback(
                         router::Config::new("out ep", capacity, max_idle_age),
                         |req: &http::Request<_>| {
                             let ep = req
@@ -507,10 +512,6 @@ where
                             debug!("outbound ep={:?}", ep);
                             ep
                         },
-                    )
-                    .with_balance(
-                        balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)
-                            .with_discover(resolve::layer(Resolve::new(resolver))),
                     ),
                 )
                 .layer(buffer::layer(max_in_flight))
