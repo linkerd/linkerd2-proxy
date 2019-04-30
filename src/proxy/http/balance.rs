@@ -140,9 +140,6 @@ pub mod weight {
     use svc;
 
     #[derive(Clone, Debug)]
-    pub struct Layer(());
-
-    #[derive(Clone, Debug)]
     pub struct MakeSvc<M> {
         inner: M,
     }
@@ -153,16 +150,8 @@ pub mod weight {
         weight: Weight,
     }
 
-    pub fn layer() -> Layer {
-        Layer(())
-    }
-
-    impl<M> svc::Layer<M> for Layer {
-        type Service = MakeSvc<M>;
-
-        fn layer(&self, inner: M) -> Self::Service {
-            Self::Service { inner }
-        }
+    pub fn layer<M>() -> impl svc::Layer<M, Service = MakeSvc<M>> + Copy {
+        svc::layer::mk(|inner| MakeSvc { inner })
     }
 
     impl<T, M> svc::Service<T> for MakeSvc<M>
