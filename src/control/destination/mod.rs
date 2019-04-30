@@ -36,8 +36,8 @@ use proxy::resolve::{self, Resolve, Update};
 
 pub mod background;
 
-use proxy::http::balance::Weight;
 use self::background::Background;
+use proxy::http::balance::Weight;
 use NameAddr;
 
 /// A handle to request resolutions from the background discovery task.
