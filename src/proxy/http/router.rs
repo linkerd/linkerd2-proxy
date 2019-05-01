@@ -60,14 +60,6 @@ impl Config {
             max_idle_age,
         }
     }
-
-    pub fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    pub fn max_idle_age(&self) -> Duration {
-        self.max_idle_age
-    }
 }
 
 // Used for logging contexts

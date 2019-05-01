@@ -212,7 +212,6 @@ pub mod fallback {
     use http;
     use proxy::{
         http::router,
-        pending,
         resolve::{EndpointStatus, HasEndpointStatus},
     };
     use svc;
@@ -230,14 +229,6 @@ pub mod fallback {
         _marker: PhantomData<fn(A)>,
     }
 
-    // #[derive(Debug)]
-    // pub struct MakeSvc<F, Bal, A, B, C> {
-    //     fallback: MakeCurried<F, router::Config>,
-    //     balance: Bal,
-    //     _marker: PhantomData<fn(A) -> (B, C)>,
-    // }
-    // pub type MakeSvc<Rec, Bal, A> =
-
     #[derive(Debug)]
     pub struct Stack<R, Bal, A> {
         fallback: R,
@@ -253,24 +244,22 @@ pub mod fallback {
     }
 
     #[derive(Debug)]
-    pub struct MakeFuture<R, Bal, F, T, A>
+    pub struct MakeFuture<R, F, A>
     where
         F: Future,
     {
         fallback: Option<MakeCurried<R, router::Config>>,
-        balance: Option<MakeCurried<Bal, T>>,
         making: F,
         _marker: PhantomData<fn(A)>,
     }
 
-    pub struct Service<F, Bal, T, A>
+    pub struct Service<F, Bal, A>
     where
-        Bal: rt::Make<T>,
         F: rt::Make<router::Config>,
     {
         mk_fallback: MakeCurried<F, router::Config>,
-        mk_balance: MakeCurried<Bal, T>,
-        state: ServiceState<F::Value, Bal::Value>,
+        fallback: Option<F::Value>,
+        balance: Bal,
         status: EndpointStatus,
         _marker: PhantomData<fn(A)>,
     }
@@ -279,11 +268,6 @@ pub mod fallback {
     struct MakeCurried<Mk, T> {
         mk: Mk,
         target: T,
-    }
-
-    enum ServiceState<R, B> {
-        Router(R),
-        Balancer(B),
     }
 
     #[derive(Clone, Debug)]
@@ -383,15 +367,14 @@ pub mod fallback {
 
     impl<R, Bal, A, T> svc::Service<T> for MakeSvc<R, Bal, A>
     where
-        Bal: svc::Service<T> + Clone,
+        Bal: svc::Service<T>,
         Bal::Response: svc::Service<http::Request<A>> + HasEndpointStatus,
         <<Bal as svc::Service<T>>::Response as svc::Service<http::Request<A>>>::Error: Into<Error>,
         Bal::Error: Into<Error>,
-        T: Clone,
         R: rt::Make<router::Config> + Clone,
     {
-        type Response = Service<R, pending::MakePending<Bal>, T, A>;
-        type Future = MakeFuture<R, pending::MakePending<Bal>, Bal::Future, T, A>; //Service<Rec, Bal, T, A>;
+        type Response = Service<R, Bal::Response, A>;
+        type Future = MakeFuture<R, Bal::Future, A>;
         type Error = Bal::Error;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -399,12 +382,8 @@ pub mod fallback {
         }
 
         fn call(&mut self, target: T) -> Self::Future {
-            let mk_balance = svc::builder()
-                .layer(pending::layer())
-                .service(self.balance.clone());
             MakeFuture {
                 fallback: Some(self.fallback.clone()),
-                balance: Some(curry(mk_balance, target.clone())),
                 making: self.balance.call(target),
                 _marker: PhantomData,
             }
@@ -425,76 +404,71 @@ pub mod fallback {
         }
     }
 
-    impl<R, Bal, F, A, T> Future for MakeFuture<R, Bal, F, T, A>
+    impl<R, F, A> Future for MakeFuture<R, F, A>
     where
-        Bal: rt::Make<T>,
         F: Future,
         F::Item: HasEndpointStatus,
         R: rt::Make<router::Config>,
     {
         type Error = F::Error;
-        type Item = Service<R, Bal, T, A>;
+        type Item = Service<R, F::Item, A>;
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            let status = try_ready!(self.making.poll()).endpoint_status();
-            let mk_balance = self.balance.take().expect("polled after ready");
+            let balance = try_ready!(self.making.poll());
+            let status = balance.endpoint_status();
             let mk_fallback = self.fallback.take().expect("polled after ready");
-            let state = ServiceState::Balancer(mk_balance.make());
             Ok(Async::Ready(Service {
-                mk_balance,
                 mk_fallback,
+                fallback: None,
                 status,
-                state,
+                balance,
                 _marker: PhantomData,
             }))
         }
     }
 
-    impl<R, Bal, T, A, B, C> svc::Service<http::Request<A>> for Service<R, Bal, T, A>
+    impl<R, Bal, A, B, C> svc::Service<http::Request<A>> for Service<R, Bal, A>
     where
         R: rt::Make<router::Config>,
-        Bal: rt::Make<T>,
-        R::Value: svc::Service<
-            http::Request<A>,
-            Response = http::Response<C>,
-            Error = <Bal::Value as svc::Service<http::Request<A>>>::Error,
-        >,
-        Bal::Value: svc::Service<http::Request<A>, Response = http::Response<B>>,
-        <Bal::Value as svc::Service<http::Request<A>>>::Error: Into<Error>,
+        R::Value: svc::Service<http::Request<A>, Response = http::Response<C>, Error = Bal::Error>,
+        Bal: svc::Service<http::Request<A>, Response = http::Response<B>>,
+        Bal::Error: Into<Error>,
         B: Payload,
         C: Payload<Error = B::Error>,
     {
         type Response = http::Response<Body<B, C>>;
-        type Error = <Bal::Value as svc::Service<http::Request<A>>>::Error;
+        type Error = Bal::Error;
         type Future = future::Either<
             future::Map<
                 <R::Value as svc::Service<http::Request<A>>>::Future,
                 fn(<R::Value as svc::Service<http::Request<A>>>::Response) -> Self::Response,
             >,
-            future::Map<
-                <Bal::Value as svc::Service<http::Request<A>>>::Future,
-                fn(<Bal::Value as svc::Service<http::Request<A>>>::Response) -> Self::Response,
-            >,
+            future::Map<Bal::Future, fn(Bal::Response) -> Self::Response>,
         >;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            // Drive the fallback router too, but only return `Ready` when the
-            // LB is ready.
-            // Note that `linkerd2-router`'s router is always `Ready` & doesn't
-            // currently need to be driven by `poll_ready`, but this may not be
-            // the case for all implementations.
-            // let _ = self.fallback.poll_ready();
-            // self.balance.poll_ready()
-            unimplemented!();
+            let ready = self.balance.poll_ready()?;
+            if !self.status.is_empty() {
+                // destroy the fallback router
+                self.fallback.take();
+            }
+
+            match ready {
+                Async::NotReady if self.status.is_empty() => {
+                    // create fallback router
+                    let mut fallback = self.mk_fallback.make();
+                    self.fallback = Some(fallback);
+                    Ok(ready)
+                }
+                ready => Ok(ready),
+            }
         }
 
         fn call(&mut self, req: http::Request<A>) -> Self::Future {
-            match self.state {
-                ServiceState::Router(ref mut s) => {
-                    future::Either::A(s.call(req).map(Body::rsp_b as fn(_) -> _))
+            match self.fallback {
+                Some(ref mut router) if self.status.is_empty() => {
+                    future::Either::A(router.call(req).map(Body::rsp_b as fn(_) -> _))
                 }
-                ServiceState::Balancer(ref mut s) => {
-                    future::Either::B(s.call(req).map(Body::rsp_a as fn(_) -> _))
-                }
+                _ => future::Either::B(self.balance.call(req).map(Body::rsp_a as fn(_) -> _)),
             }
         }
     }
