@@ -5,22 +5,14 @@ use std::marker::PhantomData;
 use std::{error, fmt};
 
 use super::glue::{Error, HttpBody, HyperConnect};
-use super::normalize_uri::ShouldNormalizeUri;
 use super::upgrade::{Http11Upgrade, HttpConnect};
-use super::{h1, h2, Settings};
+use super::{
+    h1, h2,
+    settings::{HasSettings, Settings},
+};
 use app::config::H2Settings;
 use svc::{self, ServiceExt};
 use transport::{connect, tls};
-
-/// Configurs an HTTP Client `Service` `Stack`.
-///
-/// `settings` determines whether an HTTP/1 or HTTP/2 client is used.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Config<T> {
-    pub target: T,
-    pub settings: Settings,
-    _p: (),
-}
 
 /// Configurs an HTTP client that uses a `C`-typed connector
 ///
@@ -72,30 +64,6 @@ pub enum ClientServiceFuture {
     Http2(h2::ResponseFuture),
 }
 
-// === impl Config ===
-
-impl<T> Config<T> {
-    pub fn new(target: T, settings: Settings) -> Self {
-        Config {
-            target,
-            settings,
-            _p: (),
-        }
-    }
-}
-
-impl<T> ShouldNormalizeUri for Config<T> {
-    fn should_normalize_uri(&self) -> bool {
-        !self.settings.is_http2() && !self.settings.was_absolute_form()
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Config<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.target, f)
-    }
-}
-
 // === impl Layer ===
 
 pub fn layer<T, B>(proxy_name: &'static str, h2_settings: H2Settings) -> Layer<T, B>
@@ -124,7 +92,7 @@ where
 
 impl<T, C, B> svc::Layer<C> for Layer<T, B>
 where
-    Client<C, T, B>: svc::Service<Config<T>>,
+    Client<C, T, B>: svc::Service<T>,
     B: hyper::body::Payload + Send + 'static,
 {
     type Service = Client<C, T, B>;
@@ -142,13 +110,13 @@ where
 // === impl Client ===
 
 /// MakeService
-impl<C, T, B> svc::Service<Config<T>> for Client<C, T, B>
+impl<C, T, B> svc::Service<T> for Client<C, T, B>
 where
     C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: Into<Box<dyn error::Error + Send + Sync>>,
     C::Connection: tls::HasStatus + Send + 'static,
-    T: connect::HasPeerAddr + fmt::Debug + Clone + Send + Sync,
+    T: connect::HasPeerAddr + HasSettings + fmt::Debug + Clone + Send + Sync,
     B: hyper::body::Payload + 'static,
 {
     type Response = ClientService<C, T, B>;
@@ -159,17 +127,18 @@ where
         Ok(().into())
     }
 
-    fn call(&mut self, config: Config<T>) -> Self::Future {
+    fn call(&mut self, config: T) -> Self::Future {
         debug!("building client={:?}", config);
 
         let connect = self.connect.clone();
-        let executor = ::logging::Client::proxy(self.proxy_name, config.target.peer_addr())
-            .with_settings(config.settings.clone())
+        let executor = ::logging::Client::proxy(self.proxy_name, config.peer_addr())
+            .with_settings(config.http_settings().clone())
             .executor();
 
-        match config.settings {
+        match *config.http_settings() {
             Settings::Http1 {
                 keep_alive,
+                wants_h1_upgrade: _,
                 was_absolute_form,
             } => {
                 let h1 = hyper::Client::builder()
@@ -178,13 +147,16 @@ where
                     // hyper should never try to automatically set the Host
                     // header, instead always just passing whatever we received.
                     .set_host(false)
-                    .build(HyperConnect::new(connect, config.target, was_absolute_form));
+                    .build(HyperConnect::new(connect, config, was_absolute_form));
                 ClientNewServiceFuture::Http1(Some(h1))
             }
             Settings::Http2 => {
-                let h2 = h2::Connect::new(connect, executor, self.h2_settings.clone())
-                    .oneshot(config.target);
+                let h2 =
+                    h2::Connect::new(connect, executor, self.h2_settings.clone()).oneshot(config);
                 ClientNewServiceFuture::Http2(h2)
+            }
+            Settings::NotHttp => {
+                unreachable!("client config has invalid HTTP settings: {:?}", config);
             }
         }
     }

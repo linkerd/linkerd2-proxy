@@ -201,20 +201,15 @@ where
     type Future = <Reconnect<M, T> as svc::Service<Req>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        match self.backoff {
-            Backoff::None => {}
-            Backoff::Exponential { .. } => {
-                if let Some(delay) = self.active_backoff.as_mut() {
-                    match delay.poll() {
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Ok(Async::Ready(())) => {}
-                        Err(e) => {
-                            error!("timer failed; continuing without backoff: {}", e);
-                        }
-                    }
+        if let Some(delay) = self.active_backoff.as_mut() {
+            match delay.poll() {
+                Ok(Async::NotReady) => return Ok(Async::NotReady),
+                Ok(Async::Ready(())) => {}
+                Err(e) => {
+                    error!("timer failed; continuing without backoff: {}", e);
                 }
             }
-        };
+        }
         self.active_backoff = None;
 
         match self.inner.poll_ready() {
@@ -243,7 +238,10 @@ where
                 self.active_backoff = self
                     .backoff
                     .for_failures(self.failed_attempts, rand::thread_rng())
-                    .map(|backoff| Delay::new(clock::now() + backoff));
+                    .map(|backoff| {
+                        debug!("reconnect backoff waiting for {:?}", backoff);
+                        Delay::new(clock::now() + backoff)
+                    });
 
                 self.failed_attempts += 1;
 

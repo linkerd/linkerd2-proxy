@@ -7,7 +7,10 @@ use super::identity;
 use control::destination::{Metadata, ProtocolHint};
 use proxy::{
     self,
-    http::balance::{HasWeight, Weight},
+    http::{
+        balance::{HasWeight, Weight},
+        settings,
+    },
 };
 use tap;
 use transport::{connect, tls};
@@ -19,6 +22,7 @@ pub struct Endpoint {
     pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
+    pub http_settings: settings::Settings,
 }
 
 // === impl Endpoint ===
@@ -26,13 +30,32 @@ pub struct Endpoint {
 impl Endpoint {
     pub fn can_use_orig_proto(&self) -> bool {
         match self.metadata.protocol_hint() {
-            ProtocolHint::Unknown => false,
-            ProtocolHint::Http2 => true,
+            ProtocolHint::Unknown => return false,
+            ProtocolHint::Http2 => (),
+        }
+
+        match self.http_settings {
+            settings::Settings::Http2 => false,
+            settings::Settings::Http1 {
+                keep_alive: _,
+                wants_h1_upgrade,
+                was_absolute_form: _,
+            } => !wants_h1_upgrade,
+            settings::Settings::NotHttp => {
+                unreachable!(
+                    "Endpoint::can_use_orig_proto called when NotHttp: {:?}",
+                    self,
+                );
+            }
         }
     }
 
-    pub fn from_orig_dst(source: &proxy::Source) -> Option<Self> {
-        let addr = source.orig_dst_if_not_local()?;
+    pub fn from_orig_dst<B>(req: &http::Request<B>) -> Option<Self> {
+        let addr = req
+            .extensions()
+            .get::<proxy::Source>()?
+            .orig_dst_if_not_local()?;
+        let http_settings = settings::Settings::from_request(req);
         Some(Self {
             addr,
             dst_name: None,
@@ -40,6 +63,7 @@ impl Endpoint {
                 tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
             ),
             metadata: Metadata::empty(),
+            http_settings,
         })
     }
 }
@@ -51,6 +75,7 @@ impl From<SocketAddr> for Endpoint {
             dst_name: None,
             identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
             metadata: Metadata::empty(),
+            http_settings: settings::Settings::NotHttp,
         }
     }
 }
@@ -66,6 +91,7 @@ impl hash::Hash for Endpoint {
         self.dst_name.hash(state);
         self.addr.hash(state);
         self.identity.hash(state);
+        self.http_settings.hash(state);
         // Ignore metadata.
     }
 }
@@ -85,6 +111,12 @@ impl connect::HasPeerAddr for Endpoint {
 impl HasWeight for Endpoint {
     fn weight(&self) -> Weight {
         self.metadata.weight()
+    }
+}
+
+impl settings::HasSettings for Endpoint {
+    fn http_settings(&self) -> &settings::Settings {
+        &self.http_settings
     }
 }
 
@@ -135,7 +167,7 @@ pub mod discovery {
     use super::super::dst::DstAddr;
     use super::Endpoint;
     use control::destination::Metadata;
-    use proxy::resolve;
+    use proxy::{http::settings, resolve};
     use transport::tls;
     use {Addr, Conditional, NameAddr};
 
@@ -143,7 +175,13 @@ pub mod discovery {
     pub struct Resolve<R: resolve::Resolve<NameAddr>>(R);
 
     #[derive(Debug)]
-    pub enum Resolution<R: resolve::Resolution> {
+    pub struct Resolution<R: resolve::Resolution> {
+        resolving: Resolving<R>,
+        http_settings: settings::Settings,
+    }
+
+    #[derive(Debug)]
+    enum Resolving<R: resolve::Resolution> {
         Name(NameAddr, R),
         Addr(Option<SocketAddr>),
     }
@@ -167,9 +205,14 @@ pub mod discovery {
         type Resolution = Resolution<R::Resolution>;
 
         fn resolve(&self, dst: &DstAddr) -> Self::Resolution {
-            match dst.as_ref() {
-                Addr::Name(ref name) => Resolution::Name(name.clone(), self.0.resolve(&name)),
-                Addr::Socket(ref addr) => Resolution::Addr(Some(*addr)),
+            let resolving = match dst.as_ref() {
+                Addr::Name(ref name) => Resolving::Name(name.clone(), self.0.resolve(&name)),
+                Addr::Socket(ref addr) => Resolving::Addr(Some(*addr)),
+            };
+
+            Resolution {
+                http_settings: dst.http_settings,
+                resolving,
             }
         }
     }
@@ -184,8 +227,8 @@ pub mod discovery {
         type Error = R::Error;
 
         fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
-            match self {
-                Resolution::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
+            match self.resolving {
+                Resolving::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
                     resolve::Update::NoEndpoints => Ok(Async::Ready(resolve::Update::NoEndpoints)),
                     resolve::Update::Remove(addr) => {
                         debug!("removing {}", addr);
@@ -207,11 +250,12 @@ pub mod discovery {
                             addr,
                             identity,
                             metadata,
+                            http_settings: self.http_settings,
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
                     }
                 },
-                Resolution::Addr(ref mut addr) => match addr.take() {
+                Resolving::Addr(ref mut addr) => match addr.take() {
                     Some(addr) => {
                         let ep = Endpoint {
                             dst_name: None,
@@ -220,6 +264,7 @@ pub mod discovery {
                                 tls::ReasonForNoPeerName::NoAuthorityInHttpRequest.into(),
                             ),
                             metadata: Metadata::empty(),
+                            http_settings: self.http_settings,
                         };
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
                     }
@@ -237,7 +282,7 @@ pub mod orig_proto_upgrade {
     use http;
 
     use super::Endpoint;
-    use proxy::http::orig_proto;
+    use proxy::http::{orig_proto, settings::Settings};
     use svc;
 
     #[derive(Debug)]
@@ -302,7 +347,7 @@ pub mod orig_proto_upgrade {
             self.inner.poll_ready()
         }
 
-        fn call(&mut self, endpoint: Endpoint) -> Self::Future {
+        fn call(&mut self, mut endpoint: Endpoint) -> Self::Future {
             let can_upgrade = endpoint.can_use_orig_proto();
 
             if can_upgrade {
@@ -311,6 +356,7 @@ pub mod orig_proto_upgrade {
                     orig_proto::L5D_ORIG_PROTO,
                     endpoint,
                 );
+                endpoint.http_settings = Settings::Http2;
             }
 
             let inner = self.inner.make_service(endpoint);

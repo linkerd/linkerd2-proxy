@@ -459,9 +459,6 @@ where
                 // disabled on purpose
                 //.layer(add_server_id_on_rsp::layer())
                 //.layer(add_remote_ip_on_rsp::layer())
-                .layer(settings::router::layer::<_, Endpoint>())
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
                 .layer(strip_header::response::layer(super::L5D_SERVER_ID))
                 .layer(strip_header::response::layer(super::L5D_REMOTE_IP))
                 .service(client_stack);
@@ -495,10 +492,7 @@ where
                         resolve::layer(Resolve::new(resolver)),
                     )
                     .with_fallback(|req: &http::Request<_>| {
-                        let ep = req
-                            .extensions()
-                            .get::<proxy::Source>()
-                            .and_then(Endpoint::from_orig_dst);
+                        let ep = Endpoint::from_orig_dst(req);
                         debug!("outbound ep={:?}", ep);
                         ep
                     }),
@@ -533,11 +527,10 @@ where
             // canonicalize to the same DstAddr use the same dst-stack service.
             let dst_router = svc::builder()
                 .layer(router::layer(|req: &http::Request<_>| {
-                    let addr = req
-                        .extensions()
-                        .get::<Addr>()
-                        .cloned()
-                        .map(DstAddr::outbound);
+                    let addr = req.extensions().get::<Addr>().cloned().map(|addr| {
+                        let settings = settings::Settings::from_request(req);
+                        DstAddr::outbound(addr, settings)
+                    });
                     debug!("outbound dst={:?}", addr);
                     addr
                 }))
@@ -627,7 +620,6 @@ where
             use super::inbound::{
                 orig_proto_downgrade,
                 rewrite_loopback_addr,
-                Endpoint,
                 RecognizeEndpoint,
                 // set_client_id_on_req, set_remote_ip_on_req,
             };
@@ -668,9 +660,6 @@ where
                     endpoint_http_metrics,
                 ))
                 .layer(tap_layer)
-                .layer(settings::router::layer::<_, Endpoint>())
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
                 .service(client_stack)
                 .make(&router::Config::new("in endpoint", capacity, max_idle_age));
 
@@ -735,7 +724,10 @@ where
                         .or_else(|| super::http_request_host_addr(req).ok())
                         .or_else(|| super::http_request_orig_dst_addr(req).ok());
                     debug!("inbound dst={:?}", dst);
-                    dst.map(DstAddr::inbound)
+                    dst.map(|addr| {
+                        let settings = settings::Settings::from_request(req);
+                        DstAddr::inbound(addr, settings)
+                    })
                 }))
                 .layer(buffer::layer(max_in_flight))
                 .layer(pending::layer())
