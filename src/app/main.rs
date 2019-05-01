@@ -499,16 +499,7 @@ where
                             let ep = req
                                 .extensions()
                                 .get::<proxy::Source>()
-                                .and_then(|src| src.orig_dst_if_not_local())
-                                .map(|addr| Endpoint {
-                                    dst_name: None,
-                                    addr,
-                                    identity: Conditional::None(
-                                        tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery
-                                            .into(),
-                                    ),
-                                    metadata: control::destination::Metadata::empty(),
-                                });
+                                .and_then(Endpoint::from_orig_dst);
                             debug!("outbound ep={:?}", ep);
                             ep
                         },

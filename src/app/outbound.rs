@@ -5,7 +5,10 @@ use std::{fmt, hash};
 
 use super::identity;
 use control::destination::{Metadata, ProtocolHint};
-use proxy::http::balance::{HasWeight, Weight};
+use proxy::{
+    self,
+    http::balance::{HasWeight, Weight},
+};
 use tap;
 use transport::{connect, tls};
 use {Conditional, NameAddr};
@@ -26,6 +29,18 @@ impl Endpoint {
             ProtocolHint::Unknown => false,
             ProtocolHint::Http2 => true,
         }
+    }
+
+    pub fn from_orig_dst(source: &proxy::Source) -> Option<Self> {
+        let addr = source.orig_dst_if_not_local()?;
+        Some(Self {
+            addr,
+            dst_name: None,
+            identity: Conditional::None(
+                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+            ),
+            metadata: Metadata::empty(),
+        })
     }
 }
 
