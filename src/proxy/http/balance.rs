@@ -223,7 +223,7 @@ pub mod fallback {
 
     use super::Error;
 
-    use std::{fmt, marker::PhantomData};
+    use std::marker::PhantomData;
 
     extern crate linkerd2_router as rt;
 
@@ -284,9 +284,7 @@ pub mod fallback {
         recognize: Rec,
     ) -> Layer<Rec, super::Layer<A, B, D>, A, T>
     where
-        Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
-        http::Request<A>: Send + 'static,
-        T: fmt::Display + Clone + Send + Sync + 'static,
+        Rec: router::Recognize<http::Request<A>> + Clone,
     {
         Layer {
             recognize,
@@ -298,20 +296,15 @@ pub mod fallback {
 
     impl<R, M, A, B, C, D, E, T> svc::Layer<M> for Layer<R, super::Layer<A, E, D>, A, T>
     where
-        T: fmt::Display + Clone + Send + Sync + 'static,
-        R: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
+        R: router::Recognize<http::Request<A>> + Clone,
         super::Layer<A, E, D>: svc::Layer<M>,
         <super::Layer<A, E, D> as svc::Layer<M>>::Service: svc::Service<T>,
         <<super::Layer<A, E, D> as svc::Layer<M>>::Service as svc::Service<T>>::Response:
             svc::Service<http::Request<A>, Response = http::Response<B>>,
         <<super::Layer<A, E, D> as svc::Layer<M>>::Service as svc::Service<T>>::Error: Into<Error>,
-        M: Clone,
         M: rt::Make<R::Target> + Clone,
-        M::Value:
-            svc::Service<http::Request<A>, Response = http::Response<C>> + Clone + Send + 'static,
+        M::Value: svc::Service<http::Request<A>, Response = http::Response<C>> + Clone,
         <M::Value as svc::Service<http::Request<A>>>::Error: Into<Error>,
-        <M::Value as svc::Service<http::Request<A>>>::Future: Send,
-        http::Request<A>: Send + 'static,
     {
         type Service = MakeSvc<R, M, <super::Layer<A, E, D> as svc::Layer<M>>::Service, A, B, C>;
 
@@ -329,22 +322,14 @@ pub mod fallback {
 
     impl<Rec, Mk, Bal, A, B, C, T> svc::Service<T> for MakeSvc<Rec, Mk, Bal, A, B, C>
     where
-        T: fmt::Display + Clone + Send + Sync + 'static,
-        Rec: router::Recognize<http::Request<A>> + Clone, // + Send + Sync + 'static,
-        Mk: rt::Make<Rec::Target> + Clone,                // + Send + Sync + 'static,
-        Mk::Value:
-            svc::Service<http::Request<A>, Response = http::Response<C>> + Clone + Send + 'static,
+        Rec: router::Recognize<http::Request<A>> + Clone,
+        Mk: rt::Make<Rec::Target> + Clone,
+        Mk::Value: svc::Service<http::Request<A>, Response = http::Response<C>> + Clone,
         <Mk::Value as svc::Service<http::Request<A>>>::Error: Into<Error>,
-        <Mk::Value as svc::Service<http::Request<A>>>::Future: Send,
         Bal: svc::Service<T>,
-        Bal::Response: svc::Service<http::Request<A>, Response = http::Response<B>>
-            + HasEndpointStatus
-            + Send
-            + 'static, // + Send,
+        Bal::Response:
+            svc::Service<http::Request<A>, Response = http::Response<B>> + HasEndpointStatus,
         <Bal::Response as svc::Service<http::Request<A>>>::Error: Into<Error>,
-        <Bal::Response as svc::Service<http::Request<A>>>::Future: Send,
-        http::Request<A>: Send + 'static,
-        // ::proxy::buffer::MakeBuffer<Mk, http::Request<A>>: rt::Make<Rec::Target>,
         Bal::Error: Into<Error>,
     {
         type Response = Service<Router<http::Request<A>, Rec, Mk>, Bal::Response, A, B, C>;
