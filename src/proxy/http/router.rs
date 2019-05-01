@@ -9,6 +9,7 @@ use svc;
 
 pub extern crate linkerd2_router as rt;
 
+use self::rt::Make;
 pub use self::rt::{error, Recognize, Router};
 
 // compiler doesn't notice this type is used in where bounds below...
@@ -109,7 +110,7 @@ where
 
 // === impl Stack ===
 
-impl<Req, Rec, Mk, B> Stack<Req, Rec, Mk>
+impl<Req, Rec, Mk, B> rt::Make<Config> for Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
@@ -117,7 +118,8 @@ where
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
-    pub fn make(&self, config: &Config) -> Service<Req, Rec, Mk> {
+    type Value = Service<Req, Rec, Mk>;
+    fn make(&self, config: &Config) -> Self::Value {
         let inner = Router::new(
             self.recognize.clone(),
             self.inner.clone(),

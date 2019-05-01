@@ -21,8 +21,9 @@ use never::Never;
 use proxy::{
     self, accept, buffer,
     http::{
-        client, insert_target, metrics as http_metrics, normalize_uri, profiles, router, settings,
-        strip_header,
+        client, insert_target, metrics as http_metrics, normalize_uri, profiles,
+        router::{self, rt::Make},
+        settings, strip_header,
     },
     pending, reconnect,
 };
@@ -493,22 +494,20 @@ where
                         EWMA_DECAY,
                         resolve::layer(Resolve::new(resolver)),
                     )
-                    .with_fallback(
-                        router::Config::new("out ep", capacity, max_idle_age),
-                        |req: &http::Request<_>| {
-                            let ep = req
-                                .extensions()
-                                .get::<proxy::Source>()
-                                .and_then(Endpoint::from_orig_dst);
-                            debug!("outbound ep={:?}", ep);
-                            ep
-                        },
-                    ),
+                    .with_fallback(|req: &http::Request<_>| {
+                        let ep = req
+                            .extensions()
+                            .get::<proxy::Source>()
+                            .and_then(Endpoint::from_orig_dst);
+                        debug!("outbound ep={:?}", ep);
+                        ep
+                    }),
                 )
                 .layer(buffer::layer(max_in_flight))
                 .layer(pending::layer())
                 .layer(balance::weight::layer())
-                .service(endpoint_stack);
+                .service(endpoint_stack)
+                .make(&router::Config::new("out ep", capacity, max_idle_age));
 
             // A per-`DstAddr` stack that does the following:
             //
