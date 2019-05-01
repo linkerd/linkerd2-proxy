@@ -44,10 +44,10 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
-        if req.version() == http::Version::HTTP_2 || h1::wants_upgrade(&req) {
-            // Just passing through...
-            return self.inner.call(req).map(|res| res);
-        }
+        debug_assert!(
+            req.version() != http::Version::HTTP_2 && !h1::wants_upgrade(&req),
+            "illegal request routed to orig-proto Upgrade",
+        );
 
         debug!("upgrading {:?} to HTTP2 with orig-proto", req.version());
 
