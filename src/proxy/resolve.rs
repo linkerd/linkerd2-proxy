@@ -2,7 +2,6 @@ extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
 use futures::{Async, Poll};
-use std::fmt;
 use std::{
     error, fmt,
     net::SocketAddr,
