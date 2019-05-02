@@ -175,16 +175,12 @@ where
                             let mut set = DestinationSet {
                                 addrs: Exists::Unknown,
                                 query,
-                                dns_query: None,
                                 responders: vec![resolve.responder],
                             };
                             // If the authority is one for which the Destination service is never
                             // relevant (e.g. an absolute name that doesn't end in ".svc.$zone." in
                             // Kubernetes), or if we don't have a `client`, then immediately start
                             // polling DNS.
-                            if !set.query.is_active() {
-                                set.reset_dns_query(&self.dns_resolver, Instant::now(), vac.key());
-                            }
                             vac.insert(set);
                         }
                     }
@@ -234,30 +230,6 @@ where
                 query => (query, Exists::Unknown),
             };
             set.query = new_query;
-
-            // Any active response from the Destination service cancels the DNS query except for a
-            // positive assertion that the service doesn't exist.
-            //
-            // Any disconnection from the Destination service has no effect on the DNS query; we
-            // assume that if we were querying DNS before, we should continue to do so, and if we
-            // weren't querying DNS then we shouldn't start now. In particular, temporary
-            // disruptions of connectivity to the Destination service do not cause a fallback to
-            // DNS.
-            match found_by_destination_service {
-                Exists::Yes(()) => {
-                    // Stop polling DNS on any active update from the Destination service.
-                    set.dns_query = None;
-                }
-                Exists::No => {
-                    // Fall back to DNS.
-                    set.reset_dns_query(&self.dns_resolver, Instant::now(), auth);
-                }
-                Exists::Unknown => (), // No change from Destination service's perspective.
-            }
-
-            // Poll DNS after polling the Destination service. This may reset the DNS query but it
-            // won't affect the Destination Service query.
-            set.poll_dns(&self.dns_resolver, auth);
         }
     }
 }

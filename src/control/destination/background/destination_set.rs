@@ -35,7 +35,6 @@ where
 {
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
     pub query: DestinationServiceQuery<T>,
-    pub dns_query: Option<IpAddrListFuture>,
     pub responders: Vec<Responder>,
 }
 
@@ -45,21 +44,6 @@ impl<T> DestinationSet<T>
 where
     T: GrpcService<BoxBody>,
 {
-    pub(super) fn reset_dns_query(
-        &mut self,
-        dns_resolver: &dns::Resolver,
-        deadline: Instant,
-        authority: &NameAddr,
-    ) {
-        trace!(
-            "resetting DNS query for {} at {:?}",
-            authority.name(),
-            deadline
-        );
-        self.reset_on_next_modification();
-        self.dns_query = Some(dns_resolver.resolve_all_ips(deadline, authority.name()));
-    }
-
     // Processes Destination service updates from `request_rx`, returning the new query
     // and an indication of any *change* to whether the service exists as far as the
     // Destination service is concerned, where `Exists::Unknown` is to be interpreted as
@@ -117,58 +101,6 @@ where
                     return (Remote::NeedsReconnect.into(), exists);
                 }
             };
-        }
-    }
-
-    pub(super) fn poll_dns(&mut self, dns_resolver: &dns::Resolver, authority: &NameAddr) {
-        // Duration to wait before polling DNS again after an error
-        // (or a NXDOMAIN response with no TTL).
-        const DNS_ERROR_TTL: Duration = Duration::from_secs(5);
-
-        while let Some(mut query) = self.dns_query.take() {
-            trace!("polling DNS for {:?}", authority);
-            let deadline = match query.poll() {
-                Ok(Async::NotReady) => {
-                    trace!("DNS query not ready {:?}", authority);
-                    self.dns_query = Some(query);
-                    return;
-                }
-                Ok(Async::Ready(dns::Response::Exists(ips))) => {
-                    trace!(
-                        "positive result of DNS query for {:?}: {:?}",
-                        authority,
-                        ips
-                    );
-                    self.add(
-                        authority,
-                        ips.iter().map(|ip| {
-                            (SocketAddr::from((ip, authority.port())), Metadata::empty())
-                        }),
-                    );
-
-                    // Poll again after the deadline on the DNS response.
-                    ips.valid_until()
-                }
-                Ok(Async::Ready(dns::Response::DoesNotExist { retry_after })) => {
-                    trace!(
-                        "negative result (NXDOMAIN) of DNS query for {:?}",
-                        authority
-                    );
-                    self.no_endpoints(authority, false);
-                    // Poll again after the deadline on the DNS response, if
-                    // there is one.
-                    retry_after.unwrap_or_else(|| Instant::now() + DNS_ERROR_TTL)
-                }
-                Err(e) => {
-                    // Do nothing so that the most recent non-error response is used until a
-                    // non-error response is received
-                    trace!("DNS resolution failed for {}: {}", authority.name(), e);
-
-                    // Poll again after the default wait time.
-                    Instant::now() + DNS_ERROR_TTL
-                }
-            };
-            self.reset_dns_query(dns_resolver, deadline, &authority)
         }
     }
 }
