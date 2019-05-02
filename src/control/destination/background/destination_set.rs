@@ -148,7 +148,7 @@ where
         self.addrs = Exists::Yes(cache);
     }
 
-    fn no_endpoints(&mut self, authority_for_logging: &NameAddr, exists: bool) {
+    pub(super) fn no_endpoints(&mut self, authority_for_logging: &NameAddr, exists: bool) {
         trace!(
             "no endpoints for {:?} that is known to {}",
             authority_for_logging,

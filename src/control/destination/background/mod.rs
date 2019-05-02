@@ -227,7 +227,10 @@ where
                     }
                     (new_query.into(), found_by_destination_service)
                 }
-                query => (query, Exists::Unknown),
+                query => {
+                    set.no_endpoints(auth, false);
+                    (query, Exists::Unknown)
+                }
             };
             set.query = new_query;
         }
