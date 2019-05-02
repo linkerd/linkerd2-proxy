@@ -219,7 +219,7 @@ pub mod fallback {
 
     use super::Error;
 
-    use std::marker::PhantomData;
+    use std::{fmt, marker::PhantomData};
 
     extern crate linkerd2_router as rt;
 
@@ -238,8 +238,11 @@ pub mod fallback {
     }
 
     #[derive(Debug)]
-    pub struct MakeSvc<R, Bal, A> {
-        fallback: MakeCurried<R, router::Config>,
+    pub struct MakeSvc<R, Bal, A>
+    where
+        R: rt::Make<router::Config>,
+    {
+        fallback: Fallback<R>,
         balance: Bal,
         _marker: PhantomData<fn(A)>,
     }
@@ -248,8 +251,9 @@ pub mod fallback {
     pub struct MakeFuture<R, F, A>
     where
         F: Future,
+        R: rt::Make<router::Config>,
     {
-        fallback: Option<MakeCurried<R, router::Config>>,
+        fallback: Option<Fallback<R>>,
         making: F,
         _marker: PhantomData<fn(A)>,
     }
@@ -258,23 +262,25 @@ pub mod fallback {
     where
         F: rt::Make<router::Config>,
     {
-        mk_fallback: MakeCurried<F, router::Config>,
-        fallback: Option<F::Value>,
+        fallback: Fallback<F>,
         balance: Bal,
         status: EndpointStatus,
         _marker: PhantomData<fn(A)>,
-    }
-
-    #[derive(Debug, Clone)]
-    struct MakeCurried<Mk, T> {
-        mk: Mk,
-        target: T,
     }
 
     #[derive(Clone, Debug)]
     pub enum Body<A, B> {
         A(A),
         B(B),
+    }
+
+    struct Fallback<F>
+    where
+        F: rt::Make<router::Config>,
+    {
+        mk: F,
+        cfg: router::Config,
+        router: Option<F::Value>,
     }
 
     pub fn layer<Rec, A, B, D>(
@@ -330,7 +336,11 @@ pub mod fallback {
         type Value = MakeSvc<R, Bal, A>;
         fn make(&self, config: &router::Config) -> Self::Value {
             MakeSvc {
-                fallback: curry(self.fallback.clone(), config.clone()),
+                fallback: Fallback {
+                    mk: self.fallback.clone(),
+                    cfg: config.clone(),
+                    router: None,
+                },
                 balance: self.balance.clone(),
                 _marker: PhantomData,
             }
@@ -339,7 +349,7 @@ pub mod fallback {
 
     impl<R, Bal, A> Clone for Stack<R, Bal, A>
     where
-        R: Clone,
+        R: rt::Make<router::Config> + Clone,
         Bal: Clone,
     {
         fn clone(&self) -> Self {
@@ -378,7 +388,7 @@ pub mod fallback {
 
     impl<R, Bal, A> Clone for MakeSvc<R, Bal, A>
     where
-        R: Clone,
+        R: rt::Make<router::Config> + Clone,
         Bal: Clone,
     {
         fn clone(&self) -> Self {
@@ -401,10 +411,9 @@ pub mod fallback {
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             let balance = try_ready!(self.making.poll());
             let status = balance.endpoint_status();
-            let mk_fallback = self.fallback.take().expect("polled after ready");
+            let fallback = self.fallback.take().expect("polled after ready");
             Ok(Async::Ready(Service {
-                mk_fallback,
-                fallback: None,
+                fallback,
                 status,
                 balance,
                 _marker: PhantomData,
@@ -435,26 +444,16 @@ pub mod fallback {
             let ready = self.balance.poll_ready()?;
             if !self.status.is_empty() {
                 // destroy the fallback router
-                self.fallback.take();
+                self.fallback.destroy();
             }
-
-            match ready {
-                Async::NotReady if self.status.is_empty() => {
-                    // create fallback router
-                    let mut fallback = self.mk_fallback.make();
-                    self.fallback = Some(fallback);
-                    Ok(ready)
-                }
-                ready => Ok(ready),
-            }
+            Ok(ready)
         }
 
         fn call(&mut self, req: http::Request<A>) -> Self::Future {
-            match self.fallback {
-                Some(ref mut router) if self.status.is_empty() => {
-                    future::Either::A(router.call(req).map(Body::rsp_b as fn(_) -> _))
-                }
-                _ => future::Either::B(self.balance.call(req).map(Body::rsp_a as fn(_) -> _)),
+            if self.status.is_empty() {
+                future::Either::A(self.fallback.call(req).map(Body::rsp_b as fn(_) -> _))
+            } else {
+                future::Either::B(self.balance.call(req).map(Body::rsp_a as fn(_) -> _))
             }
         }
     }
@@ -536,15 +535,59 @@ pub mod fallback {
         }
     }
 
-    impl<Mk: rt::Make<T>, T> MakeCurried<Mk, T> {
-        #[inline]
-        fn make(&self) -> Mk::Value {
-            self.mk.make(&self.target)
+    impl<F> Fallback<F>
+    where
+        F: rt::Make<router::Config>,
+    {
+        fn destroy(&mut self) {
+            self.router = None;
+        }
+
+        fn call<A>(
+            &mut self,
+            req: http::Request<A>,
+        ) -> <F::Value as svc::Service<http::Request<A>>>::Future
+        where
+            F::Value: svc::Service<http::Request<A>>,
+        {
+            if self.router.is_none() {
+                self.router = Some(self.mk.make(&self.cfg));
+            }
+            if let Some(ref mut router) = self.router {
+                svc::Service::call(router, req)
+            } else {
+                unreachable!("router should have been created")
+            }
         }
     }
 
-    fn curry<Mk: rt::Make<T>, T>(mk: Mk, target: T) -> MakeCurried<Mk, T> {
-        MakeCurried { target, mk }
+    impl<F> Clone for Fallback<F>
+    where
+        F: rt::Make<router::Config> + Clone,
+    {
+        fn clone(&self) -> Self {
+            Self {
+                mk: self.mk.clone(),
+                cfg: self.cfg.clone(),
+                router: None,
+            }
+        }
+    }
+
+    impl<F> fmt::Debug for Fallback<F>
+    where
+        F: rt::Make<router::Config> + fmt::Debug,
+    {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let mut dbg = f.debug_struct("Fallback");
+            dbg.field("mk", &self.mk).field("cfg", &self.cfg);
+            if self.router.is_some() {
+                dbg.field("router", &format_args!("Some(...)"));
+            } else {
+                dbg.field("router", &format_args!("None"));
+            }
+            dbg.finish()
+        }
     }
 }
 
