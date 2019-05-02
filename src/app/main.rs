@@ -491,13 +491,12 @@ where
                         EWMA_DECAY,
                         resolve::layer(Resolve::new(resolver)),
                     )
-                    .with_fallback(|req: &http::Request<_>| {
+                    .with_fallback(max_in_flight, |req: &http::Request<_>| {
                         let ep = Endpoint::from_orig_dst(req);
                         debug!("outbound ep={:?}", ep);
                         ep
                     }),
                 )
-                .layer(buffer::layer(max_in_flight))
                 .layer(pending::layer())
                 .layer(balance::weight::layer())
                 .service(endpoint_stack)

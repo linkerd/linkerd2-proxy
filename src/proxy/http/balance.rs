@@ -93,12 +93,16 @@ where
 }
 
 impl<A, B, D> Layer<A, B, D> {
-    pub fn with_fallback<Rec>(self, recognize: Rec) -> fallback::Layer<Rec, Self, A>
+    pub fn with_fallback<Rec>(
+        self,
+        max_in_flight: usize,
+        recognize: Rec,
+    ) -> fallback::Layer<Rec, Self, A>
     where
         Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
         http::Request<A>: Send + 'static,
     {
-        fallback::layer(self, recognize)
+        fallback::layer(self, max_in_flight, recognize)
     }
 }
 
@@ -211,6 +215,7 @@ pub mod fallback {
 
     use http;
     use proxy::{
+        buffer,
         http::router,
         resolve::{EndpointStatus, HasEndpointStatus},
     };
@@ -225,6 +230,7 @@ pub mod fallback {
     #[derive(Debug, Clone)]
     pub struct Layer<Rec, Bal, A> {
         recognize: Rec,
+        max_in_flight: usize,
         balance_layer: Bal,
         _marker: PhantomData<fn(A)>,
     }
@@ -278,6 +284,7 @@ pub mod fallback {
 
     pub fn layer<Rec, A, B, D>(
         balance_layer: super::Layer<A, B, D>,
+        max_in_flight: usize,
         recognize: Rec,
     ) -> Layer<Rec, super::Layer<A, B, D>, A>
     where
@@ -285,6 +292,7 @@ pub mod fallback {
     {
         Layer {
             recognize,
+            max_in_flight,
             balance_layer,
             _marker: PhantomData,
         }
@@ -293,18 +301,23 @@ pub mod fallback {
     impl<Rec, Bal, A, M> svc::Layer<M> for Layer<Rec, Bal, A>
     where
         Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
-        router::Layer<http::Request<A>, Rec>: svc::Layer<M>,
+        router::Layer<http::Request<A>, Rec>:
+            svc::Layer<<buffer::Layer<http::Request<A>> as svc::stack::Layer<M>>::Service>,
+        buffer::Layer<http::Request<A>>: svc::Layer<M>,
         Bal: svc::Layer<M>,
         M: Clone,
     {
         type Service = Stack<
-            <router::Layer<http::Request<A>, Rec> as svc::Layer<M>>::Service,
+            <router::Layer<http::Request<A>, Rec> as svc::Layer<
+                <buffer::Layer<http::Request<A>> as svc::stack::Layer<M>>::Service,
+            >>::Service,
             Bal::Service,
             A,
         >;
 
         fn layer(&self, inner: M) -> Self::Service {
             let balance = self.balance_layer.layer(inner.clone());
+            let inner = buffer::layer(self.max_in_flight).layer(inner);
             let fallback = router::layer(self.recognize.clone()).layer(inner);
             Stack {
                 fallback,
@@ -621,7 +634,6 @@ pub mod weight {
 mod tests {
     use super::*;
     use proxy::{
-        buffer,
         http::router::rt,
         pending,
         resolve::{self, Resolution, Resolve},
@@ -770,9 +782,8 @@ mod tests {
                     Duration::from_secs(666),
                     resolve::layer(MockResolve),
                 )
-                .with_fallback(|_: &http::Request<_>| Some(666)),
+                .with_fallback(666, |_: &http::Request<_>| Some(666)),
             )
-            .layer(buffer::layer(666))
             .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
             .service(MockStack);
 
@@ -788,9 +799,8 @@ mod tests {
                     Duration::from_secs(666),
                     resolve::layer(MockResolve),
                 )
-                .with_fallback(|_: &http::Request<_>| Some(666)),
+                .with_fallback(666, |_: &http::Request<_>| Some(666)),
             )
-            .layer(buffer::layer(666))
             .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
             .service(MockStack);
 
