@@ -1,10 +1,11 @@
 extern crate futures;
 extern crate indexmap;
 extern crate linkerd2_stack as stack;
+extern crate tower_load_shed;
 extern crate tower_service as svc;
 
 use futures::{Async, Future, Poll};
-
+use tower_load_shed::LoadShed;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -33,8 +34,8 @@ where
 pub trait Recognize<Request> {
     /// Identifies a Route.
     type Target: Eq + Hash;
-
     /// Determines the target for a route to handle the given request.
+
     fn recognize(&self, req: &Request) -> Option<Self::Target>;
 }
 
@@ -58,6 +59,7 @@ where
 pub struct ResponseFuture<Req, Svc>
 where
     Svc: svc::Service<Req>,
+    Svc::Error: Into<error::Error>,
 {
     state: State<Req, Svc>,
 }
@@ -70,15 +72,16 @@ where
 {
     recognize: Rec,
     make: Mk,
-    cache: Mutex<Cache<Rec::Target, Mk::Value>>,
+    cache: Mutex<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
 enum State<Req, Svc>
 where
     Svc: svc::Service<Req>,
+    Svc::Error: Into<error::Error>,
 {
-    Init(Option<Req>, Svc),
-    Called(Svc::Future),
+    Init(Option<Req>, LoadShed<Svc>),
+    Called(<LoadShed<Svc> as svc::Service<Req>>::Future),
     Error(Option<error::Error>),
 }
 
@@ -163,7 +166,7 @@ where
         };
 
         // Bind a new route, send the request on the route, and cache the route.
-        let service = self.inner.make.make(&target);
+        let service = LoadShed::new(self.inner.make.make(&target));
 
         reserve.store(target, service.clone());
         ResponseFuture::new(request, service)
@@ -188,8 +191,9 @@ where
 impl<Req, Svc> ResponseFuture<Req, Svc>
 where
     Svc: svc::Service<Req>,
+    Svc::Error: Into<error::Error>,
 {
-    fn new(req: Req, svc: Svc) -> Self {
+    fn new(req: Req, svc: LoadShed<Svc>) -> Self {
         ResponseFuture {
             state: State::Init(Some(req), svc),
         }
@@ -215,22 +219,26 @@ where
     Svc: svc::Service<Req>,
     Svc::Error: Into<error::Error>,
 {
-    type Item = Svc::Response;
+    type Item = <LoadShed<Svc> as svc::Service<Req>>::Response;
     type Error = error::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        use svc::Service;
+
         loop {
             self.state = match self.state {
                 State::Init(ref mut req, ref mut svc) => {
-                    match svc.poll_ready().map_err(Into::into)? {
-                        Async::NotReady => return Err(error::RouteUnavailable.into()),
+                    match svc.poll_ready().map_err(error::Error::from)? {
+                        Async::NotReady => {
+                            unreachable!("load shedding services must always be ready");
+                        }
                         Async::Ready(()) => {
                             let req = req.take().expect("polled after ready");
                             State::Called(svc.call(req))
                         }
                     }
                 }
-                State::Called(ref mut fut) => return fut.poll().map_err(Into::into),
+                State::Called(ref mut fut) => return fut.poll().map_err(error::Error::from),
                 State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),
             }
         }

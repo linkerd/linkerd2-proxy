@@ -110,9 +110,6 @@ fn map_err_to_5xx(e: Error) -> StatusCode {
     } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
         error!("could not recognize request");
         http::StatusCode::BAD_GATEWAY
-    } else if let Some(_) = e.downcast_ref::<router::RouteUnavailable>() {
-        error!("route unavailable");
-        http::StatusCode::SERVICE_UNAVAILABLE
     } else {
         // we probably should have handled this before?
         error!("unexpected error: {}", e);
