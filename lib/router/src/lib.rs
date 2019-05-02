@@ -248,7 +248,7 @@ where
 #[cfg(test)]
 mod test_util {
     use super::Make;
-    use futures::{future, Poll};
+    use futures::{future, Async, Poll};
     use std::cell::Cell;
     use std::fmt;
     use std::rc::Rc;
@@ -257,7 +257,7 @@ mod test_util {
     pub struct Recognize;
 
     #[derive(Clone, Debug)]
-    pub struct MultiplyAndAssign(Rc<Cell<usize>>);
+    pub struct MultiplyAndAssign(Rc<Cell<usize>>, bool);
 
     #[derive(Debug, PartialEq)]
     pub enum MulError {
@@ -296,7 +296,11 @@ mod test_util {
 
     impl MultiplyAndAssign {
         pub fn new(n: usize) -> Self {
-            MultiplyAndAssign(Rc::new(Cell::new(n)))
+            MultiplyAndAssign(Rc::new(Cell::new(n)), true)
+        }
+
+        pub fn never_ready() -> Self {
+            MultiplyAndAssign(Rc::new(Cell::new(0)), false)
         }
     }
 
@@ -311,7 +315,7 @@ mod test_util {
 
         fn make(&self, _: &usize) -> Self::Value {
             // Don't use a clone, so that they don't affect the original Stack...
-            MultiplyAndAssign(Rc::new(Cell::new(self.0.get())))
+            MultiplyAndAssign(Rc::new(Cell::new(self.0.get())), self.1)
         }
     }
 
@@ -321,6 +325,10 @@ mod test_util {
         type Future = future::FutureResult<Self::Response, Self::Error>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            if !self.1 {
+                return Ok(Async::NotReady)
+            }
+
             if self.0.get() < ::std::usize::MAX - 1 {
                 Ok(().into())
             } else {
@@ -436,6 +444,24 @@ mod tests {
         assert_eq!(
             err.downcast_ref::<MulError>().expect("should be MulError"),
             &MulError::AtMax,
+        );
+    }
+
+    #[test]
+    fn load_shed_from_inner_services() {
+        use tower_load_shed::error::Overloaded;
+
+        let mut router = Router::new(
+            Recognize,
+            MultiplyAndAssign::never_ready(),
+            1,
+            Duration::from_secs(0),
+        );
+
+        let err = router.call_err(2);
+        assert!(
+            err.downcast_ref::<Overloaded>().is_some(),
+            "Not overloaded",
         );
     }
 }
