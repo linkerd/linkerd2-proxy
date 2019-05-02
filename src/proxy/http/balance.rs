@@ -450,6 +450,8 @@ pub mod fallback {
             if !self.status.is_empty() {
                 // destroy the fallback router
                 self.fallback.destroy();
+            } else if let Some(ref mut router) = self.fallback.router {
+                return router.poll_ready();
             }
             Ok(ready)
         }
