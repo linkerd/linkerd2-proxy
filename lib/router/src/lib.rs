@@ -5,10 +5,10 @@ extern crate tower_load_shed;
 extern crate tower_service as svc;
 
 use futures::{Async, Future, Poll};
-use tower_load_shed::LoadShed;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tower_load_shed::LoadShed;
 
 mod cache;
 pub mod error;
@@ -326,7 +326,7 @@ mod test_util {
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             if !self.1 {
-                return Ok(Async::NotReady)
+                return Ok(Async::NotReady);
             }
 
             if self.0.get() < ::std::usize::MAX - 1 {
@@ -459,9 +459,6 @@ mod tests {
         );
 
         let err = router.call_err(2);
-        assert!(
-            err.downcast_ref::<Overloaded>().is_some(),
-            "Not overloaded",
-        );
+        assert!(err.downcast_ref::<Overloaded>().is_some(), "Not overloaded",);
     }
 }
