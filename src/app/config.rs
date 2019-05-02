@@ -39,6 +39,15 @@ pub struct Config {
     /// Where to forward externally received connections.
     pub inbound_forward: Option<SocketAddr>,
 
+    /// The maximum amount of time that an inbound request can spend buffered in the inbound proxy.
+    pub inbound_dispatch_timeout: Duration,
+
+    /// The maximum amount of time that an inbound request can spend buffered in the outbound proxy.
+    pub outbound_dispatch_timeout: Duration,
+
+    /// The maximum amount of time that an inbound request can be buffered.
+    pub control_dispatch_timeout: Duration,
+
     /// The maximum amount of time to wait for a connection to a local peer.
     pub inbound_connect_timeout: Duration,
 
@@ -196,6 +205,8 @@ pub const ENV_INBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_INBOUND_LISTEN_ADDR";
 pub const ENV_CONTROL_LISTEN_ADDR: &str = "LINKERD2_PROXY_CONTROL_LISTEN_ADDR";
 pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
+const ENV_INBOUND_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DISPATCH_TIMEOUT";
+const ENV_OUTBOUND_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_DISPATCH_TIMEOUT";
 const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
 const ENV_INBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_ACCEPT_KEEPALIVE";
@@ -268,6 +279,7 @@ pub const ENV_CONTROL_EXP_BACKOFF_MIN: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOF
 pub const ENV_CONTROL_EXP_BACKOFF_MAX: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MAX";
 pub const ENV_CONTROL_EXP_BACKOFF_JITTER: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_JITTER";
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
+const ENV_CONTROL_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_DISPATCH_TIMEOUT";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
 
 /// Configures a minimum value for the TTL of DNS lookups.
@@ -296,24 +308,27 @@ const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
 const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
+const DEFAULT_INBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 const DEFAULT_INBOUND_CONNECT_BACKOFF: Backoff = Backoff::Exponential {
     min: Duration::from_millis(100),
     max: Duration::from_millis(500),
     jitter: 0.1,
 };
+const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_OUTBOUND_CONNECT_BACKOFF: Backoff = Backoff::Exponential {
     min: Duration::from_millis(100),
     max: Duration::from_millis(500),
     jitter: 0.1,
 };
+const DEFAULT_CONTROL_DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const DEFAULT_CONTROL_BACKOFF: Backoff = Backoff::Exponential {
     min: Duration::from_secs(1),
     max: Duration::from_secs(5),
     jitter: 0.1,
 };
-const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
@@ -371,8 +386,15 @@ impl Config {
         let admin_listener_addr = parse(strings, ENV_ADMIN_LISTEN_ADDR, parse_socket_addr);
         let inbound_forward = parse(strings, ENV_INBOUND_FORWARD, parse_socket_addr);
 
+        let inbound_dispatch_timeout = parse(strings, ENV_INBOUND_DISPATCH_TIMEOUT, parse_duration);
         let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
+
+        let outbound_dispatch_timeout =
+            parse(strings, ENV_OUTBOUND_DISPATCH_TIMEOUT, parse_duration);
         let outbound_connect_timeout = parse(strings, ENV_OUTBOUND_CONNECT_TIMEOUT, parse_duration);
+
+        let control_dispatch_timeout = parse(strings, ENV_CONTROL_DISPATCH_TIMEOUT, parse_duration);
+        let control_connect_timeout = parse(strings, ENV_CONTROL_CONNECT_TIMEOUT, parse_duration);
 
         let inbound_accept_keepalive = parse(strings, ENV_INBOUND_ACCEPT_KEEPALIVE, parse_duration);
         let outbound_accept_keepalive =
@@ -415,9 +437,6 @@ impl Config {
         let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
 
         let dns_canonicalize_timeout = parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration);
-
-        let control_connect_timeout = parse(strings, ENV_CONTROL_CONNECT_TIMEOUT, parse_duration)?
-            .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT);
 
         let identity_config = parse_identity_config(strings);
 
@@ -468,18 +487,27 @@ impl Config {
                 .unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
             outbound_connect_timeout: outbound_connect_timeout?
                 .unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
+            control_connect_timeout: control_connect_timeout?
+                .unwrap_or(DEFAULT_CONTROL_CONNECT_TIMEOUT),
+
+            inbound_dispatch_timeout: inbound_dispatch_timeout?
+                .unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT),
+            outbound_dispatch_timeout: outbound_dispatch_timeout?
+                .unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT),
+            control_dispatch_timeout: control_dispatch_timeout?
+                .unwrap_or(DEFAULT_CONTROL_DISPATCH_TIMEOUT),
 
             inbound_connect_backoff: parse_backoff(
                 strings,
                 INBOUND_CONNECT_BASE,
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
-
             outbound_connect_backoff: parse_backoff(
                 strings,
                 OUTBOUND_CONNECT_BASE,
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
+            control_backoff: parse_backoff(strings, CONTROL_BASE, DEFAULT_CONTROL_BACKOFF)?,
 
             inbound_accept_keepalive: inbound_accept_keepalive?,
             outbound_accept_keepalive: outbound_accept_keepalive?,
@@ -525,10 +553,6 @@ impl Config {
             resolv_conf_path: resolv_conf_path?
                 .unwrap_or(DEFAULT_RESOLV_CONF.into())
                 .into(),
-
-            control_backoff: parse_backoff(strings, CONTROL_BASE, DEFAULT_CONTROL_BACKOFF)?,
-
-            control_connect_timeout,
 
             metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
 
