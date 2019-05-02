@@ -1,5 +1,4 @@
 use futures::{Async, Future, Poll};
-use h2;
 use http;
 use hyper::body::Payload;
 use std::fmt::Debug;
@@ -12,6 +11,7 @@ use tokio_timer::clock;
 use super::super::retry::TryClone;
 use super::classify::{ClassifyEos, ClassifyResponse};
 use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
+use proxy::Error;
 use svc;
 
 /// A stack module that wraps services to record metrics.
@@ -19,7 +19,7 @@ use svc;
 pub struct Layer<K, C>
 where
     K: Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
     registry: Arc<Mutex<Registry<K, C::Class>>>,
@@ -31,7 +31,7 @@ where
 pub struct MakeSvc<M, K, C>
 where
     K: Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
     registry: Arc<Mutex<Registry<K, C::Class>>>,
@@ -41,7 +41,7 @@ where
 
 pub struct MakeFuture<F, C>
 where
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
     metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
@@ -53,7 +53,7 @@ where
 #[derive(Debug)]
 pub struct Service<S, C>
 where
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
     metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
@@ -63,7 +63,7 @@ where
 
 pub struct ResponseFuture<F, C>
 where
-    C: ClassifyResponse<Error = h2::Error>,
+    C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
     classify: Option<C>,
@@ -86,7 +86,7 @@ where
 pub struct ResponseBody<B, C>
 where
     B: Payload,
-    C: ClassifyEos<Error = h2::Error>,
+    C: ClassifyEos,
     C::Class: Hash + Eq,
 {
     status: http::StatusCode,
@@ -102,7 +102,7 @@ where
 pub fn layer<K, C>(registry: Arc<Mutex<Registry<K, C::Class>>>) -> Layer<K, C>
 where
     K: Clone + Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     Layer {
@@ -114,7 +114,7 @@ where
 impl<K, C> Clone for Layer<K, C>
 where
     K: Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
+    C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     fn clone(&self) -> Self {
@@ -128,7 +128,7 @@ where
 impl<M, K, C> svc::Layer<M> for Layer<K, C>
 where
     K: Clone + Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     type Service = MakeSvc<M, K, C>;
@@ -148,7 +148,7 @@ impl<M, K, C> Clone for MakeSvc<M, K, C>
 where
     M: Clone,
     K: Clone + Hash + Eq,
-    C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
+    C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     fn clone(&self) -> Self {
@@ -165,7 +165,7 @@ where
     T: Clone + Debug,
     K: Hash + Eq + From<T>,
     M: svc::Service<T>,
-    C: ClassifyResponse<Error = h2::Error> + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     type Response = Service<M::Response, C>;
@@ -204,7 +204,7 @@ where
 impl<C, F> Future for MakeFuture<F, C>
 where
     F: Future,
-    C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
+    C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     type Item = Service<F::Item, C>;
@@ -226,7 +226,7 @@ where
 impl<S, C> Clone for Service<S, C>
 where
     S: Clone,
-    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     fn clone(&self) -> Self {
@@ -243,7 +243,7 @@ where
     S: svc::Service<http::Request<RequestBody<A, C::Class>>, Response = http::Response<B>>,
     A: Payload,
     B: Payload,
-    C: ClassifyResponse<Error = h2::Error> + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
@@ -291,7 +291,7 @@ impl<C, F, B> Future for ResponseFuture<F, C>
 where
     F: Future<Item = http::Response<B>>,
     B: Payload,
-    C: ClassifyResponse<Error = h2::Error> + Send + Sync + 'static,
+    C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Item = http::Response<ResponseBody<B, C::ClassifyEos>>;
@@ -352,7 +352,7 @@ where
 
 impl<B, C> tower_http_service::Body for RequestBody<B, C>
 where
-    B: Payload<Error = h2::Error>,
+    B: Payload,
     C: Hash + Eq + Send + 'static,
 {
     type Item = B::Data;
@@ -373,7 +373,7 @@ where
 
 impl<B, C> TryClone for RequestBody<B, C>
 where
-    B: Payload<Error = h2::Error> + TryClone,
+    B: Payload + TryClone,
     C: Eq + Hash,
 {
     fn try_clone(&self) -> Option<Self> {
@@ -387,7 +387,7 @@ where
 impl<B, C> Default for ResponseBody<B, C>
 where
     B: Payload + Default,
-    C: ClassifyEos<Error = h2::Error>,
+    C: ClassifyEos,
     C::Class: Hash + Eq,
 {
     fn default() -> Self {
@@ -405,7 +405,7 @@ where
 impl<B, C> ResponseBody<B, C>
 where
     B: Payload,
-    C: ClassifyEos<Error = h2::Error>,
+    C: ClassifyEos,
     C::Class: Hash + Eq,
 {
     fn record_latency(&mut self) {
@@ -458,8 +458,8 @@ where
         class_metrics.total.incr();
     }
 
-    fn measure_err(&mut self, err: C::Error) -> C::Error {
-        if let Some(c) = self.classify.take().map(|c| c.error(&err)) {
+    fn measure_err(&mut self, err: Error) -> Error {
+        if let Some(c) = self.classify.take().map(|c| c.error(&*err)) {
             self.record_class(c);
         }
         err
@@ -468,19 +468,22 @@ where
 
 impl<B, C> Payload for ResponseBody<B, C>
 where
-    B: Payload<Error = h2::Error>,
-    C: ClassifyEos<Error = h2::Error> + Send + 'static,
+    B: Payload,
+    C: ClassifyEos + Send + 'static,
     C::Class: Hash + Eq + Send,
 {
     type Data = B::Data;
-    type Error = B::Error;
+    type Error = Error;
 
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        let frame = try_ready!(self.inner.poll_data().map_err(|e| self.measure_err(e)));
+        let frame = try_ready!(self
+            .inner
+            .poll_data()
+            .map_err(|e| self.measure_err(e.into())));
 
         if !self.latency_recorded {
             self.record_latency();
@@ -490,7 +493,10 @@ where
     }
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
-        let trls = try_ready!(self.inner.poll_trailers().map_err(|e| self.measure_err(e)));
+        let trls = try_ready!(self
+            .inner
+            .poll_trailers()
+            .map_err(|e| self.measure_err(e.into())));
 
         if let Some(c) = self.classify.take().map(|c| c.eos(trls.as_ref())) {
             self.record_class(c);
@@ -502,12 +508,12 @@ where
 
 impl<B, C> tower_http_service::Body for ResponseBody<B, C>
 where
-    B: Payload<Error = h2::Error>,
-    C: ClassifyEos<Error = h2::Error> + Send + 'static,
+    B: Payload,
+    C: ClassifyEos + Send + 'static,
     C::Class: Hash + Eq + Send + 'static,
 {
     type Item = B::Data;
-    type Error = B::Error;
+    type Error = Error;
 
     fn is_end_stream(&self) -> bool {
         Payload::is_end_stream(self)
@@ -525,7 +531,7 @@ where
 impl<B, C> Drop for ResponseBody<B, C>
 where
     B: Payload,
-    C: ClassifyEos<Error = h2::Error>,
+    C: ClassifyEos,
     C::Class: Hash + Eq,
 {
     fn drop(&mut self) {

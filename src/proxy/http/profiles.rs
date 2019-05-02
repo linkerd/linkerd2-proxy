@@ -271,11 +271,10 @@ pub mod router {
     use never::Never;
 
     use dns;
+    use proxy::Error;
     use svc;
 
     use super::*;
-
-    type Error = Box<dyn std::error::Error + Send + Sync>;
 
     pub fn layer<G, M, R, B>(
         suffixes: Vec<dns::Suffix>,

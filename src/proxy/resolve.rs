@@ -2,10 +2,11 @@ extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
 use futures::{Async, Poll};
+use std::fmt;
 use std::net::SocketAddr;
-use std::{error, fmt};
 
 pub use self::tower_discover::Change;
+use proxy::Error;
 use svc;
 
 /// Resolves `T`-typed names/addresses as a `Resolution`.
@@ -40,8 +41,6 @@ pub struct MakeSvc<R, M> {
     resolve: R,
     inner: M,
 }
-
-type Error = Box<dyn error::Error + Send + Sync>;
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.

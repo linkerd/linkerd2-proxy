@@ -5,15 +5,13 @@ use std::marker::PhantomData;
 use std::time::Duration;
 
 use never::Never;
+
+use proxy::Error;
 use svc;
 
 extern crate linkerd2_router as rt;
 
 pub use self::rt::{error, Recognize, Router};
-
-// compiler doesn't notice this type is used in where bounds below...
-#[allow(unused)]
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Clone, Debug)]
 pub struct Config {
