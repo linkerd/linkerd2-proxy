@@ -6,20 +6,15 @@ use svc;
 /// Determines how a request's response should be classified.
 pub trait Classify {
     type Class;
-    type Error;
-
-    type ClassifyEos: ClassifyEos<Class = Self::Class, Error = Self::Error>;
+    type ClassifyEos: ClassifyEos<Class = Self::Class>;
 
     /// Classifies responses.
     ///
     /// Instances are intended to be used as an `http::Extension` that may be
     /// cloned to inner stack layers. Cloned instances are **not** intended to
     /// share state. Each clone should maintain its own internal state.
-    type ClassifyResponse: ClassifyResponse<
-            Class = Self::Class,
-            Error = Self::Error,
-            ClassifyEos = Self::ClassifyEos,
-        > + Clone
+    type ClassifyResponse: ClassifyResponse<Class = Self::Class, ClassifyEos = Self::ClassifyEos>
+        + Clone
         + Send
         + Sync
         + 'static;
@@ -31,19 +26,17 @@ pub trait Classify {
 pub trait ClassifyResponse {
     /// A response classification.
     type Class;
-    type Error;
-    type ClassifyEos: ClassifyEos<Class = Self::Class, Error = Self::Error>;
+    type ClassifyEos: ClassifyEos<Class = Self::Class>;
 
     /// Produce a stream classifier for this response.
     fn start<B>(self, headers: &http::Response<B>) -> Self::ClassifyEos;
 
     /// Classifies the given error.
-    fn error(self, error: &Self::Error) -> Self::Class;
+    fn error(self, error: &(dyn std::error::Error + 'static)) -> Self::Class;
 }
 
 pub trait ClassifyEos {
     type Class;
-    type Error;
 
     /// Update the classifier with an EOS.
     ///
@@ -54,7 +47,7 @@ pub trait ClassifyEos {
     ///
     /// Because errors indicate an end-of-stream, a classification must be
     /// returned.
-    fn error(self, error: &Self::Error) -> Self::Class;
+    fn error(self, error: &(dyn std::error::Error + 'static)) -> Self::Class;
 }
 
 // Used for stack targets that can produce a `Classify` implementation.

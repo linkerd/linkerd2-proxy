@@ -1,11 +1,9 @@
 use std::borrow::Cow;
 
-use h2;
 use http;
 
 pub use proxy::http::metrics::classify::{self, layer, CanClassify};
-use proxy::http::profiles;
-use proxy::http::timeout;
+use proxy::http::{profiles, timeout, HasH2Reason};
 
 #[derive(Clone, Debug)]
 pub enum Request {
@@ -67,7 +65,6 @@ impl Default for Request {
 
 impl classify::Classify for Request {
     type Class = Class;
-    type Error = h2::Error;
     type ClassifyResponse = Response;
     type ClassifyEos = Eos;
 
@@ -124,7 +121,6 @@ impl Response {
 
 impl classify::ClassifyResponse for Response {
     type Class = Class;
-    type Error = h2::Error;
     type ClassifyEos = Eos;
 
     fn start<B>(self, rsp: &http::Response<B>) -> Eos {
@@ -149,7 +145,7 @@ impl classify::ClassifyResponse for Response {
         }
     }
 
-    fn error(self, err: &h2::Error) -> Self::Class {
+    fn error(self, err: &(dyn std::error::Error + 'static)) -> Self::Class {
         Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
     }
 }
@@ -158,7 +154,6 @@ impl classify::ClassifyResponse for Response {
 
 impl classify::ClassifyEos for Eos {
     type Class = Class;
-    type Error = h2::Error;
 
     fn eos(self, trailers: Option<&http::HeaderMap>) -> Self::Class {
         match self {
@@ -177,7 +172,7 @@ impl classify::ClassifyEos for Eos {
         }
     }
 
-    fn error(self, err: &h2::Error) -> Self::Class {
+    fn error(self, err: &(dyn std::error::Error + 'static)) -> Self::Class {
         Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
     }
 }
@@ -197,13 +192,14 @@ fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
         })
 }
 
-fn h2_error(err: &h2::Error) -> String {
-    if let Some(reason) = err.reason() {
+fn h2_error(err: &(dyn std::error::Error + 'static)) -> String {
+    if let Some(reason) = err.h2_reason() {
         // This should output the error code in the same format as the spec,
         // for example: PROTOCOL_ERROR
         format!("h2({:?})", reason)
     } else {
-        format!("h2({})", err)
+        trace!("classifying found non-h2 error: {:?}", err);
+        String::from("unclassified")
     }
 }
 

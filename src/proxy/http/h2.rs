@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::{error::Error as StdError, fmt};
 
 use futures::{Future, Poll};
 use http;
@@ -9,8 +8,9 @@ use hyper::{
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use super::{Body, ClientUsedTls, Error};
+use super::{Body, ClientUsedTls};
 use app::config::H2Settings;
+use proxy::Error;
 use svc;
 use task::{ArcExecutor, BoxSendFuture, Executor};
 use transport::tls::HasStatus as HasTlsStatus;
@@ -46,12 +46,6 @@ enum ConnectState<F: Future, B> {
 pub struct ResponseFuture {
     client_used_tls: bool,
     inner: conn::ResponseFuture,
-}
-
-#[derive(Debug)]
-pub enum ConnectError<E> {
-    Connect(E),
-    Handshake(Error),
 }
 
 // ===== impl Connect =====
@@ -92,14 +86,15 @@ impl<C, B, Target> svc::Service<Target> for Connect<C, B>
 where
     C: svc::MakeConnection<Target>,
     C::Connection: HasTlsStatus + Send + 'static,
+    C::Error: Into<Error>,
     B: Payload,
 {
     type Response = Connection<B>;
-    type Error = ConnectError<C::Error>;
+    type Error = Error;
     type Future = ConnectFuture<C::Future, B>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.connect.poll_ready().map_err(ConnectError::Connect)
+        self.connect.poll_ready().map_err(Into::into)
     }
 
     fn call(&mut self, target: Target) -> Self::Future {
@@ -117,23 +112,21 @@ impl<F, B> Future for ConnectFuture<F, B>
 where
     F: Future,
     F::Item: HasTlsStatus + AsyncRead + AsyncWrite + Send + 'static,
+    F::Error: Into<Error>,
     B: Payload,
 {
     type Item = Connection<B>;
-    type Error = ConnectError<F::Error>;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             let io = match self.state {
-                ConnectState::Connect(ref mut fut) => {
-                    try_ready!(fut.poll().map_err(ConnectError::Connect))
-                }
+                ConnectState::Connect(ref mut fut) => try_ready!(fut.poll().map_err(Into::into)),
                 ConnectState::Handshake {
                     ref mut hs,
                     client_used_tls,
                 } => {
-                    let (tx, conn) =
-                        try_ready!(hs.poll().map_err(|err| ConnectError::Handshake(err.into())));
+                    let (tx, conn) = try_ready!(hs.poll());
                     let _ = self
                         .executor
                         .execute(conn.map_err(|err| debug!("http2 conn error: {}", err)));
@@ -171,7 +164,7 @@ where
     B: Payload,
 {
     type Response = http::Response<Body>;
-    type Error = Error;
+    type Error = hyper::Error;
     type Future = ResponseFuture;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -190,7 +183,7 @@ where
 
 impl Future for ResponseFuture {
     type Item = http::Response<Body>;
-    type Error = Error;
+    type Error = hyper::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let res = try_ready!(self.inner.poll());
@@ -204,16 +197,3 @@ impl Future for ResponseFuture {
         Ok(res.into())
     }
 }
-
-// ===== impl ConnectError =====
-
-impl<E: fmt::Display> fmt::Display for ConnectError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ConnectError::Connect(err) => fmt::Display::fmt(err, f),
-            ConnectError::Handshake(err) => fmt::Display::fmt(err, f),
-        }
-    }
-}
-
-impl<E: fmt::Debug + fmt::Display> StdError for ConnectError<E> {}

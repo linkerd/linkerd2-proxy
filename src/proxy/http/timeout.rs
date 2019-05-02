@@ -3,10 +3,9 @@ use std::time::Duration;
 use futures::{future, Future, Poll};
 use http::{Request, Response, StatusCode};
 
+use proxy::Error;
 use svc;
 use svc::linkerd2_timeout::{error, Timeout};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Implement on targets to determine if a service has a timeout.
 pub trait HasTimeout {

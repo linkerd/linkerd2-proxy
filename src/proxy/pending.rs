@@ -2,9 +2,8 @@ extern crate linkerd2_router as rt;
 
 use futures::{Future, Poll};
 
+use proxy::Error;
 use svc::{self, ServiceExt};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Clone, Debug)]
 pub struct MakePending<M> {

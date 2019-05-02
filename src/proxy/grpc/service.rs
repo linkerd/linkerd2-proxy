@@ -42,7 +42,7 @@ pub mod req_box_body {
     use bytes::Bytes;
     use futures::Poll;
     use http;
-    use tower_grpc::{self as grpc, Body, BoxBody};
+    use tower_grpc::{Body, BoxBody};
 
     use svc;
 
@@ -58,7 +58,6 @@ pub mod req_box_body {
     where
         B: Body + Send + 'static,
         Bytes: From<B::Item>,
-        grpc::Status: From<B::Error>,
         S: svc::Service<http::Request<BoxBody>>,
     {
         type Response = S::Response;

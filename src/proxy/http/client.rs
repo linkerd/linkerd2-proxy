@@ -1,16 +1,17 @@
 use futures::{Async, Future, Poll};
 use http;
 use hyper;
+use std::fmt;
 use std::marker::PhantomData;
-use std::{error, fmt};
 
-use super::glue::{Error, HttpBody, HyperConnect};
+use super::glue::{HttpBody, HyperConnect};
 use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{
     h1, h2,
     settings::{HasSettings, Settings},
 };
 use app::config::H2Settings;
+use proxy::Error;
 use svc::{self, ServiceExt};
 use transport::{connect, tls};
 
@@ -40,6 +41,7 @@ where
     B: hyper::body::Payload + 'static,
     C: svc::MakeConnection<T> + 'static,
     C::Connection: tls::HasStatus + Send + 'static,
+    C::Error: Into<Error>,
 {
     Http1(Option<HyperClient<C, T, B>>),
     Http2(::tower_util::Oneshot<h2::Connect<C, B>, T>),
@@ -114,13 +116,13 @@ impl<C, T, B> svc::Service<T> for Client<C, T, B>
 where
     C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<Box<dyn error::Error + Send + Sync>>,
+    <C::Future as Future>::Error: Into<Error>,
     C::Connection: tls::HasStatus + Send + 'static,
     T: connect::HasPeerAddr + HasSettings + fmt::Debug + Clone + Send + Sync,
     B: hyper::body::Payload + 'static,
 {
     type Response = ClientService<C, T, B>;
-    type Error = h2::ConnectError<C::Error>;
+    type Error = Error;
     type Future = ClientNewServiceFuture<C, T, B>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -183,10 +185,11 @@ where
     C: svc::MakeConnection<T> + Send + Sync + 'static,
     C::Connection: tls::HasStatus + Send + 'static,
     C::Future: Send + 'static,
+    C::Error: Into<Error>,
     B: hyper::body::Payload + 'static,
 {
     type Item = ClientService<C, T, B>;
-    type Error = h2::ConnectError<C::Error>;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let svc = match *self {
@@ -209,7 +212,7 @@ where
     C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: tls::HasStatus + Send,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<Box<dyn error::Error + Send + Sync>>,
+    <C::Future as Future>::Error: Into<Error>,
     T: Clone + Send + Sync + 'static,
     B: hyper::body::Payload + 'static,
 {
@@ -220,7 +223,7 @@ where
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match *self {
             ClientService::Http1(_) => Ok(Async::Ready(())),
-            ClientService::Http2(ref mut h2) => h2.poll_ready(),
+            ClientService::Http2(ref mut h2) => h2.poll_ready().map_err(Into::into),
         }
     }
 
@@ -279,7 +282,7 @@ impl Future for ClientServiceFuture {
                 }
                 Ok(Async::Ready(res))
             }
-            ClientServiceFuture::Http2(f) => f.poll(),
+            ClientServiceFuture::Http2(f) => f.poll().map_err(Into::into),
         }
     }
 }
