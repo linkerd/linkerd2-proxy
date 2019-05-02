@@ -92,13 +92,13 @@ where
                                 .filter_map(|addr| pb_to_sock_addr(addr.clone())),
                         );
                     }
-                    Some(PbUpdate2::NoEndpoints(ref no_endpoints)) if no_endpoints.exists => {
-                        exists = Exists::Yes(());
+                    Some(PbUpdate2::NoEndpoints(ref no_endpoints)) => {
                         self.no_endpoints(auth, no_endpoints.exists);
-                    }
-                    Some(PbUpdate2::NoEndpoints(no_endpoints)) => {
-                        debug_assert!(!no_endpoints.exists);
-                        exists = Exists::No;
+                        if no_endpoints.exists {
+                            exists = Exists::Yes(());
+                        } else {
+                            exists = Exists::No;
+                        }
                     }
                     None => (),
                 },
