@@ -5,7 +5,7 @@ use futures::{Async, Poll};
 use std::fmt;
 use std::{
     error, fmt,
-    net::SocketAddr
+    net::SocketAddr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
