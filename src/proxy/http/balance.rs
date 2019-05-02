@@ -93,12 +93,16 @@ where
 }
 
 impl<A, B, D> Layer<A, B, D> {
-    pub fn with_fallback<Rec>(self, recognize: Rec) -> fallback::Layer<Rec, Self, A>
+    pub fn with_fallback<Rec>(
+        self,
+        max_in_flight: usize,
+        recognize: Rec,
+    ) -> fallback::Layer<Rec, Self, A>
     where
         Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
         http::Request<A>: Send + 'static,
     {
-        fallback::layer(self, recognize)
+        fallback::layer(self, max_in_flight, recognize)
     }
 }
 
@@ -226,6 +230,7 @@ pub mod fallback {
     #[derive(Debug, Clone)]
     pub struct Layer<Rec, Bal, A> {
         recognize: Rec,
+        max_in_flight: usize,
         balance_layer: Bal,
         _marker: PhantomData<fn(A)>,
     }
@@ -285,6 +290,7 @@ pub mod fallback {
 
     pub fn layer<Rec, A, B, D>(
         balance_layer: super::Layer<A, B, D>,
+        max_in_flight: usize,
         recognize: Rec,
     ) -> Layer<Rec, super::Layer<A, B, D>, A>
     where
@@ -292,6 +298,7 @@ pub mod fallback {
     {
         Layer {
             recognize,
+            max_in_flight,
             balance_layer,
             _marker: PhantomData,
         }
@@ -316,9 +323,7 @@ pub mod fallback {
 
         fn layer(&self, inner: M) -> Self::Service {
             let balance = self.balance_layer.layer(inner.clone());
-            // Use a buffer with a single slot just to make the inner service
-            // `Clone`, not to actually provide buffering.
-            let inner = buffer::layer(1).layer(inner);
+            let inner = buffer::layer(self.max_in_flight).layer(inner);
             let fallback = router::layer(self.recognize.clone()).layer(inner);
             Stack {
                 fallback,
@@ -798,7 +803,7 @@ mod tests {
                     Duration::from_secs(666),
                     resolve::layer(MockResolve),
                 )
-                .with_fallback(|_: &http::Request<_>| Some(666)),
+                .with_fallback(666, |_: &http::Request<_>| Some(666)),
             )
             .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
             .service(MockStack);
