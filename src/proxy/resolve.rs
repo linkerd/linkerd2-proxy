@@ -3,7 +3,7 @@ extern crate tower_discover;
 
 use futures::{Async, Poll};
 use std::{
-    error, fmt,
+    fmt,
     net::SocketAddr,
     sync::{
         atomic::{AtomicBool, Ordering},
