@@ -61,7 +61,7 @@ where
     Svc: svc::Service<Req>,
     Svc::Error: Into<error::Error>,
 {
-    state: State<Req, Svc>,
+    state: State<Req, LoadShed<Svc>>,
 }
 
 struct Inner<Req, Rec, Mk>
@@ -80,8 +80,8 @@ where
     Svc: svc::Service<Req>,
     Svc::Error: Into<error::Error>,
 {
-    Init(Option<Req>, LoadShed<Svc>),
-    Called(<LoadShed<Svc> as svc::Service<Req>>::Future),
+    Init(Option<Req>, Svc),
+    Called(Svc::Future),
     Error(Option<error::Error>),
 }
 
