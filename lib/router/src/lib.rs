@@ -6,7 +6,6 @@ extern crate tower_service as svc;
 use futures::{Async, Future, Poll};
 
 use std::hash::Hash;
-use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -78,10 +77,9 @@ enum State<Req, Svc>
 where
     Svc: svc::Service<Req>,
 {
-    NotReady(Req, Svc),
+    Init(Option<Req>, Svc),
     Called(Svc::Future),
-    Error(error::Error),
-    Tmp,
+    Error(Option<error::Error>),
 }
 
 // ===== impl Recognize =====
@@ -193,13 +191,13 @@ where
 {
     fn new(req: Req, svc: Svc) -> Self {
         ResponseFuture {
-            state: State::NotReady(req, svc),
+            state: State::Init(Some(req), svc),
         }
     }
 
     fn error(err: error::Error) -> Self {
         ResponseFuture {
-            state: State::Error(err),
+            state: State::Error(Some(err)),
         }
     }
 
@@ -222,25 +220,18 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            match mem::replace(&mut self.state, State::Tmp) {
-                State::NotReady(req, mut svc) => match svc.poll_ready().map_err(Into::into)? {
-                    Async::Ready(()) => {
-                        self.state = State::Called(svc.call(req));
+            self.state = match self.state {
+                State::Init(ref mut req, ref mut svc) => {
+                    match svc.poll_ready().map_err(Into::into)? {
+                        Async::NotReady => return Err(error::RouteUnavailable.into()),
+                        Async::Ready(()) => {
+                            let req = req.take().expect("polled after ready");
+                            State::Called(svc.call(req))
+                        }
                     }
-                    Async::NotReady => {
-                        self.state = State::NotReady(req, svc);
-                        return Ok(Async::NotReady);
-                    }
-                },
-                State::Called(mut fut) => match fut.poll().map_err(Into::into)? {
-                    Async::Ready(val) => return Ok(Async::Ready(val)),
-                    Async::NotReady => {
-                        self.state = State::Called(fut);
-                        return Ok(Async::NotReady);
-                    }
-                },
-                State::Error(err) => return Err(err),
-                State::Tmp => panic!("response future polled after ready"),
+                }
+                State::Called(ref mut fut) => return fut.poll().map_err(Into::into),
+                State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),
             }
         }
     }
