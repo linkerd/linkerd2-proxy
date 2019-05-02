@@ -337,28 +337,6 @@ pub mod fallback {
         }
     }
 
-    impl<R, Bal, A> svc::Service<router::Config> for Stack<R, Bal, A>
-    where
-        R: rt::Make<router::Config> + Clone,
-        Bal: Clone,
-    {
-        type Response = MakeSvc<R, Bal, A>;
-        type Error = never::Never;
-        type Future = futures::future::FutureResult<Self::Response, Self::Error>;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            Ok(().into())
-        }
-
-        fn call(&mut self, config: router::Config) -> Self::Future {
-            futures::future::ok(MakeSvc {
-                fallback: curry(self.fallback.clone(), config),
-                balance: self.balance.clone(),
-                _marker: PhantomData,
-            })
-        }
-    }
-
     impl<R, Bal, A> Clone for Stack<R, Bal, A>
     where
         R: Clone,
@@ -762,23 +740,6 @@ mod tests {
                 Duration::from_secs(666),
                 resolve::layer(MockResolve),
             ))
-            .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
-            .service(MockStack);
-
-        assert_svc(stack);
-    }
-
-    #[test]
-    fn fallback_is_svc() {
-        let stack = svc::builder()
-            .layer(
-                layer::<hyper::Body, hyper::Body, _>(
-                    Duration::from_secs(666),
-                    Duration::from_secs(666),
-                    resolve::layer(MockResolve),
-                )
-                .with_fallback(|_: &http::Request<_>| Some(666)),
-            )
             .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
             .service(MockStack);
 
