@@ -8,11 +8,8 @@ use futures::{task, Async, Future, Poll};
 use tokio_timer::{clock, Delay};
 use tower::reconnect::Reconnect;
 
+use proxy::Error;
 use svc;
-
-// compiler doesn't seem to notice this used in where bounds below...
-#[allow(unused)]
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub struct Layer<Req> {

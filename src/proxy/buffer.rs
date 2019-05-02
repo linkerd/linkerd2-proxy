@@ -6,9 +6,8 @@ use futures::{Future, Poll};
 use tower::buffer::Buffer;
 
 use logging;
+use proxy::Error;
 use svc;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Produces `MakeService`s where the output `Service` is wrapped with a `Buffer`
 #[derive(Debug)]

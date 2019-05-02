@@ -17,14 +17,12 @@ use proxy::http::{
     upgrade,
 };
 use proxy::protocol::Protocol;
-use proxy::tcp;
+use proxy::{tcp, Error};
 use svc::{MakeService, Service};
 use transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// A protocol-transparent Server!
 ///
