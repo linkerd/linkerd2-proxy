@@ -34,8 +34,8 @@ where
 pub trait Recognize<Request> {
     /// Identifies a Route.
     type Target: Eq + Hash;
-    /// Determines the target for a route to handle the given request.
 
+    /// Determines the target for a route to handle the given request.
     fn recognize(&self, req: &Request) -> Option<Self::Target>;
 }
 
