@@ -24,7 +24,7 @@ mod destination_set;
 
 use self::destination_set::DestinationSet;
 
-type ActiveQuery<T> = Remote<PbUpdate, T>;
+type Query<T> = Remote<PbUpdate, T>;
 type UpdateRx<T> = Receiver<PbUpdate, T>;
 
 /// Satisfies resolutions as requested via `request_rx`.
@@ -37,10 +37,8 @@ pub struct Background<T>
 where
     T: GrpcService<BoxBody>,
 {
-    new_query: NewQuery,
+    new_query: NewQuery<T>,
     dsts: DestinationCache<T>,
-    client: Option<T>,
-    /// The Destination.Get RPC client service.
     /// Each poll, records whether the rpc service was till ready.
     rpc_ready: bool,
     /// A receiver of new watch requests.
@@ -61,17 +59,14 @@ where
 
 /// The configurationn necessary to create a new Destination service
 /// query.
-struct NewQuery {
-    suffixes: Vec<dns::Suffix>,
-    context_token: String,
-}
-
-enum DestinationServiceQuery<T>
+struct NewQuery<T>
 where
     T: GrpcService<BoxBody>,
 {
-    Inactive,
-    Active(ActiveQuery<T>),
+    /// The Destination.Get RPC client service.
+    client: Option<T>,
+    suffixes: Vec<dns::Suffix>,
+    context_token: String,
 }
 
 // ==== impl Background =====
@@ -111,8 +106,11 @@ where
         context_token: String,
     ) -> Self {
         Self {
-            new_query: NewQuery::new(suffixes, context_token),
-            client,
+            new_query: NewQuery {
+                client,
+                suffixes,
+                context_token,
+            },
             dsts: DestinationCache::new(),
             rpc_ready: false,
             request_rx,
@@ -121,7 +119,7 @@ where
 
     fn poll_resolve_requests(&mut self) -> Async<()> {
         loop {
-            if let Some(ref mut client) = self.client {
+            if let Some(ref mut client) = self.new_query.client {
                 // if rpc service isn't ready, not much we can do...
                 match client.poll_ready() {
                     Ok(Async::Ready(())) => {
@@ -137,11 +135,10 @@ where
                         return Async::NotReady;
                     }
                 }
-
-                // handle any pending reconnects first
-                if self.new_query.poll_reconnect(&mut self.dsts, client) {
-                    continue;
-                }
+            }
+            // handle any pending reconnects first
+            if self.new_query.poll_reconnect(&mut self.dsts) {
+                continue;
             }
 
             // check for any new watches
@@ -149,7 +146,7 @@ where
                 Ok(Async::Ready(Some(resolve))) => {
                     trace!("Destination.Get {:?}", resolve.authority);
 
-                    let new_query = &self.new_query;
+                    let new_query = &mut self.new_query;
                     let dsts = &mut self.dsts;
 
                     match dsts.destinations.entry(resolve.authority) {
@@ -173,23 +170,13 @@ where
                             occ.get_mut().responders.push(resolve.responder);
                         }
                         Entry::Vacant(vac) => {
-                            let query = new_query.query_destination_service_if_relevant(
-                                self.client.as_mut(),
-                                vac.key(),
-                                "connect",
-                            );
+                            let query = new_query.connect(vac.key());
                             let mut set = DestinationSet {
                                 addrs: Exists::Unknown,
                                 query,
                                 responders: vec![resolve.responder],
                             };
-                            // If the authority is one for which the Destination service is never
-                            // relevant (e.g. an absolute name that doesn't end in ".svc.$zone." in
-                            // Kubernetes), or if we don't have a `client`, then immediately start
-                            // polling DNS.
-                            if !set.query.is_active() {
-                                set.no_endpoints(vac.key(), false);
-                            }
+
                             vac.insert(set);
                         }
                     }
@@ -206,35 +193,38 @@ where
 
     fn poll_destinations(&mut self) {
         for (auth, set) in &mut self.dsts.destinations {
-            // Query the Destination service first.
-            let (new_query, found_by_destination_service) = match set.query.take() {
-                DestinationServiceQuery::Active(Remote::ConnectedOrConnecting { rx }) => {
-                    let (new_query, found_by_destination_service) =
-                        set.poll_destination_service(auth, rx);
+            set.query = match set.query.take() {
+                Some(Remote::ConnectedOrConnecting { rx }) => {
+                    let (new_query, _) = set.poll_destination_service(auth, rx);
                     if let Remote::NeedsReconnect = new_query {
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
                     }
-                    (new_query.into(), found_by_destination_service)
+                    Some(new_query)
                 }
                 query => {
-                    set.no_endpoints(auth, false);
-                    (query, Exists::Unknown)
+                    if query.is_none() {
+                        set.no_endpoints(auth, false);
+                    }
+                    query
                 }
             };
-            set.query = new_query;
         }
     }
 }
 
 // ===== impl NewQuery =====
 
-impl NewQuery {
-    fn new(suffixes: Vec<dns::Suffix>, context_token: String) -> Self {
-        Self {
-            suffixes,
-            context_token,
-        }
+impl<T> NewQuery<T>
+where
+    T: GrpcService<BoxBody>,
+{
+    fn connect(&mut self, dst: &NameAddr) -> Option<Query<T>> {
+        self.query(dst, "connect")
+    }
+
+    fn reconnect(&mut self, dst: &NameAddr) -> Option<Query<T>> {
+        self.query(dst, "connect")
     }
 
     /// Attepts to initiate a query `query` to the Destination service
@@ -247,46 +237,34 @@ impl NewQuery {
     ///    `None`.
     /// - `DestinationServiceQuery::Active` if the authority is suitable for
     ///    querying the Destination service.
-    fn query_destination_service_if_relevant<T>(
-        &self,
-        client: Option<&mut T>,
-        dst: &NameAddr,
-        connect_or_reconnect: &str,
-    ) -> DestinationServiceQuery<T>
+    fn query(&mut self, dst: &NameAddr, connect_or_reconnect: &str) -> Option<Query<T>>
     where
         T: GrpcService<BoxBody>,
     {
         trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
         if self.suffixes.iter().any(|s| s.contains(dst.name())) {
-            if let Some(client) = client {
-                let req = GetDestination {
-                    scheme: "k8s".into(),
-                    path: format!("{}", dst),
-                    context_token: self.context_token.clone(),
-                };
-                let mut svc = Destination::new(client.as_service());
-                let response = svc.get(grpc::Request::new(req));
-                let query = Remote::ConnectedOrConnecting {
-                    rx: Receiver::new(response),
-                };
-                return DestinationServiceQuery::Active(query);
-            }
+            let mut client = self.client.as_mut()?;
+            let req = GetDestination {
+                scheme: "k8s".into(),
+                path: format!("{}", dst),
+                context_token: self.context_token.clone(),
+            };
+            let mut svc = Destination::new(client.as_service());
+            let response = svc.get(grpc::Request::new(req));
+            Some(Remote::ConnectedOrConnecting {
+                rx: Receiver::new(response),
+            })
         } else {
             debug!("dst={} not in suffixes", dst.name());
+            None
         }
-
-        DestinationServiceQuery::Inactive
     }
 
     /// Tries to reconnect next watch stream. Returns true if reconnection started.
-    fn poll_reconnect<T>(&self, dsts: &mut DestinationCache<T>, client: &mut T) -> bool
-    where
-        T: GrpcService<BoxBody>,
-    {
+    fn poll_reconnect(&mut self, dsts: &mut DestinationCache<T>) -> bool {
         while let Some(auth) = dsts.reconnects.pop_front() {
             if let Some(set) = dsts.destinations.get_mut(&auth) {
-                set.query =
-                    self.query_destination_service_if_relevant(Some(client), &auth, "reconnect");
+                set.query = self.reconnect(&auth);
                 return true;
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
@@ -317,32 +295,5 @@ where
             dst.responders.retain(|r| r.is_active());
             dst.responders.len() > 0
         });
-    }
-}
-
-// ===== impl DestinationServiceQuery =====
-
-impl<T> DestinationServiceQuery<T>
-where
-    T: GrpcService<BoxBody>,
-{
-    pub fn is_active(&self) -> bool {
-        match self {
-            DestinationServiceQuery::Active(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn take(&mut self) -> DestinationServiceQuery<T> {
-        mem::replace(self, DestinationServiceQuery::Inactive)
-    }
-}
-
-impl<T> From<ActiveQuery<T>> for DestinationServiceQuery<T>
-where
-    T: GrpcService<BoxBody>,
-{
-    fn from(active: ActiveQuery<T>) -> Self {
-        DestinationServiceQuery::Active(active)
     }
 }

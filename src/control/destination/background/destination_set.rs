@@ -25,7 +25,7 @@ use control::{
 use identity;
 use NameAddr;
 
-use super::{ActiveQuery, DestinationServiceQuery, UpdateRx};
+use super::{Query, UpdateRx};
 
 /// Holds the state of a single resolution.
 pub(super) struct DestinationSet<T>
@@ -33,7 +33,7 @@ where
     T: GrpcService<BoxBody>,
 {
     pub addrs: Exists<Cache<SocketAddr, Metadata>>,
-    pub query: DestinationServiceQuery<T>,
+    pub query: Option<Query<T>>,
     pub responders: Vec<Responder>,
 }
 
@@ -51,7 +51,7 @@ where
         &mut self,
         auth: &NameAddr,
         mut rx: UpdateRx<T>,
-    ) -> (ActiveQuery<T>, Exists<()>) {
+    ) -> (Query<T>, Exists<()>) {
         let mut exists = Exists::Unknown;
 
         loop {
