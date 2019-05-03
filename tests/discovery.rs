@@ -98,10 +98,45 @@ macro_rules! generate_tests {
             )
         }
 
+        #[test]
+        fn outbound_destinations_reset_on_reconnect_followed_by_no_endpoints() {
+            use std::thread;
+
+            let env = init_env();
+            let srv = $make_server().route("/", "hello").run();
+            let srv2 = $make_server().route("/", "hi").run();
+            let ctrl = controller::new();
+
+            let dst_tx0 = ctrl.destination_tx("initially-exists.ns.svc.cluster.local");
+            dst_tx0.send_addr(srv.addr);
+
+            let dst_tx1 = ctrl.destination_tx("initially-exists.ns.svc.cluster.local");
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv2)
+                .run_with_test_env(env);
+
+            let initially_exists =
+                $make_client(proxy.outbound, "initially-exists.ns.svc.cluster.local");
+            assert_eq!(initially_exists.get("/"), "hello");
+
+            drop(dst_tx0); // trigger reconnect
+            dst_tx1.send(controller::destination_exists_with_no_endpoints());
+
+            // Wait for the reconnect to happen. TODO: Replace this flaky logic.
+            thread::sleep(Duration::from_millis(1000));
+
+
+            // We should now route to the request's original destination.
+            assert_eq!(initially_exists.get("/"), "hi");
+        }
+
         fn init_env() -> app::config::TestEnv {
             let _ = env_logger_init();
             app::config::TestEnv::new()
         }
+
 
         fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update) {
             use std::thread;
