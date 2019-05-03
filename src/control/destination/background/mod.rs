@@ -195,12 +195,12 @@ where
         for (auth, set) in &mut self.dsts.destinations {
             set.query = match set.query.take() {
                 Some(Remote::ConnectedOrConnecting { rx }) => {
-                    let (new_query, _) = set.poll_destination_service(auth, rx);
-                    if let Remote::NeedsReconnect = new_query {
+                    let new_query = set.poll_destination_service(auth, rx);
+                    if let Some(Remote::NeedsReconnect) = new_query {
                         set.reset_on_next_modification();
                         self.dsts.reconnects.push_back(auth.clone());
                     }
-                    Some(new_query)
+                    new_query
                 }
                 query => {
                     if query.is_none() {

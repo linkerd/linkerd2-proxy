@@ -51,9 +51,7 @@ where
         &mut self,
         auth: &NameAddr,
         mut rx: UpdateRx<T>,
-    ) -> (Query<T>, Exists<()>) {
-        let mut exists = Exists::Unknown;
-
+    ) -> Option<Query<T>> {
         loop {
             match rx.poll() {
                 Ok(Async::Ready(Some(update))) => match update.update {
@@ -66,7 +64,6 @@ where
                         self.add(auth, addrs)
                     }
                     Some(PbUpdate2::Remove(r_set)) => {
-                        exists = Exists::Yes(());
                         self.remove(
                             auth,
                             r_set
@@ -75,13 +72,8 @@ where
                                 .filter_map(|addr| pb_to_sock_addr(addr.clone())),
                         );
                     }
-                    Some(PbUpdate2::NoEndpoints(ref no_endpoints)) if no_endpoints.exists => {
-                        exists = Exists::Yes(());
+                    Some(PbUpdate2::NoEndpoints(ref no_endpoints)) => {
                         self.no_endpoints(auth, no_endpoints.exists);
-                    }
-                    Some(PbUpdate2::NoEndpoints(no_endpoints)) => {
-                        debug_assert!(!no_endpoints.exists);
-                        exists = Exists::No;
                     }
                     None => (),
                 },
@@ -90,14 +82,22 @@ where
                         "Destination.Get stream ended for {:?}, must reconnect",
                         auth
                     );
-                    return (Remote::NeedsReconnect.into(), exists);
+                    return Some(Remote::NeedsReconnect.into());
                 }
                 Ok(Async::NotReady) => {
-                    return (Remote::ConnectedOrConnecting { rx }.into(), exists);
+                    return Some(Remote::ConnectedOrConnecting { rx });
+                }
+                Err(ref status) if status.code() == tower_grpc::Code::InvalidArgument => {
+                    debug!(
+                        "Destination.Get stream ended for {:?} with Invalid Argument",
+                        auth
+                    );
+                    self.no_endpoints(auth, true);
+                    return None;
                 }
                 Err(err) => {
                     warn!("Destination.Get stream errored for {:?}: {:?}", auth, err);
-                    return (Remote::NeedsReconnect.into(), exists);
+                    return Some(Remote::NeedsReconnect);
                 }
             };
         }
@@ -153,12 +153,12 @@ where
             authority_for_logging,
             if exists { "exist" } else { "not exist" }
         );
+        self.responders.retain(|r| {
+            let sent = r.update_tx.unbounded_send(Update::NoEndpoints);
+            sent.is_ok()
+        });
         match self.addrs.take() {
             Exists::Yes(mut cache) => {
-                self.responders.retain(|r| {
-                    let sent = r.update_tx.unbounded_send(Update::NoEndpoints);
-                    sent.is_ok()
-                });
                 cache.clear(&mut |change| {
                     Self::on_change(&mut self.responders, authority_for_logging, change)
                 });
