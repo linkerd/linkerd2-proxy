@@ -340,7 +340,6 @@ where
             dst_svc.clone(),
             dns_resolver.clone(),
             config.destination_get_suffixes,
-            config.destination_concurrency_limit,
             config.destination_context.clone(),
         );
 

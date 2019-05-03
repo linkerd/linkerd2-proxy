@@ -177,12 +177,6 @@ impl<T> DestinationSet<T>
 where
     T: GrpcService<BoxBody>,
 {
-    /// Returns `true` if the authority that created this query _should_ query
-    /// the Destination service, but was unable to due to insufficient capaacity.
-    pub(super) fn needs_query_capacity(&self) -> bool {
-        self.query.needs_query_capacity()
-    }
-
     pub(super) fn reset_on_next_modification(&mut self) {
         match self.addrs {
             Exists::Yes(ref mut cache) => {
