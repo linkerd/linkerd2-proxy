@@ -115,19 +115,17 @@ pub enum ProtocolHint {
 /// the background future is executed on the controller thread's executor
 /// to drive the background task.
 pub fn new<T>(
-    mut client: Option<T>,
-    dns_resolver: dns::Resolver,
+    client: Option<T>,
     suffixes: Vec<dns::Suffix>,
     proxy_id: String,
-) -> (Resolver, impl Future<Item = (), Error = ()>)
+) -> (Resolver, Background<T>)
 where
     T: GrpcService<BoxBody>,
 {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
-    let mut bg = Background::new(rx, dns_resolver, suffixes, proxy_id);
-    let task = future::poll_fn(move || bg.poll_rpc(&mut client));
-    (disco, task)
+    let bg = Background::new(rx, client, suffixes, proxy_id);
+    (disco, bg)
 }
 
 // ==== impl Resolver =====

@@ -356,7 +356,6 @@ where
 
         let (resolver, resolver_bg) = control::destination::new(
             dst_svc.clone(),
-            dns_resolver.clone(),
             config.destination_get_suffixes,
             config.destination_context.clone(),
         );

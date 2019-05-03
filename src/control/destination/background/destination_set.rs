@@ -22,7 +22,6 @@ use control::{
     destination::{Metadata, ProtocolHint, Responder, Update},
     remote_stream::Remote,
 };
-use dns::{self, IpAddrListFuture};
 use identity;
 use NameAddr;
 

@@ -1,4 +1,4 @@
-use futures::{sync::mpsc, Async, Poll, Stream};
+use futures::{sync::mpsc, Async, Future, Poll, Stream};
 use std::{
     collections::{
         hash_map::{Entry, HashMap},
@@ -33,13 +33,13 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 /// service is healthy, it reads requests from `request_rx`, determines how to resolve the
 /// provided authority to a set of addresses, and ensures that resolution updates are
 /// propagated to all requesters.
-pub(super) struct Background<T>
+pub struct Background<T>
 where
     T: GrpcService<BoxBody>,
 {
     new_query: NewQuery,
-    dns_resolver: dns::Resolver,
     dsts: DestinationCache<T>,
+    client: Option<T>,
     /// The Destination.Get RPC client service.
     /// Each poll, records whether the rpc service was till ready.
     rpc_ready: bool,
@@ -75,32 +75,18 @@ where
 }
 
 // ==== impl Background =====
-
-impl<T> Background<T>
+impl<T> Future for Background<T>
 where
     T: GrpcService<BoxBody>,
 {
-    pub(super) fn new(
-        request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
-        dns_resolver: dns::Resolver,
-        suffixes: Vec<dns::Suffix>,
-        context_token: String,
-    ) -> Self {
-        Self {
-            new_query: NewQuery::new(suffixes, context_token),
-            dns_resolver,
-            dsts: DestinationCache::new(),
-            rpc_ready: false,
-            request_rx,
-        }
-    }
-
-    pub(super) fn poll_rpc(&mut self, client: &mut Option<T>) -> Poll<(), ()> {
+    type Item = ();
+    type Error = ();
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         // This loop is make sure any streams that were found disconnected
         // in `poll_destinations` while the `rpc` service is ready should
         // be reconnected now, otherwise the task would just sleep...
         loop {
-            if let Async::Ready(()) = self.poll_resolve_requests(client) {
+            if let Async::Ready(()) = self.poll_resolve_requests() {
                 // request_rx has closed, meaning the main thread is terminating.
                 return Ok(Async::Ready(()));
             }
@@ -112,10 +98,30 @@ where
             }
         }
     }
+}
 
-    fn poll_resolve_requests(&mut self, client: &mut Option<T>) -> Async<()> {
+impl<T> Background<T>
+where
+    T: GrpcService<BoxBody>,
+{
+    pub(super) fn new(
+        request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
+        client: Option<T>,
+        suffixes: Vec<dns::Suffix>,
+        context_token: String,
+    ) -> Self {
+        Self {
+            new_query: NewQuery::new(suffixes, context_token),
+            client,
+            dsts: DestinationCache::new(),
+            rpc_ready: false,
+            request_rx,
+        }
+    }
+
+    fn poll_resolve_requests(&mut self) -> Async<()> {
         loop {
-            if let Some(client) = client {
+            if let Some(ref mut client) = self.client {
                 // if rpc service isn't ready, not much we can do...
                 match client.poll_ready() {
                     Ok(Async::Ready(())) => {
@@ -133,7 +139,7 @@ where
                 }
 
                 // handle any pending reconnects first
-                if self.poll_reconnect(client) {
+                if self.new_query.poll_reconnect(&mut self.dsts, client) {
                     continue;
                 }
             }
@@ -168,7 +174,7 @@ where
                         }
                         Entry::Vacant(vac) => {
                             let query = new_query.query_destination_service_if_relevant(
-                                client.as_mut(),
+                                self.client.as_mut(),
                                 vac.key(),
                                 "connect",
                             );
@@ -181,6 +187,9 @@ where
                             // relevant (e.g. an absolute name that doesn't end in ".svc.$zone." in
                             // Kubernetes), or if we don't have a `client`, then immediately start
                             // polling DNS.
+                            if !set.query.is_active() {
+                                set.no_endpoints(vac.key(), false);
+                            }
                             vac.insert(set);
                         }
                     }
@@ -193,25 +202,6 @@ where
                 Err(_) => unreachable!("unbounded receiver doesn't error"),
             }
         }
-    }
-
-    /// Tries to reconnect next watch stream. Returns true if reconnection started.
-    fn poll_reconnect(&mut self, client: &mut T) -> bool {
-        debug_assert!(self.rpc_ready);
-
-        while let Some(auth) = self.dsts.reconnects.pop_front() {
-            if let Some(set) = self.dsts.destinations.get_mut(&auth) {
-                set.query = self.new_query.query_destination_service_if_relevant(
-                    Some(client),
-                    &auth,
-                    "reconnect",
-                );
-                return true;
-            } else {
-                trace!("reconnect no longer needed: {:?}", auth);
-            }
-        }
-        false
     }
 
     fn poll_destinations(&mut self) {
@@ -286,6 +276,23 @@ impl NewQuery {
         }
 
         DestinationServiceQuery::Inactive
+    }
+
+    /// Tries to reconnect next watch stream. Returns true if reconnection started.
+    fn poll_reconnect<T>(&self, dsts: &mut DestinationCache<T>, client: &mut T) -> bool
+    where
+        T: GrpcService<BoxBody>,
+    {
+        while let Some(auth) = dsts.reconnects.pop_front() {
+            if let Some(set) = dsts.destinations.get_mut(&auth) {
+                set.query =
+                    self.query_destination_service_if_relevant(Some(client), &auth, "reconnect");
+                return true;
+            } else {
+                trace!("reconnect no longer needed: {:?}", auth);
+            }
+        }
+        false
     }
 }
 
