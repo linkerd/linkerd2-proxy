@@ -1,6 +1,5 @@
 use futures::{Future, Poll, Stream};
 use prost::Message;
-use std::sync::Weak;
 use tower_grpc::{
     self as grpc, client::server_streaming::ResponseFuture, generic::client::GrpcService, BoxBody,
     Streaming,
@@ -28,10 +27,6 @@ where
     S: GrpcService<BoxBody>,
 {
     rx: Rx<M, S>,
-
-    /// Used by `background::NewQuery` for counting the number of currently
-    /// active queries that it has created.
-    _active: Weak<()>,
 }
 
 enum Rx<M, S>
@@ -45,10 +40,9 @@ where
 // ===== impl Receiver =====
 
 impl<M: Message + Default, S: GrpcService<BoxBody>> Receiver<M, S> {
-    pub fn new(future: ResponseFuture<M, S::Future>, active: Weak<()>) -> Self {
+    pub fn new(future: ResponseFuture<M, S::Future>) -> Self {
         Receiver {
             rx: Rx::Waiting(future),
-            _active: active,
         }
     }
 }

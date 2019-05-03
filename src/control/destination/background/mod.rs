@@ -5,7 +5,6 @@ use std::{
         VecDeque,
     },
     mem,
-    sync::Arc,
     time::Instant,
 };
 use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
@@ -64,14 +63,6 @@ where
 /// query.
 struct NewQuery {
     suffixes: Vec<dns::Suffix>,
-    /// Used for counting the number of currently-active queries.
-    ///
-    /// Each active query will hold a `Weak` reference back to this `Arc`, and
-    /// `NewQuery` can use `Arc::weak_count` to count the number of queries
-    /// that currently exist. When those queries are dropped, the weak count
-    /// will go down accordingly.
-    active_query_handle: Arc<()>,
-    concurrency_limit: usize,
     context_token: String,
 }
 
@@ -81,7 +72,6 @@ where
 {
     Inactive,
     Active(ActiveQuery<T>),
-    NoCapacity,
 }
 
 // ==== impl Background =====
@@ -94,11 +84,10 @@ where
         request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
         dns_resolver: dns::Resolver,
         suffixes: Vec<dns::Suffix>,
-        concurrency_limit: usize,
         context_token: String,
     ) -> Self {
         Self {
-            new_query: NewQuery::new(suffixes, concurrency_limit, context_token),
+            new_query: NewQuery::new(suffixes, context_token),
             dns_resolver,
             dsts: DestinationCache::new(),
             rpc_ready: false,
@@ -157,15 +146,6 @@ where
                     let new_query = &self.new_query;
                     let dsts = &mut self.dsts;
 
-                    // If the requested authority currently needs more
-                    // query capacity to query the destination service, go
-                    // ahead and try to free up capacity (by dropping any
-                    // inactive DestinationSets).
-                    if dsts.needs_query_for(&resolve.authority) {
-                        trace!("--> no query capacity, try retain_active...",);
-                        dsts.retain_active();
-                    };
-
                     match dsts.destinations.entry(resolve.authority) {
                         Entry::Occupied(mut occ) => {
                             // we may already know of some addresses here, so push
@@ -182,16 +162,6 @@ where
                                     }
                                 }
                                 Exists::No | Exists::Unknown => (),
-                            }
-
-                            if occ.get().needs_query_capacity() {
-                                trace!("--> {:?} wants to query Destination", occ.key());
-                                let query = new_query.query_destination_service_if_relevant(
-                                    client.as_mut(),
-                                    occ.key(),
-                                    "connect (previously at capacity)",
-                                );
-                                occ.get_mut().query = query;
                             }
 
                             occ.get_mut().responders.push(resolve.responder);
@@ -240,7 +210,7 @@ where
                     &auth,
                     "reconnect",
                 );
-                return !set.needs_query_capacity();
+                return true;
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
             }
@@ -295,19 +265,11 @@ where
 // ===== impl NewQuery =====
 
 impl NewQuery {
-    fn new(suffixes: Vec<dns::Suffix>, concurrency_limit: usize, context_token: String) -> Self {
+    fn new(suffixes: Vec<dns::Suffix>, context_token: String) -> Self {
         Self {
             suffixes,
-            concurrency_limit,
-            active_query_handle: Arc::new(()),
             context_token,
         }
-    }
-
-    /// Returns true if there is currently capacity for additional
-    /// Destination service queries.
-    fn has_more_queries(&self) -> bool {
-        Arc::weak_count(&self.active_query_handle) < self.concurrency_limit
     }
 
     /// Attepts to initiate a query `query` to the Destination service
@@ -315,17 +277,11 @@ impl NewQuery {
     /// query the Destination service.
     ///
     /// # Returns
-    ///
-    /// - `DestinationServiceQuery::NoCapacity` if the given authority _should_
-    ///   query the Destination service, but the query limit has already been
-    ///   reached. In this case, this function should be called again when
-    ///   there is capacity for additional queries.
     /// - `DestinationServiceQuery::Inactive` if the authority is not suitable
     ///    for querying the Destination service, or the provided `client` was
     ///    `None`.
     /// - `DestinationServiceQuery::Active` if the authority is suitable for
-    ///    querying the Destination service and there is sufficient capacity to
-    ///    initiate a new query.
+    ///    querying the Destination service.
     fn query_destination_service_if_relevant<T>(
         &self,
         client: Option<&mut T>,
@@ -336,25 +292,8 @@ impl NewQuery {
         T: GrpcService<BoxBody>,
     {
         trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
-        if !self.suffixes.iter().any(|s| s.contains(dst.name())) {
-            debug!("dst={} not in suffixes", dst.name());
-            return DestinationServiceQuery::Inactive;
-        }
-        match client {
-            // If we were able to normalize the authority (indicating we should
-            // query the Destination service), but we're out of queries, return
-            // None and set the "needs query" flag.
-            Some(_) if !self.has_more_queries() => {
-                warn!(
-                    "Can't query Destination service for {:?}, maximum \
-                     number of queries ({}) reached.",
-                    dst, self.concurrency_limit,
-                );
-                DestinationServiceQuery::NoCapacity
-            }
-            // We should query the Destination service and there is sufficient
-            // query capacity, so we're good to go!
-            Some(client) => {
+        if self.suffixes.iter().any(|s| s.contains(dst.name())) {
+            if let Some(client) = client {
                 let req = GetDestination {
                     scheme: "k8s".into(),
                     path: format!("{}", dst),
@@ -362,16 +301,16 @@ impl NewQuery {
                 };
                 let mut svc = Destination::new(client.as_service());
                 let response = svc.get(grpc::Request::new(req));
-                let active = Arc::downgrade(&self.active_query_handle);
                 let query = Remote::ConnectedOrConnecting {
-                    rx: Receiver::new(response, active),
+                    rx: Receiver::new(response),
                 };
-                DestinationServiceQuery::Active(query)
+                return DestinationServiceQuery::Active(query);
             }
-            // This authority should not query the Destination service. Return
-            // None, but set the "needs query" flag to false.
-            _ => DestinationServiceQuery::Inactive,
+        } else {
+            debug!("dst={} not in suffixes", dst.name());
         }
+
+        DestinationServiceQuery::Inactive
     }
 }
 
@@ -386,16 +325,6 @@ where
             destinations: HashMap::new(),
             reconnects: VecDeque::new(),
         }
-    }
-
-    /// Returns true if `auth` is currently known to need a Destination
-    /// service query, but was unable to query previously due to the query
-    /// limit being reached.
-    fn needs_query_for(&self, auth: &NameAddr) -> bool {
-        self.destinations
-            .get(auth)
-            .map(|dst| dst.needs_query_capacity())
-            .unwrap_or(false)
     }
 
     /// Ensures that `destinations` is updated to only maintain active resolutions.
@@ -418,15 +347,6 @@ where
     pub fn is_active(&self) -> bool {
         match self {
             DestinationServiceQuery::Active(_) => true,
-            _ => false,
-        }
-    }
-
-    /// Returns `true` if the authority that created this query _should_ query
-    /// the Destination service, but was unable to due to insufficient capaacity.
-    pub fn needs_query_capacity(&self) -> bool {
-        match self {
-            DestinationServiceQuery::NoCapacity => true,
             _ => false,
         }
     }

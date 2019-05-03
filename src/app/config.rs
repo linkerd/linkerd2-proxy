@@ -108,7 +108,7 @@ pub struct Config {
 
     /// The maximum number of queries to the Destination service which may be
     /// active concurrently.
-    pub destination_concurrency_limit: usize,
+    pub destination_buffer_capacity: usize,
 
     /// Configured by `ENV_DESTINATION_GET_SUFFIXES`.
     pub destination_get_suffixes: Vec<dns::Suffix>,
@@ -242,14 +242,6 @@ pub const ENV_DESTINATION_GET_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_GET_S
 /// If unspecified, a default value is used.
 pub const ENV_DESTINATION_PROFILE_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_PROFILE_SUFFIXES";
 
-/// Limits the maximum number of outbound Destination service queries.
-///
-/// Routes which do not result in service discovery lookups will not be capped
-/// by this limit. This will have no effect if it is greater than the total
-/// router capacity (as configured by `ENV_OUTBOUND_ROUTER_CAPACITY`).
-pub const ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT: &str =
-    "LINKERD2_PROXY_DESTINATION_CLIENT_CONCURRENCY_LIMIT";
-
 // These *disable* our protocol detection for connections whose SO_ORIGINAL_DST
 // has a port in the provided list.
 pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
@@ -337,7 +329,7 @@ const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = 10_000;
 const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 10_000;
 
-const DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT: usize = 100;
+const DEFAULT_DESTINATION_BUFFER_CAPACITY: usize = 100;
 
 const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
@@ -441,11 +433,6 @@ impl Config {
 
         let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
-        let dst_concurrency_limit = parse(
-            strings,
-            ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT,
-            parse_number,
-        );
         let dst_get_suffixes = parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
         let dst_profile_suffixes = parse(
             strings,
@@ -520,8 +507,7 @@ impl Config {
             outbound_max_requests_in_flight: outbound_max_in_flight?
                 .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
 
-            destination_concurrency_limit: dst_concurrency_limit?
-                .unwrap_or(DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT),
+            destination_buffer_capacity: DEFAULT_DESTINATION_BUFFER_CAPACITY,
 
             destination_get_suffixes: dst_get_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),

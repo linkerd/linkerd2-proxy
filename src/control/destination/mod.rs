@@ -118,7 +118,6 @@ pub fn new<T>(
     mut client: Option<T>,
     dns_resolver: dns::Resolver,
     suffixes: Vec<dns::Suffix>,
-    concurrency_limit: usize,
     proxy_id: String,
 ) -> (Resolver, impl Future<Item = (), Error = ()>)
 where
@@ -126,7 +125,7 @@ where
 {
     let (request_tx, rx) = mpsc::unbounded();
     let disco = Resolver { request_tx };
-    let mut bg = Background::new(rx, dns_resolver, suffixes, concurrency_limit, proxy_id);
+    let mut bg = Background::new(rx, dns_resolver, suffixes, proxy_id);
     let task = future::poll_fn(move || bg.poll_rpc(&mut client));
     (disco, task)
 }
