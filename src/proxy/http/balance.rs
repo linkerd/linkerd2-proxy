@@ -451,8 +451,8 @@ pub mod fallback {
                 trace!("endpoints exist; destroying fallback router");
                 // destroy the fallback router
                 self.fallback.destroy();
-            } else if let Some(ref mut router) = self.fallback.router {
-                return router.poll_ready();
+            } else {
+                return self.fallback.poll_ready();
             }
             Ok(ready)
         }
@@ -552,21 +552,40 @@ pub mod fallback {
             self.router = None;
         }
 
-        fn call<A>(
-            &mut self,
-            req: http::Request<A>,
-        ) -> <F::Value as svc::Service<http::Request<A>>>::Future
-        where
-            F::Value: svc::Service<http::Request<A>>,
-        {
+        fn create(&mut self) {
             if self.router.is_none() {
                 trace!("creating fallback router...");
                 self.router = Some(self.mk.make(&self.cfg));
             }
-            if let Some(ref mut router) = self.router {
-                svc::Service::call(router, req)
-            } else {
-                unreachable!("router should have been created")
+        }
+    }
+
+    impl<F, A> svc::Service<http::Request<A>> for Fallback<F>
+    where
+        F: rt::Make<router::Config>,
+        F::Value: svc::Service<http::Request<A>>,
+    {
+        type Future = <F::Value as svc::Service<http::Request<A>>>::Future;
+        type Error = <F::Value as svc::Service<http::Request<A>>>::Error;
+        type Response = <F::Value as svc::Service<http::Request<A>>>::Response;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            loop {
+                if let Some(ref mut router) = self.router {
+                    return svc::Service::poll_ready(router);
+                } else {
+                    self.create();
+                }
+            }
+        }
+
+        fn call(&mut self, req: http::Request<A>) -> Self::Future {
+            loop {
+                if let Some(ref mut router) = self.router {
+                    return svc::Service::call(router, req);
+                } else {
+                    self.create();
+                }
             }
         }
     }
