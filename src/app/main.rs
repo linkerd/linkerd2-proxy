@@ -269,7 +269,7 @@ where
                 };
 
                 let svc = svc::builder()
-                    .layer(buffer::layer(config.destination_concurrency_limit))
+                    .layer(buffer::layer(config.destination_buffer_capacity))
                     .layer(pending::layer())
                     .layer(control::add_origin::layer())
                     .layer(proxy::grpc::req_body_as_payload::layer().per_make())
@@ -319,7 +319,7 @@ where
             };
 
             svc::builder()
-                .layer(buffer::layer(config.destination_concurrency_limit))
+                .layer(buffer::layer(config.destination_buffer_capacity))
                 .layer(pending::layer())
                 .layer(control::add_origin::layer())
                 .layer(proxy::grpc::req_body_as_payload::layer().per_make())

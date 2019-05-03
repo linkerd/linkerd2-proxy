@@ -108,7 +108,7 @@ pub struct Config {
 
     /// The maximum number of queries to the Destination service which may be
     /// active concurrently.
-    pub destination_concurrency_limit: usize,
+    pub destination_buffer_capacity: usize,
 
     /// Configured by `ENV_DESTINATION_GET_SUFFIXES`.
     pub destination_get_suffixes: Vec<dns::Suffix>,
@@ -242,11 +242,11 @@ pub const ENV_DESTINATION_GET_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_GET_S
 /// If unspecified, a default value is used.
 pub const ENV_DESTINATION_PROFILE_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_PROFILE_SUFFIXES";
 
-/// Limits the maximum number of outbound Destination service queries.
+/// Limits the buffer capacity of the destination service client.
 ///
-/// Routes which do not result in service discovery lookups will not be capped
-/// by this limit. This will have no effect if it is greater than the total
-/// router capacity (as configured by `ENV_OUTBOUND_ROUTER_CAPACITY`).
+/// TODO: This no longer sets a limit on the number of concurrent queries,
+/// just the buffer capacity. Perhaps the environment variable should be
+/// renamed?
 pub const ENV_DESTINATION_CLIENT_CONCURRENCY_LIMIT: &str =
     "LINKERD2_PROXY_DESTINATION_CLIENT_CONCURRENCY_LIMIT";
 
@@ -520,7 +520,7 @@ impl Config {
             outbound_max_requests_in_flight: outbound_max_in_flight?
                 .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
 
-            destination_concurrency_limit: dst_concurrency_limit?
+            destination_buffer_capacity: dst_concurrency_limit?
                 .unwrap_or(DEFAULT_DESTINATION_CLIENT_CONCURRENCY_LIMIT),
 
             destination_get_suffixes: dst_get_suffixes?
