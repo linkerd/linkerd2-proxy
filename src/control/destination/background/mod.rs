@@ -137,7 +137,7 @@ where
                 }
             }
             // handle any pending reconnects first
-            if self.new_query.poll_reconnect(&mut self.dsts) {
+            if self.dsts.poll_reconnect(&mut self.new_query) {
                 continue;
             }
 
@@ -259,19 +259,6 @@ where
             None
         }
     }
-
-    /// Tries to reconnect next watch stream. Returns true if reconnection started.
-    fn poll_reconnect(&mut self, dsts: &mut DestinationCache<T>) -> bool {
-        while let Some(auth) = dsts.reconnects.pop_front() {
-            if let Some(set) = dsts.destinations.get_mut(&auth) {
-                set.query = self.reconnect(&auth);
-                return true;
-            } else {
-                trace!("reconnect no longer needed: {:?}", auth);
-            }
-        }
-        false
-    }
 }
 
 // ===== impl DestinationCache =====
@@ -295,5 +282,18 @@ where
             dst.responders.retain(|r| r.is_active());
             dst.responders.len() > 0
         });
+    }
+
+    /// Tries to reconnect next watch stream. Returns true if reconnection started.
+    fn poll_reconnect(&mut self, client: &mut NewQuery<T>) -> bool {
+        while let Some(auth) = self.reconnects.pop_front() {
+            if let Some(set) = self.destinations.get_mut(&auth) {
+                set.query = client.reconnect(&auth);
+                return true;
+            } else {
+                trace!("reconnect no longer needed: {:?}", auth);
+            }
+        }
+        false
     }
 }
