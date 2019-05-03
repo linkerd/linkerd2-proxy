@@ -318,7 +318,7 @@ pub mod router {
     pub struct Service<G, T, R, B>
     where
         T: WithRoute + Clone,
-        T::Output: Eq + Hash,
+        T::Output: Clone + Eq + Hash,
         R: rt::Make<T::Output>,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
@@ -426,7 +426,7 @@ pub mod router {
                 // only need 1 for default_route at first
                 1,
                 // Doesn't matter, since we are guaranteed to have enough capacity.
-                Duration::from_secs(0),
+                Duration::from_secs(1),
             );
 
             let route_stream = match target.get_destination() {
@@ -477,7 +477,7 @@ pub mod router {
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
-        T::Output: Eq + Hash,
+        T::Output: Clone + Eq + Hash,
         R: rt::Make<T::Output> + Clone,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
@@ -492,7 +492,7 @@ pub mod router {
                 self.stack.clone(),
                 slots,
                 // Doesn't matter, since we are guaranteed to have enough capacity.
-                Duration::from_secs(0),
+                Duration::from_secs(1),
             );
         }
 
@@ -507,7 +507,7 @@ pub mod router {
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
-        T::Output: Eq + Hash,
+        T::Output: Clone + Eq + Hash,
         Stk: rt::Make<T::Output, Value = Svc> + Clone,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,

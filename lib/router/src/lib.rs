@@ -1,6 +1,9 @@
+#[macro_use]
 extern crate futures;
 extern crate indexmap;
 extern crate linkerd2_stack as stack;
+extern crate tokio;
+extern crate tokio_timer;
 extern crate tower_load_shed;
 extern crate tower_service as svc;
 
@@ -8,17 +11,20 @@ use futures::{Async, Future, Poll};
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+// FIXME(kleimkuhler): impl Send for Target and Svc?
+// use tokio;
 use tower_load_shed::LoadShed;
 
 mod cache;
 pub mod error;
 
-use self::cache::Cache;
+use self::cache::{Cache, PurgeCache};
 
 /// Routes requests based on a configurable `Key`.
 pub struct Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
 {
@@ -67,12 +73,14 @@ where
 struct Inner<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
 {
     recognize: Rec,
     make: Mk,
-    cache: Mutex<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    cache: Arc<Mutex<Cache<Rec::Target, LoadShed<Mk::Value>>>>,
+    _cache_bg: PurgeCache<Rec::Target, LoadShed<Mk::Value>>,
 }
 
 enum State<Req, Svc>
@@ -104,15 +112,19 @@ where
 impl<Req, Rec, Mk> Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req> + Clone,
 {
     pub fn new(recognize: Rec, make: Mk, capacity: usize, max_idle_age: Duration) -> Self {
+        let (cache, _cache_bg) = Cache::new(capacity, max_idle_age);
+
         Router {
             inner: Arc::new(Inner {
                 recognize,
                 make,
-                cache: Mutex::new(Cache::new(capacity, max_idle_age)),
+                cache,
+                _cache_bg,
             }),
         }
     }
@@ -121,6 +133,7 @@ where
 impl<Req, Rec, Mk, Svc> svc::Service<Req> for Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target, Value = Svc>,
     Svc: svc::Service<Req> + Clone,
     Svc::Error: Into<error::Error>,
@@ -137,6 +150,8 @@ where
     ///
     /// TODO Attempt to free capacity in the router.
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        // FIXME(kleimkuhler): impl Send for Target and Svc?
+        // tokio::spawn(self.inner._cache_bg);
         Ok(().into())
     }
 
@@ -152,8 +167,9 @@ where
         let cache = &mut *self.inner.cache.lock().expect("lock router cache");
 
         // First, try to load a cached route for `target`.
+        // This is why deref is helpful
         if let Some(service) = cache.access(&target) {
-            return ResponseFuture::new(request, service.clone());
+            return ResponseFuture::new(request, service.node.value.clone());
         }
 
         // Since there wasn't a cached route, ensure that there is capacity for a
@@ -176,6 +192,7 @@ where
 impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
 {
@@ -398,7 +415,7 @@ mod tests {
 
     #[test]
     fn invalid() {
-        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(0));
+        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(60));
 
         let rsp = router.call_err(Request::NotRecognized);
         assert!(rsp.is::<error::NotRecognized>());
@@ -422,7 +439,7 @@ mod tests {
 
     #[test]
     fn services_cached() {
-        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(0));
+        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(60));
 
         let rsp = router.call_ok(2);
         assert_eq!(rsp, 2);
@@ -437,7 +454,7 @@ mod tests {
             Recognize,
             MultiplyAndAssign::new(usize::MAX),
             1,
-            Duration::from_secs(0),
+            Duration::from_secs(60),
         );
 
         let err = router.call_err(2);

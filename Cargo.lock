@@ -593,6 +593,8 @@ dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-stack 0.1.0",
+ "tokio 0.1.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-timer 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-load-shed 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
