@@ -1,14 +1,14 @@
 extern crate futures;
 extern crate indexmap;
 extern crate linkerd2_stack as stack;
+extern crate tower_load_shed;
 extern crate tower_service as svc;
 
 use futures::{Async, Future, Poll};
-
 use std::hash::Hash;
-use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tower_load_shed::LoadShed;
 
 mod cache;
 pub mod error;
@@ -59,8 +59,9 @@ where
 pub struct ResponseFuture<Req, Svc>
 where
     Svc: svc::Service<Req>,
+    Svc::Error: Into<error::Error>,
 {
-    state: State<Req, Svc>,
+    state: State<Req, LoadShed<Svc>>,
 }
 
 struct Inner<Req, Rec, Mk>
@@ -71,17 +72,17 @@ where
 {
     recognize: Rec,
     make: Mk,
-    cache: Mutex<Cache<Rec::Target, Mk::Value>>,
+    cache: Mutex<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
 enum State<Req, Svc>
 where
     Svc: svc::Service<Req>,
+    Svc::Error: Into<error::Error>,
 {
-    NotReady(Req, Svc),
+    Init(Option<Req>, Svc),
     Called(Svc::Future),
-    Error(error::Error),
-    Tmp,
+    Error(Option<error::Error>),
 }
 
 // ===== impl Recognize =====
@@ -165,7 +166,7 @@ where
         };
 
         // Bind a new route, send the request on the route, and cache the route.
-        let service = self.inner.make.make(&target);
+        let service = LoadShed::new(self.inner.make.make(&target));
 
         reserve.store(target, service.clone());
         ResponseFuture::new(request, service)
@@ -190,16 +191,17 @@ where
 impl<Req, Svc> ResponseFuture<Req, Svc>
 where
     Svc: svc::Service<Req>,
+    Svc::Error: Into<error::Error>,
 {
-    fn new(req: Req, svc: Svc) -> Self {
+    fn new(req: Req, svc: LoadShed<Svc>) -> Self {
         ResponseFuture {
-            state: State::NotReady(req, svc),
+            state: State::Init(Some(req), svc),
         }
     }
 
     fn error(err: error::Error) -> Self {
         ResponseFuture {
-            state: State::Error(err),
+            state: State::Error(Some(err)),
         }
     }
 
@@ -217,30 +219,27 @@ where
     Svc: svc::Service<Req>,
     Svc::Error: Into<error::Error>,
 {
-    type Item = Svc::Response;
+    type Item = <LoadShed<Svc> as svc::Service<Req>>::Response;
     type Error = error::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        use svc::Service;
+
         loop {
-            match mem::replace(&mut self.state, State::Tmp) {
-                State::NotReady(req, mut svc) => match svc.poll_ready().map_err(Into::into)? {
-                    Async::Ready(()) => {
-                        self.state = State::Called(svc.call(req));
+            self.state = match self.state {
+                State::Init(ref mut req, ref mut svc) => {
+                    match svc.poll_ready().map_err(error::Error::from)? {
+                        Async::NotReady => {
+                            unreachable!("load shedding services must always be ready");
+                        }
+                        Async::Ready(()) => {
+                            let req = req.take().expect("polled after ready");
+                            State::Called(svc.call(req))
+                        }
                     }
-                    Async::NotReady => {
-                        self.state = State::NotReady(req, svc);
-                        return Ok(Async::NotReady);
-                    }
-                },
-                State::Called(mut fut) => match fut.poll().map_err(Into::into)? {
-                    Async::Ready(val) => return Ok(Async::Ready(val)),
-                    Async::NotReady => {
-                        self.state = State::Called(fut);
-                        return Ok(Async::NotReady);
-                    }
-                },
-                State::Error(err) => return Err(err),
-                State::Tmp => panic!("response future polled after ready"),
+                }
+                State::Called(ref mut fut) => return fut.poll().map_err(error::Error::from),
+                State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),
             }
         }
     }
@@ -249,7 +248,7 @@ where
 #[cfg(test)]
 mod test_util {
     use super::Make;
-    use futures::{future, Poll};
+    use futures::{future, Async, Poll};
     use std::cell::Cell;
     use std::fmt;
     use std::rc::Rc;
@@ -258,7 +257,7 @@ mod test_util {
     pub struct Recognize;
 
     #[derive(Clone, Debug)]
-    pub struct MultiplyAndAssign(Rc<Cell<usize>>);
+    pub struct MultiplyAndAssign(Rc<Cell<usize>>, bool);
 
     #[derive(Debug, PartialEq)]
     pub enum MulError {
@@ -297,7 +296,11 @@ mod test_util {
 
     impl MultiplyAndAssign {
         pub fn new(n: usize) -> Self {
-            MultiplyAndAssign(Rc::new(Cell::new(n)))
+            MultiplyAndAssign(Rc::new(Cell::new(n)), true)
+        }
+
+        pub fn never_ready() -> Self {
+            MultiplyAndAssign(Rc::new(Cell::new(0)), false)
         }
     }
 
@@ -312,7 +315,7 @@ mod test_util {
 
         fn make(&self, _: &usize) -> Self::Value {
             // Don't use a clone, so that they don't affect the original Stack...
-            MultiplyAndAssign(Rc::new(Cell::new(self.0.get())))
+            MultiplyAndAssign(Rc::new(Cell::new(self.0.get())), self.1)
         }
     }
 
@@ -322,6 +325,10 @@ mod test_util {
         type Future = future::FutureResult<Self::Response, Self::Error>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            if !self.1 {
+                return Ok(Async::NotReady);
+            }
+
             if self.0.get() < ::std::usize::MAX - 1 {
                 Ok(().into())
             } else {
@@ -438,5 +445,20 @@ mod tests {
             err.downcast_ref::<MulError>().expect("should be MulError"),
             &MulError::AtMax,
         );
+    }
+
+    #[test]
+    fn load_shed_from_inner_services() {
+        use tower_load_shed::error::Overloaded;
+
+        let mut router = Router::new(
+            Recognize,
+            MultiplyAndAssign::never_ready(),
+            1,
+            Duration::from_secs(0),
+        );
+
+        let err = router.call_err(2);
+        assert!(err.downcast_ref::<Overloaded>().is_some(), "Not overloaded",);
     }
 }
