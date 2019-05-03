@@ -448,6 +448,7 @@ pub mod fallback {
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             let ready = self.balance.poll_ready()?;
             if !self.status.is_empty() {
+                trace!("endpoints exist; destroying fallback router");
                 // destroy the fallback router
                 self.fallback.destroy();
             } else if let Some(ref mut router) = self.fallback.router {
@@ -458,6 +459,7 @@ pub mod fallback {
 
         fn call(&mut self, req: http::Request<A>) -> Self::Future {
             if self.status.is_empty() {
+                trace!("no endpoints; using fallback...");
                 future::Either::A(self.fallback.call(req).map(Body::rsp_b as fn(_) -> _))
             } else {
                 future::Either::B(self.balance.call(req).map(Body::rsp_a as fn(_) -> _))
@@ -558,6 +560,7 @@ pub mod fallback {
             F::Value: svc::Service<http::Request<A>>,
         {
             if self.router.is_none() {
+                trace!("creating fallback router...");
                 self.router = Some(self.mk.make(&self.cfg));
             }
             if let Some(ref mut router) = self.router {
