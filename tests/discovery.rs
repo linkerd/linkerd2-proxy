@@ -85,13 +85,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_destinations_reset_on_reconnect_followed_by_no_endpoints_exists() {
-            outbound_destinations_reset_on_reconnect(
-                controller::destination_exists_with_no_endpoints()
-            )
-        }
-
-        #[test]
         fn outbound_destinations_reset_on_reconnect_followed_by_add_none() {
             outbound_destinations_reset_on_reconnect(
                 controller::destination_add_none()
