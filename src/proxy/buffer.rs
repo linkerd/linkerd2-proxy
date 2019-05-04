@@ -13,8 +13,9 @@ use logging;
 use proxy::Error;
 use svc;
 
-pub trait ExtractDeadline<Req>: Clone {
-    fn extract(&self, req: &Req) -> Option<Instant>;
+/// Determines the dispatch deadline for a request.
+pub trait Deadline<Req>: Clone {
+    fn deadline(&self, req: &Req) -> Option<Instant>;
 }
 
 /// Produces `MakeService`s where the output `Service` is wrapped with a `Buffer`
@@ -74,7 +75,7 @@ pub struct MakeFuture<F, T, D, Req> {
 
 pub fn layer<D, Req>(capacity: usize, deadline: D) -> Layer<D, Req>
 where
-    D: ExtractDeadline<Req>,
+    D: Deadline<Req>,
     Req: Send + 'static,
 {
     Layer {
@@ -96,7 +97,7 @@ impl<D: Clone, Req> Clone for Layer<D, Req> {
 
 impl<M, D, Req> svc::Layer<M> for Layer<D, Req>
 where
-    D: ExtractDeadline<Req>,
+    D: Deadline<Req>,
 {
     type Service = Make<M, D, Req>;
 
@@ -131,7 +132,7 @@ where
     M::Error: Into<Error>,
     <M::Response as svc::Service<Req>>::Future: Send,
     <M::Response as svc::Service<Req>>::Error: Into<Error>,
-    D: ExtractDeadline<Req>,
+    D: Deadline<Req>,
     Req: Send + 'static,
 {
     type Response = Enqueue<M::Response, D, Req>;
@@ -163,7 +164,7 @@ where
     M::Value: svc::Service<Req> + Send + 'static,
     <M::Value as svc::Service<Req>>::Future: Send,
     <M::Value as svc::Service<Req>>::Error: Into<Error>,
-    D: ExtractDeadline<Req>,
+    D: Deadline<Req>,
     Req: Send + 'static,
 {
     type Value = Enqueue<M::Value, D, Req>;
@@ -188,7 +189,7 @@ impl<M, D, Req> Make<M, D, Req> {
         <M::Value as svc::Service<Req>>::Future: Send,
         <M::Value as svc::Service<Req>>::Error: Into<Error>,
         Req: Send + 'static,
-        D: ExtractDeadline<Req> + Clone,
+        D: Deadline<Req> + Clone,
     {
         Enqueue::new(
             self.inner.make(&target),
@@ -208,7 +209,7 @@ where
     Svc: svc::Service<Req> + Send + 'static,
     Svc::Future: Send,
     Svc::Error: Into<Error>,
-    D: ExtractDeadline<Req>,
+    D: Deadline<Req>,
     Req: Send + 'static,
     T: fmt::Display + Send + Sync + 'static,
 {
@@ -237,7 +238,7 @@ where
     Dequeue<S>: svc::Service<Stealer<Req>, Error = Error> + Send,
     <Dequeue<S> as svc::Service<Stealer<Req>>>::Error: Into<Error>,
     <Dequeue<S> as svc::Service<Stealer<Req>>>::Future: Send,
-    D: ExtractDeadline<Req>,
+    D: Deadline<Req>,
     Req: Send + 'static,
 {
     pub fn new<E>(svc: S, deadline: D, capacity: usize, exec: &mut E) -> Self
@@ -255,7 +256,7 @@ where
     S: svc::Service<Req>,
     S::Error: Into<Error>,
     S::Future: Send,
-    D: ExtractDeadline<Req>,
+    D: Deadline<Req>,
 {
     type Response = S::Response;
     type Error = Error;
@@ -266,7 +267,7 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        let timeout = self.deadline.extract(&req).map(Delay::new);
+        let timeout = self.deadline.deadline(&req).map(Delay::new);
         let holder = Arc::new(Mutex::new(Some(req)));
         let stealer = Arc::downgrade(&holder);
 
@@ -340,16 +341,10 @@ where
     }
 
     fn call(&mut self, req: Stealer<Req>) -> Self::Future {
-        match req.upgrade() {
-            None => DequeueFuture::Lost,
-            Some(l) => match l.lock() {
-                Err(_) => DequeueFuture::Lost,
-                Ok(ref mut v) => match v.take() {
-                    None => DequeueFuture::Lost,
-                    Some(req) => DequeueFuture::Inner(self.0.call(req)),
-                },
-            },
-        }
+        req.upgrade()
+            .and_then(|l| l.lock().ok()?.take())
+            .map(|req| DequeueFuture::Inner(self.0.call(req)))
+            .unwrap_or(DequeueFuture::Lost)
     }
 }
 
@@ -365,8 +360,8 @@ where
 
     fn poll(&mut self) -> Poll<F::Item, Self::Error> {
         match self {
-            DequeueFuture::Lost => Err(Aborted.into()),
             DequeueFuture::Inner(ref mut f) => f.poll().map_err(Into::into),
+            DequeueFuture::Lost => Err(Aborted.into()),
         }
     }
 }
@@ -381,26 +376,26 @@ impl fmt::Display for Aborted {
 
 impl error::Error for Aborted {}
 
-// === impl ExtractDeadline ===
+// === impl Deadline ===
 
-impl<Req> ExtractDeadline<Req> for () {
-    fn extract(&self, _: &Req) -> Option<Instant> {
+impl<Req> Deadline<Req> for () {
+    fn deadline(&self, _: &Req) -> Option<Instant> {
         None
     }
 }
 
-impl<F, Req> ExtractDeadline<Req> for F
+impl<F, Req> Deadline<Req> for F
 where
     F: Fn(&Req) -> Option<Instant>,
     F: Clone,
 {
-    fn extract(&self, req: &Req) -> Option<Instant> {
+    fn deadline(&self, req: &Req) -> Option<Instant> {
         (self)(req)
     }
 }
 
-impl<Req> ExtractDeadline<Req> for Duration {
-    fn extract(&self, _: &Req) -> Option<Instant> {
+impl<Req> Deadline<Req> for Duration {
+    fn deadline(&self, _: &Req) -> Option<Instant> {
         Some(clock::now() + *self)
     }
 }

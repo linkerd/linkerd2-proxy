@@ -35,7 +35,7 @@ impl<L> Builder<L> {
         d: D,
     ) -> Builder<Stack<pending::Layer, Stack<buffer::Layer<D, Req>, L>>>
     where
-        D: buffer::ExtractDeadline<Req>,
+        D: buffer::Deadline<Req>,
         Req: Send + 'static,
     {
         self.layer(buffer::layer(bound, d)).layer(pending::layer())
