@@ -185,6 +185,10 @@ where
 
             buf.freeze()
         });
-        Box::new(self.0.request_body_async(req))
+        Box::new(
+            self.0
+                .request_body_async(req)
+                .map_err(|err| err.to_string()),
+        )
     }
 }

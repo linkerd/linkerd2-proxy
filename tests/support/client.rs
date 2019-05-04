@@ -8,12 +8,38 @@ use self::tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
+use self::tokio_rustls::TlsStream;
+use self::webpki::DNSName;
+use self::webpki::DNSNameRef;
+use bytes::{Buf, BufMut};
+use rustls::{ClientConfig, ClientSession};
+use std::io::{Read, Write};
+use std::sync::Arc;
 use support::bytes::IntoBuf;
 use support::hyper::body::Payload;
 
+type ClientError = hyper::Error;
 type Request = http::Request<Bytes>;
 type Response = http::Response<BytesBody>;
-type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, String>>)>;
+type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, ClientError>>)>;
+
+#[derive(Clone)]
+pub struct TlsConfig {
+    client_config: Arc<ClientConfig>,
+    name: DNSName,
+}
+
+impl TlsConfig {
+    pub fn new(client_config: Arc<ClientConfig>, name: &str) -> Self {
+        let dns_name = DNSNameRef::try_from_ascii_str(name)
+            .expect("no_fail")
+            .to_owned();
+        TlsConfig {
+            client_config,
+            name: dns_name,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct BytesBody(hyper::Body);
@@ -29,6 +55,18 @@ pub fn http1<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
         Run::Http1 {
             absolute_uris: false,
         },
+        None,
+    )
+}
+
+pub fn http1_tls<T: Into<String>>(addr: SocketAddr, auth: T, tls: TlsConfig) -> Client {
+    Client::new(
+        addr,
+        auth.into(),
+        Run::Http1 {
+            absolute_uris: false,
+        },
+        Some(tls),
     )
 }
 
@@ -40,11 +78,12 @@ pub fn http1_absolute_uris<T: Into<String>>(addr: SocketAddr, auth: T) -> Client
         Run::Http1 {
             absolute_uris: true,
         },
+        None,
     )
 }
 
 pub fn http2<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
-    Client::new(addr, auth.into(), Run::Http2)
+    Client::new(addr, auth.into(), Run::Http2, None)
 }
 
 pub fn tcp(addr: SocketAddr) -> tcp::TcpClient {
@@ -58,20 +97,22 @@ pub struct Client {
     running: Running,
     tx: Sender,
     version: http::Version,
+    tls: Option<TlsConfig>,
 }
 
 impl Client {
-    fn new(addr: SocketAddr, authority: String, r: Run) -> Client {
+    fn new(addr: SocketAddr, authority: String, r: Run, tls: Option<TlsConfig>) -> Client {
         let v = match r {
             Run::Http1 { .. } => http::Version::HTTP_11,
             Run::Http2 => http::Version::HTTP_2,
         };
-        let (tx, running) = run(addr, r);
+        let (tx, running) = run(addr, r, tls.clone());
         Client {
             authority,
             running,
             tx,
             version: v,
+            tls: tls,
         }
     }
 
@@ -95,7 +136,7 @@ impl Client {
     pub fn request_async(
         &self,
         builder: &mut http::request::Builder,
-    ) -> Box<Future<Item = Response, Error = String> + Send> {
+    ) -> Box<Future<Item = Response, Error = ClientError> + Send> {
         self.send_req(builder.body(Bytes::new()).unwrap())
     }
 
@@ -110,23 +151,38 @@ impl Client {
     pub fn request_body_async(
         &self,
         req: Request,
-    ) -> Box<Future<Item = Response, Error = String> + Send> {
+    ) -> Box<Future<Item = Response, Error = ClientError> + Send> {
         self.send_req(req)
     }
 
     pub fn request_builder(&self, path: &str) -> http::request::Builder {
         let mut b = ::http::Request::builder();
-        b.uri(format!("http://{}{}", self.authority, path).as_str())
-            .version(self.version);
+
+        if self.tls.is_some() {
+            b.uri(format!("https://{}{}", self.authority, path).as_str())
+                .version(self.version);
+        } else {
+            b.uri(format!("http://{}{}", self.authority, path).as_str())
+                .version(self.version);
+        };
+
         b
     }
 
-    fn send_req(&self, mut req: Request) -> Box<Future<Item = Response, Error = String> + Send> {
+    fn send_req(
+        &self,
+        mut req: Request,
+    ) -> Box<Future<Item = Response, Error = ClientError> + Send> {
         if req.uri().scheme_part().is_none() {
-            let absolute = format!("http://{}{}", self.authority, req.uri().path())
-                .parse()
-                .unwrap();
-            *req.uri_mut() = absolute;
+            if self.tls.is_some() {
+                *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
+                    .parse()
+                    .unwrap();
+            } else {
+                *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
+                    .parse()
+                    .unwrap();
+            };
         }
         let (tx, rx) = oneshot::channel();
         let _ = self.tx.unbounded_send((req, tx));
@@ -144,8 +200,8 @@ enum Run {
     Http2,
 }
 
-fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
-    let (tx, rx) = mpsc::unbounded::<(Request, oneshot::Sender<Result<Response, String>>)>();
+fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Running) {
+    let (tx, rx) = mpsc::unbounded::<(Request, oneshot::Sender<Result<Response, ClientError>>)>();
     let (running_tx, running_rx) = running();
 
     let tname = format!("support {:?} server (test={})", version, thread_name(),);
@@ -163,8 +219,9 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
             };
             let conn = Conn {
                 addr,
-                running: Mutex::new(Some(running_tx)),
+                running: Arc::new(Mutex::new(Some(running_tx))),
                 absolute_uris,
+                tls,
             };
 
             let http2_only = match version {
@@ -180,9 +237,7 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
                 .for_each(move |(req, cb)| {
                     let req = req.map(hyper::Body::from);
                     let fut = client.request(req).then(move |result| {
-                        let result = result
-                            .map(|resp| resp.map(BytesBody))
-                            .map_err(|e| e.to_string());
+                        let result = result.map(|resp| resp.map(BytesBody));
                         let _ = cb.send(result);
                         Ok(())
                     });
@@ -197,30 +252,20 @@ fn run(addr: SocketAddr, version: Run) -> (Sender, Running) {
     (tx, running_rx)
 }
 
-/// The "connector". Clones `running` into new connections, so we can signal
-/// when all connections are finally closed.
 struct Conn {
     addr: SocketAddr,
-    /// When this Sender drops, that should mean the connection is closed.
-    running: Mutex<Option<oneshot::Sender<()>>>,
+    running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     absolute_uris: bool,
+    tls: Option<TlsConfig>,
 }
 
 impl Conn {
     fn connect_(&self) -> Box<Future<Item = RunningIo, Error = ::std::io::Error> + Send> {
-        let running = self
-            .running
-            .lock()
-            .expect("running lock")
-            .take()
-            .expect("support client cannot connect more than once");
-        let c = TcpStream::connect(&self.addr)
-            .and_then(|tcp| tcp.set_nodelay(true).map(move |_| tcp))
-            .map(move |tcp| RunningIo {
-                inner: tcp,
-                running: running,
-            });
-        Box::new(c)
+        Box::new(ConnectorFuture::Init {
+            future: TcpStream::connect(&self.addr),
+            tls: self.tls.clone(),
+            running: self.running.clone(),
+        })
     }
 }
 
@@ -249,36 +294,129 @@ impl hyper::client::connect::Connect for Conn {
     }
 }
 
-/// A wrapper around a TcpStream, allowing us to signal when the connection
-/// is dropped.
-struct RunningIo {
-    inner: TcpStream,
-    /// When this drops, the related Receiver is notified that the connection
-    /// is closed.
-    running: oneshot::Sender<()>,
+enum ConnectorFuture {
+    Init {
+        future: tokio::net::tcp::ConnectFuture,
+        tls: Option<TlsConfig>,
+        running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    },
+    Handshake {
+        future: tokio_rustls::Connect<TcpStream>,
+        running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    },
 }
 
-impl io::Read for RunningIo {
+impl Future for ConnectorFuture {
+    type Item = RunningIo;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let take_running = move |r: &Mutex<Option<oneshot::Sender<()>>>| {
+            r.lock()
+                .expect("running lock")
+                .take()
+                .expect("support client cannot connect more than once")
+        };
+
+        loop {
+            *self = match self {
+                ConnectorFuture::Init {
+                    future,
+                    tls,
+                    running,
+                } => {
+                    let io = try_ready!(future.poll());
+
+                    match tls {
+                        None => {
+                            return Ok(Async::Ready(RunningIo::Http(io, take_running(running))));
+                        }
+
+                        Some(TlsConfig {
+                            client_config,
+                            name,
+                        }) => {
+                            let future = tokio_rustls::TlsConnector::from(client_config.clone())
+                                .connect(DNSName::as_ref(name), io);
+                            ConnectorFuture::Handshake {
+                                future,
+                                running: running.clone(),
+                            }
+                        }
+                    }
+                }
+
+                ConnectorFuture::Handshake { future, running } => {
+                    let io = try_ready!(future.poll());
+                    return Ok(Async::Ready(RunningIo::Https(io, take_running(running))));
+                }
+            }
+        }
+    }
+}
+
+enum RunningIo {
+    Http(TcpStream, oneshot::Sender<()>),
+    Https(TlsStream<TcpStream, ClientSession>, oneshot::Sender<()>),
+}
+
+impl Read for RunningIo {
+    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(buf)
+        match *self {
+            RunningIo::Http(ref mut s, _) => s.read(buf),
+            RunningIo::Https(ref mut s, _) => s.read(buf),
+        }
     }
 }
 
-impl io::Write for RunningIo {
+impl Write for RunningIo {
+    #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.inner.write(buf)
+        match *self {
+            RunningIo::Http(ref mut s, _) => s.write(buf),
+            RunningIo::Https(ref mut s, _) => s.write(buf),
+        }
     }
 
+    #[inline]
     fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
+        match *self {
+            RunningIo::Http(ref mut s, _) => s.flush(),
+            RunningIo::Https(ref mut s, _) => s.flush(),
+        }
     }
 }
 
-impl AsyncRead for RunningIo {}
+impl AsyncRead for RunningIo {
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
+        match *self {
+            RunningIo::Http(ref s, _) => s.prepare_uninitialized_buffer(buf),
+            RunningIo::Https(ref s, _) => s.prepare_uninitialized_buffer(buf),
+        }
+    }
+
+    fn read_buf<B: BufMut>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
+        match *self {
+            RunningIo::Http(ref mut s, _) => s.read_buf(buf),
+            RunningIo::Https(ref mut s, _) => s.read_buf(buf),
+        }
+    }
+}
 
 impl AsyncWrite for RunningIo {
     fn shutdown(&mut self) -> Poll<(), io::Error> {
-        AsyncWrite::shutdown(&mut self.inner)
+        match *self {
+            RunningIo::Http(ref mut s, _) => s.shutdown(),
+            RunningIo::Https(ref mut s, _) => s.shutdown(),
+        }
+    }
+
+    fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
+        match *self {
+            RunningIo::Http(ref mut s, _) => s.write_buf(buf),
+            RunningIo::Https(ref mut s, _) => s.write_buf(buf),
+        }
     }
 }
 

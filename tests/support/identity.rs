@@ -13,6 +13,7 @@ use linkerd2_proxy_api::identity as pb;
 pub struct Identity {
     pub env: app::config::TestEnv,
     pub certify_rsp: pb::CertifyResponse,
+    pub client_config: Arc<rustls::ClientConfig>,
 }
 
 #[derive(Clone)]
@@ -51,6 +52,20 @@ where
 }
 
 impl Identity {
+    pub fn from_pem(s: &str) -> Arc<rustls::ClientConfig> {
+        use std::io::Cursor;
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add_pem_file(&mut Cursor::new(s))
+            .expect("add pem file");
+
+        let mut c = rustls::ClientConfig::new();
+        c.root_store = roots;
+        c.enable_tickets = false;
+        Arc::new(c)
+    }
+
     pub fn new(dir: &'static str, local_name: String) -> Self {
         let (id_dir, token, trust_anchors, certify_rsp) = {
             let path_to_string = |path: &PathBuf| {
@@ -84,10 +99,17 @@ impl Identity {
 
         env.put(app::config::ENV_IDENTITY_DIR, id_dir);
         env.put(app::config::ENV_IDENTITY_TOKEN_FILE, token);
-        env.put(app::config::ENV_IDENTITY_TRUST_ANCHORS, trust_anchors);
+        env.put(
+            app::config::ENV_IDENTITY_TRUST_ANCHORS,
+            trust_anchors.clone(),
+        );
         env.put(app::config::ENV_IDENTITY_IDENTITY_LOCAL_NAME, local_name);
 
-        Self { env, certify_rsp }
+        Self {
+            env,
+            certify_rsp,
+            client_config: Identity::from_pem(&trust_anchors),
+        }
     }
 
     pub fn service(&self) -> Controller {
