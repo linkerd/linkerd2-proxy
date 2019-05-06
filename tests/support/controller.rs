@@ -135,7 +135,7 @@ fn grpc_no_results() -> grpc::Status {
 
 fn grpc_unexpected_request() -> grpc::Status {
     grpc::Status::new(
-        grpc::Code::InvalidArgument,
+        grpc::Code::Unavailable,
         "unit test controller expected different request",
     )
 }
