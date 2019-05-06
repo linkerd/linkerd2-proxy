@@ -474,7 +474,7 @@ mod tests {
             Recognize,
             MultiplyAndAssign::never_ready(),
             1,
-            Duration::from_secs(0),
+            Duration::from_secs(1),
         );
 
         let err = router.call_err(2);
