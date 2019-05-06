@@ -39,8 +39,6 @@ where
 {
     new_query: NewQuery<T>,
     dsts: DestinationCache<T>,
-    /// Each poll, records whether the rpc service was till ready.
-    rpc_ready: bool,
     /// A receiver of new watch requests.
     request_rx: mpsc::UnboundedReceiver<ResolveRequest>,
 }
@@ -67,6 +65,8 @@ where
     client: Option<T>,
     suffixes: Vec<dns::Suffix>,
     context_token: String,
+    /// Each poll, records whether the rpc service was till ready.
+    rpc_ready: bool,
 }
 
 // ==== impl Background =====
@@ -86,9 +86,9 @@ where
                 return Ok(Async::Ready(()));
             }
             self.dsts.retain_active();
-            self.poll_destinations();
+            self.dsts.poll_destinations();
 
-            if self.dsts.reconnects.is_empty() || !self.rpc_ready {
+            if self.dsts.reconnects.is_empty() || !self.new_query.is_ready() {
                 return Ok(Async::NotReady);
             }
         }
@@ -110,32 +110,19 @@ where
                 client,
                 suffixes,
                 context_token,
+                rpc_ready: false,
             },
             dsts: DestinationCache::new(),
-            rpc_ready: false,
             request_rx,
         }
     }
 
     fn poll_resolve_requests(&mut self) -> Async<()> {
         loop {
-            if let Some(ref mut client) = self.new_query.client {
-                // if rpc service isn't ready, not much we can do...
-                match client.poll_ready() {
-                    Ok(Async::Ready(())) => {
-                        self.rpc_ready = true;
-                    }
-                    Ok(Async::NotReady) => {
-                        self.rpc_ready = false;
-                        return Async::NotReady;
-                    }
-                    Err(err) => {
-                        warn!("Destination.Get poll_ready error: {:?}", err.into());
-                        self.rpc_ready = false;
-                        return Async::NotReady;
-                    }
-                }
+            if let Async::NotReady = self.new_query.poll_ready() {
+                return Async::NotReady;
             }
+
             // handle any pending reconnects first
             if self.dsts.poll_reconnect(&mut self.new_query) {
                 continue;
@@ -151,32 +138,10 @@ where
 
                     match dsts.destinations.entry(resolve.authority) {
                         Entry::Occupied(mut occ) => {
-                            // we may already know of some addresses here, so push
-                            // them onto the new watch first
-                            match occ.get().addrs {
-                                Exists::Yes(ref cache) => {
-                                    for (&addr, meta) in cache {
-                                        let update = Update::Add(addr, meta.clone());
-                                        resolve
-                                            .responder
-                                            .update_tx
-                                            .unbounded_send(update)
-                                            .expect("unbounded_send does not fail");
-                                    }
-                                }
-                                Exists::No | Exists::Unknown => (),
-                            }
-
-                            occ.get_mut().responders.push(resolve.responder);
+                            occ.get_mut().add_responder(resolve.responder);
                         }
                         Entry::Vacant(vac) => {
-                            let query = new_query.connect(vac.key());
-                            let mut set = DestinationSet {
-                                addrs: Exists::Unknown,
-                                query,
-                                responders: vec![resolve.responder],
-                            };
-
+                            let set = DestinationSet::new(vac.key(), resolve.responder, new_query);
                             vac.insert(set);
                         }
                     }
@@ -190,27 +155,6 @@ where
             }
         }
     }
-
-    fn poll_destinations(&mut self) {
-        for (auth, set) in &mut self.dsts.destinations {
-            set.query = match set.query.take() {
-                Some(Remote::ConnectedOrConnecting { rx }) => {
-                    let new_query = set.poll_destination_service(auth, rx);
-                    if let Some(Remote::NeedsReconnect) = new_query {
-                        set.reset_on_next_modification();
-                        self.dsts.reconnects.push_back(auth.clone());
-                    }
-                    new_query
-                }
-                query => {
-                    if query.is_none() {
-                        set.no_endpoints(auth, false);
-                    }
-                    query
-                }
-            };
-        }
-    }
 }
 
 // ===== impl NewQuery =====
@@ -219,12 +163,25 @@ impl<T> NewQuery<T>
 where
     T: GrpcService<BoxBody>,
 {
-    fn connect(&mut self, dst: &NameAddr) -> Option<Query<T>> {
-        self.query(dst, "connect")
+    fn poll_ready(&mut self) -> Async<()> {
+        if let Some(ref mut client) = self.client {
+            match client.poll_ready() {
+                Ok(Async::Ready(())) => {
+                    self.rpc_ready = true;
+                    return Async::Ready(());
+                }
+                Ok(Async::NotReady) => {}
+                Err(err) => warn!("Destination.Get poll_ready error: {:?}", err.into()),
+            }
+            self.rpc_ready = false;
+            Async::NotReady
+        } else {
+            Async::Ready(())
+        }
     }
 
-    fn reconnect(&mut self, dst: &NameAddr) -> Option<Query<T>> {
-        self.query(dst, "connect")
+    fn is_ready(&self) -> bool {
+        self.rpc_ready
     }
 
     /// Attepts to initiate a query `query` to the Destination service
@@ -278,22 +235,28 @@ where
     ///
     /// If there are no active resolutions for a destination, the destination is removed.
     fn retain_active(&mut self) {
-        self.destinations.retain(|_, ref mut dst| {
-            dst.responders.retain(|r| r.is_active());
-            dst.responders.len() > 0
-        });
+        self.destinations
+            .retain(|_, ref mut dst| dst.retain_active().is_active());
     }
 
     /// Tries to reconnect next watch stream. Returns true if reconnection started.
     fn poll_reconnect(&mut self, client: &mut NewQuery<T>) -> bool {
         while let Some(auth) = self.reconnects.pop_front() {
             if let Some(set) = self.destinations.get_mut(&auth) {
-                set.query = client.reconnect(&auth);
+                set.reconnect(&auth, client);
                 return true;
             } else {
                 trace!("reconnect no longer needed: {:?}", auth);
             }
         }
         false
+    }
+
+    fn poll_destinations(&mut self) {
+        for (auth, set) in &mut self.destinations {
+            if set.poll_dst(auth) {
+                self.reconnects.push_back(auth.clone())
+            }
+        }
     }
 }

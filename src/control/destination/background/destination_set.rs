@@ -25,16 +25,16 @@ use control::{
 use identity;
 use NameAddr;
 
-use super::{Query, UpdateRx};
+use super::{NewQuery, Query, UpdateRx};
 
 /// Holds the state of a single resolution.
 pub(super) struct DestinationSet<T>
 where
     T: GrpcService<BoxBody>,
 {
-    pub addrs: Exists<Cache<SocketAddr, Metadata>>,
-    pub query: Option<Query<T>>,
-    pub responders: Vec<Responder>,
+    addrs: Exists<Cache<SocketAddr, Metadata>>,
+    query: Option<Query<T>>,
+    responders: Vec<Responder>,
 }
 
 // ===== impl DestinationSet =====
@@ -43,15 +43,70 @@ impl<T> DestinationSet<T>
 where
     T: GrpcService<BoxBody>,
 {
+    pub(super) fn new(auth: &NameAddr, responder: Responder, new_query: &mut NewQuery<T>) -> Self {
+        let query = new_query.query(auth, "connect");
+        Self {
+            addrs: Exists::Unknown,
+            query,
+            responders: vec![responder],
+        }
+    }
+
+    pub(super) fn poll_dst(&mut self, auth: &NameAddr) -> bool {
+        let mut needs_reconnect = false;
+        self.query = match self.query.take() {
+            Some(Remote::ConnectedOrConnecting { rx }) => {
+                let new_query = self.poll_query(auth, rx);
+                if let Some(Remote::NeedsReconnect) = new_query {
+                    self.reset_on_next_modification();
+                    needs_reconnect = true;
+                }
+                new_query
+            }
+            None => {
+                let exists = self.exists();
+                self.no_endpoints(auth, exists);
+                None
+            }
+            query => query,
+        };
+        needs_reconnect
+    }
+
+    pub(super) fn add_responder(&mut self, responder: Responder) {
+        match self.addrs {
+            Exists::Yes(ref cache) => {
+                for (&addr, meta) in cache {
+                    let update = Update::Add(addr, meta.clone());
+                    responder
+                        .update_tx
+                        .unbounded_send(update)
+                        .expect("unbounded_send does not fail");
+                }
+            }
+            Exists::No | Exists::Unknown => (),
+        }
+        self.responders.push(responder);
+    }
+
+    pub(super) fn reconnect(&mut self, auth: &NameAddr, new_query: &mut NewQuery<T>) {
+        self.query = new_query.query(auth, "reconnect")
+    }
+
+    pub(super) fn retain_active(&mut self) -> &mut Self {
+        self.responders.retain(Responder::is_active);
+        self
+    }
+
+    pub(super) fn is_active(&self) -> bool {
+        self.responders.len() > 0
+    }
+
     // Processes Destination service updates from `request_rx`, returning the new query
     // and an indication of any *change* to whether the service exists as far as the
     // Destination service is concerned, where `Exists::Unknown` is to be interpreted as
     // "no change in existence" instead of "unknown".
-    pub(super) fn poll_destination_service(
-        &mut self,
-        auth: &NameAddr,
-        mut rx: UpdateRx<T>,
-    ) -> Option<Query<T>> {
+    fn poll_query(&mut self, auth: &NameAddr, mut rx: UpdateRx<T>) -> Option<Query<T>> {
         loop {
             match rx.poll() {
                 Ok(Async::Ready(Some(update))) => match update.update {
@@ -102,13 +157,15 @@ where
             };
         }
     }
-}
 
-impl<T> DestinationSet<T>
-where
-    T: GrpcService<BoxBody>,
-{
-    pub(super) fn reset_on_next_modification(&mut self) {
+    fn exists(&self) -> bool {
+        match self.addrs {
+            Exists::Yes(_) => true,
+            _ => false,
+        }
+    }
+
+    fn reset_on_next_modification(&mut self) {
         match self.addrs {
             Exists::Yes(ref mut cache) => {
                 cache.set_reset_on_next_modification();
@@ -147,7 +204,7 @@ where
         self.addrs = Exists::Yes(cache);
     }
 
-    pub(super) fn no_endpoints(&mut self, authority_for_logging: &NameAddr, exists: bool) {
+    fn no_endpoints(&mut self, authority_for_logging: &NameAddr, exists: bool) {
         trace!(
             "no endpoints for {:?} that is known to {}",
             authority_for_logging,
