@@ -78,7 +78,6 @@ where
     recognize: Rec,
     make: Mk,
     cache: Arc<Mutex<Cache<Rec::Target, LoadShed<Mk::Value>>>>,
-    cache_bg: PurgeCache<Rec::Target, LoadShed<Mk::Value>>,
 }
 
 enum State<Req, Svc>
@@ -114,26 +113,33 @@ where
     Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req> + Clone,
 {
-    pub fn new(recognize: Rec, make: Mk, capacity: usize, max_idle_age: Duration) -> Self {
+    pub fn new(
+        recognize: Rec,
+        make: Mk,
+        capacity: usize,
+        max_idle_age: Duration,
+    ) -> (Self, PurgeCache<Rec::Target, LoadShed<Mk::Value>>) {
         let (cache, cache_bg) = Cache::new(capacity, max_idle_age);
 
-        Router {
-            inner: Arc::new(Inner {
-                recognize,
-                make,
-                cache,
-                cache_bg,
-            }),
-        }
+        (
+            Router {
+                inner: Arc::new(Inner {
+                    recognize,
+                    make,
+                    cache,
+                }),
+            },
+            cache_bg,
+        )
     }
 }
 
 impl<Req, Rec, Mk, Svc> svc::Service<Req> for Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
-    <Rec as Recognize<Req>>::Target: Clone + Send + 'static,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target, Value = Svc>,
-    Svc: svc::Service<Req> + Clone + Send + 'static,
+    Svc: svc::Service<Req> + Clone,
     Svc::Error: Into<error::Error>,
 {
     type Response = <Mk::Value as svc::Service<Req>>::Response;
@@ -148,8 +154,6 @@ where
     ///
     /// TODO Attempt to free capacity in the router.
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        let inner = self.inner.clone();
-        tokio::spawn(inner.cache_bg);
         Ok(().into())
     }
 

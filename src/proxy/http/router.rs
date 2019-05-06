@@ -116,19 +116,21 @@ where
 impl<Req, Rec, Mk, B> Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    <Rec as Recognize<Req>>::Target: Clone,
+    <Rec as Recognize<Req>>::Target: Clone + Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
     pub fn make(&self) -> Service<Req, Rec, Mk> {
-        let inner = Router::new(
+        let (inner, cache_bg) = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
             self.config.capacity,
             self.config.max_idle_age,
         );
+        tokio::spawn(cache_bg);
+
         Service { inner }
     }
 }
@@ -136,9 +138,9 @@ where
 impl<Req, Rec, Mk, B, T> svc::Service<T> for Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    <Rec as Recognize<Req>>::Target: Clone,
+    <Rec as Recognize<Req>>::Target: Clone + Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {

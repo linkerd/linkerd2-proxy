@@ -124,7 +124,6 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
 
 impl<K: Clone + Eq + Hash, V> Future for PurgeCache<K, V> {
     type Item = ();
-
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
