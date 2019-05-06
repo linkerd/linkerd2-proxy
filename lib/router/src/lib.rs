@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn invalid() {
-        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(60));
+        let (mut router, _cache_bg) = Router::new(Recognize, Recognize, 1, Duration::from_secs(60));
 
         let rsp = router.call_err(Request::NotRecognized);
         assert!(rsp.is::<error::NotRecognized>());
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn cache_limited_by_capacity() {
-        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(1));
+        let (mut router, _cache_bg) = Router::new(Recognize, Recognize, 1, Duration::from_secs(1));
 
         let rsp = router.call_ok(2);
         assert_eq!(rsp, 2);
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn services_cached() {
-        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(60));
+        let (mut router, _cache_bg) = Router::new(Recognize, Recognize, 1, Duration::from_secs(60));
 
         let rsp = router.call_ok(2);
         assert_eq!(rsp, 2);
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn poll_ready_is_called_first() {
-        let mut router = Router::new(
+        let (mut router, _cache_bg) = Router::new(
             Recognize,
             MultiplyAndAssign::new(usize::MAX),
             1,
@@ -470,7 +470,7 @@ mod tests {
     fn load_shed_from_inner_services() {
         use tower_load_shed::error::Overloaded;
 
-        let mut router = Router::new(
+        let (mut router, _cache_bg) = Router::new(
             Recognize,
             MultiplyAndAssign::never_ready(),
             1,

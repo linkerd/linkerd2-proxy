@@ -319,25 +319,25 @@ mod tests {
         // Spawn a background purge on the current runtime
         runtime.spawn(cache_purge);
 
-        let mut cache_1 = cache.lock().unwrap();
+        {
+            let mut cache_1 = cache.lock().unwrap();
 
-        cache_1.reserve().expect("reserve").store(1, 2);
-        assert!(cache_1.access(&1).is_some());
-        let access = cache_1.access(&1);
+            cache_1.reserve().expect("reserve").store(1, 2);
+            assert!(cache_1.access(&1).is_some());
+            let _access = cache_1.access(&1);
 
-        // Sleep for an amount of time greater than the expiry duration so
-        // that the background purge would purge the cache iff values can
-        // be expired.
-        runtime
-            .block_on(tokio_timer::sleep(Duration::from_millis(100)))
-            .unwrap();
+            // Sleep for an amount of time greater than the expiry duration so
+            // that the background purge would purge the cache iff values can
+            // be expired.
+            runtime
+                .block_on(tokio_timer::sleep(Duration::from_millis(100)))
+                .unwrap();
 
-        // Explicity drop both the access and cache handles. Dropping the
-        // access handle will reset the expiration on the value in the cache.
-        // Dropping the cache handle will unlock the cache and allow a
-        // background purge to occur.
-        drop(access);
-        drop(cache_1);
+            // Explicity drop both the access and cache handles. Dropping the
+            // access handle will reset the expiration on the value in the cache.
+            // Dropping the cache handle will unlock the cache and allow a
+            // background purge to occur.
+        }
 
         // Ensure a background purge is polled so that it can expire any
         // values.
