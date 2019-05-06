@@ -22,10 +22,10 @@ type UpdateRx<T> = Receiver<PbUpdate, T>;
 
 /// Satisfies resolutions as requested via `request_rx`.
 ///
-/// As the `Background` is polled with a client to Destination service, if the client to the
-/// service is healthy, it reads requests from `request_rx`, determines how to resolve the
-/// provided authority to a set of addresses, and ensures that resolution updates are
-/// propagated to all requesters.
+/// As the `Background` is polled, if the client to the Destination service is
+/// healthy, it reads requests from `request_rx`, determines how to resolve the
+/// provided authority to a set of addresses, and ensures that resolution
+/// updates are propagated to all requesters.
 pub struct Background<T>
 where
     T: GrpcService<BoxBody>,
@@ -48,8 +48,7 @@ where
     reconnects: VecDeque<NameAddr>,
 }
 
-/// The configurationn necessary to create a new Destination service
-/// query.
+/// Constructs new Destination service queries.
 struct Client<T> {
     /// The Destination.Get RPC client service.
     client: Option<T>,
@@ -75,6 +74,9 @@ where
                 // request_rx has closed, meaning the main thread is terminating.
                 return Ok(Async::Ready(()));
             }
+
+            // purge inactive destination sets from the cache, and drive those
+            // that remain
             self.dsts.retain_active().poll_destinations();
 
             if self.dsts.reconnects.is_empty() || !self.client.is_ready() {
@@ -152,6 +154,7 @@ impl<T> Client<T>
 where
     T: GrpcService<BoxBody>,
 {
+    /// Poll the underlying client service, returning its readiness.
     fn poll_ready(&mut self) -> Async<()> {
         if let Some(ref mut client) = self.client {
             match client.poll_ready() {
@@ -169,15 +172,20 @@ where
         }
     }
 
+    /// Returns `true` if the Destination service client was ready the last tiem
+    /// `poll_ready` was called.
     fn is_ready(&self) -> bool {
         self.rpc_ready
     }
 
-    /// Attepts to initiate a query `query` to the Destination service
-    /// if the given authority's host is of a form suitable for using to
-    /// query the Destination service.
+    /// Attepts to initiate a query to the Destination service if the given
+    /// authority matches the client's set of search suffixes.
     ///
     /// # Returns
+    /// - `None` if the authority is not suitable for querying the Destination
+    //     service, or the underlying client service is `None`,
+    /// - `Some(Query)` if the authority is suitable for querying the
+    ///    Destination service.
     fn query(&mut self, dst: &NameAddr, connect_or_reconnect: &str) -> Option<Query<T>> {
         trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
         if self.suffixes.iter().any(|s| s.contains(dst.name())) {
@@ -234,8 +242,12 @@ where
         false
     }
 
+    /// Drives the destination sets in the cache, queueing any that need
+    /// need to be reconnected.
     fn poll_destinations(&mut self) -> &mut Self {
         for (auth, set) in &mut self.destinations {
+            // poll_dst returns `true` if the destination set should be
+            // queued to be reconnected.
             if set.poll_dst(auth) {
                 self.reconnects.push_back(auth.clone())
             }

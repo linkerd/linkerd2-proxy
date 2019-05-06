@@ -37,6 +37,8 @@ impl<T> DestinationSet<T>
 where
     T: GrpcService<BoxBody>,
 {
+    /// Construct a new `DestinationSet` for the given `responder` by using
+    /// `client` to query the destination service for `auth`.
     pub fn new(auth: &NameAddr, responder: Responder, client: &mut Client<T>) -> Self {
         let query = client.query(auth, "connect");
         Self {
@@ -46,6 +48,8 @@ where
         }
     }
 
+    /// Drive the Destination service query for `auth`, returning `true` if the
+    /// destination set will need to be queued to reconnect.
     pub fn poll_dst(&mut self, auth: &NameAddr) -> bool {
         let mut needs_reconnect = false;
         self.query = match self.query.take() {
@@ -67,6 +71,8 @@ where
         needs_reconnect
     }
 
+    /// Add a new responder that will be updated with changes in this
+    /// destination set.
     pub fn add_responder(&mut self, responder: Responder) {
         match self.addrs {
             Exists::Yes(ref cache) => {
@@ -83,23 +89,25 @@ where
         self.responders.push(responder);
     }
 
+    /// Reconnect the Destination service query for `auth`, using the
+    /// provided `client`.
     pub fn reconnect(&mut self, auth: &NameAddr, client: &mut Client<T>) {
         self.query = client.query(auth, "reconnect")
     }
 
+    /// Drops any inactive responders.
     pub fn retain_active(&mut self) -> &mut Self {
         self.responders.retain(Responder::is_active);
         self
     }
 
+    /// Returns `true` if this destination set contains any active responders.
     pub fn is_active(&self) -> bool {
         self.responders.len() > 0
     }
 
-    // Processes Destination service updates from `request_rx`, returning the new query
-    // and an indication of any *change* to whether the service exists as far as the
-    // Destination service is concerned, where `Exists::Unknown` is to be interpreted as
-    // "no change in existence" instead of "unknown".
+    // Processes Destination service updates from `rx`, returning the new query
+    // (or `None` if the destination service should not be queried.)
     fn poll_query(&mut self, auth: &NameAddr, mut rx: UpdateRx<T>) -> Option<Query<T>> {
         loop {
             match rx.poll() {
@@ -132,6 +140,9 @@ where
                     return Some(Remote::ConnectedOrConnecting { rx });
                 }
                 Err(ref status) if status.code() == tower_grpc::Code::InvalidArgument => {
+                    // Invalid Argument is returned to indicate that the
+                    // requested name should *not* query the destination
+                    // service. In this case, do not attempt to reconnect.
                     debug!(
                         "Destination.Get stream ended for {:?} with Invalid Argument",
                         auth
