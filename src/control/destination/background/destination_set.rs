@@ -92,7 +92,7 @@ where
                         "Destination.Get stream ended for {:?} with Invalid Argument",
                         auth
                     );
-                    self.no_endpoints(auth, true);
+                    self.no_endpoints(auth, false);
                     return None;
                 }
                 Err(err) => {
