@@ -24,7 +24,7 @@
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
-use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
+use futures::{sync::mpsc, Async, Poll, Stream};
 use indexmap::IndexMap;
 use std::sync::{Arc, Weak};
 use tower_grpc::{generic::client::GrpcService, BoxBody};

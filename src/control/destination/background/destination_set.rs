@@ -1,13 +1,7 @@
 use indexmap::IndexMap;
-use std::{
-    collections::HashMap,
-    //fmt,
-    iter::IntoIterator,
-    net::SocketAddr,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, iter::IntoIterator, net::SocketAddr};
 
-use futures::{Async, Future, Stream};
+use futures::{Async, Stream};
 use tower_grpc::{generic::client::GrpcService, BoxBody};
 
 use api::{

@@ -1,22 +1,15 @@
 use futures::{sync::mpsc, Async, Future, Poll, Stream};
-use std::{
-    collections::{
-        hash_map::{Entry, HashMap},
-        VecDeque,
-    },
-    mem,
-    time::Instant,
+use std::collections::{
+    hash_map::{Entry, HashMap},
+    VecDeque,
 };
 use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 
 use api::destination::client::Destination;
 use api::destination::{GetDestination, Update as PbUpdate};
 
-use super::{ResolveRequest, Update};
-use control::{
-    cache::Exists,
-    remote_stream::{Receiver, Remote},
-};
+use super::ResolveRequest;
+use control::remote_stream::{Receiver, Remote};
 use dns;
 use NameAddr;
 
@@ -200,7 +193,7 @@ where
     {
         trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
         if self.suffixes.iter().any(|s| s.contains(dst.name())) {
-            let mut client = self.client.as_mut()?;
+            let client = self.client.as_mut()?;
             let req = GetDestination {
                 scheme: "k8s".into(),
                 path: format!("{}", dst),
