@@ -19,7 +19,7 @@ use control::{
 use identity;
 use NameAddr;
 
-use super::{NewQuery, Query, UpdateRx};
+use super::{Client, Query, UpdateRx};
 
 /// Holds the state of a single resolution.
 pub(super) struct DestinationSet<T>
@@ -37,8 +37,8 @@ impl<T> DestinationSet<T>
 where
     T: GrpcService<BoxBody>,
 {
-    pub(super) fn new(auth: &NameAddr, responder: Responder, new_query: &mut NewQuery<T>) -> Self {
-        let query = new_query.query(auth, "connect");
+    pub fn new(auth: &NameAddr, responder: Responder, client: &mut Client<T>) -> Self {
+        let query = client.query(auth, "connect");
         Self {
             addrs: Exists::Unknown,
             query,
@@ -46,7 +46,7 @@ where
         }
     }
 
-    pub(super) fn poll_dst(&mut self, auth: &NameAddr) -> bool {
+    pub fn poll_dst(&mut self, auth: &NameAddr) -> bool {
         let mut needs_reconnect = false;
         self.query = match self.query.take() {
             Some(Remote::ConnectedOrConnecting { rx }) => {
@@ -67,7 +67,7 @@ where
         needs_reconnect
     }
 
-    pub(super) fn add_responder(&mut self, responder: Responder) {
+    pub fn add_responder(&mut self, responder: Responder) {
         match self.addrs {
             Exists::Yes(ref cache) => {
                 for (&addr, meta) in cache {
@@ -83,16 +83,16 @@ where
         self.responders.push(responder);
     }
 
-    pub(super) fn reconnect(&mut self, auth: &NameAddr, new_query: &mut NewQuery<T>) {
-        self.query = new_query.query(auth, "reconnect")
+    pub fn reconnect(&mut self, auth: &NameAddr, client: &mut Client<T>) {
+        self.query = client.query(auth, "reconnect")
     }
 
-    pub(super) fn retain_active(&mut self) -> &mut Self {
+    pub fn retain_active(&mut self) -> &mut Self {
         self.responders.retain(Responder::is_active);
         self
     }
 
-    pub(super) fn is_active(&self) -> bool {
+    pub fn is_active(&self) -> bool {
         self.responders.len() > 0
     }
 
@@ -113,13 +113,8 @@ where
                         self.add(auth, addrs)
                     }
                     Some(PbUpdate2::Remove(r_set)) => {
-                        self.remove(
-                            auth,
-                            r_set
-                                .addrs
-                                .iter()
-                                .filter_map(|addr| pb_to_sock_addr(addr.clone())),
-                        );
+                        let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
+                        self.remove(auth, addrs);
                     }
                     Some(PbUpdate2::NoEndpoints(ref no_endpoints)) => {
                         self.no_endpoints(auth, no_endpoints.exists);
@@ -131,7 +126,7 @@ where
                         "Destination.Get stream ended for {:?}, must reconnect",
                         auth
                     );
-                    return Some(Remote::NeedsReconnect.into());
+                    return Some(Remote::NeedsReconnect);
                 }
                 Ok(Async::NotReady) => {
                     return Some(Remote::ConnectedOrConnecting { rx });
