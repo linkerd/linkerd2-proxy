@@ -98,6 +98,7 @@ where
 }
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
+    use proxy::buffer;
     use proxy::http::router::error as router;
     use tower::load_shed::error as shed;
 
@@ -106,6 +107,9 @@ fn map_err_to_5xx(e: Error) -> StatusCode {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if let Some(_) = e.downcast_ref::<shed::Overloaded>() {
         warn!("server overloaded, max-in-flight reached");
+        http::StatusCode::SERVICE_UNAVAILABLE
+    } else if let Some(_) = e.downcast_ref::<buffer::Aborted>() {
+        warn!("dispatch aborted");
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
         error!("could not recognize request");
