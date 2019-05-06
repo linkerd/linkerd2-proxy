@@ -7,7 +7,15 @@ use std::{
 };
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 
-/// An LRU cache that is purged by a background purge task.
+/// A cache that is internally maintained by a `tokio_timer::DelayQueue`.
+///
+/// Cache access is coordinated through `vals`; this field represents the
+/// current state of the cache.
+///
+/// Cache state is mainted by `expirations`; this field is a `DelayQueue` that
+/// can be polled in the background and remove expired values.
+///
+/// All values in the cache will expire after a `expires` span of time.
 pub struct Cache<K: Clone + Eq + Hash, V> {
     capacity: usize,
     expires: Duration,
@@ -15,21 +23,26 @@ pub struct Cache<K: Clone + Eq + Hash, V> {
     vals: IndexMap<K, Node<V>>,
 }
 
-/// Purge a cache at a set interval.
+/// A value that can be polled in order to eagerly remove expired cache
+/// values.
+///
+/// This contains a weak reference to a cache so that if use of the cache is
+/// dropped, it will not continue to be polled in the background.
 pub struct PurgeCache<K: Clone + Eq + Hash, V> {
     cache: Weak<Mutex<Cache<K, V>>>,
     interval: Interval,
 }
 
-/// Wrap a cache node so that a lock is held on the entire cache. When the
-/// access is dropped, reset the cache node so that it is not purged.
+/// Wraps a cache value so that a lock is held on the entire cache. When the
+/// access is dropped, the associated expiration time of the value in
+/// `expirations` is reset.
 pub struct Access<'a, K: Clone + Eq + Hash, V> {
     expires: Duration,
     expirations: &'a mut DelayQueue<K>,
     pub(crate) node: &'a mut Node<V>,
 }
 
-/// This is the handle to a cache value.
+/// A handle to a cache value.
 pub struct Node<T> {
     key: delay_queue::Key,
     pub(crate) value: T,
@@ -95,7 +108,6 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
                     });
                 }
 
-                // `warn!` could be helpful here in an actual use case.
                 Err(_e) => {
                     return Err(CapacityExhausted {
                         capacity: self.capacity,
