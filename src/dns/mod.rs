@@ -3,13 +3,12 @@ extern crate untrusted;
 extern crate webpki;
 
 use self::trust_dns_resolver::{
-    config::ResolverConfig, lookup_ip::LookupIp, system_conf, AsyncResolver, BackgroundLookupIp,
+    config::ResolverConfig, system_conf, AsyncResolver, BackgroundLookupIp,
 };
 use convert::TryFrom;
 use futures::prelude::*;
 use std::time::Instant;
 use std::{fmt, net};
-use tokio::timer::Delay;
 
 mod name;
 
@@ -32,16 +31,9 @@ pub enum Error {
     ResolutionFailed(ResolveError),
 }
 
-pub enum Response {
-    Exists(LookupIp),
-    DoesNotExist { retry_after: Option<Instant> },
-}
-
 pub struct IpAddrFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 
 pub struct RefineFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
-
-pub type IpAddrListFuture = Box<Future<Item = Response, Error = ResolveError> + Send>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Suffix {
@@ -142,31 +134,6 @@ impl Resolver {
         let (resolver, background) = AsyncResolver::new(config, opts);
         let resolver = Resolver { resolver };
         (resolver, background)
-    }
-
-    pub fn resolve_all_ips(&self, deadline: Instant, name: &Name) -> IpAddrListFuture {
-        let lookup = self.resolver.lookup_ip(name.as_ref());
-
-        // FIXME this delay logic is really confusing...
-        let f = Delay::new(deadline)
-            .then(move |_| {
-                trace!("after delay");
-                lookup
-            })
-            .then(move |result| {
-                trace!("completed with {:?}", &result);
-                result.map(Response::Exists).or_else(|e| {
-                    if let &ResolveErrorKind::NoRecordsFound { valid_until, .. } = e.kind() {
-                        Ok(Response::DoesNotExist {
-                            retry_after: valid_until,
-                        })
-                    } else {
-                        Err(e)
-                    }
-                })
-            });
-
-        Box::new(::logging::context_future(Ctx(name.clone()), f))
     }
 
     pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {
