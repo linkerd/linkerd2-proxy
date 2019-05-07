@@ -85,10 +85,27 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_destinations_reset_on_reconnect_followed_by_no_endpoints_exists() {
-            outbound_destinations_reset_on_reconnect(
-                controller::destination_exists_with_no_endpoints()
-            )
+        fn outbound_does_not_resconnect_after_invalid_argument() {
+            let _ = env_logger_init();
+
+            let srv = $make_server().route("/", "hello").run();
+
+            let ctrl = controller::new()
+                .destination_err(
+                    "disco.test.svc.cluster.local",
+                    grpc::Code::InvalidArgument,
+                )
+                // The test controller will panic if the proxy tries to talk to it again.
+                .no_more_destinations();
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv)
+                .run();
+
+            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+
+            assert_eq!(client.get("/"), "hello");
         }
 
         #[test]
