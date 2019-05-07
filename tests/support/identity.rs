@@ -62,7 +62,6 @@ impl Identity {
 
         let mut c = rustls::ClientConfig::new();
         c.root_store = roots;
-        c.enable_tickets = false;
         Arc::new(c)
     }
 

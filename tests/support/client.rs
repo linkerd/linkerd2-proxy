@@ -9,9 +9,7 @@ use self::tokio::{
     net::TcpStream,
 };
 use self::tokio_rustls::TlsStream;
-use self::webpki::DNSName;
-use self::webpki::DNSNameRef;
-use bytes::{Buf, BufMut};
+use self::webpki::{DNSName, DNSNameRef};
 use rustls::{ClientConfig, ClientSession};
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -84,6 +82,10 @@ pub fn http1_absolute_uris<T: Into<String>>(addr: SocketAddr, auth: T) -> Client
 
 pub fn http2<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
     Client::new(addr, auth.into(), Run::Http2, None)
+}
+
+pub fn http2_tls<T: Into<String>>(addr: SocketAddr, auth: T, tls: TlsConfig) -> Client {
+    Client::new(addr, auth.into(), Run::Http2, Some(tls))
 }
 
 pub fn tcp(addr: SocketAddr) -> tcp::TcpClient {
@@ -179,7 +181,7 @@ impl Client {
                     .parse()
                     .unwrap();
             } else {
-                *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
+                *req.uri_mut() = format!("http://{}{}", self.authority, req.uri().path())
                     .parse()
                     .unwrap();
             };
@@ -361,7 +363,6 @@ enum RunningIo {
 }
 
 impl Read for RunningIo {
-    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match *self {
             RunningIo::Http(ref mut s, _) => s.read(buf),
@@ -371,7 +372,6 @@ impl Read for RunningIo {
 }
 
 impl Write for RunningIo {
-    #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match *self {
             RunningIo::Http(ref mut s, _) => s.write(buf),
@@ -379,7 +379,6 @@ impl Write for RunningIo {
         }
     }
 
-    #[inline]
     fn flush(&mut self) -> io::Result<()> {
         match *self {
             RunningIo::Http(ref mut s, _) => s.flush(),
@@ -388,34 +387,13 @@ impl Write for RunningIo {
     }
 }
 
-impl AsyncRead for RunningIo {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
-        match *self {
-            RunningIo::Http(ref s, _) => s.prepare_uninitialized_buffer(buf),
-            RunningIo::Https(ref s, _) => s.prepare_uninitialized_buffer(buf),
-        }
-    }
-
-    fn read_buf<B: BufMut>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        match *self {
-            RunningIo::Http(ref mut s, _) => s.read_buf(buf),
-            RunningIo::Https(ref mut s, _) => s.read_buf(buf),
-        }
-    }
-}
+impl AsyncRead for RunningIo {}
 
 impl AsyncWrite for RunningIo {
     fn shutdown(&mut self) -> Poll<(), io::Error> {
         match *self {
             RunningIo::Http(ref mut s, _) => s.shutdown(),
             RunningIo::Https(ref mut s, _) => s.shutdown(),
-        }
-    }
-
-    fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        match *self {
-            RunningIo::Http(ref mut s, _) => s.write_buf(buf),
-            RunningIo::Https(ref mut s, _) => s.write_buf(buf),
         }
     }
 }
