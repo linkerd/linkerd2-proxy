@@ -310,15 +310,17 @@ where
 
         // If the request hasn't been consumed by `Dequeue`, then steal it and
         // drop it when the timeout fires.
-        if let Ok(mut h) = self.holder.lock() {
-            if h.is_some() {
-                if let Some(t) = self.timeout.as_mut() {
-                    if t.poll().map_err(Error::from)?.is_ready() {
-                        drop(h.take());
-                        return Err(Aborted.into());
-                    }
+        let mut h = self.holder.lock().expect("inner service panicked");
+        if h.is_some() {
+            if let Some(t) = self.timeout.as_mut() {
+                if t.poll().map_err(Error::from)?.is_ready() {
+                    drop(h.take());
+                    return Err(Aborted.into());
                 }
             }
+        } else {
+            // Drop the timeout future so the timer doesn't need to track it.
+            drop(self.timeout.take());
         }
 
         return Ok(Async::NotReady);
