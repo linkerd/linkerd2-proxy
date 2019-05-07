@@ -407,7 +407,7 @@ mod tests {
     use futures::sync::oneshot::{self, Receiver, Sender};
     use svc::Service;
 
-    struct Idle;
+    struct Idle(Arc<()>);
     impl svc::Service<()> for Idle {
         type Response = ();
         type Error = Error;
@@ -456,18 +456,50 @@ mod tests {
     fn request_aborted_with_idle_service() {
         tokio::run(future::lazy(|| {
             let mut svc = Enqueue::new(
-                Idle,
+                Idle(Arc::new(())),
                 Duration::from_millis(100),
                 1,
                 &mut logging::context_executor("test"),
             );
 
-            svc.poll_ready().expect("service must be ready");
+            assert!(svc.poll_ready().ok().map(|r| r.is_ready()).unwrap_or(false));
 
             svc.call(()).then(|r| match r {
                 Ok(_) => panic!("unexpected response from idle service"),
                 Err(e) => {
                     assert!(e.downcast::<Aborted>().is_ok());
+                    future::ok(())
+                }
+            })
+        }));
+    }
+
+    #[test]
+    fn inner_service_dropped() {
+        tokio::run(future::lazy(|| {
+            let anchor = Arc::new(());
+            let handle = Arc::downgrade(&anchor);
+            let inner = Idle(anchor);
+            let mut svc = Enqueue::new(
+                inner,
+                Duration::from_secs(0),
+                1,
+                &mut logging::context_executor("test"),
+            );
+
+            assert!(svc.poll_ready().ok().map(|r| r.is_ready()).unwrap_or(false));
+            let call = svc.call(());
+            drop(svc);
+
+            let call = tokio::timer::Timeout::new(call, Duration::from_millis(100))
+            .then(|r| match r {
+                Ok(_) => panic!("unexpected response from idle service"),
+                Err(e) => {
+                    e.downcast::<Aborted>().expect("request must be aborted");
+                    assert!(
+                        handle.upgrade().is_none(),
+                        "inner service must have been dropped",
+                    );
                     future::ok(())
                 }
             })
