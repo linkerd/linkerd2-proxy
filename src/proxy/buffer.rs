@@ -467,7 +467,7 @@ mod tests {
             svc.call(()).then(|r| match r {
                 Ok(_) => panic!("unexpected response from idle service"),
                 Err(e) => {
-                    assert!(e.downcast::<Aborted>().is_ok());
+                    e.downcast::<Aborted>().expect("request must be aborted");
                     future::ok(())
                 }
             })
@@ -491,11 +491,9 @@ mod tests {
             let call = svc.call(());
             drop(svc);
 
-            let call = tokio::timer::Timeout::new(call, Duration::from_millis(100))
-            .then(|r| match r {
-                Ok(_) => panic!("unexpected response from idle service"),
-                Err(e) => {
-                    e.downcast::<Aborted>().expect("request must be aborted");
+            tokio::timer::Timeout::new(call, Duration::from_millis(100)).then(move |r| match r {
+                Ok(()) => panic!("unexpected response from idle service"),
+                Err(_) => {
                     assert!(
                         handle.upgrade().is_none(),
                         "inner service must have been dropped",
