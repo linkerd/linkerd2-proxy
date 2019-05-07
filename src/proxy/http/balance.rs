@@ -792,13 +792,13 @@ mod tests {
     #[test]
     fn balancer_is_make() {
         let stack = svc::builder()
-            .layer(pending::layer::<_, _, http::Request<hyper::Body>>())
+            .layer(pending::layer())
             .layer(layer::<hyper::Body, _, _>(
                 Duration::from_secs(666),
                 Duration::from_secs(666),
                 resolve::layer(MockResolve),
             ))
-            .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
+            .layer(pending::layer())
             .service(MockStack);
 
         assert_make(stack);
@@ -812,7 +812,7 @@ mod tests {
                 Duration::from_secs(666),
                 resolve::layer(MockResolve),
             ))
-            .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
+            .layer(pending::layer())
             .service(MockStack);
 
         assert_svc(stack);
@@ -829,7 +829,7 @@ mod tests {
                 )
                 .with_fallback(666, |_: &http::Request<_>| Some(666)),
             )
-            .layer(pending::layer::<_, usize, http::Request<hyper::Body>>())
+            .layer(pending::layer())
             .service(MockStack);
 
         assert_make(stack);
