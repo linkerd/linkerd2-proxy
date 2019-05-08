@@ -4,7 +4,6 @@ use hyper::body::Payload;
 
 use http;
 use proxy::{
-    buffer,
     http::router,
     resolve::{EndpointStatus, HasEndpointStatus},
 };
@@ -17,9 +16,8 @@ use std::{fmt, marker::PhantomData};
 extern crate linkerd2_router as rt;
 
 #[derive(Debug, Clone)]
-pub struct Layer<Rec, Bal, A> {
-    recognize: Rec,
-    max_in_flight: usize,
+pub struct Layer<R, Bal, A> {
+    fallback_layer: svc::ServiceBuilder<R>,
     balance_layer: Bal,
     _marker: PhantomData<fn(A)>,
 }
@@ -77,43 +75,28 @@ where
     router: Option<F::Value>,
 }
 
-pub fn layer<Rec, A, B, D>(
+pub fn layer<R, A, B, D>(
     balance_layer: super::Layer<A, B, D>,
-    max_in_flight: usize,
-    recognize: Rec,
-) -> Layer<Rec, super::Layer<A, B, D>, A>
-where
-    Rec: router::Recognize<http::Request<A>> + Clone,
-{
+    fallback_layer: svc::ServiceBuilder<R>,
+) -> Layer<R, super::Layer<A, B, D>, A> {
     Layer {
-        recognize,
-        max_in_flight,
+        fallback_layer,
         balance_layer,
         _marker: PhantomData,
     }
 }
 
-impl<Rec, Bal, A, M> svc::Layer<M> for Layer<Rec, Bal, A>
+impl<R, Bal, A, M> svc::Layer<M> for Layer<R, Bal, A>
 where
-    Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
-    router::Layer<http::Request<A>, Rec>:
-        svc::Layer<<buffer::Layer<http::Request<A>> as svc::stack::Layer<M>>::Service>,
-    buffer::Layer<http::Request<A>>: svc::Layer<M>,
+    R: svc::Layer<M> + Clone,
     Bal: svc::Layer<M>,
     M: Clone,
 {
-    type Service = Stack<
-        <router::Layer<http::Request<A>, Rec> as svc::Layer<
-            <buffer::Layer<http::Request<A>> as svc::stack::Layer<M>>::Service,
-        >>::Service,
-        Bal::Service,
-        A,
-    >;
+    type Service = Stack<R::Service, Bal::Service, A>;
 
     fn layer(&self, inner: M) -> Self::Service {
         let balance = self.balance_layer.layer(inner.clone());
-        let inner = buffer::layer(self.max_in_flight).layer(inner);
-        let fallback = router::layer(self.recognize.clone()).layer(inner);
+        let fallback = self.fallback_layer.clone().service(inner);
         Stack {
             fallback,
             balance,

@@ -14,10 +14,7 @@ pub use self::tower_balance::{
 };
 
 use http;
-use proxy::{
-    http::router,
-    resolve::{EndpointStatus, HasEndpointStatus},
-};
+use proxy::resolve::{EndpointStatus, HasEndpointStatus};
 use svc;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -95,16 +92,8 @@ where
 }
 
 impl<A, B, D> Layer<A, B, D> {
-    pub fn with_fallback<Rec>(
-        self,
-        max_in_flight: usize,
-        recognize: Rec,
-    ) -> fallback::Layer<Rec, Self, A>
-    where
-        Rec: router::Recognize<http::Request<A>> + Clone + Send + Sync + 'static,
-        http::Request<A>: Send + 'static,
-    {
-        fallback::layer(self, max_in_flight, recognize)
+    pub fn with_fallback<R>(self, fallback: svc::ServiceBuilder<R>) -> fallback::Layer<R, Self, A> {
+        fallback::layer(self, fallback)
     }
 }
 
@@ -262,166 +251,5 @@ pub mod weight {
             let svc = try_ready!(self.inner.poll());
             Ok(Weighted::new(svc, self.weight).into())
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use proxy::{
-        http::router::rt,
-        pending,
-        resolve::{self, Resolution, Resolve},
-    };
-
-    fn assert_make<A, T: Clone>(_: A)
-    where
-        A: rt::Make<T>,
-    {
-
-    }
-
-    fn assert_svc<A, T>(_: A)
-    where
-        A: svc::Service<T>,
-    {
-
-    }
-
-    #[derive(Clone)]
-    struct MockResolve;
-    #[derive(Clone, Debug)]
-    struct MockEp;
-    #[derive(Clone, Debug)]
-    struct MockSvc;
-    #[derive(Clone, Debug)]
-    struct MockStack;
-
-    #[derive(Debug, Clone)]
-    struct MockError;
-
-    impl fmt::Display for MockError {
-        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-            unimplemented!()
-        }
-    }
-
-    impl ::std::error::Error for MockError {}
-
-    impl Resolve<usize> for MockResolve {
-        type Endpoint = MockEp;
-        type Resolution = MockResolve;
-
-        fn resolve(&self, _: &usize) -> Self::Resolution {
-            MockResolve
-        }
-    }
-
-    impl Resolution for MockResolve {
-        type Endpoint = MockEp;
-        type Error = MockError;
-
-        fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
-            unimplemented!()
-        }
-    }
-
-    impl Discover for MockEp {
-        type Key = usize;
-        type Service = MockSvc;
-        type Error = MockError;
-
-        fn poll(&mut self) -> Poll<tower_discover::Change<Self::Key, Self::Service>, Self::Error> {
-            unimplemented!()
-        }
-    }
-
-    impl fmt::Display for MockEp {
-        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-            unimplemented!()
-        }
-    }
-
-    impl HasEndpointStatus for MockEp {
-        fn endpoint_status(&self) -> EndpointStatus {
-            unimplemented!()
-        }
-    }
-
-    impl<A> svc::Service<http::Request<A>> for MockSvc
-    where
-        A: Payload,
-    {
-        type Response = http::Response<hyper::Body>;
-        type Error = MockError;
-        type Future = future::FutureResult<Self::Response, Self::Error>;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            unimplemented!()
-        }
-
-        fn call(&mut self, _: http::Request<A>) -> Self::Future {
-            unimplemented!()
-        }
-    }
-
-    impl<T> svc::Service<T> for MockStack {
-        type Response = MockSvc;
-        type Error = MockError;
-        type Future = future::FutureResult<Self::Response, Self::Error>;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            unimplemented!()
-        }
-
-        fn call(&mut self, _: T) -> Self::Future {
-            unimplemented!()
-        }
-    }
-
-    #[test]
-    fn balancer_is_make() {
-        let stack = svc::builder()
-            .layer(pending::layer())
-            .layer(layer::<hyper::Body, _, _>(
-                Duration::from_secs(666),
-                Duration::from_secs(666),
-                resolve::layer(MockResolve),
-            ))
-            .layer(pending::layer())
-            .service(MockStack);
-
-        assert_make(stack);
-    }
-
-    #[test]
-    fn balancer_is_svc() {
-        let stack = svc::builder()
-            .layer(layer::<hyper::Body, _, _>(
-                Duration::from_secs(666),
-                Duration::from_secs(666),
-                resolve::layer(MockResolve),
-            ))
-            .layer(pending::layer())
-            .service(MockStack);
-
-        assert_svc(stack);
-    }
-
-    #[test]
-    fn fallback_is_make() {
-        let stack = svc::builder()
-            .layer(
-                layer::<hyper::Body, hyper::Body, _>(
-                    Duration::from_secs(666),
-                    Duration::from_secs(666),
-                    resolve::layer(MockResolve),
-                )
-                .with_fallback(666, |_: &http::Request<_>| Some(666)),
-            )
-            .layer(pending::layer())
-            .service(MockStack);
-
-        assert_make(stack);
     }
 }

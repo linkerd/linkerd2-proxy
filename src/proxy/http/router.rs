@@ -26,7 +26,7 @@ pub struct Config {
 /// A `Rec`-typed `Recognize` instance is used to produce a target for each
 /// `Req`-typed request. If the router doesn't already have a `Service` for this
 /// target, it uses a `Mk`-typed `Service` stack.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Layer<Req, Rec: Recognize<Req>> {
     recognize: Rec,
     _p: PhantomData<fn() -> Req>,
@@ -92,6 +92,18 @@ where
     fn layer(&self, inner: Mk) -> Self::Service {
         Stack {
             inner,
+            recognize: self.recognize.clone(),
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<Req, Rec> Clone for Layer<Req, Rec>
+where
+    Rec: Recognize<Req> + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
             recognize: self.recognize.clone(),
             _p: PhantomData,
         }
