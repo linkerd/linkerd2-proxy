@@ -15,7 +15,7 @@ pub enum Error<A> {
 
 pub type Layer<P, F, A> = MakeFallback<svc::ServiceBuilder<P>, svc::ServiceBuilder<F>, A>;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct MakeFallback<P, F, A> {
     primary: P,
     fallback: F,
@@ -120,6 +120,20 @@ where
     }
 }
 
+impl<P, F, A> Clone for MakeFallback<P, F, A>
+where
+    P: Clone,
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            primary: self.primary.clone(),
+            fallback: self.fallback.clone(),
+            _p: PhantomData,
+        }
+    }
+}
+
 impl<P, F, A> Future for MakeFuture<P, F, A>
 where
     P: Future,
@@ -181,7 +195,7 @@ where
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         let primary_ready = self.primary.poll_ready().map_err(|e| match e {
             Error::Fallback(_) => {
-                panic!("service must not return a fallback request in poll_ready")
+                panic!("service must not return a fallback request in poll_ready");
             }
             Error::Error(e) => e,
         });
