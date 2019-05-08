@@ -54,7 +54,7 @@ struct Client<T> {
     client: Option<T>,
     suffixes: Vec<dns::Suffix>,
     context_token: String,
-    /// Each poll, records whether the rpc service was till ready.
+    /// Each poll, records whether the rpc service was still ready.
     rpc_ready: bool,
 }
 
