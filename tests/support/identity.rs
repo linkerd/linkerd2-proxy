@@ -94,20 +94,18 @@ impl Identity {
             (id_dir, token, trust_anchors, rsp)
         };
 
+        let client_config = Identity::from_pem(&trust_anchors);
         let mut env = app::config::TestEnv::new();
 
         env.put(app::config::ENV_IDENTITY_DIR, id_dir);
         env.put(app::config::ENV_IDENTITY_TOKEN_FILE, token);
-        env.put(
-            app::config::ENV_IDENTITY_TRUST_ANCHORS,
-            trust_anchors.clone(),
-        );
+        env.put(app::config::ENV_IDENTITY_TRUST_ANCHORS, trust_anchors);
         env.put(app::config::ENV_IDENTITY_IDENTITY_LOCAL_NAME, local_name);
 
         Self {
             env,
             certify_rsp,
-            client_config: Identity::from_pem(&trust_anchors),
+            client_config,
         }
     }
 
