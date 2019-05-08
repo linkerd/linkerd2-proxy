@@ -20,6 +20,7 @@ fn nonblocking_identity_detection() {
     let identity::Identity {
         env,
         mut certify_rsp,
+        client_config: _,
     } = identity::Identity::new("foo-ns1", id.to_string());
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
@@ -47,6 +48,95 @@ fn nonblocking_identity_detection() {
     assert_eq!(active.read_timeout(Duration::from_secs(2)), msg2.as_bytes());
 }
 
+macro_rules! generate_tls_accept_test {
+    ( client_non_tls: $make_client_non_tls:path, client_tls: $make_client_tls:path) => {
+        let _ = env_logger_init();
+        let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let id_svc = identity::Identity::new("foo-ns1", id.to_string());
+        let proxy = proxy::new()
+            .identity(id_svc.service().run())
+            .run_with_test_env(id_svc.env);
+
+        let non_tls_client = $make_client_non_tls(proxy.metrics, "localhost");
+        assert_eventually!(
+            non_tls_client
+                .request(non_tls_client.request_builder("/ready").method("GET"))
+                .status()
+                == http::StatusCode::OK
+        );
+
+        let tls_client = $make_client_tls(
+            proxy.metrics,
+            "localhost",
+            client::TlsConfig::new(id_svc.client_config, id),
+        );
+        assert_eventually!(
+            tls_client
+                .request(tls_client.request_builder("/ready").method("GET"))
+                .status()
+                == http::StatusCode::OK
+        );
+    };
+}
+
+macro_rules! generate_tls_reject_test {
+    ( client: $make_client:path) => {
+        let _ = env_logger_init();
+        let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let identity::Identity {
+            env,
+            mut certify_rsp,
+            client_config,
+        } = identity::Identity::new("foo-ns1", id.to_string());
+
+        certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
+
+        let (_tx, rx) = oneshot::channel();
+        let id_svc = controller::identity().certify_async(move |_| rx).run();
+
+        let proxy = proxy::new().identity(id_svc).run_with_test_env(env);
+
+        let client = $make_client(
+            proxy.metrics,
+            "localhost",
+            client::TlsConfig::new(client_config, id),
+        );
+
+        assert!(client
+            .request_async(client.request_builder("/ready").method("GET"))
+            .wait()
+            .err()
+            .unwrap()
+            .is_connect());
+    };
+}
+
+#[test]
+fn http1_accepts_tls_after_identity_is_certified() {
+    generate_tls_accept_test! {
+       client_non_tls:  client::http1,
+       client_tls: client::http1_tls
+    }
+}
+
+#[test]
+fn http1_rejects_tls_before_identity_is_certified() {
+    generate_tls_reject_test! {client: client::http1_tls}
+}
+
+#[test]
+fn http2_accepts_tls_after_identity_is_certified() {
+    generate_tls_accept_test! {
+       client_non_tls:  client::http2,
+       client_tls: client::http2_tls
+    }
+}
+
+#[test]
+fn http2_rejects_tls_before_identity_is_certified() {
+    generate_tls_reject_test! {client: client::http2_tls}
+}
+
 #[test]
 fn ready() {
     let _ = env_logger_init();
@@ -54,6 +144,7 @@ fn ready() {
     let identity::Identity {
         env,
         mut certify_rsp,
+        client_config: _,
     } = identity::Identity::new("foo-ns1", id.to_string());
 
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
@@ -86,6 +177,7 @@ fn refresh() {
     let identity::Identity {
         mut env,
         certify_rsp,
+        client_config: _,
     } = identity::Identity::new("foo-ns1", id.to_string());
 
     let (expiry_tx, expiry_rx) = oneshot::channel();

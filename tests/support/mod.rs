@@ -22,9 +22,11 @@ extern crate tokio;
 extern crate tokio_connect;
 extern crate tokio_current_thread;
 pub extern crate tokio_io;
+extern crate tokio_rustls;
 extern crate tower_grpc;
 extern crate tower_http_service;
 extern crate tower_service;
+extern crate webpki;
 
 pub use std::collections::HashMap;
 use std::fmt;
