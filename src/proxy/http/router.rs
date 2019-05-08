@@ -158,6 +158,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
+            config: self.config.clone(),
             recognize: self.recognize.clone(),
             inner: self.inner.clone(),
             _p: PhantomData,

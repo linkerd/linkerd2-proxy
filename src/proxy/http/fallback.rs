@@ -13,7 +13,7 @@ pub enum Error<A> {
     Error(proxy::Error),
 }
 
-pub type Layer<P, F, A> = MakeFallback<svc::ServiceBuilder<P>, svc::ServiceBuilder<F>, A>;
+pub type Layer<P, F, A> = MakeFallback<svc::Builder<P>, svc::Builder<F>, A>;
 
 #[derive(Debug)]
 pub struct MakeFallback<P, F, A> {
@@ -63,10 +63,7 @@ enum Making<T: Future> {
     Done,
 }
 
-pub fn layer<P, F, A>(
-    primary: svc::ServiceBuilder<P>,
-    fallback: svc::ServiceBuilder<F>,
-) -> Layer<P, F, A> {
+pub fn layer<P, F, A>(primary: svc::Builder<P>, fallback: svc::Builder<F>) -> Layer<P, F, A> {
     Layer {
         primary,
         fallback,

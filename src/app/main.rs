@@ -20,7 +20,7 @@ use logging;
 use metrics::FmtMetrics;
 use never::Never;
 use proxy::{
-    self, accept,
+    self, accept, buffer,
     http::{
         client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
         strip_header,
@@ -419,12 +419,13 @@ where
 
         let outbound = {
             use super::outbound::{
-                //add_remote_ip_on_rsp, add_server_id_on_rsp,
+                self,
                 discovery::Resolve,
                 orig_proto_upgrade,
+                //add_remote_ip_on_rsp, add_server_id_on_rsp,
             };
             use proxy::{
-                http::{balance, canonicalize, header_from_target, metrics, retry},
+                http::{balance, canonicalize, fallback, header_from_target, metrics, retry},
                 resolve,
             };
 
@@ -499,9 +500,23 @@ where
                 .layer(metrics::layer::<_, classify::Response>(retry_http_metrics))
                 .layer(insert::target::layer());
 
-            let balancer_stack = svc::builder()
+            let balancer = svc::builder()
                 .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)))
+                .layer(resolve::layer(Resolve::new(resolver)));
+
+            let fallback = svc::builder()
+                .layer(router::layer(
+                    router::Config::new("out ep", capacity, max_idle_age),
+                    |req: &http::Request<_>| {
+                        let ep = outbound::Endpoint::from_orig_dst(req);
+                        debug!("outbound ep={:?}", ep);
+                        ep
+                    },
+                ))
+                .layer(buffer::layer(max_in_flight, DispatchDeadline::extract));
+
+            let balancer_stack = svc::builder()
+                .layer(fallback::layer(balancer, fallback))
                 .layer(pending::layer())
                 .layer(balance::weight::layer())
                 .service(endpoint_stack);
