@@ -235,21 +235,30 @@ where
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        // always poll the load balancer (even if it's inactive), as it drives
+        // the service discovery resolution.
         let ready = self.balance.poll_ready()?;
-        if !self.status.is_empty() {
-            trace!("endpoints exist; destroying fallback router");
-            // destroy the fallback router
-            self.fallback.destroy();
-        } else {
+
+        // if there are no endpoints in the load balancer, we are ready if the
+        // fallback router is ready.
+        if self.status.is_empty() {
             return self.fallback.poll_ready();
         }
+
+        // otherwise, if the load balancer is active, we can discard the
+        // fallback router.
+        if self.fallback.is_active() {
+            trace!("endpoints exist; destroying fallback router");
+            self.fallback.destroy();
+        }
+
         Ok(ready)
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
-        if self.status.is_empty() {
+        if let Some(fallback) = self.fallback.service() {
             trace!("no endpoints; using fallback...");
-            future::Either::A(self.fallback.call(req).map(Body::rsp_b as fn(_) -> _))
+            future::Either::A(fallback.call(req).map(Body::rsp_b as fn(_) -> _))
         } else {
             future::Either::B(self.balance.call(req).map(Body::rsp_a as fn(_) -> _))
         }
@@ -341,39 +350,25 @@ where
         self.router = None;
     }
 
-    fn create(&mut self) {
-        if self.router.is_none() {
-            trace!("creating fallback router...");
-            self.router = Some(self.mk.make(&self.cfg));
-        }
+    fn is_active(&self) -> bool {
+        self.router.is_some()
     }
-}
 
-impl<F, A> svc::Service<http::Request<A>> for Fallback<F>
-where
-    F: rt::Make<router::Config>,
-    F::Value: svc::Service<http::Request<A>>,
-{
-    type Future = <F::Value as svc::Service<http::Request<A>>>::Future;
-    type Error = <F::Value as svc::Service<http::Request<A>>>::Error;
-    type Response = <F::Value as svc::Service<http::Request<A>>>::Response;
+    fn service(&mut self) -> Option<&mut F::Value> {
+        self.router.as_mut()
+    }
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    /// Poll the fallback service, creating it if it does not currently exist.
+    fn poll_ready<R>(&mut self) -> Poll<(), <F::Value as svc::Service<R>>::Error>
+    where
+        F::Value: svc::Service<R>,
+    {
         loop {
             if let Some(ref mut router) = self.router {
                 return svc::Service::poll_ready(router);
             } else {
-                self.create();
-            }
-        }
-    }
-
-    fn call(&mut self, req: http::Request<A>) -> Self::Future {
-        loop {
-            if let Some(ref mut router) = self.router {
-                return svc::Service::call(router, req);
-            } else {
-                self.create();
+                trace!("creating fallback router...");
+                self.router = Some(self.mk.make(&self.cfg));
             }
         }
     }
