@@ -425,18 +425,26 @@ mod tests {
 
     #[test]
     fn cache_limited_by_capacity() {
-        let (mut router, _cache_bg) = Router::new(Recognize, Recognize, 1, Duration::from_secs(1));
+        use futures::future;
+        use tokio::runtime::current_thread;
 
-        let rsp = router.call_ok(2);
-        assert_eq!(rsp, 2);
+        current_thread::run(future::lazy(|| {
+            let (mut router, _cache_bg) =
+                Router::new(Recognize, Recognize, 1, Duration::from_secs(1));
 
-        let rsp = router.call_err(3);
-        assert_eq!(
-            rsp.downcast_ref::<error::NoCapacity>()
-                .expect("error should be NoCapacity")
-                .0,
-            1
-        );
+            let rsp = router.call_ok(2);
+            assert_eq!(rsp, 2);
+
+            let rsp = router.call_err(3);
+            assert_eq!(
+                rsp.downcast_ref::<error::NoCapacity>()
+                    .expect("error should be NoCapacity")
+                    .0,
+                1
+            );
+
+            Ok(())
+        }))
     }
 
     #[test]
