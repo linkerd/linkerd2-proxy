@@ -2,6 +2,7 @@ pub mod add_header;
 pub mod balance;
 pub mod canonicalize;
 pub mod client;
+pub mod fallback;
 pub(super) mod glue;
 pub mod h1;
 pub mod h2;
