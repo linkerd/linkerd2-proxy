@@ -2,8 +2,7 @@ extern crate hyper_balance;
 extern crate tower_balance;
 extern crate tower_discover;
 
-use std::marker::PhantomData;
-use std::time::Duration;
+use std::{error::Error, fmt, marker::PhantomData, time::Duration};
 
 use futures::{future, Async, Future, Poll};
 use hyper::body::Payload;
@@ -46,6 +45,9 @@ pub struct Service<S> {
     balance: S,
     status: EndpointStatus,
 }
+
+#[derive(Debug)]
+pub struct NoEndpoints;
 
 // === impl Layer ===
 
@@ -160,14 +162,14 @@ where
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.balance.poll_ready().map_err(fallback::Error::Error)
+        self.balance.poll_ready().map_err(From::from)
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         if self.status.is_empty() {
-            future::Either::B(future::err(fallback::Error::Fallback(req)))
+            future::Either::B(future::err(fallback::Error::fallback(req, NoEndpoints)))
         } else {
-            future::Either::A(self.balance.call(req).map_err(fallback::Error::Error))
+            future::Either::A(self.balance.call(req).map_err(From::from))
         }
     }
 }
@@ -226,3 +228,13 @@ pub mod weight {
         }
     }
 }
+
+// === impl NoEndpoints ===
+
+impl fmt::Display for NoEndpoints {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt("load balancer has no endpoints", f)
+    }
+}
+
+impl Error for NoEndpoints {}

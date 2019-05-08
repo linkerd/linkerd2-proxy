@@ -5,12 +5,12 @@ use hyper::body::Payload;
 use proxy;
 use svc;
 
-use std::{marker::PhantomData, mem};
+use std::{fmt, marker::PhantomData, mem};
 
 #[derive(Debug)]
-pub enum Error<A> {
-    Fallback(http::Request<A>),
-    Error(proxy::Error),
+pub struct Error<A> {
+    error: proxy::Error,
+    fallback: Option<http::Request<A>>,
 }
 
 pub type Layer<P, F, A> = MakeFallback<svc::Builder<P>, svc::Builder<F>, A>;
@@ -190,12 +190,7 @@ where
     type Future = ResponseFuture<P::Future, F, A>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        let primary_ready = self.primary.poll_ready().map_err(|e| match e {
-            Error::Fallback(_) => {
-                panic!("service must not return a fallback request in poll_ready");
-            }
-            Error::Error(e) => e,
-        });
+        let primary_ready = self.primary.poll_ready().map_err(|e| e.error);
         let fallback_ready = self.fallback.poll_ready().map_err(Into::into);
         try_ready!(primary_ready);
         try_ready!(fallback_ready);
@@ -224,8 +219,14 @@ where
                 State::Primary(ref mut f) => match f.poll() {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(rsp)) => return Ok(Async::Ready(rsp.map(Body::A))),
-                    Err(Error::Error(e)) => return Err(e),
-                    Err(Error::Fallback(req)) => State::Fallback(self.fallback.call(req)),
+                    Err(Error {
+                        fallback: Some(req),
+                        error,
+                    }) => {
+                        trace!("{}; trying to fall back", error);
+                        State::Fallback(self.fallback.call(req))
+                    }
+                    Err(e) => return Err(e.into()),
                 },
                 State::Fallback(ref mut f) => {
                     return f
@@ -297,6 +298,38 @@ where
         match self {
             Body::A(ref mut buf) => buf.advance(cnt),
             Body::B(ref mut buf) => buf.advance(cnt),
+        }
+    }
+}
+
+// === impl Error ===
+
+impl<A> fmt::Display for Error<A> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.error, f)
+    }
+}
+
+impl<A> Into<proxy::Error> for Error<A> {
+    fn into(self) -> proxy::Error {
+        self.error
+    }
+}
+
+impl<A> From<proxy::Error> for Error<A> {
+    fn from(error: proxy::Error) -> Self {
+        Error {
+            error,
+            fallback: None,
+        }
+    }
+}
+
+impl<A> Error<A> {
+    pub fn fallback(req: http::Request<A>, error: impl Into<proxy::Error>) -> Self {
+        Error {
+            fallback: Some(req),
+            error: error.into(),
         }
     }
 }
