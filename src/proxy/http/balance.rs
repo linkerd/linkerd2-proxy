@@ -5,7 +5,7 @@ extern crate tower_discover;
 use std::marker::PhantomData;
 use std::time::Duration;
 
-use futures::{Async, Future, Poll};
+use futures::{future, Async, Future, Poll};
 use hyper::body::Payload;
 
 use self::tower_discover::Discover;
@@ -15,8 +15,12 @@ pub use self::tower_balance::{
     choose::PowerOfTwoChoices, load::WithPeakEwma, Balance, HasWeight, Weight, WithWeighted,
 };
 
-use proxy::resolve::{HasEndpointStatus, EndpointStatus};
 use http;
+use proxy::{
+    self,
+    http::fallback,
+    resolve::{EndpointStatus, HasEndpointStatus},
+};
 use svc;
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
@@ -102,7 +106,8 @@ where
     A: Payload,
     B: Payload,
 {
-    type Response = Service<Balance<WithPeakEwma<M::Response, PendingUntilFirstData>, PowerOfTwoChoices>>;
+    type Response =
+        Service<Balance<WithPeakEwma<M::Response, PendingUntilFirstData>, PowerOfTwoChoices>>;
     type Error = M::Error;
     type Future = MakeSvc<M::Future, A, B>;
 
@@ -139,30 +144,31 @@ where
         let instrument = PendingUntilFirstData::default();
         let loaded = WithPeakEwma::new(discover, self.default_rtt, self.decay, instrument);
         let balance = Balance::p2c(loaded);
-        Ok(Async::Ready(Service {
-            balance,
-            status
-        }))
+        Ok(Async::Ready(Service { balance, status }))
     }
 }
 
 impl<S, A, B> svc::Service<http::Request<A>> for Service<S>
 where
-    S: svc::Service<http::Request<A>, Response = http::Response<B>>,
+    S: svc::Service<http::Request<A>, Response = http::Response<B>, Error = proxy::Error>,
 {
     type Response = http::Response<B>;
-    type Error = S::Error;
-    type Future = S::Future;
+    type Error = fallback::Error<A>;
+    type Future = future::Either<
+        future::MapErr<S::Future, fn(proxy::Error) -> Self::Error>,
+        future::FutureResult<http::Response<B>, fallback::Error<A>>,
+    >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.balance.poll_ready()
+        self.balance.poll_ready().map_err(fallback::Error::Error)
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         if self.status.is_empty() {
-            unimplemented!("no endpoints");
+            future::Either::B(future::err(fallback::Error::Fallback(req)))
+        } else {
+            future::Either::A(self.balance.call(req).map_err(fallback::Error::Error))
         }
-        self.balance.call(req)
     }
 }
 
