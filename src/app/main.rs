@@ -3,11 +3,12 @@ use http;
 use hyper;
 use std::net::SocketAddr;
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use std::{error, fmt, io};
 use tokio::executor::{self, DefaultExecutor, Executor};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::runtime::current_thread;
+use tokio_timer::clock;
 use tower_grpc as grpc;
 
 use app::classify::{self, Class};
@@ -19,9 +20,9 @@ use logging;
 use metrics::FmtMetrics;
 use never::Never;
 use proxy::{
-    self, accept, buffer,
+    self, accept,
     http::{
-        client, insert_target, metrics as http_metrics, normalize_uri, profiles, router, settings,
+        client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
         strip_header,
     },
     pending, reconnect,
@@ -67,6 +68,19 @@ struct ProxyParts<G> {
 
     inbound_listener: Listen<identity::Local, G>,
     outbound_listener: Listen<identity::Local, G>,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct DispatchDeadline(Instant);
+
+impl DispatchDeadline {
+    fn after(allowance: Duration) -> DispatchDeadline {
+        DispatchDeadline(clock::now() + allowance)
+    }
+
+    fn extract<A>(req: &http::Request<A>) -> Option<Instant> {
+        req.extensions().get::<DispatchDeadline>().map(|d| d.0)
+    }
 }
 
 impl<G> Main<G>
@@ -269,8 +283,10 @@ where
                 };
 
                 let svc = svc::builder()
-                    .layer(buffer::layer(config.destination_buffer_capacity))
-                    .layer(pending::layer())
+                    .buffer_pending(
+                        config.destination_buffer_capacity,
+                        config.control_dispatch_timeout,
+                    )
                     .layer(control::add_origin::layer())
                     .layer(proxy::grpc::req_body_as_payload::layer().per_make())
                     .layer(http_metrics::layer::<_, classify::Response>(
@@ -319,8 +335,10 @@ where
             };
 
             svc::builder()
-                .layer(buffer::layer(config.destination_buffer_capacity))
-                .layer(pending::layer())
+                .buffer_pending(
+                    config.destination_buffer_capacity,
+                    config.control_dispatch_timeout,
+                )
                 .layer(control::add_origin::layer())
                 .layer(proxy::grpc::req_body_as_payload::layer().per_make())
                 .layer(http_metrics::layer::<_, classify::Response>(
@@ -418,6 +436,7 @@ where
             let route_http_metrics = route_http_metrics.clone();
             let profile_suffixes = config.destination_profile_suffixes.clone();
             let canonicalize_timeout = config.dns_canonicalize_timeout;
+            let dispatch_timeout = config.outbound_dispatch_timeout;
 
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
@@ -472,14 +491,20 @@ where
             // 3. Retries are optionally enabled depending on if the route
             //    is retryable.
             let dst_route_layer = svc::builder()
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .layer(classify::layer())
                 .layer(metrics::layer::<_, classify::Response>(route_http_metrics))
                 .layer(proxy::http::timeout::layer())
                 .layer(retry::layer(retry_http_metrics.clone()))
                 .layer(metrics::layer::<_, classify::Response>(retry_http_metrics))
-                .layer(insert_target::layer());
+                .layer(insert::target::layer());
+
+            let balancer_stack = svc::builder()
+                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                .layer(resolve::layer(Resolve::new(resolver)))
+                .layer(pending::layer())
+                .layer(balance::weight::layer())
+                .service(endpoint_stack);
 
             // A per-`DstAddr` stack that does the following:
             //
@@ -495,13 +520,8 @@ where
                     profiles_client,
                     dst_route_layer,
                 ))
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
-                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)))
-                .layer(pending::layer())
-                .layer(balance::weight::layer())
-                .service(endpoint_stack);
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
+                .service(balancer_stack);
 
             // Routes request using the `DstAddr` extension.
             //
@@ -516,8 +536,7 @@ where
                     debug!("outbound dst={:?}", addr);
                     addr
                 }))
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .service(dst_stack)
                 .make(&router::Config::new("out dst", capacity, max_idle_age));
 
@@ -556,9 +575,8 @@ where
                         })
                         .ok()
                 }))
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
-                .layer(insert_target::layer())
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
+                .layer(insert::target::layer())
                 .layer(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                 .layer(strip_header::request::layer(super::L5D_CLIENT_ID))
                 .service(addr_stack)
@@ -576,7 +594,10 @@ where
             // extensions so that it can be used by the `addr_router`.
             let server_stack = svc::builder()
                 .layer(super::errors::layer())
-                .layer(insert_target::layer())
+                .layer(insert::target::layer())
+                .layer(insert::layer(move || {
+                    DispatchDeadline::after(dispatch_timeout)
+                }))
                 .service(svc::shared(admission_control));
 
             // Instantiated for each TCP connection received from the local
@@ -611,6 +632,7 @@ where
             let max_in_flight = config.inbound_max_requests_in_flight;
             let profile_suffixes = config.destination_profile_suffixes;
             let default_fwd_addr = config.inbound_forward.map(|a| a.into());
+            let dispatch_timeout = config.inbound_dispatch_timeout;
 
             // Establishes connections to the local application (for both
             // TCP forwarding and HTTP proxying).
@@ -636,8 +658,7 @@ where
             // `default_fwd_addr` may be used.
             let endpoint_router = svc::builder()
                 .layer(router::layer(RecognizeEndpoint::new(default_fwd_addr)))
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .layer(http_metrics::layer::<_, classify::Response>(
                     endpoint_http_metrics,
                 ))
@@ -652,13 +673,12 @@ where
             // extension into each request so that all lower metrics
             // implementations can use the route-specific configuration.
             let dst_route_stack = svc::builder()
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .layer(classify::layer())
                 .layer(http_metrics::layer::<_, classify::Response>(
                     route_http_metrics,
                 ))
-                .layer(insert_target::layer());
+                .layer(insert::target::layer());
 
             // A per-`DstAddr` stack that does the following:
             //
@@ -672,9 +692,8 @@ where
                     profiles_client,
                     dst_route_stack,
                 ))
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
-                .layer(insert_target::layer())
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
+                .layer(insert::target::layer())
                 .service(svc::shared(endpoint_router));
 
             // Routes requests to a `DstAddr`.
@@ -711,8 +730,7 @@ where
                         DstAddr::inbound(addr, settings)
                     })
                 }))
-                .layer(buffer::layer(max_in_flight))
-                .layer(pending::layer())
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .service(dst_stack)
                 .make(&router::Config::new("in dst", capacity, max_idle_age));
 
@@ -731,11 +749,14 @@ where
             // the router need not detect whether a request _will be_ downgraded.
             let source_stack = svc::builder()
                 .layer(super::errors::layer())
+                .layer(insert::layer(move || {
+                    DispatchDeadline::after(dispatch_timeout)
+                }))
                 .layer(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                 .layer(strip_header::response::layer(super::L5D_SERVER_ID))
                 .layer(strip_header::request::layer(super::L5D_CLIENT_ID))
                 .layer(strip_header::request::layer(super::L5D_REMOTE_IP))
-                .layer(insert_target::layer())
+                .layer(insert::target::layer())
                 .layer(orig_proto_downgrade::layer())
                 // disabled on purpose
                 //.push(set_remote_ip_on_req::layer())

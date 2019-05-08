@@ -279,7 +279,7 @@ pub mod router {
     pub fn layer<G, M, R, B>(
         suffixes: Vec<dns::Suffix>,
         get_routes: G,
-        route_layer: svc::ServiceBuilder<R>,
+        route_layer: svc::Builder<R>,
     ) -> Layer<G, M, R, B>
     where
         G: GetRoutes + Clone,
@@ -297,7 +297,7 @@ pub mod router {
     #[derive(Debug)]
     pub struct Layer<G, M, R, B> {
         get_routes: G,
-        route_layer: svc::ServiceBuilder<R>,
+        route_layer: svc::Builder<R>,
         suffixes: Vec<dns::Suffix>,
         /// This is saved into a field so that the same `Arc`s are used and
         /// cloned, instead of calling `Route::default()` every time.
@@ -309,7 +309,7 @@ pub mod router {
     pub struct MakeSvc<G, M, R, B> {
         inner: M,
         get_routes: G,
-        route_layer: svc::ServiceBuilder<R>,
+        route_layer: svc::Builder<R>,
         suffixes: Vec<dns::Suffix>,
         default_route: Route,
         _p: ::std::marker::PhantomData<fn(B)>,
