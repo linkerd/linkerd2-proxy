@@ -109,7 +109,7 @@ fn map_err_to_5xx(e: Error) -> StatusCode {
         warn!("server overloaded, max-in-flight reached");
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if let Some(_) = e.downcast_ref::<buffer::Aborted>() {
-        warn!("dispatch aborted");
+        warn!("request aborted because it reached the configured dispatch deadline");
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
         error!("could not recognize request");
