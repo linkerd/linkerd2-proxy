@@ -10,6 +10,7 @@ extern crate env_logger;
 extern crate futures;
 extern crate h2;
 pub extern crate http;
+extern crate http_body;
 extern crate hyper;
 extern crate linkerd2_proxy;
 pub extern crate linkerd2_proxy_api;
@@ -24,7 +25,6 @@ extern crate tokio_current_thread;
 pub extern crate tokio_io;
 extern crate tokio_rustls;
 extern crate tower_grpc;
-extern crate http_body;
 extern crate tower_service;
 extern crate webpki;
 
@@ -37,13 +37,13 @@ pub use self::bytes::Bytes;
 pub use self::futures::sync::oneshot;
 pub use self::futures::{future::Executor, *};
 pub use self::http::{HeaderMap, Request, Response, StatusCode};
+use self::http_body::Body as HttpBody;
 pub use self::linkerd2_proxy::*;
 pub use self::linkerd2_task::LazyExecutor;
 use self::tokio::{net::TcpListener, reactor, runtime};
 use self::tokio_connect::Connect;
 use self::tokio_current_thread as current_thread;
 use self::tower_grpc as grpc;
-use self::http_body::Body as HttpBody;
 pub use self::tower_service::Service;
 
 /// Environment variable for overriding the test patience.
