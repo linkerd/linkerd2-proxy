@@ -17,9 +17,9 @@ impl<B> GrpcBody<B> {
 impl<B> Payload for GrpcBody<B>
 where
     B: grpc::Body + Send + 'static,
-    B::Item: Send + 'static,
+    B::Data: Send + 'static,
 {
-    type Data = B::Item;
+    type Data = B::Data;
     type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
@@ -27,7 +27,7 @@ where
     }
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        grpc::Body::poll_buf(&mut self.0)
+        grpc::Body::poll_data(&mut self.0)
     }
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
@@ -35,19 +35,19 @@ where
     }
 }
 
-impl<B> tower_http_service::Body for GrpcBody<B>
+impl<B> http_body::Body for GrpcBody<B>
 where
     B: grpc::Body,
 {
-    type Item = B::Item;
+    type Data = B::Data;
     type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         grpc::Body::is_end_stream(&self.0)
     }
 
-    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        grpc::Body::poll_buf(&mut self.0)
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+        grpc::Body::poll_data(&mut self.0)
     }
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {

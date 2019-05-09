@@ -9,6 +9,7 @@ extern crate futures_mpsc_lossy;
 extern crate futures_watch;
 extern crate h2;
 extern crate http;
+extern crate http_body;
 extern crate httparse;
 extern crate hyper;
 extern crate ipnet;
@@ -31,7 +32,6 @@ extern crate tokio;
 extern crate tokio_timer;
 extern crate tower;
 extern crate tower_grpc;
-extern crate tower_http_service;
 extern crate tower_util;
 extern crate try_lock;
 

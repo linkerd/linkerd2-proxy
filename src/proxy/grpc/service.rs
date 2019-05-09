@@ -57,7 +57,7 @@ pub mod req_box_body {
     impl<B, S> svc::Service<http::Request<B>> for Service<S>
     where
         B: Body + Send + 'static,
-        Bytes: From<B::Item>,
+        Bytes: From<B::Data>,
         S: svc::Service<http::Request<BoxBody>>,
     {
         type Response = S::Response;

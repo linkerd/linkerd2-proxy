@@ -350,19 +350,19 @@ where
     }
 }
 
-impl<B, C> tower_http_service::Body for RequestBody<B, C>
+impl<B, C> http_body::Body for RequestBody<B, C>
 where
     B: Payload,
     C: Hash + Eq + Send + 'static,
 {
-    type Item = B::Data;
+    type Data = B::Data;
     type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
         Payload::is_end_stream(self)
     }
 
-    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
         Payload::poll_data(self)
     }
 
@@ -506,20 +506,20 @@ where
     }
 }
 
-impl<B, C> tower_http_service::Body for ResponseBody<B, C>
+impl<B, C> http_body::Body for ResponseBody<B, C>
 where
     B: Payload,
     C: ClassifyEos + Send + 'static,
     C::Class: Hash + Eq + Send + 'static,
 {
-    type Item = B::Data;
+    type Data = B::Data;
     type Error = Error;
 
     fn is_end_stream(&self) -> bool {
         Payload::is_end_stream(self)
     }
 
-    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
         Payload::poll_data(self)
     }
 

@@ -58,7 +58,7 @@ where
     // to something that wants `impl profiles::GetRoutes`.
     T: GrpcService<BoxBody> + Clone + Send + 'static,
     T::ResponseBody: Send,
-    <T::ResponseBody as Body>::Item: Send,
+    <T::ResponseBody as Body>::Data: Send,
     T::Future: Send,
 {
     pub fn new(service: Option<T>, backoff: Duration, context_token: String) -> Self {
@@ -74,7 +74,7 @@ impl<T> profiles::GetRoutes for Client<T>
 where
     T: GrpcService<BoxBody> + Clone + Send + 'static,
     T::ResponseBody: Send,
-    <T::ResponseBody as Body>::Item: Send,
+    <T::ResponseBody as Body>::Data: Send,
     T::Future: Send,
 {
     type Stream = Rx;

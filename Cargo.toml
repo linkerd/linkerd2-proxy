@@ -39,6 +39,7 @@ futures = "0.1"
 futures-watch = { git = "https://github.com/carllerche/better-future" }
 h2 = "0.1.15"
 http = "0.1"
+http-body = "0.1"
 httparse = "1.2"
 hyper = "0.12.3"
 ipnet = "1.0"
@@ -56,16 +57,15 @@ regex = "1.0.0"
 tokio = "0.1.14"
 tokio-signal = "0.2"
 tokio-timer = "0.2.6"   # for tokio_timer::clock
-tokio-connect         = { git = "https://github.com/carllerche/tokio-connect" }
-tower                 = { git = "https://github.com/tower-rs/tower" }
-tower-add-origin      = { git = "https://github.com/tower-rs/tower-http" }
-tower-balance         = { git = "https://github.com/tower-rs/tower" }
-tower-discover        = { git = "https://github.com/tower-rs/tower" }
-tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
-tower-service         = "0.2"
-tower-util            = { git = "https://github.com/tower-rs/tower" }
-tower-http-service    = { git = "https://github.com/tower-rs/tower-http" }
-tower-grpc            = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
+tower = "0.1"
+tower-discover = "0.1"
+tower-service = "0.2"
+tower-util = "0.1"
+tokio-connect          = { git = "https://github.com/carllerche/tokio-connect" }
+tower-balance          = { git = "https://github.com/tower-rs/tower" }
+tower-reconnect        = { git = "https://github.com/tower-rs/tower" }
+tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
+tower-grpc             = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
 
 # FIXME update to a release when available (>0.11)
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060", default-features = false }
