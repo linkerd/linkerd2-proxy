@@ -1,12 +1,14 @@
+extern crate tower_reconnect;
+
 use rand;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Mul;
 use std::time::Duration;
 
+use self::tower_reconnect::Reconnect;
 use futures::{task, Async, Future, Poll};
 use tokio_timer::{clock, Delay};
-use tower::reconnect::Reconnect;
 
 use proxy::Error;
 use svc;

@@ -61,6 +61,7 @@ tower                 = { git = "https://github.com/tower-rs/tower" }
 tower-add-origin      = { git = "https://github.com/tower-rs/tower-http" }
 tower-balance         = { git = "https://github.com/tower-rs/tower" }
 tower-discover        = { git = "https://github.com/tower-rs/tower" }
+tower-reconnect       = { git = "https://github.com/tower-rs/tower" }
 tower-service         = "0.2"
 tower-util            = { git = "https://github.com/tower-rs/tower" }
 tower-http-service    = { git = "https://github.com/tower-rs/tower-http" }
