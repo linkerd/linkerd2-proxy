@@ -33,7 +33,7 @@ pub mod add_origin {
         _p: PhantomData<fn(B) -> M>,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Debug)]
     pub struct Stack<M, B> {
         inner: M,
         _p: PhantomData<fn(B)>,
@@ -41,7 +41,8 @@ pub mod add_origin {
 
     pub struct MakeFuture<F, B> {
         inner: F,
-        builder: Builder<B>
+        authority: http::uri::Authority,
+        _p: PhantomData<fn(B)>,
     }
 
     // === impl Layer ===
@@ -69,7 +70,10 @@ pub mod add_origin {
         type Service = Stack<M, B>;
 
         fn layer(&self, inner: M) -> Self::Service {
-            Stack { inner, _p: PhantomData }
+            Stack {
+                inner,
+                _p: PhantomData,
+            }
         }
     }
 
@@ -89,9 +93,25 @@ pub mod add_origin {
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
+            let authority = target.addr.as_authority();
             let inner = self.inner.call(target);
-            let builder = Builder::new().set_origin(format!("http://{}", target.addr.as_authority()));
-            MakeFuture { inner, builder }
+            MakeFuture {
+                inner,
+                authority,
+                _p: PhantomData,
+            }
+        }
+    }
+
+    impl<M, B> Clone for Stack<M, B>
+    where
+        M: svc::Service<ControlAddr> + Clone,
+    {
+        fn clone(&self) -> Self {
+            Self {
+                inner: self.inner.clone(),
+                _p: PhantomData,
+            }
         }
     }
 
@@ -107,7 +127,12 @@ pub mod add_origin {
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             let inner = try_ready!(self.inner.poll().map_err(Into::into));
-            self.builder.build(inner).map_err(|_| BuildError.into()).map(|a| a.into())
+
+            Builder::new()
+                .set_origin(format!("http://{}", self.authority))
+                .build(inner)
+                .map_err(|_| BuildError.into())
+                .map(|a| a.into())
         }
     }
 
