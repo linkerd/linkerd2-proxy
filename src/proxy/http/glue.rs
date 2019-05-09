@@ -78,15 +78,15 @@ impl Payload for HttpBody {
     }
 }
 
-impl tower_http_service::Body for HttpBody {
-    type Item = hyper::body::Chunk;
+impl http_body::Body for HttpBody {
+    type Data = hyper::body::Chunk;
     type Error = hyper::Error;
 
     fn is_end_stream(&self) -> bool {
         Payload::is_end_stream(self)
     }
 
-    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
         Payload::poll_data(self)
     }
 

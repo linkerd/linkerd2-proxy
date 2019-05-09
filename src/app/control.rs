@@ -17,41 +17,44 @@ impl fmt::Display for ControlAddr {
 
 /// Sets the request's URI from `Config`.
 pub mod add_origin {
-    extern crate tower_add_origin;
+    extern crate tower_request_modifier;
 
-    use self::tower_add_origin::AddOrigin;
+    use self::tower_request_modifier::{Builder, RequestModifier};
     use futures::{Future, Poll};
-    use http::uri;
     use std::marker::PhantomData;
 
     use super::ControlAddr;
     use svc;
 
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+
     #[derive(Debug)]
-    pub struct Layer<M> {
-        _p: PhantomData<fn() -> M>,
+    pub struct Layer<M, B> {
+        _p: PhantomData<fn(B) -> M>,
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Stack<M> {
+    #[derive(Debug)]
+    pub struct Stack<M, B> {
         inner: M,
+        _p: PhantomData<fn(B)>,
     }
 
-    pub struct MakeFuture<F> {
-        authority: uri::Authority,
+    pub struct MakeFuture<F, B> {
         inner: F,
+        authority: http::uri::Authority,
+        _p: PhantomData<fn(B)>,
     }
 
     // === impl Layer ===
 
-    pub fn layer<M>() -> Layer<M>
+    pub fn layer<M, B>() -> Layer<M, B>
     where
         M: svc::Service<ControlAddr>,
     {
         Layer { _p: PhantomData }
     }
 
-    impl<M> Clone for Layer<M>
+    impl<M, B> Clone for Layer<M, B>
     where
         M: svc::Service<ControlAddr>,
     {
@@ -60,47 +63,87 @@ pub mod add_origin {
         }
     }
 
-    impl<M> svc::Layer<M> for Layer<M>
+    impl<M, B> svc::Layer<M> for Layer<M, B>
     where
         M: svc::Service<ControlAddr>,
     {
-        type Service = Stack<M>;
+        type Service = Stack<M, B>;
 
         fn layer(&self, inner: M) -> Self::Service {
-            Stack { inner }
+            Stack {
+                inner,
+                _p: PhantomData,
+            }
         }
     }
 
     // === impl Stack ===
 
-    impl<M> svc::Service<ControlAddr> for Stack<M>
+    impl<M, B> svc::Service<ControlAddr> for Stack<M, B>
     where
         M: svc::Service<ControlAddr>,
+        M::Error: Into<Error>,
     {
-        type Response = AddOrigin<M::Response>;
-        type Error = M::Error;
-        type Future = MakeFuture<M::Future>;
+        type Response = RequestModifier<M::Response, B>;
+        type Error = Error;
+        type Future = MakeFuture<M::Future, B>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
+            self.inner.poll_ready().map_err(Into::into)
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
             let authority = target.addr.as_authority();
             let inner = self.inner.call(target);
-            MakeFuture { authority, inner }
+            MakeFuture {
+                inner,
+                authority,
+                _p: PhantomData,
+            }
+        }
+    }
+
+    impl<M, B> Clone for Stack<M, B>
+    where
+        M: svc::Service<ControlAddr> + Clone,
+    {
+        fn clone(&self) -> Self {
+            Self {
+                inner: self.inner.clone(),
+                _p: PhantomData,
+            }
         }
     }
 
     // === impl MakeFuture ===
 
-    impl<F: Future> Future for MakeFuture<F> {
-        type Item = AddOrigin<F::Item>;
-        type Error = F::Error;
+    impl<F, B> Future for MakeFuture<F, B>
+    where
+        F: Future,
+        F::Error: Into<Error>,
+    {
+        type Item = RequestModifier<F::Item, B>;
+        type Error = Error;
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            let inner = try_ready!(self.inner.poll());
-            Ok(AddOrigin::new(inner, uri::Scheme::HTTP, self.authority.clone()).into())
+            let inner = try_ready!(self.inner.poll().map_err(Into::into));
+
+            Builder::new()
+                .set_origin(format!("http://{}", self.authority))
+                .build(inner)
+                .map_err(|_| BuildError.into())
+                .map(|a| a.into())
+        }
+    }
+
+    // XXX the request_modifier build error does not implement Error...
+    #[derive(Debug)]
+    struct BuildError;
+
+    impl std::error::Error for BuildError {}
+    impl std::fmt::Display for BuildError {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(f, "failed to build the add-origin request modifier")
         }
     }
 }

@@ -399,10 +399,10 @@ impl AsyncWrite for RunningIo {
 }
 
 impl HttpBody for BytesBody {
-    type Item = <Bytes as IntoBuf>::Buf;
+    type Data = <Bytes as IntoBuf>::Buf;
     type Error = hyper::Error;
 
-    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
         match try_ready!(self.0.poll_data()) {
             Some(chunk) => Ok(Async::Ready(Some(Bytes::from(chunk).into_buf()))),
             None => Ok(Async::Ready(None)),

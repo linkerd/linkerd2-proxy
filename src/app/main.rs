@@ -888,7 +888,7 @@ fn serve_tap<N, B>(
 ) -> impl Future<Item = (), Error = ()> + 'static
 where
     B: tower_grpc::Body + Send + 'static,
-    B::Item: Send + 'static,
+    B::Data: Send + 'static,
     N: svc::MakeService<(), http::Request<grpc::BoxBody>, Response = http::Response<B>>
         + Send
         + 'static,
