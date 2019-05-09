@@ -235,7 +235,7 @@ where
     T::Error: ::std::error::Error + Send + Sync,
     T::Future: Send,
     B: grpc::Body + Send + 'static,
-    B::Item: Send + 'static,
+    B::Data: Send + 'static,
 {
     let (tx, rx) = shutdown_signal();
 
@@ -522,14 +522,14 @@ fn octets_to_u64s(octets: [u8; 16]) -> (u64, u64) {
 struct PayloadToGrpc(hyper::Body);
 
 impl HttpBody for PayloadToGrpc {
-    type Item = hyper::Chunk;
+    type Data = hyper::Chunk;
     type Error = hyper::Error;
 
     fn is_end_stream(&self) -> bool {
         self.0.is_end_stream()
     }
 
-    fn poll_buf(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
         self.0.poll_data()
     }
 
@@ -543,10 +543,10 @@ struct GrpcToPayload<B>(B);
 impl<B> Payload for GrpcToPayload<B>
 where
     B: tower_grpc::Body + Send + 'static,
-    B::Item: Send + 'static,
-    <B::Item as IntoBuf>::Buf: Send + 'static,
+    B::Data: Send + 'static,
+    <B::Data as IntoBuf>::Buf: Send + 'static,
 {
-    type Data = <B::Item as IntoBuf>::Buf;
+    type Data = <B::Data as IntoBuf>::Buf;
     type Error = B::Error;
 
     fn is_end_stream(&self) -> bool {
@@ -554,7 +554,7 @@ where
     }
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        let data = try_ready!(self.0.poll_buf());
+        let data = try_ready!(self.0.poll_data());
         Ok(data.map(IntoBuf::into_buf).into())
     }
 

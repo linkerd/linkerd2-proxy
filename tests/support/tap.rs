@@ -175,7 +175,7 @@ where
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         let req = req.map(|mut body| {
             let mut buf = BytesMut::new();
-            while let Some(bytes) = future::poll_fn(|| body.poll_buf())
+            while let Some(bytes) = future::poll_fn(|| body.poll_data())
                 .wait()
                 .map_err(Into::into)
                 .expect("req body")
