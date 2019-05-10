@@ -110,7 +110,7 @@ where
         futures::future::ok(Discover {
             resolution,
             make: self.inner.clone(),
-            is_empty: Arc::new(AtomicBool::new(true)),
+            is_empty: Arc::new(AtomicBool::new(false)),
         })
     }
 }
