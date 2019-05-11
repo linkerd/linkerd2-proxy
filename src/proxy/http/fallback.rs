@@ -265,7 +265,7 @@ where
                     return f
                         .poll()
                         .map(|p| p.map(|rsp| rsp.map(Body::B)))
-                        .map_err(Into::into)
+                        .map_err(Into::into);
                 }
             }
         }
