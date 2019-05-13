@@ -19,7 +19,7 @@ pub struct Proxy {
 }
 
 pub struct Listening {
-    pub control: SocketAddr,
+    pub control: Option<SocketAddr>,
     pub inbound: SocketAddr,
     pub outbound: SocketAddr,
     pub metrics: SocketAddr,
@@ -273,7 +273,10 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     // printlns will show if the test fails...
     println!(
         "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
-        control_addr,
+        control_addr
+            .as_ref()
+            .map(|i| format!("{}", i))
+            .unwrap_or_else(String::new),
         identity_addr,
         inbound_addr,
         inbound

@@ -15,7 +15,7 @@ fn inbound_http1() {
 
     let proxy = proxy::new().inbound(srv).run();
 
-    let mut tap = tap::client(proxy.control);
+    let mut tap = tap::client(proxy.control.unwrap());
     let events = tap.observe(tap::observe_request());
 
     let authority = "tap.test.svc.cluster.local";
@@ -54,7 +54,7 @@ fn grpc_headers_end() {
 
     let proxy = proxy::new().inbound(srv).run();
 
-    let mut tap = tap::client(proxy.control);
+    let mut tap = tap::client(proxy.control.unwrap());
     let events = tap.observe(tap::observe_request());
 
     let authority = "tap.test.svc.cluster.local";
@@ -72,4 +72,23 @@ fn grpc_headers_end() {
     let ev = events.wait().nth(2).expect("nth").expect("stream");
 
     assert_eq!(ev.response_end_eos_grpc(), 1);
+}
+
+#[test]
+fn tap_enabled_by_default() {
+    let _ = env_logger_init();
+    let proxy = proxy::new().run();
+
+    assert!(proxy.control.is_some())
+}
+
+#[test]
+fn can_disable_tap() {
+    let _ = env_logger_init();
+    let mut env = app::config::TestEnv::new();
+    env.put(app::config::ENV_TAP_DISABLED, "true".to_owned());
+
+    let proxy = proxy::new().run_with_test_env(env);
+
+    assert!(proxy.control.is_none())
 }

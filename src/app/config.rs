@@ -145,6 +145,9 @@ pub struct Config {
     pub dns_canonicalize_timeout: Duration,
 
     pub h2_settings: H2Settings,
+
+    /// When set, tap is not served
+    pub tap_disabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -278,6 +281,7 @@ pub const ENV_DESTINATION_CONTEXT: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT";
 pub const ENV_CONTROL_EXP_BACKOFF_MIN: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MIN";
 pub const ENV_CONTROL_EXP_BACKOFF_MAX: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MAX";
 pub const ENV_CONTROL_EXP_BACKOFF_JITTER: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_JITTER";
+pub const ENV_TAP_DISABLED: &str = "LINKERD2_PROXY_TAP_DISABLED";
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
 const ENV_CONTROL_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_DISPATCH_TIMEOUT";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
@@ -464,6 +468,11 @@ impl Config {
         let initial_connection_window_size =
             parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
 
+        let tap_disabled =     strings
+                .get(ENV_TAP_DISABLED)?
+                .map(|d| !d.is_empty())
+                .unwrap_or(false);
+
         Ok(Config {
             outbound_listener: Listener {
                 addr: outbound_listener_addr?
@@ -567,6 +576,8 @@ impl Config {
                 initial_stream_window_size: initial_stream_window_size?,
                 initial_connection_window_size: initial_connection_window_size?,
             },
+
+            tap_disabled,
         })
     }
 }
