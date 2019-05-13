@@ -96,14 +96,10 @@ where
         let identity = config.identity_config.as_ref().map(identity::Local::new);
         let local_identity = identity.as_ref().map(|(l, _)| l.clone());
 
-        let control_listener = if config.tap_disabled {
-            None
-        } else {
-            Some(
-                Listen::bind(config.control_listener.addr, local_identity.clone())
-                    .expect("dst_svc listener bind"),
-            )
-        };
+        let control_listener = config
+            .control_listener
+            .as_ref()
+            .map(|l| Listen::bind(l.addr, local_identity.clone()).expect("dst_svc listener bind"));
 
         let admin_listener = Listen::bind(config.admin_listener.addr, local_identity.clone())
             .expect("metrics listener bind");
@@ -143,7 +139,8 @@ where
 
     pub fn control_addr(&self) -> Option<SocketAddr> {
         self.proxy_parts
-            .control_listener.as_ref()
+            .control_listener
+            .as_ref()
             .map(|l| l.local_addr().clone())
     }
 

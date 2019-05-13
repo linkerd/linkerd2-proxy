@@ -31,7 +31,7 @@ pub struct Config {
     pub inbound_listener: Listener,
 
     /// Where to listen for connections initiated by the control plane.
-    pub control_listener: Listener,
+    pub control_listener: Option<Listener>,
 
     /// Where to serve admin HTTP.
     pub admin_listener: Listener,
@@ -145,9 +145,6 @@ pub struct Config {
     pub dns_canonicalize_timeout: Duration,
 
     pub h2_settings: H2Settings,
-
-    /// When set, tap is not served
-    pub tap_disabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -386,7 +383,6 @@ impl Config {
         // defer returning any errors until all of them have been parsed.
         let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTEN_ADDR, parse_socket_addr);
         let inbound_listener_addr = parse(strings, ENV_INBOUND_LISTEN_ADDR, parse_socket_addr);
-        let control_listener_addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr);
         let admin_listener_addr = parse(strings, ENV_ADMIN_LISTEN_ADDR, parse_socket_addr);
         let inbound_forward = parse(strings, ENV_INBOUND_FORWARD, parse_socket_addr);
 
@@ -468,10 +464,18 @@ impl Config {
         let initial_connection_window_size =
             parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
 
-        let tap_disabled =     strings
-                .get(ENV_TAP_DISABLED)?
-                .map(|d| !d.is_empty())
-                .unwrap_or(false);
+        let tap_disabled = strings
+            .get(ENV_TAP_DISABLED)?
+            .map(|d| !d.is_empty())
+            .unwrap_or(false);
+
+        let control_listener = if tap_disabled {
+            None
+        } else {
+            let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
+                .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
+            Some(Listener { addr })
+        };
 
         Ok(Config {
             outbound_listener: Listener {
@@ -482,10 +486,7 @@ impl Config {
                 addr: inbound_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
             },
-            control_listener: Listener {
-                addr: control_listener_addr?
-                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap()),
-            },
+            control_listener,
             admin_listener: Listener {
                 addr: admin_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
@@ -576,8 +577,6 @@ impl Config {
                 initial_stream_window_size: initial_stream_window_size?,
                 initial_connection_window_size: initial_connection_window_size?,
             },
-
-            tap_disabled,
         })
     }
 }
