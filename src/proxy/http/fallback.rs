@@ -140,11 +140,9 @@ where
     type Item = Service<P::Item, F::Item, A>;
     type Error = proxy::Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let done =
-            self.primary.poll().map_err(Into::into)? && self.fallback.poll().map_err(Into::into)?;
-        if !done {
-            return Ok(Async::NotReady);
-        }
+        // Are both the primary and fallback futures finished?
+        try_ready!(self.primary.poll().map_err(Into::into));
+        try_ready!(self.fallback.poll().map_err(Into::into));
 
         Ok(Async::Ready(Service {
             primary: self.primary.take(),
@@ -155,19 +153,16 @@ where
 }
 
 impl<T: Future> Making<T> {
-    fn poll(&mut self) -> Result<bool, T::Error> {
-        let res = match *self {
-            Making::NotReady(ref mut fut) => fut.poll()?,
-            Making::Ready(_) => return Ok(true),
+    fn poll(&mut self) -> Poll<(), T::Error> {
+        *self = match self {
+            Making::NotReady(ref mut fut) => {
+                let res = try_ready!(fut.poll());
+                Making::Ready(res)
+            }
+            Making::Ready(_) => return Ok(Async::Ready(())),
             Making::Done => panic!("polled after ready"),
         };
-        match res {
-            Async::Ready(res) => {
-                *self = Making::Ready(res);
-                Ok(true)
-            }
-            Async::NotReady => Ok(false),
-        }
+        Ok(Async::Ready(()))
     }
 
     fn take(&mut self) -> T::Item {
