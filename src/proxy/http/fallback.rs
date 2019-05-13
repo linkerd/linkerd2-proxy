@@ -103,9 +103,8 @@ where
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         let primary_ready = self.primary.poll_ready().map_err(Into::into);
         let fallback_ready = self.fallback.poll_ready().map_err(Into::into);
-        try_ready!(primary_ready);
         try_ready!(fallback_ready);
-        Ok(Async::Ready(()))
+        primary_ready
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -190,11 +189,13 @@ where
     type Future = ResponseFuture<P::Future, F, A>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        // We are ready iff both the primary *and* the fallback are ready.
+        // However, we always want to poll both, in case they have internal
+        // state that's driven in `poll_ready`, before returning the result.
         let primary_ready = self.primary.poll_ready().map_err(|e| e.error);
         let fallback_ready = self.fallback.poll_ready().map_err(Into::into);
-        try_ready!(primary_ready);
         try_ready!(fallback_ready);
-        Ok(Async::Ready(()))
+        primary_ready
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
