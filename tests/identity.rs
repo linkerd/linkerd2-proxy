@@ -21,6 +21,7 @@ fn nonblocking_identity_detection() {
         env,
         mut certify_rsp,
         client_config: _,
+        server_config: _,
     } = identity::Identity::new("foo-ns1", id.to_string());
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
@@ -87,6 +88,7 @@ macro_rules! generate_tls_reject_test {
             env,
             mut certify_rsp,
             client_config,
+            server_config: _,
         } = identity::Identity::new("foo-ns1", id.to_string());
 
         certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
@@ -137,6 +139,61 @@ fn http2_rejects_tls_before_identity_is_certified() {
     generate_tls_reject_test! {client: client::http2_tls}
 }
 
+macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
+    (server: $make_server:path, client: $make_client:path) => {
+        let _ = env_logger_init();
+        let proxy_id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let app_id = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+
+        let mut proxy_identity = identity::Identity::new("foo-ns1", proxy_id.to_string());
+
+        proxy_identity.certify_rsp.valid_until =
+            Some((SystemTime::now() + Duration::from_secs(666)).into());
+
+        let (_, rx) = oneshot::channel();
+        let id_svc = controller::identity().certify_async(move |_| rx).run();
+
+        let app_identity = identity::Identity::new("bar-ns1", app_id.to_string());
+        let srv = $make_server(app_identity.server_config)
+            .route("/", "hello")
+            .run();
+
+        let proxy = proxy::new()
+            .outbound(srv)
+            .identity(id_svc)
+            .run_with_test_env(proxy_identity.env);
+
+        let client = $make_client(
+            proxy.outbound,
+            app_id,
+            client::TlsConfig::new(app_identity.client_config, app_id),
+        );
+
+        assert_eventually!(
+            client
+                .request(client.request_builder("/").method("GET"))
+                .status()
+                == http::StatusCode::OK
+        );
+    };
+}
+
+#[test]
+fn http1_outbound_tls_works_before_identity_is_certified() {
+    generate_outbound_tls_accept_not_cert_identity_test! {
+    server: server::http1_tls,
+    client : client::http1_tls
+    }
+}
+
+#[test]
+fn http2_outbound_tls_works_before_identity_is_certified() {
+    generate_outbound_tls_accept_not_cert_identity_test! {
+    server: server::http2_tls,
+    client : client::http2_tls
+    }
+}
+
 #[test]
 fn ready() {
     let _ = env_logger_init();
@@ -145,6 +202,7 @@ fn ready() {
         env,
         mut certify_rsp,
         client_config: _,
+        server_config: _,
     } = identity::Identity::new("foo-ns1", id.to_string());
 
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
@@ -178,6 +236,7 @@ fn refresh() {
         mut env,
         certify_rsp,
         client_config: _,
+        server_config: _,
     } = identity::Identity::new("foo-ns1", id.to_string());
 
     let (expiry_tx, expiry_rx) = oneshot::channel();
