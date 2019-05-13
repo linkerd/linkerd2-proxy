@@ -44,7 +44,7 @@ where
     F: svc::Service<http::Request<A>>,
 {
     fallback: F,
-    state: State<P, F::Future>,
+    state: ResponseState<P, F::Future>,
 }
 
 pub enum Body<A, B> {
@@ -52,7 +52,7 @@ pub enum Body<A, B> {
     B(B),
 }
 
-enum State<P, F> {
+enum ResponseState<P, F> {
     Primary(P),
     Fallback(F),
 }
@@ -201,7 +201,7 @@ where
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         ResponseFuture {
             fallback: self.fallback.clone(),
-            state: State::Primary(self.primary.call(req)),
+            state: ResponseState::Primary(self.primary.call(req)),
         }
     }
 }
@@ -214,10 +214,11 @@ where
 {
     type Item = http::Response<Body<B, C>>;
     type Error = proxy::Error;
+
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             self.state = match self.state {
-                State::Primary(ref mut f) => match f.poll() {
+                ResponseState::Primary(ref mut f) => match f.poll() {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(rsp)) => return Ok(Async::Ready(rsp.map(Body::A))),
                     Err(Error {
@@ -225,11 +226,11 @@ where
                         error,
                     }) => {
                         trace!("{}; trying to fall back", error);
-                        State::Fallback(self.fallback.call(req))
+                        ResponseState::Fallback(self.fallback.call(req))
                     }
                     Err(e) => return Err(e.into()),
                 },
-                State::Fallback(ref mut f) => {
+                ResponseState::Fallback(ref mut f) => {
                     return f
                         .poll()
                         .map(|p| p.map(|rsp| rsp.map(Body::B)))
@@ -239,6 +240,8 @@ where
         }
     }
 }
+
+// === impl Body ===
 
 impl<A, B> Payload for Body<A, B>
 where
