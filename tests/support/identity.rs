@@ -33,8 +33,8 @@ type Certify = Box<
 const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
 
 struct Certificates {
-    pub leaf_certificate: Vec<u8>,
-    pub intermediate_certificates: Vec<Vec<u8>>,
+    pub leaf: Vec<u8>,
+    pub intermediates: Vec<Vec<u8>>,
 }
 
 impl Certificates {
@@ -46,30 +46,30 @@ impl Certificates {
         let mut r = io::BufReader::new(f);
         let certs = rustls::internal::pemfile::certs(&mut r)
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?;
-        let leaf_certificate = certs
+        let leaf = certs
             .get(0)
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no certs in pemfile"))?
             .as_ref()
             .into();
-        let intermediate_certificates = certs[1..].iter().map(|i| i.as_ref().into()).collect();
+        let intermediates = certs[1..].iter().map(|i| i.as_ref().into()).collect();
 
         Ok(Certificates {
-            leaf_certificate,
-            intermediate_certificates,
+            leaf,
+            intermediates,
         })
     }
 
     pub fn chain(&self) -> Vec<rustls::Certificate> {
-        let mut chain = Vec::with_capacity(self.intermediate_certificates.len() + 1);
-        chain.push(self.leaf_certificate.clone());
-        chain.extend(self.intermediate_certificates.clone());
+        let mut chain = Vec::with_capacity(self.intermediates.len() + 1);
+        chain.push(self.leaf.clone());
+        chain.extend(self.intermediates.clone());
         chain.into_iter().map(rustls::Certificate).collect()
     }
 
     pub fn response(&self) -> pb::CertifyResponse {
         pb::CertifyResponse {
-            leaf_certificate: self.leaf_certificate.clone(),
-            intermediate_certificates: self.intermediate_certificates.clone(),
+            leaf_certificate: self.leaf.clone(),
+            intermediate_certificates: self.intermediates.clone(),
             ..Default::default()
         }
     }

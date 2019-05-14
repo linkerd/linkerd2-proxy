@@ -145,10 +145,7 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
         let proxy_id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
         let app_id = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
 
-        let mut proxy_identity = identity::Identity::new("foo-ns1", proxy_id.to_string());
-
-        proxy_identity.certify_rsp.valid_until =
-            Some((SystemTime::now() + Duration::from_secs(666)).into());
+        let proxy_identity = identity::Identity::new("foo-ns1", proxy_id.to_string());
 
         let (_, rx) = oneshot::channel();
         let id_svc = controller::identity().certify_async(move |_| rx).run();

@@ -173,6 +173,7 @@ enum RunningIo<T> {
     Plain(TcpStream, Option<oneshot::Sender<()>>),
     Tls(TlsStream<TcpStream, T>, Option<oneshot::Sender<()>>),
 }
+
 impl<T: Session> Read for RunningIo<T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match *self {
