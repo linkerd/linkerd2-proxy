@@ -89,15 +89,16 @@ where
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
-    type Service = Stack<Req, Rec, Mk>;
+    type Service = Service<Req, Rec, Mk>;
 
     fn layer(&self, inner: Mk) -> Self::Service {
-        Stack {
+        let inner = Router::new(
+            self.recognize.clone(),
             inner,
-            config: self.config.clone(),
-            recognize: self.recognize.clone(),
-            _p: PhantomData,
-        }
+            self.config.capacity,
+            self.config.max_idle_age,
+        );
+        Service { inner }
     }
 }
 
