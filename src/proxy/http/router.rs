@@ -27,12 +27,14 @@ pub struct Config {
 /// target, it uses a `Mk`-typed `Service` stack.
 #[derive(Clone, Debug)]
 pub struct Layer<Req, Rec: Recognize<Req>> {
+    config: Config,
     recognize: Rec,
     _p: PhantomData<fn() -> Req>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Stack<Req, Rec: Recognize<Req>, Mk> {
+    config: Config,
     recognize: Rec,
     inner: Mk,
     _p: PhantomData<fn() -> Req>,
@@ -68,11 +70,12 @@ impl fmt::Display for Config {
 
 // === impl Layer ===
 
-pub fn layer<Rec, Req>(recognize: Rec) -> Layer<Req, Rec>
+pub fn layer<Rec, Req>(config: Config, recognize: Rec) -> Layer<Req, Rec>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
 {
     Layer {
+        config,
         recognize,
         _p: PhantomData,
     }
@@ -91,6 +94,7 @@ where
     fn layer(&self, inner: Mk) -> Self::Service {
         Stack {
             inner,
+            config: self.config.clone(),
             recognize: self.recognize.clone(),
             _p: PhantomData,
         }
@@ -107,18 +111,18 @@ where
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
-    pub fn make(&self, config: &Config) -> Service<Req, Rec, Mk> {
+    pub fn make(&self) -> Service<Req, Rec, Mk> {
         let inner = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
-            config.capacity,
-            config.max_idle_age,
+            self.config.capacity,
+            self.config.max_idle_age,
         );
         Service { inner }
     }
 }
 
-impl<Req, Rec, Mk, B> svc::Service<Config> for Stack<Req, Rec, Mk>
+impl<Req, Rec, Mk, B, T> svc::Service<T> for Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
@@ -134,8 +138,8 @@ where
         Ok(().into()) // always ready to make a Router
     }
 
-    fn call(&mut self, config: Config) -> Self::Future {
-        futures::future::ok(self.make(&config))
+    fn call(&mut self, _: T) -> Self::Future {
+        futures::future::ok(self.make())
     }
 }
 
