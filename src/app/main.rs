@@ -540,7 +540,8 @@ where
                     },
                 ))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
-                .service(dst_stack);
+                .service(dst_stack)
+                .make();
 
             // Canonicalizes the request-specified `Addr` via DNS, and
             // annotates each request with a refined `Addr` so that it may be
@@ -584,7 +585,8 @@ where
                 .layer(insert::target::layer())
                 .layer(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                 .layer(strip_header::request::layer(super::L5D_CLIENT_ID))
-                .service(addr_stack);
+                .service(addr_stack)
+                .make();
 
             // Share a single semaphore across all requests to signal when
             // the proxy is overloaded.
@@ -670,7 +672,8 @@ where
                     endpoint_http_metrics,
                 ))
                 .layer(tap_layer)
-                .service(client_stack);
+                .service(client_stack)
+                .make();
 
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
@@ -740,7 +743,8 @@ where
                     },
                 ))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
-                .service(dst_stack);
+                .service(dst_stack)
+                .make();
 
             // Share a single semaphore across all requests to signal when
             // the proxy is overloaded.
