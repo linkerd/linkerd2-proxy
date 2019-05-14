@@ -46,7 +46,7 @@ pub struct Resolver {
     request_tx: mpsc::UnboundedSender<ResolveRequest>,
 }
 
-/// Requests that resolution updaes for `authority` be sent on `responder`.
+/// Requests that resolution updates for `authority` be sent on `responder`.
 #[derive(Debug)]
 struct ResolveRequest {
     authority: NameAddr,
