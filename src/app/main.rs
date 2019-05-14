@@ -528,17 +528,20 @@ where
             // This is shared across addr-stacks so that multiple addrs that
             // canonicalize to the same DstAddr use the same dst-stack service.
             let dst_router = svc::builder()
-                .layer(router::layer(|req: &http::Request<_>| {
-                    let addr = req.extensions().get::<Addr>().cloned().map(|addr| {
-                        let settings = settings::Settings::from_request(req);
-                        DstAddr::outbound(addr, settings)
-                    });
-                    debug!("outbound dst={:?}", addr);
-                    addr
-                }))
+                .layer(router::layer(
+                    router::Config::new("out dst", capacity, max_idle_age),
+                    |req: &http::Request<_>| {
+                        let addr = req.extensions().get::<Addr>().cloned().map(|addr| {
+                            let settings = settings::Settings::from_request(req);
+                            DstAddr::outbound(addr, settings)
+                        });
+                        debug!("outbound dst={:?}", addr);
+                        addr
+                    },
+                ))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .service(dst_stack)
-                .make(&router::Config::new("out dst", capacity, max_idle_age));
+                .make();
 
             // Canonicalizes the request-specified `Addr` via DNS, and
             // annotates each request with a refined `Addr` so that it may be
@@ -560,27 +563,30 @@ where
             // 4. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
             // address is used.
             let addr_router = svc::builder()
-                .layer(router::layer(|req: &http::Request<_>| {
-                    super::http_request_l5d_override_dst_addr(req)
-                        .map(|override_addr| {
-                            debug!("outbound addr={:?}; dst-override", override_addr);
-                            override_addr
-                        })
-                        .or_else(|_| {
-                            let addr = super::http_request_authority_addr(req)
-                                .or_else(|_| super::http_request_host_addr(req))
-                                .or_else(|_| super::http_request_orig_dst_addr(req));
-                            debug!("outbound addr={:?}", addr);
-                            addr
-                        })
-                        .ok()
-                }))
+                .layer(router::layer(
+                    router::Config::new("out addr", capacity, max_idle_age),
+                    |req: &http::Request<_>| {
+                        super::http_request_l5d_override_dst_addr(req)
+                            .map(|override_addr| {
+                                debug!("outbound addr={:?}; dst-override", override_addr);
+                                override_addr
+                            })
+                            .or_else(|_| {
+                                let addr = super::http_request_authority_addr(req)
+                                    .or_else(|_| super::http_request_host_addr(req))
+                                    .or_else(|_| super::http_request_orig_dst_addr(req));
+                                debug!("outbound addr={:?}", addr);
+                                addr
+                            })
+                            .ok()
+                    },
+                ))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .layer(insert::target::layer())
                 .layer(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                 .layer(strip_header::request::layer(super::L5D_CLIENT_ID))
                 .service(addr_stack)
-                .make(&router::Config::new("out addr", capacity, max_idle_age));
+                .make();
 
             // Share a single semaphore across all requests to signal when
             // the proxy is overloaded.
@@ -657,14 +663,17 @@ where
             // If there is no `SO_ORIGINAL_DST` for an inbound socket,
             // `default_fwd_addr` may be used.
             let endpoint_router = svc::builder()
-                .layer(router::layer(RecognizeEndpoint::new(default_fwd_addr)))
+                .layer(router::layer(
+                    router::Config::new("in endpoint", capacity, max_idle_age),
+                    RecognizeEndpoint::new(default_fwd_addr),
+                ))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .layer(http_metrics::layer::<_, classify::Response>(
                     endpoint_http_metrics,
                 ))
                 .layer(tap_layer)
                 .service(client_stack)
-                .make(&router::Config::new("in endpoint", capacity, max_idle_age));
+                .make();
 
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
@@ -712,27 +721,30 @@ where
             // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
             // address is used.
             let dst_router = svc::builder()
-                .layer(router::layer(|req: &http::Request<_>| {
-                    let canonical = req
-                        .headers()
-                        .get(super::CANONICAL_DST_HEADER)
-                        .and_then(|dst| dst.to_str().ok())
-                        .and_then(|d| Addr::from_str(d).ok());
-                    debug!("inbound canonical={:?}", canonical);
+                .layer(router::layer(
+                    router::Config::new("in dst", capacity, max_idle_age),
+                    |req: &http::Request<_>| {
+                        let canonical = req
+                            .headers()
+                            .get(super::CANONICAL_DST_HEADER)
+                            .and_then(|dst| dst.to_str().ok())
+                            .and_then(|d| Addr::from_str(d).ok());
+                        debug!("inbound canonical={:?}", canonical);
 
-                    let dst = canonical
-                        .or_else(|| super::http_request_authority_addr(req).ok())
-                        .or_else(|| super::http_request_host_addr(req).ok())
-                        .or_else(|| super::http_request_orig_dst_addr(req).ok());
-                    debug!("inbound dst={:?}", dst);
-                    dst.map(|addr| {
-                        let settings = settings::Settings::from_request(req);
-                        DstAddr::inbound(addr, settings)
-                    })
-                }))
+                        let dst = canonical
+                            .or_else(|| super::http_request_authority_addr(req).ok())
+                            .or_else(|| super::http_request_host_addr(req).ok())
+                            .or_else(|| super::http_request_orig_dst_addr(req).ok());
+                        debug!("inbound dst={:?}", dst);
+                        dst.map(|addr| {
+                            let settings = settings::Settings::from_request(req);
+                            DstAddr::inbound(addr, settings)
+                        })
+                    },
+                ))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .service(dst_stack)
-                .make(&router::Config::new("in dst", capacity, max_idle_age));
+                .make();
 
             // Share a single semaphore across all requests to signal when
             // the proxy is overloaded.
