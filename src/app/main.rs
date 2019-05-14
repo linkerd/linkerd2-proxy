@@ -504,7 +504,9 @@ where
                 .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                 .layer(resolve::layer(Resolve::new(resolver)));
 
-            let fallback = svc::builder()
+            // Routes requests to their original destination endpoints. Used as
+            // a fallback when service discovery has no endpoints for a destination.
+            let orig_dst_router = svc::builder()
                 .layer(router::layer(
                     router::Config::new("out ep", capacity, max_idle_age),
                     |req: &http::Request<_>| {
@@ -516,7 +518,7 @@ where
                 .layer(buffer::layer(max_in_flight, DispatchDeadline::extract));
 
             let balancer_stack = svc::builder()
-                .layer(fallback::layer(balancer, fallback))
+                .layer(fallback::layer(balancer, orig_dst_router))
                 .layer(pending::layer())
                 .layer(balance::weight::layer())
                 .service(endpoint_stack);

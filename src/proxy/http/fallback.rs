@@ -13,10 +13,15 @@ pub struct Error<A> {
     fallback: Option<http::Request<A>>,
 }
 
-pub type Layer<P, F, A> = MakeFallback<svc::Builder<P>, svc::Builder<F>, A>;
+#[derive(Debug)]
+pub struct Layer<P, F, A> {
+    primary: svc::Builder<P>,
+    fallback: svc::Builder<F>,
+    _p: PhantomData<fn(A)>,
+}
 
 #[derive(Debug)]
-pub struct MakeFallback<P, F, A> {
+pub struct MakeSvc<P, F, A> {
     primary: P,
     fallback: F,
     _p: PhantomData<fn(A)>,
@@ -71,16 +76,18 @@ pub fn layer<P, F, A>(primary: svc::Builder<P>, fallback: svc::Builder<F>) -> La
     }
 }
 
+// === impl Layer ===
+
 impl<P, F, A, M> svc::Layer<M> for Layer<P, F, A>
 where
     P: svc::Layer<M> + Clone,
     F: svc::Layer<M> + Clone,
     M: Clone,
 {
-    type Service = MakeFallback<P::Service, F::Service, A>;
+    type Service = MakeSvc<P::Service, F::Service, A>;
 
     fn layer(&self, inner: M) -> Self::Service {
-        MakeFallback {
+        MakeSvc {
             primary: self.primary.clone().service(inner.clone()),
             fallback: self.fallback.clone().service(inner),
             _p: PhantomData,
@@ -88,7 +95,19 @@ where
     }
 }
 
-impl<P, F, A, T> svc::Service<T> for MakeFallback<P, F, A>
+impl<P, F, A> Clone for Layer<P, F, A>
+where
+    P: Clone,
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        layer(self.primary.clone(), self.fallback.clone())
+    }
+}
+
+// === impl MakeSvc ===
+
+impl<P, F, A, T> svc::Service<T> for MakeSvc<P, F, A>
 where
     P: svc::Service<T>,
     P::Error: Into<proxy::Error>,
@@ -116,7 +135,7 @@ where
     }
 }
 
-impl<P, F, A> Clone for MakeFallback<P, F, A>
+impl<P, F, A> Clone for MakeSvc<P, F, A>
 where
     P: Clone,
     F: Clone,
@@ -129,6 +148,8 @@ where
         }
     }
 }
+
+// === impl MakeFuture ===
 
 impl<P, F, A> Future for MakeFuture<P, F, A>
 where
@@ -168,10 +189,12 @@ impl<T: Future> Making<T> {
     fn take(&mut self) -> T::Item {
         match mem::replace(self, Making::Done) {
             Making::Ready(a) => a,
-            _ => panic!(),
+            _ => panic!("tried to take service twice"),
         }
     }
 }
+
+// === impl Service ===
 
 impl<P, F, A, B, C> svc::Service<http::Request<A>> for Service<P, F, A>
 where
