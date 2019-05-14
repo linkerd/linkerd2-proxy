@@ -4,6 +4,8 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
 
+use never::Never;
+
 use proxy::Error;
 use svc;
 
@@ -27,6 +29,14 @@ pub struct Config {
 pub struct Layer<Req, Rec: Recognize<Req>> {
     config: Config,
     recognize: Rec,
+    _p: PhantomData<fn() -> Req>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Stack<Req, Rec: Recognize<Req>, Mk> {
+    config: Config,
+    recognize: Rec,
+    inner: Mk,
     _p: PhantomData<fn() -> Req>,
 }
 
@@ -88,6 +98,48 @@ where
             recognize: self.recognize.clone(),
             _p: PhantomData,
         }
+    }
+}
+
+// === impl Stack ===
+
+impl<Req, Rec, Mk, B> Stack<Req, Rec, Mk>
+where
+    Rec: Recognize<Req> + Clone + Send + Sync + 'static,
+    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
+    B: Default + Send + 'static,
+{
+    pub fn make(&self) -> Service<Req, Rec, Mk> {
+        let inner = Router::new(
+            self.recognize.clone(),
+            self.inner.clone(),
+            self.config.capacity,
+            self.config.max_idle_age,
+        );
+        Service { inner }
+    }
+}
+
+impl<Req, Rec, Mk, B, T> svc::Service<T> for Stack<Req, Rec, Mk>
+where
+    Rec: Recognize<Req> + Clone + Send + Sync + 'static,
+    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
+    B: Default + Send + 'static,
+{
+    type Response = Service<Req, Rec, Mk>;
+    type Error = Never;
+    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        Ok(().into()) // always ready to make a Router
+    }
+
+    fn call(&mut self, _: T) -> Self::Future {
+        futures::future::ok(self.make())
     }
 }
 
