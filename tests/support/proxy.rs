@@ -275,7 +275,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
         control_addr
             .as_ref()
-            .map(|i| format!("{}", i))
+            .map(SocketAddr::to_string)
             .unwrap_or_else(String::new),
         identity_addr,
         inbound_addr,

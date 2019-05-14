@@ -464,18 +464,7 @@ impl Config {
         let initial_connection_window_size =
             parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
 
-        let tap_disabled = strings
-            .get(ENV_TAP_DISABLED)?
-            .map(|d| !d.is_empty())
-            .unwrap_or(false);
-
-        let control_listener = if tap_disabled {
-            None
-        } else {
-            let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
-                .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
-            Some(Listener { addr })
-        };
+        let control_listener = parse_control_listener(strings);
 
         Ok(Config {
             outbound_listener: Listener {
@@ -486,7 +475,7 @@ impl Config {
                 addr: inbound_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
             },
-            control_listener,
+            control_listener: control_listener?,
             admin_listener: Listener {
                 addr: admin_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
@@ -623,6 +612,21 @@ impl Strings for TestEnv {
 }
 
 // ===== Parsing =====
+
+fn parse_control_listener(strings: &Strings) -> Result<Option<Listener>, Error> {
+    let tap_disabled = strings
+        .get(ENV_TAP_DISABLED)?
+        .map(|d| !d.is_empty())
+        .unwrap_or(false);
+
+    if tap_disabled {
+        Ok(None)
+    } else {
+        let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
+            .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
+        Ok(Some(Listener { addr }))
+    }
+}
 
 fn parse_number<T>(s: &str) -> Result<T, ParseError>
 where
