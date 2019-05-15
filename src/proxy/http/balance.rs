@@ -162,7 +162,12 @@ where
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.balance.poll_ready().map_err(From::from)
+        let ready = self.balance.poll_ready().map_err(fallback::Error::from)?;
+        if self.status.is_empty() {
+            Ok(Async::Ready(()))
+        } else {
+            Ok(ready)
+        }
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
