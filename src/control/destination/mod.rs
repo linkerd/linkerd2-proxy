@@ -34,45 +34,22 @@ use identity;
 use never::Never;
 use proxy::resolve::{self, Resolve, Update};
 
-pub mod background;
-
-use self::background::Background;
+mod resolution;
+pub use self::resolution::Resolution;
 use proxy::http::balance::Weight;
 use NameAddr;
 
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone)]
-pub struct Resolver {
-    request_tx: mpsc::UnboundedSender<ResolveRequest>,
+pub struct Resolver<T> {
+    client: Client<T>,
+    suffixes: Arc<Vec<dns::Suffix>>,
 }
 
-/// Requests that resolution updates for `authority` be sent on `responder`.
-#[derive(Debug)]
-struct ResolveRequest {
-    authority: NameAddr,
-    responder: Responder,
-}
-
-/// A handle through which response updates may be sent.
-#[derive(Debug)]
-struct Responder {
-    /// Sends updates from the controller to a `Resolution`.
-    update_tx: mpsc::UnboundedSender<Update<Metadata>>,
-
-    /// Indicates whether the corresponding `Resolution` is still active.
-    active: Weak<()>,
-}
-
-#[derive(Debug)]
-pub struct Resolution {
-    /// Receives updates from the controller.
-    update_rx: mpsc::UnboundedReceiver<Update<Metadata>>,
-
-    /// Allows `Responder` to detect when its `Resolution` has been lost.
-    ///
-    /// `Responder` holds a weak reference to this `Arc` and can determine when this
-    /// reference has been dropped.
-    _active: Arc<()>,
+#[derive(Clone)]
+struct Client<T> {
+    client: T,
+    context_token: Arc<String>,
 }
 
 /// Metadata describing an endpoint.
@@ -157,27 +134,6 @@ impl Resolve<NameAddr> for Resolver {
             update_rx,
             _active: active,
         }
-    }
-}
-
-impl resolve::Resolution for Resolution {
-    type Endpoint = Metadata;
-    type Error = Never;
-
-    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-        match self.update_rx.poll() {
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Ok(Async::Ready(Some(up))) => Ok(Async::Ready(up)),
-            Err(()) | Ok(Async::Ready(None)) => panic!("resolution stream must be infinite"),
-        }
-    }
-}
-
-// ===== impl Responder =====
-
-impl Responder {
-    fn is_active(&self) -> bool {
-        self.active.upgrade().is_some()
     }
 }
 
