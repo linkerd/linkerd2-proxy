@@ -28,10 +28,20 @@ pub struct Resolution<T>
 where
     T: GrpcService<BoxBody>,
 {
-    updates: VecDeque<Update<Metadata>>,
     client: Client<T>,
     query: Option<Query<T>>,
     auth: NameAddr,
+    cache: Cache,
+}
+
+#[derive(Debug)]
+struct Cache {
+    /// Used to "flatten" destination service responses containing multiple
+    /// endpoints into a series of `destination::Update`s for single endpoints.
+    queue: VecDeque<Update<Metadata>>,
+    /// Tracks all the endpoint addresses we've seen, so that we can send
+    /// `Update::Remove`s for them if we recieve a `NoEndpoints` response.
+    addrs: IndexSet<SocketAddr>,
 }
 
 type Query<T> = Remote<PbUpdate, T>;
@@ -46,9 +56,9 @@ where
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
         let auth = &self.auth;
         let client = &mut self.client;
-        let queue = &mut self.queue;
+        let cache = &mut self.cache;
         loop {
-            if let Some(update) = queue.pop_front() {
+            if let Some(update) = cache.next_update() {
                 return Ok(Async::Ready(update));
             }
 
@@ -61,19 +71,14 @@ where
                                 let addrs = a_set
                                     .addrs
                                     .into_iter()
-                                    .filter_map(|pb| pb_to_addr_meta(pb, &set_labels))
-                                    .map(|addr, meta| Update::Add(addr, meta));
-                                queue.extend(addrs);
+                                    .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
+                                cache.add(addrs);
                             }
                             Some(PbUpdate2::Remove(r_set)) => {
-                                let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr).map(Update::Remove);
-                                queue.extend(addrs);
+                                let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
+                                cache.remove(addrs);
                             }
-                            Some(PbUpdate2::NoEndpoints(_)) => {
-                                queue.clear();
-                                queue.push_front(Update::NoEndpoints);
-                                // TODO: queue removals for any existing eps.
-                            }
+                            Some(PbUpdate2::NoEndpoints(_)) => cache.no_endpoints(),
                             None => (),
                         },
                         Some(Remote::ConnectedOrConnecting { rx })
@@ -94,9 +99,7 @@ where
                             "Destination.Get stream ended for {:?} with Invalid Argument",
                             auth
                         );
-                        queue.clear();
-                        queue.push(Update::NoEndpoints);
-                        // TODO: queue removals for any existing eps.
+                        cache.remove(addrs);
                         None
                     }
                     Err(err) => {
@@ -111,6 +114,34 @@ where
             };
 
         }
-
     }
-}gf
+}
+
+
+impl Cache {
+    fn next_update(&mut self) -> Option<Update<Metadata>> {
+        self.queue.pop_front()
+    }
+
+    fn add(&mut self, addrs: impl Iterator<Item = (SocketAddr, Metadata)>) {
+        for (addr, meta) in addrs {
+            self.queue.push_back(Update::Add(addr, meta));
+            self.addrs.insert(addr);
+        }
+    }
+
+    fn remove(&mut self, addrs: impl Iterator<Item = SocketAddr>) {
+        for (addr, meta) in addrs {
+            self.queue.push_back(Update::Remove(addr));
+            self.addrs.remove(addr);
+        }
+    }
+
+    fn no_endpoints(&mut self) {
+        self.queue.clear();
+        self.queue.push_front(Update::NoEndpoints);
+        for addr in self.addrs.drain() {
+            self.queue.push_back(Update::Remove(addr));
+        }
+    }
+}
