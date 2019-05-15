@@ -64,7 +64,7 @@ struct ProxyParts<G> {
     start_time: SystemTime,
 
     admin_listener: Listen<identity::Local, ()>,
-    control_listener: Listen<identity::Local, ()>,
+    control_listener: Option<Listen<identity::Local, ()>>,
 
     inbound_listener: Listen<identity::Local, G>,
     outbound_listener: Listen<identity::Local, G>,
@@ -96,8 +96,10 @@ where
         let identity = config.identity_config.as_ref().map(identity::Local::new);
         let local_identity = identity.as_ref().map(|(l, _)| l.clone());
 
-        let control_listener = Listen::bind(config.control_listener.addr, local_identity.clone())
-            .expect("dst_svc listener bind");
+        let control_listener = config
+            .control_listener
+            .as_ref()
+            .map(|l| Listen::bind(l.addr, local_identity.clone()).expect("dst_svc listener bind"));
 
         let admin_listener = Listen::bind(config.admin_listener.addr, local_identity.clone())
             .expect("metrics listener bind");
@@ -135,8 +137,11 @@ where
         }
     }
 
-    pub fn control_addr(&self) -> SocketAddr {
-        self.proxy_parts.control_listener.local_addr()
+    pub fn control_addr(&self) -> Option<SocketAddr> {
+        self.proxy_parts
+            .control_listener
+            .as_ref()
+            .map(|l| l.local_addr().clone())
     }
 
     pub fn inbound_addr(&self) -> SocketAddr {
@@ -378,8 +383,10 @@ where
                         Admin::new(report, readiness),
                     ));
 
-                    rt.spawn(tap_daemon.map_err(|_| ()));
-                    rt.spawn(serve_tap(control_listener, TapServer::new(tap_grpc)));
+                    if let Some(listener) = control_listener {
+                        rt.spawn(tap_daemon.map_err(|_| ()));
+                        rt.spawn(serve_tap(listener, TapServer::new(tap_grpc)));
+                    }
 
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
 
