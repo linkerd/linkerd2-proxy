@@ -1,9 +1,13 @@
+use self::tokio::net::TcpStream;
+use self::tokio_rustls::TlsAcceptor;
+use self::RunningIo;
+use rustls::{ServerConfig, ServerSession};
 use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
-
+use support::futures::future::Either;
 use support::*;
 
 pub fn new() -> Server {
@@ -14,8 +18,16 @@ pub fn http1() -> Server {
     Server::http1()
 }
 
+pub fn http1_tls(tls: Arc<ServerConfig>) -> Server {
+    Server::http1_tls(tls)
+}
+
 pub fn http2() -> Server {
     Server::http2()
+}
+
+pub fn http2_tls(tls: Arc<ServerConfig>) -> Server {
+    Server::http2_tls(tls)
 }
 
 pub fn tcp() -> tcp::TcpServer {
@@ -25,6 +37,7 @@ pub fn tcp() -> tcp::TcpServer {
 pub struct Server {
     routes: HashMap<String, Route>,
     version: Run,
+    tls: Option<Arc<ServerConfig>>,
 }
 
 pub struct Listening {
@@ -46,18 +59,27 @@ impl Drop for Listening {
 }
 
 impl Server {
-    fn new(run: Run) -> Self {
+    fn new(run: Run, tls: Option<Arc<ServerConfig>>) -> Self {
         Server {
             routes: HashMap::new(),
             version: run,
+            tls,
         }
     }
     fn http1() -> Self {
-        Server::new(Run::Http1)
+        Server::new(Run::Http1, None)
+    }
+
+    fn http1_tls(tls: Arc<ServerConfig>) -> Self {
+        Server::new(Run::Http1, Some(tls))
     }
 
     fn http2() -> Self {
-        Server::new(Run::Http2)
+        Server::new(Run::Http2, None)
+    }
+
+    fn http2_tls(tls: Arc<ServerConfig>) -> Self {
+        Server::new(Run::Http2, Some(tls))
     }
 
     /// Return a string body as a 200 OK response, with the string as
@@ -128,6 +150,8 @@ impl Server {
         listener.bind(addr).expect("Tcp::bind");
         let addr = listener.local_addr().expect("Tcp::local_addr");
 
+        let tls_config = self.tls.clone();
+
         ::std::thread::Builder::new()
             .name(tname)
             .spawn(move || {
@@ -154,32 +178,31 @@ impl Server {
                     let _ = listening_tx.send(());
                 }
 
-                let serve = bind.incoming().for_each(move |sock| {
-                    if let Err(e) = sock.set_nodelay(true) {
-                        return Err(e);
-                    }
-
-                    let http_clone = http.clone();
-                    let srv_conn_count = Arc::clone(&srv_conn_count);
-                    let fut = new_svc
-                        .call(())
-                        .inspect(move |_| {
-                            srv_conn_count.fetch_add(1, Ordering::Release);
-                        })
-                        .map_err(|e| println!("server new_service error: {}", e))
-                        .and_then(move |svc| {
-                            http_clone
-                                .serve_connection(sock, svc)
-                                .map_err(|e| println!("server h1 error: {}", e))
-                        })
-                        .map(|_| ());
-                    current_thread::TaskExecutor::current()
-                        .execute(fut)
-                        .map_err(|e| {
-                            println!("server execute error: {:?}", e);
-                            io::Error::from(io::ErrorKind::Other)
-                        })
-                });
+                let serve = bind
+                    .incoming()
+                    .and_then(move |s| accept_connection(s, tls_config.clone()))
+                    .for_each(move |sock| {
+                        let http_clone = http.clone();
+                        let srv_conn_count = Arc::clone(&srv_conn_count);
+                        let fut = new_svc
+                            .call(())
+                            .inspect(move |_| {
+                                srv_conn_count.fetch_add(1, Ordering::Release);
+                            })
+                            .map_err(|e| println!("server new_service error: {}", e))
+                            .and_then(move |svc| {
+                                http_clone
+                                    .serve_connection(sock, svc)
+                                    .map_err(|e| println!("server h1 error: {}", e))
+                            })
+                            .map(|_| ());
+                        current_thread::TaskExecutor::current()
+                            .execute(fut)
+                            .map_err(|e| {
+                                println!("server execute error: {:?}", e);
+                                io::Error::from(io::ErrorKind::Other)
+                            })
+                    });
 
                 runtime.spawn(
                     serve
@@ -289,5 +312,20 @@ impl Service<()> for NewSvc {
 
     fn call(&mut self, _: ()) -> Self::Future {
         future::ok(Svc(Arc::clone(&self.0)))
+    }
+}
+
+fn accept_connection(
+    io: TcpStream,
+    tls: Option<Arc<ServerConfig>>,
+) -> impl Future<Item = RunningIo<ServerSession>, Error = std::io::Error> {
+    match tls {
+        Some(cfg) => Either::B(
+            TlsAcceptor::from(cfg)
+                .accept(io)
+                .map(|io| RunningIo::Tls(io, None)),
+        ),
+
+        None => Either::A(future::ok(RunningIo::Plain(io, None))),
     }
 }

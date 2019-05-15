@@ -40,11 +40,17 @@ pub use self::http::{HeaderMap, Request, Response, StatusCode};
 use self::http_body::Body as HttpBody;
 pub use self::linkerd2_proxy::*;
 pub use self::linkerd2_task::LazyExecutor;
+use self::tokio::io::{AsyncRead, AsyncWrite};
+use self::tokio::net::TcpStream;
 use self::tokio::{net::TcpListener, reactor, runtime};
 use self::tokio_connect::Connect;
 use self::tokio_current_thread as current_thread;
+use self::tokio_rustls::TlsStream;
 use self::tower_grpc as grpc;
 pub use self::tower_service::Service;
+use rustls::Session;
+use std::io;
+use std::io::{Read, Write};
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";
@@ -162,6 +168,47 @@ pub mod proxy;
 pub mod server;
 pub mod tap;
 pub mod tcp;
+
+enum RunningIo<T> {
+    Plain(TcpStream, Option<oneshot::Sender<()>>),
+    Tls(TlsStream<TcpStream, T>, Option<oneshot::Sender<()>>),
+}
+
+impl<T: Session> Read for RunningIo<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match *self {
+            RunningIo::Plain(ref mut s, _) => s.read(buf),
+            RunningIo::Tls(ref mut s, _) => s.read(buf),
+        }
+    }
+}
+
+impl<T: Session> Write for RunningIo<T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match *self {
+            RunningIo::Plain(ref mut s, _) => s.write(buf),
+            RunningIo::Tls(ref mut s, _) => s.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match *self {
+            RunningIo::Plain(ref mut s, _) => s.flush(),
+            RunningIo::Tls(ref mut s, _) => s.flush(),
+        }
+    }
+}
+
+impl<T: Session> AsyncRead for RunningIo<T> {}
+
+impl<T: Session> AsyncWrite for RunningIo<T> {
+    fn shutdown(&mut self) -> Poll<(), io::Error> {
+        match *self {
+            RunningIo::Plain(ref mut s, _) => s.shutdown(),
+            RunningIo::Tls(ref mut s, _) => s.shutdown(),
+        }
+    }
+}
 
 pub fn shutdown_signal() -> (Shutdown, ShutdownRx) {
     let (tx, rx) = oneshot::channel();
