@@ -85,7 +85,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_does_not_resconnect_after_invalid_argument() {
+        fn outbound_does_not_reconnect_after_invalid_argument() {
             let _ = env_logger_init();
 
             let srv = $make_server().route("/", "hello").run();
