@@ -411,6 +411,14 @@ pub fn destination_exists_with_no_endpoints() -> pb::Update {
     }
 }
 
+pub fn destination_does_not_exist() -> pb::Update {
+    pb::Update {
+        update: Some(pb::update::Update::NoEndpoints(pb::NoEndpoints {
+            exists: false,
+        })),
+    }
+}
+
 pub fn profile<I>(routes: I, retry_budget: Option<pb::RetryBudget>) -> pb::DestinationProfile
 where
     I: IntoIterator,
