@@ -20,8 +20,7 @@ fn nonblocking_identity_detection() {
     let identity::Identity {
         env,
         mut certify_rsp,
-        client_config: _,
-        server_config: _,
+        ..
     } = identity::Identity::new("foo-ns1", id.to_string());
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
@@ -88,7 +87,7 @@ macro_rules! generate_tls_reject_test {
             env,
             mut certify_rsp,
             client_config,
-            server_config: _,
+            ..
         } = identity::Identity::new("foo-ns1", id.to_string());
 
         certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
@@ -147,7 +146,7 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
 
         let proxy_identity = identity::Identity::new("foo-ns1", proxy_id.to_string());
 
-        let (_, rx) = oneshot::channel();
+        let (_tx, rx) = oneshot::channel();
         let id_svc = controller::identity().certify_async(move |_| rx).run();
 
         let app_identity = identity::Identity::new("bar-ns1", app_id.to_string());
@@ -178,16 +177,16 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
 #[test]
 fn http1_outbound_tls_works_before_identity_is_certified() {
     generate_outbound_tls_accept_not_cert_identity_test! {
-    server: server::http1_tls,
-    client : client::http1_tls
+        server: server::http1_tls,
+        client: client::http1_tls
     }
 }
 
 #[test]
 fn http2_outbound_tls_works_before_identity_is_certified() {
     generate_outbound_tls_accept_not_cert_identity_test! {
-    server: server::http2_tls,
-    client : client::http2_tls
+        server: server::http2_tls,
+        client: client::http2_tls
     }
 }
 
@@ -198,8 +197,7 @@ fn ready() {
     let identity::Identity {
         env,
         mut certify_rsp,
-        client_config: _,
-        server_config: _,
+        ..
     } = identity::Identity::new("foo-ns1", id.to_string());
 
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());

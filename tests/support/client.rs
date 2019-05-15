@@ -6,7 +6,6 @@ use std::sync::Mutex;
 use self::futures::sync::{mpsc, oneshot};
 use self::tokio::net::TcpStream;
 use self::webpki::{DNSName, DNSNameRef};
-use self::RunningIo;
 use rustls::{ClientConfig, ClientSession};
 use std::sync::Arc;
 use support::bytes::IntoBuf;
