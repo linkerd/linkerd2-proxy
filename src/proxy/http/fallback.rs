@@ -241,7 +241,8 @@ where
                 // We've called the primary service and are waiting for its
                 // future to complete.
                 Primary(ref mut f) => match f.poll() {
-                    Ok(r) => return Ok(r),
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Ok(Async::Ready(rsp)) => return Ok(Async::Ready(rsp.map(Body::A))),
                     Err(Error {
                         fallback: Some(req),
                         error,
