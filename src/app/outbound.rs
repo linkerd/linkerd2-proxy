@@ -5,8 +5,13 @@ use std::{fmt, hash};
 
 use super::identity;
 use control::destination::{Metadata, ProtocolHint};
-use proxy::http::balance::{HasWeight, Weight};
-use proxy::http::settings;
+use proxy::{
+    self,
+    http::{
+        balance::{HasWeight, Weight},
+        settings,
+    },
+};
 use tap;
 use transport::{connect, tls};
 use {Conditional, NameAddr};
@@ -43,6 +48,23 @@ impl Endpoint {
                 );
             }
         }
+    }
+
+    pub fn from_orig_dst<B>(req: &http::Request<B>) -> Option<Self> {
+        let addr = req
+            .extensions()
+            .get::<proxy::Source>()?
+            .orig_dst_if_not_local()?;
+        let http_settings = settings::Settings::from_request(req);
+        Some(Self {
+            addr,
+            dst_name: None,
+            identity: Conditional::None(
+                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+            ),
+            metadata: Metadata::empty(),
+            http_settings,
+        })
     }
 }
 
@@ -207,6 +229,7 @@ pub mod discovery {
         fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
             match self.resolving {
                 Resolving::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
+                    resolve::Update::NoEndpoints => Ok(Async::Ready(resolve::Update::NoEndpoints)),
                     resolve::Update::Remove(addr) => {
                         debug!("removing {}", addr);
                         Ok(Async::Ready(resolve::Update::Remove(addr)))

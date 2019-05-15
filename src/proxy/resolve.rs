@@ -2,8 +2,14 @@ extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
 use futures::{Async, Poll};
-use std::fmt;
-use std::net::SocketAddr;
+use std::{
+    fmt,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 pub use self::tower_discover::Change;
 use proxy::Error;
@@ -25,10 +31,18 @@ pub trait Resolution {
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
 }
 
+pub trait HasEndpointStatus {
+    fn endpoint_status(&self) -> EndpointStatus;
+}
+
+#[derive(Clone, Debug)]
+pub struct EndpointStatus(Arc<AtomicBool>);
+
 #[derive(Clone, Debug)]
 pub enum Update<T> {
     Add(SocketAddr, T),
     Remove(SocketAddr),
+    NoEndpoints,
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +62,7 @@ pub struct MakeSvc<R, M> {
 pub struct Discover<R, M> {
     resolution: R,
     make: M,
+    is_empty: Arc<AtomicBool>,
 }
 
 // === impl Layer ===
@@ -95,11 +110,19 @@ where
         futures::future::ok(Discover {
             resolution,
             make: self.inner.clone(),
+            is_empty: Arc::new(AtomicBool::new(true)),
         })
     }
 }
 
-// === impl Discover ===
+impl<R, M> HasEndpointStatus for Discover<R, M>
+where
+    R: Resolution,
+{
+    fn endpoint_status(&self) -> EndpointStatus {
+        EndpointStatus(self.is_empty.clone())
+    }
+}
 
 impl<R, M> tower_discover::Discover for Discover<R, M>
 where
@@ -113,18 +136,32 @@ where
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
-        let up = try_ready!(self.resolution.poll().map_err(Into::into));
-        trace!("watch: {:?}", up);
-        match up {
-            Update::Add(addr, target) => {
-                // We expect the load balancer to handle duplicate inserts
-                // by replacing the old endpoint with the new one, so
-                // insertions of new endpoints and metadata changes for
-                // existing ones can be handled in the same way.
-                let svc = self.make.make(&target);
-                Ok(Async::Ready(Change::Insert(addr, svc)))
+        loop {
+            let up = try_ready!(self.resolution.poll().map_err(Into::into));
+            trace!("watch: {:?}", up);
+            match up {
+                Update::Add(addr, target) => {
+                    // We expect the load balancer to handle duplicate inserts
+                    // by replacing the old endpoint with the new one, so
+                    // insertions of new endpoints and metadata changes for
+                    // existing ones can be handled in the same way.
+                    let svc = self.make.make(&target);
+                    self.is_empty.store(false, Ordering::Release);
+                    return Ok(Async::Ready(Change::Insert(addr, svc)));
+                }
+                Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
+                Update::NoEndpoints => {
+                    self.is_empty.store(true, Ordering::Release);
+                    // Keep polling as we should now start to see removals.
+                    continue;
+                }
             }
-            Update::Remove(addr) => Ok(Async::Ready(Change::Remove(addr))),
         }
+    }
+}
+
+impl EndpointStatus {
+    pub fn is_empty(&self) -> bool {
+        self.0.load(Ordering::Acquire)
     }
 }

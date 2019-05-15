@@ -224,6 +224,10 @@ where
         );
         match self.addrs.take() {
             Exists::Yes(mut cache) => {
+                self.responders.retain(|r| {
+                    let sent = r.update_tx.unbounded_send(Update::NoEndpoints);
+                    sent.is_ok()
+                });
                 cache.clear(&mut |change| {
                     Self::on_change(&mut self.responders, authority_for_logging, change)
                 });

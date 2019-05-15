@@ -18,7 +18,7 @@ jobs:
         - export RUSTFLAGS="-C debuginfo=0" RUST_TEST_THREADS=1 RUST_TEST_PATIENCE_MS=200
       script:
         - make check-fmt
-        - travis_wait make test
+        - travis_wait 40 make test
         # If you're debugging disk utilization/caching... This finds the largest files in `target`:
         #- du -sh target && find target -type f |xargs -n 1000 du -s |sort -rn |head |awk '{print $2}' |xargs du -sh
 
