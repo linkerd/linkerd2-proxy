@@ -167,7 +167,7 @@ where
             // `tower_balance`'s load balancer will return `NotReady` when it
             // has no ready endpoints. However, if we are in the no endpoints
             // state, we should accept the request so that we can return the
-            // error indicating that we should fall back to the request's 
+            // error indicating that we should fall back to the request's
             // original destination.
             Ok(Async::Ready(()))
         } else {
