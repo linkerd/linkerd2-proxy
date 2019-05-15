@@ -238,9 +238,10 @@ where
         use self::ResponseState::*;
         loop {
             self.state = match self.state {
+                // We've called the primary service and are waiting for its
+                // future to complete.
                 Primary(ref mut f) => match f.poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Ok(Async::Ready(rsp)) => return Ok(Async::Ready(rsp.map(Body::A))),
+                    Ok(r) => return Ok(r),
                     Err(Error {
                         fallback: Some(req),
                         error,
@@ -250,11 +251,15 @@ where
                     }
                     Err(e) => return Err(e.into()),
                 },
+                // The primary service has returned a fallback error, so we are
+                // waiting for the fallback service to be ready.
                 Waiting(ref mut req) => {
                     try_ready!(self.fallback.poll_ready().map_err(Into::into));
                     let req = req.take().expect("request should only be taken once");
                     Fallback(self.fallback.call(req))
                 }
+                // We've called the fallback service and are waiting for its
+                // future to complete.
                 Fallback(ref mut f) => {
                     return f
                         .poll()

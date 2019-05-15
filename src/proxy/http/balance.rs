@@ -166,6 +166,8 @@ where
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
+        // The endpoint status is updated by the Discover instance, which is
+        // driven by calling `poll_ready` on the balancer.
         if self.status.is_empty() {
             future::Either::B(future::err(fallback::Error::fallback(req, NoEndpoints)))
         } else {
