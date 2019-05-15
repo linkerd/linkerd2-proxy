@@ -383,9 +383,8 @@ where
                         Admin::new(report, readiness),
                     ));
 
-                    rt.spawn(tap_daemon.map_err(|_| ()));
-
                     if let Some(listener) = control_listener {
+                        rt.spawn(tap_daemon.map_err(|_| ()));
                         rt.spawn(serve_tap(listener, TapServer::new(tap_grpc)));
                     }
 
