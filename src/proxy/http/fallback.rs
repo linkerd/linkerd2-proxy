@@ -49,7 +49,7 @@ where
     F: svc::Service<http::Request<A>>,
 {
     fallback: F,
-    state: ResponseState<P, F::Future>,
+    state: ResponseState<P, F::Future, A>,
 }
 
 pub enum Body<A, B> {
@@ -57,8 +57,12 @@ pub enum Body<A, B> {
     B(B),
 }
 
-enum ResponseState<P, F> {
+enum ResponseState<P, F, A> {
+    /// Waiting for the primary service's future to complete.
     Primary(P),
+    /// Request buffered, waiting for the fallback service to become ready.
+    Waiting(Option<http::Request<A>>),
+    /// Waiting for the fallback service's future to complete.
     Fallback(F),
 }
 
@@ -207,13 +211,10 @@ where
     type Future = ResponseFuture<P::Future, F, A>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        // We are ready iff both the primary *and* the fallback are ready.
-        // However, we always want to poll both, in case they have internal
-        // state that's driven in `poll_ready`, before returning the result.
-        let primary_ready = self.primary.poll_ready().map_err(|e| e.error);
-        let fallback_ready = self.fallback.poll_ready().map_err(Into::into);
-        try_ready!(fallback_ready);
-        primary_ready
+        // We're ready as long as the primary service is ready. If we have to
+        // call the fallback service, the response future will buffer the
+        // request until the fallback service is ready.
+        self.primary.poll_ready().map_err(|e| e.error)
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
@@ -234,9 +235,10 @@ where
     type Error = proxy::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        use self::ResponseState::*;
         loop {
             self.state = match self.state {
-                ResponseState::Primary(ref mut f) => match f.poll() {
+                Primary(ref mut f) => match f.poll() {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(rsp)) => return Ok(Async::Ready(rsp.map(Body::A))),
                     Err(Error {
@@ -244,11 +246,16 @@ where
                         error,
                     }) => {
                         trace!("{}; trying to fall back", error);
-                        ResponseState::Fallback(self.fallback.call(req))
+                        Waiting(Some(req))
                     }
                     Err(e) => return Err(e.into()),
                 },
-                ResponseState::Fallback(ref mut f) => {
+                Waiting(ref mut req) => {
+                    try_ready!(self.fallback.poll_ready().map_err(Into::into));
+                    let req = req.take().expect("request should only be taken once");
+                    Fallback(self.fallback.call(req))
+                }
+                Fallback(ref mut f) => {
                     return f
                         .poll()
                         .map(|p| p.map(|rsp| rsp.map(Body::B)))
