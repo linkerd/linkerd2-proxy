@@ -9,7 +9,7 @@ use std::io::{self, Write};
 
 use super::FmtMetrics;
 
-/// Serve Prometheues metrics.
+/// Serve Prometheus metrics.
 #[derive(Debug, Clone)]
 pub struct Serve<M: FmtMetrics> {
     metrics: M,
