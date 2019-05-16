@@ -21,7 +21,7 @@ impl Readiness {
     }
 }
 
-/// ALways ready.
+/// Always ready.
 impl Default for Readiness {
     fn default() -> Self {
         Self::new().0
