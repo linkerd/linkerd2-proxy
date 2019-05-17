@@ -354,7 +354,7 @@ where
                 .make(addr.clone())
         });
 
-        let (resolver, resolver_bg) = control::destination::new(
+        let resolver = control::destination::Resolver::new(
             dst_svc.clone(),
             config.destination_get_suffixes,
             config.destination_context.clone(),
@@ -381,8 +381,6 @@ where
                     rt.spawn(serve_tap(control_listener, TapServer::new(tap_grpc)));
 
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
-
-                    rt.spawn(::logging::admin().bg("resolver").future(resolver_bg));
 
                     if let Some(d) = identity_daemon {
                         rt.spawn(

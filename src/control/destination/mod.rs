@@ -26,13 +26,15 @@
 
 use futures::{sync::mpsc, Async, Poll, Stream};
 use indexmap::IndexMap;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tower_grpc::{generic::client::GrpcService, BoxBody};
 
 use dns;
 use identity;
-use never::Never;
 use proxy::resolve::{self, Resolve, Update};
+
+use api::destination::client::Destination;
+use api::destination::{GetDestination, Update as PbUpdate};
 
 mod resolution;
 pub use self::resolution::Resolution;
@@ -42,14 +44,8 @@ use NameAddr;
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone)]
 pub struct Resolver<T> {
-    client: Client<T>,
+    client: Option<Client<T>>,
     suffixes: Arc<Vec<dns::Suffix>>,
-}
-
-#[derive(Clone)]
-struct Client<T> {
-    client: T,
-    context_token: Arc<String>,
 }
 
 /// Metadata describing an endpoint.
@@ -86,54 +82,52 @@ pub enum ProtocolHint {
     Http2,
 }
 
-/// Returns a `Resolver` and a background task future.
-///
-/// The `Resolver` is used by a listener to request resolutions, while
-/// the background future is executed on the controller thread's executor
-/// to drive the background task.
-pub fn new<T>(
-    client: Option<T>,
-    suffixes: Vec<dns::Suffix>,
-    proxy_id: String,
-) -> (Resolver, Background<T>)
-where
-    T: GrpcService<BoxBody>,
-{
-    let (request_tx, rx) = mpsc::unbounded();
-    let disco = Resolver { request_tx };
-    let bg = Background::new(rx, client, suffixes, proxy_id);
-    (disco, bg)
+#[derive(Clone)]
+struct Client<T> {
+    client: T,
+    context_token: Arc<String>,
 }
 
 // ==== impl Resolver =====
 
-impl Resolve<NameAddr> for Resolver {
+impl<T> Resolver<T>
+where
+    T: GrpcService<BoxBody> + Clone,
+{
+    /// Returns a `Resolver` for requesting destination resolutions.
+    pub fn new(client: Option<T>, suffixes: Vec<dns::Suffix>, proxy_id: String) -> Resolver<T> {
+        let client = client.map(|client| Client {
+            context_token: Arc::new(proxy_id),
+            client,
+        });
+        Resolver {
+            suffixes: Arc::new(suffixes),
+            client,
+        }
+    }
+}
+
+impl<T> Resolve<NameAddr> for Resolver<T>
+where
+    T: GrpcService<BoxBody> + Clone,
+{
     type Endpoint = Metadata;
-    type Resolution = Resolution;
+    type Resolution = Resolution<T>;
 
     /// Start watching for address changes for a certain authority.
-    fn resolve(&self, authority: &NameAddr) -> Resolution {
+    fn resolve(&self, authority: &NameAddr) -> Resolution<T> {
         trace!("resolve; authority={:?}", authority);
-        let (update_tx, update_rx) = mpsc::unbounded();
-        let active = Arc::new(());
-        let req = {
-            let authority = authority.clone();
-            ResolveRequest {
-                authority,
-                responder: Responder {
-                    update_tx,
-                    active: Arc::downgrade(&active),
-                },
-            }
-        };
-        self.request_tx
-            .unbounded_send(req)
-            .expect("unbounded can't fail");
 
-        Resolution {
-            update_rx,
-            _active: active,
+        if self.suffixes.iter().any(|s| s.contains(authority.name())) {
+            if let Some(client) = self.client.as_ref().cloned() {
+                return Resolution::new(authority.clone(), client);
+            } else {
+                trace!("-> control plane client disabled");
+            }
+        } else {
+            trace!("-> authority {} not in search suffixes", authority);
         }
+        Resolution::none(authority.clone())
     }
 }
 
