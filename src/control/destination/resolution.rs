@@ -75,70 +75,79 @@ where
                 return Ok(Async::Ready(update));
             }
 
-            let Inner {
-                mut client,
-                mut query,
-            } = if let Some(inner) = self.inner.take() {
-                inner
-            } else {
-                self.cache.no_endpoints();
-                continue;
-            };
-
-            trace!("--> poll inner");
-            self.inner = match query {
-                Remote::ConnectedOrConnecting { mut rx } => match rx.poll() {
-                    Ok(Async::Ready(Some(update))) => {
-                        match update.update {
-                            Some(PbUpdate2::Add(a_set)) => {
-                                let set_labels = a_set.metric_labels;
-                                let addrs = a_set
-                                    .addrs
-                                    .into_iter()
-                                    .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
-                                self.cache.add(addrs);
+            self.inner = match self.inner.take() {
+                Some(Inner {
+                    mut client,
+                    mut query,
+                }) => {
+                    trace!("--> poll inner");
+                    match query {
+                        Remote::ConnectedOrConnecting { mut rx } => match rx.poll() {
+                            Ok(Async::Ready(Some(update))) => {
+                                match update.update {
+                                    Some(PbUpdate2::Add(a_set)) => {
+                                        let set_labels = a_set.metric_labels;
+                                        let addrs = a_set
+                                            .addrs
+                                            .into_iter()
+                                            .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
+                                        self.cache.add(addrs);
+                                    }
+                                    Some(PbUpdate2::Remove(r_set)) => {
+                                        let addrs =
+                                            r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
+                                        self.cache.remove(addrs);
+                                    }
+                                    Some(PbUpdate2::NoEndpoints(_)) => self.cache.no_endpoints(),
+                                    None => (),
+                                }
+                                Some(Inner {
+                                    client,
+                                    query: Remote::ConnectedOrConnecting { rx },
+                                })
                             }
-                            Some(PbUpdate2::Remove(r_set)) => {
-                                let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
-                                self.cache.remove(addrs);
+                            Ok(Async::Ready(None)) => {
+                                trace!(
+                                    "Destination.Get stream ended for {}, must reconnect",
+                                    self.auth
+                                );
+                                let query = client.query(&self.auth, "reconnect");
+                                Some(Inner { client, query })
                             }
-                            Some(PbUpdate2::NoEndpoints(_)) => self.cache.no_endpoints(),
-                            None => (),
+                            Ok(Async::NotReady) => {
+                                trace!("-->> inner not ready!");
+                                Some(Inner {
+                                    client,
+                                    query: Remote::ConnectedOrConnecting { rx },
+                                })
+                            }
+                            Err(ref status) if status.code() == grpc::Code::InvalidArgument => {
+                                // Invalid Argument is returned to indicate that the
+                                // requested name should *not* query the destination
+                                // service. In this case, do not attempt to reconnect.
+                                debug!(
+                                    "Destination.Get stream ended for {} with Invalid Argument",
+                                    self.auth
+                                );
+                                self.cache.no_endpoints();
+                                None
+                            }
+                            Err(err) => {
+                                warn!("Destination.Get stream errored for {}: {}", self.auth, err);
+                                let query = client.query(&self.auth, "reconnect");
+                                Some(Inner { client, query })
+                            }
+                        },
+                        Remote::NeedsReconnect => {
+                            let query = client.query(&self.auth, "reconnect");
+                            Some(Inner { client, query })
                         }
-                        Some(Inner {
-                            client,
-                            query: Remote::ConnectedOrConnecting { rx },
-                        })
                     }
-                    Ok(Async::Ready(None)) => {
-                        trace!(
-                            "Destination.Get stream ended for {}, must reconnect",
-                            self.auth
-                        );
-                        let query = client.query(&self.auth, "reconnect");
-                        Some(Inner { client, query })
-                    }
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(ref status) if status.code() == grpc::Code::InvalidArgument => {
-                        // Invalid Argument is returned to indicate that the
-                        // requested name should *not* query the destination
-                        // service. In this case, do not attempt to reconnect.
-                        debug!(
-                            "Destination.Get stream ended for {} with Invalid Argument",
-                            self.auth
-                        );
-                        self.cache.no_endpoints();
-                        None
-                    }
-                    Err(err) => {
-                        warn!("Destination.Get stream errored for {}: {}", self.auth, err);
-                        let query = client.query(&self.auth, "reconnect");
-                        Some(Inner { client, query })
-                    }
-                },
-                Remote::NeedsReconnect => {
-                    let query = client.query(&self.auth, "reconnect");
-                    Some(Inner { client, query })
+                }
+                None => {
+                    trace!("--> query disabled");
+                    self.cache.no_endpoints();
+                    None
                 }
             };
         }
