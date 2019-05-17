@@ -46,7 +46,7 @@ where
     query: Query<T>,
 }
 
-type Query<T> = Remote<PbUpdate, T>;
+type Query<T> = remote_stream::Receiver<PbUpdate, T>;
 
 #[derive(Debug, Default)]
 struct Cache {
@@ -75,81 +75,35 @@ where
                 return Ok(Async::Ready(update));
             }
 
-            self.inner = match self.inner.take() {
-                Some(Inner {
-                    mut client,
-                    mut query,
-                }) => {
-                    trace!("--> poll inner");
-                    match query {
-                        Remote::ConnectedOrConnecting { mut rx } => match rx.poll() {
-                            Ok(Async::Ready(Some(update))) => {
-                                match update.update {
-                                    Some(PbUpdate2::Add(a_set)) => {
-                                        let set_labels = a_set.metric_labels;
-                                        let addrs = a_set
-                                            .addrs
-                                            .into_iter()
-                                            .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
-                                        self.cache.add(addrs);
-                                    }
-                                    Some(PbUpdate2::Remove(r_set)) => {
-                                        let addrs =
-                                            r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
-                                        self.cache.remove(addrs);
-                                    }
-                                    Some(PbUpdate2::NoEndpoints(_)) => self.cache.no_endpoints(),
-                                    None => (),
-                                }
-                                Some(Inner {
-                                    client,
-                                    query: Remote::ConnectedOrConnecting { rx },
-                                })
-                            }
-                            Ok(Async::Ready(None)) => {
-                                trace!(
-                                    "Destination.Get stream ended for {}, must reconnect",
-                                    self.auth
-                                );
-                                let query = client.query(&self.auth, "reconnect");
-                                Some(Inner { client, query })
-                            }
-                            Ok(Async::NotReady) => {
-                                trace!("-->> inner not ready!");
-                                Some(Inner {
-                                    client,
-                                    query: Remote::ConnectedOrConnecting { rx },
-                                })
-                            }
-                            Err(ref status) if status.code() == grpc::Code::InvalidArgument => {
-                                // Invalid Argument is returned to indicate that the
-                                // requested name should *not* query the destination
-                                // service. In this case, do not attempt to reconnect.
-                                debug!(
-                                    "Destination.Get stream ended for {} with Invalid Argument",
-                                    self.auth
-                                );
-                                self.cache.no_endpoints();
-                                None
-                            }
-                            Err(err) => {
-                                warn!("Destination.Get stream errored for {}: {}", self.auth, err);
-                                let query = client.query(&self.auth, "reconnect");
-                                Some(Inner { client, query })
-                            }
-                        },
-                        Remote::NeedsReconnect => {
-                            let query = client.query(&self.auth, "reconnect");
-                            Some(Inner { client, query })
-                        }
+            let canceled = if let Some(inner) = self.inner.as_mut() {
+                match inner.poll_update(&self.auth, &mut self.cache) {
+                    Ok(Async::Ready(())) => false,
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err(ref status) if status.code() == grpc::Code::InvalidArgument => {
+                        // Invalid Argument is returned to indicate that the
+                        // requested name should *not* query the destination
+                        // service. In this case, do not attempt to reconnect.
+                        debug!(
+                            "Destination.Get stream ended for {} with Invalid Argument",
+                            self.auth
+                        );
+                        self.cache.no_endpoints();
+                        true
+                    }
+                    Err(err) => {
+                        warn!("Destination.Get stream errored for {}: {}", self.auth, err,);
+                        inner.reconnect(&self.auth);
+                        false
                     }
                 }
-                None => {
-                    trace!("--> query disabled");
-                    self.cache.no_endpoints();
-                    None
-                }
+            } else {
+                self.cache.no_endpoints();
+                false
             };
+
+            if canceled {
+                self.inner.take();
+            }
         }
     }
 }
@@ -175,6 +129,43 @@ where
             cache,
             inner: None,
         }
+    }
+}
+
+// ===== impl Inner =====
+impl<T> Inner<T>
+where
+    T: GrpcService<BoxBody>,
+{
+    fn poll_update(&mut self, auth: &NameAddr, cache: &mut Cache) -> Poll<(), grpc::Status> {
+        match try_ready!(self.query.poll()) {
+            Some(update) => match update.update {
+                Some(PbUpdate2::Add(a_set)) => {
+                    let set_labels = a_set.metric_labels;
+                    let addrs = a_set
+                        .addrs
+                        .into_iter()
+                        .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
+                    cache.add(addrs);
+                }
+                Some(PbUpdate2::Remove(r_set)) => {
+                    let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
+                    cache.remove(addrs);
+                }
+                Some(PbUpdate2::NoEndpoints(_)) => cache.no_endpoints(),
+                None => (),
+            },
+            None => {
+                trace!("Destination.Get stream ended for {}, reconnecting", auth);
+                self.reconnect(auth);
+            }
+        };
+
+        Ok(Async::Ready(()))
+    }
+
+    fn reconnect(&mut self, auth: &NameAddr) {
+        self.query = self.client.query(auth, "reconnect");
     }
 }
 
@@ -224,16 +215,16 @@ where
     ///    Destination service.
     fn query(&mut self, dst: &NameAddr, connect_or_reconnect: &str) -> Query<T> {
         trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
-        if self
-            .client
-            .poll_ready()
-            .map(|a| !a.is_ready())
-            .unwrap_or(false)
-        {
-            trace!("-> destination client not ready, will need to retry");
-            return Remote::NeedsReconnect;
-        }
-        trace!("-> destination client is ready");
+        // if self
+        //     .client
+        //     .poll_ready()
+        //     .map(|a| !a.is_ready())
+        //     .unwrap_or(false)
+        // {
+        //     trace!("-> destination client not ready, will need to retry");
+        //     return Remote::NeedsReconnect;
+        // }
+        // trace!("-> destination client is ready");
         let req = GetDestination {
             scheme: "k8s".into(),
             path: format!("{}", dst),
@@ -241,8 +232,7 @@ where
         };
         let mut svc = Destination::new(self.client.as_service());
         let response = svc.get(grpc::Request::new(req));
-        let rx = remote_stream::Receiver::new(response);
-        Remote::ConnectedOrConnecting { rx }
+        remote_stream::Receiver::new(response)
     }
 }
 
