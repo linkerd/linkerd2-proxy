@@ -1,3 +1,4 @@
+use futures::{future::Future, sync::mpsc, Async, Poll, Stream};
 use indexmap::{IndexMap, IndexSet};
 use std::{
     collections::{HashMap, VecDeque},
@@ -5,8 +6,8 @@ use std::{
     net::SocketAddr,
 };
 
-use futures::{task, Async, Poll, Stream};
-use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
+use tokio::executor::{DefaultExecutor, Executor};
+use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 
 use api::{
     destination::{
@@ -29,175 +30,225 @@ use NameAddr;
 use super::Client;
 
 /// Holds the state of a single resolution.
-pub struct Resolution<T>
+pub struct Resolution {
+    rx: mpsc::UnboundedReceiver<Update<Metadata>>,
+    // auth: NameAddr,
+    // cache: Cache,
+    // inner: Option<Inner<T>>,
+}
+
+struct Daemon<T>
 where
     T: GrpcService<BoxBody>,
 {
     auth: NameAddr,
-    cache: Cache,
-    inner: Option<Inner<T>>,
-}
-
-struct Inner<T>
-where
-    T: GrpcService<BoxBody>,
-{
     client: Client<T>,
     query: Query<T>,
-}
-
-type Query<T> = remote_stream::Receiver<PbUpdate, T>;
-
-#[derive(Debug, Default)]
-struct Cache {
-    /// Used to "flatten" destination service responses containing multiple
-    /// endpoints into a series of `destination::Update`s for single endpoints.
-    queue: VecDeque<Update<Metadata>>,
-    /// Tracks all the endpoint addresses we've seen, so that we can send
-    /// `Update::Remove`s for them if we recieve a `NoEndpoints` response.
+    tx: mpsc::UnboundedSender<Update<Metadata>>,
     addrs: IndexSet<SocketAddr>,
+    /// Set to true on reconnects to indicate that the cache should be reset
+    /// when next modified.
+    should_reset: bool,
 }
+
+type Query<T> = remote_stream::Remote<PbUpdate, T>;
 
 struct DisplayUpdate<'a>(&'a Update<Metadata>);
 
-impl<T> resolve::Resolution for Resolution<T>
-where
-    T: GrpcService<BoxBody>,
-{
+impl resolve::Resolution for Resolution {
     type Endpoint = Metadata;
     type Error = Never;
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-        loop {
-            trace!("poll resolution");
-            if let Some(update) = self.cache.next_update() {
-                trace!("{} for {}", DisplayUpdate(&update), self.auth);
-                return Ok(Async::Ready(update));
-            }
+        trace!("poll resolution");
+        let up = try_ready!(self.rx.poll().or_else(|_| {
+            trace!("resolution daemon dropped; no endpoints exist");
+            Ok(Async::Ready(Some(Update::NoEndpoints)))
+        }))
+        .expect("destination stream may not end");
+        Ok(Async::Ready(up))
+    }
+}
 
-            let canceled = if let Some(inner) = self.inner.as_mut() {
-                match inner.poll_update(&self.auth, &mut self.cache) {
-                    Ok(Async::Ready(())) => false,
+impl Resolution {
+    pub(super) fn new<T>(auth: NameAddr, client: Client<T>) -> Self
+    where
+        T: GrpcService<BoxBody> + Send + 'static,
+        T::ResponseBody: Send,
+        <T::ResponseBody as Body>::Data: Send,
+        T::Future: Send,
+    {
+        let (tx, rx) = mpsc::unbounded();
+        let daemon = Daemon::new(auth, client, tx);
+
+        let spawn = DefaultExecutor::current().spawn(Box::new(daemon)).unwrap();
+        Self { rx }
+    }
+
+    pub(super) fn none() -> Self {
+        let (_, rx) = mpsc::unbounded();
+        Self { rx }
+    }
+}
+
+// ===== impl Daemon =====
+impl<T> Daemon<T>
+where
+    T: GrpcService<BoxBody> + Send,
+{
+    fn new(
+        auth: NameAddr,
+        mut client: Client<T>,
+        tx: mpsc::UnboundedSender<Update<Metadata>>,
+    ) -> Self {
+        let query = client.query(&auth, "connect");
+        Self {
+            query,
+            auth,
+            client,
+            tx,
+            addrs: IndexSet::new(),
+            should_reset: false,
+        }
+    }
+}
+
+macro_rules! try_send {
+    ($this:expr, $up:expr) => {
+        if let Err(_) = $this.tx.unbounded_send($up) {
+            trace!("resolver for {} dropped, daemon terminating...", $this.auth);
+            return Ok(Async::Ready(()));
+        }
+    };
+}
+impl<T> Future for Daemon<T>
+where
+    T: GrpcService<BoxBody>,
+{
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            self.query = match self.query {
+                Remote::ConnectedOrConnecting { ref mut rx } => match rx.poll() {
+                    Ok(Async::Ready(Some(update))) => {
+                        match update.update {
+                            Some(PbUpdate2::Add(a_set)) => {
+                                let set_labels = a_set.metric_labels;
+                                let addrs = a_set
+                                    .addrs
+                                    .into_iter()
+                                    .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
+                                for (addr, meta) in addrs {
+                                    self.addrs.insert(addr);
+                                    try_send!(self, Update::Add(addr, meta));
+                                }
+                            }
+                            Some(PbUpdate2::Remove(r_set)) => {
+                                let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
+                                for addr in addrs {
+                                    self.addrs.remove(&addr);
+                                    try_send!(self, Update::Remove(addr));
+                                }
+                            }
+                            Some(PbUpdate2::NoEndpoints(_)) => {
+                                try_send!(self, Update::NoEndpoints);
+                                for addr in self.addrs.drain(..) {
+                                    try_send!(self, Update::Remove(addr));
+                                }
+                            }
+                            None => (),
+                        };
+                        continue;
+                    }
+                    Ok(Async::Ready(None)) => {
+                        trace!(
+                            "Destination.Get stream ended for {:?}, must reconnect",
+                            self.auth
+                        );
+                        Remote::NeedsReconnect
+                    }
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(ref status) if status.code() == grpc::Code::InvalidArgument => {
+                    Err(ref status) if status.code() == tower_grpc::Code::InvalidArgument => {
                         // Invalid Argument is returned to indicate that the
                         // requested name should *not* query the destination
                         // service. In this case, do not attempt to reconnect.
                         debug!(
-                            "Destination.Get stream ended for {} with Invalid Argument",
+                            "Destination.Get stream ended for {:?} with Invalid Argument",
                             self.auth
                         );
-                        self.cache.no_endpoints();
-                        true
+                        let _ = self.tx.unbounded_send(Update::NoEndpoints);
+                        return Ok(Async::Ready(()));
                     }
                     Err(err) => {
-                        warn!("Destination.Get stream errored for {}: {}", self.auth, err,);
-                        inner.reconnect(&self.auth);
-                        false
+                        warn!(
+                            "Destination.Get stream errored for {:?}: {:?}",
+                            self.auth, err
+                        );
+                        Remote::NeedsReconnect
+                    }
+                },
+                Remote::NeedsReconnect => {
+                    if let Ok(Async::Ready(())) = self.client.client.poll_ready() {
+                        self.client.query(&self.auth, "reconnect")
+                    } else {
+                        trace!("Destination client not yet ready to reconnect");
+                        return Ok(Async::NotReady);
                     }
                 }
-            } else {
-                self.cache.no_endpoints();
-                false
             };
-
-            if canceled {
-                self.inner.take();
-            }
         }
     }
 }
 
-impl<T> Resolution<T>
-where
-    T: GrpcService<BoxBody>,
-{
-    pub(super) fn new(auth: NameAddr, mut client: Client<T>) -> Self {
-        let query = client.query(&auth, "connect");
-        Self {
-            auth,
-            inner: Some(Inner { query, client }),
-            cache: Cache::default(),
-        }
-    }
+// // ===== impl Cache =====
 
-    pub(super) fn none(auth: NameAddr) -> Self {
-        let mut cache = Cache::default();
-        cache.no_endpoints();
-        Self {
-            auth,
-            cache,
-            inner: None,
-        }
-    }
-}
+// impl Cache {
+//     fn next_update(&mut self) -> Option<Update<Metadata>> {
+//         self.queue.pop_front()
+//     }
 
-// ===== impl Inner =====
-impl<T> Inner<T>
-where
-    T: GrpcService<BoxBody>,
-{
-    fn poll_update(&mut self, auth: &NameAddr, cache: &mut Cache) -> Poll<(), grpc::Status> {
-        match try_ready!(self.query.poll()) {
-            Some(update) => match update.update {
-                Some(PbUpdate2::Add(a_set)) => {
-                    let set_labels = a_set.metric_labels;
-                    let addrs = a_set
-                        .addrs
-                        .into_iter()
-                        .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
-                    cache.add(addrs);
-                }
-                Some(PbUpdate2::Remove(r_set)) => {
-                    let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
-                    cache.remove(addrs);
-                }
-                Some(PbUpdate2::NoEndpoints(_)) => cache.no_endpoints(),
-                None => (),
-            },
-            None => {
-                trace!("Destination.Get stream ended for {}, reconnecting", auth);
-                self.reconnect(auth);
-            }
-        };
+//     fn add(&mut self, addrs: impl Iterator<Item = (SocketAddr, Metadata)>) {
+//         self.maybe_reset();
+//         for (addr, meta) in addrs {
+//             self.queue.push_back(Update::Add(addr, meta));
+//             self.addrs.insert(addr);
+//         }
+//     }
 
-        Ok(Async::Ready(()))
-    }
+//     fn remove(&mut self, addrs: impl Iterator<Item = SocketAddr>) {
+//         self.maybe_reset();
+//         for addr in addrs {
+//             self.queue.push_back(Update::Remove(addr));
+//             self.addrs.remove(&addr);
+//         }
+//     }
 
-    fn reconnect(&mut self, auth: &NameAddr) {
-        self.query = self.client.query(auth, "reconnect");
-    }
-}
+//     fn should_reset(&mut self) {
+//         trace!("cache should reset");
+//         self.should_reset = true;
+//     }
 
-// ===== impl Cache =====
+//     fn maybe_reset(&mut self) {
+//         if self.should_reset {
+//             self.should_reset = false;
+//             self.queue.clear();
+//             trace!("resetting {:?}", self.addrs);
+//             for addr in self.addrs.drain(..) {
+//                 self.queue.push_back(Update::Remove(addr));
+//             }
+//         }
+//     }
 
-impl Cache {
-    fn next_update(&mut self) -> Option<Update<Metadata>> {
-        self.queue.pop_front()
-    }
-
-    fn add(&mut self, addrs: impl Iterator<Item = (SocketAddr, Metadata)>) {
-        for (addr, meta) in addrs {
-            self.queue.push_back(Update::Add(addr, meta));
-            self.addrs.insert(addr);
-        }
-    }
-
-    fn remove(&mut self, addrs: impl Iterator<Item = SocketAddr>) {
-        for addr in addrs {
-            self.queue.push_back(Update::Remove(addr));
-            self.addrs.remove(&addr);
-        }
-    }
-
-    fn no_endpoints(&mut self) {
-        self.queue.clear();
-        self.queue.push_front(Update::NoEndpoints);
-        for addr in self.addrs.drain(..) {
-            self.queue.push_back(Update::Remove(addr));
-        }
-    }
-}
+//     fn no_endpoints(&mut self) {
+//         self.queue.clear();
+//         self.queue.push_front(Update::NoEndpoints);
+//         for addr in self.addrs.drain(..) {
+//             self.queue.push_back(Update::Remove(addr));
+//         }
+//     }
+// }
 
 // ===== impl Client =====
 
@@ -215,16 +266,6 @@ where
     ///    Destination service.
     fn query(&mut self, dst: &NameAddr, connect_or_reconnect: &str) -> Query<T> {
         trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
-        // if self
-        //     .client
-        //     .poll_ready()
-        //     .map(|a| !a.is_ready())
-        //     .unwrap_or(false)
-        // {
-        //     trace!("-> destination client not ready, will need to retry");
-        //     return Remote::NeedsReconnect;
-        // }
-        // trace!("-> destination client is ready");
         let req = GetDestination {
             scheme: "k8s".into(),
             path: format!("{}", dst),
@@ -232,7 +273,8 @@ where
         };
         let mut svc = Destination::new(self.client.as_service());
         let response = svc.get(grpc::Request::new(req));
-        remote_stream::Receiver::new(response)
+        let rx = remote_stream::Receiver::new(response);
+        remote_stream::Remote::ConnectedOrConnecting { rx }
     }
 }
 
@@ -240,7 +282,7 @@ impl<'a> fmt::Display for DisplayUpdate<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             Update::Remove(ref addr) => write!(f, "remove {}", addr),
-            Update::Add(ref addr, ..) => write!(f, "insert {}", addr),
+            Update::Add(ref addr, ..) => write!(f, "add {}", addr),
             Update::NoEndpoints => "no endpoints".fmt(f),
         }
     }

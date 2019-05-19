@@ -27,7 +27,7 @@
 use futures::{sync::mpsc, Async, Poll, Stream};
 use indexmap::IndexMap;
 use std::sync::Arc;
-use tower_grpc::{generic::client::GrpcService, BoxBody};
+use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
 
 use dns;
 use identity;
@@ -92,7 +92,10 @@ struct Client<T> {
 
 impl<T> Resolver<T>
 where
-    T: GrpcService<BoxBody> + Clone,
+    T: GrpcService<BoxBody> + Clone + Send + 'static,
+    T::ResponseBody: Send,
+    <T::ResponseBody as Body>::Data: Send,
+    T::Future: Send,
 {
     /// Returns a `Resolver` for requesting destination resolutions.
     pub fn new(client: Option<T>, suffixes: Vec<dns::Suffix>, proxy_id: String) -> Resolver<T> {
@@ -109,13 +112,16 @@ where
 
 impl<T> Resolve<NameAddr> for Resolver<T>
 where
-    T: GrpcService<BoxBody> + Clone,
+    T: GrpcService<BoxBody> + Clone + Send + 'static,
+    T::ResponseBody: Send,
+    <T::ResponseBody as Body>::Data: Send,
+    T::Future: Send,
 {
     type Endpoint = Metadata;
-    type Resolution = Resolution<T>;
+    type Resolution = Resolution;
 
     /// Start watching for address changes for a certain authority.
-    fn resolve(&self, authority: &NameAddr) -> Resolution<T> {
+    fn resolve(&self, authority: &NameAddr) -> Resolution {
         trace!("resolve; authority={:?}", authority);
 
         if self.suffixes.iter().any(|s| s.contains(authority.name())) {
@@ -127,7 +133,7 @@ where
         } else {
             trace!("-> authority {} not in search suffixes", authority);
         }
-        Resolution::none(authority.clone())
+        Resolution::none()
     }
 }
 
