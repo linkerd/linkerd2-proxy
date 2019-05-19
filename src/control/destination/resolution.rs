@@ -133,6 +133,13 @@ where
             self.query = match self.query {
                 Remote::ConnectedOrConnecting { ref mut rx } => match rx.poll() {
                     Ok(Async::Ready(Some(update))) => {
+                        if self.should_reset {
+                            self.should_reset = false;
+                            for addr in self.addrs.drain(..) {
+                                try_send!(self, Update::Remove(addr));
+                            }
+                        }
+
                         match update.update {
                             Some(PbUpdate2::Add(a_set)) => {
                                 let set_labels = a_set.metric_labels;
@@ -167,6 +174,7 @@ where
                             "Destination.Get stream ended for {:?}, must reconnect",
                             self.auth
                         );
+                        self.should_reset = true;
                         Remote::NeedsReconnect
                     }
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
@@ -186,6 +194,7 @@ where
                             "Destination.Get stream errored for {:?}: {:?}",
                             self.auth, err
                         );
+                        self.should_reset = true;
                         Remote::NeedsReconnect
                     }
                 },
