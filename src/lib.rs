@@ -53,7 +53,7 @@ pub mod convert;
 mod dns;
 mod drain;
 mod identity;
-mod logging;
+pub mod logging;
 mod proxy;
 mod svc;
 mod tap;
