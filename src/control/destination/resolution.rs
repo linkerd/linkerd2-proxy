@@ -33,9 +33,6 @@ use super::Client;
 /// Holds the state of a single resolution.
 pub struct Resolution {
     rx: mpsc::UnboundedReceiver<Update<Metadata>>,
-    // auth: NameAddr,
-    // cache: Cache,
-    // inner: Option<Inner<T>>,
 }
 
 struct Daemon<T>
@@ -211,54 +208,6 @@ where
     }
 }
 
-// // ===== impl Cache =====
-
-// impl Cache {
-//     fn next_update(&mut self) -> Option<Update<Metadata>> {
-//         self.queue.pop_front()
-//     }
-
-//     fn add(&mut self, addrs: impl Iterator<Item = (SocketAddr, Metadata)>) {
-//         self.maybe_reset();
-//         for (addr, meta) in addrs {
-//             self.queue.push_back(Update::Add(addr, meta));
-//             self.addrs.insert(addr);
-//         }
-//     }
-
-//     fn remove(&mut self, addrs: impl Iterator<Item = SocketAddr>) {
-//         self.maybe_reset();
-//         for addr in addrs {
-//             self.queue.push_back(Update::Remove(addr));
-//             self.addrs.remove(&addr);
-//         }
-//     }
-
-//     fn should_reset(&mut self) {
-//         trace!("cache should reset");
-//         self.should_reset = true;
-//     }
-
-//     fn maybe_reset(&mut self) {
-//         if self.should_reset {
-//             self.should_reset = false;
-//             self.queue.clear();
-//             trace!("resetting {:?}", self.addrs);
-//             for addr in self.addrs.drain(..) {
-//                 self.queue.push_back(Update::Remove(addr));
-//             }
-//         }
-//     }
-
-//     fn no_endpoints(&mut self) {
-//         self.queue.clear();
-//         self.queue.push_front(Update::NoEndpoints);
-//         for addr in self.addrs.drain(..) {
-//             self.queue.push_back(Update::Remove(addr));
-//         }
-//     }
-// }
-
 // ===== impl Client =====
 
 impl<T> Client<T>
@@ -275,7 +224,7 @@ where
     ///    Destination service.
     fn query(&mut self, dst: &NameAddr, connect_or_reconnect: &str) -> Query<T> {
         trace!(
-            "destination service query {}ing for {}",
+            "{}ing destination service query for {}",
             connect_or_reconnect,
             dst
         );
