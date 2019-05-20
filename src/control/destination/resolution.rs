@@ -30,11 +30,17 @@ use NameAddr;
 
 use super::Client;
 
-/// Holds the state of a single resolution.
+/// A resolution for a single authority.
 pub struct Resolution {
     rx: mpsc::UnboundedReceiver<Update<Metadata>>,
 }
 
+/// Drives the query associated with a `Resolution`.
+///
+/// Each destination service query is driven by its own background `Daemon`,
+/// rather than in `Resolution::poll`, so that changes in the discovered
+/// endpoints are handled as they are received, rather than only when polling
+/// the resolution.
 struct Daemon<T>
 where
     T: GrpcService<BoxBody>,
@@ -42,19 +48,28 @@ where
     auth: NameAddr,
     client: Client<T>,
     query: Query<T>,
+    updater: Updater,
+}
+
+/// Updates the `Resolution` when the set of discovered endpoints changes.
+///
+/// This is more than just the send end of the channel, as it also tracks the
+/// state necessary to reset stale endpoints when reconnecting.
+struct Updater {
     tx: mpsc::UnboundedSender<Update<Metadata>>,
-    addrs: IndexSet<SocketAddr>,
-    /// Set to true on reconnects to indicate that the cache should be reset
-    /// when next modified.
-    should_reset: bool,
+    /// All the endpoint addresses seen since the last reset.
+    seen: IndexSet<SocketAddr>,
+    /// Set to true on reconnects to indicate that previously seen addresses
+    /// should be reset when the query reconnects.
+    reset: bool,
 }
 
 #[derive(Clone, Debug)]
 struct LogCtx(NameAddr);
 
-type Query<T> = remote_stream::Remote<PbUpdate, T>;
-
 struct DisplayUpdate<'a>(&'a Update<Metadata>);
+
+type Query<T> = remote_stream::Remote<PbUpdate, T>;
 
 impl resolve::Resolution for Resolution {
     type Endpoint = Metadata;
@@ -95,6 +110,7 @@ impl Resolution {
 }
 
 // ===== impl Daemon =====
+
 impl<T> Daemon<T>
 where
     T: GrpcService<BoxBody> + Send,
@@ -109,22 +125,9 @@ where
             query,
             auth,
             client,
-            tx,
-            addrs: IndexSet::new(),
-            should_reset: false,
+            updater: Updater::new(tx),
         }
     }
-}
-
-macro_rules! try_send {
-    ($this:expr, $up:expr) => {
-        let up = $up;
-        trace!("{} for {}", DisplayUpdate(&up), $this.auth);
-        if let Err(_) = $this.tx.unbounded_send(up) {
-            trace!("resolution dropped, daemon terminating...");
-            return Ok(Async::Ready(()));
-        }
-    };
 }
 
 impl<T> Future for Daemon<T>
@@ -135,17 +138,20 @@ where
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        // Try to send an update to the `Resolution`, ending the background task
+        // if the resolution is no longer needed.
+        macro_rules! try_send {
+            ($send:expr) => {
+                if let Err(_) = $send {
+                    trace!("resolution dropped, daemon terminating...");
+                    return Ok(Async::Ready(()));
+                }
+            };
+        }
         loop {
             self.query = match self.query {
                 Remote::ConnectedOrConnecting { ref mut rx } => match rx.poll() {
                     Ok(Async::Ready(Some(update))) => {
-                        if self.should_reset {
-                            self.should_reset = false;
-                            for addr in self.addrs.drain(..) {
-                                try_send!(self, Update::Remove(addr));
-                            }
-                        }
-
                         match update.update {
                             Some(PbUpdate2::Add(a_set)) => {
                                 let set_labels = a_set.metric_labels;
@@ -153,31 +159,22 @@ where
                                     .addrs
                                     .into_iter()
                                     .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
-                                for (addr, meta) in addrs {
-                                    self.addrs.insert(addr);
-                                    try_send!(self, Update::Add(addr, meta));
-                                }
+                                try_send!(self.updater.add(addrs));
                             }
                             Some(PbUpdate2::Remove(r_set)) => {
                                 let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
-                                for addr in addrs {
-                                    self.addrs.remove(&addr);
-                                    try_send!(self, Update::Remove(addr));
-                                }
+                                try_send!(self.updater.remove(addrs));
                             }
                             Some(PbUpdate2::NoEndpoints(_)) => {
-                                try_send!(self, Update::NoEndpoints);
-                                for addr in self.addrs.drain(..) {
-                                    try_send!(self, Update::Remove(addr));
-                                }
+                                try_send!(self.updater.no_endpoints())
                             }
                             None => (),
                         };
                         continue;
                     }
                     Ok(Async::Ready(None)) => {
-                        trace!("Destination.Get stream ended, must reconnect",);
-                        self.should_reset = true;
+                        trace!("Destination.Get stream ended, must reconnect");
+                        self.updater.should_reset();
                         Remote::NeedsReconnect
                     }
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
@@ -186,12 +183,12 @@ where
                         // requested name should *not* query the destination
                         // service. In this case, do not attempt to reconnect.
                         debug!("Destination.Get stream ended with Invalid Argument",);
-                        let _ = self.tx.unbounded_send(Update::NoEndpoints);
+                        let _ = self.updater.no_endpoints();
                         return Ok(Async::Ready(()));
                     }
                     Err(err) => {
-                        warn!("Destination.Get stream error: {}", self.auth, err);
-                        self.should_reset = true;
+                        warn!("Destination.Get stream error: {}", err);
+                        self.updater.should_reset();
                         Remote::NeedsReconnect
                     }
                 },
@@ -237,6 +234,74 @@ where
         let response = svc.get(grpc::Request::new(req));
         let rx = remote_stream::Receiver::new(response);
         remote_stream::Remote::ConnectedOrConnecting { rx }
+    }
+}
+
+// ===== impl Updater =====
+
+impl Updater {
+    fn new(tx: mpsc::UnboundedSender<Update<Metadata>>) -> Self {
+        Self {
+            tx,
+            seen: IndexSet::new(),
+            reset: false,
+        }
+    }
+
+    fn send(&mut self, update: Update<Metadata>) -> Result<(), ()> {
+        trace!("{}", DisplayUpdate(&update));
+        self.tx.unbounded_send(update).map_err(|_| ())
+    }
+
+    /// Indicates that the resolution should be reset on the next update
+    /// received after a reconnect.
+    fn should_reset(&mut self) {
+        trace!("should reset on next update");
+        self.reset = true;
+    }
+
+    /// If the
+    fn reset_if_needed(&mut self) -> Result<(), ()> {
+        if self.reset {
+            trace!("query reconnected; removing stale endpoints");
+            for addr in self.seen.drain(..) {
+                trace!("remove {} (stale)", addr);
+                self.tx
+                    .unbounded_send(Update::Remove(addr))
+                    .map_err(|_| ())?;
+            }
+            self.reset = false;
+        }
+        Ok(())
+    }
+
+    fn add(&mut self, addrs: impl Iterator<Item = (SocketAddr, Metadata)>) -> Result<(), ()> {
+        self.reset_if_needed()?;
+        for (addr, meta) in addrs {
+            self.seen.insert(addr);
+            self.send(Update::Add(addr, meta))?;
+        }
+        Ok(())
+    }
+
+    fn remove(&mut self, addrs: impl Iterator<Item = SocketAddr>) -> Result<(), ()> {
+        self.reset_if_needed()?;
+        for addr in addrs {
+            self.seen.remove(&addr);
+            self.send(Update::Remove(addr))?;
+        }
+        Ok(())
+    }
+
+    fn no_endpoints(&mut self) -> Result<(), ()> {
+        self.send(Update::NoEndpoints)?;
+        for addr in self.seen.drain(..) {
+            trace!("remove {} (no endpoints)", addr);
+            self.tx
+                .unbounded_send(Update::Remove(addr))
+                .map_err(|_| ())?;
+        }
+        Ok(())
     }
 }
 
