@@ -187,14 +187,10 @@ where
                         Remote::NeedsReconnect
                     }
                 },
-                Remote::NeedsReconnect => {
-                    if let Ok(Async::Ready(())) = self.client.client.poll_ready() {
-                        self.client.query(&self.auth, "reconnect")
-                    } else {
-                        trace!("Destination client not yet ready to reconnect");
-                        return Ok(Async::NotReady);
-                    }
-                }
+                Remote::NeedsReconnect => match self.client.query(&self.auth, "reconnect") {
+                    Remote::NeedsReconnect => return Ok(Async::NotReady),
+                    query => query,
+                },
             };
         }
     }
@@ -206,29 +202,27 @@ impl<T> Client<T>
 where
     T: GrpcService<BoxBody>,
 {
-    /// Attepts to initiate a query to the Destination service if the given
-    /// authority matches the client's set of search suffixes.
-    ///
-    /// # Returns
-    /// - `None` if the authority is not suitable for querying the Destination
-    //     service, or the underlying client service is `None`,
-    /// - `Some(Query)` if the authority is suitable for querying the
-    ///    Destination service.
+    /// Returns a new destination service query for the given `dst`.
     fn query(&mut self, dst: &NameAddr, connect_or_reconnect: &str) -> Query<T> {
         trace!(
             "{}ing destination service query for {}",
             connect_or_reconnect,
             dst
         );
-        let req = GetDestination {
-            scheme: "k8s".into(),
-            path: format!("{}", dst),
-            context_token: self.context_token.as_ref().clone(),
-        };
-        let mut svc = Destination::new(self.client.as_service());
-        let response = svc.get(grpc::Request::new(req));
-        let rx = remote_stream::Receiver::new(response);
-        remote_stream::Remote::ConnectedOrConnecting { rx }
+        if let Ok(Async::Ready(())) = self.client.poll_ready() {
+            let req = GetDestination {
+                scheme: "k8s".into(),
+                path: format!("{}", dst),
+                context_token: self.context_token.as_ref().clone(),
+            };
+            let mut svc = Destination::new(self.client.as_service());
+            let response = svc.get(grpc::Request::new(req));
+            let rx = remote_stream::Receiver::new(response);
+            Remote::ConnectedOrConnecting { rx }
+        } else {
+            trace!("destination client not yet ready");
+            Remote::NeedsReconnect
+        }
     }
 }
 
