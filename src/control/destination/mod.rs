@@ -23,18 +23,13 @@
 //!   more explicit.
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
-
-use futures::{sync::mpsc, Async, Poll, Stream};
 use indexmap::IndexMap;
 use std::sync::Arc;
 use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
 
 use dns;
 use identity;
-use proxy::resolve::{self, Resolve, Update};
-
-use api::destination::client::Destination;
-use api::destination::{GetDestination, Update as PbUpdate};
+use proxy::resolve::{Resolve, Update};
 
 mod resolution;
 pub use self::resolution::Resolution;

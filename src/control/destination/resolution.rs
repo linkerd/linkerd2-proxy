@@ -1,10 +1,6 @@
 use futures::{future::Future, sync::mpsc, Async, Poll, Stream};
 use indexmap::{IndexMap, IndexSet};
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt,
-    net::SocketAddr,
-};
+use std::{collections::HashMap, fmt, net::SocketAddr};
 
 use tokio;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
