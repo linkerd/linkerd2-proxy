@@ -71,7 +71,10 @@ pub fn env_logger_init() -> Result<(), String> {
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    env_logger::try_init().map_err(|e| e.to_string())
+    self::linkerd2_proxy::logging::formatted_builder()
+        .parse(&log)
+        .try_init()
+        .map_err(|e| e.to_string())
 }
 
 /// Retry an assertion up to a specified number of times, waiting
