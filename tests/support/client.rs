@@ -4,14 +4,9 @@ use std::io;
 use std::sync::Mutex;
 
 use self::futures::sync::{mpsc, oneshot};
-use self::tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
-use self::tokio_rustls::TlsStream;
+use self::tokio::net::TcpStream;
 use self::webpki::{DNSName, DNSNameRef};
 use rustls::{ClientConfig, ClientSession};
-use std::io::{Read, Write};
 use std::sync::Arc;
 use support::bytes::IntoBuf;
 use support::hyper::body::Payload;
@@ -262,7 +257,9 @@ struct Conn {
 }
 
 impl Conn {
-    fn connect_(&self) -> Box<Future<Item = RunningIo, Error = ::std::io::Error> + Send> {
+    fn connect_(
+        &self,
+    ) -> Box<Future<Item = RunningIo<ClientSession>, Error = ::std::io::Error> + Send> {
         Box::new(ConnectorFuture::Init {
             future: TcpStream::connect(&self.addr),
             tls: self.tls.clone(),
@@ -272,7 +269,7 @@ impl Conn {
 }
 
 impl Connect for Conn {
-    type Connected = RunningIo;
+    type Connected = RunningIo<ClientSession>;
     type Error = ::std::io::Error;
     type Future = Box<Future<Item = Self::Connected, Error = ::std::io::Error>>;
 
@@ -282,7 +279,7 @@ impl Connect for Conn {
 }
 
 impl hyper::client::connect::Connect for Conn {
-    type Transport = RunningIo;
+    type Transport = RunningIo<ClientSession>;
     type Future = Box<
         Future<
                 Item = (Self::Transport, hyper::client::connect::Connected),
@@ -309,7 +306,7 @@ enum ConnectorFuture {
 }
 
 impl Future for ConnectorFuture {
-    type Item = RunningIo;
+    type Item = RunningIo<ClientSession>;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -331,7 +328,10 @@ impl Future for ConnectorFuture {
 
                     match tls {
                         None => {
-                            return Ok(Async::Ready(RunningIo::Http(io, take_running(running))));
+                            return Ok(Async::Ready(RunningIo::Plain(
+                                io,
+                                Some(take_running(running)),
+                            )));
                         }
 
                         Some(TlsConfig {
@@ -350,50 +350,12 @@ impl Future for ConnectorFuture {
 
                 ConnectorFuture::Handshake { future, running } => {
                     let io = try_ready!(future.poll());
-                    return Ok(Async::Ready(RunningIo::Https(io, take_running(running))));
+                    return Ok(Async::Ready(RunningIo::Tls(
+                        io,
+                        Some(take_running(running)),
+                    )));
                 }
             }
-        }
-    }
-}
-
-enum RunningIo {
-    Http(TcpStream, oneshot::Sender<()>),
-    Https(TlsStream<TcpStream, ClientSession>, oneshot::Sender<()>),
-}
-
-impl Read for RunningIo {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match *self {
-            RunningIo::Http(ref mut s, _) => s.read(buf),
-            RunningIo::Https(ref mut s, _) => s.read(buf),
-        }
-    }
-}
-
-impl Write for RunningIo {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match *self {
-            RunningIo::Http(ref mut s, _) => s.write(buf),
-            RunningIo::Https(ref mut s, _) => s.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        match *self {
-            RunningIo::Http(ref mut s, _) => s.flush(),
-            RunningIo::Https(ref mut s, _) => s.flush(),
-        }
-    }
-}
-
-impl AsyncRead for RunningIo {}
-
-impl AsyncWrite for RunningIo {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        match *self {
-            RunningIo::Http(ref mut s, _) => s.shutdown(),
-            RunningIo::Https(ref mut s, _) => s.shutdown(),
         }
     }
 }

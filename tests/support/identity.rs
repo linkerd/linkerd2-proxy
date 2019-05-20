@@ -14,6 +14,7 @@ pub struct Identity {
     pub env: app::config::TestEnv,
     pub certify_rsp: pb::CertifyResponse,
     pub client_config: Arc<rustls::ClientConfig>,
+    pub server_config: Arc<rustls::ServerConfig>,
 }
 
 #[derive(Clone)]
@@ -29,44 +30,88 @@ type Certify = Box<
         + Send,
 >;
 
-pub fn rsp_from_cert<P>(p: P) -> Result<pb::CertifyResponse, io::Error>
-where
-    P: AsRef<Path>,
-{
-    let f = fs::File::open(p)?;
-    let mut r = io::BufReader::new(f);
-    let certs = rustls::internal::pemfile::certs(&mut r)
-        .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?;
-    let leaf_certificate = certs
-        .get(0)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no certs in pemfile"))?
-        .as_ref()
-        .into();
-    let intermediate_certificates = certs[1..].iter().map(|i| i.as_ref().into()).collect();
-    let rsp = pb::CertifyResponse {
-        leaf_certificate,
-        intermediate_certificates,
-        ..Default::default()
-    };
-    Ok(rsp)
+const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
+
+struct Certificates {
+    pub leaf: Vec<u8>,
+    pub intermediates: Vec<Vec<u8>>,
+}
+
+impl Certificates {
+    pub fn load<P>(p: P) -> Result<Certificates, io::Error>
+    where
+        P: AsRef<Path>,
+    {
+        let f = fs::File::open(p)?;
+        let mut r = io::BufReader::new(f);
+        let certs = rustls::internal::pemfile::certs(&mut r)
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?;
+        let leaf = certs
+            .get(0)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no certs in pemfile"))?
+            .as_ref()
+            .into();
+        let intermediates = certs[1..].iter().map(|i| i.as_ref().into()).collect();
+
+        Ok(Certificates {
+            leaf,
+            intermediates,
+        })
+    }
+
+    pub fn chain(&self) -> Vec<rustls::Certificate> {
+        let mut chain = Vec::with_capacity(self.intermediates.len() + 1);
+        chain.push(self.leaf.clone());
+        chain.extend(self.intermediates.clone());
+        chain.into_iter().map(rustls::Certificate).collect()
+    }
+
+    pub fn response(&self) -> pb::CertifyResponse {
+        pb::CertifyResponse {
+            leaf_certificate: self.leaf.clone(),
+            intermediate_certificates: self.intermediates.clone(),
+            ..Default::default()
+        }
+    }
 }
 
 impl Identity {
-    pub fn from_pem(s: &str) -> Arc<rustls::ClientConfig> {
-        use std::io::Cursor;
+    fn load_key<P>(p: P) -> rustls::PrivateKey
+    where
+        P: AsRef<Path>,
+    {
+        let p8 = fs::read(&p).expect("read key");
+        rustls::PrivateKey(p8)
+    }
 
+    fn configs(
+        trust_anchors: &str,
+        certs: &Certificates,
+        key: rustls::PrivateKey,
+    ) -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
+        use std::io::Cursor;
         let mut roots = rustls::RootCertStore::empty();
         roots
-            .add_pem_file(&mut Cursor::new(s))
+            .add_pem_file(&mut Cursor::new(trust_anchors))
             .expect("add pem file");
 
-        let mut c = rustls::ClientConfig::new();
-        c.root_store = roots;
-        Arc::new(c)
+        let mut client_config = rustls::ClientConfig::new();
+        client_config.root_store = roots;
+
+        let mut server_config = rustls::ServerConfig::new(
+            rustls::AllowAnyAnonymousOrAuthenticatedClient::new(client_config.root_store.clone()),
+        );
+
+        server_config.versions = TLS_VERSIONS.to_vec();
+        server_config
+            .set_single_cert(certs.chain(), key)
+            .expect("set server resover");
+
+        (Arc::new(client_config), Arc::new(server_config))
     }
 
     pub fn new(dir: &'static str, local_name: String) -> Self {
-        let (id_dir, token, trust_anchors, certify_rsp) = {
+        let (id_dir, token, trust_anchors, certs, key) = {
             let path_to_string = |path: &PathBuf| {
                 path.as_path()
                     .to_owned()
@@ -89,12 +134,16 @@ impl Identity {
             let token = path_to_string(&id);
 
             id.set_file_name("ca1-cert.pem");
-            let rsp = rsp_from_cert(&id).expect("read cert");
+            let certs = Certificates::load(&id).expect("read cert");
 
-            (id_dir, token, trust_anchors, rsp)
+            id.set_file_name("key.p8");
+            let key = Identity::load_key(&id);
+
+            (id_dir, token, trust_anchors, certs, key)
         };
 
-        let client_config = Identity::from_pem(&trust_anchors);
+        let certify_rsp = certs.response();
+        let (client_config, server_config) = Identity::configs(&trust_anchors, &certs, key);
         let mut env = app::config::TestEnv::new();
 
         env.put(app::config::ENV_IDENTITY_DIR, id_dir);
@@ -106,6 +155,7 @@ impl Identity {
             env,
             certify_rsp,
             client_config,
+            server_config,
         }
     }
 

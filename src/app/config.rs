@@ -31,7 +31,7 @@ pub struct Config {
     pub inbound_listener: Listener,
 
     /// Where to listen for connections initiated by the control plane.
-    pub control_listener: Listener,
+    pub control_listener: Option<Listener>,
 
     /// Where to serve admin HTTP.
     pub admin_listener: Listener,
@@ -278,6 +278,7 @@ pub const ENV_DESTINATION_CONTEXT: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT";
 pub const ENV_CONTROL_EXP_BACKOFF_MIN: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MIN";
 pub const ENV_CONTROL_EXP_BACKOFF_MAX: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MAX";
 pub const ENV_CONTROL_EXP_BACKOFF_JITTER: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_JITTER";
+pub const ENV_TAP_DISABLED: &str = "LINKERD2_PROXY_TAP_DISABLED";
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
 const ENV_CONTROL_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_DISPATCH_TIMEOUT";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
@@ -382,7 +383,6 @@ impl Config {
         // defer returning any errors until all of them have been parsed.
         let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTEN_ADDR, parse_socket_addr);
         let inbound_listener_addr = parse(strings, ENV_INBOUND_LISTEN_ADDR, parse_socket_addr);
-        let control_listener_addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr);
         let admin_listener_addr = parse(strings, ENV_ADMIN_LISTEN_ADDR, parse_socket_addr);
         let inbound_forward = parse(strings, ENV_INBOUND_FORWARD, parse_socket_addr);
 
@@ -464,6 +464,8 @@ impl Config {
         let initial_connection_window_size =
             parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
 
+        let control_listener = parse_control_listener(strings);
+
         Ok(Config {
             outbound_listener: Listener {
                 addr: outbound_listener_addr?
@@ -473,10 +475,7 @@ impl Config {
                 addr: inbound_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
             },
-            control_listener: Listener {
-                addr: control_listener_addr?
-                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap()),
-            },
+            control_listener: control_listener?,
             admin_listener: Listener {
                 addr: admin_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
@@ -613,6 +612,21 @@ impl Strings for TestEnv {
 }
 
 // ===== Parsing =====
+
+fn parse_control_listener(strings: &Strings) -> Result<Option<Listener>, Error> {
+    let tap_disabled = strings
+        .get(ENV_TAP_DISABLED)?
+        .map(|d| !d.is_empty())
+        .unwrap_or(false);
+
+    if tap_disabled {
+        Ok(None)
+    } else {
+        let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
+            .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
+        Ok(Some(Listener { addr }))
+    }
+}
 
 fn parse_number<T>(s: &str) -> Result<T, ParseError>
 where
