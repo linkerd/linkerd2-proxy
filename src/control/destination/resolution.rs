@@ -124,7 +124,7 @@ macro_rules! try_send {
         let up = $up;
         trace!("{} for {}", DisplayUpdate(&up), $this.auth);
         if let Err(_) = $this.tx.unbounded_send(up) {
-            trace!("resolver for {} dropped, daemon terminating...", $this.auth);
+            trace!("resolution dropped, daemon terminating...");
             return Ok(Async::Ready(()));
         }
     };
@@ -179,10 +179,7 @@ where
                         continue;
                     }
                     Ok(Async::Ready(None)) => {
-                        trace!(
-                            "Destination.Get stream ended for {:?}, must reconnect",
-                            self.auth
-                        );
+                        trace!("Destination.Get stream ended, must reconnect",);
                         self.should_reset = true;
                         Remote::NeedsReconnect
                     }
@@ -191,18 +188,12 @@ where
                         // Invalid Argument is returned to indicate that the
                         // requested name should *not* query the destination
                         // service. In this case, do not attempt to reconnect.
-                        debug!(
-                            "Destination.Get stream ended for {:?} with Invalid Argument",
-                            self.auth
-                        );
+                        debug!("Destination.Get stream ended with Invalid Argument",);
                         let _ = self.tx.unbounded_send(Update::NoEndpoints);
                         return Ok(Async::Ready(()));
                     }
                     Err(err) => {
-                        warn!(
-                            "Destination.Get stream errored for {:?}: {:?}",
-                            self.auth, err
-                        );
+                        warn!("Destination.Get stream error: {}", self.auth, err);
                         self.should_reset = true;
                         Remote::NeedsReconnect
                     }
@@ -283,7 +274,11 @@ where
     /// - `Some(Query)` if the authority is suitable for querying the
     ///    Destination service.
     fn query(&mut self, dst: &NameAddr, connect_or_reconnect: &str) -> Query<T> {
-        trace!("DestinationServiceQuery {} {:?}", connect_or_reconnect, dst);
+        trace!(
+            "destination service query {}ing for {}",
+            connect_or_reconnect,
+            dst
+        );
         let req = GetDestination {
             scheme: "k8s".into(),
             path: format!("{}", dst),
