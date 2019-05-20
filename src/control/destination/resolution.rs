@@ -72,7 +72,6 @@ impl resolve::Resolution for Resolution {
     type Error = Never;
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-        trace!("poll resolution");
         match self.rx.poll() {
             Ok(Async::Ready(Some(up))) => Ok(Async::Ready(up)),
             Ok(Async::NotReady) => Ok(Async::NotReady),
