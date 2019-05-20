@@ -115,12 +115,15 @@ where
 
 macro_rules! try_send {
     ($this:expr, $up:expr) => {
-        if let Err(_) = $this.tx.unbounded_send($up) {
+        let up = $up;
+        trace!("{} for {}", DisplayUpdate(&up), $this.auth);
+        if let Err(_) = $this.tx.unbounded_send(up) {
             trace!("resolver for {} dropped, daemon terminating...", $this.auth);
             return Ok(Async::Ready(()));
         }
     };
 }
+
 impl<T> Future for Daemon<T>
 where
     T: GrpcService<BoxBody>,
