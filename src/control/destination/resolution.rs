@@ -65,7 +65,7 @@ impl resolve::Resolution for Resolution {
             trace!("resolution daemon dropped; no endpoints exist");
             Ok(Async::Ready(Some(Update::NoEndpoints)))
         }))
-        .expect("destination stream may not end");
+        .unwrap_or(Update::NoEndpoints);
         Ok(Async::Ready(up))
     }
 }
