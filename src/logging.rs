@@ -18,31 +18,36 @@ thread_local! {
     static CONTEXT: RefCell<Vec<*const fmt::Display>> = RefCell::new(Vec::new());
 }
 
-pub fn init() {
+pub fn formatted_builder() -> env_logger::Builder {
     let start_time = clock::now();
-    env_logger::Builder::new()
-        .format(move |fmt, record| {
-            CONTEXT.with(move |ctxt| {
-                let level = match record.level() {
-                    Level::Trace => "TRCE",
-                    Level::Debug => "DBUG",
-                    Level::Info => "INFO",
-                    Level::Warn => "WARN",
-                    Level::Error => "ERR!",
-                };
-                let uptime = clock::now() - start_time;
-                writeln!(
-                    fmt,
-                    "{} [{:>6}.{:06}s] {}{} {}",
-                    level,
-                    uptime.as_secs(),
-                    uptime.subsec_micros(),
-                    Context(&ctxt.borrow()),
-                    record.target(),
-                    record.args()
-                )
-            })
+    let mut builder = env_logger::Builder::new();
+    builder.format(move |fmt, record| {
+        CONTEXT.with(move |ctxt| {
+            let level = match record.level() {
+                Level::Trace => "TRCE",
+                Level::Debug => "DBUG",
+                Level::Info => "INFO",
+                Level::Warn => "WARN",
+                Level::Error => "ERR!",
+            };
+            let uptime = clock::now() - start_time;
+            writeln!(
+                fmt,
+                "{} [{:>6}.{:06}s] {}{} {}",
+                level,
+                uptime.as_secs(),
+                uptime.subsec_micros(),
+                Context(&ctxt.borrow()),
+                record.target(),
+                record.args()
+            )
         })
+    });
+    builder
+}
+
+pub fn init() {
+    formatted_builder()
         .parse(&env::var(ENV_LOG).unwrap_or_default())
         .init();
 }
