@@ -61,12 +61,14 @@ impl resolve::Resolution for Resolution {
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
         trace!("poll resolution");
-        let up = try_ready!(self.rx.poll().or_else(|_| {
-            trace!("resolution daemon dropped; no endpoints exist");
-            Ok(Async::Ready(Some(Update::NoEndpoints)))
-        }))
-        .unwrap_or(Update::NoEndpoints);
-        Ok(Async::Ready(up))
+        match self.rx.poll() {
+            Ok(Async::Ready(Some(up))) => Ok(Async::Ready(up)),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(_) | Ok(Async::Ready(None)) => {
+                trace!("resolution daemon dropped; no endpoints exist");
+                Ok(Async::NotReady)
+            }
+        }
     }
 }
 
