@@ -6,7 +6,7 @@ use std::{
     net::SocketAddr,
 };
 
-use tokio::executor::{DefaultExecutor, Executor};
+use tokio;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 
 use api::{
@@ -23,6 +23,7 @@ use control::{
 };
 
 use identity;
+use logging;
 use never::Never;
 use proxy::resolve;
 use NameAddr;
@@ -50,6 +51,9 @@ where
     /// when next modified.
     should_reset: bool,
 }
+
+#[derive(Clone, Debug)]
+struct LogCtx(NameAddr);
 
 type Query<T> = remote_stream::Remote<PbUpdate, T>;
 
@@ -81,9 +85,9 @@ impl Resolution {
         T::Future: Send,
     {
         let (tx, rx) = mpsc::unbounded();
-        let daemon = Daemon::new(auth, client, tx);
-
-        let spawn = DefaultExecutor::current().spawn(Box::new(daemon)).unwrap();
+        let daemon = Daemon::new(auth.clone(), client, tx);
+        let daemon = logging::admin().bg(LogCtx(auth)).future(daemon);
+        tokio::spawn(Box::new(daemon));
         Self { rx }
     }
 
@@ -299,6 +303,12 @@ impl<'a> fmt::Display for DisplayUpdate<'a> {
             Update::Add(ref addr, ..) => write!(f, "add {}", addr),
             Update::NoEndpoints => "no endpoints".fmt(f),
         }
+    }
+}
+
+impl fmt::Display for LogCtx {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "resolver addr={}", self.0)
     }
 }
 
