@@ -93,7 +93,7 @@ impl Resolution {
     {
         let (tx, rx) = mpsc::unbounded();
         let daemon = Daemon::new(auth.clone(), client, tx);
-        let daemon = logging::admin().bg(LogCtx(auth)).future(daemon);
+        let daemon = logging::Section::Proxy.bg(LogCtx(auth)).future(daemon);
         tokio::spawn(Box::new(daemon));
         Self { rx }
     }
