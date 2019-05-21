@@ -76,7 +76,7 @@ impl resolve::Resolution for Resolution {
             Ok(Async::Ready(Some(up))) => Ok(Async::Ready(up)),
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(_) | Ok(Async::Ready(None)) => {
-                trace!("resolution daemon dropped; no endpoints exist");
+                trace!("resolution daemon has terminated; no endpoints exist");
                 Ok(Async::NotReady)
             }
         }
@@ -245,7 +245,6 @@ impl Updater {
     /// Indicates that the resolution should be reset on the next update
     /// received after a reconnect.
     fn should_reset(&mut self) {
-        trace!("should reset on next update");
         self.reset = true;
     }
 
