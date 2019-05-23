@@ -76,7 +76,7 @@ impl resolve::Resolution for Resolution {
             Ok(Async::Ready(Some(up))) => Ok(Async::Ready(up)),
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(_) | Ok(Async::Ready(None)) => {
-                trace!("resolution daemon has terminated; no endpoints exist");
+                trace!("resolution daemon has terminated");
                 Ok(Async::NotReady)
             }
         }
@@ -99,7 +99,8 @@ impl Resolution {
     }
 
     pub(super) fn none() -> Self {
-        let (_, rx) = mpsc::unbounded();
+        let (tx, rx) = mpsc::unbounded();
+        let _ = tx.unbounded_send(Update::NoEndpoints);
         Self { rx }
     }
 }
