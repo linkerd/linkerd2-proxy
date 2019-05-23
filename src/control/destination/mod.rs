@@ -23,56 +23,24 @@
 //!   more explicit.
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
-
-use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use std::sync::{Arc, Weak};
-use tower_grpc::{generic::client::GrpcService, BoxBody};
+use std::sync::Arc;
+use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
 
 use dns;
 use identity;
-use never::Never;
-use proxy::resolve::{self, Resolve, Update};
+use proxy::resolve::{Resolve, Update};
 
-pub mod background;
-
-use self::background::Background;
+mod resolution;
+pub use self::resolution::Resolution;
 use proxy::http::balance::Weight;
 use NameAddr;
 
 /// A handle to request resolutions from the background discovery task.
 #[derive(Clone)]
-pub struct Resolver {
-    request_tx: mpsc::UnboundedSender<ResolveRequest>,
-}
-
-/// Requests that resolution updates for `authority` be sent on `responder`.
-#[derive(Debug)]
-struct ResolveRequest {
-    authority: NameAddr,
-    responder: Responder,
-}
-
-/// A handle through which response updates may be sent.
-#[derive(Debug)]
-struct Responder {
-    /// Sends updates from the controller to a `Resolution`.
-    update_tx: mpsc::UnboundedSender<Update<Metadata>>,
-
-    /// Indicates whether the corresponding `Resolution` is still active.
-    active: Weak<()>,
-}
-
-#[derive(Debug)]
-pub struct Resolution {
-    /// Receives updates from the controller.
-    update_rx: mpsc::UnboundedReceiver<Update<Metadata>>,
-
-    /// Allows `Responder` to detect when its `Resolution` has been lost.
-    ///
-    /// `Responder` holds a weak reference to this `Arc` and can determine when this
-    /// reference has been dropped.
-    _active: Arc<()>,
+pub struct Resolver<T> {
+    client: Option<Client<T>>,
+    suffixes: Arc<Vec<dns::Suffix>>,
 }
 
 /// Metadata describing an endpoint.
@@ -109,77 +77,58 @@ pub enum ProtocolHint {
     Http2,
 }
 
-/// Returns a `Resolver` and a background task future.
-///
-/// The `Resolver` is used by a listener to request resolutions, while
-/// the background future is executed on the controller thread's executor
-/// to drive the background task.
-pub fn new<T>(
-    mut client: Option<T>,
-    dns_resolver: dns::Resolver,
-    suffixes: Vec<dns::Suffix>,
-    proxy_id: String,
-) -> (Resolver, impl Future<Item = (), Error = ()>)
-where
-    T: GrpcService<BoxBody>,
-{
-    let (request_tx, rx) = mpsc::unbounded();
-    let disco = Resolver { request_tx };
-    let mut bg = Background::new(rx, dns_resolver, suffixes, proxy_id);
-    let task = future::poll_fn(move || bg.poll_rpc(&mut client));
-    (disco, task)
+#[derive(Clone)]
+struct Client<T> {
+    client: T,
+    context_token: Arc<String>,
 }
 
 // ==== impl Resolver =====
 
-impl Resolve<NameAddr> for Resolver {
+impl<T> Resolver<T>
+where
+    T: GrpcService<BoxBody> + Clone + Send + 'static,
+    T::ResponseBody: Send,
+    <T::ResponseBody as Body>::Data: Send,
+    T::Future: Send,
+{
+    /// Returns a `Resolver` for requesting destination resolutions.
+    pub fn new(client: Option<T>, suffixes: Vec<dns::Suffix>, proxy_id: String) -> Resolver<T> {
+        let client = client.map(|client| Client {
+            context_token: Arc::new(proxy_id),
+            client,
+        });
+        Resolver {
+            suffixes: Arc::new(suffixes),
+            client,
+        }
+    }
+}
+
+impl<T> Resolve<NameAddr> for Resolver<T>
+where
+    T: GrpcService<BoxBody> + Clone + Send + 'static,
+    T::ResponseBody: Send,
+    <T::ResponseBody as Body>::Data: Send,
+    T::Future: Send,
+{
     type Endpoint = Metadata;
     type Resolution = Resolution;
 
     /// Start watching for address changes for a certain authority.
     fn resolve(&self, authority: &NameAddr) -> Resolution {
         trace!("resolve; authority={:?}", authority);
-        let (update_tx, update_rx) = mpsc::unbounded();
-        let active = Arc::new(());
-        let req = {
-            let authority = authority.clone();
-            ResolveRequest {
-                authority,
-                responder: Responder {
-                    update_tx,
-                    active: Arc::downgrade(&active),
-                },
+
+        if self.suffixes.iter().any(|s| s.contains(authority.name())) {
+            if let Some(client) = self.client.as_ref().cloned() {
+                return Resolution::new(authority.clone(), client);
+            } else {
+                trace!("-> control plane client disabled");
             }
-        };
-        self.request_tx
-            .unbounded_send(req)
-            .expect("unbounded can't fail");
-
-        Resolution {
-            update_rx,
-            _active: active,
+        } else {
+            trace!("-> authority {} not in search suffixes", authority);
         }
-    }
-}
-
-impl resolve::Resolution for Resolution {
-    type Endpoint = Metadata;
-    type Error = Never;
-
-    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-        match self.update_rx.poll() {
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Ok(Async::Ready(Some(up))) => Ok(Async::Ready(up)),
-            Err(()) | Ok(Async::Ready(None)) => panic!("resolution stream must be infinite"),
-        }
-    }
-}
-
-// ===== impl Responder =====
-
-impl Responder {
-    fn is_active(&self) -> bool {
-        self.active.upgrade().is_some()
+        Resolution::none()
     }
 }
 

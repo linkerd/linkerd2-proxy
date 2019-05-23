@@ -249,13 +249,13 @@ pub struct Client<C: fmt::Display, D: fmt::Display> {
 
 /// A utility for logging actions taken on behalf of a background task.
 #[derive(Clone)]
-pub struct Bg {
+pub struct Bg<T: fmt::Display = &'static str> {
     section: Section,
-    name: &'static str,
+    name: T,
 }
 
 impl Section {
-    pub fn bg(&self, name: &'static str) -> Bg {
+    pub fn bg<T: fmt::Display>(&self, name: T) -> Bg<T> {
         Bg {
             section: *self,
             name,
@@ -291,7 +291,7 @@ impl fmt::Display for Section {
     }
 }
 
-pub type BgFuture<F> = ContextualFuture<Bg, F>;
+pub type BgFuture<F, T> = ContextualFuture<Bg<T>, F>;
 pub type ClientExecutor<C, D> = ContextualExecutor<Client<C, D>>;
 pub type ServerExecutor = ContextualExecutor<Server>;
 pub type ServerFuture<F> = ContextualFuture<Server, F>;
@@ -374,13 +374,13 @@ impl<C: fmt::Display, D: fmt::Display> fmt::Display for Client<C, D> {
     }
 }
 
-impl Bg {
-    pub fn future<F: Future>(self, f: F) -> BgFuture<F> {
+impl<T: fmt::Display> Bg<T> {
+    pub fn future<F: Future>(self, f: F) -> BgFuture<F, T> {
         context_future(self, f)
     }
 }
 
-impl fmt::Display for Bg {
+impl<T: fmt::Display> fmt::Display for Bg<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}={{bg={}}}", self.section, self.name)
     }

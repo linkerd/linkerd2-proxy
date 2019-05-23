@@ -24,7 +24,7 @@ extern crate tokio_connect;
 extern crate tokio_current_thread;
 pub extern crate tokio_io;
 extern crate tokio_rustls;
-extern crate tower_grpc;
+pub extern crate tower_grpc;
 extern crate tower_service;
 extern crate webpki;
 
@@ -46,7 +46,7 @@ use self::tokio::{net::TcpListener, reactor, runtime};
 use self::tokio_connect::Connect;
 use self::tokio_current_thread as current_thread;
 use self::tokio_rustls::TlsStream;
-use self::tower_grpc as grpc;
+pub use self::tower_grpc as grpc;
 pub use self::tower_service::Service;
 use rustls::Session;
 use std::io;

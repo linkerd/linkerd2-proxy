@@ -22,10 +22,10 @@ pub fn identity() -> identity::Controller {
 pub type Labels = HashMap<String, String>;
 
 #[derive(Debug)]
-pub struct DstReceiver(sync::mpsc::UnboundedReceiver<pb::Update>);
+pub struct DstReceiver(sync::mpsc::UnboundedReceiver<Result<pb::Update, grpc::Status>>);
 
 #[derive(Clone, Debug)]
-pub struct DstSender(sync::mpsc::UnboundedSender<pb::Update>);
+pub struct DstSender(sync::mpsc::UnboundedSender<Result<pb::Update, grpc::Status>>);
 
 #[derive(Debug)]
 pub struct ProfileReceiver(sync::mpsc::UnboundedReceiver<pb::DestinationProfile>);
@@ -35,7 +35,7 @@ pub struct ProfileSender(sync::mpsc::UnboundedSender<pb::DestinationProfile>);
 
 #[derive(Clone, Debug, Default)]
 pub struct Controller {
-    expect_dst_calls: Arc<Mutex<VecDeque<(pb::GetDestination, DstReceiver)>>>,
+    expect_dst_calls: Arc<Mutex<VecDeque<Dst>>>,
     expect_profile_calls: Arc<Mutex<VecDeque<(pb::GetDestination, ProfileReceiver)>>>,
 }
 
@@ -47,6 +47,12 @@ pub struct Listening {
 #[derive(Clone, Debug, Default)]
 pub struct RouteBuilder {
     route: pb::Route,
+}
+
+#[derive(Debug)]
+enum Dst {
+    Call(pb::GetDestination, DstReceiver),
+    Done,
 }
 
 impl Controller {
@@ -69,8 +75,14 @@ impl Controller {
         self.expect_dst_calls
             .lock()
             .unwrap()
-            .push_back((dst, DstReceiver(rx)));
+            .push_back(Dst::Call(dst, DstReceiver(rx)));
         DstSender(tx)
+    }
+
+    pub fn destination_err(self, dest: &str, err: grpc::Code) -> Self {
+        self.destination_tx(dest)
+            .send_err(grpc::Status::new(err, "unit test controller fake error"));
+        self
     }
 
     pub fn destination_and_close(self, dest: &str, addr: SocketAddr) -> Self {
@@ -80,6 +92,11 @@ impl Controller {
 
     pub fn destination_close(self, dest: &str) -> Self {
         drop(self.destination_tx(dest));
+        self
+    }
+
+    pub fn no_more_destinations(self) -> Self {
+        self.expect_dst_calls.lock().unwrap().push_back(Dst::Done);
         self
     }
 
@@ -135,7 +152,7 @@ fn grpc_no_results() -> grpc::Status {
 
 fn grpc_unexpected_request() -> grpc::Status {
     grpc::Status::new(
-        grpc::Code::InvalidArgument,
+        grpc::Code::Unavailable,
         "unit test controller expected different request",
     )
 }
@@ -144,13 +161,20 @@ impl Stream for DstReceiver {
     type Item = pb::Update;
     type Error = grpc::Status;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.0.poll().map_err(|_| grpc_internal_code())
+        match try_ready!(self.0.poll().map_err(|_| grpc_internal_code())) {
+            Some(res) => Ok(Async::Ready(Some(res?))),
+            None => Ok(Async::Ready(None)),
+        }
     }
 }
 
 impl DstSender {
     pub fn send(&self, up: pb::Update) {
-        self.0.unbounded_send(up).expect("send dst update")
+        self.0.unbounded_send(Ok(up)).expect("send dst update")
+    }
+
+    pub fn send_err(&self, e: grpc::Status) {
+        self.0.unbounded_send(Err(e)).expect("send dst err")
     }
 
     pub fn send_addr(&self, addr: SocketAddr) {
@@ -191,13 +215,19 @@ impl pb::server::Destination for Controller {
 
     fn get(&mut self, req: grpc::Request<pb::GetDestination>) -> Self::GetFuture {
         if let Ok(mut calls) = self.expect_dst_calls.lock() {
-            if let Some((dst, updates)) = calls.pop_front() {
-                if &dst == req.get_ref() {
-                    return future::ok(grpc::Response::new(updates));
-                }
+            match calls.pop_front() {
+                Some(Dst::Call(dst, updates)) => {
+                    if &dst == req.get_ref() {
+                        return future::ok(grpc::Response::new(updates));
+                    }
 
-                calls.push_front((dst, updates));
-                return future::err(grpc_unexpected_request());
+                    calls.push_front(Dst::Call(dst, updates));
+                    return future::err(grpc_unexpected_request());
+                }
+                Some(Dst::Done) => {
+                    panic!("unit test controller expects no more Destination.Get calls")
+                }
+                _ => {}
             }
         }
 
@@ -377,6 +407,14 @@ pub fn destination_exists_with_no_endpoints() -> pb::Update {
     pb::Update {
         update: Some(pb::update::Update::NoEndpoints(pb::NoEndpoints {
             exists: true,
+        })),
+    }
+}
+
+pub fn destination_does_not_exist() -> pb::Update {
+    pb::Update {
+        update: Some(pb::update::Update::NoEndpoints(pb::NoEndpoints {
+            exists: false,
         })),
     }
 }

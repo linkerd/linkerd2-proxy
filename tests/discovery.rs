@@ -85,10 +85,83 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_destinations_reset_on_reconnect_followed_by_no_endpoints_exists() {
-            outbound_destinations_reset_on_reconnect(
-                controller::destination_exists_with_no_endpoints()
-            )
+        fn outbound_falls_back_to_orig_dst_when_destination_has_no_endpoints() {
+            let _ = env_logger_init();
+
+            let srv = $make_server().route("/", "hello").run();
+
+            let ctrl = controller::new();
+            ctrl.destination_tx("disco.test.svc.cluster.local")
+                .send(controller::destination_exists_with_no_endpoints());
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv)
+                .run();
+
+            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+
+            assert_eq!(client.get("/"), "hello");
+        }
+
+        #[test]
+        fn outbound_falls_back_to_orig_dst_when_destination_doesnt_exist() {
+            let _ = env_logger_init();
+
+            let srv = $make_server().route("/", "hello").run();
+
+            let ctrl = controller::new();
+            ctrl.destination_tx("disco.test.svc.cluster.local")
+                .send(controller::destination_does_not_exist());
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv)
+                .run();
+
+            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+
+            assert_eq!(client.get("/"), "hello");
+        }
+
+        #[test]
+        fn outbound_falls_back_to_orig_dst_when_outside_search_path() {
+            let _ = env_logger_init();
+
+            let srv = $make_server().route("/", "hello from my great website").run();
+
+            let proxy = proxy::new()
+                .controller(controller::new().no_more_destinations().run())
+                .outbound(srv)
+                .run();
+
+            let client = $make_client(proxy.outbound, "my-great-websute.net");
+
+            assert_eq!(client.get("/"), "hello from my great website");
+        }
+
+        #[test]
+        fn outbound_does_not_reconnect_after_invalid_argument() {
+            let _ = env_logger_init();
+
+            let srv = $make_server().route("/", "hello").run();
+
+            let ctrl = controller::new()
+                .destination_err(
+                    "disco.test.svc.cluster.local",
+                    grpc::Code::InvalidArgument,
+                )
+                // The test controller will panic if the proxy tries to talk to it again.
+                .no_more_destinations();
+
+            let proxy = proxy::new()
+                .controller(ctrl.run())
+                .outbound(srv)
+                .run();
+
+            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+
+            assert_eq!(client.get("/"), "hello");
         }
 
         #[test]
@@ -586,34 +659,6 @@ mod http1 {
         }
     }
 
-}
-
-#[test]
-fn outbound_updates_newer_services() {
-    let _ = env_logger_init();
-
-    let srv = server::http1().route("/h1", "hello h1").run();
-
-    let ctrl = controller::new().destination_and_close("disco.test.svc.cluster.local", srv.addr);
-
-    let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
-
-    // the HTTP2 service starts watching first, receiving an addr
-    // from the controller
-    let client1 = client::http2(proxy.outbound, "disco.test.svc.cluster.local");
-
-    // Depending on the version of `hyper` we're using, protocol upgrades may or
-    // may not be supported yet, so this may have a response status of either 200
-    // or 500. Ignore the status code for now, and just expect that making the
-    // request doesn't *error* (which `client.request` does for us).
-    let _res = client1.request(&mut client1.request_builder("/h1"));
-    // assert_eq!(res.status(), 200);
-
-    // a new HTTP1 service needs to be build now, while the HTTP2
-    // service already exists, so make sure previously sent addrs
-    // get into the newer service
-    let client2 = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
-    assert_eq!(client2.get("/h1"), "hello h1");
 }
 
 mod proxy_to_proxy {

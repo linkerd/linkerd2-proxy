@@ -162,13 +162,19 @@ where
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.balance.poll_ready().map_err(From::from)
+        let ready = self.balance.poll_ready().map_err(fallback::Error::from)?;
+        if self.status.is_empty() {
+            Ok(Async::Ready(()))
+        } else {
+            Ok(ready)
+        }
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         // The endpoint status is updated by the Discover instance, which is
         // driven by calling `poll_ready` on the balancer.
         if self.status.is_empty() {
+            trace!("no endpoints for {}", req.uri());
             future::Either::B(future::err(fallback::Error::fallback(req, NoEndpoints)))
         } else {
             future::Either::A(self.balance.call(req).map_err(From::from))

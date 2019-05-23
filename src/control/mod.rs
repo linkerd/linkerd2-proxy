@@ -1,4 +1,3 @@
-mod cache;
 pub mod destination;
 mod remote_stream;
 mod serve_http;
