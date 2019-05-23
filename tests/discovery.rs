@@ -125,6 +125,22 @@ macro_rules! generate_tests {
         }
 
         #[test]
+        fn outbound_falls_back_to_orig_dst_when_outside_search_path() {
+            let _ = env_logger_init();
+
+            let srv = $make_server().route("/", "hello from my great website").run();
+
+            let proxy = proxy::new()
+                .controller(controller::new().no_more_destinations().run())
+                .outbound(srv)
+                .run();
+
+            let client = $make_client(proxy.outbound, "my-great-websute.net");
+
+            assert_eq!(client.get("/"), "hello from my great website");
+        }
+
+        #[test]
         fn outbound_does_not_reconnect_after_invalid_argument() {
             let _ = env_logger_init();
 
