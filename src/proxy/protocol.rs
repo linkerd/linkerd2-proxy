@@ -66,7 +66,7 @@ impl Protocol {
 
                 client_id = match str::from_utf8(&bytes[14..(14+len_client_id as usize)]) {
                     Ok(v) => v,
-                    Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+                    Err(_) => return None,
                 };
             }
 

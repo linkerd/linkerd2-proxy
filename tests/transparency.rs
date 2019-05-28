@@ -93,13 +93,13 @@ fn outbound_kafka() {
         // client_id => NULLABLE_STRING
         0, 10,
         99, 111, 110, 115, 117, 109, 101, 114, 45, 49]; // value: consumer-1
-    let _msg1 = "custom tcp hello";
-    let _msg2 = "custom tcp bye";
+    // Just echo to make things easier for now
+    const KAFKA_RESPONSE_API_VERSIONS: &[u8] = KAFKA_REQUEST_API_VERSIONS;
 
     let srv = server::tcp()
         .accept(move |read| {
             assert_eq!(read, KAFKA_REQUEST_API_VERSIONS);
-            read
+            KAFKA_RESPONSE_API_VERSIONS
         })
         .run();
     let proxy = proxy::new().outbound(srv).run();
@@ -109,7 +109,7 @@ fn outbound_kafka() {
     let tcp_client = client.connect();
 
     tcp_client.write(KAFKA_REQUEST_API_VERSIONS);
-    assert_eq!(tcp_client.read(), KAFKA_REQUEST_API_VERSIONS);
+    assert_eq!(tcp_client.read(), KAFKA_RESPONSE_API_VERSIONS);
 }
 
 fn test_server_speaks_first(env: app::config::TestEnv) {
