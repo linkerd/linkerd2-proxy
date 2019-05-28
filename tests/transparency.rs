@@ -76,6 +76,42 @@ fn inbound_tcp() {
     assert_eq!(tcp_client.read(), msg2.as_bytes());
 }
 
+#[test]
+fn outbound_kafka() {
+    println!("*******************");
+    let _ = env_logger_init();
+
+    const KAFKA_REQUEST_API_VERSIONS: &[u8] = &[
+        // Request/response Size => INT32
+        0, 0, 0, 20,    // value: 20
+        // api_key => INT16
+        0, 18,          // value: 18
+        // api_version => INT16
+        0, 2,           // value: 2
+        // correlation_id => INT32
+        0, 0, 0, 1,     // value: 1
+        // client_id => NULLABLE_STRING
+        0, 10,
+        99, 111, 110, 115, 117, 109, 101, 114, 45, 49]; // value: consumer-1
+    let _msg1 = "custom tcp hello";
+    let _msg2 = "custom tcp bye";
+
+    let srv = server::tcp()
+        .accept(move |read| {
+            assert_eq!(read, KAFKA_REQUEST_API_VERSIONS);
+            read
+        })
+        .run();
+    let proxy = proxy::new().outbound(srv).run();
+
+    let client = client::tcp(proxy.outbound);
+
+    let tcp_client = client.connect();
+
+    tcp_client.write(KAFKA_REQUEST_API_VERSIONS);
+    assert_eq!(tcp_client.read(), KAFKA_REQUEST_API_VERSIONS);
+}
+
 fn test_server_speaks_first(env: app::config::TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 

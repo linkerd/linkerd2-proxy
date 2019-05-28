@@ -1,4 +1,5 @@
 use httparse;
+use byteorder::{BigEndian, ByteOrder};
 
 /// Transport protocols that can be transparently detected by `Server`.
 #[derive(Debug)]
@@ -17,6 +18,7 @@ impl Protocol {
         // http2 is easiest to detect
         if bytes.len() >= H2_PREFACE.len() {
             if &bytes[..H2_PREFACE.len()] == H2_PREFACE {
+                println!("^^^^^ is H2");
                 return Some(Protocol::Http2);
             }
         }
@@ -35,11 +37,49 @@ impl Protocol {
             // We didn't want to keep parsing headers, just validate that
             // the first line is HTTP1.
             Ok(_) | Err(httparse::Error::TooManyHeaders) => {
+                println!("^^^^^ is H1");
                 return Some(Protocol::Http1);
             }
             _ => {}
         }
 
+        // Detect if this is a Kafka traffic
+
+        // Header:
+        //     Request/response Size => INT32
+        //     api_key => INT16
+        //     api_version => INT16
+        //     correlation_id => INT32
+        //     client_id => NULLABLE_STRING (first two bytes as the length of the client_id string)
+        const KAFKA_REQUEST_HEADER_LENGTH: usize = 4 + 2 + 2 + 4 + 2;
+        println!("length {}", bytes.len());
+        if bytes.len() >= KAFKA_REQUEST_HEADER_LENGTH {
+            let request_size =      BigEndian::read_i32(&bytes);
+            let api_key =           BigEndian::read_i16(&bytes[4..]);
+            let api_version =       BigEndian::read_i16(&bytes[6..]);
+            let correlation_id =    BigEndian::read_i32(&bytes[8..]);
+            let len_client_id =     BigEndian::read_i16(&bytes[12..]);
+            let mut client_id = "null";
+
+            if len_client_id > -1 {
+                use std::str;
+
+                client_id = match str::from_utf8(&bytes[14..(14+len_client_id as usize)]) {
+                    Ok(v) => v,
+                    Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+                };
+            }
+
+            println!("checking if is kafka...");
+            println!("\trequest_size: {}", request_size);
+            println!("\tapi_key: {}", api_key);
+            println!("\tapi_version: {}", api_version);
+            println!("\tcorrelation_id: {}", correlation_id);
+            println!("\tlen_client_id: {}", len_client_id);
+            println!("\tclient_id: {}", client_id);
+        }
+
+        println!("^^^^^ is None");
         None
     }
 }
