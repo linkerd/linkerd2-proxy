@@ -88,7 +88,7 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         })
     }
 
-    pub fn reserve(&mut self) -> Result<Reserve<K, V>, CapacityExhausted> {
+    pub fn poll_reserve(&mut self) -> Result<Reserve<K, V>, CapacityExhausted> {
         // If the cache capacity is zero, then we have no space to reserve a slot
         if self.capacity == 0 {
             return Err(CapacityExhausted {
@@ -215,14 +215,14 @@ mod tests {
 
             let mut cache = cache.lock().unwrap();
 
-            cache.reserve().expect("reserve").store(1, 2);
+            cache.poll_reserve().expect("reserve").store(1, 2);
             assert_eq!(cache.vals.len(), 1);
 
-            cache.reserve().expect("reserve").store(2, 3);
+            cache.poll_reserve().expect("reserve").store(2, 3);
             assert_eq!(cache.vals.len(), 2);
 
             assert_eq!(
-                cache.reserve().err(),
+                cache.poll_reserve().err(),
                 Some(CapacityExhausted { capacity: 2 })
             );
             assert_eq!(cache.vals.len(), 2);
@@ -241,11 +241,11 @@ mod tests {
             assert!(cache.access(&1).is_none());
             assert!(cache.access(&2).is_none());
 
-            cache.reserve().expect("reserve").store(1, 2);
+            cache.poll_reserve().expect("reserve").store(1, 2);
             assert!(cache.access(&1).is_some());
             assert!(cache.access(&2).is_none());
 
-            cache.reserve().expect("reserve").store(2, 3);
+            cache.poll_reserve().expect("reserve").store(2, 3);
             assert!(cache.access(&1).is_some());
             assert!(cache.access(&2).is_some());
 
@@ -263,10 +263,10 @@ mod tests {
 
             let mut cache = cache.lock().unwrap();
 
-            cache.reserve().expect("capacity").store(1, 2);
+            cache.poll_reserve().expect("capacity").store(1, 2);
             assert_eq!(cache.vals.len(), 1);
 
-            assert!(cache.reserve().is_ok());
+            assert!(cache.poll_reserve().is_ok());
             assert_eq!(cache.vals.len(), 1);
 
             Ok(())
@@ -287,8 +287,8 @@ mod tests {
         rt.block_on(future::lazy(|| {
             let mut cache_1 = cache.lock().unwrap();
 
-            cache_1.reserve().expect("reserve").store(1, 2);
-            cache_1.reserve().expect("reserve").store(2, 3);
+            cache_1.poll_reserve().expect("reserve").store(1, 2);
+            cache_1.poll_reserve().expect("reserve").store(2, 3);
             assert_eq!(cache_1.vals.len(), 2);
 
             Ok::<_, ()>(())
@@ -303,7 +303,7 @@ mod tests {
         rt.block_on(future::lazy(|| {
             let mut cache_2 = cache.lock().unwrap();
 
-            cache_2.reserve().expect("reserve").store(3, 4);
+            cache_2.poll_reserve().expect("reserve").store(3, 4);
             assert_eq!(cache_2.vals.len(), 2);
             assert!(cache_2.access(&3).is_some());
 
@@ -329,8 +329,8 @@ mod tests {
         rt.block_on(future::lazy(|| {
             let mut cache = cache.lock().unwrap();
 
-            cache.reserve().expect("reserve").store(1, 2);
-            cache.reserve().expect("reserve").store(2, 3);
+            cache.poll_reserve().expect("reserve").store(1, 2);
+            cache.poll_reserve().expect("reserve").store(2, 3);
             assert_eq!(cache.vals.len(), 2);
 
             Ok::<_, ()>(())
@@ -363,7 +363,7 @@ mod tests {
             // Hold on to an access handle the cache
             let _access = rt
                 .block_on(future::lazy(|| {
-                    cache.reserve().expect("reserve").store(1, 2);
+                    cache.poll_reserve().expect("reserve").store(1, 2);
                     assert!(cache.access(&1).is_some());
 
                     Ok::<_, ()>(cache.access(&1))

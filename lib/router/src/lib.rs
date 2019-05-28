@@ -176,7 +176,7 @@ where
 
         // Since there wasn't a cached route, ensure that there is capacity for a
         // new one.
-        let reserve = match cache.reserve() {
+        let reserve = match cache.poll_reserve() {
             Ok(r) => r,
             Err(cache::CapacityExhausted { capacity }) => {
                 return ResponseFuture::no_capacity(capacity);
