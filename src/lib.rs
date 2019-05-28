@@ -1,6 +1,7 @@
 #![deny(warnings)]
 #![recursion_limit = "128"]
 
+extern crate byteorder;
 extern crate bytes;
 extern crate env_logger;
 #[macro_use]
