@@ -10,4 +10,5 @@ http = "0.1"
 hyper = "0.12"
 
 tower-balance = { git = "https://github.com/tower-rs/tower" }
+tower-load = { git = "https://github.com/tower-rs/tower" }
 tower-service = "0.2"

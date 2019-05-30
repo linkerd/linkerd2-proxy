@@ -33,7 +33,6 @@ use proxy::resolve::{Resolve, Update};
 
 mod resolution;
 pub use self::resolution::Resolution;
-use proxy::http::balance::Weight;
 use NameAddr;
 
 /// A handle to request resolutions from the background discovery task.
@@ -169,10 +168,5 @@ impl Metadata {
 
     pub fn identity(&self) -> Option<&identity::Name> {
         self.identity.as_ref()
-    }
-
-    pub fn weight(&self) -> Weight {
-        let w: f64 = self.weight.into();
-        (w / 10_000.0).into()
     }
 }

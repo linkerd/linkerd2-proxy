@@ -20,12 +20,12 @@ use logging;
 use metrics::FmtMetrics;
 use never::Never;
 use proxy::{
-    self, accept, buffer,
+    self, accept,
     http::{
         client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
         strip_header,
     },
-    pending, reconnect,
+    reconnect,
 };
 use svc::{self, LayerExt};
 use tap;
@@ -484,6 +484,28 @@ where
                 .layer(strip_header::response::layer(super::L5D_REMOTE_IP))
                 .service(client_stack);
 
+            let balancer = svc::builder()
+                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                .layer(resolve::layer(Resolve::new(resolver)))
+                .spawn_ready();
+
+            // Routes requests to their original destination endpoints. Used as
+            // a fallback when service discovery has no endpoints for a destination.
+            let orig_dst_router = svc::builder()
+                .layer(router::layer(
+                    router::Config::new("out ep", capacity, max_idle_age),
+                    |req: &http::Request<_>| {
+                        let ep = outbound::Endpoint::from_orig_dst(req);
+                        debug!("outbound ep={:?}", ep);
+                        ep
+                    },
+                ))
+                .buffer_pending(max_in_flight, DispatchDeadline::extract);
+
+            let balancer_stack = svc::builder()
+                .layer(fallback::layer(balancer, orig_dst_router))
+                .service(endpoint_stack);
+
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
             //
@@ -503,29 +525,6 @@ where
                 .layer(retry::layer(retry_http_metrics.clone()))
                 .layer(metrics::layer::<_, classify::Response>(retry_http_metrics))
                 .layer(insert::target::layer());
-
-            let balancer = svc::builder()
-                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)));
-
-            // Routes requests to their original destination endpoints. Used as
-            // a fallback when service discovery has no endpoints for a destination.
-            let orig_dst_router = svc::builder()
-                .layer(router::layer(
-                    router::Config::new("out ep", capacity, max_idle_age),
-                    |req: &http::Request<_>| {
-                        let ep = outbound::Endpoint::from_orig_dst(req);
-                        debug!("outbound ep={:?}", ep);
-                        ep
-                    },
-                ))
-                .layer(buffer::layer(max_in_flight, DispatchDeadline::extract));
-
-            let balancer_stack = svc::builder()
-                .layer(fallback::layer(balancer, orig_dst_router))
-                .layer(pending::layer())
-                .layer(balance::weight::layer())
-                .service(endpoint_stack);
 
             // A per-`DstAddr` stack that does the following:
             //

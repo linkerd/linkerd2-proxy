@@ -2,10 +2,11 @@ extern crate futures;
 extern crate http;
 extern crate hyper;
 extern crate tower_balance;
+extern crate tower_load;
 
 use futures::{Async, Poll};
 use hyper::body::Payload;
-use tower_balance::load::Instrument;
+use tower_load::Instrument;
 
 /// Instruments HTTP responses to drop handles when their first body message is received.
 #[derive(Clone, Debug, Default)]
@@ -180,7 +181,7 @@ mod tests {
     use std::collections::VecDeque;
     use std::io::Cursor;
     use std::sync::{Arc, Weak};
-    use tower_balance::load::Instrument;
+    use tower_load::Instrument;
 
     use super::{PendingUntilEos, PendingUntilFirstData};
 

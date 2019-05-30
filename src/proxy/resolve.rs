@@ -1,7 +1,7 @@
 extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
-use futures::{Async, Poll};
+use futures::{Async, Future, Stream, Poll, stream::FuturesUnordered};
 use std::{
     fmt,
     net::SocketAddr,
@@ -58,11 +58,16 @@ pub struct MakeSvc<R, M> {
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
-#[derive(Clone, Debug)]
-pub struct Discover<R, M> {
+pub struct Discover<R: Resolution, M: svc::Service<R::Endpoint>> {
     resolution: R,
     make: M,
+    pending: FuturesUnordered<MakeFuture<M::Future>>,
     is_empty: Arc<AtomicBool>,
+}
+
+struct MakeFuture<F> {
+    inner: F,
+    addr: SocketAddr,
 }
 
 // === impl Layer ===
@@ -95,7 +100,7 @@ impl<T, R, M> svc::Service<T> for MakeSvc<R, M>
 where
     R: Resolve<T>,
     R::Endpoint: fmt::Debug,
-    M: rt::Make<R::Endpoint> + Clone,
+    M: svc::Service<R::Endpoint> + Clone,
 {
     type Response = Discover<R::Resolution, M>;
     type Error = never::Never;
@@ -110,6 +115,7 @@ where
         futures::future::ok(Discover {
             resolution,
             make: self.inner.clone(),
+            pending: FuturesUnordered::new(),
             is_empty: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -118,6 +124,7 @@ where
 impl<R, M> HasEndpointStatus for Discover<R, M>
 where
     R: Resolution,
+    M: svc::Service<R::Endpoint>
 {
     fn endpoint_status(&self) -> EndpointStatus {
         EndpointStatus(self.is_empty.clone())
@@ -129,25 +136,28 @@ where
     R: Resolution,
     R::Endpoint: fmt::Debug,
     R::Error: Into<Error>,
-    M: rt::Make<R::Endpoint>,
+    M: svc::Service<R::Endpoint>,
+    M::Error: Into<Error>,
 {
     type Key = SocketAddr;
-    type Service = M::Value;
+    type Service = M::Response;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
         loop {
+            if let Async::Ready(Some((addr, svc))) = self.pending.poll().map_err(Into::into)? {
+                self.is_empty.store(false, Ordering::Release);
+                return Ok(Async::Ready(Change::Insert(addr, svc)));
+            }
+
+            try_ready!(self.make.poll_ready().map_err(Into::into));
+
             let up = try_ready!(self.resolution.poll().map_err(Into::into));
             trace!("watch: {:?}", up);
             match up {
                 Update::Add(addr, target) => {
-                    // We expect the load balancer to handle duplicate inserts
-                    // by replacing the old endpoint with the new one, so
-                    // insertions of new endpoints and metadata changes for
-                    // existing ones can be handled in the same way.
-                    let svc = self.make.make(&target);
-                    self.is_empty.store(false, Ordering::Release);
-                    return Ok(Async::Ready(Change::Insert(addr, svc)));
+                    let inner = self.make.call(target);
+                    self.pending.push(MakeFuture { addr, inner });
                 }
                 Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
                 Update::NoEndpoints => {
@@ -163,5 +173,15 @@ where
 impl EndpointStatus {
     pub fn is_empty(&self) -> bool {
         self.0.load(Ordering::Acquire)
+    }
+}
+
+impl<F: Future> Future for MakeFuture<F> {
+    type Item = (SocketAddr, F::Item);
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let svc = try_ready!(self.inner.poll());
+        Ok((self.addr, svc).into())
     }
 }
