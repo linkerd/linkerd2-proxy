@@ -1,5 +1,7 @@
-use httparse;
 use byteorder::{BigEndian, ByteOrder};
+use httparse;
+
+use kafka::primitives::hello;
 
 /// Transport protocols that can be transparently detected by `Server`.
 #[derive(Debug)]
@@ -15,6 +17,7 @@ impl Protocol {
     ///
     /// If no protocol can be determined, returns `None`.
     pub fn detect(bytes: &[u8]) -> Option<Protocol> {
+        hello();
         // http2 is easiest to detect
         if bytes.len() >= H2_PREFACE.len() {
             if &bytes[..H2_PREFACE.len()] == H2_PREFACE {
@@ -54,17 +57,17 @@ impl Protocol {
         const KAFKA_REQUEST_HEADER_LENGTH: usize = 4 + 2 + 2 + 4 + 2;
         println!("length {}", bytes.len());
         if bytes.len() >= KAFKA_REQUEST_HEADER_LENGTH {
-            let request_size =      BigEndian::read_i32(&bytes);
-            let api_key =           BigEndian::read_i16(&bytes[4..]);
-            let api_version =       BigEndian::read_i16(&bytes[6..]);
-            let correlation_id =    BigEndian::read_i32(&bytes[8..]);
-            let len_client_id =     BigEndian::read_i16(&bytes[12..]);
+            let request_size = BigEndian::read_i32(&bytes);
+            let api_key = BigEndian::read_i16(&bytes[4..]);
+            let api_version = BigEndian::read_i16(&bytes[6..]);
+            let correlation_id = BigEndian::read_i32(&bytes[8..]);
+            let len_client_id = BigEndian::read_i16(&bytes[12..]);
             let mut client_id = "null";
 
             if len_client_id > -1 {
                 use std::str;
 
-                client_id = match str::from_utf8(&bytes[14..(14+len_client_id as usize)]) {
+                client_id = match str::from_utf8(&bytes[14..(14 + len_client_id as usize)]) {
                     Ok(v) => v,
                     Err(_) => return None,
                 };

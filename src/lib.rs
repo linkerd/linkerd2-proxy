@@ -53,6 +53,7 @@ pub mod convert;
 mod dns;
 mod drain;
 mod identity;
+mod kafka;
 pub mod logging;
 mod proxy;
 mod svc;
