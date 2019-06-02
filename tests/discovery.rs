@@ -85,10 +85,12 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_falls_back_to_orig_dst_when_destination_has_no_endpoints() {
+        fn outbound_fails_fast_when_destination_has_no_endpoints() {
             let _ = env_logger_init();
 
-            let srv = $make_server().route("/", "hello").run();
+            let srv = $make_server().route_fn("/", |_| {
+                panic!("destination indicates that this destination does not exist")
+            }).run();
 
             let ctrl = controller::new();
             ctrl.destination_tx("disco.test.svc.cluster.local")
@@ -101,7 +103,10 @@ macro_rules! generate_tests {
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-            assert_eq!(client.get("/"), "hello");
+            let rsp = client.request(&mut client.request_builder("/"));
+
+            // We should have gotten an HTTP response, not an error.
+            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
         }
 
         #[test]
