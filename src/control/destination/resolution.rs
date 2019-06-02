@@ -161,8 +161,8 @@ where
                                 let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
                                 try_send!(self.updater.remove(addrs));
                             }
-                            Some(PbUpdate2::NoEndpoints(_)) => {
-                                try_send!(self.updater.no_endpoints())
+                            Some(PbUpdate2::NoEndpoints(eps)) => {
+                                try_send!(self.updater.no_endpoints(eps.exists))
                             }
                             None => (),
                         };
@@ -179,7 +179,7 @@ where
                         // requested name should *not* query the destination
                         // service. In this case, do not attempt to reconnect.
                         debug!("Destination.Get stream ended with Invalid Argument",);
-                        let _ = self.updater.no_endpoints();
+                        let _ = self.updater.no_endpoints(false);
                         return Ok(Async::Ready(()));
                     }
                     Err(err) => {
@@ -282,8 +282,14 @@ impl Updater {
         Ok(())
     }
 
-    fn no_endpoints(&mut self) -> Result<(), ()> {
-        self.send(Update::NoEndpoints)?;
+    fn no_endpoints(&mut self, exists: bool) -> Result<(), ()> {
+        if !exists {
+            // If the endpoint doesn't exist in service discovery, indicate that
+            // we should fall back.
+            trace!("does not exist in service discovery");
+            self.send(Update::NoEndpoints)?;
+        }
+
         for addr in self.seen.drain(..) {
             trace!("remove {} (no endpoints)", addr);
             self.tx
