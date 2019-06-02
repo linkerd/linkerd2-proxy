@@ -86,10 +86,15 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_fails_fast_when_destination_has_no_endpoints() {
+            use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
             let _ = env_logger_init();
 
-            let srv = $make_server().route_fn("/", |_| {
-                panic!("destination indicates that this destination does not exist")
+            let did_not_fall_back = Arc::new(AtomicBool::new(true));
+            let did_not_fall_back2 = did_not_fall_back.clone();
+
+            let srv = $make_server().route_fn("/", move |_| {
+                did_not_fall_back2.store(false, Ordering::Release);
+                panic!()
             }).run();
 
             let ctrl = controller::new();
@@ -105,6 +110,10 @@ macro_rules! generate_tests {
 
             let rsp = client.request(&mut client.request_builder("/"));
 
+            assert!(
+                did_not_fall_back.load(Ordering::Acquire),
+                "original destination should not have been used!",
+            );
             // We should have gotten an HTTP response, not an error.
             assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
         }
