@@ -317,9 +317,9 @@ pub mod router {
 
     pub struct Service<G, T, R, B>
     where
-        T: WithRoute + Clone,
-        T::Output: Clone + Eq + Hash,
-        R: rt::Make<T::Output>,
+        T: WithRoute + Clone + Send,
+        T::Output: Clone + Eq + Hash + Send,
+        R: rt::Make<T::Output> + Clone + Send,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
         target: T,
@@ -335,6 +335,16 @@ pub mod router {
         target: T,
         routes: Routes,
         default_route: Route,
+    }
+
+    impl<T: Clone> Clone for Recognize<T> {
+        fn clone(&self) -> Self {
+            Recognize {
+                target: self.target.clone(),
+                routes: self.routes.clone(),
+                default_route: self.default_route.clone(),
+            }
+        }
     }
 
     impl<B, T> rt::Recognize<http::Request<B>> for Recognize<T>
@@ -394,13 +404,13 @@ pub mod router {
 
     impl<T, G, M, R, B, RMk, RSvc> svc::Service<T> for MakeSvc<G, M, R, B>
     where
-        T: CanGetDestination + WithRoute + Clone,
-        <T as WithRoute>::Output: Eq + Hash + Clone,
+        T: CanGetDestination + WithRoute + Clone + Send,
+        <T as WithRoute>::Output: Eq + Hash + Clone + Send,
         M: rt::Make<T>,
         M::Value: Clone,
         G: GetRoutes,
         R: svc::Layer<svc::shared::Shared<M::Value>, Service = RMk> + Clone,
-        RMk: rt::Make<<T as WithRoute>::Output, Value = RSvc> + Clone,
+        RMk: rt::Make<<T as WithRoute>::Output, Value = RSvc> + Clone + Send,
         RSvc: svc::Service<http::Request<B>> + Clone,
         RSvc::Error: Into<Error>,
     {
@@ -477,9 +487,9 @@ pub mod router {
     impl<G, T, R, B> Service<G, T, R, B>
     where
         G: Stream<Item = Routes, Error = Never>,
-        T: WithRoute + Clone,
-        T::Output: Clone + Eq + Hash,
-        R: rt::Make<T::Output> + Clone,
+        T: WithRoute + Clone + Send,
+        T::Output: Clone + Eq + Hash + Send,
+        R: rt::Make<T::Output> + Clone + Send,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
         fn update_routes(&mut self, routes: Routes) {
@@ -510,9 +520,9 @@ pub mod router {
     impl<G, T, Stk, B, Svc> svc::Service<http::Request<B>> for Service<G, T, Stk, B>
     where
         G: Stream<Item = Routes, Error = Never>,
-        T: WithRoute + Clone,
-        T::Output: Clone + Eq + Hash,
-        Stk: rt::Make<T::Output, Value = Svc> + Clone,
+        T: WithRoute + Clone + Send,
+        T::Output: Clone + Eq + Hash + Send,
+        Stk: rt::Make<T::Output, Value = Svc> + Clone + Send,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {

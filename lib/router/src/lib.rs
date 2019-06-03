@@ -9,8 +9,8 @@ extern crate tower_service as svc;
 
 use futures::{Async, Future, Poll};
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::lock::Lock;
 use tower_load_shed::LoadShed;
 
 mod cache;
@@ -21,12 +21,12 @@ use self::cache::{Cache, PurgeCache};
 /// Routes requests based on a configurable `Key`.
 pub struct Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req>,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target>,
+    Rec: Recognize<Req> + Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone + Send,
+    Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
 {
-    inner: Arc<Inner<Req, Rec, Mk>>,
+    inner: Inner<Req, Rec, Mk>,
 }
 
 /// Provides a strategy for routing a Request to a Service.
@@ -70,14 +70,14 @@ where
 
 struct Inner<Req, Rec, Mk>
 where
-    Rec: Recognize<Req>,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target>,
+    Rec: Recognize<Req> + Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone + Send,
+    Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
 {
     recognize: Rec,
     make: Mk,
-    cache: Arc<Mutex<Cache<Rec::Target, LoadShed<Mk::Value>>>>,
+    cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
 enum State<Req, Svc>
@@ -108,9 +108,9 @@ where
 
 impl<Req, Rec, Mk> Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req>,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target>,
+    Rec: Recognize<Req> + Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone + Send,
+    Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req> + Clone,
 {
     pub fn new(
@@ -123,11 +123,11 @@ where
 
         (
             Router {
-                inner: Arc::new(Inner {
+                inner: Inner {
                     recognize,
                     make,
                     cache,
-                }),
+                },
             },
             cache_bg,
         )
@@ -136,9 +136,9 @@ where
 
 impl<Req, Rec, Mk, Svc> svc::Service<Req> for Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req>,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target, Value = Svc>,
+    Rec: Recognize<Req> + Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone + Send,
+    Mk: Make<Rec::Target, Value = Svc> + Clone + Send,
     Svc: svc::Service<Req> + Clone,
     Svc::Error: Into<error::Error>,
 {
@@ -166,17 +166,25 @@ where
             None => return ResponseFuture::not_recognized(),
         };
 
-        let cache = &mut *self.inner.cache.lock().expect("lock router cache");
+        // let cache = &mut *self.inner.cache.lock().expect("lock router cache");
+        let mut acquired = loop {
+            match self.inner.cache.poll_lock() {
+                Async::Ready(acquired) => {
+                    break acquired;
+                }
+                Async::NotReady => continue,
+            }
+        };
 
         // First, try to load a cached route for `target`.
         // This is why deref is helpful
-        if let Some(service) = cache.access(&target) {
+        if let Some(service) = acquired.access(&target) {
             return ResponseFuture::new(request, service.node.value.clone());
         }
 
         // Since there wasn't a cached route, ensure that there is capacity for a
         // new one.
-        let reserve = match cache.poll_reserve() {
+        let reserve = match acquired.poll_reserve() {
             Ok(r) => r,
             Err(cache::CapacityExhausted { capacity }) => {
                 return ResponseFuture::no_capacity(capacity);
@@ -193,9 +201,9 @@ where
 
 impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req>,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target>,
+    Rec: Recognize<Req> + Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone + Send,
+    Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
 {
     fn clone(&self) -> Self {
@@ -264,6 +272,24 @@ where
     }
 }
 
+// ===== impl Inner =====
+
+impl<Req, Rec, Mk> Clone for Inner<Req, Rec, Mk>
+where
+    Rec: Recognize<Req> + Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone + Send,
+    Mk: Make<Rec::Target> + Clone + Send,
+    Mk::Value: svc::Service<Req>,
+{
+    fn clone(&self) -> Self {
+        Inner {
+            recognize: self.recognize.clone(),
+            make: self.make.clone(),
+            cache: self.cache.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test_util {
     use super::Make;
@@ -273,6 +299,7 @@ mod test_util {
     use std::rc::Rc;
     use svc::Service;
 
+    #[derive(Clone)]
     pub struct Recognize;
 
     #[derive(Clone, Debug)]
@@ -398,7 +425,8 @@ mod tests {
 
     impl<Mk> Router<Request, Recognize, Mk>
     where
-        Mk: Make<usize>,
+        Recognize: Clone,
+        Mk: Make<usize> + Clone + Send,
         Mk::Value: svc::Service<Request, Response = usize> + Clone,
         <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
     {
