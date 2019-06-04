@@ -267,3 +267,40 @@ fn refresh() {
 
     assert_eventually!(refreshed.load(Ordering::SeqCst) == true);
 }
+
+#[test]
+fn force_identity_header() {
+    let _ = env_logger_init();
+    let proxy_id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let app_id = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+
+    let proxy_identity = identity::Identity::new("foo-ns1", proxy_id.to_string());
+    let app_identity = identity::Identity::new("bar-ns1", app_id.to_string());
+
+    let srv = server::http2_tls(app_identity.server_config)
+        .route("/", "hello")
+        .run();
+
+    let proxy = proxy::new()
+        .outbound(srv)
+        .identity(proxy_identity.service().run())
+        .run_with_test_env(proxy_identity.env);
+
+    // Make an http client with no TLS config
+    let client = client::http2(proxy.outbound, app_id);
+
+    // Send a request with a `l5d-force-id` header value of `app_id` so that
+    // when the connection is established, it uses `app_id` as the TLS server
+    // identity.
+    assert_eventually!(
+        client
+            .request(
+                client
+                    .request_builder("/")
+                    .header("l5d-force-id", app_id)
+                    .method("GET")
+            )
+            .status()
+            == http::StatusCode::OK
+    );
+}
