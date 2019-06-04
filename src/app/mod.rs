@@ -25,6 +25,7 @@ pub const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";
 const L5D_REMOTE_IP: &'static str = "l5d-remote-ip";
 const L5D_SERVER_ID: &'static str = "l5d-server-id";
 const L5D_CLIENT_ID: &'static str = "l5d-client-id";
+pub const L5D_FORCE_ID: &'static str = "l5d-force-id";
 
 pub fn init() -> Result<(config::Config, trace::LevelHandle), Box<Error + Send + Sync + 'static>> {
     let trace_admin = trace::init()?;
