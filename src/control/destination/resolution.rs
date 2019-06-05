@@ -161,8 +161,9 @@ where
                                 let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
                                 try_send!(self.updater.remove(addrs));
                             }
-                            Some(PbUpdate2::NoEndpoints(eps)) => {
-                                try_send!(self.updater.no_endpoints(eps.exists))
+                            Some(PbUpdate2::NoEndpoints(_)) => {
+                                trace!("has no endpoints");
+                                try_send!(self.updater.remove_all("no endpoints"));
                             }
                             None => (),
                         };
@@ -179,7 +180,7 @@ where
                         // requested name should *not* query the destination
                         // service. In this case, do not attempt to reconnect.
                         debug!("Destination.Get stream ended with Invalid Argument",);
-                        let _ = self.updater.no_endpoints(false);
+                        let _ = self.updater.does_not_exist();
                         return Ok(Async::Ready(()));
                     }
                     Err(err) => {
@@ -253,12 +254,7 @@ impl Updater {
     fn reset_if_needed(&mut self) -> Result<(), ()> {
         if self.reset {
             trace!("query reconnected; removing stale endpoints");
-            for addr in self.seen.drain(..) {
-                trace!("remove {} (stale)", addr);
-                self.tx
-                    .unbounded_send(Update::Remove(addr))
-                    .map_err(|_| ())?;
-            }
+            self.remove_all("stale")?;
             self.reset = false;
         }
         Ok(())
@@ -282,21 +278,19 @@ impl Updater {
         Ok(())
     }
 
-    fn no_endpoints(&mut self, exists: bool) -> Result<(), ()> {
-        if !exists {
-            // If the endpoint doesn't exist in service discovery, indicate that
-            // we should fall back.
-            trace!("does not exist in service discovery");
-            self.send(Update::NoEndpoints)?;
-        }
-
+    fn remove_all(&mut self, reason: &'static str) -> Result<(), ()> {
         for addr in self.seen.drain(..) {
-            trace!("remove {} (no endpoints)", addr);
+            trace!("remove {} ({})", addr, reason);
             self.tx
                 .unbounded_send(Update::Remove(addr))
                 .map_err(|_| ())?;
         }
         Ok(())
+    }
+
+    fn does_not_exist(&mut self) -> Result<(), ()> {
+        self.send(Update::NoEndpoints)?;
+        self.remove_all("nonexistent")
     }
 }
 
@@ -305,7 +299,7 @@ impl<'a> fmt::Display for DisplayUpdate<'a> {
         match self.0 {
             Update::Remove(ref addr) => write!(f, "remove {}", addr),
             Update::Add(ref addr, ..) => write!(f, "add {}", addr),
-            Update::NoEndpoints => "no endpoints".fmt(f),
+            Update::NoEndpoints => "does not exist in service discovery".fmt(f),
         }
     }
 }

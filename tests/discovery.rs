@@ -86,6 +86,15 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_fails_fast_when_destination_has_no_endpoints() {
+            outbound_fails_fast(controller::destination_exists_with_no_endpoints())
+        }
+
+        #[test]
+        fn outbound_fails_fast_when_destination_does_not_exist() {
+            outbound_fails_fast(controller::destination_does_not_exist())
+        }
+
+        fn outbound_fails_fast(up: pb::destination::Update) {
             use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
             let _ = env_logger_init();
 
@@ -98,8 +107,7 @@ macro_rules! generate_tests {
             }).run();
 
             let ctrl = controller::new();
-            ctrl.destination_tx("disco.test.svc.cluster.local")
-                .send(controller::destination_exists_with_no_endpoints());
+            ctrl.destination_tx("disco.test.svc.cluster.local").send(up);
 
             let proxy = proxy::new()
                 .controller(ctrl.run())
@@ -119,26 +127,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_falls_back_to_orig_dst_when_destination_doesnt_exist() {
-            let _ = env_logger_init();
-
-            let srv = $make_server().route("/", "hello").run();
-
-            let ctrl = controller::new();
-            ctrl.destination_tx("disco.test.svc.cluster.local")
-                .send(controller::destination_does_not_exist());
-
-            let proxy = proxy::new()
-                .controller(ctrl.run())
-                .outbound(srv)
-                .run();
-
-            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
-
-            assert_eq!(client.get("/"), "hello");
-        }
-
-        #[test]
         fn outbound_falls_back_to_orig_dst_when_outside_search_path() {
             let _ = env_logger_init();
 
@@ -155,7 +143,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_does_not_reconnect_after_invalid_argument() {
+        fn outbound_falls_back_to_orig_dst_after_invalid_argument() {
             let _ = env_logger_init();
 
             let srv = $make_server().route("/", "hello").run();
