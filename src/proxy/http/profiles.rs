@@ -318,7 +318,7 @@ pub mod router {
     pub struct Service<G, T, R, B>
     where
         T: WithRoute + Clone + Send,
-        T::Output: Clone + Eq + Hash + Send,
+        T::Output: Clone + Eq + Hash,
         R: rt::Make<T::Output> + Clone + Send,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
@@ -405,7 +405,7 @@ pub mod router {
     impl<T, G, M, R, B, RMk, RSvc> svc::Service<T> for MakeSvc<G, M, R, B>
     where
         T: CanGetDestination + WithRoute + Clone + Send,
-        <T as WithRoute>::Output: Eq + Hash + Clone + Send,
+        <T as WithRoute>::Output: Eq + Hash + Clone,
         M: rt::Make<T>,
         M::Value: Clone,
         G: GetRoutes,
@@ -488,7 +488,7 @@ pub mod router {
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone + Send,
-        T::Output: Clone + Eq + Hash + Send,
+        T::Output: Clone + Eq + Hash,
         R: rt::Make<T::Output> + Clone + Send,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
@@ -521,7 +521,7 @@ pub mod router {
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone + Send,
-        T::Output: Clone + Eq + Hash + Send,
+        T::Output: Clone + Eq + Hash,
         Stk: rt::Make<T::Output, Value = Svc> + Clone + Send,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,

@@ -22,7 +22,7 @@ use self::cache::{Cache, PurgeCache};
 pub struct Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
 {
@@ -71,7 +71,7 @@ where
 struct Inner<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
 {
@@ -109,7 +109,7 @@ where
 impl<Req, Rec, Mk> Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req> + Clone,
 {
@@ -137,7 +137,7 @@ where
 impl<Req, Rec, Mk, Svc> svc::Service<Req> for Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target, Value = Svc> + Clone + Send,
     Svc: svc::Service<Req> + Clone,
     Svc::Error: Into<error::Error>,
@@ -202,7 +202,7 @@ where
 impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
 {
@@ -277,7 +277,7 @@ where
 impl<Req, Rec, Mk> Clone for Inner<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
 {

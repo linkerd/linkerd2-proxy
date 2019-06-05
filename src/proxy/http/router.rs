@@ -43,7 +43,7 @@ pub struct Stack<Req, Rec: Recognize<Req>, Mk> {
 pub struct Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: rt::Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
 {
@@ -85,7 +85,7 @@ where
 impl<Req, Rec, Mk, B> svc::Layer<Mk> for Layer<Req, Rec>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
     Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
@@ -176,7 +176,7 @@ where
 impl<Req, Rec, Mk, B> svc::Service<Req> for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
     Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
@@ -199,7 +199,7 @@ where
 impl<Req, Rec, Mk> Clone for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone + Send,
+    <Rec as Recognize<Req>>::Target: Clone,
     Mk: rt::Make<Rec::Target> + Clone + Send,
     Mk::Value: svc::Service<Req>,
     Router<Req, Rec, Mk>: Clone,

@@ -13,7 +13,7 @@ use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 /// can be polled in the background and remove expired values.
 ///
 /// All values in the cache will expire after a `expires` span of time.
-pub struct Cache<K: Clone + Eq + Hash + Send, V> {
+pub struct Cache<K: Clone + Eq + Hash, V> {
     capacity: usize,
     expires: Duration,
     expirations: DelayQueue<K>,
@@ -25,7 +25,7 @@ pub struct Cache<K: Clone + Eq + Hash + Send, V> {
 ///
 /// This contains a weak reference to a cache so that if use of the cache is
 /// dropped, it will not continue to be polled in the background.
-pub struct PurgeCache<K: Clone + Eq + Hash + Send, V> {
+pub struct PurgeCache<K: Clone + Eq + Hash, V> {
     cache: Lock<Cache<K, V>>,
     interval: Interval,
 }
@@ -33,7 +33,7 @@ pub struct PurgeCache<K: Clone + Eq + Hash + Send, V> {
 /// Wraps a cache value so that a lock is held on the entire cache. When the
 /// access is dropped, the associated expiration time of the value in
 /// `expirations` is reset.
-pub struct Access<'a, K: Clone + Eq + Hash + Send, V> {
+pub struct Access<'a, K: Clone + Eq + Hash, V> {
     expires: Duration,
     expirations: &'a mut DelayQueue<K>,
     pub(crate) node: &'a mut Node<V>,
@@ -51,7 +51,7 @@ pub struct CapacityExhausted {
 }
 
 /// A handle to a cache that has capacity for at least one additional value.
-pub struct Reserve<'a, K: Clone + Eq + Hash + Send, V> {
+pub struct Reserve<'a, K: Clone + Eq + Hash, V> {
     expirations: &'a mut DelayQueue<K>,
     expires: Duration,
     vals: &'a mut IndexMap<K, Node<V>>,
@@ -59,7 +59,7 @@ pub struct Reserve<'a, K: Clone + Eq + Hash + Send, V> {
 
 // ===== impl Cache =====
 
-impl<K: Clone + Eq + Hash + Send, V> Cache<K, V> {
+impl<K: Clone + Eq + Hash, V> Cache<K, V> {
     pub fn new(capacity: usize, expires: Duration) -> (Lock<Cache<K, V>>, PurgeCache<K, V>) {
         let cache = Self {
             capacity,
@@ -134,7 +134,7 @@ impl<K: Clone + Eq + Hash + Send, V> Cache<K, V> {
 
 // ===== impl PurgeCache =====
 
-impl<K: Clone + Eq + Hash + Send, V> Future for PurgeCache<K, V> {
+impl<K: Clone + Eq + Hash, V> Future for PurgeCache<K, V> {
     type Item = ();
     type Error = ();
 
@@ -142,14 +142,6 @@ impl<K: Clone + Eq + Hash + Send, V> Future for PurgeCache<K, V> {
         try_ready!(self.interval.poll().map_err(|e| {
             panic!("PurgeCache.interval Interval::poll must not fail: {}", e);
         }));
-
-        // let mut upgraded = match self.cache.upgrade() {
-        //     Some(upgraded) => upgraded,
-
-        //     // Failing to upgrade the Weak reference means the cache has been
-        //     // dropped. We can stop trying to purge values.
-        //     None => return Ok(Async::Ready(())),
-        // };
 
         let mut acquired = try_ready!(Ok(self.cache.poll_lock()));
 
@@ -161,7 +153,7 @@ impl<K: Clone + Eq + Hash + Send, V> Future for PurgeCache<K, V> {
 
 // ===== impl Access =====
 
-impl<'a, K: Clone + Eq + Hash + Send, V> Drop for Access<'a, K, V> {
+impl<'a, K: Clone + Eq + Hash, V> Drop for Access<'a, K, V> {
     fn drop(&mut self) {
         self.expirations.reset(&self.node.key, self.expires);
     }
@@ -177,7 +169,7 @@ impl<T> Node<T> {
 
 // ===== impl Reserve =====
 
-impl<'a, K: Clone + Eq + Hash + Send, V> Reserve<'a, K, V> {
+impl<'a, K: Clone + Eq + Hash, V> Reserve<'a, K, V> {
     pub fn store(self, key: K, val: V) {
         let node = {
             let delay = self.expirations.insert(key.clone(), self.expires);
