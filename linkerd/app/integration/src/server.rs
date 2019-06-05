@@ -45,6 +45,16 @@ pub struct Listening {
     pub(super) conn_count: Arc<AtomicUsize>,
 }
 
+pub fn mock_listening(a: SocketAddr) -> Listening {
+    let (tx, _rx) = shutdown_signal();
+    let conn_count = Arc::new(AtomicUsize::from(0));
+    Listening {
+        addr: a,
+        shutdown: tx,
+        conn_count,
+    }
+}
+
 impl Listening {
     pub fn connections(&self) -> usize {
         self.conn_count.load(Ordering::Acquire)
