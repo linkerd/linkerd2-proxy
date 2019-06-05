@@ -25,7 +25,6 @@ impl AddrInfo for TcpStream {
 
     #[cfg(target_os = "linux")]
     fn get_original_dst(&self) -> Option<SocketAddr> {
-        use self::linux;
         use std::os::unix::io::AsRawFd;
 
         let fd = self.as_raw_fd();
