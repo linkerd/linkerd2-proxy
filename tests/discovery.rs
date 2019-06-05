@@ -212,13 +212,9 @@ macro_rules! generate_tests {
             // Wait for the reconnect to happen. TODO: Replace this flaky logic.
             thread::sleep(Duration::from_millis(1000));
 
+            let rsp = initially_exists.request(&mut initially_exists.request_builder("/"));
+            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
 
-            // This would wait since there are no endpoints.
-            let mut req = initially_exists.request_builder("/");
-            initially_exists
-                .request_async(req.method("GET"))
-                .wait_timeout(Duration::from_secs(1))
-                .expect_timedout("request should wait for destination capacity");
         }
 
         #[test]
