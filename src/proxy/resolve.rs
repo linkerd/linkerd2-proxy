@@ -1,7 +1,7 @@
 extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
-use futures::{Async, Future, Stream, Poll, stream::FuturesUnordered};
+use futures::{stream::FuturesUnordered, Async, Future, Poll, Stream};
 use std::{
     fmt,
     net::SocketAddr,
@@ -124,7 +124,7 @@ where
 impl<R, M> HasEndpointStatus for Discover<R, M>
 where
     R: Resolution,
-    M: svc::Service<R::Endpoint>
+    M: svc::Service<R::Endpoint>,
 {
     fn endpoint_status(&self) -> EndpointStatus {
         EndpointStatus(self.is_empty.clone())

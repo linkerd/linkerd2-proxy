@@ -7,7 +7,7 @@ use std::{error::Error, fmt, marker::PhantomData, time::Duration};
 
 use futures::{future, Async, Future, Poll};
 use hyper::body::Payload;
-use rand::{FromEntropy, rngs::SmallRng};
+use rand::{rngs::SmallRng, FromEntropy};
 
 use self::tower_discover::Discover;
 
@@ -116,8 +116,7 @@ where
     B: Payload,
     Balance<PeakEwmaDiscover<M::Response, PendingUntilFirstData>>: svc::Service<http::Request<A>>,
 {
-    type Response =
-        Service<Balance<PeakEwmaDiscover<M::Response, PendingUntilFirstData>>>;
+    type Response = Service<Balance<PeakEwmaDiscover<M::Response, PendingUntilFirstData>>>;
     type Error = M::Error;
     type Future = MakeSvc<M::Future, A, B>;
 
@@ -147,8 +146,7 @@ where
     B: Payload,
     Balance<PeakEwmaDiscover<F::Item, PendingUntilFirstData>>: svc::Service<http::Request<A>>,
 {
-    type Item =
-        Service<Balance<PeakEwmaDiscover<F::Item, PendingUntilFirstData>>>;
+    type Item = Service<Balance<PeakEwmaDiscover<F::Item, PendingUntilFirstData>>>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
