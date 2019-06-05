@@ -21,9 +21,8 @@ use self::cache::{Cache, PurgeCache};
 /// Routes requests based on a configurable `Key`.
 pub struct Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target> + Clone + Send,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
 {
     inner: Inner<Req, Rec, Mk>,
@@ -37,7 +36,7 @@ where
 /// `bind_service` to instantiate the identified route.
 pub trait Recognize<Request> {
     /// Identifies a Route.
-    type Target: Eq + Hash;
+    type Target: Clone + Eq + Hash;
 
     /// Determines the target for a route to handle the given request.
     fn recognize(&self, req: &Request) -> Option<Self::Target>;
@@ -70,9 +69,8 @@ where
 
 struct Inner<Req, Rec, Mk>
 where
-    Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target> + Clone + Send,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
 {
     recognize: Rec,
@@ -94,7 +92,7 @@ where
 
 impl<R, T, F> Recognize<R> for F
 where
-    T: Eq + Hash,
+    T: Clone + Eq + Hash,
     F: Fn(&R) -> Option<T>,
 {
     type Target = T;
@@ -108,10 +106,9 @@ where
 
 impl<Req, Rec, Mk> Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target> + Clone + Send,
-    Mk::Value: svc::Service<Req> + Clone,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
 {
     pub fn new(
         recognize: Rec,
@@ -136,9 +133,8 @@ where
 
 impl<Req, Rec, Mk, Svc> svc::Service<Req> for Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target, Value = Svc> + Clone + Send,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target, Value = Svc>,
     Svc: svc::Service<Req> + Clone,
     Svc::Error: Into<error::Error>,
 {
@@ -201,9 +197,8 @@ where
 
 impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target> + Clone + Send,
+    Rec: Recognize<Req> + Clone,
+    Mk: Make<Rec::Target> + Clone,
     Mk::Value: svc::Service<Req>,
 {
     fn clone(&self) -> Self {
@@ -276,9 +271,8 @@ where
 
 impl<Req, Rec, Mk> Clone for Inner<Req, Rec, Mk>
 where
-    Rec: Recognize<Req> + Clone + Send,
-    <Rec as Recognize<Req>>::Target: Clone,
-    Mk: Make<Rec::Target> + Clone + Send,
+    Rec: Recognize<Req> + Clone,
+    Mk: Make<Rec::Target> + Clone,
     Mk::Value: svc::Service<Req>,
 {
     fn clone(&self) -> Self {
@@ -299,7 +293,6 @@ mod test_util {
     use std::rc::Rc;
     use svc::Service;
 
-    #[derive(Clone)]
     pub struct Recognize;
 
     #[derive(Clone, Debug)]
@@ -425,8 +418,7 @@ mod tests {
 
     impl<Mk> Router<Request, Recognize, Mk>
     where
-        Recognize: Clone,
-        Mk: Make<usize> + Clone + Send,
+        Mk: Make<usize>,
         Mk::Value: svc::Service<Request, Response = usize> + Clone,
         <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
     {
