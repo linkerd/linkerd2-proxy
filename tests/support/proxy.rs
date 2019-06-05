@@ -138,8 +138,6 @@ impl linkerd2_proxy::transport::GetOriginalDst for MockOriginalDst {
 }
 
 fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
-    use self::linkerd2_proxy::app;
-
     let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
