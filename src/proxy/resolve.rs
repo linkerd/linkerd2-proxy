@@ -1,7 +1,7 @@
 extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
-use futures::{stream::FuturesUnordered, Async, Future, Poll, Stream};
+use futures::{stream::FuturesUnordered, Async, Future, Poll, Stream, sync::oneshot};
 use std::{
     fmt,
     net::SocketAddr,
@@ -10,6 +10,7 @@ use std::{
         Arc,
     },
 };
+use indexmap::IndexMap;
 
 pub use self::tower_discover::Change;
 use proxy::Error;
@@ -61,13 +62,24 @@ pub struct MakeSvc<R, M> {
 pub struct Discover<R: Resolution, M: svc::Service<R::Endpoint>> {
     resolution: R,
     make: M,
-    pending: FuturesUnordered<MakeFuture<M::Future>>,
+    pending: Making<M::Future>,
     is_empty: Arc<AtomicBool>,
+}
+
+struct Making<F> {
+    pending: FuturesUnordered<MakeFuture<F>>,
+    cancellations: IndexMap<SocketAddr, oneshot::Sender<()>>,
 }
 
 struct MakeFuture<F> {
     inner: F,
+    canceled: oneshot::Receiver<()>,
     addr: SocketAddr,
+}
+
+enum MakeError<E> {
+    Inner(E),
+    Canceled,
 }
 
 // === impl Layer ===
@@ -115,7 +127,10 @@ where
         futures::future::ok(Discover {
             resolution,
             make: self.inner.clone(),
-            pending: FuturesUnordered::new(),
+            pending: Making {
+                pending: FuturesUnordered::new(),
+                cancellations: IndexMap::new(),
+            },
             is_empty: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -157,9 +172,12 @@ where
             match up {
                 Update::Add(addr, target) => {
                     let inner = self.make.call(target);
-                    self.pending.push(MakeFuture { addr, inner });
+                    self.pending.push(addr, inner);
                 }
-                Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
+                Update::Remove(addr) => {
+                    self.pending.remove(&addr);
+                    return Ok(Async::Ready(Change::Remove(addr)));
+                },
                 Update::NoEndpoints => {
                     self.is_empty.store(true, Ordering::Release);
                     // Keep polling as we should now start to see removals.
@@ -176,12 +194,57 @@ impl EndpointStatus {
     }
 }
 
-impl<F: Future> Future for MakeFuture<F> {
+// ===== impl Making =====
+
+impl<F> Making<F> {
+    fn push(&mut self, addr: SocketAddr, inner: F) {
+        let (cancel, canceled) = oneshot::channel();
+        self.cancellations.insert(addr, cancel);
+        self.pending.push(MakeFuture { addr, inner, canceled });
+    }
+
+    fn remove(&mut self, addr: &SocketAddr) {
+        if let Some(cancel) = self.cancellations.remove(addr) {
+            let _ = cancel.send(());
+        }
+    }
+}
+
+impl<F: Future> Stream for Making<F> {
     type Item = (SocketAddr, F::Item);
     type Error = F::Error;
 
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        loop {
+            return match self.pending.poll() {
+                Err(MakeError::Canceled) => continue,
+                Err(MakeError::Inner(err)) => Err(err),
+                Ok(Async::Ready(Some((addr, svc)))) => {
+                    self.cancellations.remove(&addr);
+                    Ok(Async::Ready(Some((addr, svc))))
+                },
+                Ok(r) => Ok(r),
+            }
+        }
+    }
+}
+
+impl<F: Future> Future for MakeFuture<F> {
+    type Item = (SocketAddr, F::Item);
+    type Error = MakeError<F::Error>;
+
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        if let Ok(Async::Ready(())) = self.canceled.poll() {
+            trace!("canceled making service for {:?}", self.addr);
+            return Err(MakeError::Canceled);
+        }
         let svc = try_ready!(self.inner.poll());
         Ok((self.addr, svc).into())
+    }
+}
+
+impl<E> From<E> for MakeError<E> {
+    fn from(inner: E) -> Self {
+        MakeError::Inner(inner)
     }
 }
