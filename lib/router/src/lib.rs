@@ -10,7 +10,7 @@ extern crate tower_service as svc;
 use futures::{Async, Future, Poll};
 use std::hash::Hash;
 use std::time::Duration;
-use tokio::sync::lock::Lock;
+use tokio::sync::lock::{Lock, LockGuard};
 use tower_load_shed::LoadShed;
 
 mod cache;
@@ -59,12 +59,14 @@ where
     }
 }
 
-pub struct ResponseFuture<Req, Svc>
+pub struct ResponseFuture<Req, Rec, Mk>
 where
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<error::Error>,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    state: State<Req, LoadShed<Svc>>,
+    state: State<Req, Rec, Mk>,
 }
 
 struct Inner<Req, Rec, Mk>
@@ -78,13 +80,27 @@ where
     cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
-enum State<Req, Svc>
+enum State<Req, Rec, Mk>
 where
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<error::Error>,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    Init(Option<Req>, Svc),
-    Called(Svc::Future),
+    Init(
+        Option<Req>,
+        Option<Rec::Target>,
+        Option<Mk>,
+        Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    ),
+    Acquired(
+        Option<Req>,
+        Option<Rec::Target>,
+        Option<Mk>,
+        LockGuard<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    ),
+    Call(Option<Req>, Option<LoadShed<Mk::Value>>),
+    Called(<LoadShed<Mk::Value> as svc::Service<Req>>::Future),
     Error(Option<error::Error>),
 }
 
@@ -129,26 +145,36 @@ where
             cache_bg,
         )
     }
+
+    pub fn new_lazy(recognize: Rec, make: Mk, capacity: usize, max_idle_age: Duration) -> Self {
+        let (cache, _) = Cache::new(capacity, max_idle_age);
+
+        (Router {
+            inner: Inner {
+                recognize,
+                make,
+                cache,
+            },
+        })
+    }
 }
 
-impl<Req, Rec, Mk, Svc> svc::Service<Req> for Router<Req, Rec, Mk>
+impl<Req, Rec, Mk> svc::Service<Req> for Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target, Value = Svc>,
-    Svc: svc::Service<Req> + Clone,
-    Svc::Error: Into<error::Error>,
+    Mk: Make<Rec::Target> + Clone,
+    Mk::Value: svc::Service<Req> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
     type Response = <Mk::Value as svc::Service<Req>>::Response;
     type Error = error::Error;
-    type Future = ResponseFuture<Req, Mk::Value>;
+    type Future = ResponseFuture<Req, Rec, Mk>;
 
     /// Always ready to serve.
     ///
     /// Graceful backpressure is **not** supported at this level, since each request may
     /// be routed to different resources. Instead, requests should be issued and each
     /// route should support a queue of requests.
-    ///
-    /// TODO Attempt to free capacity in the router.
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into())
     }
@@ -162,36 +188,12 @@ where
             None => return ResponseFuture::not_recognized(),
         };
 
-        // let cache = &mut *self.inner.cache.lock().expect("lock router cache");
-        let mut acquired = loop {
-            match self.inner.cache.poll_lock() {
-                Async::Ready(acquired) => {
-                    break acquired;
-                }
-                Async::NotReady => continue,
-            }
-        };
-
-        // First, try to load a cached route for `target`.
-        // This is why deref is helpful
-        if let Some(service) = acquired.access(&target) {
-            return ResponseFuture::new(request, service.node.value.clone());
-        }
-
-        // Since there wasn't a cached route, ensure that there is capacity for a
-        // new one.
-        let reserve = match acquired.poll_reserve() {
-            Ok(r) => r,
-            Err(cache::CapacityExhausted { capacity }) => {
-                return ResponseFuture::no_capacity(capacity);
-            }
-        };
-
-        // Bind a new route, send the request on the route, and cache the route.
-        let service = LoadShed::new(self.inner.make.make(&target));
-
-        reserve.store(target, service.clone());
-        ResponseFuture::new(request, service)
+        return ResponseFuture::new(
+            request,
+            target,
+            self.inner.make.clone(),
+            self.inner.cache.clone(),
+        );
     }
 }
 
@@ -210,14 +212,21 @@ where
 
 // ===== impl ResponseFuture =====
 
-impl<Req, Svc> ResponseFuture<Req, Svc>
+impl<Req, Rec, Mk> ResponseFuture<Req, Rec, Mk>
 where
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<error::Error>,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    fn new(req: Req, svc: LoadShed<Svc>) -> Self {
+    fn new(
+        req: Req,
+        target: Rec::Target,
+        make: Mk,
+        cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    ) -> Self {
         ResponseFuture {
-            state: State::Init(Some(req), svc),
+            state: State::Init(Some(req), Some(target), Some(make), cache),
         }
     }
 
@@ -230,18 +239,16 @@ where
     fn not_recognized() -> Self {
         Self::error(error::NotRecognized.into())
     }
-
-    fn no_capacity(capacity: usize) -> Self {
-        Self::error(error::NoCapacity(capacity).into())
-    }
 }
 
-impl<Req, Svc> Future for ResponseFuture<Req, Svc>
+impl<Req, Rec, Mk> Future for ResponseFuture<Req, Rec, Mk>
 where
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<error::Error>,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    type Item = <LoadShed<Svc> as svc::Service<Req>>::Response;
+    type Item = <LoadShed<Mk::Value> as svc::Service<Req>>::Response;
     type Error = error::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -249,18 +256,58 @@ where
 
         loop {
             self.state = match self.state {
-                State::Init(ref mut req, ref mut svc) => {
-                    match svc.poll_ready().map_err(error::Error::from)? {
-                        Async::NotReady => {
+                State::Init(ref mut req, ref mut target, ref mut make, ref mut cache) => {
+                    let req = req.take().expect("polled after ready");
+                    let target = target.take().expect("polled after ready");
+                    let make = make.take().expect("polled after ready");
+
+                    let mut cache = match cache.poll_lock() {
+                        Async::Ready(lock) => lock,
+                        Async::NotReady => return Ok(Async::NotReady),
+                    };
+                    State::Acquired(Some(req), Some(target), Some(make), cache)
+                }
+                State::Acquired(ref mut req, ref mut target, ref mut make, ref mut cache) => {
+                    (|| {
+                        let req = req.take().expect("polled after ready");
+                        let target = target.take().expect("polled after ready");
+                        let make = make.take().expect("polled after ready");
+
+                        if let Some(service) = cache.access(&target) {
+                            return State::Call(Some(req), Some(service.node.value.clone()));
+                        }
+
+                        // Since there wasn't a cached route, ensure that
+                        // there is capacity for a new one
+                        let capacity = cache.capacity();
+                        match cache.poll_reserve() {
+                            Async::Ready(reserve) => {
+                                // Bind a new route, cache the route, and send
+                                // the request on the route.
+                                let service = LoadShed::new(make.make(&target));
+                                reserve.store(target, service.clone());
+                                State::Call(Some(req), Some(service))
+                            }
+                            Async::NotReady => {
+                                State::Error(Some(error::NoCapacity(capacity).into()))
+                            }
+                        }
+                    })()
+                }
+                State::Call(ref mut req, ref mut service) => {
+                    let mut service = service.take().expect("polled after ready");
+                    match service.poll_ready() {
+                        Ok(Async::Ready(())) => {
+                            let req = req.take().expect("polled after ready");
+                            State::Called(service.call(req))
+                        }
+                        Ok(Async::NotReady) => {
                             unreachable!("load shedding services must always be ready");
                         }
-                        Async::Ready(()) => {
-                            let req = req.take().expect("polled after ready");
-                            State::Called(svc.call(req))
-                        }
+                        Err(err) => State::Error(Some(err)),
                     }
                 }
-                State::Called(ref mut fut) => return fut.poll().map_err(error::Error::from),
+                State::Called(ref mut fut) => return fut.poll().map_err(Into::into),
                 State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),
             }
         }
@@ -418,9 +465,13 @@ mod tests {
 
     impl<Mk> Router<Request, Recognize, Mk>
     where
-        Mk: Make<usize>,
-        Mk::Value: svc::Service<Request, Response = usize> + Clone,
+        Recognize: Recognize<Req>,
+        Mk: Make<Recognize::Target>,
+        Mk::Value: svc::Service<Request>,
         <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
+        // Mk: Make<usize>,
+        // Mk::Value: svc::Service<Request, Response = usize> + Clone,
+        // <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
     {
         fn call_ok(&mut self, req: impl Into<Request>) -> usize {
             let req = req.into();

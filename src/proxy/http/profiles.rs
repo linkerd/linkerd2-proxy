@@ -417,7 +417,7 @@ pub mod router {
             let stack = self.route_layer.clone().service(svc::shared(inner));
 
             // We never want to purge routes from the profiles router cache
-            let (router, _) = Router::new(
+            let router = Router::new_lazy(
                 Recognize {
                     target: target.clone(),
                     routes: Vec::new(),
@@ -486,7 +486,7 @@ pub mod router {
             let slots = routes.len() + 1;
 
             // We never want to purge routes from the profiles router cache
-            let (router, _) = Router::new(
+            let router = Router::new_lazy(
                 Recognize {
                     target: self.target.clone(),
                     routes,

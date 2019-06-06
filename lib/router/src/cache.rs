@@ -61,6 +61,7 @@ pub struct Reserve<'a, K: Clone + Eq + Hash, V> {
 
 impl<K: Clone + Eq + Hash, V> Cache<K, V> {
     pub fn new(capacity: usize, expires: Duration) -> (Lock<Cache<K, V>>, PurgeCache<K, V>) {
+        assert!(capacity != 0);
         let cache = Self {
             capacity,
             expires,
@@ -85,14 +86,11 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         })
     }
 
-    pub fn poll_reserve(&mut self) -> Result<Reserve<K, V>, CapacityExhausted> {
-        // If the cache capacity is zero, then we have no space to reserve a slot
-        if self.capacity == 0 {
-            return Err(CapacityExhausted {
-                capacity: self.capacity,
-            });
-        }
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
 
+    pub fn poll_reserve(&mut self) -> Async<Reserve<K, V>> {
         if self.vals.len() == self.capacity {
             match self.expirations.poll() {
                 // The cache is at capacity but we are able to remove a value.
@@ -107,16 +105,14 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
 
                 // The cache is at capacity and no values can be removed.
                 Ok(Async::NotReady) => {
-                    return Err(CapacityExhausted {
-                        capacity: self.capacity,
-                    });
+                    return Async::NotReady;
                 }
 
                 Err(e) => panic!("Cache.expirations DelayQueue::poll must not fail: {}", e),
             }
         }
 
-        Ok(Reserve {
+        Async::Ready(Reserve {
             expirations: &mut self.expirations,
             expires: self.expires,
             vals: &mut self.vals,
@@ -191,7 +187,7 @@ impl<'a, K: Clone + Eq + Hash, V> Reserve<'a, K, V> {
 //             let (cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
 
 //             let mut cache = loop {
-//                 match self.inner.cache.poll_lock() {
+//                 match cache.poll_lock() {
 //                     Async::Ready(acquired) => {
 //                         break acquired;
 //                     }
@@ -220,7 +216,14 @@ impl<'a, K: Clone + Eq + Hash, V> Reserve<'a, K, V> {
 //         current_thread::run(future::lazy(|| {
 //             let (cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
 
-//             let mut cache = try_ready!(Ok(cache.poll_lock()));
+//             let mut cache = loop {
+//                 match cache.poll_lock() {
+//                     Async::Ready(acquired) => {
+//                         break acquired;
+//                     }
+//                     Async::NotReady => continue,
+//                 }
+//             };
 
 //             assert!(cache.access(&1).is_none());
 //             assert!(cache.access(&2).is_none());
@@ -245,7 +248,14 @@ impl<'a, K: Clone + Eq + Hash, V> Reserve<'a, K, V> {
 //         current_thread::run(futures::future::lazy(|| {
 //             let (cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
 
-//             let mut cache = try_ready!(Ok(cache.poll_lock()));
+//             let mut cache = loop {
+//                 match cache.poll_lock() {
+//                     Async::Ready(acquired) => {
+//                         break acquired;
+//                     }
+//                     Async::NotReady => continue,
+//                 }
+//             };
 
 //             cache.poll_reserve().expect("capacity").store(1, 2);
 //             assert_eq!(cache.vals.len(), 1);
