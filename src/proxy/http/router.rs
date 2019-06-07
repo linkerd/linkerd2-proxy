@@ -174,7 +174,7 @@ where
 impl<Req, Rec, Mk, B> svc::Service<Req> for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Send + Sync + 'static,
-    Mk: rt::Make<Rec::Target> + Send + Sync + 'static,
+    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
     Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,

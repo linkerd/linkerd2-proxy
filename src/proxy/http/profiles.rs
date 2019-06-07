@@ -518,7 +518,7 @@ pub mod router {
     {
         type Response = Svc::Response;
         type Error = Error;
-        type Future = rt::ResponseFuture<http::Request<B>, Svc>;
+        type Future = rt::ResponseFuture<http::Request<B>, Recognize<T>, Stk>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             while let Some(Async::Ready(Some(routes))) = self.poll_route_stream() {
