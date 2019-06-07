@@ -340,6 +340,7 @@ mod test_util {
     use std::rc::Rc;
     use svc::Service;
 
+    #[derive(Clone)]
     pub struct Recognize;
 
     #[derive(Clone, Debug)]
@@ -465,13 +466,9 @@ mod tests {
 
     impl<Mk> Router<Request, Recognize, Mk>
     where
-        Recognize: Recognize<Req>,
-        Mk: Make<Recognize::Target>,
-        Mk::Value: svc::Service<Request>,
+        Mk: Make<usize> + Clone,
+        Mk::Value: svc::Service<Request, Response = usize> + Clone,
         <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
-        // Mk: Make<usize>,
-        // Mk::Value: svc::Service<Request, Response = usize> + Clone,
-        // <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
     {
         fn call_ok(&mut self, req: impl Into<Request>) -> usize {
             let req = req.into();
