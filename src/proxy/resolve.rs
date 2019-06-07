@@ -136,6 +136,8 @@ where
     }
 }
 
+// === impl Discover ===
+
 impl<R, M> HasEndpointStatus for Discover<R, M>
 where
     R: Resolution,
@@ -171,8 +173,8 @@ where
             trace!("watch: {:?}", up);
             match up {
                 Update::Add(addr, target) => {
-                    let inner = self.make.call(target);
-                    self.makes.push(addr, inner);
+                    let fut = self.make.call(target);
+                    self.makes.push(addr, fut);
                 }
                 Update::Remove(addr) => {
                     self.makes.remove(&addr);
@@ -188,13 +190,15 @@ where
     }
 }
 
+// === impl EndpointStatus ===
+
 impl EndpointStatus {
     pub fn is_empty(&self) -> bool {
         self.0.load(Ordering::Acquire)
     }
 }
 
-// ===== impl MakeStream =====
+// === impl MakeStream ===
 
 impl<F> MakeStream<F> {
     fn push(&mut self, addr: SocketAddr, inner: F) {
@@ -234,6 +238,8 @@ impl<F: Future> Stream for MakeStream<F> {
     }
 }
 
+// === impl MakeFuture ===
+
 impl<F: Future> Future for MakeFuture<F> {
     type Item = (SocketAddr, F::Item);
     type Error = MakeError<F::Error>;
@@ -247,6 +253,8 @@ impl<F: Future> Future for MakeFuture<F> {
         Ok((self.addr, svc).into())
     }
 }
+
+// === impl MakeError ===
 
 impl<E> From<E> for MakeError<E> {
     fn from(inner: E) -> Self {
