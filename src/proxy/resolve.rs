@@ -1,7 +1,8 @@
 extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
-use futures::{stream::FuturesUnordered, Async, Future, Poll, Stream, sync::oneshot};
+use futures::{stream::FuturesUnordered, sync::oneshot, Async, Future, Poll, Stream};
+use indexmap::IndexMap;
 use std::{
     fmt,
     net::SocketAddr,
@@ -10,7 +11,6 @@ use std::{
         Arc,
     },
 };
-use indexmap::IndexMap;
 
 pub use self::tower_discover::Change;
 use proxy::Error;
@@ -62,12 +62,12 @@ pub struct MakeSvc<R, M> {
 pub struct Discover<R: Resolution, M: svc::Service<R::Endpoint>> {
     resolution: R,
     make: M,
-    pending: Making<M::Future>,
+    makes: MakeStream<M::Future>,
     is_empty: Arc<AtomicBool>,
 }
 
-struct Making<F> {
-    pending: FuturesUnordered<MakeFuture<F>>,
+struct MakeStream<F> {
+    futures: FuturesUnordered<MakeFuture<F>>,
     cancellations: IndexMap<SocketAddr, oneshot::Sender<()>>,
 }
 
@@ -127,8 +127,8 @@ where
         futures::future::ok(Discover {
             resolution,
             make: self.inner.clone(),
-            pending: Making {
-                pending: FuturesUnordered::new(),
+            makes: MakeStream {
+                futures: FuturesUnordered::new(),
                 cancellations: IndexMap::new(),
             },
             is_empty: Arc::new(AtomicBool::new(false)),
@@ -160,7 +160,7 @@ where
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
         loop {
-            if let Async::Ready(Some((addr, svc))) = self.pending.poll().map_err(Into::into)? {
+            if let Async::Ready(Some((addr, svc))) = self.makes.poll().map_err(Into::into)? {
                 self.is_empty.store(false, Ordering::Release);
                 return Ok(Async::Ready(Change::Insert(addr, svc)));
             }
@@ -172,12 +172,12 @@ where
             match up {
                 Update::Add(addr, target) => {
                     let inner = self.make.call(target);
-                    self.pending.push(addr, inner);
+                    self.makes.push(addr, inner);
                 }
                 Update::Remove(addr) => {
-                    self.pending.remove(&addr);
+                    self.makes.remove(&addr);
                     return Ok(Async::Ready(Change::Remove(addr)));
-                },
+                }
                 Update::NoEndpoints => {
                     self.is_empty.store(true, Ordering::Release);
                     // Keep polling as we should now start to see removals.
@@ -194,13 +194,17 @@ impl EndpointStatus {
     }
 }
 
-// ===== impl Making =====
+// ===== impl MakeStream =====
 
-impl<F> Making<F> {
+impl<F> MakeStream<F> {
     fn push(&mut self, addr: SocketAddr, inner: F) {
         let (cancel, canceled) = oneshot::channel();
         self.cancellations.insert(addr, cancel);
-        self.pending.push(MakeFuture { addr, inner, canceled });
+        self.futures.push(MakeFuture {
+            addr,
+            inner,
+            canceled,
+        });
     }
 
     fn remove(&mut self, addr: &SocketAddr) {
@@ -210,21 +214,21 @@ impl<F> Making<F> {
     }
 }
 
-impl<F: Future> Stream for Making<F> {
+impl<F: Future> Stream for MakeStream<F> {
     type Item = (SocketAddr, F::Item);
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
-            return match self.pending.poll() {
+            return match self.futures.poll() {
                 Err(MakeError::Canceled) => continue,
                 Err(MakeError::Inner(err)) => Err(err),
                 Ok(Async::Ready(Some((addr, svc)))) => {
                     self.cancellations.remove(&addr);
                     Ok(Async::Ready(Some((addr, svc))))
-                },
+                }
                 Ok(r) => Ok(r),
-            }
+            };
         }
     }
 }
