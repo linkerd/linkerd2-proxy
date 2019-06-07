@@ -180,7 +180,7 @@ where
                         // requested name should *not* query the destination
                         // service. In this case, do not attempt to reconnect.
                         debug!("Destination.Get stream ended with Invalid Argument",);
-                        let _ = self.updater.does_not_exist();
+                        let _ = self.updater.unresolvable();
                         return Ok(Async::Ready(()));
                     }
                     Err(err) => {
@@ -288,9 +288,9 @@ impl Updater {
         Ok(())
     }
 
-    fn does_not_exist(&mut self) -> Result<(), ()> {
+    fn unresolvable(&mut self) -> Result<(), ()> {
         self.send(Update::NoEndpoints)?;
-        self.remove_all("nonexistent")
+        self.remove_all("unresolvable")
     }
 }
 
@@ -299,7 +299,7 @@ impl<'a> fmt::Display for DisplayUpdate<'a> {
         match self.0 {
             Update::Remove(ref addr) => write!(f, "remove {}", addr),
             Update::Add(ref addr, ..) => write!(f, "add {}", addr),
-            Update::NoEndpoints => "does not exist in service discovery".fmt(f),
+            Update::NoEndpoints => "should not be resolved by the Destination service".fmt(f),
         }
     }
 }
