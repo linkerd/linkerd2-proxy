@@ -427,33 +427,60 @@ macro_rules! generate_tests {
 
                     let foo_reqs = Arc::new(AtomicUsize::new(0));
                     let foo_reqs2 = foo_reqs.clone();
-                    let foo = $make_server().route_fn("/", move |req| {
-                        assert!(
-                            !req.headers().contains_key(OVERRIDE_HEADER),
-                            "dst override header should be stripped before forwarding request",
-                        );
-                        foo_reqs2.clone().fetch_add(1, Ordering::Release);
-                        Response::builder().status(200)
-                            .body(Bytes::from_static(&b"hello from foo"[..]))
-                            .unwrap()
-                    }).run();
+                    let foo = $make_server()
+                        .route_fn("/", move |req| {
+                            assert!(
+                                !req.headers().contains_key(OVERRIDE_HEADER),
+                                "dst override header should be stripped before forwarding request",
+                            );
+                            foo_reqs2.clone().fetch_add(1, Ordering::Release);
+                            Response::builder().status(200)
+                                .body(Bytes::from_static(&b"hello from foo"[..]))
+                                .unwrap()
+                        })
+                        .route_fn("/load-profile", |_| {
+                            Response::builder().status(200)
+                                .body("".into())
+                                .unwrap()
+                        })
+                        .run();
 
                     let bar_reqs = Arc::new(AtomicUsize::new(0));
                     let bar_reqs2 = bar_reqs.clone();
-                    let bar = $make_server().route_fn("/", move |req| {
-                        assert!(
-                            !req.headers().contains_key(OVERRIDE_HEADER),
-                            "dst override header should be stripped before forwarding request",
-                        );
-                        bar_reqs2.clone().fetch_add(1, Ordering::Release);
-                        Response::builder().status(200)
-                            .body(Bytes::from_static(&b"hello from bar"[..]))
-                            .unwrap()
-                    }).run();
+                    let bar = $make_server()
+                        .route_fn("/", move |req| {
+                            assert!(
+                                !req.headers().contains_key(OVERRIDE_HEADER),
+                                "dst override header should be stripped before forwarding request",
+                            );
+                            bar_reqs2.clone().fetch_add(1, Ordering::Release);
+                            Response::builder().status(200)
+                                .body(Bytes::from_static(&b"hello from bar"[..]))
+                                .unwrap()
+                        })
+                        .route_fn("/load-profile", |_| {
+                            Response::builder().status(200)
+                                .body("".into())
+                                .unwrap()
+                        })
+                        .run();
 
                     let ctrl = controller::new()
                         .destination_and_close(FOO, foo.addr)
                         .destination_and_close(BAR, bar.addr);
+                    ctrl.profile_tx(FOO).send(controller::profile(vec![
+                        controller::route().request_path("/")
+                            .label("hello", "foo"),
+                        controller::route().request_path("/load-profile")
+                            .label("load_profile", "foo"),
+                    ], None));
+                    ctrl.profile_tx(BAR).send(controller::profile(vec![
+                        controller::route().request_path("/")
+                            .label("hello", "bar"),
+                        controller::route().request_path("/load-profile")
+                            .label("load_profile", "bar"),
+                    ], None));
+
                     Fixture {
                         foo_reqs, bar_reqs,
                         foo: Some(foo),
@@ -488,6 +515,25 @@ macro_rules! generate_tests {
                 )
             }
 
+            fn load_both_profiles(addr: SocketAddr, metrics: &client::Client) {
+                let foo_client = $make_client(addr, FOO);
+                let bar_client = $make_client(addr, BAR);
+                // ensure profiles are loaded
+                loop {
+                    assert_eq!(foo_client.get("/load-profile"), "");
+                    assert_eq!(bar_client.get("/load-profile"), "");
+                    let m = metrics.get("/metrics");
+                    let has_foo = m.contains("rt_load_profile=\"foo\"");
+                    let has_bar = m.contains("rt_load_profile=\"bar\"");
+                    println!("load profile; foo={}; bar={};", has_foo, has_bar);
+                    if  has_foo && has_bar  {
+                        break;
+                    }
+
+                    ::std::thread::sleep(::std::time::Duration::from_millis(200));
+                }
+            }
+
             #[test]
             fn outbound_honors_override_header() {
                 let mut fixture = Fixture::new();
@@ -516,6 +562,25 @@ macro_rules! generate_tests {
                 assert_eq!(client.get("/"), "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 1);
+            }
+
+            #[test]
+            fn outbound_overrides_profile() {
+                let mut fixture = Fixture::new();
+                let proxy = fixture.proxy().run();
+
+                let client = $make_client(proxy.outbound, FOO);
+                let metrics = client::http1(proxy.metrics, "localhost");
+                load_both_profiles(proxy.outbound, &metrics);
+
+                // Request 1 --- without override header.
+                client.get("/");
+                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"foo\"");
+
+                // Request 2 --- with override header
+                let res = override_req(&client);
+                assert_eq!(res.status(), http::StatusCode::OK);
+                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"bar\"");
             }
 
             #[test]
@@ -551,7 +616,28 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            fn inbound_does_not_honor_override_header() {
+            fn inbound_overrides_profile() {
+                let mut fixture = Fixture::new();
+                let proxy = fixture.proxy()
+                    .inbound(fixture.foo())
+                    .run();
+
+                let client = $make_client(proxy.inbound, FOO);
+                let metrics = client::http1(proxy.metrics, "localhost");
+                load_both_profiles(proxy.inbound, &metrics);
+
+                // Request 1 --- without override header.
+                client.get("/");
+                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"foo\"");
+
+                // Request 2 --- with override header
+                let res = override_req(&client);
+                assert_eq!(res.status(), http::StatusCode::OK);
+                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"bar\"");
+            }
+
+            #[test]
+            fn inbound_still_routes_to_orig_dst() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
                     .inbound(fixture.foo())
