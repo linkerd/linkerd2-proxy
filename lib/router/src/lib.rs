@@ -265,14 +265,16 @@ where
                         Async::Ready(lock) => lock,
                         Async::NotReady => return Ok(Async::NotReady),
                     };
+
                     State::Acquired(Some(req), Some(target), Some(make), cache)
                 }
                 State::Acquired(ref mut req, ref mut target, ref mut make, ref mut cache) => {
                     (|| {
                         let req = req.take().expect("polled after ready");
                         let target = target.take().expect("polled after ready");
-                        let make = make.take().expect("polled after ready");
 
+                        // If the target exists in the cache, get the service
+                        // and call it with `req`.
                         if let Some(service) = cache.access(&target) {
                             return State::Call(Some(req), Some(service.node.value.clone()));
                         }
@@ -280,11 +282,13 @@ where
                         // Since there wasn't a cached route, ensure that
                         // there is capacity for a new one
                         let capacity = cache.capacity();
-                        match cache.poll_reserve() {
+                        match cache.reserve() {
                             Async::Ready(reserve) => {
-                                // Bind a new route, cache the route, and send
-                                // the request on the route.
+                                // Make a new service for the route
+                                let make = make.take().expect("polled after ready");
                                 let service = LoadShed::new(make.make(&target));
+
+                                // Cache the service and send the request on the route
                                 reserve.store(target, service.clone());
                                 State::Call(Some(req), Some(service))
                             }
@@ -296,6 +300,7 @@ where
                 }
                 State::Call(ref mut req, ref mut service) => {
                     let mut service = service.take().expect("polled after ready");
+
                     match service.poll_ready() {
                         Ok(Async::Ready(())) => {
                             let req = req.take().expect("polled after ready");

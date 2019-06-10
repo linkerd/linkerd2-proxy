@@ -90,7 +90,7 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         self.capacity
     }
 
-    pub fn poll_reserve(&mut self) -> Async<Reserve<K, V>> {
+    pub fn reserve(&mut self) -> Async<Reserve<K, V>> {
         if self.vals.len() == self.capacity {
             match self.expirations.poll() {
                 // The cache is at capacity but we are able to remove a value.
@@ -175,222 +175,302 @@ impl<'a, K: Clone + Eq + Hash, V> Reserve<'a, K, V> {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use futures::future;
-//     use tokio::runtime::current_thread::{self, Runtime};
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::future;
+    use tokio::runtime::current_thread::{self, Runtime};
 
-//     #[test]
-//     fn reserve_and_store() {
-//         current_thread::run(future::lazy(|| {
-//             let (cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
+    #[test]
+    fn reserve_and_store() {
+        current_thread::run(future::lazy(|| {
+            let (mut cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
 
-//             let mut cache = loop {
-//                 match cache.poll_lock() {
-//                     Async::Ready(acquired) => {
-//                         break acquired;
-//                     }
-//                     Async::NotReady => continue,
-//                 }
-//             };
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-//             cache.poll_reserve().expect("reserve").store(1, 2);
-//             assert_eq!(cache.vals.len(), 1);
+            {
+                let slot = match cache.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(1, 2);
+            }
+            assert_eq!(cache.vals.len(), 1);
 
-//             cache.poll_reserve().expect("reserve").store(2, 3);
-//             assert_eq!(cache.vals.len(), 2);
+            {
+                let slot = match cache.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(2, 3);
+            }
+            assert_eq!(cache.vals.len(), 2);
 
-//             assert_eq!(
-//                 cache.poll_reserve().err(),
-//                 Some(CapacityExhausted { capacity: 2 })
-//             );
-//             assert_eq!(cache.vals.len(), 2);
+            {
+                match cache.reserve() {
+                    Async::NotReady => (),
+                    _ => panic!("cache should be Ready to reserve"),
+                }
+            }
+            assert_eq!(cache.vals.len(), 2);
 
-//             Ok(Async::Ready(()))
-//         }))
-//     }
+            Ok::<_, ()>(())
+        }))
+    }
 
-//     #[test]
-//     fn store_access_value() {
-//         current_thread::run(future::lazy(|| {
-//             let (cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
+    #[test]
+    fn store_access_value() {
+        current_thread::run(future::lazy(|| {
+            let (mut cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
 
-//             let mut cache = loop {
-//                 match cache.poll_lock() {
-//                     Async::Ready(acquired) => {
-//                         break acquired;
-//                     }
-//                     Async::NotReady => continue,
-//                 }
-//             };
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-//             assert!(cache.access(&1).is_none());
-//             assert!(cache.access(&2).is_none());
+            assert!(cache.access(&1).is_none());
+            assert!(cache.access(&2).is_none());
 
-//             cache.poll_reserve().expect("reserve").store(1, 2);
-//             assert!(cache.access(&1).is_some());
-//             assert!(cache.access(&2).is_none());
+            {
+                let slot = match cache.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(1, 2);
+            }
+            assert!(cache.access(&1).is_some());
+            assert!(cache.access(&2).is_none());
 
-//             cache.poll_reserve().expect("reserve").store(2, 3);
-//             assert!(cache.access(&1).is_some());
-//             assert!(cache.access(&2).is_some());
+            {
+                let slot = match cache.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(2, 3);
+            }
+            assert!(cache.access(&1).is_some());
+            assert!(cache.access(&2).is_some());
 
-//             assert_eq!(cache.access(&1).take().unwrap().node.value, 2);
-//             assert_eq!(cache.access(&2).take().unwrap().node.value, 3);
+            assert_eq!(cache.access(&1).take().unwrap().node.value, 2);
+            assert_eq!(cache.access(&2).take().unwrap().node.value, 3);
 
-//             Ok(Async::Ready(()))
-//         }))
-//     }
+            Ok::<_, ()>(())
+        }))
+    }
 
-//     #[test]
-//     fn reserve_does_nothing_when_capacity_exists() {
-//         current_thread::run(futures::future::lazy(|| {
-//             let (cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
+    #[test]
+    fn reserve_does_nothing_when_capacity_exists() {
+        current_thread::run(futures::future::lazy(|| {
+            let (mut cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
 
-//             let mut cache = loop {
-//                 match cache.poll_lock() {
-//                     Async::Ready(acquired) => {
-//                         break acquired;
-//                     }
-//                     Async::NotReady => continue,
-//                 }
-//             };
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-//             cache.poll_reserve().expect("capacity").store(1, 2);
-//             assert_eq!(cache.vals.len(), 1);
+            {
+                let slot = match cache.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(1, 2);
+            }
+            assert_eq!(cache.vals.len(), 1);
 
-//             assert!(cache.poll_reserve().is_ok());
-//             assert_eq!(cache.vals.len(), 1);
+            {
+                let _slot = match cache.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+            }
+            assert_eq!(cache.vals.len(), 1);
 
-//             Ok(Async::Ready(()))
-//         }))
-//     }
+            Ok::<_, ()>(())
+        }))
+    }
 
-//     #[test]
-//     fn store_and_self_purge() {
-//         let mut rt = Runtime::new().unwrap();
+    #[test]
+    fn store_and_self_purge() {
+        let mut rt = Runtime::new().unwrap();
 
-//         let (cache, _cache_purge) = rt
-//             .block_on(future::lazy(|| {
-//                 Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
-//             }))
-//             .unwrap();
+        let (mut cache, _cache_purge) = rt
+            .block_on(future::lazy(|| {
+                Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
+            }))
+            .unwrap();
 
-//         // Fill the cache, but do not spawn a background purge task
-//         rt.block_on(future::lazy(|| {
-//             let mut cache_1 = cache.lock().unwrap();
+        // Fill the cache, but do not spawn a background purge task
+        rt.block_on(future::lazy(|| {
+            let mut cache_1 = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-//             cache_1.poll_reserve().expect("reserve").store(1, 2);
-//             cache_1.poll_reserve().expect("reserve").store(2, 3);
-//             assert_eq!(cache_1.vals.len(), 2);
+            {
+                let slot = match cache_1.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(1, 2);
+            }
+            {
+                let slot = match cache_1.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(2, 3);
+            }
+            assert_eq!(cache_1.vals.len(), 2);
 
-//             Ok::<_, ()>(())
-//         }))
-//         .unwrap();
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
 
-//         // Sleep for enough time that cache values should be expired
-//         rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
-//             .unwrap();
+        // Sleep for enough time that cache values should be expired
+        rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
+            .unwrap();
 
-//         // Force `reserve` to purge the cache
-//         rt.block_on(future::lazy(|| {
-//             let mut cache_2 = cache.lock().unwrap();
+        // Force `reserve` to purge the cache
+        rt.block_on(future::lazy(|| {
+            let mut cache_2 = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-//             cache_2.poll_reserve().expect("reserve").store(3, 4);
-//             assert_eq!(cache_2.vals.len(), 2);
-//             assert!(cache_2.access(&3).is_some());
+            {
+                let slot = match cache_2.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(3, 4);
+            }
+            assert_eq!(cache_2.vals.len(), 2);
+            assert!(cache_2.access(&3).is_some());
 
-//             Ok::<_, ()>(())
-//         }))
-//         .unwrap()
-//     }
+            Ok::<_, ()>(())
+        }))
+        .unwrap()
+    }
 
-//     #[test]
-//     fn store_and_background_purge() {
-//         let mut rt = Runtime::new().unwrap();
+    #[test]
+    fn store_and_background_purge() {
+        let mut rt = Runtime::new().unwrap();
 
-//         let (cache, cache_purge) = rt
-//             .block_on(futures::future::lazy(|| {
-//                 Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
-//             }))
-//             .unwrap();
+        let (mut cache, cache_purge) = rt
+            .block_on(futures::future::lazy(|| {
+                Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
+            }))
+            .unwrap();
 
-//         // Spawn a background purge task on the runtime
-//         rt.spawn(cache_purge);
+        // Spawn a background purge task on the runtime
+        rt.spawn(cache_purge);
 
-//         // Fill the cache
-//         rt.block_on(future::lazy(|| {
-//             let mut cache = cache.lock().unwrap();
+        // Fill the cache
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-//             cache.poll_reserve().expect("reserve").store(1, 2);
-//             cache.poll_reserve().expect("reserve").store(2, 3);
-//             assert_eq!(cache.vals.len(), 2);
+            {
+                let slot = match cache.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(1, 2);
+            }
+            {
+                let slot = match cache.reserve() {
+                    Async::Ready(slot) => slot,
+                    _ => panic!("cache should be Ready to reserve"),
+                };
+                slot.store(2, 3);
+            }
+            assert_eq!(cache.vals.len(), 2);
 
-//             Ok::<_, ()>(())
-//         }))
-//         .unwrap();
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
 
-//         // Sleep for enough time that all cache values expire
-//         rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
-//             .unwrap();
+        // Sleep for enough time that all cache values expire
+        rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
+            .unwrap();
 
-//         assert_eq!(cache.lock().unwrap().vals.len(), 0);
-//     }
+        let cache = match cache.poll_lock() {
+            Async::Ready(acquired) => acquired,
+            _ => panic!("cache lock should be Ready"),
+        };
+        assert_eq!(cache.vals.len(), 0);
+    }
 
-//     #[test]
-//     fn drop_access_resets_expiration() {
-//         let mut rt = current_thread::Runtime::new().unwrap();
+    #[test]
+    fn drop_access_resets_expiration() {
+        let mut rt = current_thread::Runtime::new().unwrap();
 
-//         let (cache, cache_purge) = rt
-//             .block_on(futures::future::lazy(|| {
-//                 Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
-//             }))
-//             .unwrap();
+        let (mut cache, cache_purge) = rt
+            .block_on(futures::future::lazy(|| {
+                Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
+            }))
+            .unwrap();
 
-//         // Spawn a background purge task on the runtime
-//         rt.spawn(cache_purge);
+        // Spawn a background purge task on the runtime
+        rt.spawn(cache_purge);
 
-//         {
-//             let mut cache = cache.lock().unwrap();
+        {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-//             // Hold on to an access handle the cache
-//             let _access = rt
-//                 .block_on(future::lazy(|| {
-//                     cache.poll_reserve().expect("reserve").store(1, 2);
-//                     assert!(cache.access(&1).is_some());
+            // Hold on to an access handle the cache
+            let _access = rt
+                .block_on(future::lazy(|| {
+                    {
+                        let slot = match cache.reserve() {
+                            Async::Ready(slot) => slot,
+                            _ => panic!("cache should be Ready to reserve"),
+                        };
+                        slot.store(1, 2);
+                    }
+                    assert!(cache.access(&1).is_some());
 
-//                     Ok::<_, ()>(cache.access(&1))
-//                 }))
-//                 .unwrap();
+                    Ok::<_, ()>(cache.access(&1))
+                }))
+                .unwrap();
 
-//             // Sleep for enough time that the background purge would remove the value
-//             rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
-//                 .unwrap();
+            // Sleep for enough time that the background purge would remove the value
+            rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
+                .unwrap();
 
-//             // Drop both the access and cache handles. Dropping the
-//             // access handle will reset the expiration on the value in the cache.
-//             // Dropping the cache handle will unlock the cache and allow a
-//             // background purge to occur.
-//         }
+            // Drop both the access and cache handles. Dropping the
+            // access handle will reset the expiration on the value in the cache.
+            // Dropping the cache handle will unlock the cache and allow a
+            // background purge to occur.
+        }
 
-//         // Ensure a background purge is polled so that it can expire any
-//         // values.
-//         rt.block_on(future::lazy(|| {
-//             tokio_timer::sleep(Duration::from_millis(1))
-//         }))
-//         .unwrap();
+        // Ensure a background purge is polled so that it can expire any
+        // values.
+        rt.block_on(future::lazy(|| {
+            tokio_timer::sleep(Duration::from_millis(1))
+        }))
+        .unwrap();
 
-//         rt.block_on(future::lazy(|| {
-//             let mut cache = cache.lock().unwrap();
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-//             // The cache value should still be present since it was reset after
-//             // the value expiration. We ensured a background purge occurred but
-//             // that it did not purge the value.
-//             assert!(cache.access(&1).is_some());
+            // The cache value should still be present since it was reset after
+            // the value expiration. We ensured a background purge occurred but
+            // that it did not purge the value.
+            assert!(cache.access(&1).is_some());
 
-//             Ok::<_, ()>(())
-//         }))
-//         .unwrap()
-//     }
-// }
+            Ok::<_, ()>(())
+        }))
+        .unwrap()
+    }
+}
