@@ -39,7 +39,7 @@ pub trait Recognize<Request> {
     type Target: Clone + Eq + Hash;
 
     /// Determines the target for a route to handle the given request.
-    fn recognize(&self, req: &Request) -> Option<Self::Target>;
+    fn recognize(&self, request: &Request) -> Option<Self::Target>;
 }
 
 pub trait Make<Target> {
@@ -80,6 +80,32 @@ where
     cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
+struct LockedCache<Req, Rec, Mk>
+where
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+{
+    request: Option<Req>,
+    target: Option<Rec::Target>,
+    make: Option<Mk>,
+    locked_cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+}
+
+struct UnlockedCache<Req, Rec, Mk>
+where
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+{
+    request: Option<Req>,
+    target: Option<Rec::Target>,
+    make: Option<Mk>,
+    unlocked_cache: LockGuard<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+}
+
 enum State<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
@@ -87,18 +113,8 @@ where
     Mk::Value: svc::Service<Req>,
     <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    Init(
-        Option<Req>,
-        Option<Rec::Target>,
-        Option<Mk>,
-        Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
-    ),
-    Acquired(
-        Option<Req>,
-        Option<Rec::Target>,
-        Option<Mk>,
-        LockGuard<Cache<Rec::Target, LoadShed<Mk::Value>>>,
-    ),
+    Init(LockedCache<Req, Rec, Mk>),
+    Acquired(UnlockedCache<Req, Rec, Mk>),
     Call(Option<Req>, Option<LoadShed<Mk::Value>>),
     Called(<LoadShed<Mk::Value> as svc::Service<Req>>::Future),
     Error(Option<error::Error>),
@@ -113,8 +129,8 @@ where
 {
     type Target = T;
 
-    fn recognize(&self, req: &R) -> Option<T> {
-        (self)(req)
+    fn recognize(&self, request: &R) -> Option<T> {
+        (self)(request)
     }
 }
 
@@ -220,13 +236,18 @@ where
     <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
     fn new(
-        req: Req,
+        request: Req,
         target: Rec::Target,
         make: Mk,
         cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
     ) -> Self {
         ResponseFuture {
-            state: State::Init(Some(req), Some(target), Some(make), cache),
+            state: State::Init(LockedCache {
+                request: Some(request),
+                target: Some(target),
+                make: Some(make),
+                locked_cache: cache,
+            }),
         }
     }
 
@@ -256,46 +277,51 @@ where
 
         loop {
             self.state = match self.state {
-                State::Init(ref mut req, ref mut target, ref mut make, ref mut cache) => {
-                    let req = req.take().expect("polled after ready");
-                    let target = target.take().expect("polled after ready");
-                    let make = make.take().expect("polled after ready");
+                State::Init(ref mut state) => {
+                    let request = state.request.take().expect("polled after ready");
+                    let target = state.target.take().expect("polled after ready");
+                    let make = state.make.take().expect("polled after ready");
 
-                    let mut cache = match cache.poll_lock() {
+                    let mut cache = match state.locked_cache.poll_lock() {
                         Async::Ready(lock) => lock,
                         Async::NotReady => return Ok(Async::NotReady),
                     };
 
-                    State::Acquired(Some(req), Some(target), Some(make), cache)
+                    State::Acquired(UnlockedCache {
+                        request: Some(request),
+                        target: Some(target),
+                        make: Some(make),
+                        unlocked_cache: cache,
+                    })
                 }
-                State::Acquired(ref mut req, ref mut target, ref mut make, ref mut cache) => {
+                State::Acquired(ref mut state) => {
                     // FIXME(kleimkuhler): This match arm is a bit of a hack.
                     // It is a closure that is immediately executed. The
                     // reason for this is because of the mutable borrow that
                     // happens when we check if the target already exists in
                     // the cache. It should no longer be an issue with NLL.
                     (|| {
-                        let req = req.take().expect("polled after ready");
-                        let target = target.take().expect("polled after ready");
+                        let request = state.request.take().expect("polled after ready");
+                        let target = state.target.take().expect("polled after ready");
 
                         // If the target exists in the cache, get the service
-                        // and call it with `req`.
-                        if let Some(service) = cache.access(&target) {
-                            return State::Call(Some(req), Some(service.node.value.clone()));
+                        // and call it with `request`.
+                        if let Some(service) = state.unlocked_cache.access(&target) {
+                            return State::Call(Some(request), Some(service.node.value.clone()));
                         }
 
                         // Since there wasn't a cached route, ensure that
                         // there is capacity for a new one
-                        let capacity = cache.capacity();
-                        match cache.reserve() {
+                        let capacity = state.unlocked_cache.capacity();
+                        match state.unlocked_cache.reserve() {
                             Async::Ready(reserve) => {
                                 // Make a new service for the route
-                                let make = make.take().expect("polled after ready");
+                                let make = state.make.take().expect("polled after ready");
                                 let service = LoadShed::new(make.make(&target));
 
                                 // Cache the service and send the request on the route
                                 reserve.store(target, service.clone());
-                                State::Call(Some(req), Some(service))
+                                State::Call(Some(request), Some(service))
                             }
                             Async::NotReady => {
                                 State::Error(Some(error::NoCapacity(capacity).into()))
@@ -303,13 +329,13 @@ where
                         }
                     })()
                 }
-                State::Call(ref mut req, ref mut service) => {
+                State::Call(ref mut request, ref mut service) => {
                     let mut service = service.take().expect("polled after ready");
 
                     match service.poll_ready() {
                         Ok(Async::Ready(())) => {
-                            let req = req.take().expect("polled after ready");
-                            State::Called(service.call(req))
+                            let request = request.take().expect("polled after ready");
+                            State::Called(service.call(request))
                         }
                         Ok(Async::NotReady) => {
                             unreachable!("load shedding services must always be ready");
@@ -373,8 +399,8 @@ mod test_util {
     impl super::Recognize<Request> for Recognize {
         type Target = usize;
 
-        fn recognize(&self, req: &Request) -> Option<Self::Target> {
-            match *req {
+        fn recognize(&self, request: &Request) -> Option<Self::Target> {
+            match *request {
                 Request::NotRecognized => None,
                 Request::Recognized(n) => Some(n),
             }
@@ -433,8 +459,8 @@ mod test_util {
             }
         }
 
-        fn call(&mut self, req: Request) -> Self::Future {
-            let n = match req {
+        fn call(&mut self, request: Request) -> Self::Future {
+            let n = match request {
                 Request::NotRecognized => unreachable!(),
                 Request::Recognized(n) => n,
             };
@@ -480,16 +506,16 @@ mod tests {
         Mk::Value: svc::Service<Request, Response = usize> + Clone,
         <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
     {
-        fn call_ok(&mut self, req: impl Into<Request>) -> usize {
-            let req = req.into();
-            let msg = format!("router.call({:?}) should succeed", req);
-            self.call(req).wait().expect(&msg)
+        fn call_ok(&mut self, request: impl Into<Request>) -> usize {
+            let request = request.into();
+            let msg = format!("router.call({:?}) should succeed", request);
+            self.call(request).wait().expect(&msg)
         }
 
-        fn call_err(&mut self, req: impl Into<Request>) -> error::Error {
-            let req = req.into();
-            let msg = format!("router.call({:?}) should error", req);
-            self.call(req.into()).wait().expect_err(&msg)
+        fn call_err(&mut self, request: impl Into<Request>) -> error::Error {
+            let request = request.into();
+            let msg = format!("router.call({:?}) should error", request);
+            self.call(request.into()).wait().expect_err(&msg)
         }
     }
 
