@@ -269,6 +269,11 @@ where
                     State::Acquired(Some(req), Some(target), Some(make), cache)
                 }
                 State::Acquired(ref mut req, ref mut target, ref mut make, ref mut cache) => {
+                    // FIXME(kleimkuhler): This match arm is a bit of a hack.
+                    // It is a closure that is immediately executed. The
+                    // reason for this is because of the mutable borrow that
+                    // happens when we check if the target already exists in
+                    // the cache. It should no longer be an issue with NLL.
                     (|| {
                         let req = req.take().expect("polled after ready");
                         let target = target.take().expect("polled after ready");
