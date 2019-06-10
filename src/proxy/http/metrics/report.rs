@@ -16,6 +16,7 @@ where
     T: FmtLabels + Hash + Eq,
     C: FmtLabels + Hash + Eq,
 {
+    prefix: &'static str,
     scope: Scope,
     registry: Arc<Mutex<Registry<T, C>>>,
     retain_idle: Duration,
@@ -40,6 +41,7 @@ where
 {
     pub(super) fn new(retain_idle: Duration, registry: Arc<Mutex<Registry<T, C>>>) -> Self {
         Self {
+            prefix: "",
             registry,
             retain_idle,
             scope: Scope::default(),
@@ -52,6 +54,7 @@ where
         }
 
         Self {
+            prefix,
             scope: Scope::prefixed(prefix),
             ..self
         }
@@ -64,7 +67,7 @@ where
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        trace!("fmt_metrics");
+        trace!("fmt_metrics({})", self.prefix);
         let mut registry = match self.registry.lock() {
             Err(_) => return Ok(()),
             Ok(r) => r,
@@ -72,11 +75,20 @@ where
 
         let now = clock::now();
         let since = now - self.retain_idle;
-        trace!("fmt_metrics: retain_since: now={:?} since={:?}", now, since);
+        trace!(
+            "fmt_metrics({}): retain_since: now={:?} since={:?}",
+            self.prefix,
+            now,
+            since
+        );
         registry.retain_since(since);
 
         let registry = registry;
-        trace!("fmt_metrics: by_target={}", registry.by_target.len());
+        trace!(
+            "fmt_metrics({}): by_target={}",
+            self.prefix,
+            registry.by_target.len()
+        );
         if registry.by_target.is_empty() {
             return Ok(());
         }
