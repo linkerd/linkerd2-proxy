@@ -161,7 +161,7 @@ impl tap::Inspect for Endpoint {
 }
 
 pub mod discovery {
-    use futures::{Async, Poll};
+    use futures::{future::Future, Async, Poll};
     use std::net::SocketAddr;
 
     use super::super::dst::DstAddr;
@@ -175,13 +175,13 @@ pub mod discovery {
     pub struct Resolve<R: resolve::Resolve<NameAddr>>(R);
 
     #[derive(Debug)]
-    pub struct Resolution<R: resolve::Resolution> {
+    pub struct Resolution<R> {
         resolving: Resolving<R>,
         http_settings: settings::Settings,
     }
 
     #[derive(Debug)]
-    enum Resolving<R: resolve::Resolution> {
+    enum Resolving<R> {
         Name(NameAddr, R),
         Addr(Option<SocketAddr>),
     }
@@ -203,8 +203,9 @@ pub mod discovery {
     {
         type Endpoint = Endpoint;
         type Resolution = Resolution<R::Resolution>;
+        type Future = Resolution<R::Future>;
 
-        fn resolve(&self, dst: &DstAddr) -> Self::Resolution {
+        fn resolve(&self, dst: &DstAddr) -> Self::Future {
             let resolving = match dst.as_ref() {
                 Addr::Name(ref name) => Resolving::Name(name.clone(), self.0.resolve(&name)),
                 Addr::Socket(ref addr) => Resolving::Addr(Some(*addr)),
@@ -218,6 +219,26 @@ pub mod discovery {
     }
 
     // === impl Resolution ===
+
+    impl<F: Future> Future for Resolution<F> {
+        type Item = Resolution<F::Item>;
+        type Error = F::Error;
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            let resolving = match self.resolving {
+                Resolving::Name(ref name, ref mut f) => {
+                    let res = try_ready!(f.poll());
+                    // TODO: get rid of unnecessary arc bumps?
+                    Resolving::Name(name.clone(), res)
+                }
+                Resolving::Addr(a) => Resolving::Addr(a),
+            };
+            Ok(Async::Ready(Resolution {
+                resolving,
+                // TODO: get rid of unnecessary clone
+                http_settings: self.http_settings.clone(),
+            }))
+        }
+    }
 
     impl<R> resolve::Resolution for Resolution<R>
     where

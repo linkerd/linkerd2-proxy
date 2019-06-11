@@ -1,7 +1,7 @@
 extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
-use futures::{Async, Poll};
+use futures::{Async, Future, Poll};
 use std::{
     fmt,
     net::SocketAddr,
@@ -19,8 +19,9 @@ use svc;
 pub trait Resolve<T> {
     type Endpoint;
     type Resolution: Resolution<Endpoint = Self::Endpoint>;
+    type Future: Future<Item = Self::Resolution>;
 
-    fn resolve(&self, target: &T) -> Self::Resolution;
+    fn resolve(&self, target: &T) -> Self::Future;
 }
 
 /// An infinite stream of endpoint updates.

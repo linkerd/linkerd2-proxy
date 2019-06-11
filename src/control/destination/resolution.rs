@@ -3,32 +3,41 @@ use indexmap::{IndexMap, IndexSet};
 use std::{collections::HashMap, fmt, net::SocketAddr};
 
 use tokio;
-use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
+use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 
 use api::{
     destination::{
-        client::Destination, protocol_hint::Protocol, update::Update as PbUpdate2, GetDestination,
-        TlsIdentity, Update as PbUpdate, WeightedAddr,
+        protocol_hint::Protocol, update::Update as PbUpdate2, TlsIdentity, Update as PbUpdate,
+        WeightedAddr,
     },
     net::TcpAddress,
 };
 
-use control::{
-    destination::{Metadata, ProtocolHint, Update},
-    remote_stream::{self, Remote},
-};
+use control::destination::{Metadata, ProtocolHint, Update};
 
+use super::client;
 use identity;
 use logging;
 use never::Never;
 use proxy::resolve;
 use NameAddr;
 
-use super::Client;
-
 /// A resolution for a single authority.
 pub struct Resolution {
     rx: mpsc::UnboundedReceiver<Update<Metadata>>,
+}
+
+pub struct ResolveFuture<T>
+where
+    T: GrpcService<BoxBody>,
+{
+    query: Option<client::Query<T>>,
+}
+
+/// An error indicating that the Destination service cannot resolve the
+/// requested name.
+pub struct Unresolvable {
+    _p: (),
 }
 
 /// Drives the query associated with a `Resolution`.
@@ -41,9 +50,7 @@ struct Daemon<T>
 where
     T: GrpcService<BoxBody>,
 {
-    auth: NameAddr,
-    client: Client<T>,
-    query: Query<T>,
+    query: client::Query<T>,
     updater: Updater,
 }
 
@@ -65,8 +72,6 @@ struct LogCtx(NameAddr);
 
 struct DisplayUpdate<'a>(&'a Update<Metadata>);
 
-type Query<T> = remote_stream::Remote<PbUpdate, T>;
-
 impl resolve::Resolution for Resolution {
     type Endpoint = Metadata;
     type Error = Never;
@@ -83,48 +88,84 @@ impl resolve::Resolution for Resolution {
     }
 }
 
-impl Resolution {
-    pub(super) fn new<T>(auth: NameAddr, client: Client<T>) -> Self
-    where
-        T: GrpcService<BoxBody> + Send + 'static,
-        T::ResponseBody: Send,
-        <T::ResponseBody as Body>::Data: Send,
-        T::Future: Send,
-    {
+impl<T> Resolution<T>
+where
+    T: GrpcService<BoxBody> + Send,
+{
+    fn new() -> (Self, Updater) {
         let (tx, rx) = mpsc::unbounded();
-        let daemon = Daemon::new(auth.clone(), client, tx);
-        let daemon = logging::Section::Proxy.bg(LogCtx(auth)).future(daemon);
-        tokio::spawn(Box::new(daemon));
-        Self { rx }
+        (Self { rx }, Updater::new(tx))
+    }
+}
+
+// ===== impl ResolveFuture =====
+
+impl<T> ResolveFuture<T>
+where
+    T: GrpcService<BoxBody> + Send,
+{
+    pub(super) fn new(authority: NameAddr, client: client::Client<T>) -> (Self, Updater) {
+        Self {
+            query: Some(client.connect(authority)),
+        }
     }
 
-    pub(super) fn none() -> Self {
-        let (tx, rx) = mpsc::unbounded();
-        let _ = tx.unbounded_send(Update::NoEndpoints);
-        Self { rx }
+    pub(super) fn unresolvable() -> Self {
+        Self { query: None }
+    }
+}
+
+impl<T> Future for ResolveFuture<T>
+where
+    T: GrpcService<BoxBody> + Send,
+{
+    type Item = Resolution;
+    type Error = Unresolvable;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            let update = match self.query {
+                Some(ref mut query) => match query.poll() {
+                    Ok(Async::Ready(Some(up))) => up,
+                    Ok(Async::Ready(None)) => {
+                        warn!("Destination.Get stream ended immediately, must reconnect");
+                        query.reconnect();
+                        continue;
+                    }
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err(ref status) if status.code() == grpc::Code::InvalidArgument => {
+                        trace!("{} is unresolvable", query.authority());
+                        return Err(Unresolvable { _p: () });
+                    }
+                    Err(err) => {
+                        warn!("Destination.Get stream error {}, must reconnect", err);
+                        query.reconnect();
+                        continue;
+                    }
+                },
+                None => {
+                    trace!("{} is not in search suffixes", self.query.authority());
+                    return Err(Unresolvable { _p: () });
+                }
+            };
+
+            let (res, updater) = Resolution::new();
+            updater
+                .send(update)
+                .expect("resolution should not have been dropped");
+
+            let query = self.query.take().expect("invalid state");
+            let ctx = logging::Section::Proxy.bg(LogCtx(query.authority.clone()));
+
+            let daemon = ctx.future(Daemon { updater, query });
+            tokio::spawn(Box::new(daemon));
+
+            return Ok(res);
+        }
     }
 }
 
 // ===== impl Daemon =====
-
-impl<T> Daemon<T>
-where
-    T: GrpcService<BoxBody> + Send,
-{
-    fn new(
-        auth: NameAddr,
-        mut client: Client<T>,
-        tx: mpsc::UnboundedSender<Update<Metadata>>,
-    ) -> Self {
-        let query = client.query(&auth, "connect");
-        Self {
-            query,
-            auth,
-            client,
-            updater: Updater::new(tx),
-        }
-    }
-}
 
 impl<T> Future for Daemon<T>
 where
@@ -134,96 +175,26 @@ where
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        // Try to send an update to the `Resolution`, ending the background task
-        // if the resolution is no longer needed.
-        macro_rules! try_send {
-            ($send:expr) => {
-                if let Err(_) = $send {
-                    trace!("resolution dropped, daemon terminating...");
-                    return Ok(Async::Ready(()));
-                }
-            };
-        }
         loop {
-            self.query = match self.query {
-                Remote::ConnectedOrConnecting { ref mut rx } => match rx.poll() {
-                    Ok(Async::Ready(Some(update))) => {
-                        match update.update {
-                            Some(PbUpdate2::Add(a_set)) => {
-                                let set_labels = a_set.metric_labels;
-                                let addrs = a_set
-                                    .addrs
-                                    .into_iter()
-                                    .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
-                                try_send!(self.updater.add(addrs));
-                            }
-                            Some(PbUpdate2::Remove(r_set)) => {
-                                let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
-                                try_send!(self.updater.remove(addrs));
-                            }
-                            Some(PbUpdate2::NoEndpoints(_)) => {
-                                trace!("has no endpoints");
-                                try_send!(self.updater.remove_all("no endpoints"));
-                            }
-                            None => (),
-                        };
-                        continue;
-                    }
-                    Ok(Async::Ready(None)) => {
-                        trace!("Destination.Get stream ended, must reconnect");
-                        self.updater.should_reset();
-                        Remote::NeedsReconnect
-                    }
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(ref status) if status.code() == tower_grpc::Code::InvalidArgument => {
-                        // Invalid Argument is returned to indicate that the
-                        // requested name should *not* query the destination
-                        // service. In this case, do not attempt to reconnect.
-                        debug!("Destination.Get stream ended with Invalid Argument",);
-                        let _ = self.updater.unresolvable();
+            match self.query.poll() {
+                Ok(Async::NotReady) => return Ok(Async::NotReady),
+                Ok(Async::Ready(Some(update))) => {
+                    if let Err(_) = self.updater.update(update) {
+                        trace!("resolution dropped, daemon terminating...");
                         return Ok(Async::Ready(()));
                     }
-                    Err(err) => {
-                        warn!("Destination.Get stream error: {}", err);
-                        self.updater.should_reset();
-                        Remote::NeedsReconnect
-                    }
-                },
-                Remote::NeedsReconnect => match self.client.query(&self.auth, "reconnect") {
-                    Remote::NeedsReconnect => return Ok(Async::NotReady),
-                    query => query,
-                },
-            };
-        }
-    }
-}
-
-// ===== impl Client =====
-
-impl<T> Client<T>
-where
-    T: GrpcService<BoxBody>,
-{
-    /// Returns a new destination service query for the given `dst`.
-    fn query(&mut self, dst: &NameAddr, connect_or_reconnect: &str) -> Query<T> {
-        trace!(
-            "{}ing destination service query for {}",
-            connect_or_reconnect,
-            dst
-        );
-        if let Ok(Async::Ready(())) = self.client.poll_ready() {
-            let req = GetDestination {
-                scheme: "k8s".into(),
-                path: format!("{}", dst),
-                context_token: self.context_token.as_ref().clone(),
-            };
-            let mut svc = Destination::new(self.client.as_service());
-            let response = svc.get(grpc::Request::new(req));
-            let rx = remote_stream::Receiver::new(response);
-            Remote::ConnectedOrConnecting { rx }
-        } else {
-            trace!("destination client not yet ready");
-            Remote::NeedsReconnect
+                }
+                Ok(Async::Ready(None)) => {
+                    trace!("Destination.Get stream ended, must reconnect");
+                    self.updater.should_reset();
+                    self.query.reconnect();
+                }
+                Err(err) => {
+                    warn!("Destination.Get stream error: {}", err);
+                    self.updater.should_reset();
+                    self.query.reconnect();
+                }
+            }
         }
     }
 }
@@ -237,6 +208,29 @@ impl Updater {
             seen: IndexSet::new(),
             reset: false,
         }
+    }
+
+    fn update(&mut self, update: PbUpdate) -> Result<(), ()> {
+        match update.update {
+            Some(PbUpdate2::Add(a_set)) => {
+                let set_labels = a_set.metric_labels;
+                let addrs = a_set
+                    .addrs
+                    .into_iter()
+                    .filter_map(|pb| pb_to_addr_meta(pb, &set_labels));
+                self.add(addrs)?;
+            }
+            Some(PbUpdate2::Remove(r_set)) => {
+                let addrs = r_set.addrs.into_iter().filter_map(pb_to_sock_addr);
+                self.remove(addrs)?;
+            }
+            Some(PbUpdate2::NoEndpoints(_)) => {
+                trace!("has no endpoints");
+                self.remove_all("no endpoints")?;
+            }
+            None => (),
+        }
+        Ok(())
     }
 
     fn send(&mut self, update: Update<Metadata>) -> Result<(), ()> {
@@ -287,11 +281,6 @@ impl Updater {
         }
         Ok(())
     }
-
-    fn unresolvable(&mut self) -> Result<(), ()> {
-        self.send(Update::NoEndpoints)?;
-        self.remove_all("unresolvable")
-    }
 }
 
 impl<'a> fmt::Display for DisplayUpdate<'a> {
@@ -299,7 +288,6 @@ impl<'a> fmt::Display for DisplayUpdate<'a> {
         match self.0 {
             Update::Remove(ref addr) => write!(f, "remove {}", addr),
             Update::Add(ref addr, ..) => write!(f, "add {}", addr),
-            Update::NoEndpoints => "should not be resolved by the Destination service".fmt(f),
         }
     }
 }
