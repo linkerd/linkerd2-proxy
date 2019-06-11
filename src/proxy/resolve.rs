@@ -166,6 +166,9 @@ where
 {
     fn poll_resolution(&mut self) -> Poll<Change<SocketAddr, M::Response>, Error> {
         loop {
+            // Before polling the resolution, where we could potentially receive
+            // an `Add`, poll_ready to ensure that `make` is ready to build new
+            // services. Don't process any updates until we can do so.
             try_ready!(self.make.poll_ready().map_err(Into::into));
 
             let update = try_ready!(self.resolution.poll().map_err(Into::into));
