@@ -429,7 +429,7 @@ where
                 //add_remote_ip_on_rsp, add_server_id_on_rsp,
             };
             use proxy::{
-                http::{balance, canonicalize, fallback, header_from_target, metrics, retry},
+                http::{balance, canonicalize, header_from_target, metrics, retry},
                 resolve,
             };
 
@@ -504,10 +504,6 @@ where
                 .layer(metrics::layer::<_, classify::Response>(retry_http_metrics))
                 .layer(insert::target::layer());
 
-            let balancer = svc::builder()
-                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)));
-
             // Routes requests to their original destination endpoints. Used as
             // a fallback when service discovery has no endpoints for a destination.
             let orig_dst_router = svc::builder()
@@ -521,11 +517,14 @@ where
                 ))
                 .layer(buffer::layer(max_in_flight, DispatchDeadline::extract));
 
+            let balancer = svc::builder()
+                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                .layer(resolve::layer(Resolve::new(resolver)))
+                .fallback_to(orig_dst_router)
+                .on_error::<control::destination::Unresolvable>();
+
             let balancer_stack = svc::builder()
-                .layer(
-                    fallback::layer(balancer, orig_dst_router)
-                        .on_error::<control::destination::Unresolvable>(),
-                )
+                .layer(balancer)
                 .layer(pending::layer())
                 .layer(balance::weight::layer())
                 .service(endpoint_stack);
