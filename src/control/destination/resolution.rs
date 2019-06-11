@@ -153,7 +153,7 @@ where
                 }
             };
 
-            let (res, updater) = Resolution::new();
+            let (res, mut updater) = Resolution::new();
             updater
                 .update(update)
                 .expect("resolution should not have been dropped");

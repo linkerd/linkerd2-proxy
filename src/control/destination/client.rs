@@ -49,7 +49,7 @@ where
     }
 
     /// Returns a destination service query for the given `dst`.
-    pub fn connect(self, dst: &NameAddr) -> Query<T> {
+    pub fn connect(mut self, dst: &NameAddr) -> Query<T> {
         let query = self.query(dst, "connect");
         Query {
             auth: dst.clone(),
