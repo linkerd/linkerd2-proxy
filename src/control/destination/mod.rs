@@ -34,7 +34,7 @@ use proxy::resolve::{Resolve, Update};
 mod client;
 mod resolution;
 use self::client::Client;
-pub use self::resolution::{Resolution, ResolveFuture};
+pub use self::resolution::{Resolution, ResolveFuture, Unresolvable};
 use proxy::http::balance::Weight;
 use NameAddr;
 
@@ -115,7 +115,7 @@ where
 
         if self.suffixes.iter().any(|s| s.contains(authority.name())) {
             if let Some(client) = self.client.as_ref().cloned() {
-                return ResolveFuture::new(authority.clone(), client);
+                return ResolveFuture::new(authority, client);
             } else {
                 trace!("-> control plane client disabled");
             }

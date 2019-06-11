@@ -522,7 +522,10 @@ where
                 .layer(buffer::layer(max_in_flight, DispatchDeadline::extract));
 
             let balancer_stack = svc::builder()
-                .layer(fallback::layer(balancer, orig_dst_router))
+                .layer(
+                    fallback::layer(balancer, orig_dst_router)
+                        .on_error::<control::destination::Unresolvable>(),
+                )
                 .layer(pending::layer())
                 .layer(balance::weight::layer())
                 .service(endpoint_stack);

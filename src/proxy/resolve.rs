@@ -99,8 +99,8 @@ where
     M: rt::Make<R::Endpoint> + Clone,
 {
     type Response = Discover<R::Resolution, M>;
-    type Error = never::Never;
-    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
+    type Error = <R::Future as Future>::Error;
+    type Future = Discover<R::Future, Option<M>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into()) // always ready to make a Discover
@@ -108,11 +108,11 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let resolution = self.resolve.resolve(&target);
-        futures::future::ok(Discover {
+        Discover {
             resolution,
-            make: self.inner.clone(),
+            make: Some(self.inner.clone()),
             is_empty: Arc::new(AtomicBool::new(false)),
-        })
+        }
     }
 }
 
@@ -158,6 +158,23 @@ where
                 }
             }
         }
+    }
+}
+
+impl<F, M> Future for Discover<F, Option<M>>
+where
+    F: Future,
+{
+    type Item = Discover<F::Item, M>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let resolution = try_ready!(self.resolution.poll());
+        Ok(Async::Ready(Discover {
+            resolution,
+            make: self.make.take().expect("polled after ready"),
+            is_empty: self.is_empty.clone(),
+        }))
     }
 }
 

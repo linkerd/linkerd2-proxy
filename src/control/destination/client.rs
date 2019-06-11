@@ -1,4 +1,4 @@
-use futures::{future::Future, Async, Poll, Stream};
+use futures::{Async, Poll, Stream};
 
 use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 
@@ -78,7 +78,7 @@ where
         self.query = Remote::NeedsReconnect;
     }
 
-    pub fn poll(&mut self) -> Poll<Update, grpc::Status> {
+    pub fn poll(&mut self) -> Poll<Option<Update>, grpc::Status> {
         loop {
             self.query = match self.query {
                 Remote::ConnectedOrConnecting { ref mut rx } => return rx.poll(),

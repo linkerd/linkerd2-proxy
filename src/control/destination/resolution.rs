@@ -1,9 +1,9 @@
 use futures::{future::Future, sync::mpsc, Async, Poll, Stream};
 use indexmap::{IndexMap, IndexSet};
-use std::{collections::HashMap, fmt, net::SocketAddr};
+use std::{collections::HashMap, error::Error, fmt, net::SocketAddr};
 
 use tokio;
-use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
+use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 
 use api::{
     destination::{
@@ -36,6 +36,7 @@ where
 
 /// An error indicating that the Destination service cannot resolve the
 /// requested name.
+#[derive(Debug)]
 pub struct Unresolvable {
     _p: (),
 }
@@ -88,10 +89,7 @@ impl resolve::Resolution for Resolution {
     }
 }
 
-impl<T> Resolution<T>
-where
-    T: GrpcService<BoxBody> + Send,
-{
+impl Resolution {
     fn new() -> (Self, Updater) {
         let (tx, rx) = mpsc::unbounded();
         (Self { rx }, Updater::new(tx))
@@ -104,9 +102,9 @@ impl<T> ResolveFuture<T>
 where
     T: GrpcService<BoxBody> + Send,
 {
-    pub(super) fn new(authority: NameAddr, client: client::Client<T>) -> (Self, Updater) {
+    pub(super) fn new(authority: &NameAddr, client: client::Client<T>) -> Self {
         Self {
-            query: Some(client.connect(authority)),
+            query: Some(client.connect(&authority)),
         }
     }
 
@@ -117,7 +115,10 @@ where
 
 impl<T> Future for ResolveFuture<T>
 where
-    T: GrpcService<BoxBody> + Send,
+    T: GrpcService<BoxBody> + Send + 'static,
+    T::ResponseBody: Send,
+    <T::ResponseBody as Body>::Data: Send,
+    T::Future: Send,
 {
     type Item = Resolution;
     type Error = Unresolvable;
@@ -144,23 +145,26 @@ where
                     }
                 },
                 None => {
-                    trace!("{} is not in search suffixes", self.query.authority());
+                    trace!(
+                        "{} is not in search suffixes",
+                        self.query.as_ref().expect("invalid state").authority()
+                    );
                     return Err(Unresolvable { _p: () });
                 }
             };
 
             let (res, updater) = Resolution::new();
             updater
-                .send(update)
+                .update(update)
                 .expect("resolution should not have been dropped");
 
             let query = self.query.take().expect("invalid state");
-            let ctx = logging::Section::Proxy.bg(LogCtx(query.authority.clone()));
+            let ctx = logging::Section::Proxy.bg(LogCtx(query.authority().clone()));
 
             let daemon = ctx.future(Daemon { updater, query });
             tokio::spawn(Box::new(daemon));
 
-            return Ok(res);
+            return Ok(Async::Ready(res));
         }
     }
 }
@@ -297,6 +301,16 @@ impl fmt::Display for LogCtx {
         write!(f, "resolver addr={}", self.0)
     }
 }
+
+// === impl Unresolvable ===
+
+impl fmt::Display for Unresolvable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        "this name cannot be resolved by the destination service".fmt(f)
+    }
+}
+
+impl Error for Unresolvable {}
 
 /// Construct a new labeled `SocketAddr `from a protobuf `WeightedAddr`.
 fn pb_to_addr_meta(
