@@ -270,7 +270,7 @@ impl<F: Future> Stream for MakeStream<F> {
                 Err(MakeError::Inner(err)) => Err(err),
                 Ok(Async::Ready(Some((addr, svc)))) => {
                     let _rm = self.cancelations.remove(&addr);
-                    debug_assert!(_rm.is_some(), "cancelation missing");
+                    debug_assert!(_rm.is_some(), "cancelation missing for {}", addr);
                     Ok(Async::Ready(Some((addr, svc))))
                 }
                 Ok(r) => Ok(r),
