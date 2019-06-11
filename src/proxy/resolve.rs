@@ -63,11 +63,11 @@ pub struct MakeSvc<R, M> {
 pub struct Discover<R: Resolution, M: svc::Service<R::Endpoint>> {
     resolution: R,
     make: M,
-    makes: MakeStream<M::Future>,
+    make_futures: MakeStream<MakeStreamM::Future>,
     is_empty: Arc<AtomicBool>,
 }
 
-struct MakeStream<F> {
+struct MakeStream<MakeStreamF> {
     futures: FuturesUnordered<MakeFuture<F>>,
     cancelations: IndexMap<SocketAddr, oneshot::Sender<()>>,
 }
@@ -140,7 +140,7 @@ where
         Self {
             resolution,
             make,
-            makes: MakeStream::new(),
+            make_futures: MakeStream:MakeStream:new(),
             is_empty: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -168,23 +168,23 @@ where
         loop {
             try_ready!(self.make.poll_ready().map_err(Into::into));
 
-            let up = try_ready!(self.resolution.poll().map_err(Into::into));
+            let update = try_ready!(self.resolution.poll().map_err(Into::into));
             trace!("watch: {:?}", up);
-            match up {
+            match update {
                 Update::Add(addr, target) => {
                     // Start building the service and continue.
                     // Remove any pending additions for this addr so that they
                     // cannot race.
-                    self.makes.remove(&addr);
+                    self.make_futures.remove(&addr);
                     let fut = self.make.call(target);
-                    self.makes.push(addr, fut);
+                    self.make_futures.push(addr, fut);
                 }
                 Update::Remove(addr) => {
                     // If the service is still pending, cancel it. It won't
                     // actually be removed until a subsequent poll, however.
                     // If it was canceled, we send the remove anyway, since this
                     // may have been an update to a pre-existing addr.
-                    self.makes.remove(&addr);
+                    self.make_futures.remove(&addr);
                     return Ok(Async::Ready(Change::Remove(addr)));
                 }
                 Update::NoEndpoints => {
@@ -215,7 +215,7 @@ where
             return Ok(Async::Ready(change));
         }
 
-        if let Async::Ready(Some((addr, svc))) = self.makes.poll().map_err(Into::into)? {
+        if let Async::Ready(Some((addr, svc))) = self.make_futures.poll().map_err(Into::into)? {
             self.is_empty.store(false, Ordering::Release);
             return Ok(Async::Ready(Change::Insert(addr, svc)));
         }
@@ -232,9 +232,9 @@ impl EndpointStatus {
     }
 }
 
-// === impl MakeStream ===
+// === impl MakeStream MakeStream===
 
-impl<F: Future> MakeStream<F> {
+impl<F: Future> MakeStream<MakeStreamF> {
     fn new() -> Self {
         Self {
             futures: FuturesUnordered::new(),
@@ -259,7 +259,7 @@ impl<F: Future> MakeStream<F> {
     }
 }
 
-impl<F: Future> Stream for MakeStream<F> {
+impl<F: Future> Stream for MakeStream<MakeStreamF> {
     type Item = (SocketAddr, F::Item);
     type Error = F::Error;
 
@@ -359,12 +359,12 @@ mod tests {
                 "ready without service being made"
             );
             assert_eq!(
-                discover.makes.futures.len(),
+                discover.make_futures.futures.len(),
                 1,
                 "must be only one pending make"
             );
             assert_eq!(
-                discover.makes.cancelations.len(),
+                discover.make_futures.cancelations.len(),
                 1,
                 "no pending cancelation"
             );
@@ -378,12 +378,12 @@ mod tests {
                 "ready without service being made"
             );
             assert_eq!(
-                discover.makes.futures.len(),
+                discover.make_futures.futures.len(),
                 2,
                 "must be only one pending make"
             );
             assert_eq!(
-                discover.makes.cancelations.len(),
+                discover.make_futures.cancelations.len(),
                 2,
                 "no pending cancelation"
             );
@@ -406,12 +406,12 @@ mod tests {
                 }
             }
             assert_eq!(
-                discover.makes.futures.len(),
+                discover.make_futures.futures.len(),
                 1,
                 "must be only one pending make"
             );
             assert_eq!(
-                discover.makes.cancelations.len(),
+                discover.make_futures.cancelations.len(),
                 1,
                 "no pending cancelation"
             );
@@ -435,11 +435,11 @@ mod tests {
                 }
             }
             assert!(
-                discover.makes.futures.is_empty(),
+                discover.make_futures.futures.is_empty(),
                 "futures remains"
             );
             assert!(
-                discover.makes.cancelations.is_empty(),
+                discover.make_futures.cancelations.is_empty(),
                 "cancelation remains"
             );
         });
@@ -467,12 +467,12 @@ mod tests {
                 "ready without service being made"
             );
             assert_eq!(
-                discover.makes.futures.len(),
+                discover.make_futures.futures.len(),
                 1,
                 "must be only one pending make"
             );
             assert_eq!(
-                discover.makes.cancelations.len(),
+                discover.make_futures.cancelations.len(),
                 1,
                 "no pending cancelation"
             );
@@ -485,12 +485,12 @@ mod tests {
                 "ready without service being made"
             );
             assert_eq!(
-                discover.makes.futures.len(),
+                discover.make_futures.futures.len(),
                 1,
                 "must be only one pending make"
             );
             assert_eq!(
-                discover.makes.cancelations.len(),
+                discover.make_futures.cancelations.len(),
                 1,
                 "no pending cancelation"
             );
@@ -517,7 +517,7 @@ mod tests {
                 }
             }
             assert!(
-                discover.makes.cancelations.is_empty(),
+                discover.make_futures.cancelations.is_empty(),
                 "cancelation remains"
             );
         });
@@ -542,7 +542,7 @@ mod tests {
                 "ready without service being made"
             );
             assert_eq!(
-                discover.makes.cancelations.len(),
+                discover.make_futures.cancelations.len(),
                 1,
                 "no pending cancelation"
             );
@@ -554,7 +554,7 @@ mod tests {
                 Async::Ready(Change::Remove(a)) => assert_eq!(a, addr),
             }
             assert!(
-                discover.makes.cancelations.is_empty(),
+                discover.make_futures.cancelations.is_empty(),
                 "cancelation remains"
             );
         });
