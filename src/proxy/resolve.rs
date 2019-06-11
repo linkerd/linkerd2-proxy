@@ -419,7 +419,6 @@ mod tests {
                 "no pending cancelation"
             );
 
-
             let (rsp0_tx, rsp0_rx) = oneshot::channel();
             make0_tx
                 .send(Svc(vec![rsp0_rx]))
@@ -437,16 +436,12 @@ mod tests {
                     assert_eq!(fut.poll().unwrap(), Async::Ready(0));
                 }
             }
-            assert!(
-                discover.make_futures.futures.is_empty(),
-                "futures remains"
-            );
+            assert!(discover.make_futures.futures.is_empty(), "futures remains");
             assert!(
                 discover.make_futures.cancelations.is_empty(),
                 "cancelation remains"
             );
         });
-
     }
 
     #[test]
