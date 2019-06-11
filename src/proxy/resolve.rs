@@ -63,11 +63,11 @@ pub struct MakeSvc<R, M> {
 pub struct Discover<R: Resolution, M: svc::Service<R::Endpoint>> {
     resolution: R,
     make: M,
-    make_futures: MakeStream<MakeStreamM::Future>,
+    make_futures: MakeFutures<M::Future>,
     is_empty: Arc<AtomicBool>,
 }
 
-struct MakeStream<MakeStreamF> {
+struct MakeFutures<F> {
     futures: FuturesUnordered<MakeFuture<F>>,
     cancelations: IndexMap<SocketAddr, oneshot::Sender<()>>,
 }
@@ -140,7 +140,7 @@ where
         Self {
             resolution,
             make,
-            make_futures: MakeStream:MakeStream:new(),
+            make_futures: MakeFutures::new(),
             is_empty: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -172,7 +172,7 @@ where
             try_ready!(self.make.poll_ready().map_err(Into::into));
 
             let update = try_ready!(self.resolution.poll().map_err(Into::into));
-            trace!("watch: {:?}", up);
+            trace!("watch: {:?}", update);
             match update {
                 Update::Add(addr, target) => {
                     // Start building the service and continue.
@@ -235,9 +235,9 @@ impl EndpointStatus {
     }
 }
 
-// === impl MakeStream MakeStream===
+// === impl MakeFutures MakeFutures===
 
-impl<F: Future> MakeStream<MakeStreamF> {
+impl<F: Future> MakeFutures<F> {
     fn new() -> Self {
         Self {
             futures: FuturesUnordered::new(),
@@ -262,7 +262,7 @@ impl<F: Future> MakeStream<MakeStreamF> {
     }
 }
 
-impl<F: Future> Stream for MakeStream<MakeStreamF> {
+impl<F: Future> Stream for MakeFutures<F> {
     type Item = (SocketAddr, F::Item);
     type Error = F::Error;
 
