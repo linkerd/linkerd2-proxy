@@ -436,7 +436,7 @@ mod tests {
                     assert_eq!(fut.poll().unwrap(), Async::Ready(0));
                 }
             }
-            assert!(discover.make_futures.futures.is_empty(), "futures remains");
+            assert!(discover.make_futures.futures.is_empty(), "futures remain");
             assert!(
                 discover.make_futures.cancelations.is_empty(),
                 "cancelation remains"
