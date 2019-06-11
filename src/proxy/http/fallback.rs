@@ -5,8 +5,6 @@ use hyper::body::Payload;
 use proxy;
 use svc;
 
-// use std::marker::PhantomData;
-
 /// A fallback layer composing two service builders.
 ///
 /// If the future returned by the primary builder's `MakeService` fails with
@@ -17,7 +15,6 @@ pub struct Layer<A, B, P = fn(&proxy::Error) -> bool> {
     primary: svc::Builder<A>,
     fallback: svc::Builder<B>,
     predicate: P,
-    // _p: PhantomData<fn(R)>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,7 +22,6 @@ pub struct MakeSvc<A, B, P> {
     primary: A,
     fallback: B,
     predicate: P,
-    // _p: PhantomData<fn(R)>,
 }
 
 pub struct MakeFuture<A, B, P, T>
@@ -61,7 +57,6 @@ pub fn layer<A, B>(primary: svc::Builder<A>, fallback: svc::Builder<B>) -> Layer
         primary,
         fallback,
         predicate,
-        // _p: PhantomData,
     }
 }
 
@@ -78,18 +73,16 @@ impl<A, B> Layer<A, B> {
             primary: self.primary,
             fallback: self.fallback,
             predicate,
-            // _p: PhantomData,
         }
     }
 
-    /// Returns a `Layer` that falls back if the error or its cause is of the given type.
+    /// Returns a `Layer` that falls back if the error or its source is of
+    /// type `E`.
     pub fn on_error<E>(self) -> Layer<A, B>
     where
         E: std::error::Error + 'static,
     {
-        let predicate: fn(&proxy::Error) -> bool =
-            |e| e.is::<E>() || e.source().map(|s| s.is::<E>()).unwrap_or(false);
-        Layer { predicate, ..self }
+        self.with_predicate(|e| e.is::<E>() || e.source().map(|s| s.is::<E>()).unwrap_or(false))
     }
 }
 
