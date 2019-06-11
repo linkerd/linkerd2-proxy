@@ -32,18 +32,10 @@ pub trait Resolution {
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
 }
 
-pub trait HasEndpointStatus {
-    fn endpoint_status(&self) -> EndpointStatus;
-}
-
-#[derive(Clone, Debug)]
-pub struct EndpointStatus(Arc<AtomicBool>);
-
 #[derive(Clone, Debug)]
 pub enum Update<T> {
     Add(SocketAddr, T),
     Remove(SocketAddr),
-    NoEndpoints,
 }
 
 #[derive(Clone, Debug)]
@@ -116,15 +108,6 @@ where
     }
 }
 
-impl<R, M> HasEndpointStatus for Discover<R, M>
-where
-    R: Resolution,
-{
-    fn endpoint_status(&self) -> EndpointStatus {
-        EndpointStatus(self.is_empty.clone())
-    }
-}
-
 impl<R, M> tower_discover::Discover for Discover<R, M>
 where
     R: Resolution,
@@ -151,11 +134,6 @@ where
                     return Ok(Async::Ready(Change::Insert(addr, svc)));
                 }
                 Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
-                Update::NoEndpoints => {
-                    self.is_empty.store(true, Ordering::Release);
-                    // Keep polling as we should now start to see removals.
-                    continue;
-                }
             }
         }
     }
@@ -175,11 +153,5 @@ where
             make: self.make.take().expect("polled after ready"),
             is_empty: self.is_empty.clone(),
         }))
-    }
-}
-
-impl EndpointStatus {
-    pub fn is_empty(&self) -> bool {
-        self.0.load(Ordering::Acquire)
     }
 }
