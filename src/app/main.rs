@@ -429,7 +429,7 @@ where
                 //add_remote_ip_on_rsp, add_server_id_on_rsp,
             };
             use proxy::{
-                http::{balance, canonicalize, fallback, header_from_target, metrics, retry},
+                http::{balance, canonicalize, header_from_target, metrics, retry},
                 resolve,
             };
 
@@ -483,29 +483,6 @@ where
                 .layer(strip_header::response::layer(super::L5D_SERVER_ID))
                 .layer(strip_header::response::layer(super::L5D_REMOTE_IP))
                 .service(client_stack);
-
-            let balancer = svc::builder()
-                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)))
-                .spawn_ready();
-
-            // Routes requests to their original destination endpoints. Used as
-            // a fallback when service discovery has no endpoints for a destination.
-            let orig_dst_router = svc::builder()
-                .layer(router::layer(
-                    router::Config::new("out ep", capacity, max_idle_age),
-                    |req: &http::Request<_>| {
-                        let ep = outbound::Endpoint::from_orig_dst(req);
-                        debug!("outbound ep={:?}", ep);
-                        ep
-                    },
-                ))
-                .buffer_pending(max_in_flight, DispatchDeadline::extract);
-
-            let balancer_stack = svc::builder()
-                .layer(fallback::layer(balancer, orig_dst_router))
-                .service(endpoint_stack);
-
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
             //
@@ -525,6 +502,30 @@ where
                 .layer(retry::layer(retry_http_metrics.clone()))
                 .layer(metrics::layer::<_, classify::Response>(retry_http_metrics))
                 .layer(insert::target::layer());
+
+            // Routes requests to their original destination endpoints. Used as
+            // a fallback when service discovery has no endpoints for a destination.
+            let orig_dst_router = svc::builder()
+                .layer(router::layer(
+                    router::Config::new("out ep", capacity, max_idle_age),
+                    |req: &http::Request<_>| {
+                        let ep = outbound::Endpoint::from_orig_dst(req);
+                        debug!("outbound ep={:?}", ep);
+                        ep
+                    },
+                ))
+                .buffer_pending(max_in_flight, DispatchDeadline::extract);
+
+            let balancer = svc::builder()
+                .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                .layer(resolve::layer(Resolve::new(resolver)))
+                .spawn_ready()
+                .fallback_to(orig_dst_router)
+                .on_error::<control::destination::Unresolvable>();
+
+            let balancer_stack = svc::builder()
+                .layer(balancer)
+                .service(endpoint_stack);
 
             // A per-`DstAddr` stack that does the following:
             //
@@ -572,15 +573,18 @@ where
 
             // Routes requests to an `Addr`:
             //
-            // 1. If the request is HTTP/2 and has an :authority, this value
+            // 1. If the request had an `l5d-override-dst` header, this value
             // is used.
             //
-            // 2. If the request is absolute-form HTTP/1, the URI's
+            // 2. If the request is HTTP/2 and has an :authority, this value
+            // is used.
+            //
+            // 3. If the request is absolute-form HTTP/1, the URI's
             // authority is used.
             //
-            // 3. If the request has an HTTP/1 Host header, it is used.
+            // 4. If the request has an HTTP/1 Host header, it is used.
             //
-            // 4. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
+            // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
             // address is used.
             let addr_router = svc::builder()
                 .layer(router::layer(
@@ -716,6 +720,7 @@ where
             // 2. Annotates the request with the `DstAddr` so that
             //    `RecognizeEndpoint` can use the value.
             let dst_stack = svc::builder()
+                .layer(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                 .layer(profiles::router::layer(
                     profile_suffixes,
                     profiles_client,
@@ -730,15 +735,18 @@ where
             // 1. If the CANONICAL_DST_HEADER is set by the remote peer,
             // this value is used to construct a DstAddr.
             //
-            // 2. If the request is HTTP/2 and has an :authority, this value
+            // 2. If the OVERRIDE_DST_HEADER is set by the remote peer,
+            // this value is used.
+            //
+            // 3. If the request is HTTP/2 and has an :authority, this value
             // is used.
             //
-            // 3. If the request is absolute-form HTTP/1, the URI's
+            // 4. If the request is absolute-form HTTP/1, the URI's
             // authority is used.
             //
-            // 4. If the request has an HTTP/1 Host header, it is used.
+            // 5. If the request has an HTTP/1 Host header, it is used.
             //
-            // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
+            // 6. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
             // address is used.
             let dst_router = svc::builder()
                 .layer(router::layer(
@@ -752,10 +760,19 @@ where
                         debug!("inbound canonical={:?}", canonical);
 
                         let dst = canonical
+                            .or_else(|| {
+                                super::http_request_l5d_override_dst_addr(req)
+                                    .map(|override_addr| {
+                                        debug!("inbound dst={:?}; dst-override", override_addr);
+                                        override_addr
+                                    })
+                                    .ok()
+                            })
                             .or_else(|| super::http_request_authority_addr(req).ok())
                             .or_else(|| super::http_request_host_addr(req).ok())
                             .or_else(|| super::http_request_orig_dst_addr(req).ok());
                         debug!("inbound dst={:?}", dst);
+
                         dst.map(|addr| {
                             let settings = settings::Settings::from_request(req);
                             DstAddr::inbound(addr, settings)
@@ -784,7 +801,6 @@ where
                 .layer(insert::layer(move || {
                     DispatchDeadline::after(dispatch_timeout)
                 }))
-                .layer(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
                 .layer(strip_header::response::layer(super::L5D_SERVER_ID))
                 .layer(strip_header::request::layer(super::L5D_CLIENT_ID))
                 .layer(strip_header::request::layer(super::L5D_REMOTE_IP))

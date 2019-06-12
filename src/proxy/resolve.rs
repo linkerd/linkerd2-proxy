@@ -3,14 +3,7 @@ extern crate tower_discover;
 
 use futures::{stream::FuturesUnordered, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use std::{
-    fmt,
-    net::SocketAddr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{fmt, net::SocketAddr};
 use tokio::sync::oneshot;
 
 pub use self::tower_discover::Change;
@@ -21,8 +14,15 @@ use svc;
 pub trait Resolve<T> {
     type Endpoint;
     type Resolution: Resolution<Endpoint = Self::Endpoint>;
+    type Future: Future<Item = Self::Resolution>;
 
-    fn resolve(&self, target: &T) -> Self::Resolution;
+    /// Asynchronously returns a `Resolution` for the given `target`.
+    ///
+    /// The returned future will complete with a `Resolution` if this resolver
+    /// was able to successfully resolve `target`. Otherwise, if it completes
+    /// with an error, that name or address should not be resolved by this
+    /// resolver.
+    fn resolve(&self, target: &T) -> Self::Future;
 }
 
 /// An infinite stream of endpoint updates.
@@ -33,18 +33,10 @@ pub trait Resolution {
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
 }
 
-pub trait HasEndpointStatus {
-    fn endpoint_status(&self) -> EndpointStatus;
-}
-
-#[derive(Clone, Debug)]
-pub struct EndpointStatus(Arc<AtomicBool>);
-
 #[derive(Clone, Debug)]
 pub enum Update<T> {
     Add(SocketAddr, T),
     Remove(SocketAddr),
-    NoEndpoints,
 }
 
 #[derive(Clone, Debug)]
@@ -64,7 +56,11 @@ pub struct Discover<R: Resolution, M: svc::Service<R::Endpoint>> {
     resolution: R,
     make: M,
     make_futures: MakeFutures<M::Future>,
-    is_empty: Arc<AtomicBool>,
+}
+
+pub struct DiscoverFuture<F, M> {
+    future: F,
+    make: M,
 }
 
 struct MakeFutures<F> {
@@ -116,45 +112,44 @@ where
     M: svc::Service<R::Endpoint> + Clone,
 {
     type Response = Discover<R::Resolution, M>;
-    type Error = never::Never;
-    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
+    type Error = <R::Future as Future>::Error;
+    type Future = DiscoverFuture<R::Future, Option<M>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into()) // always ready to make a Discover
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let resolution = self.resolve.resolve(&target);
-        futures::future::ok(Discover::new(resolution, self.inner.clone()))
-    }
-}
-
-// === impl Discover ===
-
-impl<R, M> Discover<R, M>
-where
-    R: Resolution,
-    M: svc::Service<R::Endpoint>,
-{
-    fn new(resolution: R, make: M) -> Self {
-        Self {
-            resolution,
-            make,
-            make_futures: MakeFutures::new(),
-            is_empty: Arc::new(AtomicBool::new(false)),
+        let future = self.resolve.resolve(&target);
+        DiscoverFuture {
+            future,
+            make: Some(self.inner.clone()),
         }
     }
 }
 
-impl<R, M> HasEndpointStatus for Discover<R, M>
+// === impl DiscoverFuture ===
+
+impl<F, M> Future for DiscoverFuture<F, Option<M>>
 where
-    R: Resolution,
-    M: svc::Service<R::Endpoint>,
+    F: Future,
+    F::Item: Resolution,
+    M: svc::Service<<F::Item as Resolution>::Endpoint>,
 {
-    fn endpoint_status(&self) -> EndpointStatus {
-        EndpointStatus(self.is_empty.clone())
+    type Item = Discover<F::Item, M>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let resolution = try_ready!(self.future.poll());
+        Ok(Async::Ready(Discover {
+            resolution,
+            make: self.make.take().expect("polled after ready"),
+            make_futures: MakeFutures::new(),
+        }))
     }
 }
+
+// === impl Discover ===
 
 impl<R, M> Discover<R, M>
 where
@@ -183,18 +178,8 @@ where
                     self.make_futures.push(addr, fut);
                 }
                 Update::Remove(addr) => {
-                    // If the service is still pending, cancel it. It won't
-                    // actually be removed until a subsequent poll, however.
-                    // If it was canceled, we send the remove anyway, since this
-                    // may have been an update to a pre-existing addr.
                     self.make_futures.remove(&addr);
                     return Ok(Async::Ready(Change::Remove(addr)));
-                }
-                Update::NoEndpoints => {
-                    // Mark the service as explicitly empty. It's expected that
-                    // Remove events have already or will be receieved to
-                    // actually empty the receiver.
-                    self.is_empty.store(true, Ordering::Release);
                 }
             }
         }
@@ -219,19 +204,10 @@ where
         }
 
         if let Async::Ready(Some((addr, svc))) = self.make_futures.poll().map_err(Into::into)? {
-            self.is_empty.store(false, Ordering::Release);
             return Ok(Async::Ready(Change::Insert(addr, svc)));
         }
 
         Ok(Async::NotReady)
-    }
-}
-
-// === impl EndpointStatus ===
-
-impl EndpointStatus {
-    pub fn is_empty(&self) -> bool {
-        self.0.load(Ordering::Acquire)
     }
 }
 
