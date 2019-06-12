@@ -2,10 +2,7 @@ extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
 use futures::{Async, Future, Poll};
-use std::{
-    fmt,
-    net::SocketAddr,
-};
+use std::{fmt, net::SocketAddr};
 
 pub use self::tower_discover::Change;
 use proxy::Error;
