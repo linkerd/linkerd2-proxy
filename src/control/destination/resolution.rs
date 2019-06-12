@@ -242,13 +242,16 @@ impl Updater {
         self.tx.unbounded_send(update).map_err(|_| ())
     }
 
-    /// Indicates that the resolution should be reset on the next update
-    /// received after a reconnect.
+    /// Indicates that the resolution should reset any previously discovered
+    /// endpoints on the next update received after a reconnect.
     fn should_reset(&mut self) {
         self.reset = true;
     }
 
-    /// If the
+    /// Removes any previously discovered endpoints if they are stale.
+    /// Otherwise, does nothing.
+    ///
+    /// This is called when processing a new update.
     fn reset_if_needed(&mut self) -> Result<(), ()> {
         if self.reset {
             trace!("query reconnected; removing stale endpoints");

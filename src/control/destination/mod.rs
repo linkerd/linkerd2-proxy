@@ -38,7 +38,7 @@ pub use self::resolution::{Resolution, ResolveFuture, Unresolvable};
 use proxy::http::balance::Weight;
 use NameAddr;
 
-/// A handle to request resolutions from the background discovery task.
+/// A handle to request resolutions from the destination service.
 #[derive(Clone)]
 pub struct Resolver<T> {
     client: Option<Client<T>>,

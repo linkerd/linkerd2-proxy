@@ -9,12 +9,16 @@ use std::sync::Arc;
 
 use NameAddr;
 
+/// A client for making service discovery requests to the destination service.
 #[derive(Clone)]
 pub struct Client<T> {
     client: T,
     context_token: Arc<String>,
 }
 
+/// A destination service query for a particular name.
+///
+/// A `Query` manages the underlying gRPC request and can reconnect itself as necessary.
 pub struct Query<T>
 where
     T: GrpcService<BoxBody>,
@@ -74,10 +78,12 @@ where
         &self.auth
     }
 
+    /// Indicates that this query should be reconnected.
     pub fn reconnect(&mut self) {
         self.query = Remote::NeedsReconnect;
     }
 
+    /// Polls the destination service query for updates, reconnecting if necessary.
     pub fn poll(&mut self) -> Poll<Option<Update>, grpc::Status> {
         loop {
             self.query = match self.query {

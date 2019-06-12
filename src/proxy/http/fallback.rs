@@ -179,8 +179,8 @@ where
                         }
                     }
                 },
-                // The primary service has returned a fallback error, so we are
-                // waiting for the fallback service to be ready.
+                // The primary service has returned an error matching the
+                // predicate, and we are waiting for the fallback service to be ready.
                 FallbackState::Waiting(ref mut target) => {
                     try_ready!(self.fallback.poll_ready().map_err(Into::into));
                     let target = target.take().expect("target should only be taken once");
