@@ -6,33 +6,30 @@ use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 
 /// A cache that is internally maintained by a `tokio_timer::DelayQueue`.
 ///
-/// Cache access is coordinated through `vals`; this field represents the
-/// current state of the cache.
-///
-/// Cache state is mainted by `expirations`; this field is a `DelayQueue` that
-/// can be polled in the background and remove expired values.
-///
 /// All values in the cache will expire after a `expires` span of time.
 pub struct Cache<K: Clone + Eq + Hash, V> {
     capacity: usize,
     expires: Duration,
+    /// Elements are keys into `vals`. As elements become Ready, we can remove
+    /// the key and corresponding value from the cache.
     expirations: DelayQueue<K>,
+    /// Cache access is coordinated through `vals`. This field represents the
+    /// current state of the cache.
     vals: IndexMap<K, Node<V>>,
 }
 
-/// A value that can be polled in order to eagerly remove expired cache
-/// values.
+/// A background future that eagerly removes expired cache values.
 ///
-/// This contains a weak reference to a cache so that if use of the cache is
-/// dropped, it will not continue to be polled in the background.
+/// If the cache is dropped, this future will complete.
 pub struct PurgeCache<K: Clone + Eq + Hash, V> {
     cache: Lock<Cache<K, V>>,
     interval: Interval,
 }
 
 /// Wraps a cache value so that a lock is held on the entire cache. When the
-/// access is dropped, the associated expiration time of the value in
-/// `expirations` is reset.
+/// access is dropped, the associated expiration time of the value is reset.
+///
+/// Note that the value will not be removed while an `Access` is held.
 pub struct Access<'a, K: Clone + Eq + Hash, V> {
     expires: Duration,
     expirations: &'a mut DelayQueue<K>,
@@ -90,7 +87,7 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         self.capacity
     }
 
-    pub fn reserve(&mut self) -> Async<Reserve<K, V>> {
+    pub fn reserve(&mut self) -> Poll<Reserve<K, V>, ()> {
         if self.vals.len() == self.capacity {
             match self.expirations.poll() {
                 // The cache is at capacity but we are able to remove a value.
@@ -105,18 +102,18 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
 
                 // The cache is at capacity and no values can be removed.
                 Ok(Async::NotReady) => {
-                    return Async::NotReady;
+                    return Ok(Async::NotReady);
                 }
 
                 Err(e) => panic!("Cache.expirations DelayQueue::poll must not fail: {}", e),
             }
         }
 
-        Async::Ready(Reserve {
+        Ok(Async::Ready(Reserve {
             expirations: &mut self.expirations,
             expires: self.expires,
             vals: &mut self.vals,
-        })
+        }))
     }
 
     fn poll_purge(&mut self) -> Poll<(), Error> {
@@ -193,7 +190,7 @@ mod tests {
 
             {
                 let slot = match cache.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(1, 2);
@@ -202,7 +199,7 @@ mod tests {
 
             {
                 let slot = match cache.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(2, 3);
@@ -211,8 +208,8 @@ mod tests {
 
             {
                 match cache.reserve() {
-                    Async::NotReady => (),
-                    _ => panic!("cache should be Ready to reserve"),
+                    Ok(Async::NotReady) => (),
+                    _ => panic!("cache should not be Ready to reserve"),
                 }
             }
             assert_eq!(cache.vals.len(), 2);
@@ -236,7 +233,7 @@ mod tests {
 
             {
                 let slot = match cache.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(1, 2);
@@ -246,7 +243,7 @@ mod tests {
 
             {
                 let slot = match cache.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(2, 3);
@@ -273,7 +270,7 @@ mod tests {
 
             {
                 let slot = match cache.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(1, 2);
@@ -282,7 +279,7 @@ mod tests {
 
             {
                 let _slot = match cache.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
             }
@@ -311,14 +308,14 @@ mod tests {
 
             {
                 let slot = match cache_1.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(1, 2);
             }
             {
                 let slot = match cache_1.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(2, 3);
@@ -342,7 +339,7 @@ mod tests {
 
             {
                 let slot = match cache_2.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(3, 4);
@@ -377,14 +374,14 @@ mod tests {
 
             {
                 let slot = match cache.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(1, 2);
             }
             {
                 let slot = match cache.reserve() {
-                    Async::Ready(slot) => slot,
+                    Ok(Async::Ready(slot)) => slot,
                     _ => panic!("cache should be Ready to reserve"),
                 };
                 slot.store(2, 3);
@@ -430,7 +427,7 @@ mod tests {
                 .block_on(future::lazy(|| {
                     {
                         let slot = match cache.reserve() {
-                            Async::Ready(slot) => slot,
+                            Ok(Async::Ready(slot)) => slot,
                             _ => panic!("cache should be Ready to reserve"),
                         };
                         slot.store(1, 2);

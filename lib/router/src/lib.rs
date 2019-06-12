@@ -278,14 +278,14 @@ where
         loop {
             self.state = match self.state {
                 State::Init(ref mut state) => {
-                    let request = state.request.take().expect("polled after ready");
-                    let target = state.target.take().expect("polled after ready");
-                    let make = state.make.take().expect("polled after ready");
-
                     let mut cache = match state.locked_cache.poll_lock() {
                         Async::Ready(lock) => lock,
                         Async::NotReady => return Ok(Async::NotReady),
                     };
+
+                    let request = state.request.take().expect("polled after ready");
+                    let target = state.target.take().expect("polled after ready");
+                    let make = state.make.take().expect("polled after ready");
 
                     State::Acquired(UnlockedCache {
                         request: Some(request),
@@ -314,7 +314,7 @@ where
                         // there is capacity for a new one
                         let capacity = state.unlocked_cache.capacity();
                         match state.unlocked_cache.reserve() {
-                            Async::Ready(reserve) => {
+                            Ok(Async::Ready(reserve)) => {
                                 // Make a new service for the route
                                 let make = state.make.take().expect("polled after ready");
                                 let service = LoadShed::new(make.make(&target));
@@ -323,9 +323,10 @@ where
                                 reserve.store(target, service.clone());
                                 State::Call(Some(request), Some(service))
                             }
-                            Async::NotReady => {
+                            Ok(Async::NotReady) => {
                                 State::Error(Some(error::NoCapacity(capacity).into()))
                             }
+                            Err(_) => panic!("Cache::reserve must not fail"),
                         }
                     })()
                 }
