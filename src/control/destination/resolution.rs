@@ -145,10 +145,7 @@ where
                     }
                 },
                 None => {
-                    trace!(
-                        "{} is not in search suffixes",
-                        self.query.as_ref().expect("invalid state").authority()
-                    );
+                    trace!("name is unresolvable");
                     return Err(Unresolvable { _p: () });
                 }
             };
