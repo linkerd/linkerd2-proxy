@@ -104,7 +104,7 @@ macro_rules! profile_test {
                 .label("load_profile", "test"),
             $($route,),+
         ];
-        profile_tx.send(controller::profile(routes, $budget));
+        profile_tx.send(controller::profile(routes, $budget, vec![]));
 
         let ctrl = ctrl.run();
         let proxy = proxy::new()
@@ -342,6 +342,7 @@ fn timeout() {
 }
 
 #[test]
+#[ignore]
 fn traffic_split() {
     let _ = env_logger_init();
     let apex = "profiles.test.svc.cluster.local";
@@ -395,7 +396,6 @@ fn traffic_split() {
     leaf_a_dst_send.send_addr(leaf_a_srv.addr);
     leaf_b_dst_send.send_addr(leaf_b_srv.addr);
 
-    // TOOD(kleimkuhler): Move to step 5
     let profile_send = ctrl.profile_tx(apex);
     let routes = vec![
         controller::route()
@@ -411,8 +411,8 @@ fn traffic_split() {
 
     let client = client::http1(apex_proxy.outbound, apex);
     let apex_metrics = client::http1(apex_proxy.metrics, "localhost");
-    let _leaf_a_metrics = client::http1(leaf_a_proxy.metrics, "localhost");
-    let _leaf_b_metrics = client::http1(leaf_b_proxy.metrics, "localhost");
+    let leaf_a_metrics = client::http1(leaf_a_proxy.metrics, "localhost");
+    let leaf_b_metrics = client::http1(leaf_b_proxy.metrics, "localhost");
 
     // 1. Send `n` requests to apex service
     for _ in 0..10 {
@@ -433,7 +433,14 @@ fn traffic_split() {
     assert_eq!(leaf_b_responses.load(Ordering::SeqCst), 0);
 
     // 5. Load service profile that defines traffic split on Apex
-    profile_send.send(controller::profile(routes, None));
+    profile_send.send(controller::profile(
+        routes,
+        None,
+        vec![
+            controller::traffic_split(leaf_a, 500),
+            controller::traffic_split(leaf_b, 500),
+        ],
+    ));
 
     // 6. Poll metrics until we recognize the profile is loaded
     loop {
@@ -454,12 +461,22 @@ fn traffic_split() {
     // TODO(kleimkuhler): Should there be more responses on Apex metrics?
 
     // 9. Leaf A proxy metrics should assert there are greater than 0
-    // TODO(kleimkuhler): Should we check metrics?
-    // assert!(leaf_a_responses.load(Ordering::SeqCst) > 0);
+    // Note: We use the same authority as the original request; we do not
+    // specify the number of responses because that is not deterministic
+    assert_eventually_contains!(
+        leaf_a_metrics.get("/metrics"),
+        "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",status_code=\"200\",classification=\"success\"}"
+    );
+    assert!(leaf_a_responses.load(Ordering::SeqCst) > 0);
 
     // 10. Leaf B proxy metrics should assert there are greater than 0 responses
-    // TODO(kleimkuhler): Should we check metrics?
-    // assert!(leaf_b_responses.load(Ordering::SeqCst) > 0);
+    // Note: We use the same authority as the original request; we do not
+    // specify the number of responses because that is not deterministic
+    assert_eventually_contains!(
+        leaf_b_metrics.get("/metrics"),
+        "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",status_code=\"200\",classification=\"success\"}"
+    );
+    assert!(leaf_b_responses.load(Ordering::SeqCst) > 0);
 
     // 11. TODO(kleimkuhler): Add more tests that do the following?
     //   - Load a new profile to split all traffic to Leaf A, and then assert
