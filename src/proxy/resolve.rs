@@ -5,10 +5,6 @@ use futures::{Async, Future, Poll};
 use std::{
     fmt,
     net::SocketAddr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
 };
 
 pub use self::tower_discover::Change;
@@ -61,7 +57,6 @@ pub struct MakeSvc<R, M> {
 pub struct Discover<R, M> {
     resolution: R,
     make: M,
-    is_empty: Arc<AtomicBool>,
 }
 
 // === impl Layer ===
@@ -109,7 +104,6 @@ where
         Discover {
             resolution,
             make: Some(self.inner.clone()),
-            is_empty: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -136,7 +130,6 @@ where
                     // insertions of new endpoints and metadata changes for
                     // existing ones can be handled in the same way.
                     let svc = self.make.make(&target);
-                    self.is_empty.store(false, Ordering::Release);
                     return Ok(Async::Ready(Change::Insert(addr, svc)));
                 }
                 Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
@@ -157,7 +150,6 @@ where
         Ok(Async::Ready(Discover {
             resolution,
             make: self.make.take().expect("polled after ready"),
-            is_empty: self.is_empty.clone(),
         }))
     }
 }

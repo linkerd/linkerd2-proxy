@@ -10,14 +10,14 @@ use svc;
 /// If the future returned by the primary builder's `MakeService` fails with
 /// an error matching a given predicate, the fallback future will attempt
 /// to call the secondary `MakeService`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Layer<A, B, P = fn(&proxy::Error) -> bool> {
     primary: svc::Builder<A>,
     fallback: svc::Builder<B>,
     predicate: P,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct MakeSvc<A, B, P> {
     primary: A,
     fallback: B,
@@ -100,23 +100,6 @@ where
             primary: self.primary.clone().service(inner.clone()),
             fallback: self.fallback.clone().service(inner),
             predicate: self.predicate.clone(),
-            // _p: PhantomData,
-        }
-    }
-}
-
-impl<A, B, P> Clone for Layer<A, B, P>
-where
-    A: Clone,
-    B: Clone,
-    P: Clone,
-{
-    fn clone(&self) -> Self {
-        Layer {
-            primary: self.primary.clone(),
-            fallback: self.fallback.clone(),
-            predicate: self.predicate.clone(),
-            // _p: PhantomData,
         }
     }
 }
