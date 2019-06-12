@@ -1,370 +1,303 @@
 use bytes::Buf;
-use futures::{Async, Future, Poll};
+use futures::{Future, Poll};
 use http;
 use hyper::body::Payload;
 use proxy;
 use svc;
 
-use std::{fmt, marker::PhantomData, mem};
-
-#[derive(Debug)]
-pub struct Error<A> {
-    error: proxy::Error,
-    fallback: Option<http::Request<A>>,
+/// A fallback layer composing two service builders.
+///
+/// If the future returned by the primary builder's `MakeService` fails with
+/// an error matching a given predicate, the fallback future will attempt
+/// to call the secondary `MakeService`.
+#[derive(Clone, Debug)]
+pub struct Layer<A, B, P = fn(&proxy::Error) -> bool> {
+    primary: svc::Builder<A>,
+    fallback: svc::Builder<B>,
+    predicate: P,
 }
 
-#[derive(Debug)]
-pub struct Layer<P, F, A> {
-    primary: svc::Builder<P>,
-    fallback: svc::Builder<F>,
-    _p: PhantomData<fn(A)>,
+#[derive(Clone, Debug)]
+pub struct MakeSvc<A, B, P> {
+    primary: A,
+    fallback: B,
+    predicate: P,
 }
 
-#[derive(Debug)]
-pub struct MakeSvc<P, F, A> {
-    primary: P,
-    fallback: F,
-    _p: PhantomData<fn(A)>,
-}
-
-pub struct Service<P, F, A> {
-    primary: P,
-    fallback: F,
-    _p: PhantomData<fn(A)>,
-}
-
-pub struct MakeFuture<P, F, A>
+pub struct MakeFuture<A, B, P, T>
 where
-    P: Future,
-    F: Future,
+    A: Future,
+    A::Error: Into<proxy::Error>,
+    B: svc::Service<T>,
 {
-    primary: Making<P>,
-    fallback: Making<F>,
-    _p: PhantomData<fn(A)>,
+    fallback: B,
+    target: Option<T>,
+    predicate: P,
+    state: FallbackState<A, B::Future, T>,
 }
 
-pub struct ResponseFuture<P, F, A>
-where
-    P: Future<Error = Error<A>>,
-    F: svc::Service<http::Request<A>>,
-{
-    fallback: F,
-    state: ResponseState<P, F::Future, A>,
-}
-
-pub enum Body<A, B> {
+#[derive(Clone)]
+pub enum Either<A, B> {
     A(A),
     B(B),
 }
 
-enum ResponseState<P, F, A> {
+enum FallbackState<A, B, T> {
     /// Waiting for the primary service's future to complete.
-    Primary(P),
-    /// Request buffered, waiting for the fallback service to become ready.
-    Waiting(Option<http::Request<A>>),
+    Primary(A),
+    ///W aiting for the fallback service to become ready.
+    Waiting(Option<T>),
     /// Waiting for the fallback service's future to complete.
-    Fallback(F),
+    Fallback(B),
 }
 
-enum Making<T: Future> {
-    NotReady(T),
-    Ready(T::Item),
-    Done,
-}
-
-pub fn layer<P, F, A>(primary: svc::Builder<P>, fallback: svc::Builder<F>) -> Layer<P, F, A> {
+pub fn layer<A, B>(primary: svc::Builder<A>, fallback: svc::Builder<B>) -> Layer<A, B> {
+    let predicate: fn(&proxy::Error) -> bool = |_| true;
     Layer {
         primary,
         fallback,
-        _p: PhantomData,
+        predicate,
     }
 }
 
 // === impl Layer ===
 
-impl<P, F, A, M> svc::Layer<M> for Layer<P, F, A>
+impl<A, B> Layer<A, B> {
+    /// Returns a `Layer` that uses the given `predicate` to determine whether
+    /// to fall back.
+    pub fn with_predicate<P>(self, predicate: P) -> Layer<A, B, P>
+    where
+        P: Fn(&proxy::Error) -> bool + Clone,
+    {
+        Layer {
+            primary: self.primary,
+            fallback: self.fallback,
+            predicate,
+        }
+    }
+
+    /// Returns a `Layer` that falls back if the error or its source is of
+    /// type `E`.
+    pub fn on_error<E>(self) -> Layer<A, B>
+    where
+        E: std::error::Error + 'static,
+    {
+        self.with_predicate(|e| e.is::<E>() || e.source().map(|s| s.is::<E>()).unwrap_or(false))
+    }
+}
+
+impl<A, B, P, M> svc::Layer<M> for Layer<A, B, P>
 where
-    P: svc::Layer<M> + Clone,
-    F: svc::Layer<M> + Clone,
+    A: svc::Layer<M> + Clone,
+    B: svc::Layer<M> + Clone,
     M: Clone,
+    P: Fn(&proxy::Error) -> bool + Clone,
 {
-    type Service = MakeSvc<P::Service, F::Service, A>;
+    type Service = MakeSvc<A::Service, B::Service, P>;
 
     fn layer(&self, inner: M) -> Self::Service {
         MakeSvc {
             primary: self.primary.clone().service(inner.clone()),
             fallback: self.fallback.clone().service(inner),
-            _p: PhantomData,
+            predicate: self.predicate.clone(),
         }
-    }
-}
-
-impl<P, F, A> Clone for Layer<P, F, A>
-where
-    P: Clone,
-    F: Clone,
-{
-    fn clone(&self) -> Self {
-        layer(self.primary.clone(), self.fallback.clone())
     }
 }
 
 // === impl MakeSvc ===
 
-impl<P, F, A, T> svc::Service<T> for MakeSvc<P, F, A>
+impl<A, B, P, T> svc::Service<T> for MakeSvc<A, B, P>
 where
-    P: svc::Service<T>,
-    P::Error: Into<proxy::Error>,
-    F: svc::Service<T>,
-    F::Error: Into<proxy::Error>,
+    A: svc::Service<T>,
+    A::Error: Into<proxy::Error>,
+    B: svc::Service<T> + Clone,
+    B::Error: Into<proxy::Error>,
+    P: Fn(&proxy::Error) -> bool + Clone,
     T: Clone,
 {
-    type Response = Service<P::Response, F::Response, A>;
+    type Response = Either<A::Response, B::Response>;
     type Error = proxy::Error;
-    type Future = MakeFuture<P::Future, F::Future, A>;
+    type Future = MakeFuture<A::Future, B, P, T>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        let primary_ready = self.primary.poll_ready().map_err(Into::into);
-        let fallback_ready = self.fallback.poll_ready().map_err(Into::into);
-        try_ready!(fallback_ready);
-        primary_ready
+        self.primary.poll_ready().map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
         MakeFuture {
-            primary: Making::NotReady(self.primary.call(target.clone())),
-            fallback: Making::NotReady(self.fallback.call(target.clone())),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<P, F, A> Clone for MakeSvc<P, F, A>
-where
-    P: Clone,
-    F: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            primary: self.primary.clone(),
             fallback: self.fallback.clone(),
-            _p: PhantomData,
+            predicate: self.predicate.clone(),
+            target: Some(target.clone()),
+            state: FallbackState::Primary(self.primary.call(target)),
         }
     }
 }
 
-// === impl MakeFuture ===
-
-impl<P, F, A> Future for MakeFuture<P, F, A>
+impl<A, B, P, T> Future for MakeFuture<A, B, P, T>
 where
-    P: Future,
-    P::Error: Into<proxy::Error>,
-    F: Future,
-    F::Error: Into<proxy::Error>,
+    A: Future,
+    A::Error: Into<proxy::Error>,
+    B: svc::Service<T>,
+    B::Error: Into<proxy::Error>,
+    P: Fn(&proxy::Error) -> bool,
 {
-    type Item = Service<P::Item, F::Item, A>;
-    type Error = proxy::Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        // Are both the primary and fallback futures finished?
-        try_ready!(self.primary.poll().map_err(Into::into));
-        try_ready!(self.fallback.poll().map_err(Into::into));
-
-        Ok(Async::Ready(Service {
-            primary: self.primary.take(),
-            fallback: self.fallback.take(),
-            _p: PhantomData,
-        }))
-    }
-}
-
-impl<T: Future> Making<T> {
-    fn poll(&mut self) -> Poll<(), T::Error> {
-        *self = match self {
-            Making::NotReady(ref mut fut) => {
-                let res = try_ready!(fut.poll());
-                Making::Ready(res)
-            }
-            Making::Ready(_) => return Ok(Async::Ready(())),
-            Making::Done => panic!("polled after ready"),
-        };
-        Ok(Async::Ready(()))
-    }
-
-    fn take(&mut self) -> T::Item {
-        match mem::replace(self, Making::Done) {
-            Making::Ready(a) => a,
-            _ => panic!("tried to take service twice"),
-        }
-    }
-}
-
-// === impl Service ===
-
-impl<P, F, A, B, C> svc::Service<http::Request<A>> for Service<P, F, A>
-where
-    P: svc::Service<http::Request<A>, Response = http::Response<B>, Error = Error<A>>,
-    F: svc::Service<http::Request<A>, Response = http::Response<C>> + Clone,
-    F::Error: Into<proxy::Error>,
-{
-    type Response = http::Response<Body<B, C>>;
-    type Error = proxy::Error;
-    type Future = ResponseFuture<P::Future, F, A>;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        // We're ready as long as the primary service is ready. If we have to
-        // call the fallback service, the response future will buffer the
-        // request until the fallback service is ready.
-        self.primary.poll_ready().map_err(|e| e.error)
-    }
-
-    fn call(&mut self, req: http::Request<A>) -> Self::Future {
-        ResponseFuture {
-            fallback: self.fallback.clone(),
-            state: ResponseState::Primary(self.primary.call(req)),
-        }
-    }
-}
-
-impl<P, F, A, B, C> Future for ResponseFuture<P, F, A>
-where
-    P: Future<Item = http::Response<B>, Error = Error<A>>,
-    F: svc::Service<http::Request<A>, Response = http::Response<C>>,
-    F::Error: Into<proxy::Error>,
-{
-    type Item = http::Response<Body<B, C>>;
+    type Item = Either<A::Item, B::Response>;
     type Error = proxy::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        use self::ResponseState::*;
         loop {
             self.state = match self.state {
                 // We've called the primary service and are waiting for its
                 // future to complete.
-                Primary(ref mut f) => match f.poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Ok(Async::Ready(rsp)) => return Ok(Async::Ready(rsp.map(Body::A))),
-                    Err(Error {
-                        fallback: Some(req),
-                        error,
-                    }) => {
-                        trace!("{}; trying to fall back", error);
-                        Waiting(Some(req))
+                FallbackState::Primary(ref mut f) => match f.poll() {
+                    Ok(r) => return Ok(r.map(Either::A)),
+                    Err(error) => {
+                        let error = error.into();
+                        if (self.predicate)(&error) {
+                            trace!("{} matches; trying to fall back", error);
+                            FallbackState::Waiting(self.target.take())
+                        } else {
+                            trace!("{} does not match; not falling back", error);
+                            return Err(error);
+                        }
                     }
-                    Err(e) => return Err(e.into()),
                 },
-                // The primary service has returned a fallback error, so we are
-                // waiting for the fallback service to be ready.
-                Waiting(ref mut req) => {
+                // The primary service has returned an error matching the
+                // predicate, and we are waiting for the fallback service to be ready.
+                FallbackState::Waiting(ref mut target) => {
                     try_ready!(self.fallback.poll_ready().map_err(Into::into));
-                    let req = req.take().expect("request should only be taken once");
-                    Fallback(self.fallback.call(req))
+                    let target = target.take().expect("target should only be taken once");
+                    FallbackState::Fallback(self.fallback.call(target))
                 }
                 // We've called the fallback service and are waiting for its
                 // future to complete.
-                Fallback(ref mut f) => {
-                    return f
-                        .poll()
-                        .map(|p| p.map(|rsp| rsp.map(Body::B)))
-                        .map_err(Into::into)
+                FallbackState::Fallback(ref mut f) => {
+                    return f.poll().map(|a| a.map(Either::B)).map_err(Into::into)
                 }
             }
         }
     }
 }
 
-// === impl Body ===
+// === impl Either ===
 
-impl<A, B> Payload for Body<A, B>
+impl<A, B, B1, B2, R> svc::Service<R> for Either<A, B>
+where
+    A: svc::Service<R, Response = http::Response<B1>>,
+    A::Error: Into<proxy::Error>,
+    B: svc::Service<R, Response = http::Response<B2>>,
+    B::Error: Into<proxy::Error>,
+{
+    type Response = http::Response<Either<B1, B2>>;
+    type Future = Either<A::Future, B::Future>;
+    type Error = proxy::Error;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        match self {
+            Either::A(ref mut inner) => inner.poll_ready().map_err(Into::into),
+            Either::B(ref mut inner) => inner.poll_ready().map_err(Into::into),
+        }
+    }
+
+    fn call(&mut self, req: R) -> Self::Future {
+        match self {
+            Either::A(ref mut inner) => Either::A(inner.call(req)),
+            Either::B(ref mut inner) => Either::B(inner.call(req)),
+        }
+    }
+}
+
+impl<A, B, B1, B2> Future for Either<A, B>
+where
+    A: Future<Item = http::Response<B1>>,
+    A::Error: Into<proxy::Error>,
+    B: Future<Item = http::Response<B2>>,
+    B::Error: Into<proxy::Error>,
+{
+    type Item = http::Response<Either<B1, B2>>;
+    type Error = proxy::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        match self {
+            Either::A(ref mut inner) => inner
+                .poll()
+                .map_err(Into::into)
+                .map(|ready| ready.map(|rsp| rsp.map(Either::A))),
+            Either::B(ref mut inner) => inner
+                .poll()
+                .map_err(Into::into)
+                .map(|ready| ready.map(|rsp| rsp.map(Either::B))),
+        }
+    }
+}
+
+impl<A, B> Payload for Either<A, B>
 where
     A: Payload,
-    B: Payload<Error = A::Error>,
+    A::Error: Into<proxy::Error>,
+    B: Payload,
+    B::Error: Into<proxy::Error>,
 {
-    type Data = Body<A::Data, B::Data>;
-    type Error = A::Error;
+    type Data = Either<A::Data, B::Data>;
+    type Error = proxy::Error;
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
         match self {
-            Body::A(ref mut body) => body.poll_data().map(|r| r.map(|o| o.map(Body::A))),
-            Body::B(ref mut body) => body.poll_data().map(|r| r.map(|o| o.map(Body::B))),
+            Either::A(ref mut body) => body
+                .poll_data()
+                .map(|r| r.map(|o| o.map(Either::A)))
+                .map_err(Into::into),
+            Either::B(ref mut body) => body
+                .poll_data()
+                .map(|r| r.map(|o| o.map(Either::B)))
+                .map_err(Into::into),
         }
     }
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
         match self {
-            Body::A(ref mut body) => body.poll_trailers(),
-            Body::B(ref mut body) => body.poll_trailers(),
+            Either::A(ref mut body) => body.poll_trailers().map_err(Into::into),
+            Either::B(ref mut body) => body.poll_trailers().map_err(Into::into),
         }
     }
 
     fn is_end_stream(&self) -> bool {
         match self {
-            Body::A(ref body) => body.is_end_stream(),
-            Body::B(ref body) => body.is_end_stream(),
+            Either::A(ref body) => body.is_end_stream(),
+            Either::B(ref body) => body.is_end_stream(),
         }
     }
 }
 
-impl<A, B: Default> Default for Body<A, B> {
+impl<A, B: Default> Default for Either<A, B> {
     fn default() -> Self {
-        Body::B(Default::default())
+        Either::B(Default::default())
     }
 }
 
-impl<A, B> Buf for Body<A, B>
+impl<A, B> Buf for Either<A, B>
 where
     A: Buf,
     B: Buf,
 {
     fn remaining(&self) -> usize {
         match self {
-            Body::A(ref buf) => buf.remaining(),
-            Body::B(ref buf) => buf.remaining(),
+            Either::A(ref buf) => buf.remaining(),
+            Either::B(ref buf) => buf.remaining(),
         }
     }
 
     fn bytes(&self) -> &[u8] {
         match self {
-            Body::A(ref buf) => buf.bytes(),
-            Body::B(ref buf) => buf.bytes(),
+            Either::A(ref buf) => buf.bytes(),
+            Either::B(ref buf) => buf.bytes(),
         }
     }
 
     fn advance(&mut self, cnt: usize) {
         match self {
-            Body::A(ref mut buf) => buf.advance(cnt),
-            Body::B(ref mut buf) => buf.advance(cnt),
-        }
-    }
-}
-
-// === impl Error ===
-
-impl<A> fmt::Display for Error<A> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.error, f)
-    }
-}
-
-impl<A> Into<proxy::Error> for Error<A> {
-    fn into(self) -> proxy::Error {
-        self.error
-    }
-}
-
-impl<A> From<proxy::Error> for Error<A> {
-    fn from(error: proxy::Error) -> Self {
-        Error {
-            error,
-            fallback: None,
-        }
-    }
-}
-
-impl<A> Error<A> {
-    pub fn fallback(req: http::Request<A>, error: impl Into<proxy::Error>) -> Self {
-        Error {
-            fallback: Some(req),
-            error: error.into(),
+            Either::A(ref mut buf) => buf.advance(cnt),
+            Either::B(ref mut buf) => buf.advance(cnt),
         }
     }
 }
