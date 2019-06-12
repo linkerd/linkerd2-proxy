@@ -340,3 +340,99 @@ fn timeout() {
         }
     }
 }
+
+#[test]
+#[ignore]
+fn traffic_split() {
+    let _ = env_logger_init();
+    let apex = "profiles.test.svc.cluster.local";
+    let leaf_a = "a.profiles.test.svc.cluster.local";
+    let leaf_b = "b.profiles.test.svc.cluster.local";
+
+    let apex_srv = server::http1()
+        .route_fn("/load-profile", |_| {
+            Response::builder().status(201).body("".into()).unwrap()
+        })
+        .route_fn("/traffic-split", |_req| {
+            Response::builder().status(200).body("".into()).unwrap()
+        })
+        .run();
+
+    let leaf_a_srv = server::http1()
+        .route_fn("/traffic-split", |_req| {
+            Response::builder()
+                .status(200)
+                .body("leaf-a".into())
+                .unwrap()
+        })
+        .run();
+
+    let leaf_b_srv = server::http1()
+        .route_fn("/traffic-split", |_req| {
+            Response::builder()
+                .status(200)
+                .body("leaf-b".into())
+                .unwrap()
+        })
+        .run();
+
+    let ctrl = controller::new();
+
+    let apex_dst_send = ctrl.destination_tx(apex);
+    let leaf_a_dst_send = ctrl.destination_tx(leaf_a);
+    let leaf_b_dst_send = ctrl.destination_tx(leaf_b);
+
+    apex_dst_send.send_addr(apex_srv.addr);
+    leaf_a_dst_send.send_addr(leaf_a_srv.addr);
+    leaf_b_dst_send.send_addr(leaf_b_srv.addr);
+
+    // TOOD(kleimkuhler): Move to step 5
+    let profile_send = ctrl.profile_tx(apex);
+    let routes = vec![
+        controller::route()
+            .request_path("/load-profile")
+            .label("load_profile", "test"),
+        controller::route().request_any(),
+    ];
+    profile_send.send(controller::profile(routes, None));
+
+    let ctrl = ctrl.run();
+    let apex_proxy = proxy::new().controller(ctrl).outbound(apex_srv).run();
+    let leaf_a_proxy = proxy::new().outbound(leaf_a_srv).run();
+    let leaf_b_proxy = proxy::new().outbound(leaf_b_srv).run();
+
+    let client = client::http1(apex_proxy.outbound, apex);
+    let _apex_metrics = client::http1(apex_proxy.metrics, "localhost");
+    let _leaf_a_metrics = client::http1(leaf_a_proxy.metrics, "localhost");
+    let _leaf_b_metrics = client::http1(leaf_b_proxy.metrics, "localhost");
+
+    // 1. Send `n` requests to apex service
+
+    // 2. Apex proxy metrics should assert there are `n` responses
+
+    // 3. Leaf A proxy metrics should assert there are 0 responses
+
+    // 4. Leaf B proxy metrics should assert there are 0 responses
+
+    // 5. Load service profile that defines traffic split on Apex
+
+    // 6. Poll metrics until we recognize the profile is loaded
+
+    // 7. Send `n` requests to apex service
+
+    // 8. Apex proxy metrics should assert there are ... responses
+
+    // 9. Leaf A proxy metrics should assert there are greater than 0 responses
+
+    // 10. Leaf B proxy metrics should assert there are greater than 0 responses
+
+    // 11. TODO(kleimkuhler): Add more tests that do the following?
+    //   - Load a new profile to split all traffic to Leaf A, and then assert
+    //     Leaf A proxy metrics have more responses and Leaf B proxy metrics
+    //     have the same in step 10
+    //   - Load a new profile to remove the traffic split and assert both Leaf
+    //     A and Leaf B proxy metrics have the same number of responses in
+    //     steps 9 and 10 respectively
+
+    assert_eq!(client.get("/load-profile"), "");
+}
