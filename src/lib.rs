@@ -15,7 +15,6 @@ extern crate hyper;
 extern crate ipnet;
 #[cfg(target_os = "linux")]
 extern crate libc;
-#[macro_use]
 extern crate log;
 extern crate indexmap;
 #[cfg(target_os = "linux")]
@@ -29,6 +28,8 @@ extern crate rand;
 extern crate regex;
 extern crate tokio;
 extern crate tokio_timer;
+#[macro_use]
+extern crate tokio_trace;
 extern crate tower;
 extern crate tower_grpc;
 extern crate tower_util;
