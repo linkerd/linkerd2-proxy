@@ -2,44 +2,34 @@ use futures::{Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use std::{hash::Hash, time::Duration};
 use tokio::sync::lock::Lock;
-use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
+use tokio_timer::{DelayQueue, Error, Interval};
 
 /// A cache that is internally maintained by a `tokio_timer::DelayQueue`.
 ///
 /// All values in the cache will expire after a `expires` span of time.
-pub struct Cache<K: Clone + Eq + Hash, V> {
+pub struct Cache<K, V>
+where
+    K: Clone + Eq + Hash,
+{
     capacity: usize,
     expires: Duration,
-    /// Elements are keys into `vals`. As elements become Ready, we can remove
+    /// Elements are keys into `values`. As elements become Ready, we can remove
     /// the key and corresponding value from the cache.
     expirations: DelayQueue<K>,
-    /// Cache access is coordinated through `vals`. This field represents the
+    /// Cache access is coordinated through `values`. This field represents the
     /// current state of the cache.
-    vals: IndexMap<K, Node<V>>,
+    values: IndexMap<K, V>,
 }
 
 /// A background future that eagerly removes expired cache values.
 ///
 /// If the cache is dropped, this future will complete.
-pub struct PurgeCache<K: Clone + Eq + Hash, V> {
+pub struct PurgeCache<K, V>
+where
+    K: Clone + Eq + Hash,
+{
     cache: Lock<Cache<K, V>>,
     interval: Interval,
-}
-
-/// Wraps a cache value so that a lock is held on the entire cache. When the
-/// access is dropped, the associated expiration time of the value is reset.
-///
-/// Note that the value will not be removed while an `Access` is held.
-pub struct Access<'a, K: Clone + Eq + Hash, V> {
-    expires: Duration,
-    expirations: &'a mut DelayQueue<K>,
-    pub(crate) node: &'a mut Node<V>,
-}
-
-/// A handle to a cache value.
-pub struct Node<T> {
-    key: delay_queue::Key,
-    pub(crate) value: T,
 }
 
 #[derive(Debug, PartialEq)]
@@ -48,22 +38,29 @@ pub struct CapacityExhausted {
 }
 
 /// A handle to a cache that has capacity for at least one additional value.
-pub struct Reserve<'a, K: Clone + Eq + Hash, V> {
+pub struct Reserve<'a, K, V>
+where
+    K: Clone + Eq + Hash,
+{
     expirations: &'a mut DelayQueue<K>,
     expires: Duration,
-    vals: &'a mut IndexMap<K, Node<V>>,
+    values: &'a mut IndexMap<K, V>,
 }
 
 // ===== impl Cache =====
 
-impl<K: Clone + Eq + Hash, V> Cache<K, V> {
+impl<K, V> Cache<K, V>
+where
+    K: Clone + Eq + Hash,
+    V: Clone,
+{
     pub fn new(capacity: usize, expires: Duration) -> (Lock<Cache<K, V>>, PurgeCache<K, V>) {
         assert!(capacity != 0);
         let cache = Self {
             capacity,
             expires,
             expirations: DelayQueue::with_capacity(capacity),
-            vals: IndexMap::default(),
+            values: IndexMap::default(),
         };
         let cache = Lock::new(cache);
         let bg_purge = PurgeCache {
@@ -74,13 +71,9 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         (cache, bg_purge)
     }
 
-    pub fn access(&mut self, key: &K) -> Option<Access<K, V>> {
-        let node = self.vals.get_mut(key)?;
-        Some(Access {
-            expires: self.expires,
-            expirations: &mut self.expirations,
-            node,
-        })
+    pub fn access(&mut self, key: &K) -> Option<V> {
+        let value = self.values.get_mut(key)?;
+        Some(value.clone())
     }
 
     pub fn capacity(&self) -> usize {
@@ -88,15 +81,15 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
     }
 
     pub fn reserve(&mut self) -> Poll<Reserve<K, V>, ()> {
-        if self.vals.len() == self.capacity {
+        if self.values.len() == self.capacity {
             match self.expirations.poll() {
                 // The cache is at capacity but we are able to remove a value.
                 Ok(Async::Ready(Some(entry))) => {
-                    self.vals.remove(entry.get_ref());
+                    self.values.remove(entry.get_ref());
                 }
 
                 // `Ready(None)` can only be returned when expirations is
-                // empty. We know `expirations` is not empty because `vals` is
+                // empty. We know `expirations` is not empty because `values` is
                 // not empty and capacity does not equal zero.
                 Ok(Async::Ready(None)) => unreachable!("cache expirations cannot be empty"),
 
@@ -112,13 +105,13 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         Ok(Async::Ready(Reserve {
             expirations: &mut self.expirations,
             expires: self.expires,
-            vals: &mut self.vals,
+            values: &mut self.values,
         }))
     }
 
     fn poll_purge(&mut self) -> Poll<(), Error> {
         while let Some(entry) = try_ready!(self.expirations.poll()) {
-            self.vals.remove(entry.get_ref());
+            self.values.remove(entry.get_ref());
         }
 
         Ok(Async::Ready(()))
@@ -127,7 +120,11 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
 
 // ===== impl PurgeCache =====
 
-impl<K: Clone + Eq + Hash, V> Future for PurgeCache<K, V> {
+impl<K, V> Future for PurgeCache<K, V>
+where
+    K: Clone + Eq + Hash,
+    V: Clone,
+{
     type Item = ();
     type Error = ();
 
@@ -146,29 +143,24 @@ impl<K: Clone + Eq + Hash, V> Future for PurgeCache<K, V> {
 
 // ===== impl Access =====
 
-impl<'a, K: Clone + Eq + Hash, V> Drop for Access<'a, K, V> {
-    fn drop(&mut self) {
-        self.expirations.reset(&self.node.key, self.expires);
-    }
-}
-
-// ===== impl Node =====
-
-impl<T> Node<T> {
-    pub fn new(key: delay_queue::Key, value: T) -> Self {
-        Node { key, value }
-    }
-}
+// impl<'a, K, V> Drop for Access<'a, K, V>
+// where
+//     K: Clone + Eq + Hash,
+// {
+//     fn drop(&mut self) {
+//         self.expirations.reset(&self.node.key, self.expires);
+//     }
+// }
 
 // ===== impl Reserve =====
 
-impl<'a, K: Clone + Eq + Hash, V> Reserve<'a, K, V> {
-    pub fn store(self, key: K, val: V) {
-        let node = {
-            let delay = self.expirations.insert(key.clone(), self.expires);
-            Node::new(delay, val)
-        };
-        self.vals.insert(key, node);
+impl<'a, K, V> Reserve<'a, K, V>
+where
+    K: Clone + Eq + Hash,
+{
+    pub fn store(self, key: K, value: V) {
+        let _delay = self.expirations.insert(key.clone(), self.expires);
+        self.values.insert(key, value);
     }
 }
 
@@ -195,7 +187,7 @@ mod tests {
                 };
                 slot.store(1, 2);
             }
-            assert_eq!(cache.vals.len(), 1);
+            assert_eq!(cache.values.len(), 1);
 
             {
                 let slot = match cache.reserve() {
@@ -204,7 +196,7 @@ mod tests {
                 };
                 slot.store(2, 3);
             }
-            assert_eq!(cache.vals.len(), 2);
+            assert_eq!(cache.values.len(), 2);
 
             {
                 match cache.reserve() {
@@ -212,7 +204,7 @@ mod tests {
                     _ => panic!("cache should not be Ready to reserve"),
                 }
             }
-            assert_eq!(cache.vals.len(), 2);
+            assert_eq!(cache.values.len(), 2);
 
             Ok::<_, ()>(())
         }))
@@ -251,8 +243,8 @@ mod tests {
             assert!(cache.access(&1).is_some());
             assert!(cache.access(&2).is_some());
 
-            assert_eq!(cache.access(&1).take().unwrap().node.value, 2);
-            assert_eq!(cache.access(&2).take().unwrap().node.value, 3);
+            assert_eq!(cache.access(&1).take().unwrap(), 2);
+            assert_eq!(cache.access(&2).take().unwrap(), 3);
 
             Ok::<_, ()>(())
         }))
@@ -275,7 +267,7 @@ mod tests {
                 };
                 slot.store(1, 2);
             }
-            assert_eq!(cache.vals.len(), 1);
+            assert_eq!(cache.values.len(), 1);
 
             {
                 let _slot = match cache.reserve() {
@@ -283,7 +275,7 @@ mod tests {
                     _ => panic!("cache should be Ready to reserve"),
                 };
             }
-            assert_eq!(cache.vals.len(), 1);
+            assert_eq!(cache.values.len(), 1);
 
             Ok::<_, ()>(())
         }))
@@ -320,7 +312,7 @@ mod tests {
                 };
                 slot.store(2, 3);
             }
-            assert_eq!(cache_1.vals.len(), 2);
+            assert_eq!(cache_1.values.len(), 2);
 
             Ok::<_, ()>(())
         }))
@@ -344,7 +336,7 @@ mod tests {
                 };
                 slot.store(3, 4);
             }
-            assert_eq!(cache_2.vals.len(), 2);
+            assert_eq!(cache_2.values.len(), 2);
             assert!(cache_2.access(&3).is_some());
 
             Ok::<_, ()>(())
@@ -386,7 +378,7 @@ mod tests {
                 };
                 slot.store(2, 3);
             }
-            assert_eq!(cache.vals.len(), 2);
+            assert_eq!(cache.values.len(), 2);
 
             Ok::<_, ()>(())
         }))
@@ -400,7 +392,7 @@ mod tests {
             Async::Ready(acquired) => acquired,
             _ => panic!("cache lock should be Ready"),
         };
-        assert_eq!(cache.vals.len(), 0);
+        assert_eq!(cache.values.len(), 0);
     }
 
     #[test]

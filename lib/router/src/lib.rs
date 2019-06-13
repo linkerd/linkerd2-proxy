@@ -140,6 +140,7 @@ impl<Req, Rec, Mk> Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
+    <Mk as Make<Rec::Target>>::Value: Clone,
     Mk::Value: svc::Service<Req>,
 {
     pub fn new(
@@ -307,7 +308,7 @@ where
                         // If the target exists in the cache, get the service
                         // and call it with `request`.
                         if let Some(service) = state.unlocked_cache.access(&target) {
-                            return State::Call(Some(request), Some(service.node.value.clone()));
+                            return State::Call(Some(request), Some(service));
                         }
 
                         // Since there wasn't a cached route, ensure that
