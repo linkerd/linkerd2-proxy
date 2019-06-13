@@ -10,7 +10,7 @@ extern crate tower_service as svc;
 use futures::{Async, Future, Poll};
 use std::hash::Hash;
 use std::time::Duration;
-use tokio::sync::lock::{Lock, LockGuard};
+use tokio::sync::lock::Lock;
 use tower_load_shed::LoadShed;
 
 mod cache;
@@ -80,7 +80,7 @@ where
     cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
-struct LockedCache<Req, Rec, Mk>
+struct RouteRequest<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
@@ -90,20 +90,7 @@ where
     request: Option<Req>,
     target: Option<Rec::Target>,
     make: Option<Mk>,
-    locked_cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
-}
-
-struct UnlockedCache<Req, Rec, Mk>
-where
-    Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req>,
-    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
-{
-    request: Option<Req>,
-    target: Option<Rec::Target>,
-    make: Option<Mk>,
-    unlocked_cache: LockGuard<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
 enum State<Req, Rec, Mk>
@@ -113,9 +100,8 @@ where
     Mk::Value: svc::Service<Req>,
     <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    Init(LockedCache<Req, Rec, Mk>),
-    Acquired(UnlockedCache<Req, Rec, Mk>),
-    Call(Option<Req>, Option<LoadShed<Mk::Value>>),
+    Inserting(RouteRequest<Req, Rec, Mk>),
+    Calling(Option<Req>, Option<LoadShed<Mk::Value>>),
     Called(<LoadShed<Mk::Value> as svc::Service<Req>>::Future),
     Error(Option<error::Error>),
 }
@@ -243,11 +229,11 @@ where
         cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
     ) -> Self {
         ResponseFuture {
-            state: State::Init(LockedCache {
+            state: State::Inserting(RouteRequest {
                 request: Some(request),
                 target: Some(target),
                 make: Some(make),
-                locked_cache: cache,
+                cache: cache,
             }),
         }
     }
@@ -278,60 +264,39 @@ where
 
         loop {
             self.state = match self.state {
-                State::Init(ref mut state) => {
-                    let mut cache = match state.locked_cache.poll_lock() {
-                        Async::Ready(lock) => lock,
+                State::Inserting(ref mut rr) => {
+                    // Aquire the lock for the router cache
+                    let mut cache = match rr.cache.poll_lock() {
+                        Async::Ready(aquired) => aquired,
                         Async::NotReady => return Ok(Async::NotReady),
                     };
 
-                    let request = state.request.take().expect("polled after ready");
-                    let target = state.target.take().expect("polled after ready");
-                    let make = state.make.take().expect("polled after ready");
+                    let request = rr.request.take().expect("polled after ready");
+                    let target = rr.target.take().expect("polled after ready");
 
-                    State::Acquired(UnlockedCache {
-                        request: Some(request),
-                        target: Some(target),
-                        make: Some(make),
-                        unlocked_cache: cache,
-                    })
-                }
-                State::Acquired(ref mut state) => {
-                    // FIXME(kleimkuhler): This match arm is a bit of a hack.
-                    // It is a closure that is immediately executed. The
-                    // reason for this is because of the mutable borrow that
-                    // happens when we check if the target already exists in
-                    // the cache. It should no longer be an issue with NLL.
-                    (|| {
-                        let request = state.request.take().expect("polled after ready");
-                        let target = state.target.take().expect("polled after ready");
-
-                        // If the target exists in the cache, get the service
-                        // and call it with `request`.
-                        if let Some(service) = state.unlocked_cache.access(&target) {
-                            return State::Call(Some(request), Some(service));
-                        }
-
-                        // Since there wasn't a cached route, ensure that
-                        // there is capacity for a new one
-                        let capacity = state.unlocked_cache.capacity();
-                        match state.unlocked_cache.reserve() {
-                            Ok(Async::Ready(reserve)) => {
-                                // Make a new service for the route
-                                let make = state.make.take().expect("polled after ready");
+                    // If the target is already cached, route the request to
+                    // the service; otherwise, try to insert it
+                    if let Some(service) = cache.get(&target) {
+                        State::Calling(Some(request), Some(service))
+                    } else {
+                        // Ensure that there is capacity for a new slot
+                        match cache.poll_insert().expect("Cache::reserve must not fail") {
+                            Async::Ready(()) => {
+                                // Make a new service for the target
+                                let make = rr.make.take().expect("polled after ready");
                                 let service = LoadShed::new(make.make(&target));
 
-                                // Cache the service and send the request on the route
-                                reserve.store(target, service.clone());
-                                State::Call(Some(request), Some(service))
+                                cache.insert(target, service.clone());
+                                State::Calling(Some(request), Some(service))
                             }
-                            Ok(Async::NotReady) => {
+                            Async::NotReady => {
+                                let capacity = cache.capacity();
                                 State::Error(Some(error::NoCapacity(capacity).into()))
                             }
-                            Err(_) => panic!("Cache::reserve must not fail"),
                         }
-                    })()
+                    }
                 }
-                State::Call(ref mut request, ref mut service) => {
+                State::Calling(ref mut request, ref mut service) => {
                     let mut service = service.take().expect("polled after ready");
 
                     match service.poll_ready() {
