@@ -162,7 +162,8 @@ where
         for (tgt, tm) in &self.by_target {
             if let Ok(tm) = tm.lock() {
                 for (status, m) in &tm.by_status {
-                    let labels = (tgt, Status(*status));
+                    let status = status.as_ref().map(|s| Status(*s));
+                    let labels = (tgt, status);
                     get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
                 }
             }
@@ -185,7 +186,8 @@ where
             if let Ok(tm) = tm.lock() {
                 for (status, sm) in &tm.by_status {
                     for (cls, m) in &sm.by_class {
-                        let labels = (tgt, (Status(*status), cls));
+                        let status = status.as_ref().map(|s| Status(*s));
+                        let labels = (tgt, (status, cls));
                         get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
                     }
                 }
