@@ -4,6 +4,8 @@ use std::{hash::Hash, time::Duration};
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 
+use error::NoCapacity;
+
 /// A cache that is internally maintained by a `tokio_timer::DelayQueue`.
 ///
 /// All values in the cache will expire after a `expires` span of time.
@@ -38,11 +40,6 @@ pub struct Node<T> {
     value: T,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct CapacityExhausted {
-    pub(crate) capacity: usize,
-}
-
 // ===== impl Cache =====
 
 impl<K, V> Cache<K, V>
@@ -67,10 +64,6 @@ where
         (cache, bg_purge)
     }
 
-    pub fn capacity(&self) -> usize {
-        self.capacity
-    }
-
     pub fn get(&mut self, key: &K) -> Option<V> {
         if let Some(node) = self.values.get_mut(key) {
             self.expirations.reset(node.dq_key_ref(), self.expires);
@@ -80,36 +73,38 @@ where
         None
     }
 
-    pub fn insert(&mut self, key: K, value: V) -> Option<Node<V>> {
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let node = {
             let dq_key = self.expirations.insert(key.clone(), self.expires);
             Node::new(dq_key, value)
         };
 
-        self.values.insert(key, node)
+        self.values.insert(key, node).map(|n| n.into_inner())
     }
 
-    pub fn poll_insert(&mut self) -> Poll<(), ()> {
+    pub fn poll_insert(&mut self) -> Poll<(), NoCapacity> {
         // When checking capacity, only try to remove values if the cache is
         // at capacity
         if self.values.len() == self.capacity {
-            match self.expirations.poll() {
+            match self
+                .expirations
+                .poll()
+                .expect("delay_queue::poll must not fail")
+            {
                 // The cache is at capacity, but we are able to remove a value
-                Ok(Async::Ready(Some(expired))) => {
+                Async::Ready(Some(expired)) => {
                     self.values.remove(expired.get_ref());
                 }
 
                 // `Ready(None)` can only be returned when `expirations` is
                 // empty; we know `expirations` is not empty because `values`
                 // is not empty and capacity does not equal zero.
-                Ok(Async::Ready(None)) => unreachable!("cache expirations cannot be empty"),
+                Async::Ready(None) => unreachable!("cache expirations cannot be empty"),
 
                 // The cache is at capacity and no values can be removed
-                Ok(Async::NotReady) => {
-                    return Ok(Async::NotReady);
+                Async::NotReady => {
+                    return Err(NoCapacity(self.capacity));
                 }
-
-                Err(e) => panic!("Cache.expirations DelayQueue::poll must not fail: {}", e),
             }
         }
 
@@ -151,16 +146,20 @@ where
 // ===== impl Node =====
 
 impl<T> Node<T> {
-    pub fn new(dq_key: delay_queue::Key, value: T) -> Self {
+    fn new(dq_key: delay_queue::Key, value: T) -> Self {
         Node { dq_key, value }
     }
 
-    pub fn dq_key_ref(&self) -> &delay_queue::Key {
+    fn dq_key_ref(&self) -> &delay_queue::Key {
         &self.dq_key
     }
 
-    pub fn value_ref(&self) -> &T {
+    fn value_ref(&self) -> &T {
         &self.value
+    }
+
+    fn into_inner(self) -> T {
+        self.value
     }
 }
 
@@ -199,10 +198,8 @@ mod tests {
             assert_eq!(cache.values.len(), 2);
 
             {
-                match cache.poll_insert().unwrap() {
-                    Async::NotReady => (),
-                    _ => panic!("cache should not be Ready to reserve"),
-                }
+                let res = cache.poll_insert();
+                assert!(res.is_err());
             }
             assert_eq!(cache.values.len(), 2);
 

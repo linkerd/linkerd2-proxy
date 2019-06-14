@@ -280,35 +280,22 @@ where
                         State::Calling(Some(request), Some(service))
                     } else {
                         // Ensure that there is capacity for a new slot
-                        match cache.poll_insert().expect("Cache::reserve must not fail") {
-                            Async::Ready(()) => {
-                                // Make a new service for the target
-                                let make = rr.make.take().expect("polled after ready");
-                                let service = LoadShed::new(make.make(&target));
+                        cache.poll_insert()?;
 
-                                cache.insert(target, service.clone());
-                                State::Calling(Some(request), Some(service))
-                            }
-                            Async::NotReady => {
-                                let capacity = cache.capacity();
-                                State::Error(Some(error::NoCapacity(capacity).into()))
-                            }
-                        }
+                        // Make a new service for the target
+                        let make = rr.make.take().expect("polled after ready");
+                        let service = LoadShed::new(make.make(&target));
+
+                        cache.insert(target, service.clone());
+                        State::Calling(Some(request), Some(service))
                     }
                 }
                 State::Calling(ref mut request, ref mut service) => {
                     let mut service = service.take().expect("polled after ready");
+                    service.poll_ready()?;
 
-                    match service.poll_ready() {
-                        Ok(Async::Ready(())) => {
-                            let request = request.take().expect("polled after ready");
-                            State::Called(service.call(request))
-                        }
-                        Ok(Async::NotReady) => {
-                            unreachable!("load shedding services must always be ready");
-                        }
-                        Err(err) => State::Error(Some(err)),
-                    }
+                    let request = request.take().expect("polled after ready");
+                    State::Called(service.call(request))
                 }
                 State::Called(ref mut fut) => return fut.poll().map_err(Into::into),
                 State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),
