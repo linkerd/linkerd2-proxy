@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 futures = "0.1"
 indexmap = "1.0.0"
+linkerd2-never = { path = "../never" }
 linkerd2-stack  = { path = "../stack" }
 tower-load-shed = "0.1"
 tokio = "0.1.20"

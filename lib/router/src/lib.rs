@@ -1,15 +1,17 @@
 #[macro_use]
 extern crate futures;
 extern crate indexmap;
+extern crate linkerd2_never as never;
 extern crate linkerd2_stack as stack;
 extern crate tokio;
 extern crate tokio_timer;
 extern crate tower_load_shed;
 extern crate tower_service as svc;
 
-use futures::{Async, Future, Poll};
 use std::hash::Hash;
 use std::time::Duration;
+
+use futures::{Async, Future, Poll};
 use tokio::sync::lock::Lock;
 use tower_load_shed::LoadShed;
 
@@ -136,29 +138,27 @@ where
         max_idle_age: Duration,
     ) -> (Self, PurgeCache<Rec::Target, LoadShed<Mk::Value>>) {
         let (cache, cache_bg) = Cache::new(capacity, max_idle_age);
-
-        (
-            Router {
-                inner: Inner {
-                    recognize,
-                    make,
-                    cache,
-                },
-            },
-            cache_bg,
-        )
-    }
-
-    pub fn new_lazy(recognize: Rec, make: Mk, capacity: usize, max_idle_age: Duration) -> Self {
-        let (cache, _) = Cache::new(capacity, max_idle_age);
-
-        (Router {
+        let router = Self {
             inner: Inner {
                 recognize,
                 make,
                 cache,
             },
-        })
+        };
+
+        (router, cache_bg)
+    }
+
+    pub fn new_lazy(recognize: Rec, make: Mk, capacity: usize, max_idle_age: Duration) -> Self {
+        let (cache, _) = Cache::new(capacity, max_idle_age);
+
+        Self {
+            inner: Inner {
+                recognize,
+                make,
+                cache,
+            },
+        }
     }
 }
 
@@ -280,7 +280,15 @@ where
                         State::Calling(Some(request), Some(service))
                     } else {
                         // Ensure that there is capacity for a new slot
-                        cache.poll_insert()?;
+                        match cache
+                            .poll_insert()
+                            .expect("poll_insert never returns an error")
+                        {
+                            Async::Ready(()) => (),
+                            Async::NotReady => {
+                                return Err(error::NoCapacity(cache.capacity()).into());
+                            }
+                        }
 
                         // Make a new service for the target
                         let make = rr.make.take().expect("polled after ready");
@@ -292,10 +300,16 @@ where
                 }
                 State::Calling(ref mut request, ref mut service) => {
                     let mut service = service.take().expect("polled after ready");
-                    service.poll_ready()?;
 
-                    let request = request.take().expect("polled after ready");
-                    State::Called(service.call(request))
+                    match service.poll_ready().map_err(error::Error::from)? {
+                        Async::Ready(()) => {
+                            let request = request.take().expect("polled after ready");
+                            State::Called(service.call(request))
+                        }
+                        Async::NotReady => {
+                            unreachable!("load shedding services must always be ready");
+                        }
+                    }
                 }
                 State::Called(ref mut fut) => return fut.poll().map_err(Into::into),
                 State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),

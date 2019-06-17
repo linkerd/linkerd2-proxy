@@ -1,10 +1,10 @@
+use std::{hash::Hash, time::Duration};
+
 use futures::{Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use std::{hash::Hash, time::Duration};
+use never::Never;
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
-
-use error::NoCapacity;
 
 /// A cache that is internally maintained by a `tokio_timer::DelayQueue`.
 ///
@@ -35,7 +35,7 @@ where
 }
 
 /// A handle to a cache value.
-pub struct Node<T> {
+struct Node<T> {
     dq_key: delay_queue::Key,
     value: T,
 }
@@ -64,10 +64,14 @@ where
         (cache, bg_purge)
     }
 
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
     pub fn get(&mut self, key: &K) -> Option<V> {
         if let Some(node) = self.values.get_mut(key) {
-            self.expirations.reset(node.dq_key_ref(), self.expires);
-            return Some(node.value_ref().clone());
+            self.expirations.reset(&node.dq_key, self.expires);
+            return Some(node.value.clone());
         }
 
         None
@@ -79,10 +83,10 @@ where
             Node::new(dq_key, value)
         };
 
-        self.values.insert(key, node).map(|n| n.into_inner())
+        self.values.insert(key, node).map(|n| n.value)
     }
 
-    pub fn poll_insert(&mut self) -> Poll<(), NoCapacity> {
+    pub fn poll_insert(&mut self) -> Poll<(), Never> {
         // When checking capacity, only try to remove values if the cache is
         // at capacity
         if self.values.len() == self.capacity {
@@ -103,7 +107,7 @@ where
 
                 // The cache is at capacity and no values can be removed
                 Async::NotReady => {
-                    return Err(NoCapacity(self.capacity));
+                    return Ok(Async::NotReady);
                 }
             }
         }
@@ -149,18 +153,6 @@ impl<T> Node<T> {
     fn new(dq_key: delay_queue::Key, value: T) -> Self {
         Node { dq_key, value }
     }
-
-    fn dq_key_ref(&self) -> &delay_queue::Key {
-        &self.dq_key
-    }
-
-    fn value_ref(&self) -> &T {
-        &self.value
-    }
-
-    fn into_inner(self) -> T {
-        self.value
-    }
 }
 
 #[cfg(test)]
@@ -197,9 +189,9 @@ mod tests {
             }
             assert_eq!(cache.values.len(), 2);
 
-            {
-                let res = cache.poll_insert();
-                assert!(res.is_err());
+            match cache.poll_insert().unwrap() {
+                Async::NotReady => (),
+                _ => panic!("cache should not be Ready to reserve"),
             }
             assert_eq!(cache.values.len(), 2);
 
