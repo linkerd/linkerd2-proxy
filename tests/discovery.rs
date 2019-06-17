@@ -473,13 +473,13 @@ macro_rules! generate_tests {
                             .label("hello", "foo"),
                         controller::route().request_path("/load-profile")
                             .label("load_profile", "foo"),
-                    ], None));
+                    ], None, vec![]));
                     ctrl.profile_tx(BAR).send(controller::profile(vec![
                         controller::route().request_path("/")
                             .label("hello", "bar"),
                         controller::route().request_path("/load-profile")
                             .label("load_profile", "bar"),
-                    ], None));
+                    ], None, vec![]));
 
                     Fixture {
                         foo_reqs, bar_reqs,

@@ -419,7 +419,11 @@ pub fn destination_does_not_exist() -> pb::Update {
     }
 }
 
-pub fn profile<I>(routes: I, retry_budget: Option<pb::RetryBudget>) -> pb::DestinationProfile
+pub fn profile<I>(
+    routes: I,
+    retry_budget: Option<pb::RetryBudget>,
+    dst_overrides: Vec<pb::WeightedDst>,
+) -> pb::DestinationProfile
 where
     I: IntoIterator,
     I::Item: Into<pb::Route>,
@@ -428,6 +432,7 @@ where
     pb::DestinationProfile {
         routes,
         retry_budget,
+        dst_overrides,
         ..Default::default()
     }
 }
@@ -441,6 +446,13 @@ pub fn retry_budget(
         ttl: Some(ttl.into()),
         retry_ratio,
         min_retries_per_second,
+    }
+}
+
+pub fn traffic_split(authority: &str, weight: u32) -> pb::WeightedDst {
+    pb::WeightedDst {
+        authority: authority.to_string(),
+        weight,
     }
 }
 
