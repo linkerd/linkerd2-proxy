@@ -6,9 +6,26 @@ use never::Never;
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 
-/// A cache that is internally maintained by a `tokio_timer::DelayQueue`.
+/// An LRU cache that can eagerly remove values in a background task.
 ///
-/// All values in the cache will expire after a `expires` span of time.
+/// Assumptions:
+///     - `get` is common
+///     - `poll_insert` is less common
+///     - Values should have an `expires` span of time greater than 0
+///
+/// Complexity:
+///     - `get` in **O(1)** time (amortized average)
+///     - `insert` in **O(1)** time (average)
+///     - `poll_insert` in **O(1)** time (average)
+///
+/// The underlying data structure of Cache is a [`DelayQueue`]. This allows
+/// the background task to remove values by polling for elements that have
+/// reached their specified deadline. Elements are retrieved from the queue
+/// via [`Stream::poll`], and that is what [`poll_purge`] ultimately uses.
+///
+/// [`DelayQueue`]: https://docs.rs/tokio/0.1.19/tokio/timer/struct.DelayQueue.html
+/// [`Stream::poll`]: https://docs.rs/tokio/0.1.19/tokio/timer/struct.DelayQueue.html#impl-Stream
+/// [`poll_purge`]: #method.poll_purge
 pub struct Cache<K, V>
 where
     K: Clone + Eq + Hash,
@@ -80,7 +97,7 @@ where
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let node = {
             let dq_key = self.expirations.insert(key.clone(), self.expires);
-            Node::new(dq_key, value)
+            Node { dq_key, value }
         };
 
         self.values.insert(key, node).map(|n| n.value)
@@ -136,22 +153,14 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         try_ready!(self.interval.poll().map_err(|e| {
-            panic!("PurgeCache.interval Interval::poll must not fail: {}", e);
+            panic!("Interval::poll must not fail: {}", e);
         }));
 
         let mut cache = try_ready!(Ok(self.cache.poll_lock()));
 
         cache.poll_purge().map_err(|e| {
-            panic!("PurgeCache.cache Cache::poll_purge must not fail: {}", e);
+            panic!("Cache::poll_purge must not fail: {}", e);
         })
-    }
-}
-
-// ===== impl Node =====
-
-impl<T> Node<T> {
-    fn new(dq_key: delay_queue::Key, value: T) -> Self {
-        Node { dq_key, value }
     }
 }
 
@@ -382,5 +391,71 @@ mod tests {
             _ => panic!("cache lock should be Ready"),
         };
         assert_eq!(cache.values.len(), 0);
+    }
+
+    #[test]
+    fn access_resets_expiration() {
+        let mut rt = Runtime::new().unwrap();
+
+        let (mut cache, cache_purge) = rt
+            .block_on(future::lazy(|| {
+                Ok::<_, ()>(Cache::new(2, Duration::from_millis(100)))
+            }))
+            .unwrap();
+
+        // Spawn a background purge task on the runtime
+        rt.spawn(cache_purge);
+
+        // Insert into the cache
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
+
+            match cache.poll_insert().unwrap() {
+                Async::Ready(()) => (),
+                _ => panic!("cache should be Ready to reserve"),
+            };
+            cache.insert(1, 2);
+
+            assert_eq!(cache.values.len(), 1);
+
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
+
+        // Sleep for at least half of the expiration time
+        rt.block_on(tokio_timer::sleep(Duration::from_millis(60)))
+            .unwrap();
+
+        // Access the value that was inserted
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
+            assert!(cache.get(&1).is_some());
+
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
+
+        // Sleep for at least half of the expiration time
+        rt.block_on(tokio_timer::sleep(Duration::from_millis(60)))
+            .unwrap();
+
+        // If the access reset the value's expiration, it should still be
+        // retrievable
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
+            assert!(cache.get(&1).is_some());
+
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
     }
 }
