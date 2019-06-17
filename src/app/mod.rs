@@ -4,6 +4,7 @@ use http;
 
 mod admin;
 mod classify;
+mod concrete_dst_router;
 pub mod config;
 mod control;
 mod dst;

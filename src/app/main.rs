@@ -39,6 +39,7 @@ use super::config::{Config, H2Settings};
 use super::dst::DstAddr;
 use super::identity;
 use super::profiles::Client as ProfilesClient;
+use super::concrete_dst_router;
 
 /// Runs a sidecar proxy.
 ///
@@ -541,6 +542,10 @@ where
                     profiles_client,
                     dst_route_layer,
                 ))
+                .buffer_pending(max_in_flight, DispatchDeadline::extract)
+                // Route to a balancer based on the ConcreteDst extention metadata
+                // if it has been set by the profiles router.
+                .layer(concrete_dst_router::layer(concrete_dst_router::Config::new("concrete dst", capacity, max_idle_age)))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .service(balancer_stack);
 

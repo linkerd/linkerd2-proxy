@@ -3,6 +3,10 @@ extern crate tower_discover;
 use futures::Stream;
 use http;
 use indexmap::IndexMap;
+// Import is used by WeightedIndex::sample.
+#[allow(unused_imports)]
+use rand::distributions::Distribution;
+use rand::distributions::WeightedIndex;
 use regex::Regex;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -16,7 +20,13 @@ use never::Never;
 use super::retry::Budget;
 use NameAddr;
 
-pub type Routes = Vec<(RequestMatch, Route)>;
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ConcreteDst(pub NameAddr);
+
+pub struct Routes {
+    pub routes: Vec<(RequestMatch, Route)>,
+    pub dst_overrides: Vec<(NameAddr, u32)>,
+}
 
 /// Watches a destination's Routes.
 ///
@@ -327,13 +337,14 @@ pub mod router {
         route_stream: Option<G>,
         router: Router<B, T, R>,
         default_route: Route,
+        dst_overrides: Vec<(NameAddr, u32)>,
     }
 
     type Router<B, T, M> = rt::Router<http::Request<B>, Recognize<T>, M>;
 
     pub struct Recognize<T> {
         target: T,
-        routes: Routes,
+        routes: Vec<(RequestMatch, Route)>,
         default_route: Route,
     }
 
@@ -451,6 +462,7 @@ pub mod router {
                 route_stream,
                 router,
                 default_route: self.default_route.clone(),
+                dst_overrides: Vec::new(),
             })
         }
     }
@@ -482,11 +494,11 @@ pub mod router {
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
         fn update_routes(&mut self, routes: Routes) {
-            let slots = routes.len() + 1;
+            let slots = routes.routes.len() + 1;
             self.router = Router::new(
                 Recognize {
                     target: self.target.clone(),
-                    routes,
+                    routes: routes.routes,
                     default_route: self.default_route.clone(),
                 },
                 self.stack.clone(),
@@ -494,12 +506,24 @@ pub mod router {
                 // Doesn't matter, since we are guaranteed to have enough capacity.
                 Duration::from_secs(0),
             );
+            self.dst_overrides = routes.dst_overrides;
         }
 
         fn poll_route_stream(&mut self) -> Option<Async<Option<Routes>>> {
             self.route_stream
                 .as_mut()
                 .and_then(|ref mut s| s.poll().ok())
+        }
+
+        fn pick_dst_override(&self) -> Option<NameAddr> {
+            if !self.dst_overrides.is_empty() {
+                let weights = self.dst_overrides.iter().map(|dst| dst.1);
+                let mut rng = rand::thread_rng();
+                let dist = WeightedIndex::new(weights).unwrap();
+                Some(self.dst_overrides[dist.sample(&mut rng)].0.clone())
+            } else {
+                None
+            }
         }
     }
 
@@ -524,7 +548,10 @@ pub mod router {
             Ok(Async::Ready(()))
         }
 
-        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+            if let Some(dst) = self.pick_dst_override() {
+                req.extensions_mut().insert(ConcreteDst(dst));
+            }
             self.router.call(req)
         }
     }
