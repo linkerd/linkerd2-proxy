@@ -506,8 +506,8 @@ dependencies = [
  "http 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.12.30 (registry+https://github.com/rust-lang/crates.io-index)",
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "quickcheck 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-trace 0.1.0 (git+https://github.com/tokio-rs/tokio)",
 ]
 
 [[package]]
@@ -600,6 +600,7 @@ dependencies = [
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-sync 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-timer 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-trace 0.1.0 (git+https://github.com/tokio-rs/tokio)",
  "tower-load-shed 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -623,10 +624,10 @@ name = "linkerd2-task"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-executor 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-timer 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-trace 0.1.0 (git+https://github.com/tokio-rs/tokio)",
 ]
 
 [[package]]
@@ -1437,7 +1438,7 @@ dependencies = [
 [[package]]
 name = "tokio-trace"
 version = "0.1.0"
-source = "git+https://github.com/tokio-rs/tokio#d4adeeef2f30a78b147207738b0fcdc0cc8ac5e7"
+source = "git+https://github.com/tokio-rs/tokio#5925ca772056fba370e2b4524bc4103ec7dd2f56"
 dependencies = [
  "cfg-if 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",

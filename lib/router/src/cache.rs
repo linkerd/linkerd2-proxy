@@ -2,10 +2,10 @@ use std::{hash::Hash, time::Duration};
 
 use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use log::debug;
+
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
-
+use tokio_trace::debug;
 /// An LRU cache that can eagerly remove values in a background task.
 ///
 /// Assumptions:

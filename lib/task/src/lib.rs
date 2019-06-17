@@ -2,7 +2,7 @@
 
 //! Task execution utilities.
 
-use log::{debug, warn};
+use tokio_trace::{debug, warn};
 use std::{error::Error as StdError, fmt, io, sync::Arc};
 
 pub use futures::future::Executor;

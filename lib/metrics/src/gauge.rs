@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use log::warn;
+use tokio_trace::warn;
 
 use super::{FmtLabels, FmtMetric};
 
