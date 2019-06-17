@@ -18,6 +18,15 @@ thread_local! {
     static CONTEXT: RefCell<Vec<*const fmt::Display>> = RefCell::new(Vec::new());
 }
 
+pub fn dispatch() -> trace::Dispatch {
+    let s = trace_fmt::FmtSubscriber::builder()
+        // .on_event(fmt_event)
+        .full()
+        .with_filter(trace_fmt::filter::EnvFilter::from_env(ENV_LOG))
+        .finish();
+    trace::Dispatch::new(s)
+}
+
 pub fn formatted_builder() -> env_logger::Builder {
     let start_time = clock::now();
     let mut builder = env_logger::Builder::new();
@@ -385,3 +394,56 @@ impl<T: fmt::Display> fmt::Display for Bg<T> {
         write!(f, "{}={{bg={}}}", self.section, self.name)
     }
 }
+
+// pub fn fmt_event<N>(ctx: &trace_fmt::span::Context<N>, f: &mut fmt::Write, event: &trace::Event) -> fmt::Result
+// where
+//     N: for<'a> trace_fmt::NewVisitor<'a>,
+// {
+//     let meta = event.metadata();
+//     let level = match record.level() {
+//         Level::TRACE => "TRCE",
+//         Level::DEBUG => "DBUG",
+//         Level::INFO => "INFO",
+//         Level::WARN => "WARN",
+//         Level::ERROR => "ERR!",
+//     };
+//     let uptime = clock::now() - start_time;
+//     write!(
+//         f,
+//         "{} [{:>6}.{:06}s] {} {}",
+//         level,
+//         uptime.as_secs(),
+//         uptime.subsec_micros(),
+//         FmtCtx(&ctx),
+//         meta.target()
+//     )?;
+//     {
+//         let mut recorder = ctx.new_visitor(f, true);
+//         event.record(&mut recorder);
+//     }
+//     ctx.with_current(|(_, span)| write!(f, " {}", span.fields()))
+//         .unwrap_or(Ok(()))?;
+//     writeln!(f)
+// }
+
+// struct FmtCtx<'a, N: 'a>(&'a trace_fmt::span::Context<'a, N>);
+
+// impl<'a, N> fmt::Display for FmtCtx<'a, N> {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         let mut seen = false;
+//         self.0.visit_spans(|_, span| {
+//             write!(f, "{}", span.name())?;
+//             seen = true;
+
+//             let fields = span.fields();
+//             if !fields.is_empty() {
+//                 write!(f, "{{{}}}", fields)?;
+//             }
+//             ":".fmt(f)
+//         })?;
+//         if seen {
+//             f.pad(" ")?;
+//         }
+//         Ok(())
+//     }
+// }

@@ -1,4 +1,4 @@
-#![deny(warnings)]
+// #![deny(warnings)]
 #![recursion_limit = "128"]
 
 extern crate bytes;
@@ -29,7 +29,8 @@ extern crate regex;
 extern crate tokio;
 extern crate tokio_timer;
 #[macro_use]
-extern crate tokio_trace;
+extern crate tokio_trace as trace;
+extern crate tokio_trace_fmt as trace_fmt;
 extern crate tower;
 extern crate tower_grpc;
 extern crate tower_util;

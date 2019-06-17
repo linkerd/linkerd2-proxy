@@ -27,6 +27,7 @@ extern crate tokio_rustls;
 pub extern crate tower_grpc;
 extern crate tower_service;
 extern crate webpki;
+extern crate tokio_trace as trace;
 
 pub use std::collections::HashMap;
 use std::fmt;
@@ -71,10 +72,12 @@ pub fn env_logger_init() -> Result<(), String> {
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    self::linkerd2_proxy::logging::formatted_builder()
-        .parse(&log)
-        .try_init()
-        .map_err(|e| e.to_string())
+    // self::linkerd2_proxy::logging::formatted_builder()
+    //     .parse(&log)
+    //     .try_init()
+    //     .map_err(|e| e.to_string())
+    let _ = trace::dispatcher::set_global_default(self::linkerd2_proxy::logging::dispatch());
+    Ok(())
 }
 
 /// Retry an assertion up to a specified number of times, waiting
