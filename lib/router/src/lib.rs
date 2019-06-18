@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate futures;
 extern crate indexmap;
-extern crate linkerd2_never as never;
 extern crate linkerd2_stack as stack;
 extern crate tokio;
 extern crate tokio_timer;
@@ -276,19 +275,11 @@ where
 
                     // If the target is already cached, route the request to
                     // the service; otherwise, try to insert it
-                    if let Some(service) = cache.get(&target) {
+                    if let Some(service) = cache.access(&target) {
                         State::Calling(Some(request), Some(service))
                     } else {
                         // Ensure that there is capacity for a new slot
-                        match cache
-                            .poll_insert()
-                            .expect("poll_insert never returns an error")
-                        {
-                            Async::Ready(()) => (),
-                            Async::NotReady => {
-                                return Err(error::NoCapacity(cache.capacity()).into());
-                            }
-                        }
+                        cache.at_capacity()?;
 
                         // Make a new service for the target
                         let make = rr.make.take().expect("polled after ready");

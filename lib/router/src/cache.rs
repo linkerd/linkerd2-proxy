@@ -1,22 +1,21 @@
 use std::{hash::Hash, time::Duration};
 
+use error::NoCapacity;
 use futures::{Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use never::Never;
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 
 /// An LRU cache that can eagerly remove values in a background task.
 ///
 /// Assumptions:
-///     - `get` is common
-///     - `poll_insert` is less common
+///     - `access` is common
+///     - `insert` is less common
 ///     - Values should have an `expires` span of time greater than 0
 ///
 /// Complexity:
-///     - `get` in **O(1)** time (amortized average)
+///     - `access` in **O(1)** time (amortized average)
 ///     - `insert` in **O(1)** time (average)
-///     - `poll_insert` in **O(1)** time (average)
 ///
 /// The underlying data structure of Cache is a [`DelayQueue`]. This allows
 /// the background task to remove values by polling for elements that have
@@ -81,11 +80,19 @@ where
         (cache, bg_purge)
     }
 
-    pub fn capacity(&self) -> usize {
-        self.capacity
+    pub fn at_capacity(&self) -> Result<(), NoCapacity> {
+        if self.values.len() == self.capacity {
+            Err(NoCapacity(self.capacity))
+        } else {
+            Ok(())
+        }
     }
 
-    pub fn get(&mut self, key: &K) -> Option<V> {
+    /// Attempts to access an item by key.
+    ///
+    /// If a value is returned, this key will not be considered for eviction
+    /// for another `expires` span of time.
+    pub fn access(&mut self, key: &K) -> Option<V> {
         if let Some(node) = self.values.get_mut(key) {
             self.expirations.reset(&node.dq_key, self.expires);
             return Some(node.value.clone());
@@ -94,6 +101,10 @@ where
         None
     }
 
+    /// Attempts to insert an item by key.
+    ///
+    /// If a value is returned, this key has been set to expire after an
+    /// `expires` span of time.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let node = {
             let dq_key = self.expirations.insert(key.clone(), self.expires);
@@ -103,35 +114,10 @@ where
         self.values.insert(key, node).map(|n| n.value)
     }
 
-    pub fn poll_insert(&mut self) -> Poll<(), Never> {
-        // When checking capacity, only try to remove values if the cache is
-        // at capacity
-        if self.values.len() == self.capacity {
-            match self
-                .expirations
-                .poll()
-                .expect("delay_queue::poll must not fail")
-            {
-                // The cache is at capacity, but we are able to remove a value
-                Async::Ready(Some(expired)) => {
-                    self.values.remove(expired.get_ref());
-                }
-
-                // `Ready(None)` can only be returned when `expirations` is
-                // empty; we know `expirations` is not empty because `values`
-                // is not empty and capacity does not equal zero.
-                Async::Ready(None) => unreachable!("cache expirations cannot be empty"),
-
-                // The cache is at capacity and no values can be removed
-                Async::NotReady => {
-                    return Ok(Async::NotReady);
-                }
-            }
-        }
-
-        Ok(Async::Ready(()))
-    }
-
+    /// Evict expired values from the cache.
+    ///
+    /// Polls the underlying `DelayQueue`. When elements are returned from the
+    /// queue, remove the associated key from `values`.
     fn poll_purge(&mut self) -> Poll<(), Error> {
         while let Some(expired) = try_ready!(self.expirations.poll()) {
             self.values.remove(expired.get_ref());
@@ -180,29 +166,12 @@ mod tests {
                 _ => panic!("cache lock should be Ready"),
             };
 
-            {
-                match cache.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache.insert(1, 2);
-            }
+            cache.insert(1, 2);
             assert_eq!(cache.values.len(), 1);
 
-            {
-                match cache.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache.insert(2, 3);
-            }
+            cache.insert(2, 3);
             assert_eq!(cache.values.len(), 2);
-
-            match cache.poll_insert().unwrap() {
-                Async::NotReady => (),
-                _ => panic!("cache should not be Ready to reserve"),
-            }
-            assert_eq!(cache.values.len(), 2);
+            assert!(cache.at_capacity().is_err());
 
             Ok::<_, ()>(())
         }))
@@ -218,132 +187,26 @@ mod tests {
                 _ => panic!("cache lock should be Ready"),
             };
 
-            assert!(cache.get(&1).is_none());
-            assert!(cache.get(&2).is_none());
+            assert!(cache.access(&1).is_none());
+            assert!(cache.access(&2).is_none());
 
-            {
-                match cache.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache.insert(1, 2);
-            }
-            assert!(cache.get(&1).is_some());
-            assert!(cache.get(&2).is_none());
+            cache.insert(1, 2);
+            assert!(cache.access(&1).is_some());
+            assert!(cache.access(&2).is_none());
 
-            {
-                match cache.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache.insert(2, 3);
-            }
-            assert!(cache.get(&1).is_some());
-            assert!(cache.get(&2).is_some());
+            cache.insert(2, 3);
+            assert!(cache.access(&1).is_some());
+            assert!(cache.access(&2).is_some());
 
-            assert_eq!(cache.get(&1).take().unwrap(), 2);
-            assert_eq!(cache.get(&2).take().unwrap(), 3);
+            assert_eq!(cache.access(&1).take().unwrap(), 2);
+            assert_eq!(cache.access(&2).take().unwrap(), 3);
 
             Ok::<_, ()>(())
         }))
     }
 
     #[test]
-    fn poll_insert_does_nothing_when_capacity_exists() {
-        current_thread::run(futures::future::lazy(|| {
-            let (mut cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
-
-            let mut cache = match cache.poll_lock() {
-                Async::Ready(acquired) => acquired,
-                _ => panic!("cache lock should be Ready"),
-            };
-
-            {
-                match cache.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache.insert(1, 2);
-            }
-            assert_eq!(cache.values.len(), 1);
-
-            {
-                match cache.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-            }
-            assert_eq!(cache.values.len(), 1);
-
-            Ok::<_, ()>(())
-        }))
-    }
-
-    #[test]
-    fn insert_and_self_purge() {
-        let mut rt = Runtime::new().unwrap();
-
-        let (mut cache, _cache_purge) = rt
-            .block_on(future::lazy(|| {
-                Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
-            }))
-            .unwrap();
-
-        // Fill the cache, but do not spawn a background purge task
-        rt.block_on(future::lazy(|| {
-            let mut cache_1 = match cache.poll_lock() {
-                Async::Ready(acquired) => acquired,
-                _ => panic!("cache lock should be Ready"),
-            };
-
-            {
-                match cache_1.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache_1.insert(1, 2);
-            }
-            {
-                match cache_1.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache_1.insert(2, 3);
-            }
-            assert_eq!(cache_1.values.len(), 2);
-
-            Ok::<_, ()>(())
-        }))
-        .unwrap();
-
-        // Sleep for enough time that cache values should be expired
-        rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
-            .unwrap();
-
-        // Force `reserve` to purge the cache
-        rt.block_on(future::lazy(|| {
-            let mut cache_2 = match cache.poll_lock() {
-                Async::Ready(acquired) => acquired,
-                _ => panic!("cache lock should be Ready"),
-            };
-
-            {
-                match cache_2.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache_2.insert(3, 4);
-            }
-            assert_eq!(cache_2.values.len(), 2);
-            assert!(cache_2.get(&3).is_some());
-
-            Ok::<_, ()>(())
-        }))
-        .unwrap()
-    }
-
-    #[test]
-    fn isnert_and_background_purge() {
+    fn insert_and_background_purge() {
         let mut rt = Runtime::new().unwrap();
 
         let (mut cache, cache_purge) = rt
@@ -362,20 +225,8 @@ mod tests {
                 _ => panic!("cache lock should be Ready"),
             };
 
-            {
-                match cache.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache.insert(1, 2);
-            }
-            {
-                match cache.poll_insert().unwrap() {
-                    Async::Ready(()) => (),
-                    _ => panic!("cache should be Ready to reserve"),
-                };
-                cache.insert(2, 3);
-            }
+            cache.insert(1, 2);
+            cache.insert(2, 3);
             assert_eq!(cache.values.len(), 2);
 
             Ok::<_, ()>(())
@@ -413,12 +264,7 @@ mod tests {
                 _ => panic!("cache lock should be Ready"),
             };
 
-            match cache.poll_insert().unwrap() {
-                Async::Ready(()) => (),
-                _ => panic!("cache should be Ready to reserve"),
-            };
             cache.insert(1, 2);
-
             assert_eq!(cache.values.len(), 1);
 
             Ok::<_, ()>(())
@@ -435,7 +281,7 @@ mod tests {
                 Async::Ready(acquired) => acquired,
                 _ => panic!("cache lock should be Ready"),
             };
-            assert!(cache.get(&1).is_some());
+            assert!(cache.access(&1).is_some());
 
             Ok::<_, ()>(())
         }))
@@ -452,7 +298,7 @@ mod tests {
                 Async::Ready(acquired) => acquired,
                 _ => panic!("cache lock should be Ready"),
             };
-            assert!(cache.get(&1).is_some());
+            assert!(cache.access(&1).is_some());
 
             Ok::<_, ()>(())
         }))
