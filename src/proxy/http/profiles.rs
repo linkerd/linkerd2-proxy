@@ -417,7 +417,7 @@ pub mod router {
             let stack = self.route_layer.clone().service(svc::shared(inner));
 
             // We never want to purge routes from the profiles router cache
-            let router = Router::new_lazy(
+            let router = Router::new_without_expiry(
                 Recognize {
                     target: target.clone(),
                     routes: Vec::new(),
@@ -426,8 +426,6 @@ pub mod router {
                 stack.clone(),
                 // only need 1 for default_route at first
                 1,
-                // Doesn't matter, since we are guaranteed to have enough capacity.
-                Duration::from_secs(1),
             );
 
             let route_stream = match target.get_destination() {
@@ -486,7 +484,7 @@ pub mod router {
             let slots = routes.len() + 1;
 
             // We never want to purge routes from the profiles router cache
-            let router = Router::new_lazy(
+            let router = Router::new_without_expiry(
                 Recognize {
                     target: self.target.clone(),
                     routes,
@@ -494,8 +492,6 @@ pub mod router {
                 },
                 self.stack.clone(),
                 slots,
-                // Doesn't matter, since we are guaranteed to have enough capacity.
-                Duration::from_secs(1),
             );
             self.router = router;
         }

@@ -148,8 +148,8 @@ where
         (router, cache_bg)
     }
 
-    pub fn new_lazy(recognize: Rec, make: Mk, capacity: usize, max_idle_age: Duration) -> Self {
-        let (cache, _) = Cache::new(capacity, max_idle_age);
+    pub fn new_without_expiry(recognize: Rec, make: Mk, capacity: usize) -> Self {
+        let (cache, _) = Cache::new(capacity, Duration::default());
 
         Self {
             inner: Inner {
@@ -279,7 +279,9 @@ where
                         State::Calling(Some(request), Some(service))
                     } else {
                         // Ensure that there is capacity for a new slot
-                        cache.at_capacity()?;
+                        if !cache.can_insert() {
+                            return Err(error::NoCapacity(cache.capacity()).into());
+                        }
 
                         // Make a new service for the target
                         let make = rr.make.take().expect("polled after ready");
@@ -292,15 +294,10 @@ where
                 State::Calling(ref mut request, ref mut service) => {
                     let mut service = service.take().expect("polled after ready");
 
-                    match service.poll_ready().map_err(error::Error::from)? {
-                        Async::Ready(()) => {
-                            let request = request.take().expect("polled after ready");
-                            State::Called(service.call(request))
-                        }
-                        Async::NotReady => {
-                            unreachable!("load shedding services must always be ready");
-                        }
-                    }
+                    assert!(service.poll_ready()?.is_ready(), "load shedding services must always be ready");
+
+                    let request = request.take().expect("polled after ready");
+                    State::Called(service.call(request))
                 }
                 State::Called(ref mut fut) => return fut.poll().map_err(Into::into),
                 State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),

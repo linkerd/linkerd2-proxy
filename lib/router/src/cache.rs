@@ -1,6 +1,5 @@
 use std::{hash::Hash, time::Duration};
 
-use error::NoCapacity;
 use futures::{Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use tokio::sync::lock::Lock;
@@ -80,12 +79,12 @@ where
         (cache, bg_purge)
     }
 
-    pub fn at_capacity(&self) -> Result<(), NoCapacity> {
-        if self.values.len() == self.capacity {
-            Err(NoCapacity(self.capacity))
-        } else {
-            Ok(())
-        }
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn can_insert(&self) -> bool {
+        self.values.len() < self.capacity
     }
 
     /// Attempts to access an item by key.
@@ -171,7 +170,7 @@ mod tests {
 
             cache.insert(2, 3);
             assert_eq!(cache.values.len(), 2);
-            assert!(cache.at_capacity().is_err());
+            assert!(!cache.can_insert());
 
             Ok::<_, ()>(())
         }))
