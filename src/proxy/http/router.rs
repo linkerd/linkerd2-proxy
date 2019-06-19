@@ -1,5 +1,6 @@
 use futures::Poll;
 use http;
+use trace;
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -48,6 +49,7 @@ where
     Mk::Value: svc::Service<Req>,
 {
     inner: Router<Req, Rec, Mk>,
+    span: trace::Span,
 }
 
 // === impl Config ===
@@ -128,12 +130,17 @@ where
             self.config.capacity,
             self.config.max_idle_age,
         );
-
+        let span = debug_span!(
+            "router",
+            name = self.config.proxy_name,
+            // config.capacity = self.config.capacity,
+            // config.max_idle_age = ?self.config.max_idle_age,
+        );
         let ctx = logging::Section::Proxy.bg(self.config.proxy_name);
         let cache_daemon = ctx.future(cache_bg);
         tokio::spawn(cache_daemon);
 
-        Service { inner }
+        Service { inner, span }
     }
 }
 
@@ -192,6 +199,7 @@ where
     }
 
     fn call(&mut self, request: Req) -> Self::Future {
+        let _enter = self.span.enter();
         trace!("routing...");
         self.inner.call(request)
     }
@@ -207,6 +215,7 @@ where
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            span: self.span.clone(),
         }
     }
 }

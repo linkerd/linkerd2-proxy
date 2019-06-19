@@ -25,11 +25,10 @@ const L5D_SERVER_ID: &'static str = "l5d-server-id";
 const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 
 pub fn init() -> Result<config::Config, config::Error> {
-    use logging;
     use trace;
 
     // logging::init();
-    trace::dispatcher::set_global_default(logging::dispatch()).unwrap();
+    trace::init();
     config::Config::parse(&config::Env)
 }
 

@@ -61,8 +61,10 @@ tower = "0.1"
 tower-discover = "0.1"
 tower-service = "0.2"
 tower-util = "0.1"
-tokio-trace            = { git = "https://github.com/tokio-rs/tokio", features = ["log"]}
+tokio-trace            = { git = "https://github.com/tokio-rs/tokio" }
 tokio-trace-fmt        = { git = "https://github.com/tokio-rs/tokio-trace-nursery", branch = "eliza/trace-0.2"}
+tokio-trace-futures    = { git = "https://github.com/tokio-rs/tokio-trace-nursery", branch = "eliza/trace-0.2"}
+tokio-trace-log        = { git = "https://github.com/tokio-rs/tokio-trace-nursery", branch = "eliza/trace-0.2"}
 tokio-connect          = { git = "https://github.com/carllerche/tokio-connect" }
 tower-balance          = { git = "https://github.com/tower-rs/tower" }
 tower-reconnect        = { git = "https://github.com/tower-rs/tower" }

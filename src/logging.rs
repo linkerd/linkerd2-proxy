@@ -18,13 +18,111 @@ thread_local! {
     static CONTEXT: RefCell<Vec<*const fmt::Display>> = RefCell::new(Vec::new());
 }
 
-pub fn dispatch() -> trace::Dispatch {
-    let s = trace_fmt::FmtSubscriber::builder()
-        // .on_event(fmt_event)
-        .full()
-        .with_filter(trace_fmt::filter::EnvFilter::from_env(ENV_LOG))
-        .finish();
-    trace::Dispatch::new(s)
+pub mod trace {
+    extern crate tokio_trace_log;
+    use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
+    use std::{env, fmt, sync::Arc, time::Instant};
+    pub use tokio_trace::*;
+    pub use tokio_trace_fmt::*;
+
+    pub type SubscriberBuilder = Builder<
+        default::NewRecorder,
+        Box<
+            Fn(&Context<default::NewRecorder>, &mut fmt::Write, &Event) -> fmt::Result
+                + Send
+                + Sync
+                + 'static,
+        >,
+        filter::EnvFilter,
+    >;
+
+    pub fn init() {
+        let env = env::var(super::ENV_LOG).unwrap_or_default();
+        try_init_with_filter(env).expect("initializing tokio-trace failed");
+    }
+
+    pub fn try_init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), &'static str> {
+        let dispatch = Dispatch::new(
+            subscriber_builder()
+                .with_filter(filter::EnvFilter::from(filter))
+                .finish(),
+        );
+        dispatcher::set_global_default(dispatch)
+            .map_err(|_| "failed to set global default dispatcher")?;
+        let logger = tokio_trace_log::LogTracer::default();
+        log::set_boxed_logger(Box::new(logger)).map_err(|_| "failed to set global logger")
+    }
+
+    fn fmt_event<N>(span_ctx: &Context<N>, f: &mut fmt::Write, event: &Event) -> fmt::Result {
+        // lazy_static! {
+        //     static ref START_TIME: Instant = clock::now()
+        // }
+        // TODO: put back start time
+        unimplemented!()
+    }
+
+    fn subscriber_builder() -> SubscriberBuilder {
+        let start_time = Arc::new(clock::now());
+        FmtSubscriber::builder().on_event(Box::new(move |span_ctx, f, event| {
+            let meta = event.metadata();
+            let level = match meta.level() {
+                &Level::TRACE => "TRCE",
+                &Level::DEBUG => "DBUG",
+                &Level::INFO => "INFO",
+                &Level::WARN => "WARN",
+                &Level::ERROR => "ERR!",
+            };
+            let uptime = clock::now() - *start_time.clone();
+            LEGACY_CONTEXT.with(|old_ctx| {
+                write!(
+                    f,
+                    "{} [{:>6}.{:06}s] {} {}{} ",
+                    level,
+                    uptime.as_secs(),
+                    uptime.subsec_micros(),
+                    // "??",
+                    // "????",
+                    LegacyContext(&old_ctx.borrow()),
+                    FmtCtx(&span_ctx),
+                    meta.target()
+                )
+            })?;
+            {
+                let mut recorder = span_ctx.new_visitor(f, true);
+                event.record(&mut recorder);
+            }
+            // ctx.with_current(|(_, span)| write!(f, " {}", span.fields()))
+            //     .unwrap_or(Ok(()))?;
+            writeln!(f)
+        }))
+    }
+
+    struct FmtCtx<'a, N: 'a>(&'a Context<'a, N>);
+
+    impl<'a, N> fmt::Display for FmtCtx<'a, N> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let mut seen = false;
+            self.0.visit_spans(|_, span| {
+                write!(f, "{}", span.name())?;
+                seen = true;
+
+                let fields = span.fields();
+                if !fields.is_empty() {
+                    write!(f, "{{{}}}", fields)?;
+                }
+                ":".fmt(f)
+            })?;
+            if seen {
+                f.pad(" ")?;
+            }
+            Ok(())
+        }
+    }
+
+    pub mod futures {
+        pub use tokio_trace_futures::*;
+    }
+
 }
 
 pub fn formatted_builder() -> env_logger::Builder {
@@ -395,55 +493,10 @@ impl<T: fmt::Display> fmt::Display for Bg<T> {
     }
 }
 
-// pub fn fmt_event<N>(ctx: &trace_fmt::span::Context<N>, f: &mut fmt::Write, event: &trace::Event) -> fmt::Result
+// pub fn fmt_event<N>(span_ctx: &trace_fmt::Context<N>, f: &mut fmt::Write, event: &trace::Event) -> fmt::Result
 // where
 //     N: for<'a> trace_fmt::NewVisitor<'a>,
 // {
-//     let meta = event.metadata();
-//     let level = match record.level() {
-//         Level::TRACE => "TRCE",
-//         Level::DEBUG => "DBUG",
-//         Level::INFO => "INFO",
-//         Level::WARN => "WARN",
-//         Level::ERROR => "ERR!",
-//     };
-//     let uptime = clock::now() - start_time;
-//     write!(
-//         f,
-//         "{} [{:>6}.{:06}s] {} {}",
-//         level,
-//         uptime.as_secs(),
-//         uptime.subsec_micros(),
-//         FmtCtx(&ctx),
-//         meta.target()
-//     )?;
-//     {
-//         let mut recorder = ctx.new_visitor(f, true);
-//         event.record(&mut recorder);
-//     }
-//     ctx.with_current(|(_, span)| write!(f, " {}", span.fields()))
-//         .unwrap_or(Ok(()))?;
-//     writeln!(f)
+
 // }
 
-// struct FmtCtx<'a, N: 'a>(&'a trace_fmt::span::Context<'a, N>);
-
-// impl<'a, N> fmt::Display for FmtCtx<'a, N> {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         let mut seen = false;
-//         self.0.visit_spans(|_, span| {
-//             write!(f, "{}", span.name())?;
-//             seen = true;
-
-//             let fields = span.fields();
-//             if !fields.is_empty() {
-//                 write!(f, "{{{}}}", fields)?;
-//             }
-//             ":".fmt(f)
-//         })?;
-//         if seen {
-//             f.pad(" ")?;
-//         }
-//         Ok(())
-//     }
-// }

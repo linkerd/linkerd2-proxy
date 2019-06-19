@@ -65,6 +65,7 @@ const DEFAULT_LOG: &'static str = "error,\
 
 pub fn env_logger_init() -> Result<(), String> {
     use std::env;
+    use self::linkerd2_proxy::trace;
 
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
@@ -72,12 +73,7 @@ pub fn env_logger_init() -> Result<(), String> {
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    // self::linkerd2_proxy::logging::formatted_builder()
-    //     .parse(&log)
-    //     .try_init()
-    //     .map_err(|e| e.to_string())
-    let _ = trace::dispatcher::set_global_default(self::linkerd2_proxy::logging::dispatch());
-    Ok(())
+    trace::try_init_with_filter(&log).map_err(ToString::to_string)
 }
 
 /// Retry an assertion up to a specified number of times, waiting

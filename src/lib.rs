@@ -29,8 +29,10 @@ extern crate regex;
 extern crate tokio;
 extern crate tokio_timer;
 #[macro_use]
-extern crate tokio_trace as trace;
-extern crate tokio_trace_fmt as trace_fmt;
+extern crate tokio_trace;
+extern crate tokio_trace_fmt;
+#[macro_use]
+extern crate tokio_trace_futures;
 extern crate tower;
 extern crate tower_grpc;
 extern crate tower_util;
@@ -64,3 +66,4 @@ pub mod transport;
 use self::addr::{Addr, NameAddr};
 use self::conditional::Conditional;
 pub use self::transport::SoOriginalDst;
+pub use self::logging::trace;
