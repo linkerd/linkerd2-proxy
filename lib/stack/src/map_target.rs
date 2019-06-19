@@ -1,5 +1,5 @@
 use futures::Poll;
-use svc;
+use tower_service as svc;
 
 pub fn layer<T, M>(map_target: M) -> Layer<M>
 where
