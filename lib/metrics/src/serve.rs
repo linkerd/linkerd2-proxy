@@ -3,6 +3,7 @@ use deflate::CompressionOptions;
 use futures::future::{self, FutureResult};
 use http::{self, header, StatusCode};
 use hyper::{service::Service, Body, Request, Response};
+use log::{error, trace};
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
@@ -108,7 +109,7 @@ impl From<io::Error> for ServeError {
 }
 
 impl fmt::Display for ServeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}: {}",
