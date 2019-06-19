@@ -1,11 +1,8 @@
+#![deny(warnings, rust_2018_idioms)]
+
 //! Task execution utilities.
 
-extern crate futures;
-#[macro_use]
-extern crate log;
-extern crate tokio;
-extern crate tokio_executor;
-
+use log::{debug, warn};
 use std::{error::Error as StdError, fmt, io, sync::Arc};
 
 pub use futures::future::Executor;
@@ -16,7 +13,7 @@ use tokio::runtime::{self as thread_pool, current_thread};
 pub use tokio::spawn;
 pub use tokio_executor::TypedExecutor;
 
-pub type BoxSendFuture = Box<Future<Item = (), Error = ()> + Send>;
+pub type BoxSendFuture = Box<dyn Future<Item = (), Error = ()> + Send>;
 
 /// An empty type which implements `Executor` by lazily  calling
 /// `tokio::executor::DefaultExecutor::current().execute(...)`.
@@ -38,11 +35,11 @@ pub struct BoxExecutor<E: TokioExecutor>(E);
 ///
 /// This is useful when some code cannot be generic over any executor,
 /// and instead needs a trait object. An example is `Http11Upgrade`.
-pub struct ErasedExecutor(Box<Executor<BoxSendFuture> + Send + Sync>);
+pub struct ErasedExecutor(Box<dyn Executor<BoxSendFuture> + Send + Sync>);
 
 /// A `futures::executor::Executor` with any generics erased.
 #[derive(Clone)]
-pub struct ArcExecutor(Arc<Executor<BoxSendFuture> + Send + Sync>);
+pub struct ArcExecutor(Arc<dyn Executor<BoxSendFuture> + Send + Sync>);
 
 /// Indicates which Tokio `Runtime` should be used for the main proxy.
 ///
@@ -184,7 +181,7 @@ where
 }
 
 impl fmt::Debug for ErasedExecutor {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("ErasedExecutor")
     }
 }
@@ -209,7 +206,7 @@ where
 }
 
 impl fmt::Debug for ArcExecutor {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("ArcExecutor")
     }
 }
@@ -309,7 +306,7 @@ impl<F> From<ExecuteError<F>> for Error {
     }
 }
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.description().fmt(f)
     }
 }
@@ -326,7 +323,7 @@ impl StdError for Error {
 
 #[cfg(any(test, feature = "test_util"))]
 pub mod test_util {
-    extern crate tokio_timer;
+    use tokio_timer;
 
     use self::tokio_timer as timer;
     use futures::Future;
