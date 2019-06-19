@@ -53,14 +53,6 @@ pub mod trace {
         log::set_boxed_logger(Box::new(logger)).map_err(|_| "failed to set global logger")
     }
 
-    fn fmt_event<N>(span_ctx: &Context<N>, f: &mut fmt::Write, event: &Event) -> fmt::Result {
-        // lazy_static! {
-        //     static ref START_TIME: Instant = clock::now()
-        // }
-        // TODO: put back start time
-        unimplemented!()
-    }
-
     fn subscriber_builder() -> SubscriberBuilder {
         let start_time = Arc::new(clock::now());
         FmtSubscriber::builder().on_event(Box::new(move |span_ctx, f, event| {
@@ -76,12 +68,10 @@ pub mod trace {
             LEGACY_CONTEXT.with(|old_ctx| {
                 write!(
                     f,
-                    "{} [{:>6}.{:06}s] {} {}{} ",
+                    "{} [{:>6}.{:06}s] {}{}{} ",
                     level,
                     uptime.as_secs(),
                     uptime.subsec_micros(),
-                    // "??",
-                    // "????",
                     LegacyContext(&old_ctx.borrow()),
                     FmtCtx(&span_ctx),
                     meta.target()
@@ -91,8 +81,6 @@ pub mod trace {
                 let mut recorder = span_ctx.new_visitor(f, true);
                 event.record(&mut recorder);
             }
-            // ctx.with_current(|(_, span)| write!(f, " {}", span.fields()))
-            //     .unwrap_or(Ok(()))?;
             writeln!(f)
         }))
     }
