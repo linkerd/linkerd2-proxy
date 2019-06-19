@@ -1,9 +1,7 @@
-extern crate futures;
-extern crate http;
-extern crate hyper;
-extern crate tower_balance;
+#![deny(warnings, rust_2018_idioms)]
 
 use futures::{Async, Poll};
+use http;
 use hyper::body::Payload;
 use tower_balance::load::Instrument;
 
@@ -38,15 +36,15 @@ where
     type Output = http::Response<PendingUntilFirstDataBody<T, B>>;
 
     fn instrument(&self, handle: T, rsp: http::Response<B>) -> Self::Output {
-        let (parts, body) = rsp.into_parts();
-        let handle = if body.is_end_stream() {
-            drop(handle);
-            None
-        } else {
-            Some(handle)
-        };
-        let body = PendingUntilFirstDataBody { handle, body };
-        http::Response::from_parts(parts, body)
+        rsp.map(move |body| {
+            let handle = if body.is_end_stream() {
+                drop(handle);
+                None
+            } else {
+                Some(handle)
+            };
+            PendingUntilFirstDataBody { handle, body }
+        })
     }
 }
 
@@ -59,15 +57,15 @@ where
     type Output = http::Response<PendingUntilEosBody<T, B>>;
 
     fn instrument(&self, handle: T, rsp: http::Response<B>) -> Self::Output {
-        let (parts, body) = rsp.into_parts();
-        let handle = if body.is_end_stream() {
-            drop(handle);
-            None
-        } else {
-            Some(handle)
-        };
-        let body = PendingUntilEosBody { handle, body };
-        http::Response::from_parts(parts, body)
+        rsp.map(move |body| {
+            let handle = if body.is_end_stream() {
+                drop(handle);
+                None
+            } else {
+                Some(handle)
+            };
+            PendingUntilEosBody { handle, body }
+        })
     }
 }
 
