@@ -55,14 +55,14 @@ pub struct Node<T> {
 /// When the guard is dropped, the value's `last_access` time is updated with the provided
 /// time source.
 #[derive(Debug)]
-pub struct Access<'a, T: 'a, N: Now + 'a = ()> {
+pub struct Access<'a, T, N: Now = ()> {
     node: &'a mut Node<T>,
     now: &'a N,
 }
 
 /// A handle to a `Cache` that has capacity for at least one additional value.
 #[derive(Debug)]
-pub struct Reserve<'a, K: Hash + Eq + 'a, V: 'a, N: 'a> {
+pub struct Reserve<'a, K: Hash + Eq, V, N> {
     vals: &'a mut IndexMap<K, Node<V>>,
     now: &'a N,
 }
@@ -90,7 +90,7 @@ impl<K: Hash + Eq, V, N: Now> Cache<K, V, N> {
     ///
     /// A mutable reference to the route is wrapped in the returned `Access` to
     /// ensure that the access-time is updated when the reference is released.
-    pub fn access<Q>(&mut self, key: &Q) -> Option<Access<V, N>>
+    pub fn access<Q>(&mut self, key: &Q) -> Option<Access<'_, V, N>>
     where
         Q: Hash + Equivalent<K>,
     {
@@ -104,7 +104,7 @@ impl<K: Hash + Eq, V, N: Now> Cache<K, V, N> {
     /// capacity, idle entries may be evicted to create capacity.
     ///
     /// An error is returned if there is no available capacity.
-    pub fn reserve(&mut self) -> Result<Reserve<K, V, N>, CapacityExhausted> {
+    pub fn reserve(&mut self) -> Result<Reserve<'_, K, V, N>, CapacityExhausted> {
         if self.vals.len() == self.capacity {
             // Only whole seconds are used to determine whether a node should be retained.
             // This is intended to prevent the need for repetitive reservations when
@@ -220,14 +220,14 @@ impl Now for () {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::MultiplyAndAssign;
     use futures::Future;
     use std::{
         cell::RefCell,
         rc::Rc,
         time::{Duration, Instant},
     };
-    use svc::Service;
-    use test_util::MultiplyAndAssign;
+    use tower_service::Service;
 
     /// A mocked instance of `Now` to drive tests.
     #[derive(Clone)]
