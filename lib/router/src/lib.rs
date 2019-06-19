@@ -11,6 +11,7 @@ use std::hash::Hash;
 use std::time::Duration;
 
 use futures::{Async, Future, Poll};
+use indexmap::IndexMap;
 use tokio::sync::lock::Lock;
 use tower_load_shed::LoadShed;
 
@@ -59,6 +60,9 @@ where
         (*self)(target)
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct FixedMake<T: Clone + Eq + Hash, Svc>(IndexMap<T, Svc>);
 
 pub struct ResponseFuture<Req, Rec, Mk>
 where
@@ -121,6 +125,23 @@ where
     }
 }
 
+// ===== impl FixedMake =====
+
+impl<T, Svc> Make<T> for FixedMake<T, Svc>
+where
+    T: Clone + Eq + Hash,
+    Svc: Clone,
+{
+    type Value = Svc;
+
+    fn make(&self, target: &T) -> Self::Value {
+        self.0
+            .get(target)
+            .cloned()
+            .expect("target not found in fixed router")
+    }
+}
+
 // ===== impl Router =====
 
 impl<Req, Rec, Mk> Router<Req, Rec, Mk>
@@ -147,17 +168,23 @@ where
 
         (router, cache_bg)
     }
+}
 
-    pub fn new_without_expiry(recognize: Rec, make: Mk, capacity: usize) -> Self {
-        let (cache, _) = Cache::new(capacity, Duration::default());
+impl<Req, Rec, Svc> Router<Req, Rec, FixedMake<Rec::Target, Svc>>
+where
+    Rec: Recognize<Req>,
+    Svc: svc::Service<Req> + Clone,
+{
+    pub fn new_fixed(recognize: Rec, routes: IndexMap<Rec::Target, Svc>) -> Self {
+        let capacity = routes.len();
+        let (router, _) = Self::new(
+            recognize,
+            FixedMake(routes),
+            capacity,
+            Duration::from_secs(1),
+        );
 
-        Self {
-            inner: Inner {
-                recognize,
-                make,
-                cache,
-            },
-        }
+        router
     }
 }
 
@@ -294,7 +321,10 @@ where
                 State::Calling(ref mut request, ref mut service) => {
                     let mut service = service.take().expect("polled after ready");
 
-                    assert!(service.poll_ready()?.is_ready(), "load shedding services must always be ready");
+                    assert!(
+                        service.poll_ready()?.is_ready(),
+                        "load shedding services must always be ready"
+                    );
 
                     let request = request.take().expect("polled after ready");
                     State::Called(service.call(request))

@@ -325,7 +325,7 @@ pub mod router {
         target: T,
         stack: R,
         route_stream: Option<G>,
-        router: Router<B, T, R>,
+        router: Router<B, T, rt::FixedMake<T::Output, R::Value>>,
         default_route: Route,
     }
 
@@ -415,17 +415,20 @@ pub mod router {
         fn call(&mut self, target: T) -> Self::Future {
             let inner = self.inner.make(&target);
             let stack = self.route_layer.clone().service(svc::shared(inner));
+            let default_route = target.clone().with_route(self.default_route.clone());
 
-            // We never want to purge routes from the profiles router cache
-            let router = Router::new_without_expiry(
+            let mut make = IndexMap::with_capacity(1);
+            make.insert(default_route.clone(), stack.make(&default_route));
+
+            // Create a new fixed router; we can eagerly make the services
+            // and never expire the routes from the profile router cache
+            let router = Router::new_fixed(
                 Recognize {
                     target: target.clone(),
                     routes: Vec::new(),
                     default_route: self.default_route.clone(),
                 },
-                stack.clone(),
-                // only need 1 for default_route at first
-                1,
+                make,
             );
 
             let route_stream = match target.get_destination() {
@@ -481,18 +484,29 @@ pub mod router {
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
         fn update_routes(&mut self, routes: Routes) {
-            let slots = routes.len() + 1;
+            let default_route = self.target.clone().with_route(self.default_route.clone());
 
-            // We never want to purge routes from the profiles router cache
-            let router = Router::new_without_expiry(
+            let capacity = routes.len() + 1;
+            let mut make = IndexMap::with_capacity(capacity);
+            make.insert(default_route.clone(), self.stack.make(&default_route));
+
+            for (_, route) in routes.clone().into_iter() {
+                let route = self.target.clone().with_route(route);
+                let service = self.stack.make(&route);
+                make.insert(route, service);
+            }
+
+            // Create a new fixed router; we can eagerly make the services
+            // and never expire the routes from the profile router cache
+            let router = Router::new_fixed(
                 Recognize {
                     target: self.target.clone(),
                     routes,
                     default_route: self.default_route.clone(),
                 },
-                self.stack.clone(),
-                slots,
+                make,
             );
+
             self.router = router;
         }
 
@@ -514,7 +528,8 @@ pub mod router {
     {
         type Response = Svc::Response;
         type Error = Error;
-        type Future = rt::ResponseFuture<http::Request<B>, Recognize<T>, Stk>;
+        type Future =
+            rt::ResponseFuture<http::Request<B>, Recognize<T>, rt::FixedMake<T::Output, Svc>>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             while let Some(Async::Ready(Some(routes))) = self.poll_route_stream() {
