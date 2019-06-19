@@ -1,5 +1,5 @@
-use futures::{Future, Poll};
-use svc;
+use futures::{try_ready, Future, Poll};
+use tower_service as svc;
 
 pub fn layer<L>(per_make: L) -> Layer<L> {
     Layer(per_make)
