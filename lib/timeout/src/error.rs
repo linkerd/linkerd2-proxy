@@ -3,7 +3,7 @@
 use std::fmt;
 use std::time::Duration;
 
-pub use timer::Error as Timer;
+pub use tokio_timer::Error as Timer;
 
 pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -25,7 +25,7 @@ impl Timedout {
 }
 
 impl fmt::Display for Timedout {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "operation timed out after {}", HumanDuration(&self.0))
     }
 }
@@ -33,7 +33,7 @@ impl fmt::Display for Timedout {
 impl std::error::Error for Timedout {}
 
 impl<'a> fmt::Display for HumanDuration<'a> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         let secs = self.0.as_secs();
         let subsec_ms = self.0.subsec_nanos() as f64 / 1_000_000f64;
         if secs == 0 {
