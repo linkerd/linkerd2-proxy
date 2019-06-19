@@ -9,7 +9,7 @@ pub struct NoCapacity(pub usize);
 pub struct NotRecognized;
 
 impl fmt::Display for NoCapacity {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "router capacity reached ({})", self.0)
     }
 }
@@ -17,7 +17,7 @@ impl fmt::Display for NoCapacity {
 impl std::error::Error for NoCapacity {}
 
 impl fmt::Display for NotRecognized {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("route not recognized")
     }
 }
