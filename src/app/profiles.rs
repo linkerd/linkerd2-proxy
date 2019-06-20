@@ -277,7 +277,10 @@ fn convert_route(
 fn convert_dst_override(orig: api::WeightedDst) -> Option<profiles::WeightedAddr> {
     NameAddr::from_str(orig.authority.as_str())
         .ok()
-        .map(|addr| profiles::WeightedAddr {addr, weight: orig.weight})
+        .map(|addr| profiles::WeightedAddr {
+            addr,
+            weight: orig.weight,
+        })
 }
 
 fn set_route_retry(route: &mut profiles::Route, retry_budget: Option<&Arc<Budget>>) {

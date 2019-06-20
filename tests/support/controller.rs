@@ -8,7 +8,6 @@ use std::net::IpAddr;
 use std::ops::{Bound, DerefMut, RangeBounds};
 use std::sync::{Arc, Mutex};
 
-
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 
@@ -251,7 +250,10 @@ impl pb::server::Destination for Controller {
                             return future::ok(grpc::Response::new(updates));
                         }
 
-                        let msg = format!("expected get call for {:?} but got get call for {:?}", dst, req);
+                        let msg = format!(
+                            "expected get call for {:?} but got get call for {:?}",
+                            dst, req
+                        );
                         calls.push_front(Dst::Call(dst, updates));
                         return future::err(grpc::Status::new(grpc::Code::Unavailable, msg));
                     }
@@ -482,10 +484,7 @@ pub fn retry_budget(
 }
 
 pub fn traffic_split(authority: String, weight: u32) -> pb::WeightedDst {
-    pb::WeightedDst {
-        authority,
-        weight,
-    }
+    pb::WeightedDst { authority, weight }
 }
 
 pub fn route() -> RouteBuilder {

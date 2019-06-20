@@ -453,7 +453,6 @@ fn traffic_split() {
     }
     apex_responses.store(0, Ordering::SeqCst);
 
-
     // 6. Send `n` requests to apex service
     for _ in 0..n {
         let rsp = client.get("/traffic-split");

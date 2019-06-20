@@ -335,7 +335,7 @@ pub mod router {
     where
         T: WithRoute + Clone,
         T::Output: Eq + Hash,
-        R: svc::Layer<S, Service=RMk>,
+        R: svc::Layer<S, Service = RMk>,
         RMk: rt::Make<T::Output>,
         RMk::Value: svc::Service<http::Request<RBody>> + Clone,
     {
@@ -386,7 +386,9 @@ pub mod router {
         type Target = T;
 
         fn recognize(&self, _req: &http::Request<B>) -> Option<Self::Target> {
-            let mut weights = self.dst_overrides.iter()
+            let mut weights = self
+                .dst_overrides
+                .iter()
                 .map(|dst| dst.weight)
                 .filter(|weight| *weight > 0)
                 .peekable();
@@ -446,12 +448,23 @@ pub mod router {
         MSvc: svc::Service<http::Request<MBody>> + Clone,
         MSvc::Error: Into<Error>,
         G: GetRoutes,
-        R: svc::Layer<svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>, Service = RMk> + Clone,
+        R: svc::Layer<
+                svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>,
+                Service = RMk,
+            > + Clone,
         RMk: rt::Make<<T as WithRoute>::Output, Value = RSvc> + Clone,
         RSvc: svc::Service<http::Request<RBody>> + Clone,
         RSvc::Error: Into<Error>,
     {
-        type Response = Service<G::Stream, T, R, svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>, RMk, M, RBody>;
+        type Response = Service<
+            G::Stream,
+            T,
+            R,
+            svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>,
+            RMk,
+            M,
+            RBody,
+        >;
         type Error = never::Never;
         type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
@@ -463,14 +476,17 @@ pub mod router {
             let concrete_router = rt::Router::new(
                 ConcreteDstRecognize {
                     target: target.clone(),
-                    dst_overrides: Vec::new()
+                    dst_overrides: Vec::new(),
                 },
                 self.inner.clone(),
                 1,
                 Duration::from_secs(0),
             );
 
-            let stack = self.route_layer.clone().service(svc::shared(concrete_router));
+            let stack = self
+                .route_layer
+                .clone()
+                .service(svc::shared(concrete_router));
 
             let router = rt::Router::new(
                 RouteRecognize {
@@ -531,12 +547,24 @@ pub mod router {
         }
     }
 
-    impl<G, T, R, RMk, M, RBody, MBody> Service<G, T, R, svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>, RMk, M, RBody>
+    impl<G, T, R, RMk, M, RBody, MBody>
+        Service<
+            G,
+            T,
+            R,
+            svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>,
+            RMk,
+            M,
+            RBody,
+        >
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + WithAddr + Eq + Hash + Clone,
         T::Output: Eq + Hash,
-        R: svc::Layer<svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>, Service=RMk> + Clone,
+        R: svc::Layer<
+                svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>,
+                Service = RMk,
+            > + Clone,
         RMk: rt::Make<T::Output> + Clone,
         RMk::Value: svc::Service<http::Request<RBody>> + Clone,
         M: rt::Make<T> + Clone,
@@ -554,7 +582,10 @@ pub mod router {
                 Duration::from_secs(0),
             );
 
-            let stack = self.route_layer.clone().service(svc::shared(concrete_router));
+            let stack = self
+                .route_layer
+                .clone()
+                .service(svc::shared(concrete_router));
 
             let slots = routes.routes.len() + 1;
             self.router = rt::Router::new(
@@ -575,15 +606,26 @@ pub mod router {
                 .as_mut()
                 .and_then(|ref mut s| s.poll().ok())
         }
-
     }
 
-    impl<G, T, R, RMk, M, RBody, MBody, Svc> svc::Service<http::Request<RBody>> for Service<G, T, R, svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>, RMk, M, RBody>
+    impl<G, T, R, RMk, M, RBody, MBody, Svc> svc::Service<http::Request<RBody>>
+        for Service<
+            G,
+            T,
+            R,
+            svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>,
+            RMk,
+            M,
+            RBody,
+        >
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + WithAddr + Eq + Hash + Clone,
         T::Output: Eq + Hash,
-        R: svc::Layer<svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>, Service=RMk> + Clone,
+        R: svc::Layer<
+                svc::shared::Shared<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, M>>,
+                Service = RMk,
+            > + Clone,
         RMk: rt::Make<T::Output, Value = Svc> + Clone,
         M: rt::Make<T> + Clone,
         M::Value: svc::Service<http::Request<MBody>> + Clone,
