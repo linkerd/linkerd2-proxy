@@ -43,7 +43,7 @@ http-body = "0.1"
 httparse = "1.2"
 hyper = "0.12.3"
 ipnet = "1.0"
-log = "0.4.1"
+log = { version = "0.4.1", features = ["max_level_trace"] }
 indexmap = "1.0.0"
 prost = "0.5.0"
 prost-types = "0.5.0"
@@ -61,7 +61,7 @@ tower = "0.1"
 tower-discover = "0.1"
 tower-service = "0.2"
 tower-util = "0.1"
-tokio-trace            = { git = "https://github.com/tokio-rs/tokio" }
+tokio-trace            = { git = "https://github.com/tokio-rs/tokio", default-features = false }
 tokio-trace-fmt        = { git = "https://github.com/tokio-rs/tokio-trace-nursery", branch = "eliza/trace-0.2"}
 tokio-trace-futures    = { git = "https://github.com/tokio-rs/tokio-trace-nursery", branch = "eliza/trace-0.2"}
 tokio-trace-log        = { git = "https://github.com/tokio-rs/tokio-trace-nursery", branch = "eliza/trace-0.2"}
@@ -109,5 +109,5 @@ webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-nam
 tokio-trace-core = { git = "https://github.com/kazimuth/tokio.git", branch = "global_dispatch" }
 
 [patch.'https://github.com/tokio-rs/tokio']
-tokio-trace      = { git = "https://github.com/kazimuth/tokio.git", features = ["log"], branch = "global_dispatch" }
+tokio-trace      = { git = "https://github.com/kazimuth/tokio.git", branch = "global_dispatch", default-features = false }
 tokio-trace-core = { git = "https://github.com/kazimuth/tokio.git", branch = "global_dispatch" }
