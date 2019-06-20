@@ -8,13 +8,13 @@ use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 /// An LRU cache that can eagerly remove values in a background task.
 ///
 /// Assumptions:
-///     - `access` is common
-///     - `insert` is less common
-///     - Values should have an `expires` span of time greater than 0
+/// - `access` is common
+/// - `insert` is less common
+/// - Values should have an `expires` span of time greater than 0
 ///
 /// Complexity:
-///     - `access` in **O(1)** time (amortized average)
-///     - `insert` in **O(1)** time (average)
+/// - `access` in **O(1)** time (amortized average)
+/// - `insert` in **O(1)** time (average)
 ///
 /// The underlying data structure of Cache is a [`DelayQueue`]. This allows
 /// the background task to remove values by polling for elements that have
@@ -30,7 +30,8 @@ where
 {
     capacity: usize,
     expires: Duration,
-    /// Elements are keys into `values`. As elements become Ready, we can
+    /// A queue of keys into `values` that become ready when the corresponding
+    /// cache entry expires. As elements become ready, we can
     /// remove the key and corresponding value from the cache.
     expirations: DelayQueue<K>,
     /// Cache access is coordinated through `values`. This field represents

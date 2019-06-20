@@ -61,6 +61,7 @@ where
     }
 }
 
+/// A map of known routes and services used when creating a fixed router.
 #[derive(Clone, Debug)]
 pub struct FixedMake<T: Clone + Eq + Hash, Svc>(IndexMap<T, Svc>);
 
@@ -85,19 +86,6 @@ where
     cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
-struct RouteRequest<Req, Rec, Mk>
-where
-    Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req>,
-    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
-{
-    request: Option<Req>,
-    target: Option<Rec::Target>,
-    make: Option<Mk>,
-    cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
-}
-
 enum State<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
@@ -105,9 +93,14 @@ where
     Mk::Value: svc::Service<Req>,
     <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    Inserting(RouteRequest<Req, Rec, Mk>),
-    Calling(Option<Req>, Option<LoadShed<Mk::Value>>),
-    Called(<LoadShed<Mk::Value> as svc::Service<Req>>::Future),
+    Acquire {
+        request: Option<Req>,
+        target: Option<Rec::Target>,
+        make: Option<Mk>,
+        cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    },
+    Call(Option<Req>, Option<LoadShed<Mk::Value>>),
+    Respond(<LoadShed<Mk::Value> as svc::Service<Req>>::Future),
     Error(Option<error::Error>),
 }
 
@@ -175,6 +168,12 @@ where
     Rec: Recognize<Req>,
     Svc: svc::Service<Req> + Clone,
 {
+    /// A router that is created with a fixed set of known routes.
+    ///
+    /// `recognize` will only produce targets that exist in `routes`. We never
+    /// want to expire routes from the fixed set; the explicit drop of the
+    /// daemon task ensures eviction is never performed and `max_idle_age` is
+    /// ignored.
     pub fn new_fixed(recognize: Rec, routes: IndexMap<Rec::Target, Svc>) -> Self {
         let capacity = routes.len();
         let (router, _) = Self::new(
@@ -217,12 +216,12 @@ where
             None => return ResponseFuture::not_recognized(),
         };
 
-        return ResponseFuture::new(
+        ResponseFuture::new(
             request,
             target,
             self.inner.make.clone(),
             self.inner.cache.clone(),
-        );
+        )
     }
 }
 
@@ -255,12 +254,12 @@ where
         cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
     ) -> Self {
         ResponseFuture {
-            state: State::Inserting(RouteRequest {
+            state: State::Acquire {
                 request: Some(request),
                 target: Some(target),
                 make: Some(make),
                 cache: cache,
-            }),
+            },
         }
     }
 
@@ -290,20 +289,25 @@ where
 
         loop {
             self.state = match self.state {
-                State::Inserting(ref mut rr) => {
+                State::Acquire {
+                    ref mut request,
+                    ref mut target,
+                    ref mut make,
+                    ref mut cache,
+                } => {
                     // Aquire the lock for the router cache
-                    let mut cache = match rr.cache.poll_lock() {
+                    let mut cache = match cache.poll_lock() {
                         Async::Ready(aquired) => aquired,
                         Async::NotReady => return Ok(Async::NotReady),
                     };
 
-                    let request = rr.request.take().expect("polled after ready");
-                    let target = rr.target.take().expect("polled after ready");
+                    let request = request.take().expect("polled after ready");
+                    let target = target.take().expect("polled after ready");
 
                     // If the target is already cached, route the request to
                     // the service; otherwise, try to insert it
                     if let Some(service) = cache.access(&target) {
-                        State::Calling(Some(request), Some(service))
+                        State::Call(Some(request), Some(service))
                     } else {
                         // Ensure that there is capacity for a new slot
                         if !cache.can_insert() {
@@ -311,14 +315,14 @@ where
                         }
 
                         // Make a new service for the target
-                        let make = rr.make.take().expect("polled after ready");
+                        let make = make.take().expect("polled after ready");
                         let service = LoadShed::new(make.make(&target));
 
                         cache.insert(target, service.clone());
-                        State::Calling(Some(request), Some(service))
+                        State::Call(Some(request), Some(service))
                     }
                 }
-                State::Calling(ref mut request, ref mut service) => {
+                State::Call(ref mut request, ref mut service) => {
                     let mut service = service.take().expect("polled after ready");
 
                     assert!(
@@ -327,9 +331,9 @@ where
                     );
 
                     let request = request.take().expect("polled after ready");
-                    State::Called(service.call(request))
+                    State::Respond(service.call(request))
                 }
-                State::Called(ref mut fut) => return fut.poll().map_err(Into::into),
+                State::Respond(ref mut fut) => return fut.poll().map_err(Into::into),
                 State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),
             }
         }
