@@ -1,8 +1,7 @@
-// #![deny(warnings)]
+#![deny(warnings)]
 #![recursion_limit = "128"]
 
 extern crate bytes;
-extern crate env_logger;
 #[macro_use]
 extern crate futures;
 extern crate futures_mpsc_lossy;
@@ -31,7 +30,6 @@ extern crate tokio_timer;
 #[macro_use]
 extern crate tokio_trace;
 extern crate tokio_trace_fmt;
-#[macro_use]
 extern crate tokio_trace_futures;
 extern crate tower;
 extern crate tower_grpc;
@@ -65,5 +63,6 @@ pub mod transport;
 
 use self::addr::{Addr, NameAddr};
 use self::conditional::Conditional;
-pub use self::transport::SoOriginalDst;
+
 pub use self::logging::trace;
+pub use self::transport::SoOriginalDst;

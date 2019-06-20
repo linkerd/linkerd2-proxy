@@ -6,7 +6,6 @@
 #![allow(dead_code)]
 
 pub extern crate bytes;
-extern crate env_logger;
 extern crate futures;
 extern crate h2;
 pub extern crate http;
@@ -15,7 +14,6 @@ extern crate hyper;
 extern crate linkerd2_proxy;
 pub extern crate linkerd2_proxy_api;
 extern crate linkerd2_task;
-extern crate log;
 pub extern crate net2;
 extern crate prost;
 pub extern crate rustls;
@@ -24,10 +22,10 @@ extern crate tokio_connect;
 extern crate tokio_current_thread;
 pub extern crate tokio_io;
 extern crate tokio_rustls;
-pub extern crate tower_grpc;
+extern crate tokio_trace as trace;
 extern crate tower_service;
 extern crate webpki;
-extern crate tokio_trace as trace;
+
 
 pub use std::collections::HashMap;
 use std::fmt;
@@ -64,9 +62,9 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy::proxy::tcp=off";
 
 pub fn env_logger_init() -> Result<(), String> {
-    use std::env;
-    use self::linkerd2_proxy::trace;
 
+    use self::linkerd2_proxy::trace;
+    use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
         .unwrap_or_else(|_| DEFAULT_LOG.to_owned());

@@ -1,11 +1,7 @@
-use env_logger;
 use futures::future::{ExecuteError, Executor};
 use futures::{Future, Poll};
-use log::Level;
 use std::cell::RefCell;
-use std::env;
 use std::fmt;
-use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio_timer::clock;
@@ -21,7 +17,7 @@ thread_local! {
 pub mod trace {
     extern crate tokio_trace_log;
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-    use std::{env, fmt, sync::Arc, time::Instant};
+    use std::{env, fmt, sync::Arc};
     pub use tokio_trace::*;
     pub use tokio_trace_fmt::*;
 
@@ -51,7 +47,6 @@ pub mod trace {
             .map_err(|_| "failed to set global default dispatcher")?;
         let logger = tokio_trace_log::LogTracer::with_filter(log::LevelFilter::max());
         log::set_boxed_logger(Box::new(logger)).map_err(|_| "failed to set global logger")?;
-        log::set_max_level(log::LevelFilter::max());
         Ok(())
     }
 
@@ -113,40 +108,6 @@ pub mod trace {
         pub use tokio_trace_futures::*;
     }
 
-}
-
-pub fn formatted_builder() -> env_logger::Builder {
-    let start_time = clock::now();
-    let mut builder = env_logger::Builder::new();
-    builder.format(move |fmt, record| {
-        CONTEXT.with(move |ctxt| {
-            let level = match record.level() {
-                Level::Trace => "TRCE",
-                Level::Debug => "DBUG",
-                Level::Info => "INFO",
-                Level::Warn => "WARN",
-                Level::Error => "ERR!",
-            };
-            let uptime = clock::now() - start_time;
-            writeln!(
-                fmt,
-                "{} [{:>6}.{:06}s] {}{} {}",
-                level,
-                uptime.as_secs(),
-                uptime.subsec_micros(),
-                Context(&ctxt.borrow()),
-                record.target(),
-                record.args()
-            )
-        })
-    });
-    builder
-}
-
-pub fn init() {
-    formatted_builder()
-        .parse(&env::var(ENV_LOG).unwrap_or_default())
-        .init();
 }
 
 /// Execute a closure with a `Display` item attached to allow log messages.
@@ -482,11 +443,3 @@ impl<T: fmt::Display> fmt::Display for Bg<T> {
         write!(f, "{}={{bg={}}}", self.section, self.name)
     }
 }
-
-// pub fn fmt_event<N>(span_ctx: &trace_fmt::Context<N>, f: &mut fmt::Write, event: &trace::Event) -> fmt::Result
-// where
-//     N: for<'a> trace_fmt::NewVisitor<'a>,
-// {
-
-// }
-
