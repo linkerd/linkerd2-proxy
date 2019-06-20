@@ -884,19 +884,18 @@ where
     );
     let log = server.log().clone();
 
-    let future = log.future(bound_port.listen_and_fold(
-        (),
-        move |(), (connection, remote)| {
-            let s = server.serve(connection, remote, h2_settings)
-                .instrument(info_span!("conn", %remote));
+    let future = log.future(
+        bound_port.listen_and_fold((), move |(), (connection, remote)| {
+            let s = server.serve(connection, remote, h2_settings);
+            // .instrument(info_span!("conn", %remote));
             // Logging context is configured by the server.
             let r = DefaultExecutor::current()
                 .spawn(Box::new(s))
                 .map_err(task::Error::into_io);
             future::result(r)
-        },
-    ))
-    .instrument(info_span!("server", server = %proxy_name, local = %listen_addr));
+        }),
+    );
+    // .instrument(info_span!("proxy", server = %proxy_name, local = %listen_addr));
 
     let accept_until = Cancelable {
         future,
