@@ -490,8 +490,8 @@ pub mod router {
             let mut make = IndexMap::with_capacity(capacity);
             make.insert(default_route.clone(), self.stack.make(&default_route));
 
-            for (_, route) in routes.clone().into_iter() {
-                let route = self.target.clone().with_route(route);
+            for (_, route) in &routes {
+                let route = self.target.clone().with_route(route.clone());
                 let service = self.stack.make(&route);
                 make.insert(route, service);
             }
