@@ -5,6 +5,7 @@ authors = [
     "Oliver Gould <ver@buoyant.io>",
     "Carl Lerche <me@carllerche.com>",
 ]
+edition = "2018"
 publish = false
 
 [dependencies]

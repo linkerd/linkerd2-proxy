@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use super::Timeout;
-use futures::{Future, Poll};
+use futures::{try_ready, Future, Poll};
 use linkerd2_stack as stk;
-use svc;
+use tower_service as svc;
 
 /// Creates a layer that *always* applies the timeout to every request.
 ///

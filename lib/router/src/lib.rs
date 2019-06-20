@@ -1,11 +1,4 @@
-#[macro_use]
-extern crate futures;
-extern crate indexmap;
-extern crate linkerd2_stack as stack;
-extern crate tokio;
-extern crate tokio_timer;
-extern crate tower_load_shed;
-extern crate tower_service as svc;
+#![deny(warnings, rust_2018_idioms)]
 
 use std::hash::Hash;
 use std::time::Duration;
@@ -14,6 +7,7 @@ use futures::{Async, Future, Poll};
 use indexmap::IndexMap;
 use tokio::sync::lock::Lock;
 use tower_load_shed::LoadShed;
+use tower_service as svc;
 
 mod cache;
 pub mod error;
@@ -364,7 +358,7 @@ mod test_util {
     use std::cell::Cell;
     use std::fmt;
     use std::rc::Rc;
-    use svc::Service;
+    use tower_service::Service;
 
     #[derive(Clone)]
     pub struct Recognize;
@@ -472,7 +466,7 @@ mod test_util {
     }
 
     impl fmt::Display for MulError {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "{:?}", self)
         }
     }
@@ -484,11 +478,11 @@ mod test_util {
 mod tests {
     use super::Make;
     use super::{error, Router};
+    use crate::test_util::*;
     use futures::Future;
     use std::time::Duration;
     use std::usize;
-    use svc::Service;
-    use test_util::*;
+    use tower_service::{self as svc, Service};
 
     impl<Mk> Router<Request, Recognize, Mk>
     where

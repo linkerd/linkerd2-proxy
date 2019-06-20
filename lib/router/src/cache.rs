@@ -1,6 +1,6 @@
 use std::{hash::Hash, time::Duration};
 
-use futures::{Async, Future, Poll, Stream};
+use futures::{Async, Future, Poll, Stream, try_ready};
 use indexmap::IndexMap;
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
