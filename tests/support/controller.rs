@@ -251,8 +251,9 @@ impl pb::server::Destination for Controller {
                             return future::ok(grpc::Response::new(updates));
                         }
 
+                        let msg = format!("expected get call for {:?} but got get call for {:?}", dst, req);
                         calls.push_front(Dst::Call(dst, updates));
-                        return future::err(grpc_unexpected_request());
+                        return future::err(grpc::Status::new(grpc::Code::Unavailable, msg));
                     }
                     Some(Dst::Done) => {
                         panic!("unit test controller expects no more Destination.Get calls")

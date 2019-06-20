@@ -160,6 +160,13 @@ impl profiles::WithRoute for DstAddr {
     }
 }
 
+impl profiles::WithAddr for DstAddr {
+    fn with_addr(mut self, addr: NameAddr) -> Self {
+        self.addr = Addr::Name(addr);
+        self
+    }
+}
+
 // === impl Route ===
 
 impl Route {
