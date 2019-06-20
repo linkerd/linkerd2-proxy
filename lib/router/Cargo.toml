@@ -12,6 +12,7 @@ publish = false
 futures = "0.1"
 indexmap = "1.0.0"
 linkerd2-stack  = { path = "../stack" }
+log = "0.4"
 tower-load-shed = "0.1"
 tokio = "0.1.20"
 tokio-sync = "0.1.6"

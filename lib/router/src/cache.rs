@@ -2,6 +2,7 @@ use std::{hash::Hash, time::Duration};
 
 use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
+use log::trace;
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 
@@ -95,6 +96,8 @@ where
     pub fn access(&mut self, key: &K) -> Option<V> {
         if let Some(node) = self.values.get_mut(key) {
             self.expirations.reset(&node.dq_key, self.expires);
+            trace!("reset expiration for cache value associated with key");
+
             return Some(node.value.clone());
         }
 
@@ -107,10 +110,12 @@ where
     /// `expires` span of time.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let node = {
+            trace!("inserting value into expirations");
             let dq_key = self.expirations.insert(key.clone(), self.expires);
             Node { dq_key, value }
         };
 
+        trace!("inserting node into values");
         self.values.insert(key, node).map(|n| n.value)
     }
 
@@ -120,7 +125,9 @@ where
     /// queue, remove the associated key from `values`.
     fn poll_purge(&mut self) -> Poll<(), Error> {
         while let Some(expired) = try_ready!(self.expirations.poll()) {
+            trace!("expired an entry from expirations");
             self.values.remove(expired.get_ref());
+            trace!("removed an entry from values!");
         }
 
         Ok(Async::Ready(()))
@@ -138,15 +145,23 @@ where
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        try_ready!(self.interval.poll().map_err(|e| {
-            panic!("Interval::poll must not fail: {}", e);
-        }));
+        loop {
+            try_ready!(self.interval.poll().map_err(|e| {
+                panic!("Interval::poll must not fail: {}", e);
+            }));
+            trace!("purge cache interval reached");
 
-        let mut cache = try_ready!(Ok(self.cache.poll_lock()));
+            let mut cache = try_ready!(Ok(self.cache.poll_lock()));
 
-        cache.poll_purge().map_err(|e| {
-            panic!("Cache::poll_purge must not fail: {}", e);
-        })
+            trace!("purge cache is polling for evictions...");
+            match cache.poll_purge() {
+                Ok(Async::NotReady) => return Ok(Async::NotReady),
+                Ok(Async::Ready(())) => (),
+                Err(e) => {
+                    panic!("Cache::poll_purge must not fail: {}", e);
+                }
+            }
+        }
     }
 }
 
