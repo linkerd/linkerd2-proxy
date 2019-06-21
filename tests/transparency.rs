@@ -7,7 +7,7 @@ use std::sync::mpsc;
 
 #[test]
 fn outbound_http1() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run();
     let ctrl = controller::new()
@@ -21,7 +21,7 @@ fn outbound_http1() {
 
 #[test]
 fn inbound_http1() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run();
     let proxy = proxy::new().inbound_fuzz_addr(srv).run();
@@ -32,7 +32,7 @@ fn inbound_http1() {
 
 #[test]
 fn outbound_tcp() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let msg1 = "custom tcp hello";
     let msg2 = "custom tcp bye";
@@ -55,7 +55,7 @@ fn outbound_tcp() {
 
 #[test]
 fn inbound_tcp() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let msg1 = "custom tcp hello";
     let msg2 = "custom tcp bye";
@@ -79,7 +79,7 @@ fn inbound_tcp() {
 fn test_server_speaks_first(env: app::config::TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let msg1 = "custom tcp server starts";
     let msg2 = "custom tcp client second";
@@ -161,7 +161,7 @@ fn tcp_server_first_tls() {
 
 #[test]
 fn tcp_with_no_orig_dst() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let srv = server::tcp().accept(move |_| "don't read me").run();
     let proxy = proxy::new().inbound(srv).run();
@@ -183,7 +183,7 @@ fn tcp_with_no_orig_dst() {
 fn tcp_connections_close_if_client_closes() {
     use std::sync::mpsc;
 
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let msg1 = "custom tcp hello";
     let msg2 = "custom tcp bye";
@@ -229,7 +229,7 @@ macro_rules! http1_tests {
     (proxy: $proxy:expr) => {
         #[test]
         fn inbound_http1() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = server::http1().route("/", "hello h1").run();
             let proxy = $proxy(srv);
@@ -240,7 +240,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_removes_connection_headers() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -278,7 +278,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http10_with_host() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let host = "transparency.test.svc.cluster.local";
             let srv = server::http1()
@@ -307,7 +307,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_absolute_uri_differs_from_host() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             // We shouldn't touch the URI or the Host, just pass directly as we got.
             let auth = "transparency.test.svc.cluster.local";
@@ -335,7 +335,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_upgrades() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             // To simplify things for this test, we just use the test TCP
             // client and server to do an HTTP upgrade.
@@ -411,7 +411,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn l5d_orig_proto_header_isnt_leaked() {
-            let _ = env_logger::try_init();
+            let _ = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -431,7 +431,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_upgrade_h2_stripped() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
             // and it succeeded, there would an h2 connection, but it would
@@ -470,7 +470,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_connect() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             // To simplify things for this test, we just use the test TCP
             // client and server to do an HTTP CONNECT.
@@ -544,7 +544,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_connect_bad_requests() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = server::tcp()
                 .accept(move |_sock| -> Vec<u8> {
@@ -604,7 +604,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_request_with_body_content_length() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -628,7 +628,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_request_with_body_chunked() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = server::http1()
                 .route_async("/", |req| {
@@ -662,7 +662,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_requests_without_body_doesnt_add_transfer_encoding() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -692,7 +692,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_content_length_zero_is_preserved() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -728,7 +728,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_bodyless_responses() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let req_status_header = "x-test-status-requested";
 
@@ -790,7 +790,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_head_responses() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", move |req| {
@@ -820,7 +820,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_response_end_of_file() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             // test both http/1.0 and 1.1
             let srv = server::tcp()
@@ -926,7 +926,7 @@ mod proxy_to_proxy {
 fn http10_without_host() {
     // Without a host or authority, there's no way to route this test,
     // so its not part of the proxy_to_proxy set.
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let srv = server::http1()
         .route_fn("/", move |req| {
@@ -958,7 +958,7 @@ fn http10_without_host() {
 
 #[test]
 fn http1_one_connection_per_host() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let srv = server::http1()
         .route("/body", "hello hosts")
@@ -1004,7 +1004,7 @@ fn http1_one_connection_per_host() {
 
 #[test]
 fn http1_requests_without_host_have_unique_connections() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let srv = server::http1().route("/", "unique hosts").run();
     let proxy = proxy::new().inbound(srv).run();
@@ -1063,7 +1063,7 @@ fn http1_requests_without_host_have_unique_connections() {
 
 #[test]
 fn retry_reconnect_errors() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     // Used to delay `listen` in the server, to force connection refused errors.
     let (tx, rx) = oneshot::channel();
@@ -1123,7 +1123,7 @@ mod max_in_flight {
     }
 
     fn run_max_in_flight(ver: Ver, dir: Dir) {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let host = "transparency.test.svc.cluster.local";
         let srv = match ver {

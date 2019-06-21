@@ -22,7 +22,7 @@ extern crate tokio_connect;
 extern crate tokio_current_thread;
 pub extern crate tokio_io;
 extern crate tokio_rustls;
-extern crate tokio_trace as trace;
+pub extern crate tower_grpc;
 extern crate tower_service;
 extern crate webpki;
 
@@ -61,8 +61,7 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy::proxy::http::router=off,\
                                    linkerd2_proxy::proxy::tcp=off";
 
-pub fn env_logger_init() -> Result<(), String> {
-
+pub fn trace_init() -> Result<(), String> {
     use self::linkerd2_proxy::trace;
     use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")

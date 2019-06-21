@@ -33,8 +33,12 @@ pub mod trace {
     >;
 
     pub fn init() {
+        try_init().expect("initializing tokio-trace failed");
+    }
+
+    pub fn try_init() -> Result<(), &'static str> {
         let env = env::var(super::ENV_LOG).unwrap_or_default();
-        try_init_with_filter(env).expect("initializing tokio-trace failed");
+        try_init_with_filter(env)
     }
 
     pub fn try_init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), &'static str> {

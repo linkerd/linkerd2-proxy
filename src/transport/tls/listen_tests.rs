@@ -109,7 +109,7 @@ where
     SF: Future<Item = SR, Error = io::Error> + Send + 'static,
     SR: Send + 'static,
 {
-    let _ = ::env_logger::try_init();
+    let _ = ::trace::try_init();
 
     // A future that will receive a single connection.
     let (server, server_addr, server_result) = {

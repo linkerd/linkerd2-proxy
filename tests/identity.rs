@@ -14,7 +14,7 @@ use std::{
 
 #[test]
 fn nonblocking_identity_detection() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity::Identity {
@@ -50,7 +50,7 @@ fn nonblocking_identity_detection() {
 
 macro_rules! generate_tls_accept_test {
     ( client_non_tls: $make_client_non_tls:path, client_tls: $make_client_tls:path) => {
-        let _ = env_logger_init();
+        let _ = trace_init();
         let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
         let id_svc = identity::Identity::new("foo-ns1", id.to_string());
         let proxy = proxy::new()
@@ -81,7 +81,7 @@ macro_rules! generate_tls_accept_test {
 
 macro_rules! generate_tls_reject_test {
     ( client: $make_client:path) => {
-        let _ = env_logger_init();
+        let _ = trace_init();
         let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
         let identity::Identity {
             env,
@@ -140,7 +140,7 @@ fn http2_rejects_tls_before_identity_is_certified() {
 
 macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
     (server: $make_server:path, client: $make_client:path) => {
-        let _ = env_logger_init();
+        let _ = trace_init();
         let proxy_id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
         let app_id = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
 
@@ -192,7 +192,7 @@ fn http2_outbound_tls_works_before_identity_is_certified() {
 
 #[test]
 fn ready() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity::Identity {
         env,
@@ -225,7 +225,7 @@ fn ready() {
 
 #[test]
 fn refresh() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity::Identity {
         mut env,
