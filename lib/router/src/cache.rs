@@ -130,6 +130,7 @@ where
             trace!("removed an entry from values!");
         }
 
+        trace!("cache expirations polling is ready");
         Ok(Async::Ready(()))
     }
 }
@@ -149,18 +150,16 @@ where
             try_ready!(self.interval.poll().map_err(|e| {
                 panic!("Interval::poll must not fail: {}", e);
             }));
-            trace!("purge cache interval reached");
+            trace!("purge task interval reached");
 
             let mut cache = try_ready!(Ok(self.cache.poll_lock()));
+            trace!("purge task locked the router cache");
 
-            trace!("purge cache is polling for evictions...");
-            match cache.poll_purge() {
-                Ok(Async::NotReady) => return Ok(Async::NotReady),
-                Ok(Async::Ready(())) => (),
-                Err(e) => {
-                    panic!("Cache::poll_purge must not fail: {}", e);
-                }
-            }
+            // If poll_purge is not ready, we cannot expire any values and
+            // wait for the next interval. If poll_purge is ready, we have
+            // expired all values and wait for the next interval
+            trace!("purge task is polling for evictions...");
+            cache.poll_purge().expect("Cache::poll_purge must not fail");
         }
     }
 }
