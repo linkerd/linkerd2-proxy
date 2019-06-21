@@ -2,7 +2,7 @@ use std::{hash::Hash, time::Duration};
 
 use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use log::trace;
+use log::debug;
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 
@@ -96,7 +96,7 @@ where
     pub fn access(&mut self, key: &K) -> Option<V> {
         if let Some(node) = self.values.get_mut(key) {
             self.expirations.reset(&node.dq_key, self.expires);
-            trace!("reset expiration for cache value associated with key");
+            debug!("reset expiration for cache value associated with key");
 
             return Some(node.value.clone());
         }
@@ -110,12 +110,11 @@ where
     /// `expires` span of time.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let node = {
-            trace!("inserting value into expirations");
+            debug!("inserting an item into the cache");
             let dq_key = self.expirations.insert(key.clone(), self.expires);
             Node { dq_key, value }
         };
 
-        trace!("inserting node into values");
         self.values.insert(key, node).map(|n| n.value)
     }
 
@@ -125,12 +124,11 @@ where
     /// queue, remove the associated key from `values`.
     fn poll_purge(&mut self) -> Poll<(), Error> {
         while let Some(expired) = try_ready!(self.expirations.poll()) {
-            trace!("expired an entry from expirations");
+            debug!("expiring an item from the cache");
             self.values.remove(expired.get_ref());
-            trace!("removed an entry from values!");
         }
 
-        trace!("cache expirations polling is ready");
+        debug!("cache expirations polling is ready");
         Ok(Async::Ready(()))
     }
 }
@@ -150,15 +148,15 @@ where
             try_ready!(self.interval.poll().map_err(|e| {
                 panic!("Interval::poll must not fail: {}", e);
             }));
-            trace!("purge task interval reached");
+            debug!("purge task interval reached");
 
             let mut cache = try_ready!(Ok(self.cache.poll_lock()));
-            trace!("purge task locked the router cache");
+            debug!("purge task locked the router cache");
 
             // If poll_purge is not ready, we cannot expire any values and
             // wait for the next interval. If poll_purge is ready, we have
             // expired all values and wait for the next interval
-            trace!("purge task is polling for evictions...");
+            debug!("purge task is polling for evictions...");
             cache.poll_purge().expect("Cache::poll_purge must not fail");
         }
     }

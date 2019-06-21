@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use futures::{Async, Future, Poll};
 use indexmap::IndexMap;
-use log::trace;
+use log::debug;
 use tokio::sync::lock::Lock;
 use tower_load_shed::LoadShed;
 use tower_service as svc;
@@ -302,14 +302,14 @@ where
                     // If the target is already cached, route the request to
                     // the service; otherwise, try to insert it
                     if let Some(service) = cache.access(&target) {
-                        trace!("target already cached");
+                        debug!("target already cached");
                         State::Call(Some(request), Some(service))
                     } else {
-                        trace!("target not cached");
+                        debug!("target not cached");
 
                         // Ensure that there is capacity for a new slot
                         if !cache.can_insert() {
-                            trace!("not enough capacity to insert target into cache");
+                            debug!("not enough capacity to insert target into cache");
                             return Err(error::NoCapacity(cache.capacity()).into());
                         }
 
@@ -317,7 +317,7 @@ where
                         let make = make.take().expect("polled after ready");
                         let service = LoadShed::new(make.make(&target));
 
-                        trace!("inserting new target into cache");
+                        debug!("inserting new target into cache");
                         cache.insert(target, service.clone());
                         State::Call(Some(request), Some(service))
                     }
