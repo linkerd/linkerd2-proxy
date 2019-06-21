@@ -1203,7 +1203,7 @@ mod max_in_flight {
 
 #[test]
 fn http2_request_without_authority() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let srv = server::http2()
         .route_fn("/", |req| {
