@@ -51,6 +51,7 @@ pub mod trace {
             .map_err(|_| "failed to set global default dispatcher")?;
         let logger = tokio_trace_log::LogTracer::with_filter(log::LevelFilter::max());
         log::set_boxed_logger(Box::new(logger)).map_err(|_| "failed to set global logger")?;
+        log::set_max_level(log::LevelFilter::max());
         Ok(())
     }
 
