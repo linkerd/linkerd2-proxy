@@ -1433,7 +1433,7 @@ dependencies = [
 [[package]]
 name = "tokio-trace-fmt"
 version = "0.1.0"
-source = "git+https://github.com/tokio-rs/tokio-trace-nursery?branch=eliza/trace-0.2#aaed19e4a286df8e36957825986468201e1f0a87"
+source = "git+https://github.com/tokio-rs/tokio-trace-nursery?branch=eliza/trace-0.2#641f0c1d055d7392a8db7acfa6b422af4e4c6f84"
 dependencies = [
  "ansi_term 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1447,7 +1447,7 @@ dependencies = [
 [[package]]
 name = "tokio-trace-futures"
 version = "0.0.1"
-source = "git+https://github.com/tokio-rs/tokio-trace-nursery?branch=eliza/trace-0.2#aaed19e4a286df8e36957825986468201e1f0a87"
+source = "git+https://github.com/tokio-rs/tokio-trace-nursery?branch=eliza/trace-0.2#641f0c1d055d7392a8db7acfa6b422af4e4c6f84"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1457,7 +1457,7 @@ dependencies = [
 [[package]]
 name = "tokio-trace-log"
 version = "0.0.1"
-source = "git+https://github.com/tokio-rs/tokio-trace-nursery?branch=eliza/trace-0.2#aaed19e4a286df8e36957825986468201e1f0a87"
+source = "git+https://github.com/tokio-rs/tokio-trace-nursery?branch=eliza/trace-0.2#641f0c1d055d7392a8db7acfa6b422af4e4c6f84"
 dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-trace 0.1.0 (git+https://github.com/kazimuth/tokio.git?branch=global_dispatch)",
@@ -1467,7 +1467,7 @@ dependencies = [
 [[package]]
 name = "tokio-trace-subscriber"
 version = "0.0.1"
-source = "git+https://github.com/tokio-rs/tokio-trace-nursery?branch=eliza/trace-0.2#aaed19e4a286df8e36957825986468201e1f0a87"
+source = "git+https://github.com/tokio-rs/tokio-trace-nursery?branch=eliza/trace-0.2#641f0c1d055d7392a8db7acfa6b422af4e4c6f84"
 dependencies = [
  "tokio-trace 0.1.0 (git+https://github.com/kazimuth/tokio.git?branch=global_dispatch)",
 ]
