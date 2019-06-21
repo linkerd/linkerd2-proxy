@@ -1,9 +1,9 @@
 use futures::Poll;
 use http;
-use trace;
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
+use trace;
 
 use logging;
 use never::Never;

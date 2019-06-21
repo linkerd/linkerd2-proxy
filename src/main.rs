@@ -5,9 +5,8 @@ extern crate linkerd2_proxy;
 
 #[macro_use]
 extern crate tokio_trace;
-extern crate tokio_trace_fmt;
 extern crate tokio;
-
+extern crate tokio_trace_fmt;
 
 use std::process;
 

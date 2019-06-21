@@ -2,8 +2,8 @@
 
 //! Task execution utilities.
 
-use tokio_trace::{debug, warn};
 use std::{error::Error as StdError, fmt, io, sync::Arc};
+use tokio_trace::{debug, warn};
 
 pub use futures::future::Executor;
 use futures::future::{ExecuteError, ExecuteErrorKind, Future};

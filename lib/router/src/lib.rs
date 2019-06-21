@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use futures::{Async, Future, Poll};
 use indexmap::IndexMap;
-use tokio_trace::debug;
 use tokio::sync::lock::Lock;
+use tokio_trace::debug;
 use tower_load_shed::LoadShed;
 use tower_service as svc;
 

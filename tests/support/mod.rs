@@ -26,7 +26,6 @@ pub extern crate tower_grpc;
 extern crate tower_service;
 extern crate webpki;
 
-
 pub use std::collections::HashMap;
 use std::fmt;
 pub use std::net::SocketAddr;

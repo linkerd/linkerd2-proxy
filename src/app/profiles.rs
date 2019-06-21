@@ -200,8 +200,7 @@ where
                                 let err = err.into();
                                 error!(
                                     "profile service unexpected error (dst = {}): {:?}",
-                                    self.dst,
-                                    err,
+                                    self.dst, err,
                                 );
                                 return Ok(Async::Ready(()));
                             }

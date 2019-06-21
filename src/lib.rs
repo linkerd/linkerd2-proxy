@@ -11,11 +11,11 @@ extern crate http;
 extern crate http_body;
 extern crate httparse;
 extern crate hyper;
+extern crate indexmap;
 extern crate ipnet;
 #[cfg(target_os = "linux")]
 extern crate libc;
 extern crate log;
-extern crate indexmap;
 #[cfg(target_os = "linux")]
 extern crate procinfo;
 extern crate prost;
