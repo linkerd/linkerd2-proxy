@@ -1,16 +1,19 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{Async, Future, Poll};
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use futures::{Async, Future, Poll};
+use indexmap::IndexMap;
+use log::debug;
+use tokio::sync::lock::Lock;
 use tower_load_shed::LoadShed;
 use tower_service as svc;
 
 mod cache;
 pub mod error;
 
-use self::cache::Cache;
+use self::cache::{Cache, PurgeCache};
 
 /// Routes requests based on a configurable `Key`.
 pub struct Router<Req, Rec, Mk>
@@ -19,7 +22,7 @@ where
     Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
 {
-    inner: Arc<Inner<Req, Rec, Mk>>,
+    inner: Inner<Req, Rec, Mk>,
 }
 
 /// Provides a strategy for routing a Request to a Service.
@@ -30,10 +33,10 @@ where
 /// `bind_service` to instantiate the identified route.
 pub trait Recognize<Request> {
     /// Identifies a Route.
-    type Target: Eq + Hash;
+    type Target: Clone + Eq + Hash;
 
     /// Determines the target for a route to handle the given request.
-    fn recognize(&self, req: &Request) -> Option<Self::Target>;
+    fn recognize(&self, request: &Request) -> Option<Self::Target>;
 }
 
 pub trait Make<Target> {
@@ -53,12 +56,18 @@ where
     }
 }
 
-pub struct ResponseFuture<Req, Svc>
+/// A map of known routes and services used when creating a fixed router.
+#[derive(Clone, Debug)]
+pub struct FixedMake<T: Clone + Eq + Hash, Svc>(IndexMap<T, Svc>);
+
+pub struct ResponseFuture<Req, Rec, Mk>
 where
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<error::Error>,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    state: State<Req, LoadShed<Svc>>,
+    state: State<Req, Rec, Mk>,
 }
 
 struct Inner<Req, Rec, Mk>
@@ -69,16 +78,24 @@ where
 {
     recognize: Rec,
     make: Mk,
-    cache: Mutex<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
 }
 
-enum State<Req, Svc>
+enum State<Req, Rec, Mk>
 where
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<error::Error>,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    Init(Option<Req>, Svc),
-    Called(Svc::Future),
+    Acquire {
+        request: Option<Req>,
+        target: Option<Rec::Target>,
+        make: Option<Mk>,
+        cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    },
+    Call(Option<Req>, Option<LoadShed<Mk::Value>>),
+    Respond(<LoadShed<Mk::Value> as svc::Service<Req>>::Future),
     Error(Option<error::Error>),
 }
 
@@ -86,13 +103,30 @@ where
 
 impl<R, T, F> Recognize<R> for F
 where
-    T: Eq + Hash,
+    T: Clone + Eq + Hash,
     F: Fn(&R) -> Option<T>,
 {
     type Target = T;
 
-    fn recognize(&self, req: &R) -> Option<T> {
-        (self)(req)
+    fn recognize(&self, request: &R) -> Option<T> {
+        (self)(request)
+    }
+}
+
+// ===== impl FixedMake =====
+
+impl<T, Svc> Make<T> for FixedMake<T, Svc>
+where
+    T: Clone + Eq + Hash,
+    Svc: Clone,
+{
+    type Value = Svc;
+
+    fn make(&self, target: &T) -> Self::Value {
+        self.0
+            .get(target)
+            .cloned()
+            .expect("target not found in fixed router")
     }
 }
 
@@ -102,37 +136,68 @@ impl<Req, Rec, Mk> Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req> + Clone,
+    <Mk as Make<Rec::Target>>::Value: Clone,
+    Mk::Value: svc::Service<Req>,
 {
-    pub fn new(recognize: Rec, make: Mk, capacity: usize, max_idle_age: Duration) -> Self {
-        Router {
-            inner: Arc::new(Inner {
+    pub fn new(
+        recognize: Rec,
+        make: Mk,
+        capacity: usize,
+        max_idle_age: Duration,
+    ) -> (Self, PurgeCache<Rec::Target, LoadShed<Mk::Value>>) {
+        let (cache, cache_bg) = Cache::new(capacity, max_idle_age);
+        let router = Self {
+            inner: Inner {
                 recognize,
                 make,
-                cache: Mutex::new(Cache::new(capacity, max_idle_age)),
-            }),
-        }
+                cache,
+            },
+        };
+
+        (router, cache_bg)
     }
 }
 
-impl<Req, Rec, Mk, Svc> svc::Service<Req> for Router<Req, Rec, Mk>
+impl<Req, Rec, Svc> Router<Req, Rec, FixedMake<Rec::Target, Svc>>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target, Value = Svc>,
     Svc: svc::Service<Req> + Clone,
-    Svc::Error: Into<error::Error>,
+{
+    /// A router that is created with a fixed set of known routes.
+    ///
+    /// `recognize` will only produce targets that exist in `routes`. We never
+    /// want to expire routes from the fixed set; the explicit drop of the
+    /// daemon task ensures eviction is never performed and `max_idle_age` is
+    /// ignored.
+    pub fn new_fixed(recognize: Rec, routes: IndexMap<Rec::Target, Svc>) -> Self {
+        let capacity = routes.len();
+        let (router, _) = Self::new(
+            recognize,
+            FixedMake(routes),
+            capacity,
+            Duration::from_secs(1),
+        );
+
+        router
+    }
+}
+
+impl<Req, Rec, Mk> svc::Service<Req> for Router<Req, Rec, Mk>
+where
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target> + Clone,
+    Mk::Value: svc::Service<Req> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
     type Response = <Mk::Value as svc::Service<Req>>::Response;
     type Error = error::Error;
-    type Future = ResponseFuture<Req, Mk::Value>;
+    type Future = ResponseFuture<Req, Rec, Mk>;
 
     /// Always ready to serve.
     ///
     /// Graceful backpressure is **not** supported at this level, since each request may
     /// be routed to different resources. Instead, requests should be issued and each
     /// route should support a queue of requests.
-    ///
-    /// TODO Attempt to free capacity in the router.
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into())
     }
@@ -146,34 +211,19 @@ where
             None => return ResponseFuture::not_recognized(),
         };
 
-        let cache = &mut *self.inner.cache.lock().expect("lock router cache");
-
-        // First, try to load a cached route for `target`.
-        if let Some(service) = cache.access(&target) {
-            return ResponseFuture::new(request, service.clone());
-        }
-
-        // Since there wasn't a cached route, ensure that there is capacity for a
-        // new one.
-        let reserve = match cache.reserve() {
-            Ok(r) => r,
-            Err(cache::CapacityExhausted { capacity }) => {
-                return ResponseFuture::no_capacity(capacity);
-            }
-        };
-
-        // Bind a new route, send the request on the route, and cache the route.
-        let service = LoadShed::new(self.inner.make.make(&target));
-
-        reserve.store(target, service.clone());
-        ResponseFuture::new(request, service)
+        ResponseFuture::new(
+            request,
+            target,
+            self.inner.make.clone(),
+            self.inner.cache.clone(),
+        )
     }
 }
 
 impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk>
 where
-    Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
+    Rec: Recognize<Req> + Clone,
+    Mk: Make<Rec::Target> + Clone,
     Mk::Value: svc::Service<Req>,
 {
     fn clone(&self) -> Self {
@@ -185,14 +235,26 @@ where
 
 // ===== impl ResponseFuture =====
 
-impl<Req, Svc> ResponseFuture<Req, Svc>
+impl<Req, Rec, Mk> ResponseFuture<Req, Rec, Mk>
 where
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<error::Error>,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    fn new(req: Req, svc: LoadShed<Svc>) -> Self {
+    fn new(
+        request: Req,
+        target: Rec::Target,
+        make: Mk,
+        cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    ) -> Self {
         ResponseFuture {
-            state: State::Init(Some(req), svc),
+            state: State::Acquire {
+                request: Some(request),
+                target: Some(target),
+                make: Some(make),
+                cache: cache,
+            },
         }
     }
 
@@ -205,18 +267,16 @@ where
     fn not_recognized() -> Self {
         Self::error(error::NotRecognized.into())
     }
-
-    fn no_capacity(capacity: usize) -> Self {
-        Self::error(error::NoCapacity(capacity).into())
-    }
 }
 
-impl<Req, Svc> Future for ResponseFuture<Req, Svc>
+impl<Req, Rec, Mk> Future for ResponseFuture<Req, Rec, Mk>
 where
-    Svc: svc::Service<Req>,
-    Svc::Error: Into<error::Error>,
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target>,
+    Mk::Value: svc::Service<Req> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
 {
-    type Item = <LoadShed<Svc> as svc::Service<Req>>::Response;
+    type Item = <LoadShed<Mk::Value> as svc::Service<Req>>::Response;
     type Error = error::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -224,20 +284,75 @@ where
 
         loop {
             self.state = match self.state {
-                State::Init(ref mut req, ref mut svc) => {
-                    match svc.poll_ready().map_err(error::Error::from)? {
-                        Async::NotReady => {
-                            unreachable!("load shedding services must always be ready");
+                State::Acquire {
+                    ref mut request,
+                    ref mut target,
+                    ref mut make,
+                    ref mut cache,
+                } => {
+                    // Aquire the lock for the router cache
+                    let mut cache = match cache.poll_lock() {
+                        Async::Ready(aquired) => aquired,
+                        Async::NotReady => return Ok(Async::NotReady),
+                    };
+
+                    let request = request.take().expect("polled after ready");
+                    let target = target.take().expect("polled after ready");
+
+                    // If the target is already cached, route the request to
+                    // the service; otherwise, try to insert it
+                    if let Some(service) = cache.access(&target) {
+                        debug!("target already cached");
+                        State::Call(Some(request), Some(service))
+                    } else {
+                        debug!("target not cached");
+
+                        // Ensure that there is capacity for a new slot
+                        if !cache.can_insert() {
+                            debug!("not enough capacity to insert target into cache");
+                            return Err(error::NoCapacity(cache.capacity()).into());
                         }
-                        Async::Ready(()) => {
-                            let req = req.take().expect("polled after ready");
-                            State::Called(svc.call(req))
-                        }
+
+                        // Make a new service for the target
+                        let make = make.take().expect("polled after ready");
+                        let service = LoadShed::new(make.make(&target));
+
+                        debug!("inserting new target into cache");
+                        cache.insert(target, service.clone());
+                        State::Call(Some(request), Some(service))
                     }
                 }
-                State::Called(ref mut fut) => return fut.poll().map_err(error::Error::from),
+                State::Call(ref mut request, ref mut service) => {
+                    let mut service = service.take().expect("polled after ready");
+
+                    assert!(
+                        service.poll_ready()?.is_ready(),
+                        "load shedding services must always be ready"
+                    );
+
+                    let request = request.take().expect("polled after ready");
+                    State::Respond(service.call(request))
+                }
+                State::Respond(ref mut fut) => return fut.poll().map_err(Into::into),
                 State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),
             }
+        }
+    }
+}
+
+// ===== impl Inner =====
+
+impl<Req, Rec, Mk> Clone for Inner<Req, Rec, Mk>
+where
+    Rec: Recognize<Req> + Clone,
+    Mk: Make<Rec::Target> + Clone,
+    Mk::Value: svc::Service<Req>,
+{
+    fn clone(&self) -> Self {
+        Inner {
+            recognize: self.recognize.clone(),
+            make: self.make.clone(),
+            cache: self.cache.clone(),
         }
     }
 }
@@ -251,6 +366,7 @@ mod test_util {
     use std::rc::Rc;
     use tower_service::Service;
 
+    #[derive(Clone)]
     pub struct Recognize;
 
     #[derive(Clone, Debug)]
@@ -273,8 +389,8 @@ mod test_util {
     impl super::Recognize<Request> for Recognize {
         type Target = usize;
 
-        fn recognize(&self, req: &Request) -> Option<Self::Target> {
-            match *req {
+        fn recognize(&self, request: &Request) -> Option<Self::Target> {
+            match *request {
                 Request::NotRecognized => None,
                 Request::Recognized(n) => Some(n),
             }
@@ -333,8 +449,8 @@ mod test_util {
             }
         }
 
-        fn call(&mut self, req: Request) -> Self::Future {
-            let n = match req {
+        fn call(&mut self, request: Request) -> Self::Future {
+            let n = match request {
                 Request::NotRecognized => unreachable!(),
                 Request::Recognized(n) => n,
             };
@@ -376,26 +492,26 @@ mod tests {
 
     impl<Mk> Router<Request, Recognize, Mk>
     where
-        Mk: Make<usize>,
+        Mk: Make<usize> + Clone,
         Mk::Value: svc::Service<Request, Response = usize> + Clone,
         <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
     {
-        fn call_ok(&mut self, req: impl Into<Request>) -> usize {
-            let req = req.into();
-            let msg = format!("router.call({:?}) should succeed", req);
-            self.call(req).wait().expect(&msg)
+        fn call_ok(&mut self, request: impl Into<Request>) -> usize {
+            let request = request.into();
+            let msg = format!("router.call({:?}) should succeed", request);
+            self.call(request).wait().expect(&msg)
         }
 
-        fn call_err(&mut self, req: impl Into<Request>) -> error::Error {
-            let req = req.into();
-            let msg = format!("router.call({:?}) should error", req);
-            self.call(req.into()).wait().expect_err(&msg)
+        fn call_err(&mut self, request: impl Into<Request>) -> error::Error {
+            let request = request.into();
+            let msg = format!("router.call({:?}) should error", request);
+            self.call(request.into()).wait().expect_err(&msg)
         }
     }
 
     #[test]
     fn invalid() {
-        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(0));
+        let (mut router, _cache_bg) = Router::new(Recognize, Recognize, 1, Duration::from_secs(60));
 
         let rsp = router.call_err(Request::NotRecognized);
         assert!(rsp.is::<error::NotRecognized>());
@@ -403,23 +519,31 @@ mod tests {
 
     #[test]
     fn cache_limited_by_capacity() {
-        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(1));
+        use futures::future;
+        use tokio::runtime::current_thread;
 
-        let rsp = router.call_ok(2);
-        assert_eq!(rsp, 2);
+        current_thread::run(future::lazy(|| {
+            let (mut router, _cache_bg) =
+                Router::new(Recognize, Recognize, 1, Duration::from_secs(1));
 
-        let rsp = router.call_err(3);
-        assert_eq!(
-            rsp.downcast_ref::<error::NoCapacity>()
-                .expect("error should be NoCapacity")
-                .0,
-            1
-        );
+            let rsp = router.call_ok(2);
+            assert_eq!(rsp, 2);
+
+            let rsp = router.call_err(3);
+            assert_eq!(
+                rsp.downcast_ref::<error::NoCapacity>()
+                    .expect("error should be NoCapacity")
+                    .0,
+                1
+            );
+
+            Ok(())
+        }))
     }
 
     #[test]
     fn services_cached() {
-        let mut router = Router::new(Recognize, Recognize, 1, Duration::from_secs(0));
+        let (mut router, _cache_bg) = Router::new(Recognize, Recognize, 1, Duration::from_secs(60));
 
         let rsp = router.call_ok(2);
         assert_eq!(rsp, 2);
@@ -430,11 +554,11 @@ mod tests {
 
     #[test]
     fn poll_ready_is_called_first() {
-        let mut router = Router::new(
+        let (mut router, _cache_bg) = Router::new(
             Recognize,
             MultiplyAndAssign::new(usize::MAX),
             1,
-            Duration::from_secs(0),
+            Duration::from_secs(60),
         );
 
         let err = router.call_err(2);
@@ -448,11 +572,11 @@ mod tests {
     fn load_shed_from_inner_services() {
         use tower_load_shed::error::Overloaded;
 
-        let mut router = Router::new(
+        let (mut router, _cache_bg) = Router::new(
             Recognize,
             MultiplyAndAssign::never_ready(),
             1,
-            Duration::from_secs(0),
+            Duration::from_secs(1),
         );
 
         let err = router.call_err(2);

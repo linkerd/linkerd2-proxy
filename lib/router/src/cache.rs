@@ -1,426 +1,319 @@
+use std::{hash::Hash, time::Duration};
+
+use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use std::{
-    hash::Hash,
-    ops::{Deref, DerefMut},
-    time::{Duration, Instant},
-};
+use log::debug;
+use tokio::sync::lock::Lock;
+use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 
-// Reexported so IndexMap isn't exposed.
-pub use indexmap::Equivalent;
-
-/// An LRU cache
+/// An LRU cache that can eagerly remove values in a background task.
 ///
-/// ## Assumptions
+/// Assumptions:
+/// - `access` is common
+/// - `insert` is less common
+/// - Values should have an `expires` span of time greater than 0
 ///
-/// - `access` is common;
-/// - `store` is less common;
-/// - `capacity` is large enough that idle vals need not be removed frequently.
+/// Complexity:
+/// - `access` in **O(1)** time (amortized average)
+/// - `insert` in **O(1)** time (average)
 ///
-/// ## Complexity
+/// The underlying data structure of Cache is a [`DelayQueue`]. This allows
+/// the background task to remove values by polling for elements that have
+/// reached their specified deadline. Elements are retrieved from the queue
+/// via [`Stream::poll`], and that is what [`poll_purge`] ultimately uses.
 ///
-/// - `access` computes in O(1) time (amortized average).
-/// - `store` computes in O(1) time (average).
-/// - `reserve` computes in O(n) time (average) when capacity is not available,
-///
-/// ### TODO
-///
-/// The underlying datastructure could be improved somewhat so that `reserve` can evict
-/// unused nodes more efficiently. Given that eviction is intended to be rare, this is
-/// probably not a very high priority.
-pub struct Cache<K: Hash + Eq, V, N: Now = ()> {
-    vals: IndexMap<K, Node<V>>,
+/// [`DelayQueue`]: https://docs.rs/tokio/0.1.19/tokio/timer/struct.DelayQueue.html
+/// [`Stream::poll`]: https://docs.rs/tokio/0.1.19/tokio/timer/struct.DelayQueue.html#impl-Stream
+/// [`poll_purge`]: #method.poll_purge
+pub struct Cache<K, V>
+where
+    K: Clone + Eq + Hash,
+{
     capacity: usize,
-    max_idle_age: Duration,
-
-    /// The time source.
-    now: N,
+    expires: Duration,
+    /// A queue of keys into `values` that become ready when the corresponding
+    /// cache entry expires. As elements become ready, we can
+    /// remove the key and corresponding value from the cache.
+    expirations: DelayQueue<K>,
+    /// Cache access is coordinated through `values`. This field represents
+    /// the current state of the cache.
+    values: IndexMap<K, Node<V>>,
 }
 
-/// Provides the current time within the module. Useful for testing.
-pub trait Now {
-    fn now(&self) -> Instant;
+/// A background future that eagerly removes expired cache values.
+///
+/// If the cache is dropped, this future will complete.
+pub struct PurgeCache<K, V>
+where
+    K: Clone + Eq + Hash,
+{
+    cache: Lock<Cache<K, V>>,
+    interval: Interval,
 }
 
-/// Wraps cache values so that each tracks its last access time.
-#[derive(Debug, PartialEq)]
-pub struct Node<T> {
+/// A handle to a cache value.
+struct Node<T> {
+    dq_key: delay_queue::Key,
     value: T,
-    last_access: Instant,
-}
-
-/// A smart pointer that updates an access time when dropped.
-///
-/// Wraps a mutable reference to a `V`-typed value.
-///
-/// When the guard is dropped, the value's `last_access` time is updated with the provided
-/// time source.
-#[derive(Debug)]
-pub struct Access<'a, T, N: Now = ()> {
-    node: &'a mut Node<T>,
-    now: &'a N,
-}
-
-/// A handle to a `Cache` that has capacity for at least one additional value.
-#[derive(Debug)]
-pub struct Reserve<'a, K: Hash + Eq, V, N> {
-    vals: &'a mut IndexMap<K, Node<V>>,
-    now: &'a N,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct CapacityExhausted {
-    pub capacity: usize,
 }
 
 // ===== impl Cache =====
 
-impl<K: Hash + Eq, V> Cache<K, V, ()> {
-    pub fn new(capacity: usize, max_idle_age: Duration) -> Self {
-        Self {
+impl<K, V> Cache<K, V>
+where
+    K: Clone + Eq + Hash,
+    V: Clone,
+{
+    pub fn new(capacity: usize, expires: Duration) -> (Lock<Cache<K, V>>, PurgeCache<K, V>) {
+        assert!(capacity != 0);
+        let cache = Self {
             capacity,
-            vals: IndexMap::default(),
-            max_idle_age,
-            now: (),
-        }
-    }
-}
+            expires,
+            expirations: DelayQueue::with_capacity(capacity),
+            values: IndexMap::default(),
+        };
+        let cache = Lock::new(cache);
+        let bg_purge = PurgeCache {
+            cache: cache.clone(),
+            interval: Interval::new_interval(expires),
+        };
 
-impl<K: Hash + Eq, V, N: Now> Cache<K, V, N> {
-    /// Accesses a route.
-    ///
-    /// A mutable reference to the route is wrapped in the returned `Access` to
-    /// ensure that the access-time is updated when the reference is released.
-    pub fn access<Q>(&mut self, key: &Q) -> Option<Access<'_, V, N>>
-    where
-        Q: Hash + Equivalent<K>,
-    {
-        let v = self.vals.get_mut(key)?;
-        Some(v.access(&self.now))
+        (cache, bg_purge)
     }
 
-    /// Ensures that there is capacity to store an additional route.
-    ///
-    /// Returns a handle that may be used to store an ite,. If there is no available
-    /// capacity, idle entries may be evicted to create capacity.
-    ///
-    /// An error is returned if there is no available capacity.
-    pub fn reserve(&mut self) -> Result<Reserve<'_, K, V, N>, CapacityExhausted> {
-        if self.vals.len() == self.capacity {
-            // Only whole seconds are used to determine whether a node should be retained.
-            // This is intended to prevent the need for repetitive reservations when
-            // entries are clustered in tight time ranges.
-            let max_age = self.max_idle_age.as_secs();
-            let now = self.now.now();
-            self.vals.retain(|_, n| {
-                let age = now - n.last_access();
-                age.as_secs() <= max_age
-            });
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
 
-            if self.vals.len() == self.capacity {
-                return Err(CapacityExhausted {
-                    capacity: self.capacity,
-                });
-            }
+    pub fn can_insert(&self) -> bool {
+        self.values.len() < self.capacity
+    }
+
+    /// Attempts to access an item by key.
+    ///
+    /// If a value is returned, this key will not be considered for eviction
+    /// for another `expires` span of time.
+    pub fn access(&mut self, key: &K) -> Option<V> {
+        if let Some(node) = self.values.get_mut(key) {
+            self.expirations.reset(&node.dq_key, self.expires);
+            debug!("reset expiration for cache value associated with key");
+
+            return Some(node.value.clone());
         }
 
-        Ok(Reserve {
-            vals: &mut self.vals,
-            now: &self.now,
-        })
+        None
     }
 
-    /// Overrides the time source for tests.
-    #[cfg(test)]
-    fn with_clock<M: Now>(self, now: M) -> Cache<K, V, M> {
-        Cache {
-            now,
-            vals: self.vals,
-            capacity: self.capacity,
-            max_idle_age: self.max_idle_age,
+    /// Attempts to insert an item by key.
+    ///
+    /// If a value is returned, this key has been set to expire after an
+    /// `expires` span of time.
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let node = {
+            debug!("inserting an item into the cache");
+            let dq_key = self.expirations.insert(key.clone(), self.expires);
+            Node { dq_key, value }
+        };
+
+        self.values.insert(key, node).map(|n| n.value)
+    }
+
+    /// Evict expired values from the cache.
+    ///
+    /// Polls the underlying `DelayQueue`. When elements are returned from the
+    /// queue, remove the associated key from `values`.
+    fn poll_purge(&mut self) -> Poll<(), Error> {
+        while let Some(expired) = try_ready!(self.expirations.poll()) {
+            debug!("expiring an item from the cache");
+            self.values.remove(expired.get_ref());
         }
+
+        debug!("cache expirations polling is ready");
+        Ok(Async::Ready(()))
     }
 }
 
-// ===== impl Reserve =====
+// ===== impl PurgeCache =====
 
-impl<'a, K: Hash + Eq + 'a, V: 'a, N: Now + 'a> Reserve<'a, K, V, N> {
-    /// Stores a route in the cache.
-    pub fn store(self, key: K, val: V) {
-        let node = Node::new(val.into(), self.now.now());
-        self.vals.insert(key, node);
-    }
-}
+impl<K, V> Future for PurgeCache<K, V>
+where
+    K: Clone + Eq + Hash,
+    V: Clone,
+{
+    type Item = ();
+    type Error = ();
 
-// ===== impl Access =====
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            try_ready!(self.interval.poll().map_err(|e| {
+                panic!("Interval::poll must not fail: {}", e);
+            }));
+            debug!("purge task interval reached");
 
-impl<'a, T: 'a, N: Now + 'a> Deref for Access<'a, T, N> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.node
-    }
-}
+            let mut cache = try_ready!(Ok(self.cache.poll_lock()));
+            debug!("purge task locked the router cache");
 
-impl<'a, T: 'a, N: Now + 'a> DerefMut for Access<'a, T, N> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node
-    }
-}
-
-impl<'a, T: 'a, N: Now + 'a> Access<'a, T, N> {
-    #[cfg(test)]
-    fn last_access(&self) -> Instant {
-        self.node.last_access
-    }
-}
-
-impl<'a, T: 'a, N: Now + 'a> Drop for Access<'a, T, N> {
-    fn drop(&mut self) {
-        self.node.last_access = self.now.now();
-    }
-}
-
-// ===== impl Node =====
-
-impl<T> Node<T> {
-    pub fn new(value: T, last_access: Instant) -> Self {
-        Node { value, last_access }
-    }
-
-    pub fn access<'a, N: Now + 'a>(&'a mut self, now: &'a N) -> Access<'a, T, N> {
-        Access { now, node: self }
-    }
-
-    pub fn last_access(&self) -> Instant {
-        self.last_access
-    }
-}
-
-impl<T> Deref for Node<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl<T> DerefMut for Node<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
-    }
-}
-
-// ===== impl Now =====
-
-/// Default source of time.
-impl Now for () {
-    fn now(&self) -> Instant {
-        Instant::now()
+            // If poll_purge is not ready, we cannot expire any values and
+            // wait for the next interval. If poll_purge is ready, we have
+            // expired all values and wait for the next interval
+            debug!("purge task is polling for evictions...");
+            cache.poll_purge().expect("Cache::poll_purge must not fail");
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::MultiplyAndAssign;
-    use futures::Future;
-    use std::{
-        cell::RefCell,
-        rc::Rc,
-        time::{Duration, Instant},
-    };
-    use tower_service::Service;
+    use futures::future;
+    use tokio::runtime::current_thread::{self, Runtime};
 
-    /// A mocked instance of `Now` to drive tests.
-    #[derive(Clone)]
-    pub struct Clock(Rc<RefCell<Instant>>);
+    #[test]
+    fn check_capacity_and_insert() {
+        current_thread::run(future::lazy(|| {
+            let (mut cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
 
-    // ===== impl Clock =====
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-    impl Default for Clock {
-        fn default() -> Clock {
-            Clock(Rc::new(RefCell::new(Instant::now())))
-        }
-    }
+            cache.insert(1, 2);
+            assert_eq!(cache.values.len(), 1);
 
-    impl Clock {
-        pub fn advance(&mut self, d: Duration) {
-            *self.0.borrow_mut() += d;
-        }
-    }
+            cache.insert(2, 3);
+            assert_eq!(cache.values.len(), 2);
+            assert!(!cache.can_insert());
 
-    impl Now for Clock {
-        fn now(&self) -> Instant {
-            self.0.borrow().clone()
-        }
+            Ok::<_, ()>(())
+        }))
     }
 
     #[test]
-    fn reserve_and_store() {
-        let mut cache = Cache::<_, MultiplyAndAssign>::new(2, Duration::from_secs(1));
+    fn insert_and_access_value() {
+        current_thread::run(future::lazy(|| {
+            let (mut cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
 
-        {
-            let r = cache.reserve().expect("reserve");
-            r.store(1, MultiplyAndAssign::default());
-        }
-        assert_eq!(cache.vals.len(), 1);
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-        {
-            let r = cache.reserve().expect("reserve");
-            r.store(2, MultiplyAndAssign::default());
-        }
-        assert_eq!(cache.vals.len(), 2);
+            assert!(cache.access(&1).is_none());
+            assert!(cache.access(&2).is_none());
 
-        assert_eq!(
-            cache.reserve().err(),
-            Some(CapacityExhausted { capacity: 2 })
-        );
-        assert_eq!(cache.vals.len(), 2);
+            cache.insert(1, 2);
+            assert!(cache.access(&1).is_some());
+            assert!(cache.access(&2).is_none());
+
+            cache.insert(2, 3);
+            assert!(cache.access(&1).is_some());
+            assert!(cache.access(&2).is_some());
+
+            assert_eq!(cache.access(&1).take().unwrap(), 2);
+            assert_eq!(cache.access(&2).take().unwrap(), 3);
+
+            Ok::<_, ()>(())
+        }))
     }
 
     #[test]
-    fn store_and_access() {
-        let mut cache = Cache::<_, MultiplyAndAssign>::new(2, Duration::from_secs(0));
+    fn insert_and_background_purge() {
+        let mut rt = Runtime::new().unwrap();
 
-        assert!(cache.access(&1).is_none());
-        assert!(cache.access(&2).is_none());
+        let (mut cache, cache_purge) = rt
+            .block_on(futures::future::lazy(|| {
+                Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
+            }))
+            .unwrap();
 
-        {
-            let r = cache.reserve().expect("reserve");
-            r.store(1, MultiplyAndAssign::default());
-        }
-        assert!(cache.access(&1).is_some());
-        assert!(cache.access(&2).is_none());
+        // Spawn a background purge task on the runtime
+        rt.spawn(cache_purge);
 
-        {
-            let r = cache.reserve().expect("reserve");
-            r.store(2, MultiplyAndAssign::default());
-        }
-        assert!(cache.access(&1).is_some());
-        assert!(cache.access(&2).is_some());
-    }
+        // Fill the cache
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-    #[test]
-    fn reserve_does_nothing_when_capacity_exists() {
-        let mut cache = Cache::<_, MultiplyAndAssign, _>::new(2, Duration::from_secs(0));
+            cache.insert(1, 2);
+            cache.insert(2, 3);
+            assert_eq!(cache.values.len(), 2);
 
-        // Create a route that goes idle immediately:
-        {
-            let r = cache.reserve().expect("capacity");
-            let mut service = MultiplyAndAssign::default();
-            service.call(1.into()).wait().unwrap();
-            r.store(1, service);
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
+
+        // Sleep for enough time that all cache values expire
+        rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
+            .unwrap();
+
+        let cache = match cache.poll_lock() {
+            Async::Ready(acquired) => acquired,
+            _ => panic!("cache lock should be Ready"),
         };
-        assert_eq!(cache.vals.len(), 1);
-
-        assert!(cache.reserve().is_ok());
-        assert_eq!(cache.vals.len(), 1);
+        assert_eq!(cache.values.len(), 0);
     }
 
     #[test]
-    fn reserve_honors_max_idle_age() {
-        let mut clock = Clock::default();
-        let mut cache = Cache::<_, MultiplyAndAssign, _>::new(1, Duration::from_secs(2))
-            .with_clock(clock.clone());
+    fn access_resets_expiration() {
+        let mut rt = Runtime::new().unwrap();
 
-        // Touch `1` at 0s.
-        cache
-            .reserve()
-            .expect("capacity")
-            .store(1, MultiplyAndAssign::default());
-        assert_eq!(
-            cache.reserve().err(),
-            Some(CapacityExhausted { capacity: 1 })
-        );
-        assert_eq!(cache.vals.len(), 1);
+        let (mut cache, cache_purge) = rt
+            .block_on(future::lazy(|| {
+                Ok::<_, ()>(Cache::new(2, Duration::from_millis(100)))
+            }))
+            .unwrap();
 
-        // No capacity at 1s.
-        clock.advance(Duration::from_secs(1));
-        assert_eq!(
-            cache.reserve().err(),
-            Some(CapacityExhausted { capacity: 1 })
-        );
-        assert_eq!(cache.vals.len(), 1);
+        // Spawn a background purge task on the runtime
+        rt.spawn(cache_purge);
 
-        // No capacity at 2s.
-        clock.advance(Duration::from_secs(1));
-        assert_eq!(
-            cache.reserve().err(),
-            Some(CapacityExhausted { capacity: 1 })
-        );
-        assert_eq!(cache.vals.len(), 1);
+        // Insert into the cache
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
 
-        // Capacity at 3+s.
-        clock.advance(Duration::from_secs(1));
-        assert!(cache.reserve().is_ok());
-        assert_eq!(cache.vals.len(), 0);
-    }
+            cache.insert(1, 2);
+            assert_eq!(cache.values.len(), 1);
 
-    #[test]
-    fn last_access() {
-        let mut clock = Clock::default();
-        let mut cache =
-            Cache::<_, MultiplyAndAssign>::new(1, Duration::from_secs(0)).with_clock(clock.clone());
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
 
-        let t0 = clock.now();
-        cache
-            .reserve()
-            .expect("capacity")
-            .store(333, MultiplyAndAssign::default());
+        // Sleep for at least half of the expiration time
+        rt.block_on(tokio_timer::sleep(Duration::from_millis(60)))
+            .unwrap();
 
-        clock.advance(Duration::from_secs(1));
-        let t1 = clock.now();
-        assert_eq!(cache.access(&333).map(|n| n.last_access()), Some(t0));
+        // Access the value that was inserted
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
+            assert!(cache.access(&1).is_some());
 
-        clock.advance(Duration::from_secs(1));
-        assert_eq!(cache.access(&333).map(|n| n.last_access()), Some(t1));
-    }
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
 
-    #[test]
-    fn last_access_wiped_on_evict() {
-        let mut clock = Clock::default();
-        let mut cache =
-            Cache::<_, MultiplyAndAssign>::new(1, Duration::from_secs(0)).with_clock(clock.clone());
+        // Sleep for at least half of the expiration time
+        rt.block_on(tokio_timer::sleep(Duration::from_millis(60)))
+            .unwrap();
 
-        let t0 = clock.now();
-        cache
-            .reserve()
-            .expect("capacity")
-            .store(333, MultiplyAndAssign::default());
+        // If the access reset the value's expiration, it should still be
+        // retrievable
+        rt.block_on(future::lazy(|| {
+            let mut cache = match cache.poll_lock() {
+                Async::Ready(acquired) => acquired,
+                _ => panic!("cache lock should be Ready"),
+            };
+            assert!(cache.access(&1).is_some());
 
-        clock.advance(Duration::from_secs(1));
-        assert_eq!(cache.access(&333).map(|n| n.last_access()), Some(t0));
-
-        // Cause the router to evict the `333` route.
-        clock.advance(Duration::from_secs(1));
-        cache
-            .reserve()
-            .expect("capacity")
-            .store(444, MultiplyAndAssign::default());
-
-        clock.advance(Duration::from_secs(1));
-        let t1 = clock.now();
-        cache
-            .reserve()
-            .expect("capacity")
-            .store(333, MultiplyAndAssign::default());
-
-        clock.advance(Duration::from_secs(1));
-        assert_eq!(cache.access(&333).map(|n| n.last_access()), Some(t1));
-    }
-
-    #[test]
-    fn node_access_updated_on_drop() {
-        let mut clock = Clock::default();
-        let t0 = clock.now();
-        let mut node = Node::new(123, t0);
-
-        clock.advance(Duration::from_secs(1));
-        {
-            let access = node.access(&clock);
-            assert_eq!(access.last_access(), t0);
-        }
-
-        let t1 = clock.now();
-        assert_eq!(node.last_access(), t1);
-        assert_ne!(t0, t1);
+            Ok::<_, ()>(())
+        }))
+        .unwrap();
     }
 }

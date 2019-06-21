@@ -318,14 +318,14 @@ pub mod router {
     pub struct Service<G, T, R, B>
     where
         T: WithRoute + Clone,
-        T::Output: Eq + Hash,
+        T::Output: Clone + Eq + Hash,
         R: rt::Make<T::Output>,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
         target: T,
         stack: R,
         route_stream: Option<G>,
-        router: Router<B, T, R>,
+        router: Router<B, T, rt::FixedMake<T::Output, R::Value>>,
         default_route: Route,
     }
 
@@ -340,7 +340,7 @@ pub mod router {
     impl<B, T> rt::Recognize<http::Request<B>> for Recognize<T>
     where
         T: WithRoute + Clone,
-        T::Output: Eq + Hash,
+        T::Output: Clone + Eq + Hash,
     {
         type Target = T::Output;
 
@@ -415,18 +415,20 @@ pub mod router {
         fn call(&mut self, target: T) -> Self::Future {
             let inner = self.inner.make(&target);
             let stack = self.route_layer.clone().service(svc::shared(inner));
+            let default_route = target.clone().with_route(self.default_route.clone());
 
-            let router = Router::new(
+            let mut make = IndexMap::with_capacity(1);
+            make.insert(default_route.clone(), stack.make(&default_route));
+
+            // Create a new fixed router; we can eagerly make the services
+            // and never expire the routes from the profile router cache
+            let router = Router::new_fixed(
                 Recognize {
                     target: target.clone(),
                     routes: Vec::new(),
                     default_route: self.default_route.clone(),
                 },
-                stack.clone(),
-                // only need 1 for default_route at first
-                1,
-                // Doesn't matter, since we are guaranteed to have enough capacity.
-                Duration::from_secs(0),
+                make,
             );
 
             let route_stream = match target.get_destination() {
@@ -477,23 +479,35 @@ pub mod router {
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
-        T::Output: Eq + Hash,
+        T::Output: Clone + Eq + Hash,
         R: rt::Make<T::Output> + Clone,
         R::Value: svc::Service<http::Request<B>> + Clone,
     {
         fn update_routes(&mut self, routes: Routes) {
-            let slots = routes.len() + 1;
-            self.router = Router::new(
+            let default_route = self.target.clone().with_route(self.default_route.clone());
+
+            let capacity = routes.len() + 1;
+            let mut make = IndexMap::with_capacity(capacity);
+            make.insert(default_route.clone(), self.stack.make(&default_route));
+
+            for (_, route) in &routes {
+                let route = self.target.clone().with_route(route.clone());
+                let service = self.stack.make(&route);
+                make.insert(route, service);
+            }
+
+            // Create a new fixed router; we can eagerly make the services
+            // and never expire the routes from the profile router cache
+            let router = Router::new_fixed(
                 Recognize {
                     target: self.target.clone(),
                     routes,
                     default_route: self.default_route.clone(),
                 },
-                self.stack.clone(),
-                slots,
-                // Doesn't matter, since we are guaranteed to have enough capacity.
-                Duration::from_secs(0),
+                make,
             );
+
+            self.router = router;
         }
 
         fn poll_route_stream(&mut self) -> Option<Async<Option<Routes>>> {
@@ -507,14 +521,15 @@ pub mod router {
     where
         G: Stream<Item = Routes, Error = Never>,
         T: WithRoute + Clone,
-        T::Output: Eq + Hash,
+        T::Output: Clone + Eq + Hash,
         Stk: rt::Make<T::Output, Value = Svc> + Clone,
         Svc: svc::Service<http::Request<B>> + Clone,
         Svc::Error: Into<Error>,
     {
         type Response = Svc::Response;
         type Error = Error;
-        type Future = rt::ResponseFuture<http::Request<B>, Svc>;
+        type Future =
+            rt::ResponseFuture<http::Request<B>, Recognize<T>, rt::FixedMake<T::Output, Svc>>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             while let Some(Async::Ready(Some(routes))) = self.poll_route_stream() {
