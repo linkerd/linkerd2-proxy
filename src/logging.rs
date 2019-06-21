@@ -16,13 +16,24 @@ thread_local! {
 
 pub mod trace {
     extern crate tracing_log;
+
+    use futures::{Stream, future::{self, Future}};
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
     use std::{env, error, fmt, time::Instant};
+    use hyper::{service::Service, Body, Request, Response};
+
     pub use tracing::*;
     pub use tracing_fmt::*;
 
     type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
     pub type Error = Box<error::Error + Send + Sync + 'static>;
+
+
+    #[derive(Clone)]
+    pub struct Admin {
+        filter: String,
+        handle: filter::reload::Handle<filter::EnvFilter, default::NewRecorder>,
+    }
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
     /// environment variable as the verbosity-level filter.
@@ -32,17 +43,22 @@ pub mod trace {
     }
 
     /// Initialize tracing and logging with the provided verbosity-level filter.
-    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), Error> {
-        let dispatch = Dispatch::new(
-            subscriber_builder()
+    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<Admin, Error> {
+        // Set up the subscriber
+        let builder =  subscriber_builder()
                 .with_filter(filter::EnvFilter::from(filter))
-                .finish(),
-        );
+                .with_filter_reloading();
+        let handle = builder.reload_handle();
+        let dispatch = Dispatch::new(builder.finish());
         dispatcher::set_global_default(dispatch)?;
         let logger = tracing_log::LogTracer::with_filter(log::LevelFilter::max());
         log::set_boxed_logger(Box::new(logger))?;
         log::set_max_level(log::LevelFilter::max());
-        Ok(())
+
+        Ok(Admin {
+            filter: filter.as_ref().to_string(),
+            handle
+        })
     }
 
     /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
@@ -124,6 +140,54 @@ pub mod trace {
         pub use tracing_futures::*;
     }
 
+    impl Service for Admin {
+        type ReqBody = Body;
+        type ResBody = Body;
+        type Error = io::Error;
+        type Future = Box<Future<Item = Response<Body>, Error=Self::Error> + Send  + 'static>;
+
+        fn call(&mut self, req: Request<Body>) -> Self::Future {
+            use http::StatusCode;
+
+            match req.method() {
+                &http::Method::GET => Box::new(future::ok(Response::builder().status(StatusCode::OK)
+                    .body(self.filter.into())
+                    .expect("builder with known status code must not fail"))),
+                &http::Method::POST => {
+                    Box::new(req.into_body().concat2().and_then(|chunk| {
+                        let chunk = chunk
+                            .iter()
+                            .collect::<Vec<u8>>();
+                        let body = String::from_utf8(chunk).unwrap();
+                        match body.parse::<filter::EnvFilter>(){
+                            Err(e) => future::ok(Response::builder().status(StatusCode::BAD_REQUEST)
+                                .body(format!("{}", e).into())
+                                .expect("builder with known status code must not fail")),
+                                Ok(new) => {
+                                    self.handle.reload(new).unwrap();
+                                    future::ok(Response::builder().status(StatusCode::OK)
+                                    .body(Body::empty())
+                                    .expect("builder with known status code must not fail"))
+                                }
+                            }
+                    })).map_err(io::Error::from)
+                }
+                _ => Box::new(future::ok(Response::builder().status(StatusCode::METHOD_NOT_ALLOWED)
+                    .header("allow", "GET")
+                    .header("allow", "POST")
+                    .body(Body::empty())
+                    .expect("builder with known status code must not fail"))),
+            }
+        }
+    }
+
+    impl fmt::Debug for Admin {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.debug_struct("Admin")
+                .field("filter", &self.filter)
+                .finish()
+        }
+    }
 }
 
 /// Execute a closure with a `Display` item attached to allow log messages.
