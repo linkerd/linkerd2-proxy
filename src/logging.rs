@@ -44,6 +44,7 @@ pub mod trace {
 
     /// Initialize tracing and logging with the provided verbosity-level filter.
     pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<Admin, Error> {
+        let f2 = filter.as_ref().to_string();
         // Set up the subscriber
         let builder =  subscriber_builder()
                 .with_filter(filter::EnvFilter::from(filter))
@@ -56,7 +57,7 @@ pub mod trace {
         log::set_max_level(log::LevelFilter::max());
 
         Ok(Admin {
-            filter: filter.as_ref().to_string(),
+            filter: f2,
             handle
         })
     }
@@ -148,15 +149,16 @@ pub mod trace {
 
         fn call(&mut self, req: Request<Body>) -> Self::Future {
             use http::StatusCode;
-
+            let curr = self.filter.clone();
+            let handle = self.handle.clone();
             match req.method() {
                 &http::Method::GET => Box::new(future::ok(Response::builder().status(StatusCode::OK)
-                    .body(self.filter.into())
+                    .body(curr.into())
                     .expect("builder with known status code must not fail"))),
                 &http::Method::POST => {
-                    Box::new(req.into_body().concat2().and_then(|chunk| {
+                    Box::new(req.into_body().concat2().and_then(move |chunk| {
                         let chunk = chunk
-                            .iter()
+                            .into_iter()
                             .collect::<Vec<u8>>();
                         let body = String::from_utf8(chunk).unwrap();
                         match body.parse::<filter::EnvFilter>(){
@@ -164,13 +166,13 @@ pub mod trace {
                                 .body(format!("{}", e).into())
                                 .expect("builder with known status code must not fail")),
                                 Ok(new) => {
-                                    self.handle.reload(new).unwrap();
+                                    handle.reload(new).unwrap();
                                     future::ok(Response::builder().status(StatusCode::OK)
                                     .body(Body::empty())
                                     .expect("builder with known status code must not fail"))
                                 }
                             }
-                    })).map_err(io::Error::from)
+                    }).map_err(|_| io::Error::from(io::ErrorKind::Other)))
                 }
                 _ => Box::new(future::ok(Response::builder().status(StatusCode::METHOD_NOT_ALLOWED)
                     .header("allow", "GET")
