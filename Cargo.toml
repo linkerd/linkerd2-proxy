@@ -105,8 +105,4 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }
-tokio-trace-core = { git = "https://github.com/kazimuth/tokio.git", branch = "global_dispatch" }
-
-[patch.'https://github.com/tokio-rs/tokio']
-tokio-trace      = { git = "https://github.com/kazimuth/tokio.git", branch = "global_dispatch", default-features = false }
-tokio-trace-core = { git = "https://github.com/kazimuth/tokio.git", branch = "global_dispatch" }
+tokio-trace-core = { git = "https://github.com/tokio-rs/tokio.git" }
