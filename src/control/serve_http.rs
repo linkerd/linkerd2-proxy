@@ -1,9 +1,13 @@
 use futures::{future, Future};
-use hyper::{server::conn::Http, service::Service, Body};
+use hyper::{server::conn::Http, service::{service_fn, Service}, Body};
 use tokio::executor::current_thread::TaskExecutor;
 
 use task;
 use transport::{tls, Listen};
+use std::net::SocketAddr;
+
+#[derive(Debug, Copy, Clone)]
+pub struct ClientAddr(SocketAddr);
 
 pub fn serve_http<L, S>(
     name: &'static str,
@@ -21,8 +25,14 @@ where
         let log = log.clone();
         bound_port
             .listen_and_fold(Http::new(), move |hyper, (conn, remote)| {
+                let remote_ip = ClientAddr(remote);
+                let svc = service.clone();
+                let svc = service_fn(move |mut req| {
+                    req.extensions_mut().insert(remote_ip);
+                    svc.call(req)
+                });
                 let serve = hyper
-                    .serve_connection(conn, service.clone())
+                    .serve_connection(conn, svc)
                     .map(|_| {})
                     .map_err(move |e| {
                         error!("error serving {}: {:?}", name, e);
@@ -40,4 +50,10 @@ where
     };
 
     log.future(fut)
+}
+
+impl ClientAddr {
+    pub fn is_loopback(&self) -> bool {
+        self.0.ip().is_loopback()
+    }
 }

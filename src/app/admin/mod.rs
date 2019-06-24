@@ -11,6 +11,7 @@ use std::io;
 
 use trace;
 use metrics;
+use control::ClientAddr;
 
 mod readiness;
 pub use self::readiness::{Latch, Readiness};
@@ -59,12 +60,26 @@ where
     type ReqBody = Body;
     type ResBody = Body;
     type Error = io::Error;
-    type Future =Box<Future<Item= Response<Body>, Error=Self::Error> + Send  + 'static>;
+    type Future = Box<Future<Item= Response<Body>, Error=Self::Error> + Send  + 'static>;
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
+
         match req.uri().path() {
             "/metrics" => Box::new(self.metrics.call(req)),
-            "/proxy-log-level" => Box::new(self.trace_admin.call(req)),
+            "/proxy-log-level" => if req.extensions()
+                .get::<ClientAddr>()
+                .map(ClientAddr::is_loopback)
+                .unwrap_or(false)
+            {
+                Box::new(self.trace_admin.call(req))
+            } else {
+                Box::new(future::ok(
+                    Response::builder()
+                        .status(StatusCode::FORBIDDEN)
+                        .body("access to /proxy-log-level only allowed from loopback addresses".into())
+                        .expect("builder with known status code must not fail")
+                ))
+            },
             "/ready" => Box::new(future::ok(self.ready_rsp())),
             _ => Box::new(future::ok(
                 Response::builder()
