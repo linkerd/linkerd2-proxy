@@ -162,7 +162,7 @@ where
                     let overrides = profile
                         .dst_overrides
                         .into_iter()
-                        .filter_map(|orig| convert_dst_override(orig));
+                        .filter_map(convert_dst_override);
                     match tx.start_send(profiles::Routes {
                         routes: routes.collect(),
                         dst_overrides: overrides.collect(),
