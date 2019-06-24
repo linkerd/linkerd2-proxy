@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use tokio::sync::lock::Lock;
 use tokio_timer::{delay_queue, DelayQueue, Error, Interval};
 use tokio_trace::debug;
+
 /// An LRU cache that can eagerly remove values in a background task.
 ///
 /// Assumptions:

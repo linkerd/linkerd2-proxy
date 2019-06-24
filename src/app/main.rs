@@ -886,6 +886,7 @@ where
     let future = log.future(
         bound_port.listen_and_fold((), move |(), (connection, remote)| {
             let s = server.serve(connection, remote, h2_settings);
+            // TODO: use trace spans for log contexts.
             // .instrument(info_span!("conn", %remote));
             // Logging context is configured by the server.
             let r = DefaultExecutor::current()
@@ -894,6 +895,7 @@ where
             future::result(r)
         }),
     );
+    // TODO: use trace spans for log contexts.
     // .instrument(info_span!("proxy", server = %proxy_name, local = %listen_addr));
 
     let accept_until = Cancelable {

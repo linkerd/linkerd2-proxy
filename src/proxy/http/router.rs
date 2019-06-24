@@ -130,12 +130,7 @@ where
             self.config.capacity,
             self.config.max_idle_age,
         );
-        let span = debug_span!(
-            "router",
-            name = self.config.proxy_name,
-            // config.capacity = self.config.capacity,
-            // config.max_idle_age = ?self.config.max_idle_age,
-        );
+        let span = debug_span!("router", name = self.config.proxy_name);
         let ctx = logging::Section::Proxy.bg(self.config.proxy_name);
         let cache_daemon = ctx.future(cache_bg);
         tokio::spawn(cache_daemon);
