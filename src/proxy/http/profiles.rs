@@ -332,10 +332,12 @@ pub mod router {
         _p: ::std::marker::PhantomData<fn(RBody, MBody)>,
     }
 
-    pub struct Service<G, T, R, S, RMk, M, RBody>
+    pub struct Service<G, T, R, S, RMk, M, RBody, MBody>
     where
-        T: WithRoute + Clone,
+        T: WithAddr + WithRoute + Clone + Eq + Hash,
         T::Output: Clone + Eq + Hash,
+        M: rt::Make<T>,
+        M::Value: svc::Service<http::Request<MBody>> + Clone,
         R: svc::Layer<S, Service = RMk>,
         RMk: rt::Make<T::Output>,
         RMk::Value: svc::Service<http::Request<RBody>> + Clone,
@@ -344,6 +346,7 @@ pub mod router {
         inner: M,
         route_layer: svc::Builder<R>,
         route_stream: Option<G>,
+        concrete_router: Option<rt::Router<http::Request<MBody>, ConcreteDstRecognize<T>, rt::FixedMake<T, M::Value>>>,
         router: rt::Router<http::Request<RBody>, RouteRecognize<T>, rt::FixedMake<T::Output, RMk::Value>>,
         default_route: Route,
         _p: ::std::marker::PhantomData<S>,
@@ -467,6 +470,7 @@ pub mod router {
             RMk,
             M,
             RBody,
+            MBody,
         >;
         type Error = never::Never;
         type Future = futures::future::FutureResult<Self::Response, Self::Error>;
@@ -490,7 +494,7 @@ pub mod router {
             let stack = self
                 .route_layer
                 .clone()
-                .service(svc::shared(concrete_router));
+                .service(svc::shared(concrete_router.clone()));
             let default_route = target.clone().with_route(self.default_route.clone());
 
             let mut make = IndexMap::with_capacity(1);
@@ -523,11 +527,12 @@ pub mod router {
             };
 
             futures::future::ok(Service {
-                target: target.clone(),
+                target,
                 inner: self.inner.clone(),
                 route_layer: self.route_layer.clone(),
                 route_stream,
                 router,
+                concrete_router: Some(concrete_router),
                 default_route: self.default_route.clone(),
                 _p: ::std::marker::PhantomData,
             })
@@ -561,6 +566,7 @@ pub mod router {
             RMk,
             M,
             RBody,
+            MBody,
         >
     where
         G: Stream<Item = Routes, Error = Never>,
@@ -579,11 +585,19 @@ pub mod router {
             let capacity = routes.dst_overrides.len() + 1;
 
             let mut make = IndexMap::with_capacity(capacity);
-            make.insert(self.target.clone(), self.inner.make(&self.target));
+            let mut drained = self.concrete_router.take().expect("previous concrete dst router is missing").drain();
+
+            let target_addr = drained.remove(&self.target).unwrap_or_else(|| {
+                error!("concrete dst router did not contain target dst");
+                self.inner.make(&self.target)
+            });
+            make.insert(self.target.clone(), target_addr);
 
             for WeightedAddr{addr, ..} in &routes.dst_overrides {
                 let target = self.target.clone().with_addr(addr.clone());
-                let service = self.inner.make(&target);
+                let service = drained.remove(&target).unwrap_or_else(|| {
+                    self.inner.make(&target)
+                });
                 make.insert(target, service);
             }
 
@@ -594,6 +608,8 @@ pub mod router {
                 },
                 make,
             );
+
+            self.concrete_router = Some(concrete_router.clone());
 
             let stack = self
                 .route_layer
@@ -642,6 +658,7 @@ pub mod router {
             RMk,
             M,
             RBody,
+            MBody,
         >
     where
         G: Stream<Item = Routes, Error = Never>,

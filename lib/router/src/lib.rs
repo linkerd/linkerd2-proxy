@@ -180,6 +180,10 @@ where
 
         router
     }
+
+    pub fn drain(self) -> IndexMap<Rec::Target, Svc> {
+        self.inner.make.0
+    }
 }
 
 impl<Req, Rec, Mk> svc::Service<Req> for Router<Req, Rec, Mk>
