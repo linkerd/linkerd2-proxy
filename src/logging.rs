@@ -17,10 +17,13 @@ thread_local! {
 pub mod trace {
     extern crate tracing_log;
 
-    use futures::{Stream, future::{self, Future}};
+    use futures::{
+        future::{self, Future},
+        Stream,
+    };
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-    use std::{env, error, fmt, time::Instant};
     use hyper::{service::Service, Body, Request, Response};
+    use std::{env, error, fmt, io, sync::Arc};
 
     pub use tracing::*;
     pub use tracing_fmt::*;
@@ -32,7 +35,7 @@ pub mod trace {
     #[derive(Clone)]
     pub struct Admin {
         filter: String,
-        handle: filter::reload::Handle<filter::EnvFilter, default::NewRecorder>,
+        handle: ReloadHandle,
     }
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
@@ -46,9 +49,9 @@ pub mod trace {
     pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<Admin, Error> {
         let f2 = filter.as_ref().to_string();
         // Set up the subscriber
-        let builder =  subscriber_builder()
-                .with_filter(filter::EnvFilter::from(filter))
-                .with_filter_reloading();
+        let builder = subscriber_builder()
+            .with_filter(filter::EnvFilter::from(filter))
+            .with_filter_reloading();
         let handle = builder.reload_handle();
         let dispatch = Dispatch::new(builder.finish());
         dispatcher::set_global_default(dispatch)?;
@@ -56,10 +59,7 @@ pub mod trace {
         log::set_boxed_logger(Box::new(logger))?;
         log::set_max_level(log::LevelFilter::max());
 
-        Ok(Admin {
-            filter: f2,
-            handle
-        })
+        Ok(Admin { filter: f2, handle })
     }
 
     /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
@@ -114,6 +114,8 @@ pub mod trace {
         }
     }
 
+    type ReloadHandle = filter::reload::Handle<filter::EnvFilter, default::NewRecorder>;
+
     /// Implements `fmt::Display` for a `tokio-trace-fmt` span context.
     struct SpanContext<'a, N: 'a>(&'a Context<'a, N>);
 
@@ -145,40 +147,59 @@ pub mod trace {
         type ReqBody = Body;
         type ResBody = Body;
         type Error = io::Error;
-        type Future = Box<Future<Item = Response<Body>, Error=Self::Error> + Send  + 'static>;
+        type Future = Box<Future<Item = Response<Body>, Error = Self::Error> + Send + 'static>;
 
         fn call(&mut self, req: Request<Body>) -> Self::Future {
+            fn handle_reload(chunk: hyper::Chunk, handle: ReloadHandle) -> Result<(), String> {
+                let body = ::std::str::from_utf8(&chunk.into_bytes().as_ref()).map_err(|e| format!("{}", e))?;
+                trace!(request.body = ?body);
+                let filter = body.parse::<filter::EnvFilter>()
+                    .map_err(|e| format!("{}", e))?;
+                handle.reload(filter).map_err(|e| format!("{}", e))?;
+                info!(message = "set new log level", level = %body);
+                Ok(())
+            }
+
             use http::StatusCode;
             let curr = self.filter.clone();
             let handle = self.handle.clone();
             match req.method() {
-                &http::Method::GET => Box::new(future::ok(Response::builder().status(StatusCode::OK)
-                    .body(curr.into())
-                    .expect("builder with known status code must not fail"))),
-                &http::Method::POST => {
-                    Box::new(req.into_body().concat2().and_then(move |chunk| {
-                        let chunk = chunk
-                            .into_iter()
-                            .collect::<Vec<u8>>();
-                        let body = String::from_utf8(chunk).unwrap();
-                        match body.parse::<filter::EnvFilter>(){
-                            Err(e) => future::ok(Response::builder().status(StatusCode::BAD_REQUEST)
-                                .body(format!("{}", e).into())
-                                .expect("builder with known status code must not fail")),
-                                Ok(new) => {
-                                    handle.reload(new).unwrap();
-                                    future::ok(Response::builder().status(StatusCode::OK)
-                                    .body(Body::empty())
-                                    .expect("builder with known status code must not fail"))
+                &http::Method::GET => Box::new(future::ok(
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .body(curr.into())
+                        .expect("builder with known status code must not fail"),
+                )),
+                &http::Method::POST => Box::new(
+                    req.into_body()
+                        .concat2()
+                        .map(move |chunk| {
+                            match handle_reload(chunk, handle) {
+                                Err(error) => {
+                                    warn!(message = "setting log level failed", %error);
+                                    Response::builder()
+                                        .status(StatusCode::BAD_REQUEST)
+                                        .body(error.into())
+                                        .expect("builder with known status code must not fail")
+                                },
+                                Ok(()) => {
+                                    Response::builder()
+                                        .status(StatusCode::CREATED)
+                                        .body(Body::empty())
+                                        .expect("builder with known status code must not fail")
                                 }
                             }
-                    }).map_err(|_| io::Error::from(io::ErrorKind::Other)))
-                }
-                _ => Box::new(future::ok(Response::builder().status(StatusCode::METHOD_NOT_ALLOWED)
-                    .header("allow", "GET")
-                    .header("allow", "POST")
-                    .body(Body::empty())
-                    .expect("builder with known status code must not fail"))),
+                        })
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
+                ),
+                _ => Box::new(future::ok(
+                    Response::builder()
+                        .status(StatusCode::METHOD_NOT_ALLOWED)
+                        .header("allow", "GET")
+                        .header("allow", "POST")
+                        .body(Body::empty())
+                        .expect("builder with known status code must not fail"),
+                )),
             }
         }
     }
