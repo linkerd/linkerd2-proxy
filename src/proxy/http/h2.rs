@@ -171,7 +171,21 @@ where
         self.tx.poll_ready().map_err(From::from)
     }
 
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        debug_assert_eq!(
+            req.version(),
+            http::Version::HTTP_2,
+            "request version should be HTTP/2",
+        );
+
+        // A request translated from HTTP/1 to 2 might not include an
+        // authority. In order to support that case, our h2 library requires
+        // the version to be dropped down from HTTP/2, as a form of us
+        // explicitly acknowledging that its not a normal HTTP/2 form.
+        if req.uri().authority_part().is_none() {
+            *req.version_mut() = http::Version::HTTP_11;
+        }
+
         ResponseFuture {
             client_used_tls: self.client_used_tls,
             inner: self.tx.send_request(req),

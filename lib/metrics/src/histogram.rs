@@ -180,7 +180,7 @@ impl<'a, V: Into<u64>> IntoIterator for &'a Histogram<V> {
 impl<V: Into<u64>> FmtMetric for Histogram<V> {
     const KIND: &'static str = "histogram";
 
-    fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter, name: N) -> fmt::Result {
+    fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
         let mut total = Counter::default();
         for (le, count) in self {
             total += *count;
@@ -192,7 +192,12 @@ impl<V: Into<u64>> FmtMetric for Histogram<V> {
         Ok(())
     }
 
-    fn fmt_metric_labeled<N, L>(&self, f: &mut fmt::Formatter, name: N, labels: L) -> fmt::Result
+    fn fmt_metric_labeled<N, L>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        name: N,
+        labels: L,
+    ) -> fmt::Result
     where
         N: fmt::Display,
         L: FmtLabels,
@@ -212,7 +217,7 @@ impl<V: Into<u64>> FmtMetric for Histogram<V> {
 // ===== impl Key =====
 
 impl<A: fmt::Display, B: fmt::Display> fmt::Display for Key<A, B> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}_{}", self.0, self.1)
     }
 }
@@ -220,7 +225,7 @@ impl<A: fmt::Display, B: fmt::Display> fmt::Display for Key<A, B> {
 // ===== impl Label =====
 
 impl<K: fmt::Display, V: fmt::Display> FmtLabels for Label<K, V> {
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}=\"{}\"", self.0, self.1)
     }
 }
@@ -228,7 +233,7 @@ impl<K: fmt::Display, V: fmt::Display> FmtLabels for Label<K, V> {
 // ===== impl Bucket =====
 
 impl fmt::Display for Bucket {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Bucket::Le(v) => write!(f, "{}", v),
             Bucket::Inf => write!(f, "+Inf"),
@@ -279,6 +284,7 @@ impl cmp::Ord for Bucket {
 mod tests {
     use super::*;
 
+    use quickcheck::quickcheck;
     use std::collections::HashMap;
     use std::u64;
 

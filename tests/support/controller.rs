@@ -334,8 +334,7 @@ where
                 .serve(move || {
                     let svc = Mutex::new(svc.clone());
                     hyper::service::service_fn(move |req| {
-                        let req =
-                            req.map(|body| tower_grpc::BoxBody::map_from(PayloadToGrpc(body)));
+                        let req = req.map(|body| tower_grpc::BoxBody::map_from(body));
                         svc.lock()
                             .expect("svc lock")
                             .call(req)
@@ -598,25 +597,6 @@ fn octets_to_u64s(octets: [u8; 16]) -> (u64, u64) {
         + (u64::from(octets[14]) << 8)
         + u64::from(octets[15]);
     (first, last)
-}
-
-struct PayloadToGrpc(hyper::Body);
-
-impl HttpBody for PayloadToGrpc {
-    type Data = hyper::Chunk;
-    type Error = hyper::Error;
-
-    fn is_end_stream(&self) -> bool {
-        self.0.is_end_stream()
-    }
-
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        self.0.poll_data()
-    }
-
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
-        self.0.poll_trailers()
-    }
 }
 
 struct GrpcToPayload<B>(B);

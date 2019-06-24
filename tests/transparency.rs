@@ -1200,3 +1200,46 @@ mod max_in_flight {
         assert_eq!(res2.status(), http::StatusCode::SERVICE_UNAVAILABLE);
     }
 }
+
+#[test]
+fn http2_request_without_authority() {
+    let _ = env_logger_init();
+
+    let srv = server::http2()
+        .route_fn("/", |req| {
+            assert_eq!(req.uri().authority_part(), None);
+            Response::new("".into())
+        })
+        .run();
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+
+    // Make a single HTTP/2 request without an :authority header.
+    //
+    // The support::client expects request URIs to be in absolute-form. It's
+    // easier to customize this one case than to make the support::client more
+    // complicated.
+    let addr = proxy.inbound;
+    let future = futures::future::lazy(move || tokio::net::TcpStream::connect(&addr))
+        .map_err(|e| panic!("connect error: {:?}", e))
+        .and_then(|io| {
+            hyper::client::conn::Builder::new()
+                .http2_only(true)
+                .handshake(io)
+                .map_err(|e| panic!("handshake error: {:?}", e))
+        })
+        .and_then(|(mut client, conn)| {
+            tokio::spawn(conn.map_err(|e| println!("conn error: {:?}", e)));
+            let req = Request::new(hyper::Body::empty());
+            // these properties are specifically what we want, and set by default
+            assert_eq!(req.uri(), "/");
+            assert_eq!(req.version(), http::Version::HTTP_11);
+            client
+                .send_request(req)
+                .map_err(|e| panic!("client error: {:?}", e))
+        })
+        .map(|res| {
+            assert_eq!(res.status(), http::StatusCode::OK);
+        });
+
+    tokio::runtime::current_thread::run(future);
+}

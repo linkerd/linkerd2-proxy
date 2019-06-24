@@ -1,15 +1,8 @@
 extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
-use futures::{Async, Poll};
-use std::{
-    fmt,
-    net::SocketAddr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use futures::{Async, Future, Poll};
+use std::{fmt, net::SocketAddr};
 
 pub use self::tower_discover::Change;
 use proxy::Error;
@@ -19,8 +12,15 @@ use svc;
 pub trait Resolve<T> {
     type Endpoint;
     type Resolution: Resolution<Endpoint = Self::Endpoint>;
+    type Future: Future<Item = Self::Resolution>;
 
-    fn resolve(&self, target: &T) -> Self::Resolution;
+    /// Asynchronously returns a `Resolution` for the given `target`.
+    ///
+    /// The returned future will complete with a `Resolution` if this resolver
+    /// was able to successfully resolve `target`. Otherwise, if it completes
+    /// with an error, that name or address should not be resolved by this
+    /// resolver.
+    fn resolve(&self, target: &T) -> Self::Future;
 }
 
 /// An infinite stream of endpoint updates.
@@ -31,18 +31,10 @@ pub trait Resolution {
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
 }
 
-pub trait HasEndpointStatus {
-    fn endpoint_status(&self) -> EndpointStatus;
-}
-
-#[derive(Clone, Debug)]
-pub struct EndpointStatus(Arc<AtomicBool>);
-
 #[derive(Clone, Debug)]
 pub enum Update<T> {
     Add(SocketAddr, T),
     Remove(SocketAddr),
-    NoEndpoints,
 }
 
 #[derive(Clone, Debug)]
@@ -62,7 +54,6 @@ pub struct MakeSvc<R, M> {
 pub struct Discover<R, M> {
     resolution: R,
     make: M,
-    is_empty: Arc<AtomicBool>,
 }
 
 // === impl Layer ===
@@ -98,8 +89,8 @@ where
     M: rt::Make<R::Endpoint> + Clone,
 {
     type Response = Discover<R::Resolution, M>;
-    type Error = never::Never;
-    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
+    type Error = <R::Future as Future>::Error;
+    type Future = Discover<R::Future, Option<M>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into()) // always ready to make a Discover
@@ -107,20 +98,10 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let resolution = self.resolve.resolve(&target);
-        futures::future::ok(Discover {
+        Discover {
             resolution,
-            make: self.inner.clone(),
-            is_empty: Arc::new(AtomicBool::new(false)),
-        })
-    }
-}
-
-impl<R, M> HasEndpointStatus for Discover<R, M>
-where
-    R: Resolution,
-{
-    fn endpoint_status(&self) -> EndpointStatus {
-        EndpointStatus(self.is_empty.clone())
+            make: Some(self.inner.clone()),
+        }
     }
 }
 
@@ -146,22 +127,26 @@ where
                     // insertions of new endpoints and metadata changes for
                     // existing ones can be handled in the same way.
                     let svc = self.make.make(&target);
-                    self.is_empty.store(false, Ordering::Release);
                     return Ok(Async::Ready(Change::Insert(addr, svc)));
                 }
                 Update::Remove(addr) => return Ok(Async::Ready(Change::Remove(addr))),
-                Update::NoEndpoints => {
-                    self.is_empty.store(true, Ordering::Release);
-                    // Keep polling as we should now start to see removals.
-                    continue;
-                }
             }
         }
     }
 }
 
-impl EndpointStatus {
-    pub fn is_empty(&self) -> bool {
-        self.0.load(Ordering::Acquire)
+impl<F, M> Future for Discover<F, Option<M>>
+where
+    F: Future,
+{
+    type Item = Discover<F::Item, M>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let resolution = try_ready!(self.resolution.poll());
+        Ok(Async::Ready(Discover {
+            resolution,
+            make: self.make.take().expect("polled after ready"),
+        }))
     }
 }

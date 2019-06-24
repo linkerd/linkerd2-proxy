@@ -1,8 +1,4 @@
-#[macro_use]
-extern crate futures;
-extern crate linkerd2_never as never;
-extern crate tower_layer;
-extern crate tower_service as svc;
+#![deny(warnings, rust_2018_idioms)]
 
 pub mod layer;
 pub mod map_target;

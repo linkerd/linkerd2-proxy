@@ -1,14 +1,10 @@
-#[macro_use]
-extern crate futures;
-extern crate linkerd2_stack;
-extern crate tokio_connect;
-extern crate tokio_timer;
-extern crate tower_service as svc;
+#![deny(warnings, rust_2018_idioms)]
 
 use futures::{Future, Poll};
 use std::time::Duration;
 use tokio_connect::Connect;
 use tokio_timer as timer;
+use tower_service as svc;
 
 pub mod error;
 pub mod stack;

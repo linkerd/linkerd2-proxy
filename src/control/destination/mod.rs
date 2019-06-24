@@ -31,12 +31,14 @@ use dns;
 use identity;
 use proxy::resolve::{Resolve, Update};
 
+mod client;
 mod resolution;
-pub use self::resolution::Resolution;
+use self::client::Client;
+pub use self::resolution::{Resolution, ResolveFuture, Unresolvable};
 use proxy::http::balance::Weight;
 use NameAddr;
 
-/// A handle to request resolutions from the background discovery task.
+/// A handle to request resolutions from the destination service.
 #[derive(Clone)]
 pub struct Resolver<T> {
     client: Option<Client<T>>,
@@ -77,12 +79,6 @@ pub enum ProtocolHint {
     Http2,
 }
 
-#[derive(Clone)]
-struct Client<T> {
-    client: T,
-    context_token: Arc<String>,
-}
-
 // ==== impl Resolver =====
 
 impl<T> Resolver<T>
@@ -94,10 +90,7 @@ where
 {
     /// Returns a `Resolver` for requesting destination resolutions.
     pub fn new(client: Option<T>, suffixes: Vec<dns::Suffix>, proxy_id: String) -> Resolver<T> {
-        let client = client.map(|client| Client {
-            context_token: Arc::new(proxy_id),
-            client,
-        });
+        let client = client.map(|client| Client::new(client, proxy_id));
         Resolver {
             suffixes: Arc::new(suffixes),
             client,
@@ -114,21 +107,22 @@ where
 {
     type Endpoint = Metadata;
     type Resolution = Resolution;
+    type Future = ResolveFuture<T>;
 
     /// Start watching for address changes for a certain authority.
-    fn resolve(&self, authority: &NameAddr) -> Resolution {
+    fn resolve(&self, authority: &NameAddr) -> Self::Future {
         trace!("resolve; authority={:?}", authority);
 
         if self.suffixes.iter().any(|s| s.contains(authority.name())) {
             if let Some(client) = self.client.as_ref().cloned() {
-                return Resolution::new(authority.clone(), client);
+                return ResolveFuture::new(authority, client);
             } else {
                 trace!("-> control plane client disabled");
             }
         } else {
             trace!("-> authority {} not in search suffixes", authority);
         }
-        Resolution::none()
+        ResolveFuture::unresolvable()
     }
 }
 

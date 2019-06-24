@@ -5,6 +5,8 @@ use http;
 pub use proxy::http::metrics::classify::{self, layer, CanClassify};
 use proxy::http::{profiles, timeout, HasH2Reason};
 
+type Error = Box<dyn std::error::Error + Send + Sync>;
+
 #[derive(Clone, Debug)]
 pub enum Request {
     Default,
@@ -145,7 +147,7 @@ impl classify::ClassifyResponse for Response {
         }
     }
 
-    fn error(self, err: &(dyn std::error::Error + 'static)) -> Self::Class {
+    fn error(self, err: &Error) -> Self::Class {
         Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
     }
 }
@@ -172,7 +174,7 @@ impl classify::ClassifyEos for Eos {
         }
     }
 
-    fn error(self, err: &(dyn std::error::Error + 'static)) -> Self::Class {
+    fn error(self, err: &Error) -> Self::Class {
         Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
     }
 }
@@ -192,7 +194,7 @@ fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
         })
 }
 
-fn h2_error(err: &(dyn std::error::Error + 'static)) -> String {
+fn h2_error(err: &Error) -> String {
     if let Some(reason) = err.h2_reason() {
         // This should output the error code in the same format as the spec,
         // for example: PROTOCOL_ERROR
