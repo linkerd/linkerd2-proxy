@@ -17,7 +17,7 @@ thread_local! {
 pub mod trace {
     extern crate tokio_trace_log;
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-    use std::{env, fmt, sync::Arc, error};
+    use std::{env, error, fmt, sync::Arc};
     pub use tokio_trace::*;
     pub use tokio_trace_fmt::*;
 
