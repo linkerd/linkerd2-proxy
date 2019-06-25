@@ -19,8 +19,8 @@ pub mod trace {
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
 
     use std::{env, error, fmt, str, time::Instant};
-    pub use tokio_trace::*;
-    pub use tokio_trace_fmt::*;
+    pub use tracing::*;
+    pub use tracing_fmt::*;
 
     type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
     pub type Error = Box<error::Error + Send + Sync + 'static>;

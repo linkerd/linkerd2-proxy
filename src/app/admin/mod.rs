@@ -130,7 +130,7 @@ impl Service for TraceLevel {
                     )))
                 }
             },
-            &Method::POST => {
+            &Method::PUT => {
                 let handle = self.clone();
                 let f = req
                     .into_body()
@@ -149,7 +149,7 @@ impl Service for TraceLevel {
                 Response::builder()
                     .status(StatusCode::METHOD_NOT_ALLOWED)
                     .header("allow", "GET")
-                    .header("allow", "POST")
+                    .header("allow", "PUT")
                     .body(Body::empty())
                     .expect("builder with known status code must not fail"),
             )),
