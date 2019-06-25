@@ -4,12 +4,12 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 
-use futures::future::{self, Future};
+use futures::future::{self, Future, FutureResult};
 use http::StatusCode;
 use hyper::{service::Service, Body, Request, Response};
 use std::io;
 
-use trace;
+use trace::{self, futures::Instrument};
 use metrics;
 use control::ClientAddr;
 
@@ -25,6 +25,11 @@ where
     trace_admin: trace::Admin,
     ready: Readiness,
 }
+
+pub type ResponseFuture = trace::futures::Instrumented<future::Either<
+    FutureResult<Response<Body>, io::Error>,
+    Box<Future<Item = Response<Body>, Error = io::Error> + Send + 'static>,
+>>;
 
 impl<M> Admin<M>
 where
@@ -51,6 +56,23 @@ where
                 .expect("builder with known status code must not fail")
         }
     }
+
+    fn proxy_log_level(&mut self, req: Request<Body>) -> ResponseFuture {
+        let is_loopback = req.extensions()
+            .get::<ClientAddr>()
+            .map(ClientAddr::is_loopback)
+            .unwrap_or(false);
+        if is_loopback {
+            future::Either::B(self.trace_admin.call(req))
+        } else {
+            future::Either::A(future::ok(
+                Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .body("access to /proxy-log-level only allowed from loopback addresses".into())
+                    .expect("builder with known status code must not fail")
+                ))
+        }
+    }
 }
 
 impl<M> Service for Admin<M>
@@ -63,31 +85,21 @@ where
     type Future = Box<Future<Item= Response<Body>, Error=Self::Error> + Send  + 'static>;
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
+        let path = req.uri().path();
+        let span = trace_span!("admin", request.path = %path, request.method = ?req.method());
+        let _enter = span.enter();
 
         match req.uri().path() {
-            "/metrics" => Box::new(self.metrics.call(req)),
-            "/proxy-log-level" => if req.extensions()
-                .get::<ClientAddr>()
-                .map(ClientAddr::is_loopback)
-                .unwrap_or(false)
-            {
-                Box::new(self.trace_admin.call(req))
-            } else {
-                Box::new(future::ok(
-                    Response::builder()
-                        .status(StatusCode::FORBIDDEN)
-                        .body("access to /proxy-log-level only allowed from loopback addresses".into())
-                        .expect("builder with known status code must not fail")
-                ))
-            },
+            "/metrics" => future::Either::A(self.metrics.call(req)),
+            "/proxy-log-level" => self.proxy_log_level(),
             "/ready" => Box::new(future::ok(self.ready_rsp())),
-            _ => Box::new(future::ok(
+            _ => future::Either::A(future::ok(
                 Response::builder()
                     .status(StatusCode::NOT_FOUND)
                     .body(Body::empty())
                     .expect("builder with known status code must not fail"),
             )),
-        }
+        }.instrument(span.clone())
     }
 }
 

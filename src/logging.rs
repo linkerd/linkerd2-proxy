@@ -34,7 +34,6 @@ pub mod trace {
 
     #[derive(Clone)]
     pub struct Admin {
-        filter: String,
         handle: ReloadHandle,
     }
 
@@ -150,6 +149,8 @@ pub mod trace {
         type Future = Box<Future<Item = Response<Body>, Error = Self::Error> + Send + 'static>;
 
         fn call(&mut self, req: Request<Body>) -> Self::Future {
+            use http::StatusCode;
+
             fn handle_reload(chunk: hyper::Chunk, handle: ReloadHandle) -> Result<(), String> {
                 let body = ::std::str::from_utf8(&chunk.into_bytes().as_ref()).map_err(|e| format!("{}", e))?;
                 trace!(request.body = ?body);
@@ -160,38 +161,41 @@ pub mod trace {
                 Ok(())
             }
 
-            use http::StatusCode;
-            let curr = self.filter.clone();
-            let handle = self.handle.clone();
             match req.method() {
-                &http::Method::GET => Box::new(future::ok(
-                    Response::builder()
-                        .status(StatusCode::OK)
-                        .body(curr.into())
-                        .expect("builder with known status code must not fail"),
-                )),
-                &http::Method::POST => Box::new(
-                    req.into_body()
-                        .concat2()
-                        .map(move |chunk| {
-                            match handle_reload(chunk, handle) {
-                                Err(error) => {
-                                    warn!(message = "setting log level failed", %error);
-                                    Response::builder()
-                                        .status(StatusCode::BAD_REQUEST)
-                                        .body(error.into())
-                                        .expect("builder with known status code must not fail")
-                                },
-                                Ok(()) => {
-                                    Response::builder()
-                                        .status(StatusCode::CREATED)
-                                        .body(Body::empty())
-                                        .expect("builder with known status code must not fail")
+                &http::Method::GET =>{
+                    let curr = self.handle.with_current(|f| format!("{}", f).unwrap_or_default();
+                    Box::new(future::ok(
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .body().into())
+                            .expect("builder with known status code must not fail")
+                    ))
+                },
+                &http::Method::POST => {
+                    let handle = self.handle.clone();
+                    Box::new(
+                        req.into_body()
+                            .concat2()
+                            .map(move |chunk| {
+                                match handle_reload(chunk, handle) {
+                                    Err(error) => {
+                                        warn!(message = "setting log level failed", %error);
+                                        Response::builder()
+                                            .status(StatusCode::BAD_REQUEST)
+                                            .body(error.into())
+                                            .expect("builder with known status code must not fail")
+                                    },
+                                    Ok(()) => {
+                                        Response::builder()
+                                            .status(StatusCode::CREATED)
+                                            .body(Body::empty())
+                                            .expect("builder with known status code must not fail")
+                                    }
                                 }
-                            }
-                        })
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
-                ),
+                            })
+                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+                        )
+                },
                 _ => Box::new(future::ok(
                     Response::builder()
                         .status(StatusCode::METHOD_NOT_ALLOWED)
