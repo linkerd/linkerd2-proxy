@@ -21,7 +21,7 @@ pub mod trace {
     pub use tokio_trace::*;
     pub use tokio_trace_fmt::*;
 
-    pub type SubscriberBuilder = Builder<
+    type SubscriberBuilder = Builder<
         default::NewRecorder,
         Box<
             Fn(&Context<default::NewRecorder>, &mut fmt::Write, &Event) -> fmt::Result
@@ -32,16 +32,15 @@ pub mod trace {
         filter::EnvFilter,
     >;
 
-    pub fn init() {
-        try_init().expect("initializing tokio-trace failed");
-    }
-
-    pub fn try_init() -> Result<(), &'static str> {
+    /// Initialize tracing and logging with the value of the `ENV_LOG`
+    /// environment variable as the verbosity-level filter.
+    pub fn init() -> Result<(), &'static str> {
         let env = env::var(super::ENV_LOG).unwrap_or_default();
-        try_init_with_filter(env)
+        init_with_filter(env)
     }
 
-    pub fn try_init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), &'static str> {
+    /// Initialize tracing and logging with the provided verbosity-level filter.
+    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), &'static str> {
         let dispatch = Dispatch::new(
             subscriber_builder()
                 .with_filter(filter::EnvFilter::from(filter))
@@ -55,6 +54,7 @@ pub mod trace {
         Ok(())
     }
 
+    /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
     fn subscriber_builder() -> SubscriberBuilder {
         let start_time = Arc::new(clock::now());
         FmtSubscriber::builder().on_event(Box::new(move |span_ctx, f, event| {
@@ -67,6 +67,9 @@ pub mod trace {
                 &Level::ERROR => "ERR!",
             };
             let uptime = clock::now() - *start_time.clone();
+            // Until the legacy logging contexts are no longer used, we must
+            // format both the `tokio-trace` span context *and* the proxy's
+            // logging context.
             LEGACY_CONTEXT.with(|old_ctx| {
                 write!(
                     f,
@@ -75,7 +78,7 @@ pub mod trace {
                     uptime.as_secs(),
                     uptime.subsec_micros(),
                     LegacyContext(&old_ctx.borrow()),
-                    FmtCtx(&span_ctx),
+                    SpanContext(&span_ctx),
                     meta.target()
                 )
             })?;
@@ -87,9 +90,10 @@ pub mod trace {
         }))
     }
 
-    struct FmtCtx<'a, N: 'a>(&'a Context<'a, N>);
+    /// Implements `fmt::Display` for a `tokio-trace-fmt` span context.
+    struct SpanContext<'a, N: 'a>(&'a Context<'a, N>);
 
-    impl<'a, N> fmt::Display for FmtCtx<'a, N> {
+    impl<'a, N> fmt::Display for SpanContext<'a, N> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             let mut seen = false;
             self.0.visit_spans(|_, span| {

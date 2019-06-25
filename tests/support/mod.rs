@@ -60,7 +60,7 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy::proxy::http::router=off,\
                                    linkerd2_proxy::proxy::tcp=off";
 
-pub fn trace_init() -> Result<(), String> {
+pub fn trace_init() -> Result<(), &'static str> {
     use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
@@ -68,7 +68,7 @@ pub fn trace_init() -> Result<(), String> {
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    trace::try_init_with_filter(&log).map_err(ToString::to_string)
+    trace::init_with_filter(&log)
 }
 
 /// Retry an assertion up to a specified number of times, waiting

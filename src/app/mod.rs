@@ -27,7 +27,7 @@ const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 pub fn init() -> Result<config::Config, config::Error> {
     use trace;
 
-    trace::init();
+    trace::init()?;
     config::Config::parse(&config::Env)
 }
 
