@@ -429,7 +429,9 @@ where
                 //add_remote_ip_on_rsp, add_server_id_on_rsp,
             };
             use proxy::{
-                http::{balance, canonicalize, header_from_target, metrics, retry, identity_from_header},
+                http::{
+                    balance, canonicalize, header_from_target, identity_from_header, metrics, retry,
+                },
                 resolve,
             };
 
@@ -513,14 +515,13 @@ where
                 .layer(router::layer(
                     router::Config::new("out ep", capacity, max_idle_age),
                     |req: &http::Request<_>| {
-                        let ep = outbound::Endpoint::from_orig_dst(req)
-                            .and_then(|mut ep| {
-                                if let Some(force_id) = identity_from_header(req, super::L5D_FORCE_ID) {
-                                    debug!("outbound ep force identity={:?}", force_id);
-                                    ep.identity = Conditional::Some(force_id);
-                                }
-                                Some(ep)
-                            });
+                        let ep = outbound::Endpoint::from_orig_dst(req).and_then(|mut ep| {
+                            if let Some(force_id) = identity_from_header(req, super::L5D_FORCE_ID) {
+                                debug!("outbound ep force identity={:?}", force_id);
+                                ep.identity = Conditional::Some(force_id);
+                            }
+                            Some(ep)
+                        });
                         debug!("outbound ep={:?}", ep);
                         ep
                     },
