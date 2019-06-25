@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
@@ -955,6 +956,16 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
         }
     }
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::InvalidEnvVar => fmt::Display::fmt("invalid environment variable", f),
+        }
+    }
+}
+
+impl ::std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {

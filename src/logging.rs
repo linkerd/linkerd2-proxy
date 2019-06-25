@@ -17,7 +17,7 @@ thread_local! {
 pub mod trace {
     extern crate tokio_trace_log;
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-    use std::{env, fmt, sync::Arc};
+    use std::{env, fmt, sync::Arc, error};
     pub use tokio_trace::*;
     pub use tokio_trace_fmt::*;
 
@@ -31,25 +31,25 @@ pub mod trace {
         >,
         filter::EnvFilter,
     >;
+    pub type Error = Box<error::Error + Send + Sync + 'static>;
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
     /// environment variable as the verbosity-level filter.
-    pub fn init() -> Result<(), &'static str> {
+    pub fn init() -> Result<(), Error> {
         let env = env::var(super::ENV_LOG).unwrap_or_default();
         init_with_filter(env)
     }
 
     /// Initialize tracing and logging with the provided verbosity-level filter.
-    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), &'static str> {
+    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), Error> {
         let dispatch = Dispatch::new(
             subscriber_builder()
                 .with_filter(filter::EnvFilter::from(filter))
                 .finish(),
         );
-        dispatcher::set_global_default(dispatch)
-            .map_err(|_| "failed to set global default dispatcher")?;
+        dispatcher::set_global_default(dispatch)?;
         let logger = tokio_trace_log::LogTracer::with_filter(log::LevelFilter::max());
-        log::set_boxed_logger(Box::new(logger)).map_err(|_| "failed to set global logger")?;
+        log::set_boxed_logger(Box::new(logger))?;
         log::set_max_level(log::LevelFilter::max());
         Ok(())
     }

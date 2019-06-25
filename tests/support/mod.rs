@@ -60,7 +60,7 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy::proxy::http::router=off,\
                                    linkerd2_proxy::proxy::tcp=off";
 
-pub fn trace_init() -> Result<(), &'static str> {
+pub fn trace_init() -> Result<(), trace::Error> {
     use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
