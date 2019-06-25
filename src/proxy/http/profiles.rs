@@ -48,6 +48,8 @@ pub trait WithRoute {
     fn with_route(self, route: Route) -> Self::Output;
 }
 
+/// Implemented by target types that can have their `NameAddr` destination
+/// changed.
 pub trait WithAddr {
     fn with_addr(self, addr: NameAddr) -> Self;
 }
@@ -274,10 +276,11 @@ impl fmt::Debug for Labels {
 /// As the router's Stack is built, a destination is extracted from the stack's
 /// target and it is used to get route profiles from ` GetRoutes` implemetnation.
 ///
-/// Each route uses a shared underlying stack. As such, it assumed that the
-/// underlying stack is buffered, and so `poll_ready` is NOT called on the routes
-/// before requests are dispatched. If an individual route wishes to apply
-/// backpressure, it must implement its own buffer/limit strategy.
+/// Each route uses a shared underlying concrete dst router.  The concrete dst
+/// router picks a concrete dst (NameAddr) from the profile's dst_overrides if
+/// they exist, or uses the router's target's addr if no dst_overrides exist.
+/// The concrete dst router uses the concrete dst as the target for the
+/// underlying stack.
 pub mod router {
     extern crate linkerd2_router as rt;
 
@@ -292,6 +295,15 @@ pub mod router {
     use svc;
 
     use super::*;
+
+    // A router which routes based on the dst_overrides of the profile or, if
+    // no dst_overrdies exist, on the router's target.
+    type ConcreteRouter<T, Svc, B> =
+        rt::Router<http::Request<B>, ConcreteDstRecognize<T>, rt::FixedMake<T, Svc>>;
+
+    // A router which routes based on the "route" of the target.
+    type RouteRouter<T, RT, Svc, B> =
+        rt::Router<http::Request<B>, RouteRecognize<T>, rt::FixedMake<RT, Svc>>;
 
     pub fn layer<G, M, R, RBody, MBody>(
         suffixes: Vec<dns::Suffix>,
@@ -310,9 +322,6 @@ pub mod router {
             _p: ::std::marker::PhantomData,
         }
     }
-
-    type ConcreteRouter<T, Svc, B> =
-        rt::Router<http::Request<B>, ConcreteDstRecognize<T>, rt::FixedMake<T, Svc>>;
 
     #[derive(Debug)]
     pub struct Layer<G, M, R, RBody, MBody> {
@@ -335,6 +344,20 @@ pub mod router {
         _p: ::std::marker::PhantomData<fn(RBody, MBody)>,
     }
 
+    /// The Service consists of a RouteRouter which routes over the route
+    /// stack built by the route_layer.  The per-route stack is terminated by a
+    /// shared concrete_router.  The concrete_router routes over the underlying
+    /// stack and passes the concrete dst as the target.
+    ///
+    /// +--------------+
+    /// |RouteRouter   | Target = t
+    /// +--------------+
+    /// |route_layer   | Target = t.withRoute(route)
+    /// +--------------+
+    /// |ConcreteRouter| Target = t
+    /// +--------------+
+    /// |inner         | Target = t.withAddr(concrete_dst)
+    /// +--------------+
     pub struct Service<G, T, R, S, RMk, M, RBody, MBody>
     where
         T: WithAddr + WithRoute + Clone + Eq + Hash,
@@ -350,11 +373,7 @@ pub mod router {
         route_layer: svc::Builder<R>,
         route_stream: Option<G>,
         concrete_router: Option<ConcreteRouter<T, M::Value, MBody>>,
-        router: rt::Router<
-            http::Request<RBody>,
-            RouteRecognize<T>,
-            rt::FixedMake<T::Output, RMk::Value>,
-        >,
+        router: RouteRouter<T, T::Output, RMk::Value, RBody>,
         default_route: Route,
         _p: ::std::marker::PhantomData<S>,
     }
@@ -370,6 +389,8 @@ pub mod router {
     pub struct ConcreteDstRecognize<T> {
         target: T,
         dst_overrides: Vec<WeightedAddr>,
+        // A weighted index of the dst_overrides weights.  This should only be
+        // None if dst_overrides is empty.
         distribution: Option<WeightedIndex<u32>>,
     }
 
@@ -504,6 +525,8 @@ pub mod router {
         }
 
         fn call(&mut self, target: T) -> Self::Future {
+            // Initially there are no dst_overrides, so build a concrete router
+            // with only the default target.
             let mut make = IndexMap::with_capacity(1);
             make.insert(target.clone(), self.inner.make(&target));
 
@@ -514,6 +537,9 @@ pub mod router {
                 .route_layer
                 .clone()
                 .service(svc::shared(concrete_router.clone()));
+
+            // Initially there are no routes, so build a route router with only
+            // the default route.
             let default_route = target.clone().with_route(self.default_route.clone());
 
             let mut make = IndexMap::with_capacity(1);
@@ -528,6 +554,8 @@ pub mod router {
                 make,
             );
 
+            // Initiate a stream to get route and dst_override updates for this
+            // destination.
             let route_stream = match target.get_destination() {
                 Some(ref dst) => {
                     if self.suffixes.iter().any(|s| s.contains(dst.name())) {
@@ -598,24 +626,28 @@ pub mod router {
         M::Value: svc::Service<http::Request<MBody>> + Clone,
     {
         fn update_routes(&mut self, routes: Routes) {
+            // We must build a new concrete router with a service for each
+            // dst_override.  These services are created eagerly.  If a service
+            // was present in the previous concrete router, we reuse that
+            // service in the new concrete router rather than recreating it.
             let capacity = routes.dst_overrides.len() + 1;
 
             let mut make = IndexMap::with_capacity(capacity);
-            let mut drained = self
+            let mut old_make = self
                 .concrete_router
                 .take()
                 .expect("previous concrete dst router is missing")
-                .drain();
+                .into_make();
 
-            let target_addr = drained.remove(&self.target).unwrap_or_else(|| {
+            let target_svc = old_make.remove(&self.target).unwrap_or_else(|| {
                 error!("concrete dst router did not contain target dst");
                 self.inner.make(&self.target)
             });
-            make.insert(self.target.clone(), target_addr);
+            make.insert(self.target.clone(), target_svc);
 
             for WeightedAddr { addr, .. } in &routes.dst_overrides {
                 let target = self.target.clone().with_addr(addr.clone());
-                let service = drained
+                let service = old_make
                     .remove(&target)
                     .unwrap_or_else(|| self.inner.make(&target));
                 make.insert(target, service);
@@ -626,6 +658,9 @@ pub mod router {
                 make,
             );
 
+            // We store the concrete_router directly in the Service struct so
+            // that we can extract its services when its time to construct a
+            // new concrete router.
             self.concrete_router = Some(concrete_router.clone());
 
             let stack = self
@@ -635,6 +670,9 @@ pub mod router {
 
             let default_route = self.target.clone().with_route(self.default_route.clone());
 
+            // Create a new fixed router router; we can eagerly make the
+            // services and never expire the routes from the profile router
+            // cache.
             let capacity = routes.routes.len() + 1;
             let mut make = IndexMap::with_capacity(capacity);
             make.insert(default_route.clone(), stack.make(&default_route));
@@ -645,8 +683,6 @@ pub mod router {
                 make.insert(route, service);
             }
 
-            // Create a new fixed router; we can eagerly make the services
-            // and never expire the routes from the profile router cache
             let router = rt::Router::new_fixed(
                 RouteRecognize {
                     target: self.target.clone(),

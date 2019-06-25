@@ -158,14 +158,16 @@ where
                     let routes = profile
                         .routes
                         .into_iter()
-                        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()));
-                    let overrides = profile
+                        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
+                        .collect();
+                    let dst_overrides = profile
                         .dst_overrides
                         .into_iter()
-                        .filter_map(convert_dst_override);
+                        .filter_map(convert_dst_override)
+                        .collect();
                     match tx.start_send(profiles::Routes {
-                        routes: routes.collect(),
-                        dst_overrides: overrides.collect(),
+                        routes,
+                        dst_overrides,
                     }) {
                         Ok(AsyncSink::Ready) => {} // continue
                         Ok(AsyncSink::NotReady(_)) => {
