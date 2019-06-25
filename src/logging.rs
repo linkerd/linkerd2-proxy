@@ -16,37 +16,31 @@ thread_local! {
 
 pub mod trace {
     extern crate tracing_log;
-
-    use futures::{
-        future::{self, Future},
-        Stream,
-    };
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-    use hyper::{service::Service, Body, Request, Response};
-    use std::{env, error, fmt, io, sync::Arc};
 
-    pub use tracing::*;
-    pub use tracing_fmt::*;
+    use std::{env, error, fmt, str, time::Instant};
+    pub use tokio_trace::*;
+    pub use tokio_trace_fmt::*;
 
     type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
     pub type Error = Box<error::Error + Send + Sync + 'static>;
 
+    pub type Error = Box<error::Error + Send + Sync + 'static>;
 
     #[derive(Clone)]
-    pub struct Admin {
-        handle: ReloadHandle,
+    pub struct LevelHandle {
+        inner: filter::reload::Handle<filter::EnvFilter, default::NewRecorder>,
     }
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
     /// environment variable as the verbosity-level filter.
-    pub fn init() -> Result<(), Error> {
+    pub fn init() -> Result<LevelHandle, Error> {
         let env = env::var(super::ENV_LOG).unwrap_or_default();
         init_with_filter(env)
     }
 
     /// Initialize tracing and logging with the provided verbosity-level filter.
-    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<Admin, Error> {
-        let f2 = filter.as_ref().to_string();
+    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<LevelHandle, Error> {
         // Set up the subscriber
         let builder = subscriber_builder()
             .with_filter(filter::EnvFilter::from(filter))
@@ -58,7 +52,7 @@ pub mod trace {
         log::set_boxed_logger(Box::new(logger))?;
         log::set_max_level(log::LevelFilter::max());
 
-        Ok(Admin { filter: f2, handle })
+        Ok(LevelHandle { inner: handle })
     }
 
     /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
@@ -113,7 +107,34 @@ pub mod trace {
         }
     }
 
-    type ReloadHandle = filter::reload::Handle<filter::EnvFilter, default::NewRecorder>;
+    impl LevelHandle {
+        pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
+            let level = level.as_ref();
+            let filter = level.parse::<filter::EnvFilter>()?;
+            self.inner.reload(filter)?;
+            info!(message = "set new log level", %level);
+            Ok(())
+        }
+
+        pub fn current(&self) -> Result<String, Error> {
+            self.inner
+                .with_current(|f| format!("{}", f))
+                .map_err(Into::into)
+        }
+    }
+
+    impl fmt::Debug for LevelHandle {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let current = self
+                .inner
+                // ugh...
+                .with_current(|c| format!("{}", c))
+                .unwrap_or_else(|e| format!("{}", e));
+            f.debug_struct("LevelHandle")
+                .field("current", &current)
+                .finish()
+        }
+    }
 
     /// Implements `fmt::Display` for a `tokio-trace-fmt` span context.
     struct SpanContext<'a, N: 'a>(&'a Context<'a, N>);
@@ -140,80 +161,6 @@ pub mod trace {
 
     pub mod futures {
         pub use tracing_futures::*;
-    }
-
-    impl Service for Admin {
-        type ReqBody = Body;
-        type ResBody = Body;
-        type Error = io::Error;
-        type Future = Box<Future<Item = Response<Body>, Error = Self::Error> + Send + 'static>;
-
-        fn call(&mut self, req: Request<Body>) -> Self::Future {
-            use http::StatusCode;
-
-            fn handle_reload(chunk: hyper::Chunk, handle: ReloadHandle) -> Result<(), String> {
-                let body = ::std::str::from_utf8(&chunk.into_bytes().as_ref()).map_err(|e| format!("{}", e))?;
-                trace!(request.body = ?body);
-                let filter = body.parse::<filter::EnvFilter>()
-                    .map_err(|e| format!("{}", e))?;
-                handle.reload(filter).map_err(|e| format!("{}", e))?;
-                info!(message = "set new log level", level = %body);
-                Ok(())
-            }
-
-            match req.method() {
-                &http::Method::GET =>{
-                    let curr = self.handle.with_current(|f| format!("{}", f).unwrap_or_default();
-                    Box::new(future::ok(
-                        Response::builder()
-                            .status(StatusCode::OK)
-                            .body().into())
-                            .expect("builder with known status code must not fail")
-                    ))
-                },
-                &http::Method::POST => {
-                    let handle = self.handle.clone();
-                    Box::new(
-                        req.into_body()
-                            .concat2()
-                            .map(move |chunk| {
-                                match handle_reload(chunk, handle) {
-                                    Err(error) => {
-                                        warn!(message = "setting log level failed", %error);
-                                        Response::builder()
-                                            .status(StatusCode::BAD_REQUEST)
-                                            .body(error.into())
-                                            .expect("builder with known status code must not fail")
-                                    },
-                                    Ok(()) => {
-                                        Response::builder()
-                                            .status(StatusCode::CREATED)
-                                            .body(Body::empty())
-                                            .expect("builder with known status code must not fail")
-                                    }
-                                }
-                            })
-                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                        )
-                },
-                _ => Box::new(future::ok(
-                    Response::builder()
-                        .status(StatusCode::METHOD_NOT_ALLOWED)
-                        .header("allow", "GET")
-                        .header("allow", "POST")
-                        .body(Body::empty())
-                        .expect("builder with known status code must not fail"),
-                )),
-            }
-        }
-    }
-
-    impl fmt::Debug for Admin {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.debug_struct("Admin")
-                .field("filter", &self.filter)
-                .finish()
-        }
     }
 }
 

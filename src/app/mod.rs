@@ -26,9 +26,9 @@ const L5D_REMOTE_IP: &'static str = "l5d-remote-ip";
 const L5D_SERVER_ID: &'static str = "l5d-server-id";
 const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 
-pub fn init() -> Result<(config::Config, trace::Admin), Box<Error + Send + Sync + 'static>> {
+pub fn init() -> Result<(config::Config, trace::LevelHandle), Box<Error + Send + Sync + 'static>> {
     let trace_admin = trace::init()?;
-    let cfg = config::Config::parse(&config::Env).map_err(Into::into)?;
+    let cfg = config::Config::parse(&config::Env)?;
     Ok((cfg, trace_admin))
 }
 

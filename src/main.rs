@@ -25,7 +25,8 @@ fn main() {
     // NOTE: eventually, this is where we would choose to use the threadpool
     //       runtime instead, if acting as an ingress proxy.
     let runtime = tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
-    let main = linkerd2_proxy::app::Main::new(config, trace_admin, linkerd2_proxy::SoOriginalDst, runtime);
+    let main =
+        linkerd2_proxy::app::Main::new(config, trace_admin, linkerd2_proxy::SoOriginalDst, runtime);
     let shutdown_signal = signal::shutdown();
     main.run_until(shutdown_signal);
 }
