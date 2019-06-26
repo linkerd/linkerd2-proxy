@@ -1,8 +1,9 @@
 //! Layer to map HTTP service errors into appropriate `http::Response`s.
 
 use futures::{Future, Poll};
-use http::{header, Request, Response, StatusCode};
+use http::{header, Request, Response, StatusCode, Version};
 
+use proxy::http::HasH2Reason;
 use svc;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -26,6 +27,7 @@ pub struct Service<S>(S);
 #[derive(Debug)]
 pub struct ResponseFuture<F> {
     inner: F,
+    is_http2: bool,
 }
 
 impl<M> svc::Layer<M> for Layer {
@@ -67,8 +69,9 @@ where
     }
 
     fn call(&mut self, req: Request<B1>) -> Self::Future {
+        let is_http2 = req.version() == Version::HTTP_2;
         let inner = self.0.call(req);
-        ResponseFuture { inner }
+        ResponseFuture { inner, is_http2 }
     }
 }
 
@@ -85,8 +88,17 @@ where
         match self.inner.poll() {
             Ok(ok) => Ok(ok),
             Err(err) => {
+                let err = err.into();
+
+                if self.is_http2 {
+                    if err.h2_reason().is_some() {
+                        debug!("propagating http2 response error: {:?}", err);
+                        return Err(err);
+                    }
+                }
+
                 let response = Response::builder()
-                    .status(map_err_to_5xx(err.into()))
+                    .status(map_err_to_5xx(err))
                     .header(header::CONTENT_LENGTH, "0")
                     .body(B::default())
                     .expect("app::errors response is valid");

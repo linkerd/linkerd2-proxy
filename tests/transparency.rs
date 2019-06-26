@@ -3,6 +3,7 @@
 #[macro_use]
 mod support;
 use self::support::*;
+use std::error::Error as _;
 use std::sync::mpsc;
 
 #[test]
@@ -633,13 +634,16 @@ macro_rules! http1_tests {
             let srv = server::http1()
                 .route_async("/", |req| {
                     assert_eq!(req.headers()["transfer-encoding"], "chunked");
-                    req.into_body().concat2().map(|body| {
-                        assert_eq!(body, "hello");
-                        Response::builder()
-                            .header("transfer-encoding", "chunked")
-                            .body("world".into())
-                            .unwrap()
-                    })
+                    req.into_body()
+                        .concat2()
+                        .map_err(|()| "req concat error")
+                        .map(|body| {
+                            assert_eq!(body, "hello");
+                            Response::builder()
+                                .header("transfer-encoding", "chunked")
+                                .body("world".into())
+                                .unwrap()
+                        })
                 })
                 .run();
             let proxy = $proxy(srv);
@@ -1242,4 +1246,58 @@ fn http2_request_without_authority() {
         });
 
     tokio::runtime::current_thread::run(future);
+}
+
+#[test]
+fn http2_rst_stream_is_propagated() {
+    let _ = env_logger_init();
+
+    let reason = h2::Reason::ENHANCE_YOUR_CALM;
+
+    let srv = server::http2()
+        .route_async("/", move |_req| Err(h2::Error::from(reason)))
+        .run();
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+    let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
+
+    let err: hyper::Error = client
+        .request_async(&mut client.request_builder("/"))
+        .wait()
+        .expect_err("client request should error");
+
+    let rst = err
+        .source()
+        .expect("error should have a source")
+        .downcast_ref::<h2::Error>()
+        .expect("source should be h2::Error");
+
+    assert_eq!(rst.reason(), Some(reason));
+}
+
+#[test]
+fn http1_orig_proto_does_not_propagate_rst_stream() {
+    let _ = env_logger_init();
+
+    // Use a custom http2 server to "act" as an inbound proxy so we
+    // can trigger a RST_STREAM.
+    let srv = server::http2()
+        .route_async("/", move |req| {
+            assert!(req.headers().contains_key("l5d-orig-proto"));
+            Err(h2::Error::from(h2::Reason::ENHANCE_YOUR_CALM))
+        })
+        .run();
+    let ctrl = controller::new();
+    let host = "transparency.test.svc.cluster.local";
+    let dst = ctrl.destination_tx(host);
+    dst.send_h2_hinted(srv.addr);
+    let proxy = proxy::new().controller(ctrl.run()).run();
+    let addr = proxy.outbound;
+
+    let client = client::http1(addr, host);
+    let res = client
+        .request_async(&mut client.request_builder("/"))
+        .wait()
+        .expect("client request");
+
+    assert_eq!(res.status(), http::StatusCode::BAD_GATEWAY);
 }
