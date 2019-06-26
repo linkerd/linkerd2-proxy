@@ -95,7 +95,7 @@ impl Server {
     where
         F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + 'static,
     {
-        self.route_async(path, move |req| Ok(cb(req)))
+        self.route_async(path, move |req| Ok::<_, BoxError>(cb(req)))
     }
 
     /// Call a closure when the request matches, returning a Future of
@@ -103,12 +103,13 @@ impl Server {
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
         F: Fn(Request<ReqBody>) -> U + Send + 'static,
-        U: IntoFuture<Item = Response<Bytes>, Error = ()> + Send + 'static,
+        U: IntoFuture<Item = Response<Bytes>> + Send + 'static,
         U::Future: Send + 'static,
+        U::Error: Into<BoxError>,
     {
         let func = move |req| {
-            Box::new(cb(req).into_future())
-                as Box<Future<Item = Response<Bytes>, Error = ()> + Send>
+            Box::new(cb(req).into_future().map_err(Into::into))
+                as Box<dyn Future<Item = Response<Bytes>, Error = BoxError> + Send>
         };
         self.routes.insert(path.into(), Route(Box::new(func)));
         self
@@ -189,11 +190,11 @@ impl Server {
                             .inspect(move |_| {
                                 srv_conn_count.fetch_add(1, Ordering::Release);
                             })
-                            .map_err(|e| println!("server new_service error: {}", e))
+                            .map_err(|e| println!("support/server new_service error: {}", e))
                             .and_then(move |svc| {
                                 http_clone
                                     .serve_connection(sock, svc)
-                                    .map_err(|e| println!("server h1 error: {}", e))
+                                    .map_err(|e| println!("support/server error: {}", e))
                             })
                             .map(|_| ());
                         current_thread::TaskExecutor::current()
@@ -234,7 +235,12 @@ enum Run {
 }
 
 struct Route(
-    Box<Fn(Request<ReqBody>) -> Box<Future<Item = Response<Bytes>, Error = ()> + Send> + Send>,
+    Box<
+        dyn Fn(
+                Request<ReqBody>,
+            ) -> Box<dyn Future<Item = Response<Bytes>, Error = BoxError> + Send>
+            + Send,
+    >,
 );
 
 impl Route {
@@ -257,13 +263,17 @@ impl ::std::fmt::Debug for Route {
     }
 }
 
-type ReqBody = Box<Stream<Item = Bytes, Error = ()> + Send>;
+type ReqBody = Box<dyn Stream<Item = Bytes, Error = ()> + Send>;
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 struct Svc(Arc<HashMap<String, Route>>);
 
 impl Svc {
-    fn route(&mut self, req: Request<ReqBody>) -> impl Future<Item = Response<Bytes>, Error = ()> {
+    fn route(
+        &mut self,
+        req: Request<ReqBody>,
+    ) -> impl Future<Item = Response<Bytes>, Error = BoxError> {
         match self.0.get(req.uri().path()) {
             Some(Route(ref func)) => func(req),
             None => {
@@ -281,8 +291,8 @@ impl Svc {
 impl hyper::service::Service for Svc {
     type ReqBody = hyper::Body;
     type ResBody = hyper::Body;
-    type Error = http::Error;
-    type Future = Box<Future<Item = hyper::Response<hyper::Body>, Error = Self::Error> + Send>;
+    type Error = BoxError;
+    type Future = Box<dyn Future<Item = hyper::Response<hyper::Body>, Error = Self::Error> + Send>;
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
         let req = req.map(|body| {
@@ -290,11 +300,7 @@ impl hyper::service::Service for Svc {
                 panic!("body error: {}", err);
             })) as ReqBody
         });
-        Box::new(
-            self.route(req)
-                .map(|res| res.map(|s| hyper::Body::from(s)))
-                .map_err(|()| panic!("test route handler errored")),
-        )
+        Box::new(self.route(req).map(|res| res.map(|s| hyper::Body::from(s))))
     }
 }
 
