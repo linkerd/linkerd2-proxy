@@ -112,40 +112,23 @@ pub mod res_body_as_payload {
     }
 }
 
-// pub mod unauthorized {
-//     use futures::{
-//         Future,
-//         future::{self, FutureResult},
-//         Poll,
-//     };
-//     use http::{self, StatusCode};
-//     use hyper::{Body, Response};
-//     use std::io;
-//     use svc;
-//     use tower_grpc as grpc;
+pub mod unauthenticated {
+    use api::tap as api;
+    use futures::{future, stream};
+    use tower_grpc::{Code, Request, Response, Status};
 
-//     pub struct Service;
+    #[derive(Clone)]
+    pub struct Unauthenticated;
 
-//     impl Service {
-//         pub fn new() -> Self {
-//             Service
-//         }
-//     }
+    impl api::server::Tap for Unauthenticated {
+        type ObserveStream = stream::Empty<api::TapEvent, Status>;
+        type ObserveFuture = future::FutureResult<Response<Self::ObserveStream>, Status>;
 
-//     impl<B> svc::Service<http::Request<B>> for Service {
-//         type Future = Future<Item=Self::Response, Error=Self::Error>;
-//         type Response = Result<(), grpc::Status>;
-//         type Error = io::Error;
-
-//         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-//             Ok(().into())
-//         }
-
-//         fn call(&mut self, _req: http::Request<B>) -> Self::Future {
-//             future::ok(Err(grpc::Status::new(
-//                 grpc::Code::Unauthenticated,
-//                 "unauthenticated",
-//             )))
-//         }
-//     }
-// }
+        fn observe(&mut self, _req: Request<api::ObserveRequest>) -> Self::ObserveFuture {
+            future::err(Status::new(
+                Code::Unauthenticated,
+                "client is not authenticated for the tap server",
+            ))
+        }
+    }
+}
