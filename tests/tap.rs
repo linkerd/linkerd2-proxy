@@ -5,38 +5,6 @@ mod support;
 use self::support::*;
 use support::tap::TapEventExt;
 
-#[test]
-#[ignore]
-/// The tap server accepts a connection from a client with the expected
-/// identity.
-fn tap_accepts_identity() {
-    unimplemented!();
-}
-
-#[test]
-#[ignore]
-/// The tap server accepts a connection from a client with the expected
-/// identity through discovery.
-fn tap_accepts_identity_through_discovery() {
-    unimplemented!();
-}
-
-#[test]
-#[ignore]
-/// The tap server rejects a connection from a client with an unexpected
-/// identity.
-fn tap_rejects_identity() {
-    unimplemented!();
-}
-
-#[test]
-#[ignore]
-/// The tap server rejects a connection from a client with an unexpected
-/// identity through discovery.
-fn tap_rejects_identity_through_discovery() {
-    unimplemented!();
-}
-
 // Flaky: sometimes the admin thread hasn't had a chance to register
 // the Taps before the `client.get` is called.
 #[test]
@@ -123,4 +91,53 @@ fn can_disable_tap() {
     let proxy = proxy::new().run_with_test_env(env);
 
     assert!(proxy.control.is_none())
+}
+
+#[test]
+#[ignore]
+fn tap_accepts_by_default() {
+    unimplemented!();
+}
+
+/// The tap server accepts a connection from a client with the expected
+/// identity.
+#[test]
+fn tap_rejects_identity() {
+    let auth = "tap.test.svc.cluster.local";
+    let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+
+    let mut env = init_env();
+    env.put(app::config::ENV_IDENTITY_TAP_IDENTITY, id.to_owned());
+
+    let srv = server::http1().route("/", "hello").run();
+
+    let proxy = proxy::new().inbound(srv).run_with_test_env(env);
+    let mut tap = tap::client(proxy.control.unwrap());
+    let events = tap.observe(tap::observe_request());
+
+    let client = client::http1(proxy.inbound, auth);
+    assert_eq!(client.get("/"), "hello");
+
+    let mut events = events.wait().take(3);
+
+    let ev1 = events.next().expect("next1").expect("stream1");
+    assert!(ev1.is_inbound());
+    assert_eq!(ev1.request_init_authority(), auth);
+    assert_eq!(ev1.request_init_path(), "/");
+
+    let ev2 = events.next().expect("next2").expect("stream2");
+    assert!(ev2.is_inbound());
+    assert_eq!(ev2.response_init_status(), 200);
+
+    let ev3 = events.next().expect("next3").expect("stream3");
+    assert!(ev3.is_inbound());
+    assert_eq!(ev3.response_end_bytes(), 5);
+}
+
+#[test]
+#[ignore]
+/// The tap server rejects a connection from a client with an unexpected
+/// identity.
+fn tap_accepts_identity() {
+    unimplemented!();
 }

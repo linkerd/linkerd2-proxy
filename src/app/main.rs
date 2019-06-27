@@ -986,7 +986,7 @@ where
                 // If there is an expected controller identity, then we
                 // assert that it is the client identity of the incoming
                 // connection; otherwise, we serve tap
-                if let Conditional::Some(tap_identity) = tap_identity.as_ref() {
+                let serve = if let Conditional::Some(tap_identity) = tap_identity.as_ref() {
                     match session.peer_identity() {
                         Conditional::Some(ref peer_identity) => {
                             // If the expected peer identity does not equal the
@@ -998,29 +998,41 @@ where
                                     "tap client identity is not authorized: {:?}",
                                     peer_identity
                                 );
-                                return future::ok(new_service);
+                                let svc = proxy::grpc::unauthorized::Service::new();
+                                let svc = proxy::http::HyperServerSvc::new(svc);
+                                hyper::server::conn::Http::new()
+                                    .with_executor(log_clone.executor())
+                                    .http2_only(true)
+                                    .serve_connection(session, svc)
+                                    .map_err(|err| debug!("tap connection error: {}", err));
                             }
                         }
                         Conditional::None(reason) => {
                             debug!("missing tap client identity: {}", reason);
-                            return future::ok(new_service);
+                            let svc = proxy::grpc::unauthorized::Service::new();
+                            let svc = proxy::http::HyperServerSvc::new(svc);
+                            hyper::server::conn::Http::new()
+                                .with_executor(log_clone.executor())
+                                .http2_only(true)
+                                .serve_connection(session, svc)
+                                .map_err(|err| debug!("tap connection error: {}", err));
                         }
                     }
-                }
-
-                let serve = new_service
-                    .make_service(())
-                    .map_err(|err| error!("tap MakeService error: {}", err))
-                    .and_then(move |svc| {
-                        let svc = proxy::grpc::req_box_body::Service::new(svc);
-                        let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
-                        let svc = proxy::http::HyperServerSvc::new(svc);
-                        hyper::server::conn::Http::new()
-                            .with_executor(log_clone.executor())
-                            .http2_only(true)
-                            .serve_connection(session, svc)
-                            .map_err(|err| debug!("tap connection error: {}", err))
-                    });
+                } else {
+                    new_service
+                        .make_service(())
+                        .map_err(|err| error!("tap MakeService error: {}", err))
+                        .and_then(move |svc| {
+                            let svc = proxy::grpc::req_box_body::Service::new(svc);
+                            let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
+                            let svc = proxy::http::HyperServerSvc::new(svc);
+                            hyper::server::conn::Http::new()
+                                .with_executor(log_clone.executor())
+                                .http2_only(true)
+                                .serve_connection(session, svc)
+                                .map_err(|err| debug!("tap connection error: {}", err))
+                        });
+                };
 
                 let r = executor::current_thread::TaskExecutor::current()
                     .spawn_local(Box::new(log.future(serve)))

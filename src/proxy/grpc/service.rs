@@ -111,3 +111,40 @@ pub mod res_body_as_payload {
         }
     }
 }
+
+pub mod unauthorized {
+    use futures::{
+        future::{self, FutureResult},
+        Poll,
+    };
+    use http::{self, StatusCode};
+    use hyper::{Body, Response};
+    use std::io;
+    use svc;
+
+    pub struct Service;
+
+    impl Service {
+        pub fn new() -> Self {
+            Service
+        }
+    }
+
+    impl<B> svc::Service<http::Request<B>> for Service {
+        type Response = http::Response<Body>;
+        type Error = io::Error;
+        type Future = FutureResult<http::Response<Body>, Self::Error>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            Ok(().into())
+        }
+
+        fn call(&mut self, _req: http::Request<B>) -> Self::Future {
+            let rsp = Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::empty())
+                .expect("builder with known status code should not fail");
+            return future::ok(rsp);
+        }
+    }
+}
