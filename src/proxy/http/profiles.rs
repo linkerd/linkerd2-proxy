@@ -277,8 +277,8 @@ impl fmt::Debug for Labels {
 /// target and it is used to get route profiles from ` GetRoutes` implemetnation.
 ///
 /// Each route uses a shared underlying concrete dst router.  The concrete dst
-/// router picks a concrete dst (NameAddr) from the profile's dst_overrides if
-/// they exist, or uses the router's target's addr if no dst_overrides exist.
+/// router picks a concrete dst (NameAddr) from the profile's `dst_overrides` if
+/// they exist, or uses the router's target's addr if no `dst_overrides` exist.
 /// The concrete dst router uses the concrete dst as the target for the
 /// underlying stack.
 pub mod router {
@@ -296,8 +296,8 @@ pub mod router {
 
     use super::*;
 
-    // A router which routes based on the dst_overrides of the profile or, if
-    // no dst_overrdies exist, on the router's target.
+    // A router which routes based on the `dst_overrides` of the profile or, if
+    // no `dst_overrdies` exist, on the router's target.
     type ConcreteRouter<T, Svc, B> =
         rt::Router<http::Request<B>, ConcreteDstRecognize<T>, rt::FixedMake<T, Svc>>;
 
@@ -345,19 +345,21 @@ pub mod router {
     }
 
     /// The Service consists of a RouteRouter which routes over the route
-    /// stack built by the route_layer.  The per-route stack is terminated by a
-    /// shared concrete_router.  The concrete_router routes over the underlying
-    /// stack and passes the concrete dst as the target.
+    /// stack built by the `route_layer`.  The per-route stack is terminated by
+    /// a shared `concrete_router`.  The `concrete_router` routes over the
+    /// underlying stack and passes the concrete dst as the target.
     ///
-    /// +--------------+
-    /// |RouteRouter   | Target = t
-    /// +--------------+
-    /// |route_layer   | Target = t.withRoute(route)
-    /// +--------------+
-    /// |ConcreteRouter| Target = t
-    /// +--------------+
-    /// |inner         | Target = t.withAddr(concrete_dst)
-    /// +--------------+
+    /// ```plain
+    ///     +--------------+
+    ///     |RouteRouter   | Target = t
+    ///     +--------------+
+    ///     |route_layer   | Target = t.withRoute(route)
+    ///     +--------------+
+    ///     |ConcreteRouter| Target = t
+    ///     +--------------+
+    ///     |inner         | Target = t.withAddr(concrete_dst)
+    ///     +--------------+
+    /// ```
     pub struct Service<G, T, R, S, RMk, M, RBody, MBody>
     where
         T: WithAddr + WithRoute + Clone + Eq + Hash,
@@ -389,8 +391,8 @@ pub mod router {
     pub struct ConcreteDstRecognize<T> {
         target: T,
         dst_overrides: Vec<WeightedAddr>,
-        // A weighted index of the dst_overrides weights.  This should only be
-        // None if dst_overrides is empty.
+        // A weighted index of the `dst_overrides` weights.  This must only be
+        // None if `dst_overrides` is empty.
         distribution: Option<WeightedIndex<u32>>,
     }
 
@@ -425,11 +427,7 @@ pub mod router {
         }
 
         fn make_dist(dst_overrides: &Vec<WeightedAddr>) -> Option<WeightedIndex<u32>> {
-            let mut weights = dst_overrides
-                .iter()
-                .map(|dst| dst.weight)
-                .filter(|weight| *weight > 0)
-                .peekable();
+            let mut weights = dst_overrides.iter().map(|dst| dst.weight).peekable();
             if weights.peek().is_none() {
                 // Weights list is empty.
                 None
@@ -525,13 +523,15 @@ pub mod router {
         }
 
         fn call(&mut self, target: T) -> Self::Future {
-            // Initially there are no dst_overrides, so build a concrete router
-            // with only the default target.
-            let mut make = IndexMap::with_capacity(1);
-            make.insert(target.clone(), self.inner.make(&target));
+            let concrete_router = {
+                // Initially there are no dst_overrides, so build a concrete router
+                // with only the default target.
+                let mut make = IndexMap::with_capacity(1);
+                make.insert(target.clone(), self.inner.make(&target));
 
-            let concrete_router =
-                rt::Router::new_fixed(ConcreteDstRecognize::new(target.clone(), Vec::new()), make);
+                let rec = ConcreteDstRecognize::new(target.clone(), Vec::new());
+                rt::Router::new_fixed(rec, make)
+            };
 
             let stack = self
                 .route_layer

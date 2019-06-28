@@ -277,6 +277,9 @@ fn convert_route(
 }
 
 fn convert_dst_override(orig: api::WeightedDst) -> Option<profiles::WeightedAddr> {
+    if orig.weight == 0 {
+        return None;
+    }
     NameAddr::from_str(orig.authority.as_str())
         .ok()
         .map(|addr| profiles::WeightedAddr {
