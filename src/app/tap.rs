@@ -13,6 +13,29 @@ use transport::{
 };
 use Conditional;
 
+macro_rules! tap_server {
+    { $session:ident, $svc:ident, $log_context:ident } => {{
+        let svc = proxy::grpc::req_box_body::Service::new($svc);
+        let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
+        let svc = proxy::http::HyperServerSvc::new(svc);
+
+        hyper::server::conn::Http::new()
+            .with_executor($log_context.executor())
+            .http2_only(true)
+            .serve_connection($session, svc)
+            .map_err(|err| debug!("tap connection error: {}", err))
+    };}
+}
+
+macro_rules! tap_task {
+    { $srv:ident, $log:ident, $new_service:ident } => {{
+        executor::current_thread::TaskExecutor::current()
+            .spawn_local(Box::new($log.future($srv)))
+            .map(|()| $new_service)
+            .map_err(task::Error::into_io)
+    };}
+}
+
 pub fn serve_tap<N, B>(
     bound_port: Listen<identity::Local, ()>,
     tap_identity: tls::PeerIdentity,
@@ -44,19 +67,8 @@ where
                                 let svc = api::tap::server::TapServer::new(
                                     proxy::grpc::unauthenticated::Unauthenticated,
                                 );
-                                let svc = proxy::grpc::req_box_body::Service::new(svc);
-                                let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
-                                let svc = proxy::http::HyperServerSvc::new(svc);
-                                let serve = hyper::server::conn::Http::new()
-                                    .with_executor(log_context.executor())
-                                    .http2_only(true)
-                                    .serve_connection(session, svc)
-                                    .map_err(|err| debug!("tap connection error: {}", err));
-
-                                let r = executor::current_thread::TaskExecutor::current()
-                                    .spawn_local(Box::new(log.future(serve)))
-                                    .map(|()| new_service)
-                                    .map_err(task::Error::into_io);
+                                let srv = tap_server!(session, svc, log_context);
+                                let r = tap_task!(srv, log, new_service);
 
                                 return future::result(r);
                             }
@@ -65,43 +77,20 @@ where
                             let svc = api::tap::server::TapServer::new(
                                 proxy::grpc::unauthenticated::Unauthenticated,
                             );
-                            let svc = proxy::grpc::req_box_body::Service::new(svc);
-                            let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
-                            let svc = proxy::http::HyperServerSvc::new(svc);
-                            let serve = hyper::server::conn::Http::new()
-                                .with_executor(log_context.executor())
-                                .http2_only(true)
-                                .serve_connection(session, svc)
-                                .map_err(|err| debug!("tap connection error: {}", err));
-
-                            let r = executor::current_thread::TaskExecutor::current()
-                                .spawn_local(Box::new(log.future(serve)))
-                                .map(|()| new_service)
-                                .map_err(task::Error::into_io);
+                            let srv = tap_server!(session, svc, log_context);
+                            let r = tap_task!(srv, log, new_service);
 
                             return future::result(r);
                         }
                     }
                 }
 
-                let serve = new_service
+                let srv = new_service
                     .make_service(())
                     .map_err(|err| error!("tap MakeService error: {}", err))
-                    .and_then(move |svc| {
-                        let svc = proxy::grpc::req_box_body::Service::new(svc);
-                        let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
-                        let svc = proxy::http::HyperServerSvc::new(svc);
-                        hyper::server::conn::Http::new()
-                            .with_executor(log_context.executor())
-                            .http2_only(true)
-                            .serve_connection(session, svc)
-                            .map_err(|err| debug!("tap connection error: {}", err))
-                    });
+                    .and_then(move |svc| tap_server!(session, svc, log_context));
+                let r = tap_task!(srv, log, new_service);
 
-                let r = executor::current_thread::TaskExecutor::current()
-                    .spawn_local(Box::new(log.future(serve)))
-                    .map(|()| new_service)
-                    .map_err(task::Error::into_io);
                 future::result(r)
             })
             .map_err(|err| error!("tap listen error: {}", err))

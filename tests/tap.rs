@@ -99,10 +99,8 @@ fn tap_accepts_by_default() {
     unimplemented!();
 }
 
-/// The tap server accepts a connection from a client with the expected
-/// identity.
 #[test]
-fn tap_rejects_identity() {
+fn tap_rejects_no_identity_when_identity_is_expected() {
     let auth = "tap.test.svc.cluster.local";
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
 
@@ -118,20 +116,8 @@ fn tap_rejects_identity() {
     let client = client::http1(proxy.inbound, auth);
     assert_eq!(client.get("/"), "hello");
 
-    let mut events = events.wait().take(3);
-
-    let ev1 = events.next().expect("next1").expect("stream1");
-    assert!(ev1.is_inbound());
-    assert_eq!(ev1.request_init_authority(), auth);
-    assert_eq!(ev1.request_init_path(), "/");
-
-    let ev2 = events.next().expect("next2").expect("stream2");
-    assert!(ev2.is_inbound());
-    assert_eq!(ev2.response_init_status(), 200);
-
-    let ev3 = events.next().expect("next3").expect("stream3");
-    assert!(ev3.is_inbound());
-    assert_eq!(ev3.response_end_bytes(), 5);
+    let mut events = events.wait().take(1);
+    assert!(events.next().expect("next1").is_err());
 }
 
 #[test]

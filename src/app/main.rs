@@ -31,11 +31,7 @@ use tap;
 use task;
 use telemetry;
 use trace;
-use transport::{
-    self, connect, keepalive,
-    tls,
-    Connection, GetOriginalDst, Listen,
-};
+use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
 use {Addr, Conditional};
 
 use super::admin::{Admin, Readiness};
