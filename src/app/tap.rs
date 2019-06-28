@@ -60,28 +60,20 @@ where
                 let log = log.clone().with_remote(remote);
                 let log_context = log.clone();
 
-                if let Conditional::Some(tap_identity) = tap_identity.as_ref() {
-                    match session.peer_identity() {
-                        Conditional::Some(ref peer_identity) => {
-                            if peer_identity != tap_identity {
-                                let svc = api::tap::server::TapServer::new(
-                                    proxy::grpc::unauthenticated::Unauthenticated,
-                                );
-                                let srv = tap_server!(session, svc, log_context);
-                                let r = tap_task!(srv, log, new_service);
+                if let Conditional::Some(ref tap_identity) = tap_identity {
+                    let is_expected_identity = match session.peer_identity() {
+                        Conditional::Some(ref peer_identity) => peer_identity == tap_identity,
+                        _ => false,
+                    };
 
-                                return future::result(r);
-                            }
-                        }
-                        Conditional::None(_reason) => {
-                            let svc = api::tap::server::TapServer::new(
-                                proxy::grpc::unauthenticated::Unauthenticated,
-                            );
-                            let srv = tap_server!(session, svc, log_context);
-                            let r = tap_task!(srv, log, new_service);
+                    if !is_expected_identity {
+                        let svc = api::tap::server::TapServer::new(
+                            proxy::grpc::unauthenticated::Unauthenticated,
+                        );
+                        let srv = tap_server!(session, svc, log_context);
+                        let task = tap_task!(srv, log, new_service);
 
-                            return future::result(r);
-                        }
+                        return future::result(task);
                     }
                 }
 
@@ -89,9 +81,9 @@ where
                     .make_service(())
                     .map_err(|err| error!("tap MakeService error: {}", err))
                     .and_then(move |svc| tap_server!(session, svc, log_context));
-                let r = tap_task!(srv, log, new_service);
+                let task = tap_task!(srv, log, new_service);
 
-                future::result(r)
+                future::result(task)
             })
             .map_err(|err| error!("tap listen error: {}", err))
     };
