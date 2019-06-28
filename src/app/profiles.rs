@@ -158,8 +158,17 @@ where
                     let routes = profile
                         .routes
                         .into_iter()
-                        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()));
-                    match tx.start_send(routes.collect()) {
+                        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
+                        .collect();
+                    let dst_overrides = profile
+                        .dst_overrides
+                        .into_iter()
+                        .filter_map(convert_dst_override)
+                        .collect();
+                    match tx.start_send(profiles::Routes {
+                        routes,
+                        dst_overrides,
+                    }) {
                         Ok(AsyncSink::Ready) => {} // continue
                         Ok(AsyncSink::NotReady(_)) => {
                             info!("dropping profile update due to a full buffer");
@@ -265,6 +274,18 @@ fn convert_route(
         set_route_timeout(&mut route, timeout.into());
     }
     Some((req_match, route))
+}
+
+fn convert_dst_override(orig: api::WeightedDst) -> Option<profiles::WeightedAddr> {
+    if orig.weight == 0 {
+        return None;
+    }
+    NameAddr::from_str(orig.authority.as_str())
+        .ok()
+        .map(|addr| profiles::WeightedAddr {
+            addr,
+            weight: orig.weight,
+        })
 }
 
 fn set_route_retry(route: &mut profiles::Route, retry_budget: Option<&Arc<Budget>>) {
