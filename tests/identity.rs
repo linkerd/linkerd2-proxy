@@ -68,7 +68,7 @@ macro_rules! generate_tls_accept_test {
         let tls_client = $make_client_tls(
             proxy.metrics,
             "localhost",
-            client::TlsConfig::new(id_svc.client_config, id),
+            TlsConfig::new(id_svc.client_config, id),
         );
         assert_eventually!(
             tls_client
@@ -100,7 +100,7 @@ macro_rules! generate_tls_reject_test {
         let client = $make_client(
             proxy.metrics,
             "localhost",
-            client::TlsConfig::new(client_config, id),
+            TlsConfig::new(client_config, id),
         );
 
         assert!(client
@@ -162,7 +162,7 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
         let client = $make_client(
             proxy.outbound,
             app_id,
-            client::TlsConfig::new(app_identity.client_config, app_id),
+            TlsConfig::new(app_identity.client_config, app_id),
         );
 
         assert_eventually!(
