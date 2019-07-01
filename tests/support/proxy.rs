@@ -11,6 +11,7 @@ pub struct Proxy {
     identity: Option<controller::Listening>,
     inbound: Option<server::Listening>,
     outbound: Option<server::Listening>,
+    outbound_ip: Option<SocketAddr>,
 
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
     outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
@@ -26,6 +27,7 @@ pub struct Listening {
 
     pub outbound_server: Option<server::Listening>,
     pub inbound_server: Option<server::Listening>,
+    pub outbound_ip: Option<SocketAddr>,
 
     shutdown: Shutdown,
 }
@@ -37,6 +39,7 @@ impl Proxy {
             inbound: None,
             outbound: None,
             identity: None,
+            outbound_ip: None,
 
             inbound_disable_ports_protocol_detection: None,
             outbound_disable_ports_protocol_detection: None,
@@ -77,6 +80,11 @@ impl Proxy {
 
     pub fn outbound(mut self, s: server::Listening) -> Self {
         self.outbound = Some(s);
+        self
+    }
+
+    pub fn outbound_ip(mut self, socket: SocketAddr) -> Self {
+        self.outbound_ip = Some(socket);
         self
     }
 
@@ -142,6 +150,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
     let identity = proxy.identity;
+    let outbound_ip = proxy.outbound_ip;
     let mut mock_orig_dst = DstInner::default();
 
     env.put(
@@ -278,7 +287,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
 
     // printlns will show if the test fails...
     println!(
-        "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
+        "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}, outbound_ip={}",
         control_addr
             .as_ref()
             .map(SocketAddr::to_string)
@@ -295,6 +304,10 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             .map(|o| format!(" (SO_ORIGINAL_DST={})", o.addr))
             .unwrap_or_else(String::new),
         metrics_addr,
+        outbound_ip
+            .as_ref()
+            .map(SocketAddr::to_string)
+            .unwrap_or_else(String::new),
     );
 
     Listening {
@@ -305,6 +318,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
 
         outbound_server: outbound,
         inbound_server: inbound,
+        outbound_ip,
 
         shutdown: tx,
     }
