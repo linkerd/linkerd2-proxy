@@ -8,6 +8,11 @@ pub fn client(addr: SocketAddr) -> Client {
     Client { api }
 }
 
+pub fn auth_client<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
+    let api = pb::client::Tap::new(SyncSvc(client::http2(addr, auth)));
+    Client { api }
+}
+
 pub fn tls_client(addr: SocketAddr, tls: TlsConfig) -> Client {
     let api = pb::client::Tap::new(SyncSvc(client::http2_tls(addr, "localhost", tls)));
     Client { api }

@@ -195,15 +195,26 @@ fn tap_tls_test() {
         .run_with_test_env(identity_env.env.clone());
 
     let ctrl = controller::new();
-    let dst = ctrl.destination_tx("tap.test.svc.cluster.local");
-    dst.send(controller::destination_add_tls(in_proxy.inbound, identity));
+    let tap_dst = ctrl.destination_tx("tap.test.svc.cluster.local");
+    let foo_dst = ctrl.destination_tx("foo.test.svc.cluster.local");
+    tap_dst.send(controller::destination_add_tls(in_proxy.inbound, identity));
+    foo_dst.send(controller::destination_add_tls(
+        in_proxy.control.unwrap(),
+        "foo.test.svc.cluster.local",
+    ));
 
     let out_proxy = proxy::new()
         .controller(ctrl.run())
         .identity(identity_env.service().run())
         .run_with_test_env(identity_env.env.clone());
 
-    let client = client::http1(out_proxy.outbound, "tap.test.svc.cluster.local");
+    let mut tap = tap::auth_client(out_proxy.outbound, "foo.test.svc.cluster.local");
+    let events = tap.observe(tap::observe_request());
 
+    let client = client::http1(out_proxy.outbound, "tap.test.svc.cluster.local");
     assert_eq!(client.get("/"), "hello");
+
+    let mut events = events.wait().take(1);
+    let _ev1 = events.next().expect("next1").expect("stream1");
+    // assert!(ev1.is_inbound());
 }
