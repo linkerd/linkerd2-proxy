@@ -137,6 +137,7 @@ fn tap_rejects_no_identity_when_identity_is_expected() {
 }
 
 #[test]
+#[ignore]
 fn tap_rejects_incorrect_identity_when_identity_is_expected() {
     let _ = env_logger_init();
 
@@ -145,18 +146,18 @@ fn tap_rejects_incorrect_identity_when_identity_is_expected() {
         env,
         mut certify_rsp,
         client_config,
-        server_config,
+        server_config: _server_config,
     } = identity::Identity::new("foo-ns1", expected_auth.to_string());
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
     // let client_id = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
     // let _client_id_svc = identity::Identity::new("bar-ns1", client_id.to_string());
 
-    let srv = server::http1_tls(server_config).route("/", "hello").run();
+    let srv = server::http1().route("/", "hello").run();
 
     let expected_id_svc = controller::identity().certify(move |_| certify_rsp).run();
     let proxy = proxy::new()
-        .outbound(srv)
+        .inbound(srv)
         .identity(expected_id_svc)
         .run_with_test_env(env);
 
@@ -167,7 +168,7 @@ fn tap_rejects_incorrect_identity_when_identity_is_expected() {
     // let events = tap.observe(tap::observe_request());
 
     let tls_client = client::http1_tls(
-        proxy.outbound,
+        proxy.inbound,
         expected_auth,
         TlsConfig::new(client_config, expected_auth),
     );
@@ -175,4 +176,34 @@ fn tap_rejects_incorrect_identity_when_identity_is_expected() {
 
     // let mut _events = events.wait().take(1);
     // assert!(events.next().expect("next1").is_err());
+}
+
+#[test]
+fn tap_tls_test() {
+    let _ = env_logger_init();
+
+    let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
+
+    let _expected_identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+
+    let srv = server::http1().route("/", "hello").run();
+
+    let in_proxy = proxy::new()
+        .inbound(srv)
+        .identity(identity_env.service().run())
+        .run_with_test_env(identity_env.env.clone());
+
+    let ctrl = controller::new();
+    let dst = ctrl.destination_tx("tap.test.svc.cluster.local");
+    dst.send(controller::destination_add_tls(in_proxy.inbound, identity));
+
+    let out_proxy = proxy::new()
+        .controller(ctrl.run())
+        .identity(identity_env.service().run())
+        .run_with_test_env(identity_env.env.clone());
+
+    let client = client::http1(out_proxy.outbound, "tap.test.svc.cluster.local");
+
+    assert_eq!(client.get("/"), "hello");
 }
