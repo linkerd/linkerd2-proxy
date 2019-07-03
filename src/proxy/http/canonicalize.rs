@@ -11,6 +11,7 @@
 
 use futures::{Async, Future, Poll, Stream};
 use http;
+use log::trace;
 use std::time::Duration;
 use tokio::{self, sync::mpsc};
 use tokio_timer::{clock, Delay, Timeout};
@@ -181,12 +182,16 @@ impl Future for Task {
         loop {
             // If the receiver has been dropped, stop watching for updates.
             let tx_ready = match self.tx.poll_ready() {
-                Err(_) => return Ok(Async::Ready(())),
                 Ok(r) => r,
+                Err(_) => {
+                    trace!("task complete; name={:?}", self.original);
+                    return Ok(Async::Ready(()));
+                }
             };
 
             self.state = match self.state {
                 State::Init => {
+                    trace!("task init; name={:?}", self.original);
                     let f = self.resolver.refine(self.original.name());
                     State::Pending(Timeout::new(f, self.timeout))
                 }
@@ -194,6 +199,7 @@ impl Future for Task {
                     // Only poll the resolution for updates when the receiver is
                     // ready to receive an update.
                     if tx_ready.is_not_ready() {
+                        trace!("task awaiting capacity; name={:?}", self.original);
                         return Ok(Async::NotReady);
                     }
 
@@ -202,6 +208,7 @@ impl Future for Task {
                             return Ok(Async::NotReady);
                         }
                         Ok(Async::Ready(refine)) => {
+                            trace!("task update; name={:?} refined={:?}", self.original, refine.name);
                             // If the resolved name is a new name, bind a
                             // service with it and set a delay that will notify
                             // when the resolver should be consulted again.
@@ -216,6 +223,8 @@ impl Future for Task {
                             State::ValidUntil(Delay::new(refine.valid_until))
                         }
                         Err(e) => {
+                            trace!("task error; name={:?} err={:?}", self.original, e);
+
                             if self.resolved == Cache::AwaitingInitial {
                                 // The service needs a value, so we need to
                                 // publish the original name so it can proceed.
@@ -256,6 +265,12 @@ impl Future for Task {
                 }
 
                 State::ValidUntil(ref mut f) => {
+                    trace!(
+                        "task idle; name={:?}; ttl={}s",
+                        self.original,
+                        f.deadline().duration_since(clock::now()).as_secs(),
+                    );
+
                     match f.poll().expect("timer must not fail") {
                         Async::NotReady => return Ok(Async::NotReady),
                         Async::Ready(()) => {
