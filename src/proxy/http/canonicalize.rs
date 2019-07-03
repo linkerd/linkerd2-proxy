@@ -269,11 +269,7 @@ impl Future for Task {
                 }
 
                 State::ValidUntil(ref mut f) => {
-                    trace!(
-                        "task idle; name={:?}; ttl={}s",
-                        self.original,
-                        f.deadline().duration_since(clock::now()).as_secs(),
-                    );
+                    trace!("task idle; name={:?}", self.original);
 
                     match f.poll().expect("timer must not fail") {
                         Async::NotReady => return Ok(Async::NotReady),
