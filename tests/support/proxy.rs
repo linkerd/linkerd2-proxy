@@ -10,8 +10,7 @@ pub struct Proxy {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
     inbound: Option<server::Listening>,
-    outbound: Option<server::Listening>,
-    outbound_ip: Option<SocketAddr>,
+    outbound: Option<SocketAddr>,
 
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
     outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
@@ -25,9 +24,8 @@ pub struct Listening {
     pub outbound: SocketAddr,
     pub metrics: SocketAddr,
 
-    pub outbound_server: Option<server::Listening>,
+    pub outbound_server: Option<SocketAddr>,
     pub inbound_server: Option<server::Listening>,
-    pub outbound_ip: Option<SocketAddr>,
 
     shutdown: Shutdown,
 }
@@ -39,7 +37,6 @@ impl Proxy {
             inbound: None,
             outbound: None,
             identity: None,
-            outbound_ip: None,
 
             inbound_disable_ports_protocol_detection: None,
             outbound_disable_ports_protocol_detection: None,
@@ -79,12 +76,13 @@ impl Proxy {
     }
 
     pub fn outbound(mut self, s: server::Listening) -> Self {
-        self.outbound = Some(s);
+        let addr = s.addr;
+        self.outbound = Some(addr);
         self
     }
 
-    pub fn outbound_ip(mut self, socket: SocketAddr) -> Self {
-        self.outbound_ip = Some(socket);
+    pub fn outbound_ip(mut self, s: SocketAddr) -> Self {
+        self.outbound = Some(s);
         self
     }
 
@@ -150,7 +148,6 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
     let identity = proxy.identity;
-    let outbound_ip = proxy.outbound_ip;
     let mut mock_orig_dst = DstInner::default();
 
     env.put(
@@ -168,8 +165,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         );
         mock_orig_dst.inbound_orig_addr = Some(inbound.addr);
     }
-    if let Some(ref outbound) = outbound {
-        mock_orig_dst.outbound_orig_addr = Some(outbound.addr);
+    if let Some(outbound) = outbound {
+        mock_orig_dst.outbound_orig_addr = Some(outbound);
     }
     env.put(
         app::config::ENV_INBOUND_LISTEN_ADDR,
@@ -287,7 +284,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
 
     // printlns will show if the test fails...
     println!(
-        "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}, outbound_ip={}",
+        "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
         control_addr
             .as_ref()
             .map(SocketAddr::to_string)
@@ -301,13 +298,9 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         outbound_addr,
         outbound
             .as_ref()
-            .map(|o| format!(" (SO_ORIGINAL_DST={})", o.addr))
+            .map(|o| format!(" (SO_ORIGINAL_DST={})", o))
             .unwrap_or_else(String::new),
         metrics_addr,
-        outbound_ip
-            .as_ref()
-            .map(SocketAddr::to_string)
-            .unwrap_or_else(String::new),
     );
 
     Listening {
@@ -318,7 +311,6 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
 
         outbound_server: outbound,
         inbound_server: inbound,
-        outbound_ip,
 
         shutdown: tx,
     }
