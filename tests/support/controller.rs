@@ -5,7 +5,7 @@ use support::*;
 
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
-use std::ops::{Bound, RangeBounds};
+use std::ops::{Bound, DerefMut, RangeBounds};
 use std::sync::{Arc, Mutex};
 
 use linkerd2_proxy_api::destination as pb;
@@ -13,6 +13,10 @@ use linkerd2_proxy_api::net;
 
 pub fn new() -> Controller {
     Controller::new()
+}
+
+pub fn new_unordered() -> Controller {
+    Controller::new_unordered()
 }
 
 pub fn identity() -> identity::Controller {
@@ -37,6 +41,7 @@ pub struct ProfileSender(sync::mpsc::UnboundedSender<pb::DestinationProfile>);
 pub struct Controller {
     expect_dst_calls: Arc<Mutex<VecDeque<Dst>>>,
     expect_profile_calls: Arc<Mutex<VecDeque<(pb::GetDestination, ProfileReceiver)>>>,
+    unordered: bool,
 }
 
 pub struct Listening {
@@ -58,6 +63,12 @@ enum Dst {
 impl Controller {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn new_unordered() -> Self {
+        let mut ctrl = Self::default();
+        ctrl.unordered = true;
+        ctrl
     }
 
     pub fn destination_tx(&self, dest: &str) -> DstSender {
@@ -215,19 +226,42 @@ impl pb::server::Destination for Controller {
 
     fn get(&mut self, req: grpc::Request<pb::GetDestination>) -> Self::GetFuture {
         if let Ok(mut calls) = self.expect_dst_calls.lock() {
-            match calls.pop_front() {
-                Some(Dst::Call(dst, updates)) => {
-                    if &dst == req.get_ref() {
-                        return future::ok(grpc::Response::new(updates));
+            if self.unordered {
+                let mut calls_next: VecDeque<Dst> = VecDeque::new();
+                let mut ret = future::err(grpc_unexpected_request());
+                while let Some(call) = calls.pop_front() {
+                    match call {
+                        Dst::Call(dst, updates) => {
+                            if &dst == req.get_ref() {
+                                ret = future::ok(grpc::Response::new(updates));
+                            } else {
+                                calls_next.push_back(Dst::Call(dst, updates));
+                            }
+                        }
+                        Dst::Done => {}
                     }
+                }
+                *calls.deref_mut() = calls_next;
+                return ret;
+            } else {
+                match calls.pop_front() {
+                    Some(Dst::Call(dst, updates)) => {
+                        if &dst == req.get_ref() {
+                            return future::ok(grpc::Response::new(updates));
+                        }
 
-                    calls.push_front(Dst::Call(dst, updates));
-                    return future::err(grpc_unexpected_request());
+                        let msg = format!(
+                            "expected get call for {:?} but got get call for {:?}",
+                            dst, req
+                        );
+                        calls.push_front(Dst::Call(dst, updates));
+                        return future::err(grpc::Status::new(grpc::Code::Unavailable, msg));
+                    }
+                    Some(Dst::Done) => {
+                        panic!("unit test controller expects no more Destination.Get calls")
+                    }
+                    _ => {}
                 }
-                Some(Dst::Done) => {
-                    panic!("unit test controller expects no more Destination.Get calls")
-                }
-                _ => {}
             }
         }
 
@@ -418,7 +452,11 @@ pub fn destination_does_not_exist() -> pb::Update {
     }
 }
 
-pub fn profile<I>(routes: I, retry_budget: Option<pb::RetryBudget>) -> pb::DestinationProfile
+pub fn profile<I>(
+    routes: I,
+    retry_budget: Option<pb::RetryBudget>,
+    dst_overrides: Vec<pb::WeightedDst>,
+) -> pb::DestinationProfile
 where
     I: IntoIterator,
     I::Item: Into<pb::Route>,
@@ -427,6 +465,7 @@ where
     pb::DestinationProfile {
         routes,
         retry_budget,
+        dst_overrides,
         ..Default::default()
     }
 }
@@ -441,6 +480,10 @@ pub fn retry_budget(
         retry_ratio,
         min_retries_per_second,
     }
+}
+
+pub fn traffic_split(authority: String, weight: u32) -> pb::WeightedDst {
+    pb::WeightedDst { authority, weight }
 }
 
 pub fn route() -> RouteBuilder {
