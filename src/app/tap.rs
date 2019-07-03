@@ -61,15 +61,15 @@ where
                 let log_context = log.clone();
 
                 if let Conditional::Some(ref tap_identity) = tap_identity {
-                    println!("expected tap_identity: {:?}", tap_identity);
+                    debug!("expected tap_identity: {:?}", tap_identity);
 
                     let is_expected_identity = match session.peer_identity() {
                         Conditional::Some(ref peer_identity) => {
-                            println!("found peer_identity: {:?}", peer_identity);
+                            debug!("found peer_identity: {:?}", peer_identity);
                             peer_identity == tap_identity
                         }
                         _ => {
-                            println!("did not find peer_identity");
+                            debug!("did not find peer_identity");
                             false
                         }
                     };

@@ -165,9 +165,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         );
         mock_orig_dst.inbound_orig_addr = Some(inbound.addr);
     }
-    if let Some(outbound) = outbound {
-        mock_orig_dst.outbound_orig_addr = Some(outbound);
-    }
+    mock_orig_dst.outbound_orig_addr = outbound;
     env.put(
         app::config::ENV_INBOUND_LISTEN_ADDR,
         "127.0.0.1:0".to_owned(),
