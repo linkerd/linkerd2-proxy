@@ -1,3 +1,4 @@
+extern crate linkerd2_router as rt;
 extern crate tower_discover;
 
 use futures::Stream;
@@ -32,6 +33,7 @@ use NameAddr;
 /// The concrete dst router uses the concrete dst as the target for the
 /// underlying stack.
 pub mod router;
+pub mod recognize;
 
 #[derive(Clone)]
 pub struct WeightedAddr {
