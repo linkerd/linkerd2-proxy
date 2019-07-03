@@ -208,7 +208,11 @@ impl Future for Task {
                             return Ok(Async::NotReady);
                         }
                         Ok(Async::Ready(refine)) => {
-                            trace!("task update; name={:?} refined={:?}", self.original, refine.name);
+                            trace!(
+                                "task update; name={:?} refined={:?}",
+                                self.original,
+                                refine.name
+                            );
                             // If the resolved name is a new name, bind a
                             // service with it and set a delay that will notify
                             // when the resolver should be consulted again.
@@ -310,12 +314,11 @@ where
             debug!("refined: {}", addr);
             self.canonicalized = Some(addr.into());
         }
-
-        if self.canonicalized.is_some() {
-            Ok(Async::Ready(()))
-        } else {
-            Ok(Async::NotReady)
+        if self.canonicalized.is_none() {
+            return Ok(Async::NotReady);
         }
+
+        Ok(Async::Ready(()))
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
@@ -325,5 +328,11 @@ where
             .expect("called before canonicalized address");
         req.extensions_mut().insert(addr);
         self.inner.call(req)
+    }
+}
+
+impl<S> Drop for Service<S> {
+    fn drop(&mut self) {
+        trace!("dropping service; name={:?}", self.canonicalized);
     }
 }
