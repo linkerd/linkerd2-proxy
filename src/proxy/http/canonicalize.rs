@@ -9,10 +9,10 @@
 //! DNS TTLs are honored and, if the resolution changes, the inner stack is
 //! rebuilt with the updated value.
 
-use futures::{sync::mpsc, Async, Future, Poll, Stream};
+use futures::{Async, Future, Poll, Stream};
 use http;
 use std::time::Duration;
-use tokio;
+use tokio::{self, sync::mpsc};
 use tokio_timer::{clock, Delay, Timeout};
 
 use dns;
@@ -178,6 +178,12 @@ impl Future for Task {
     type Error = ();
 
     fn poll(&mut self) -> Poll<(), ()> {
+        // If the receiver has been dropped, stop watching for updates.
+        let tx_ready = match self.tx.poll_ready() {
+            Err(_) => return Ok(Async::Ready(())),
+            Ok(r) => r,
+        };
+
         loop {
             self.state = match self.state {
                 State::Init => {
@@ -185,6 +191,12 @@ impl Future for Task {
                     State::Pending(Timeout::new(f, self.timeout))
                 }
                 State::Pending(ref mut fut) => {
+                    // Only poll the resolution for updates when the receiver is
+                    // ready to receive an update.
+                    if tx_ready.is_not_ready() {
+                        return Ok(Async::NotReady);
+                    }
+
                     match fut.poll() {
                         Ok(Async::NotReady) => {
                             return Ok(Async::NotReady);
@@ -195,11 +207,9 @@ impl Future for Task {
                             // when the resolver should be consulted again.
                             let resolved = NameAddr::new(refine.name, self.original.port());
                             if self.resolved.get() != Some(&resolved) {
-                                let err = self.tx.try_send(resolved.clone()).err();
-                                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
-                                    return Ok(().into());
-                                }
-
+                                self.tx
+                                    .try_send(resolved.clone())
+                                    .expect("tx failed despite being ready");
                                 self.resolved = Cache::Resolved(resolved);
                             }
 
@@ -214,10 +224,9 @@ impl Future for Task {
                                     self.original.name(),
                                     e,
                                 );
-                                let err = self.tx.try_send(self.original.clone()).err();
-                                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
-                                    return Ok(().into());
-                                }
+                                self.tx
+                                    .try_send(self.original.clone())
+                                    .expect("tx failed despite being ready");
 
                                 // There's now no need to re-publish the
                                 // original name on subsequent failures.
