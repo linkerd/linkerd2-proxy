@@ -178,13 +178,13 @@ impl Future for Task {
     type Error = ();
 
     fn poll(&mut self) -> Poll<(), ()> {
-        // If the receiver has been dropped, stop watching for updates.
-        let tx_ready = match self.tx.poll_ready() {
-            Err(_) => return Ok(Async::Ready(())),
-            Ok(r) => r,
-        };
-
         loop {
+            // If the receiver has been dropped, stop watching for updates.
+            let tx_ready = match self.tx.poll_ready() {
+                Err(_) => return Ok(Async::Ready(())),
+                Ok(r) => r,
+            };
+
             self.state = match self.state {
                 State::Init => {
                     let f = self.resolver.refine(self.original.name());
