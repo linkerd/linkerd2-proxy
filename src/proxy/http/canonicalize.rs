@@ -137,7 +137,7 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
         let svc = if let Some((na, resolver, timeout)) = self.task.take() {
-            let (tx, rx) = mpsc::channel(2);
+            let (tx, rx) = mpsc::channel(1);
 
             tokio::spawn(Task::new(na, resolver, timeout, tx));
 
