@@ -13,7 +13,8 @@ use futures::{Async, Future, Poll, Stream};
 use http;
 use log::trace;
 use std::time::Duration;
-use tokio::{self, sync::mpsc};
+use tokio;
+use tokio::sync::{mpsc, oneshot};
 use tokio_timer::{clock, Delay, Timeout};
 
 use dns;
@@ -46,6 +47,7 @@ pub struct Service<S> {
     canonicalized: Option<Addr>,
     inner: S,
     rx: mpsc::Receiver<NameAddr>,
+    _tx_stop: oneshot::Sender<()>,
 }
 
 struct Task {
@@ -55,6 +57,7 @@ struct Task {
     state: State,
     timeout: Duration,
     tx: mpsc::Sender<NameAddr>,
+    rx_stop: oneshot::Receiver<()>,
 }
 
 /// Tracks the state of the last resolution.
@@ -138,13 +141,15 @@ where
         let inner = try_ready!(self.inner.poll());
         let svc = if let Some((na, resolver, timeout)) = self.task.take() {
             let (tx, rx) = mpsc::channel(1);
+            let (_tx_stop, rx_stop) = oneshot::channel();
 
-            tokio::spawn(Task::new(na, resolver, timeout, tx));
+            tokio::spawn(Task::new(na, resolver, timeout, tx, rx_stop));
 
             svc::Either::A(Service {
                 canonicalized: None,
                 inner,
                 rx,
+                _tx_stop,
             })
         } else {
             svc::Either::B(inner)
@@ -162,6 +167,7 @@ impl Task {
         resolver: dns::Resolver,
         timeout: Duration,
         tx: mpsc::Sender<NameAddr>,
+        rx_stop: oneshot::Receiver<()>,
     ) -> Self {
         Self {
             original,
@@ -170,6 +176,7 @@ impl Task {
             state: State::Init,
             timeout,
             tx,
+            rx_stop,
         }
     }
 }
@@ -181,13 +188,13 @@ impl Future for Task {
     fn poll(&mut self) -> Poll<(), ()> {
         loop {
             // If the receiver has been dropped, stop watching for updates.
-            let tx_ready = match self.tx.poll_ready() {
-                Ok(r) => r,
-                Err(_) => {
+            match self.rx_stop.poll() {
+                Ok(Async::NotReady) => {}
+                _ => {
                     trace!("task complete; name={:?}", self.original);
                     return Ok(Async::Ready(()));
                 }
-            };
+            }
 
             self.state = match self.state {
                 State::Init => {
@@ -198,10 +205,17 @@ impl Future for Task {
                 State::Pending(ref mut fut) => {
                     // Only poll the resolution for updates when the receiver is
                     // ready to receive an update.
-                    if tx_ready.is_not_ready() {
-                        trace!("task awaiting capacity; name={:?}", self.original);
-                        return Ok(Async::NotReady);
-                    }
+                    match self.tx.poll_ready() {
+                        Ok(Async::Ready(())) => {}
+                        Ok(Async::NotReady) => {
+                            trace!("task awaiting capacity; name={:?}", self.original);
+                            return Ok(Async::NotReady);
+                        }
+                        Err(_) => {
+                            trace!("task complete; name={:?}", self.original);
+                            return Ok(Async::Ready(()));
+                        }
+                    };
 
                     match fut.poll() {
                         Ok(Async::NotReady) => {
