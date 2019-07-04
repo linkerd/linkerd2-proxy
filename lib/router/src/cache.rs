@@ -142,11 +142,6 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let mut cache = try_ready!(Ok(self.0.poll_lock()));
-        trace!("purge: locked and purging");
-
-        // If poll_purge is not ready, we cannot expire any values and
-        // wait for the next interval. If poll_purge is ready, we have
-        // expired all values and wait for the next interval
         cache.poll_purge()
     }
 }
