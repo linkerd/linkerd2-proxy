@@ -21,6 +21,7 @@ use never::Never;
 use super::retry::Budget;
 use NameAddr;
 
+pub mod recognize;
 /// A stack module that produces a Service that routes requests through alternate
 /// middleware configurations
 ///
@@ -33,7 +34,6 @@ use NameAddr;
 /// The concrete dst router uses the concrete dst as the target for the
 /// underlying stack.
 pub mod router;
-pub mod recognize;
 
 #[derive(Clone)]
 pub struct WeightedAddr {

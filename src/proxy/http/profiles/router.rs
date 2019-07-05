@@ -151,15 +151,7 @@ where
     RouteSvc: svc::Service<http::Request<RouteBody>> + Clone,
     RouteSvc::Error: Into<Error>,
 {
-    type Response = Service<
-        G::Stream,
-        Target,
-        RouteLayer,
-        RouteMake,
-        Inner,
-        RouteBody,
-        InnerBody,
-    >;
+    type Response = Service<G::Stream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody>;
     type Error = never::Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
@@ -245,15 +237,7 @@ where
 }
 
 impl<RouteStream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody>
-    Service<
-        RouteStream,
-        Target,
-        RouteLayer,
-        RouteMake,
-        Inner,
-        RouteBody,
-        InnerBody,
-    >
+    Service<RouteStream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody>
 where
     RouteStream: Stream<Item = Routes, Error = Never>,
     Target: WithRoute + WithAddr + Eq + Hash + Clone,
@@ -326,7 +310,11 @@ where
         }
 
         let router = rt::Router::new_fixed(
-            RouteRecognize::new(self.target.clone(), routes.routes, self.default_route.clone()),
+            RouteRecognize::new(
+                self.target.clone(),
+                routes.routes,
+                self.default_route.clone(),
+            ),
             make,
         );
 
@@ -342,15 +330,7 @@ where
 
 impl<RouteStream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody, RouteSvc>
     svc::Service<http::Request<RouteBody>>
-    for Service<
-        RouteStream,
-        Target,
-        RouteLayer,
-        RouteMake,
-        Inner,
-        RouteBody,
-        InnerBody,
-    >
+    for Service<RouteStream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody>
 where
     RouteStream: Stream<Item = Routes, Error = Never>,
     Target: WithRoute + WithAddr + Eq + Hash + Clone,
