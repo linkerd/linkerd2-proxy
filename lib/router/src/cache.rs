@@ -1,6 +1,6 @@
 use std::{hash::Hash, time::Duration};
 
-use futures::{try_ready, Async, Future, Poll, Stream};
+use futures::{task, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use log::trace;
 use tokio::sync::lock::Lock;
@@ -38,6 +38,8 @@ where
     /// Cache access is coordinated through `values`. This field represents
     /// the current state of the cache.
     values: IndexMap<K, Node<V>>,
+
+    purge_task: Option<task::Task>,
 }
 
 /// A background future that eagerly removes expired cache values.
@@ -67,6 +69,7 @@ where
             expires,
             expirations: DelayQueue::with_capacity(capacity),
             values: IndexMap::default(),
+            purge_task: None,
         });
 
         (cache.clone(), PurgeCache(cache))
@@ -106,6 +109,10 @@ where
             Node { dq_key, value }
         };
 
+        if let Some(purge) = self.purge_task.take() {
+            purge.notify();
+        }
+
         self.values.insert(key, node).map(|n| n.value)
     }
 
@@ -120,7 +127,10 @@ where
                 .poll()
                 .map_err(|e| unreachable!("expiration must not fail: {}", e)))
             {
-                None => return Ok(Async::NotReady),
+                None => {
+                    self.purge_task = Some(task::current());
+                    return Ok(Async::NotReady);
+                }
                 Some(key) => {
                     trace!("expiring an item from the cache");
                     self.values.remove(key.get_ref());
