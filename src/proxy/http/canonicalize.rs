@@ -47,6 +47,7 @@ pub struct Service<S> {
     canonicalized: Option<Addr>,
     inner: S,
     rx: mpsc::Receiver<NameAddr>,
+    /// Notifies the daemon `Task` on drop.
     _tx_stop: oneshot::Sender<()>,
 }
 
