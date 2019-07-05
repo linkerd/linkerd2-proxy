@@ -6,12 +6,13 @@
 //! this module may build its inner stack with either `web.example.com.:8080`,
 //! `web.example.net.:8080`, or `web:8080`, depending on the state of DNS.
 //!
-//! DNS TTLs are honored and, if the resolution changes, the inner stack is
-//! rebuilt with the updated value.
+//! DNS TTLs are honored and the most recent value is added to each request's
+//! extensions.
 
 use futures::{Async, Future, Poll, Stream};
 use http;
 use log::trace;
+use never::Never;
 use std::time::Duration;
 use tokio;
 use tokio::sync::{mpsc, oneshot};
@@ -48,7 +49,7 @@ pub struct Service<S> {
     inner: S,
     rx: mpsc::Receiver<NameAddr>,
     /// Notifies the daemon `Task` on drop.
-    _tx_stop: oneshot::Sender<()>,
+    _tx_stop: oneshot::Sender<Never>,
 }
 
 struct Task {
@@ -58,7 +59,7 @@ struct Task {
     state: State,
     timeout: Duration,
     tx: mpsc::Sender<NameAddr>,
-    rx_stop: oneshot::Receiver<()>,
+    rx_stop: oneshot::Receiver<Never>,
 }
 
 /// Tracks the state of the last resolution.
@@ -168,7 +169,7 @@ impl Task {
         resolver: dns::Resolver,
         timeout: Duration,
         tx: mpsc::Sender<NameAddr>,
-        rx_stop: oneshot::Receiver<()>,
+        rx_stop: oneshot::Receiver<Never>,
     ) -> Self {
         Self {
             original,
