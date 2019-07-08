@@ -525,7 +525,7 @@ where
 
             let distributor = svc::builder()
                 .layer(
-                    // Attempt to build a balancer. If the serviec is
+                    // Attempt to build a balancer. If the service is
                     // unresolvable, fall back to using a router that dispatches
                     // request to the application-selected original destination.
                     fallback::layer(balancer, orig_dst_router)
