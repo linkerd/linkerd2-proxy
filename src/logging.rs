@@ -17,18 +17,13 @@ thread_local! {
 pub mod trace {
     extern crate tracing_log;
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-    use std::{env, error, fmt, sync::Arc};
+    use std::{env, error, fmt, time::Instant};
     pub use tracing::*;
     pub use tracing_fmt::*;
 
     type SubscriberBuilder = Builder<
         default::NewRecorder,
-        Box<
-            Fn(&Context<default::NewRecorder>, &mut fmt::Write, &Event) -> fmt::Result
-                + Send
-                + Sync
-                + 'static,
-        >,
+        Format,
         filter::EnvFilter,
     >;
     pub type Error = Box<error::Error + Send + Sync + 'static>;
@@ -56,8 +51,24 @@ pub mod trace {
 
     /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
     fn subscriber_builder() -> SubscriberBuilder {
-        let start_time = Arc::new(clock::now());
-        FmtSubscriber::builder().on_event(Box::new(move |span_ctx, f, event| {
+        let start_time = clock::now();
+        FmtSubscriber::builder().on_event(Format { start_time })
+    }
+
+    struct Format {
+        start_time: Instant,
+    }
+
+    impl<N> tracing_fmt::FormatEvent<N> for Format
+    where
+        N: for<'a> tracing_fmt::NewVisitor<'a>,
+    {
+        fn format_event(
+            &self,
+            span_ctx: &Context<N>,
+            f: &mut dyn fmt::Write,
+            event: &Event,
+        ) -> fmt::Result {
             let meta = event.metadata();
             let level = match meta.level() {
                 &Level::TRACE => "TRCE",
@@ -66,7 +77,7 @@ pub mod trace {
                 &Level::WARN => "WARN",
                 &Level::ERROR => "ERR!",
             };
-            let uptime = clock::now() - *start_time.clone();
+            let uptime = clock::now() - self.start_time;
             // Until the legacy logging contexts are no longer used, we must
             // format both the `tokio-trace` span context *and* the proxy's
             // logging context.
@@ -87,7 +98,7 @@ pub mod trace {
                 event.record(&mut recorder);
             }
             writeln!(f)
-        }))
+        }
     }
 
     /// Implements `fmt::Display` for a `tokio-trace-fmt` span context.
