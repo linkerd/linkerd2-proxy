@@ -1250,7 +1250,7 @@ fn http2_request_without_authority() {
 
 #[test]
 fn http2_rst_stream_is_propagated() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     let reason = h2::Reason::ENHANCE_YOUR_CALM;
 
@@ -1276,7 +1276,7 @@ fn http2_rst_stream_is_propagated() {
 
 #[test]
 fn http1_orig_proto_does_not_propagate_rst_stream() {
-    let _ = env_logger_init();
+    let _ = trace_init();
 
     // Use a custom http2 server to "act" as an inbound proxy so we
     // can trigger a RST_STREAM.
