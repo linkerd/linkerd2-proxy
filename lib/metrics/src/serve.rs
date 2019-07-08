@@ -6,7 +6,7 @@ use hyper::{service::Service, Body, Request, Response};
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
-use tokio_trace::{error, trace};
+use tracing::{error, trace};
 
 use super::FmtMetrics;
 

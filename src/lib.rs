@@ -28,9 +28,9 @@ extern crate regex;
 extern crate tokio;
 extern crate tokio_timer;
 #[macro_use]
-extern crate tokio_trace;
-extern crate tokio_trace_fmt;
-extern crate tokio_trace_futures;
+extern crate tracing;
+extern crate tracing_fmt;
+extern crate tracing_futures;
 extern crate tower;
 extern crate tower_grpc;
 extern crate tower_util;

@@ -15,11 +15,11 @@ thread_local! {
 }
 
 pub mod trace {
-    extern crate tokio_trace_log;
+    extern crate tracing_log;
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
     use std::{env, error, fmt, sync::Arc};
-    pub use tokio_trace::*;
-    pub use tokio_trace_fmt::*;
+    pub use tracing::*;
+    pub use tracing_fmt::*;
 
     type SubscriberBuilder = Builder<
         default::NewRecorder,
@@ -48,7 +48,7 @@ pub mod trace {
                 .finish(),
         );
         dispatcher::set_global_default(dispatch)?;
-        let logger = tokio_trace_log::LogTracer::with_filter(log::LevelFilter::max());
+        let logger = tracing_log::LogTracer::with_filter(log::LevelFilter::max());
         log::set_boxed_logger(Box::new(logger))?;
         log::set_max_level(log::LevelFilter::max());
         Ok(())
@@ -114,7 +114,7 @@ pub mod trace {
     }
 
     pub mod futures {
-        pub use tokio_trace_futures::*;
+        pub use tracing_futures::*;
     }
 
 }
