@@ -29,11 +29,11 @@ extern crate tokio;
 extern crate tokio_timer;
 #[macro_use]
 extern crate tracing;
-extern crate tracing_fmt;
-extern crate tracing_futures;
 extern crate tower;
 extern crate tower_grpc;
 extern crate tower_util;
+extern crate tracing_fmt;
+extern crate tracing_futures;
 extern crate try_lock;
 
 #[macro_use]

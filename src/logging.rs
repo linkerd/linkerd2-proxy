@@ -21,11 +21,7 @@ pub mod trace {
     pub use tracing::*;
     pub use tracing_fmt::*;
 
-    type SubscriberBuilder = Builder<
-        default::NewRecorder,
-        Format,
-        filter::EnvFilter,
-    >;
+    type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
     pub type Error = Box<error::Error + Send + Sync + 'static>;
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
