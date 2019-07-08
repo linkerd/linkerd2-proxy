@@ -25,8 +25,6 @@ pub mod trace {
     type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
     pub type Error = Box<error::Error + Send + Sync + 'static>;
 
-    pub type Error = Box<error::Error + Send + Sync + 'static>;
-
     #[derive(Clone)]
     pub struct LevelHandle {
         inner: filter::reload::Handle<filter::EnvFilter, default::NewRecorder>,
