@@ -530,7 +530,7 @@ where
                     |req: &http::Request<_>| {
                         let ep = outbound::Endpoint::from_orig_dst(req).and_then(|mut ep| {
                             if let Some(force_id) = identity_from_header(req, super::L5D_FORCE_ID) {
-                                debug!("outbound ep force identity={:?}", force_id);
+                                debug!("outbound ep server name={:?}; force-id", force_id);
                                 ep.identity = Conditional::Some(force_id);
                             }
                             Some(ep)
@@ -583,9 +583,10 @@ where
                 .layer(router::layer(
                     router::Config::new("out dst", capacity, max_idle_age),
                     |req: &http::Request<_>| {
-                        let addr = req.extensions().get::<Addr>().cloned().map(|addr| {
+                        let force_identity = identity_from_header(req, super::L5D_FORCE_ID);
+                        let addr = req.extensions().get::<Addr>().cloned().map(move |addr| {
                             let settings = settings::Settings::from_request(req);
-                            DstAddr::outbound(addr, settings)
+                            DstAddr::outbound(addr, settings, force_identity)
                         });
                         debug!("outbound dst={:?}", addr);
                         addr
