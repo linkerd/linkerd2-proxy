@@ -106,6 +106,19 @@ pub mod trace {
     }
 
     impl LevelHandle {
+        /// Returns a new `LevelHandle` without a corresponding filter.
+        ///
+        /// This will do nothing, but is required for admin endpoint tests which
+        /// do not exercise the `proxy-log-level` endpoint.
+        #[cfg(test)]
+        pub fn dangling() -> Self {
+            let builder = subscriber_builder()
+                .with_filter(filter::EnvFilter::default())
+                .with_filter_reloading();
+            let inner = builder.reload_handle();
+            LevelHandle { inner }
+        }
+
         pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
             let level = level.as_ref();
             let filter = level.parse::<filter::EnvFilter>()?;

@@ -190,7 +190,7 @@ mod tests {
         let l1 = l0.clone();
 
         let mut rt = Runtime::new().unwrap();
-        let mut srv = Admin::new((), r);
+        let mut srv = Admin::new((), r, TraceLevel::dangling());
         macro_rules! call {
             () => {{
                 let r = Request::builder()
