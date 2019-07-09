@@ -211,7 +211,7 @@ where
     }
 }
 
-// === impl MakeFutures MakeFutures===
+// === impl MakeFutures ===
 
 impl<F: Future> MakeFutures<F> {
     fn new() -> Self {
