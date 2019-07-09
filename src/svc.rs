@@ -14,7 +14,7 @@ use tower::limit::concurrency::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
 use tower::timeout::TimeoutLayer;
 
-use proxy::{buffer, http::fallback, pending};
+use proxy::{buffer, pending};
 
 #[derive(Clone, Debug)]
 pub struct Builder<L>(ServiceBuilder<L>);
@@ -51,12 +51,6 @@ impl<L> Builder<L> {
 
     pub fn timeout(self, timeout: Duration) -> Builder<Stack<TimeoutLayer, L>> {
         Builder(self.0.timeout(timeout))
-    }
-
-    /// Returns a `Layer` that tries to build a service using `self`, falling
-    /// back to `other` if `self` fails.
-    pub fn fallback_to<B>(self, other: Builder<B>) -> fallback::Layer<L, B> {
-        fallback::layer(self, other)
     }
 
     /// Wrap the service `S` with the layers.
