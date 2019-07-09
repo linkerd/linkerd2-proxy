@@ -110,7 +110,6 @@ pub mod trace {
         ///
         /// This will do nothing, but is required for admin endpoint tests which
         /// do not exercise the `proxy-log-level` endpoint.
-        #[cfg(test)]
         pub fn dangling() -> Self {
             let builder = subscriber_builder()
                 .with_filter(filter::EnvFilter::default())
