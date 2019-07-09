@@ -160,6 +160,7 @@ pub mod trace {
     pub mod futures {
         pub use tracing_futures::*;
     }
+
 }
 
 /// Execute a closure with a `Display` item attached to allow log messages.

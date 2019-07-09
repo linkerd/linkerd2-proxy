@@ -438,7 +438,7 @@ where
                 //add_remote_ip_on_rsp, add_server_id_on_rsp,
             };
             use proxy::{
-                http::{balance, canonicalize, header_from_target, metrics, retry},
+                http::{balance, canonicalize, fallback, header_from_target, metrics, retry},
                 resolve,
             };
 
@@ -526,14 +526,20 @@ where
                 ))
                 .layer(buffer::layer(max_in_flight, DispatchDeadline::extract));
 
+            // Resolves the target via the control plane and balances requests
+            // over all endpoints returned from the destination service.
             let balancer = svc::builder()
                 .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)))
-                .fallback_to(orig_dst_router)
-                .on_error::<control::destination::Unresolvable>();
+                .layer(resolve::layer(Resolve::new(resolver)));
 
-            let balancer_stack = svc::builder()
-                .layer(balancer)
+            let distributor = svc::builder()
+                .layer(
+                    // Attempt to build a balancer. If the service is
+                    // unresolvable, fall back to using a router that dispatches
+                    // request to the application-selected original destination.
+                    fallback::layer(balancer, orig_dst_router)
+                        .on_error::<control::destination::Unresolvable>(),
+                )
                 .layer(pending::layer())
                 .layer(balance::weight::layer())
                 .service(endpoint_stack);
@@ -553,7 +559,7 @@ where
                     dst_route_layer,
                 ))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
-                .service(balancer_stack);
+                .service(distributor);
 
             // Routes request using the `DstAddr` extension.
             //
