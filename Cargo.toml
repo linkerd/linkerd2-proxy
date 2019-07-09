@@ -34,7 +34,6 @@ linkerd2-timeout   = { path = "lib/timeout" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 
 bytes = "0.4"
-env_logger = { version = "0.5", default-features = false }
 futures = "0.1"
 futures-watch = { git = "https://github.com/carllerche/better-future" }
 h2 = "0.1.15"
@@ -43,7 +42,7 @@ http-body = "0.1"
 httparse = "1.2"
 hyper = "0.12.3"
 ipnet = "1.0"
-log = "0.4.1"
+log = { version = "0.4.1", features = ["std"] }
 indexmap = "1.0.0"
 prost = "0.5.0"
 prost-types = "0.5.0"
@@ -69,6 +68,11 @@ tower-grpc             = { git = "https://github.com/tower-rs/tower-grpc", defau
 
 # FIXME update to a release when available (>0.11)
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060", default-features = false }
+
+tracing         = "0.1.2"
+tracing-fmt     = { git = "https://github.com/tokio-rs/tracing" }
+tracing-futures = { git = "https://github.com/tokio-rs/tracing" }
+tracing-log     = { git = "https://github.com/tokio-rs/tracing" }
 
 # tls
 ring = "0.14.6"
@@ -102,3 +106,4 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }
+

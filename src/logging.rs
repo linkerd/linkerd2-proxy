@@ -1,11 +1,7 @@
-use env_logger;
 use futures::future::{ExecuteError, Executor};
 use futures::{Future, Poll};
-use log::Level;
 use std::cell::RefCell;
-use std::env;
 use std::fmt;
-use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio_timer::clock;
@@ -18,38 +14,116 @@ thread_local! {
     static CONTEXT: RefCell<Vec<*const fmt::Display>> = RefCell::new(Vec::new());
 }
 
-pub fn formatted_builder() -> env_logger::Builder {
-    let start_time = clock::now();
-    let mut builder = env_logger::Builder::new();
-    builder.format(move |fmt, record| {
-        CONTEXT.with(move |ctxt| {
-            let level = match record.level() {
-                Level::Trace => "TRCE",
-                Level::Debug => "DBUG",
-                Level::Info => "INFO",
-                Level::Warn => "WARN",
-                Level::Error => "ERR!",
-            };
-            let uptime = clock::now() - start_time;
-            writeln!(
-                fmt,
-                "{} [{:>6}.{:06}s] {}{} {}",
-                level,
-                uptime.as_secs(),
-                uptime.subsec_micros(),
-                Context(&ctxt.borrow()),
-                record.target(),
-                record.args()
-            )
-        })
-    });
-    builder
-}
+pub mod trace {
+    extern crate tracing_log;
+    use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
+    use std::{env, error, fmt, time::Instant};
+    pub use tracing::*;
+    pub use tracing_fmt::*;
 
-pub fn init() {
-    formatted_builder()
-        .parse(&env::var(ENV_LOG).unwrap_or_default())
-        .init();
+    type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
+    pub type Error = Box<error::Error + Send + Sync + 'static>;
+
+    /// Initialize tracing and logging with the value of the `ENV_LOG`
+    /// environment variable as the verbosity-level filter.
+    pub fn init() -> Result<(), Error> {
+        let env = env::var(super::ENV_LOG).unwrap_or_default();
+        init_with_filter(env)
+    }
+
+    /// Initialize tracing and logging with the provided verbosity-level filter.
+    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), Error> {
+        let dispatch = Dispatch::new(
+            subscriber_builder()
+                .with_filter(filter::EnvFilter::from(filter))
+                .finish(),
+        );
+        dispatcher::set_global_default(dispatch)?;
+        let logger = tracing_log::LogTracer::with_filter(log::LevelFilter::max());
+        log::set_boxed_logger(Box::new(logger))?;
+        log::set_max_level(log::LevelFilter::max());
+        Ok(())
+    }
+
+    /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
+    fn subscriber_builder() -> SubscriberBuilder {
+        let start_time = clock::now();
+        FmtSubscriber::builder().on_event(Format { start_time })
+    }
+
+    struct Format {
+        start_time: Instant,
+    }
+
+    impl<N> tracing_fmt::FormatEvent<N> for Format
+    where
+        N: for<'a> tracing_fmt::NewVisitor<'a>,
+    {
+        fn format_event(
+            &self,
+            span_ctx: &Context<N>,
+            f: &mut dyn fmt::Write,
+            event: &Event,
+        ) -> fmt::Result {
+            let meta = event.metadata();
+            let level = match meta.level() {
+                &Level::TRACE => "TRCE",
+                &Level::DEBUG => "DBUG",
+                &Level::INFO => "INFO",
+                &Level::WARN => "WARN",
+                &Level::ERROR => "ERR!",
+            };
+            let uptime = clock::now() - self.start_time;
+            // Until the legacy logging contexts are no longer used, we must
+            // format both the `tokio-trace` span context *and* the proxy's
+            // logging context.
+            LEGACY_CONTEXT.with(|old_ctx| {
+                write!(
+                    f,
+                    "{} [{:>6}.{:06}s] {}{}{} ",
+                    level,
+                    uptime.as_secs(),
+                    uptime.subsec_micros(),
+                    LegacyContext(&old_ctx.borrow()),
+                    SpanContext(&span_ctx),
+                    meta.target()
+                )
+            })?;
+            {
+                let mut recorder = span_ctx.new_visitor(f, true);
+                event.record(&mut recorder);
+            }
+            writeln!(f)
+        }
+    }
+
+    /// Implements `fmt::Display` for a `tokio-trace-fmt` span context.
+    struct SpanContext<'a, N: 'a>(&'a Context<'a, N>);
+
+    impl<'a, N> fmt::Display for SpanContext<'a, N> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let mut seen = false;
+            self.0.visit_spans(|_, span| {
+                write!(f, "{}", span.name())?;
+                seen = true;
+
+                let fields = span.fields();
+                if !fields.is_empty() {
+                    write!(f, "{{{}}}", fields)?;
+                }
+                ":".fmt(f)
+            })?;
+            if seen {
+                f.pad(" ")?;
+            }
+            Ok(())
+        }
+    }
+
+    pub mod futures {
+        pub use tracing_futures::*;
+    }
+
 }
 
 /// Execute a closure with a `Display` item attached to allow log messages.

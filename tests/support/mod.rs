@@ -6,7 +6,6 @@
 #![allow(dead_code)]
 
 pub extern crate bytes;
-extern crate env_logger;
 extern crate futures;
 extern crate h2;
 pub extern crate http;
@@ -15,7 +14,6 @@ extern crate hyper;
 extern crate linkerd2_proxy;
 pub extern crate linkerd2_proxy_api;
 extern crate linkerd2_task;
-extern crate log;
 pub extern crate net2;
 extern crate prost;
 pub extern crate rustls;
@@ -63,19 +61,15 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy::proxy::http::router=off,\
                                    linkerd2_proxy::proxy::tcp=off";
 
-pub fn env_logger_init() -> Result<(), String> {
+pub fn trace_init() -> Result<(), trace::Error> {
     use std::env;
-
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
         .unwrap_or_else(|_| DEFAULT_LOG.to_owned());
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    self::linkerd2_proxy::logging::formatted_builder()
-        .parse(&log)
-        .try_init()
-        .map_err(|e| e.to_string())
+    trace::init_with_filter(&log)
 }
 
 /// Retry an assertion up to a specified number of times, waiting

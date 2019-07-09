@@ -15,7 +15,7 @@ futures = "0.1"
 http = "0.1"
 hyper = "0.12.3"
 indexmap = "1.0"
-log = "0.4"
+tracing = "0.1.2"
 
 [dev-dependencies]
 quickcheck = { version = "0.8", default-features = false }
