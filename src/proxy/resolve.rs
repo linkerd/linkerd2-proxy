@@ -170,10 +170,8 @@ where
             trace!("watch: {:?}", update);
             match update {
                 Update::Add(addr, target) => {
-                    // Start building the service and continue.
-                    // Remove any pending additions for this addr so that they
-                    // cannot race.
-                    self.make_futures.remove(&addr);
+                    // Start building the service and continue. If a pending
+                    // service exists for this addr, it will be canceled.
                     let fut = self.make.call(target);
                     self.make_futures.push(addr, fut);
                 }
@@ -223,7 +221,9 @@ impl<F: Future> MakeFutures<F> {
 
     fn push(&mut self, addr: SocketAddr, inner: F) {
         let (cancel, canceled) = oneshot::channel();
-        self.cancelations.insert(addr, cancel);
+        if let Some(prior) = self.cancelations.insert(addr, cancel) {
+            let _ = prior.send(());
+        }
         self.futures.push(MakeFuture {
             addr,
             inner,
