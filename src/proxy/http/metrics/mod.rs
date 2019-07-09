@@ -49,7 +49,7 @@ where
     last_update: Instant,
     total: Counter,
     by_retry_skipped: IndexMap<RetrySkipped, Counter>,
-    by_status: IndexMap<http::StatusCode, StatusMetrics<C>>,
+    by_status: IndexMap<Option<http::StatusCode>, StatusMetrics<C>>,
 }
 
 #[derive(Debug)]

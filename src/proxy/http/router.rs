@@ -4,6 +4,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
 
+use logging;
 use never::Never;
 
 use proxy::Error;
@@ -114,18 +115,24 @@ where
 impl<Req, Rec, Mk, B> Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
+    <Rec as Recognize<Req>>::Target: Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
     pub fn make(&self) -> Service<Req, Rec, Mk> {
-        let inner = Router::new(
+        let (inner, cache_bg) = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
             self.config.capacity,
             self.config.max_idle_age,
         );
+
+        let ctx = logging::Section::Proxy.bg(self.config.proxy_name);
+        let cache_daemon = ctx.future(cache_bg);
+        tokio::spawn(cache_daemon);
+
         Service { inner }
     }
 }
@@ -133,8 +140,9 @@ where
 impl<Req, Rec, Mk, B, T> svc::Service<T> for Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
+    <Rec as Recognize<Req>>::Target: Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
@@ -170,7 +178,7 @@ where
 impl<Req, Rec, Mk, B> svc::Service<Req> for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Send + Sync + 'static,
-    Mk: rt::Make<Rec::Target> + Send + Sync + 'static,
+    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
     Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,

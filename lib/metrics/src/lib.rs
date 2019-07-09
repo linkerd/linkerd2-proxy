@@ -1,15 +1,6 @@
-//! Utilties for exposing metrics to Prometheus.
+#![deny(warnings, rust_2018_idioms)]
 
-extern crate deflate;
-extern crate futures;
-extern crate http;
-extern crate hyper;
-extern crate indexmap;
-#[macro_use]
-extern crate log;
-#[cfg(test)]
-#[macro_use]
-extern crate quickcheck;
+//! Utilties for exposing metrics to Prometheus.
 
 mod counter;
 mod gauge;

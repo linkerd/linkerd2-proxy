@@ -316,7 +316,7 @@ const DEFAULT_INBOUND_CONNECT_BACKOFF: Backoff = Backoff::Exponential {
     max: Duration::from_millis(500),
     jitter: 0.1,
 };
-const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
+const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_OUTBOUND_CONNECT_BACKOFF: Backoff = Backoff::Exponential {
     min: Duration::from_millis(100),

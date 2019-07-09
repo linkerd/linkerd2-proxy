@@ -1,4 +1,4 @@
-extern crate futures;
+#![deny(warnings, rust_2018_idioms)]
 
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -65,7 +65,7 @@ impl<T> Stream for Receiver<T> {
 
 // NB: `rx` does not have a `Debug` impl.
 impl<T> fmt::Debug for Receiver<T> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Receiver")
             .field("capacity", &self.capacity)
             .finish()
@@ -122,7 +122,7 @@ impl<T> Clone for Sender<T> {
 
 // NB: `tx` does not have a `Debug` impl.
 impl<T> fmt::Debug for Sender<T> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Sender")
             .field("capacity", &self.capacity)
             .finish()

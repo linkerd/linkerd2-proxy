@@ -31,6 +31,7 @@ extern crate webpki;
 pub use std::collections::HashMap;
 use std::fmt;
 pub use std::net::SocketAddr;
+pub use std::sync::Arc;
 pub use std::time::Duration;
 
 pub use self::bytes::Bytes;
@@ -281,7 +282,6 @@ pub trait FutureWaitExt: Future {
     where
         Self: Sized,
     {
-        use std::sync::Arc;
         use std::thread;
         use std::time::Instant;
 
