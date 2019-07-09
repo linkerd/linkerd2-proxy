@@ -141,15 +141,26 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let resolution = try_ready!(self.future.poll());
-        Ok(Async::Ready(Discover {
-            resolution,
-            make: self.make.take().expect("polled after ready"),
-            make_futures: MakeFutures::new(),
-        }))
+        let make = self.make.take().expect("polled after ready");
+        Ok(Async::Ready(Discover::new(resolution, make)))
     }
 }
 
 // === impl Discover ===
+
+impl<R, M> Discover<R, M>
+where
+    R: Resolution,
+    M: svc::Service<R::Endpoint>,
+{
+    fn new(resolution: R, make: M) -> Self {
+        Self {
+            resolution,
+            make,
+            make_futures: MakeFutures::new(),
+        }
+    }
+}
 
 impl<R, M> Discover<R, M>
 where
