@@ -135,14 +135,17 @@ pub mod trace {
 
     impl fmt::Debug for LevelHandle {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            let current = self
-                .inner
-                // ugh...
-                .with_current(|c| format!("{}", c))
-                .unwrap_or_else(|e| format!("{}", e));
-            f.debug_struct("LevelHandle")
-                .field("current", &current)
-                .finish()
+            self.inner
+                .with_current(|c| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", c))
+                        .finish()
+                })
+                .unwrap_or_else(|e| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", e))
+                        .finish()
+                })
         }
     }
 
