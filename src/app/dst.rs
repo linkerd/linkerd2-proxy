@@ -12,7 +12,6 @@ use proxy::http::{
 };
 use {Addr, NameAddr};
 
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
     In,
