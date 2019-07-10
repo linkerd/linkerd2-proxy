@@ -10,7 +10,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_asks_controller_api() {
-            let _ = env_logger_init();
+            let _ = trace_init();
             let srv = $make_server().route("/", "hello").route("/bye", "bye").run();
 
             let ctrl = controller::new()
@@ -25,7 +25,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_router_capacity() {
-            let _ = env_logger_init();
+            let _ = trace_init();
             let srv = $make_server().route("/", "hello").run();
             let srv_addr = srv.addr;
 
@@ -70,7 +70,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_reconnects_if_controller_stream_ends() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = $make_server().route("/recon", "nect").run();
 
@@ -96,7 +96,7 @@ macro_rules! generate_tests {
 
         fn outbound_fails_fast(up: pb::destination::Update) {
             use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let did_not_fall_back = Arc::new(AtomicBool::new(true));
             let did_not_fall_back2 = did_not_fall_back.clone();
@@ -128,7 +128,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_falls_back_to_orig_dst_when_outside_search_path() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = $make_server().route("/", "hello from my great website").run();
 
@@ -144,7 +144,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_falls_back_to_orig_dst_after_invalid_argument() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = $make_server().route("/", "hello").run();
 
@@ -181,7 +181,7 @@ macro_rules! generate_tests {
         }
 
         fn init_env() -> app::config::TestEnv {
-            let _ = env_logger_init();
+            let _ = trace_init();
             app::config::TestEnv::new()
         }
 
@@ -333,7 +333,7 @@ macro_rules! generate_tests {
 
             #[test]
             fn outbound_should_strip() {
-                let _ = env_logger_init();
+                let _ = trace_init();
                 let header = HeaderValue::from_static(IP_1);
 
                 let srv = $make_server().route_fn("/strip", |_req| {
@@ -351,7 +351,7 @@ macro_rules! generate_tests {
 
             #[test]
             fn inbound_should_strip() {
-                let _ = env_logger_init();
+                let _ = trace_init();
                 let header = HeaderValue::from_static(IP_1);
 
                 let srv = $make_server().route_fn("/strip", move |req| {
@@ -369,7 +369,7 @@ macro_rules! generate_tests {
             #[test]
             #[ignore] // #2597
             fn outbound_should_set() {
-                let _ = env_logger_init();
+                let _ = trace_init();
                 let header = HeaderValue::from_static(IP_2);
 
                 let srv = $make_server().route("/set", "hello").run();
@@ -385,7 +385,7 @@ macro_rules! generate_tests {
             #[test]
             #[ignore] // #2597
             fn inbound_should_set() {
-                let _ = env_logger_init();
+                let _ = trace_init();
 
                 let header = HeaderValue::from_static(IP_2);
 
@@ -421,7 +421,7 @@ macro_rules! generate_tests {
 
             impl Fixture {
                 fn new() -> Fixture {
-                    let _ = env_logger_init();
+                    let _ = trace_init();
 
                     let foo_reqs = Arc::new(AtomicUsize::new(0));
                     let foo_reqs2 = foo_reqs.clone();
@@ -678,7 +678,7 @@ mod http2 {
     #[test]
     fn outbound_balancer_waits_for_ready_endpoint() {
         // See https://github.com/linkerd/linkerd2/issues/2550
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv1 = server::http2()
             .route("/", "hello")
@@ -750,7 +750,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn outbound_http1() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         // Instead of a second proxy, this mocked h2 server will be the target.
         let srv = server::http2()
@@ -778,7 +778,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn inbound_http1() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/h1", |req| {
@@ -809,7 +809,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn inbound_should_strip_l5d_client_id() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/stripped", |req| {
@@ -832,7 +832,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn outbound_should_strip_l5d_client_id() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/stripped", |req| {
@@ -858,7 +858,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn inbound_should_strip_l5d_server_id() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/strip-me", |_req| {
@@ -880,7 +880,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn outbound_should_strip_l5d_server_id() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/strip-me", |_req| {
@@ -905,7 +905,7 @@ mod proxy_to_proxy {
 
     macro_rules! generate_l5d_tls_id_test {
         (server: $make_server:path, client: $make_client:path) => {
-            let _ = env_logger_init();
+            let _ = trace_init();
             let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
             let id_env = identity::Identity::new("foo-ns1", id.to_string());
 

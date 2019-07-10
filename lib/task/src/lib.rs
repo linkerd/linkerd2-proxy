@@ -2,8 +2,8 @@
 
 //! Task execution utilities.
 
-use log::{debug, warn};
 use std::{error::Error as StdError, fmt, io, sync::Arc};
+use tracing::{debug, warn};
 
 pub use futures::future::Executor;
 use futures::future::{ExecuteError, ExecuteErrorKind, Future};
