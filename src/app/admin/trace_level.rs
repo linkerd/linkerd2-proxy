@@ -59,7 +59,7 @@ impl Service for TraceLevel {
                             warn!(message = "setting log level failed", %error);
                             rsp(StatusCode::BAD_REQUEST, format!("{}", error))
                         }
-                        Ok(()) => rsp(StatusCode::CREATED, Body::empty()),
+                        Ok(()) => rsp(StatusCode::NO_CONTENT, Body::empty()),
                     })
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
                 Box::new(f)
