@@ -3,7 +3,7 @@
 //! * `/metrics` -- reports prometheus-formatted metrics.
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
-use futures::future::{self, Future, FutureResult};
+use futures::future::{self, Future};
 use http::StatusCode;
 use hyper::{service::Service, Body, Request, Response};
 use std::io;
@@ -25,10 +25,7 @@ where
     ready: Readiness,
 }
 
-pub type ResponseFuture = future::Either<
-    FutureResult<Response<Body>, io::Error>,
-    Box<Future<Item = Response<Body>, Error = io::Error> + Send + 'static>,
->;
+pub type ResponseFuture = Box<Future<Item = Response<Body>, Error = io::Error> + Send + 'static>;
 
 impl<M> Admin<M>
 where
@@ -68,10 +65,10 @@ where
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         match req.uri().path() {
-            "/metrics" => future::Either::A(self.metrics.call(req)),
-            "/proxy-log-level" => future::Either::B(self.trace_level.call(req)),
-            "/ready" => future::Either::A(future::ok(self.ready_rsp())),
-            _ => future::Either::A(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
+            "/metrics" => Box::new(self.metrics.call(req)),
+            "/proxy-log-level" => self.trace_level.call(req),
+            "/ready" => Box::new(future::ok(self.ready_rsp())),
+            _ => Box::new(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
     }
 }
