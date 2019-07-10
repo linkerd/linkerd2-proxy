@@ -4,7 +4,7 @@ use futures::{
 };
 use http::{Method, StatusCode};
 use hyper::{service::Service, Body, Request, Response};
-use std::{io, str};
+use std::{io, str, net::SocketAddr};
 
 use control::ClientAddr;
 pub use trace::LevelHandle as TraceLevel;
@@ -22,8 +22,8 @@ impl Service for TraceLevel {
         if let Some(addr) = req
             .extensions()
             .get::<ClientAddr>()
-            .map(ClientAddr::into_socket_addr)
         {
+            let addr: SocketAddr = addr.into();
             if !addr.ip().is_loopback() {
                 warn!(message = "denying request from non-loopback IP", %addr);
                 return Box::new(future::ok(rsp(

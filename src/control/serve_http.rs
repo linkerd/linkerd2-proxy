@@ -59,8 +59,8 @@ where
     log.future(fut)
 }
 
-impl ClientAddr {
-    pub fn into_socket_addr(&self) -> SocketAddr {
+impl<'a> Into<SocketAddr> for &'a ClientAddr {
+    fn into(self) -> SocketAddr {
         self.0
     }
 }
