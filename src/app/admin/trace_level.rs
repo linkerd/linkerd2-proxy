@@ -1,5 +1,5 @@
 use futures::{
-    future::{self, Future, FutureResult},
+    future::{self, Future},
     Stream,
 };
 use http::{Method, StatusCode};
@@ -7,7 +7,6 @@ use hyper::{service::Service, Body, Request, Response};
 use std::{io, str};
 
 use control::ClientAddr;
-use trace::{self, futures::Instrument};
 pub use trace::LevelHandle as TraceLevel;
 
 use super::rsp;

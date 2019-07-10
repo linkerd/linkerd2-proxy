@@ -25,11 +25,9 @@ where
     ready: Readiness,
 }
 
-pub type ResponseFuture = trace::futures::Instrumented<
-    future::Either<
-        FutureResult<Response<Body>, io::Error>,
-        Box<Future<Item = Response<Body>, Error = io::Error> + Send + 'static>,
-    >,
+pub type ResponseFuture = future::Either<
+    FutureResult<Response<Body>, io::Error>,
+    Box<Future<Item = Response<Body>, Error = io::Error> + Send + 'static>,
 >;
 
 impl<M> Admin<M>
@@ -69,20 +67,12 @@ where
     type Future = ResponseFuture;
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let span = trace_span!(
-            "admin",
-            request.path = %req.uri().path(),
-            request.method = ?req.method(),
-        );
-        let _enter = span.enter();
-        trace!("handling request");
         match req.uri().path() {
             "/metrics" => future::Either::A(self.metrics.call(req)),
             "/proxy-log-level" => future::Either::B(self.trace_level.call(req)),
             "/ready" => future::Either::A(future::ok(self.ready_rsp())),
             _ => future::Either::A(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
-        .instrument(span.clone())
     }
 }
 
