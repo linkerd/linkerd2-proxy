@@ -17,32 +17,40 @@ thread_local! {
 pub mod trace {
     extern crate tracing_log;
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-    use std::{env, error, fmt, time::Instant};
+
+    use std::{env, error, fmt, str, time::Instant};
     pub use tracing::*;
     pub use tracing_fmt::*;
 
     type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
     pub type Error = Box<error::Error + Send + Sync + 'static>;
 
+    #[derive(Clone)]
+    pub struct LevelHandle {
+        inner: filter::reload::Handle<filter::EnvFilter, default::NewRecorder>,
+    }
+
     /// Initialize tracing and logging with the value of the `ENV_LOG`
     /// environment variable as the verbosity-level filter.
-    pub fn init() -> Result<(), Error> {
+    pub fn init() -> Result<LevelHandle, Error> {
         let env = env::var(super::ENV_LOG).unwrap_or_default();
         init_with_filter(env)
     }
 
     /// Initialize tracing and logging with the provided verbosity-level filter.
-    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<(), Error> {
-        let dispatch = Dispatch::new(
-            subscriber_builder()
-                .with_filter(filter::EnvFilter::from(filter))
-                .finish(),
-        );
+    pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<LevelHandle, Error> {
+        // Set up the subscriber
+        let builder = subscriber_builder()
+            .with_filter(filter::EnvFilter::from(filter))
+            .with_filter_reloading();
+        let handle = builder.reload_handle();
+        let dispatch = Dispatch::new(builder.finish());
         dispatcher::set_global_default(dispatch)?;
         let logger = tracing_log::LogTracer::with_filter(log::LevelFilter::max());
         log::set_boxed_logger(Box::new(logger))?;
         log::set_max_level(log::LevelFilter::max());
-        Ok(())
+
+        Ok(LevelHandle { inner: handle })
     }
 
     /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
@@ -94,6 +102,50 @@ pub mod trace {
                 event.record(&mut recorder);
             }
             writeln!(f)
+        }
+    }
+
+    impl LevelHandle {
+        /// Returns a new `LevelHandle` without a corresponding filter.
+        ///
+        /// This will do nothing, but is required for admin endpoint tests which
+        /// do not exercise the `proxy-log-level` endpoint.
+        pub fn dangling() -> Self {
+            let builder = subscriber_builder()
+                .with_filter(filter::EnvFilter::default())
+                .with_filter_reloading();
+            let inner = builder.reload_handle();
+            LevelHandle { inner }
+        }
+
+        pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
+            let level = level.as_ref();
+            let filter = level.parse::<filter::EnvFilter>()?;
+            self.inner.reload(filter)?;
+            info!(message = "set new log level", %level);
+            Ok(())
+        }
+
+        pub fn current(&self) -> Result<String, Error> {
+            self.inner
+                .with_current(|f| format!("{}", f))
+                .map_err(Into::into)
+        }
+    }
+
+    impl fmt::Debug for LevelHandle {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            self.inner
+                .with_current(|c| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", c))
+                        .finish()
+                })
+                .unwrap_or_else(|e| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", e))
+                        .finish()
+                })
         }
     }
 

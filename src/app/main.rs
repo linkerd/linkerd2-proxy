@@ -31,6 +31,7 @@ use svc::{self, LayerExt};
 use tap;
 use task;
 use telemetry;
+use trace;
 use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
 use {Addr, Conditional};
 
@@ -62,6 +63,7 @@ struct ProxyParts<G> {
     identity: tls::Conditional<(identity::Local, identity::CrtKeyStore)>,
 
     start_time: SystemTime,
+    trace_level: trace::LevelHandle,
 
     admin_listener: Listen<identity::Local, ()>,
     control_listener: Option<Listen<identity::Local, ()>>,
@@ -87,7 +89,12 @@ impl<G> Main<G>
 where
     G: GetOriginalDst + Clone + Send + 'static,
 {
-    pub fn new<R>(config: Config, get_original_dst: G, runtime: R) -> Self
+    pub fn new<R>(
+        config: Config,
+        trace_level: trace::LevelHandle,
+        get_original_dst: G,
+        runtime: R,
+    ) -> Self
     where
         R: Into<task::MainRuntime>,
     {
@@ -125,6 +132,7 @@ where
             config,
             identity,
             start_time,
+            trace_level,
             inbound_listener,
             outbound_listener,
             control_listener,
@@ -195,6 +203,7 @@ where
             config,
             identity,
             start_time,
+            trace_level,
             control_listener,
             inbound_listener,
             outbound_listener,
@@ -379,7 +388,7 @@ where
                     rt.spawn(control::serve_http(
                         "admin",
                         admin_listener,
-                        Admin::new(report, readiness),
+                        Admin::new(report, readiness, trace_level),
                     ));
 
                     if let Some(listener) = control_listener {

@@ -69,7 +69,7 @@ pub fn trace_init() -> Result<(), trace::Error> {
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    trace::init_with_filter(&log)
+    trace::init_with_filter(&log).map(|_| ())
 }
 
 /// Retry an assertion up to a specified number of times, waiting

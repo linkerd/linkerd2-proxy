@@ -1,9 +1,17 @@
 use futures::{future, Future};
-use hyper::{server::conn::Http, service::Service, Body};
+use hyper::{
+    server::conn::Http,
+    service::{service_fn, Service},
+    Body,
+};
 use tokio::executor::current_thread::TaskExecutor;
 
+use std::net::SocketAddr;
 use task;
 use transport::{tls, Listen};
+
+#[derive(Clone, Debug)]
+pub struct ClientAddr(SocketAddr);
 
 pub fn serve_http<L, S>(
     name: &'static str,
@@ -21,8 +29,17 @@ where
         let log = log.clone();
         bound_port
             .listen_and_fold(Http::new(), move |hyper, (conn, remote)| {
+                // Since the `/proxy-log-level` controls access based on the
+                // client's IP address, we wrap the service with a new service
+                // that adds the remote IP as a request extension.
+                let svc = service.clone();
+                let svc = service_fn(move |mut req| {
+                    let mut svc = svc.clone();
+                    req.extensions_mut().insert(ClientAddr(remote));
+                    svc.call(req)
+                });
                 let serve = hyper
-                    .serve_connection(conn, service.clone())
+                    .serve_connection(conn, svc)
                     .map(|_| {})
                     .map_err(move |e| {
                         error!("error serving {}: {:?}", name, e);
@@ -40,4 +57,10 @@ where
     };
 
     log.future(fut)
+}
+
+impl<'a> Into<SocketAddr> for &'a ClientAddr {
+    fn into(self) -> SocketAddr {
+        self.0
+    }
 }
