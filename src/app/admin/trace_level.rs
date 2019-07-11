@@ -1,15 +1,14 @@
+use super::rsp;
+use control::ClientAddr;
 use futures::{
     future::{self, Future},
     Stream,
 };
 use http::{Method, StatusCode};
 use hyper::{service::Service, Body, Request, Response};
-use std::{io, net::SocketAddr, str};
-
-use control::ClientAddr;
 pub use trace::LevelHandle as TraceLevel;
 
-use super::rsp;
+use std::{io, net::SocketAddr, str};
 
 impl Service for TraceLevel {
     type ReqBody = Body;
