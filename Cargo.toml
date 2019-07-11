@@ -62,8 +62,10 @@ tower-service = "0.2"
 tower-util = "0.1"
 tokio-connect          = { git = "https://github.com/carllerche/tokio-connect" }
 tower-balance          = { git = "https://github.com/tower-rs/tower" }
+tower-load             = { git = "https://github.com/tower-rs/tower" }
 tower-reconnect        = { git = "https://github.com/tower-rs/tower" }
 tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
+tower-spawn-ready      = { git = "https://github.com/tower-rs/tower" }
 tower-grpc             = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
 
 # FIXME update to a release when available (>0.11)

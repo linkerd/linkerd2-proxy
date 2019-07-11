@@ -1,18 +1,19 @@
 extern crate hyper_balance;
 extern crate tower_balance;
 extern crate tower_discover;
+extern crate tower_load;
 
 use std::{marker::PhantomData, time::Duration};
 
 use futures::{Async, Future, Poll};
 use hyper::body::Payload;
+use rand::{rngs::SmallRng, FromEntropy};
 
 use self::tower_discover::Discover;
 
 pub use self::hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
-pub use self::tower_balance::{
-    choose::PowerOfTwoChoices, load::WithPeakEwma, Balance, HasWeight, Weight, WithWeighted,
-};
+pub use self::tower_balance::p2c::Balance;
+pub use self::tower_load::{Load, PeakEwmaDiscover};
 
 use http;
 use svc;
@@ -23,6 +24,7 @@ use svc;
 pub struct Layer<A, B> {
     decay: Duration,
     default_rtt: Duration,
+    rng: SmallRng,
     _marker: PhantomData<fn(A) -> B>,
 }
 
@@ -32,6 +34,7 @@ pub struct MakeSvc<M, A, B> {
     decay: Duration,
     default_rtt: Duration,
     inner: M,
+    rng: SmallRng,
     _marker: PhantomData<fn(A) -> B>,
 }
 
@@ -41,15 +44,17 @@ pub fn layer<A, B>(default_rtt: Duration, decay: Duration) -> Layer<A, B> {
     Layer {
         decay,
         default_rtt,
+        rng: SmallRng::from_entropy(),
         _marker: PhantomData,
     }
 }
 
 impl<A, B> Clone for Layer<A, B> {
     fn clone(&self) -> Self {
-        Layer {
+        Self {
             decay: self.decay,
             default_rtt: self.default_rtt,
+            rng: self.rng.clone(),
             _marker: PhantomData,
         }
     }
@@ -67,6 +72,7 @@ where
             decay: self.decay,
             default_rtt: self.default_rtt,
             inner,
+            rng: self.rng.clone(),
             _marker: PhantomData,
         }
     }
@@ -80,6 +86,7 @@ impl<M: Clone, A, B> Clone for MakeSvc<M, A, B> {
             decay: self.decay,
             default_rtt: self.default_rtt,
             inner: self.inner.clone(),
+            rng: self.rng.clone(),
             _marker: PhantomData,
         }
     }
@@ -93,8 +100,10 @@ where
         svc::Service<http::Request<A>, Response = http::Response<B>>,
     A: Payload,
     B: Payload,
+    Balance<PeakEwmaDiscover<M::Response, PendingUntilFirstData>, http::Request<A>>:
+        svc::Service<http::Request<A>>,
 {
-    type Response = Balance<WithPeakEwma<M::Response, PendingUntilFirstData>, PowerOfTwoChoices>;
+    type Response = Balance<PeakEwmaDiscover<M::Response, PendingUntilFirstData>, http::Request<A>>;
     type Error = M::Error;
     type Future = MakeSvc<M::Future, A, B>;
 
@@ -109,6 +118,7 @@ where
             decay: self.decay,
             default_rtt: self.default_rtt,
             inner,
+            rng: self.rng.clone(),
             _marker: PhantomData,
         }
     }
@@ -121,70 +131,17 @@ where
     <F::Item as Discover>::Service: svc::Service<http::Request<A>, Response = http::Response<B>>,
     A: Payload,
     B: Payload,
+    Balance<PeakEwmaDiscover<F::Item, PendingUntilFirstData>, http::Request<A>>:
+        svc::Service<http::Request<A>>,
 {
-    type Item = Balance<WithPeakEwma<F::Item, PendingUntilFirstData>, PowerOfTwoChoices>;
+    type Item = Balance<PeakEwmaDiscover<F::Item, PendingUntilFirstData>, http::Request<A>>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let discover = try_ready!(self.inner.poll());
         let instrument = PendingUntilFirstData::default();
-        let loaded = WithPeakEwma::new(discover, self.default_rtt, self.decay, instrument);
-        let balance = Balance::p2c(loaded);
+        let loaded = PeakEwmaDiscover::new(discover, self.default_rtt, self.decay, instrument);
+        let balance = Balance::new(loaded, self.rng.clone());
         Ok(Async::Ready(balance))
-    }
-}
-
-pub mod weight {
-    use super::tower_balance::{HasWeight, Weight, Weighted};
-    use futures::{Future, Poll};
-    use svc;
-
-    #[derive(Clone, Debug)]
-    pub struct MakeSvc<M> {
-        inner: M,
-    }
-
-    #[derive(Debug)]
-    pub struct MakeFuture<F> {
-        inner: F,
-        weight: Weight,
-    }
-
-    pub fn layer<M>() -> impl svc::Layer<M, Service = MakeSvc<M>> + Copy {
-        svc::layer::mk(|inner| MakeSvc { inner })
-    }
-
-    impl<T, M> svc::Service<T> for MakeSvc<M>
-    where
-        T: HasWeight,
-        M: svc::Service<T>,
-    {
-        type Response = Weighted<M::Response>;
-        type Error = M::Error;
-        type Future = MakeFuture<M::Future>;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
-        }
-
-        fn call(&mut self, target: T) -> Self::Future {
-            MakeFuture {
-                weight: target.weight(),
-                inner: self.inner.call(target),
-            }
-        }
-    }
-
-    impl<F> Future for MakeFuture<F>
-    where
-        F: Future,
-    {
-        type Item = Weighted<F::Item>;
-        type Error = F::Error;
-
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            let svc = try_ready!(self.inner.poll());
-            Ok(Weighted::new(svc, self.weight).into())
-        }
     }
 }

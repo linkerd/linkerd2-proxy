@@ -35,7 +35,6 @@ mod client;
 mod resolution;
 use self::client::Client;
 pub use self::resolution::{Resolution, ResolveFuture, Unresolvable};
-use proxy::http::balance::Weight;
 use NameAddr;
 
 /// A handle to request resolutions from the destination service.
@@ -163,10 +162,5 @@ impl Metadata {
 
     pub fn identity(&self) -> Option<&identity::Name> {
         self.identity.as_ref()
-    }
-
-    pub fn weight(&self) -> Weight {
-        let w: f64 = self.weight.into();
-        (w / 10_000.0).into()
     }
 }

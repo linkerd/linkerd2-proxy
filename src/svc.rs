@@ -1,12 +1,14 @@
 extern crate linkerd2_router as rt;
 pub extern crate linkerd2_stack as stack;
 pub extern crate linkerd2_timeout;
+extern crate tower_spawn_ready;
 
 pub use self::linkerd2_timeout::stack as timeout;
 pub use self::stack::{layer, shared, Layer, LayerExt};
 pub use tower::util::{Either, Oneshot};
 pub use tower::{service_fn as mk, MakeConnection, MakeService, Service, ServiceExt};
 
+use self::tower_spawn_ready::SpawnReadyLayer;
 use std::time::Duration;
 use tower::builder::ServiceBuilder;
 use tower::layer::util::{Identity, Stack};
@@ -29,6 +31,11 @@ impl<L> Builder<L> {
     }
 
     /// Buffer requests when when the next layer is out of capacity.
+    pub fn pending(self) -> Builder<Stack<pending::Layer, L>> {
+        self.layer(pending::layer())
+    }
+
+    /// Buffer requests when when the next layer is out of capacity.
     pub fn buffer_pending<D, Req>(
         self,
         bound: usize,
@@ -38,7 +45,12 @@ impl<L> Builder<L> {
         D: buffer::Deadline<Req>,
         Req: Send + 'static,
     {
-        self.layer(buffer::layer(bound, d)).layer(pending::layer())
+        self.layer(buffer::layer(bound, d)).pending()
+    }
+
+    /// Buffer requests when when the next layer is out of capacity.
+    pub fn spawn_ready(self) -> Builder<Stack<SpawnReadyLayer, L>> {
+        self.layer(SpawnReadyLayer::new())
     }
 
     pub fn concurrency_limit(self, max: usize) -> Builder<Stack<ConcurrencyLimitLayer, L>> {

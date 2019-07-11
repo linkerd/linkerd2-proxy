@@ -20,12 +20,12 @@ use logging;
 use metrics::FmtMetrics;
 use never::Never;
 use proxy::{
-    self, accept, buffer,
+    self, accept,
     http::{
         client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
         strip_header,
     },
-    pending, reconnect,
+    reconnect,
 };
 use svc::{self, LayerExt};
 use tap;
@@ -483,7 +483,6 @@ where
                 .layer(strip_header::response::layer(super::L5D_SERVER_ID))
                 .layer(strip_header::response::layer(super::L5D_REMOTE_IP))
                 .service(client_stack);
-
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
             //
@@ -515,13 +514,14 @@ where
                         ep
                     },
                 ))
-                .layer(buffer::layer(max_in_flight, DispatchDeadline::extract));
+                .buffer_pending(max_in_flight, DispatchDeadline::extract);
 
             // Resolves the target via the control plane and balances requests
             // over all endpoints returned from the destination service.
             let balancer = svc::builder()
                 .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)));
+                .layer(resolve::layer(Resolve::new(resolver)))
+                .spawn_ready();
 
             let distributor = svc::builder()
                 .layer(
@@ -531,8 +531,6 @@ where
                     fallback::layer(balancer, orig_dst_router)
                         .on_error::<control::destination::Unresolvable>(),
                 )
-                .layer(pending::layer())
-                .layer(balance::weight::layer())
                 .service(endpoint_stack);
 
             // A per-`DstAddr` stack that does the following:
