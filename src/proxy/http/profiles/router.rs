@@ -1,15 +1,14 @@
+use super::recognize::{ConcreteDstRecognize, RouteRecognize};
+use super::rt;
+use super::{CanGetDestination, GetRoutes, Route, Routes, WeightedAddr, WithAddr, WithRoute};
+use dns;
 use futures::{Async, Poll, Stream};
 use http;
-use std::hash::Hash;
-
+use indexmap::IndexMap;
 use never::Never;
-
-use dns;
 use proxy::Error;
+use std::hash::Hash;
 use svc;
-
-use super::recognize::*;
-use super::*;
 
 // A router which routes based on the `dst_overrides` of the profile or, if
 // no `dst_overrdies` exist, on the router's target.

@@ -4,10 +4,6 @@ extern crate tower_discover;
 use futures::Stream;
 use http;
 use indexmap::IndexMap;
-// Import is used by WeightedIndex::sample.
-#[allow(unused_imports)]
-use rand::distributions::Distribution;
-use rand::distributions::WeightedIndex;
 use regex::Regex;
 use std::fmt;
 use std::hash::{Hash, Hasher};

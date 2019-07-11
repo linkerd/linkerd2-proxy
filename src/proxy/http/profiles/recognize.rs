@@ -1,7 +1,8 @@
+use super::{rt, RequestMatch, Route, WeightedAddr, WithAddr, WithRoute};
 use http;
+use rand::distributions::Distribution;
+use rand::distributions::WeightedIndex;
 use std::hash::Hash;
-
-use super::*;
 
 #[derive(Clone)]
 pub struct RouteRecognize<T> {
