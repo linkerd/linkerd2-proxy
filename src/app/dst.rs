@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use super::classify;
 use http;
-use identity;
 use indexmap::IndexMap;
 use proxy::http::{
     metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
@@ -35,7 +34,6 @@ pub struct DstAddr {
     addr: Addr,
     direction: Direction,
     pub(super) http_settings: settings::Settings,
-    force_identity: Option<identity::Name>,
 }
 
 // === impl Route ===
@@ -114,13 +112,11 @@ impl DstAddr {
     pub fn outbound(
         addr: Addr,
         http_settings: settings::Settings,
-        force_identity: Option<identity::Name>,
     ) -> Self {
         DstAddr {
             addr,
             direction: Direction::Out,
             http_settings,
-            force_identity,
         }
     }
 
@@ -129,7 +125,6 @@ impl DstAddr {
             addr,
             direction: Direction::In,
             http_settings,
-            force_identity: None,
         }
     }
 
