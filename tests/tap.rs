@@ -10,7 +10,7 @@ use support::tap::TapEventExt;
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn inbound_http1() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let srv = server::http1().route("/", "hello").run();
 
     let proxy = proxy::new().inbound(srv).run();
@@ -42,7 +42,7 @@ fn inbound_http1() {
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn grpc_headers_end() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let srv = server::http2()
         .route_fn("/", |_req| {
             Response::builder()
@@ -76,7 +76,7 @@ fn grpc_headers_end() {
 
 #[test]
 fn tap_enabled_by_default() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let proxy = proxy::new().run();
 
     assert!(proxy.control.is_some())
@@ -84,7 +84,7 @@ fn tap_enabled_by_default() {
 
 #[test]
 fn can_disable_tap() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let mut env = app::config::TestEnv::new();
     env.put(app::config::ENV_TAP_DISABLED, "true".to_owned());
 

@@ -228,7 +228,15 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             // TODO: a mock timer could be injected here?
             let runtime =
                 tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
-            let main = linkerd2_proxy::app::Main::new(config, mock_orig_dst.clone(), runtime);
+            // TODO: it would be nice for this to not be stubbed out, so that it
+            // can be tested.
+            let trace_handle = super::trace::LevelHandle::dangling();
+            let main = linkerd2_proxy::app::Main::new(
+                config,
+                trace_handle,
+                mock_orig_dst.clone(),
+                runtime,
+            );
 
             let control_addr = main.control_addr();
             let identity_addr = identity_addr;

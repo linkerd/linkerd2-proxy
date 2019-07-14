@@ -24,7 +24,7 @@ macro_rules! profile_test {
         }
     };
     (http: $http:ident, routes: [$($route:expr),+], budget: $budget:expr, with_client: $with_client:expr, with_metrics: $with_metrics:expr) => {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let counter = AtomicUsize::new(0);
         let counter2 = AtomicUsize::new(0);
@@ -343,7 +343,7 @@ fn timeout() {
 
 #[test]
 fn traffic_split() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let apex = "profiles.test.svc.cluster.local";
     let leaf_a = "a.profiles.test.svc.cluster.local";
     let leaf_b = "b.profiles.test.svc.cluster.local";

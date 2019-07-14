@@ -2,7 +2,6 @@
 #![recursion_limit = "128"]
 
 extern crate bytes;
-extern crate env_logger;
 #[macro_use]
 extern crate futures;
 extern crate futures_mpsc_lossy;
@@ -12,12 +11,11 @@ extern crate http;
 extern crate http_body;
 extern crate httparse;
 extern crate hyper;
+extern crate indexmap;
 extern crate ipnet;
 #[cfg(target_os = "linux")]
 extern crate libc;
-#[macro_use]
 extern crate log;
-extern crate indexmap;
 #[cfg(target_os = "linux")]
 extern crate procinfo;
 extern crate prost;
@@ -29,9 +27,13 @@ extern crate rand;
 extern crate regex;
 extern crate tokio;
 extern crate tokio_timer;
+#[macro_use]
+extern crate tracing;
 extern crate tower;
 extern crate tower_grpc;
 extern crate tower_util;
+extern crate tracing_fmt;
+extern crate tracing_futures;
 extern crate try_lock;
 
 #[macro_use]
@@ -61,4 +63,6 @@ pub mod transport;
 
 use self::addr::{Addr, NameAddr};
 use self::conditional::Conditional;
+
+pub use self::logging::trace;
 pub use self::transport::SoOriginalDst;

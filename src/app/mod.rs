@@ -17,6 +17,8 @@ mod profiles;
 
 pub use self::main::Main;
 use addr::{self, Addr};
+use std::error::Error;
+use trace;
 
 const CANONICAL_DST_HEADER: &'static str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";
@@ -25,11 +27,10 @@ const L5D_SERVER_ID: &'static str = "l5d-server-id";
 const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 pub const L5D_FORCE_ID: &'static str = "l5d-force-id";
 
-pub fn init() -> Result<config::Config, config::Error> {
-    use logging;
-
-    logging::init();
-    config::Config::parse(&config::Env)
+pub fn init() -> Result<(config::Config, trace::LevelHandle), Box<Error + Send + Sync + 'static>> {
+    let trace_admin = trace::init()?;
+    let cfg = config::Config::parse(&config::Env)?;
+    Ok((cfg, trace_admin))
 }
 
 const DEFAULT_PORT: u16 = 80;
