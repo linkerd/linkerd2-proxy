@@ -1,15 +1,16 @@
+use http;
+use indexmap::IndexMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::classify;
-use http;
-use indexmap::IndexMap;
 use proxy::http::{
     metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
     profiles, retry, settings, timeout,
 };
 use {Addr, NameAddr};
+
+use super::classify;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -109,10 +110,7 @@ impl AsRef<Addr> for DstAddr {
 }
 
 impl DstAddr {
-    pub fn outbound(
-        addr: Addr,
-        http_settings: settings::Settings,
-    ) -> Self {
+    pub fn outbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
             addr,
             direction: Direction::Out,

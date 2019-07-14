@@ -440,12 +440,8 @@ where
             };
             use proxy::{
                 http::{
-<<<<<<< HEAD
                     balance, canonicalize, fallback, header_from_target, identity_from_header,
                     metrics, retry,
-=======
-                    balance, canonicalize, header_from_target, identity_from_header, metrics, retry,
->>>>>>> Run rustfmt
                 },
                 resolve,
             };
@@ -498,9 +494,9 @@ where
                 // disabled on purpose
                 //.layer(add_server_id_on_rsp::layer())
                 //.layer(add_remote_ip_on_rsp::layer())
+                .layer(strip_header::request::layer(super::L5D_FORCE_ID))
                 .layer(strip_header::response::layer(super::L5D_SERVER_ID))
                 .layer(strip_header::response::layer(super::L5D_REMOTE_IP))
-                .layer(strip_header::request::layer(super::L5D_FORCE_ID))
                 .service(client_stack);
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
