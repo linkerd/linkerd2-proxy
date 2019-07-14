@@ -278,19 +278,34 @@ fn orig_dst_client_can_connect_to_tls_server_with_force_id_header() {
     let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
     let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
 
-    // Make a server that expects `app_identity`
+    // Make a server that expects `app_identity` identity
     let srv = server::http2_tls(app_identity.server_config)
         .route("/", "hello")
         .run();
 
-    // Make a proxy that has `proxy_identity`
+    // Make a proxy that has `proxy_identity` identity
     let proxy = proxy::new()
         .outbound(srv)
         .identity(proxy_identity.service().run())
         .run_with_test_env(proxy_identity.env);
 
     // Make a non-TLS client
-    let client = client::http2(proxy.outbound, "localhost");
+    let client = client::http2(proxy.outbound, app_name);
+
+    // Assert a request to `srv` with incorrect `l5d-force-id` header fails
+    //
+    // Fails because of reconnect backoff; results in status code 502
+    assert_eq!(
+        client
+            .request(
+                client
+                    .request_builder("/")
+                    .header("l5d-force-id", "hey-its-me")
+                    .method("GET")
+            )
+            .status(),
+        http::StatusCode::SERVICE_UNAVAILABLE
+    );
 
     // Assert a request to `srv` with `l5d-force-id` header succeeds
     assert_eq!(
@@ -316,7 +331,7 @@ fn discovery_client_can_connect_to_tls_server_with_force_id_header() {
     let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
     let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
 
-    // Make a server that expects app identity
+    // Make a server that expects `app_identity` identity
     let srv = server::http2_tls(app_identity.server_config)
         .route("/", "hello")
         .run();
@@ -326,7 +341,8 @@ fn discovery_client_can_connect_to_tls_server_with_force_id_header() {
     let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
     dst.send(controller::destination_add_tls(srv.addr, app_name));
 
-    // Make a proxy that has app identity
+    // Make a proxy that has `proxy_identity` identity and no SO_ORIGINAL_DST
+    // backup
     let proxy = proxy::new()
         .controller(ctrl.run())
         .identity(proxy_identity.service().run())
@@ -368,5 +384,48 @@ fn discovery_client_can_connect_to_tls_server_with_force_id_header() {
             )
             .status(),
         http::StatusCode::OK
+    );
+}
+
+#[test]
+fn orig_dst_client_cannot_connect_to_plaintext_server_with_force_id_header() {
+    let _ = env_logger_init();
+
+    let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
+
+    // Make a non-TLS server
+    let srv = server::http2().route("/", "hello").run();
+
+    // Make a proxy that has `proxy_identity` identity
+    let proxy = proxy::new()
+        .outbound(srv)
+        .identity(proxy_identity.service().run())
+        .run_with_test_env(proxy_identity.env);
+
+    // Make a non-TLS client
+    let client = client::http2(proxy.outbound, "localhost");
+
+    // Assert a request to `srv` succeeds
+    assert_eq!(
+        client
+            .request(client.request_builder("/").method("GET"))
+            .status(),
+        http::StatusCode::OK
+    );
+
+    // Assert a request to `srv` with `l5d-force-header` fails
+    //
+    // Fails because of reconnect backoff; results in status code 502
+    assert_eq!(
+        client
+            .request(
+                client
+                    .request_builder("/")
+                    .header("l5d-force-id", "hey-its-me")
+                    .method("GET")
+            )
+            .status(),
+        http::StatusCode::SERVICE_UNAVAILABLE
     );
 }
