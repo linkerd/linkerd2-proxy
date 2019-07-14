@@ -434,6 +434,7 @@ where
             use super::outbound::{
                 self,
                 discovery::Resolve,
+                force_identity_check,
                 orig_proto_upgrade,
                 //add_remote_ip_on_rsp, add_server_id_on_rsp,
             };
@@ -488,6 +489,7 @@ where
             // 6. Strips any `l5d-server-id` that may have been received from
             //    the server, before we apply our own.
             let endpoint_stack = svc::builder()
+                .layer(force_identity_check::layer())
                 .layer(metrics::layer::<_, classify::Response>(
                     endpoint_http_metrics,
                 ))
@@ -498,6 +500,7 @@ where
                 //.layer(add_remote_ip_on_rsp::layer())
                 .layer(strip_header::response::layer(super::L5D_SERVER_ID))
                 .layer(strip_header::response::layer(super::L5D_REMOTE_IP))
+                .layer(strip_header::request::layer(super::L5D_FORCE_ID))
                 .service(client_stack);
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
@@ -530,7 +533,7 @@ where
                     |req: &http::Request<_>| {
                         let ep = outbound::Endpoint::from_orig_dst(req).and_then(|mut ep| {
                             if let Some(force_id) = identity_from_header(req, super::L5D_FORCE_ID) {
-                                debug!("outbound ep server name={:?}; force-id", force_id);
+                                debug!("outbound ep force server id={:?}", force_id);
                                 ep.identity = Conditional::Some(force_id);
                             }
                             Some(ep)
@@ -583,10 +586,9 @@ where
                 .layer(router::layer(
                     router::Config::new("out dst", capacity, max_idle_age),
                     |req: &http::Request<_>| {
-                        let force_identity = identity_from_header(req, super::L5D_FORCE_ID);
                         let addr = req.extensions().get::<Addr>().cloned().map(move |addr| {
                             let settings = settings::Settings::from_request(req);
-                            DstAddr::outbound(addr, settings, force_identity)
+                            DstAddr::outbound(addr, settings)
                         });
                         debug!("outbound dst={:?}", addr);
                         addr

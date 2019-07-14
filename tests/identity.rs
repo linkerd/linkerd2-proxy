@@ -269,38 +269,104 @@ fn refresh() {
 }
 
 #[test]
-fn force_identity_header() {
+fn orig_dst_client_can_connect_to_tls_server_with_force_id_header() {
     let _ = env_logger_init();
-    let proxy_id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let app_id = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
 
-    let proxy_identity = identity::Identity::new("foo-ns1", proxy_id.to_string());
-    let app_identity = identity::Identity::new("bar-ns1", app_id.to_string());
+    let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
 
+    let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
+
+    // Make a server that expects `app_identity`
     let srv = server::http2_tls(app_identity.server_config)
         .route("/", "hello")
         .run();
 
+    // Make a proxy that has `proxy_identity`
     let proxy = proxy::new()
         .outbound(srv)
         .identity(proxy_identity.service().run())
         .run_with_test_env(proxy_identity.env);
 
-    // Make an http client with no TLS config
-    let client = client::http2(proxy.outbound, app_id);
+    // Make a non-TLS client
+    let client = client::http2(proxy.outbound, "localhost");
 
-    // Send a request with a `l5d-force-id` header value of `app_id` so that
-    // when the connection is established, it uses `app_id` as the TLS server
-    // identity.
-    assert_eventually!(
+    // Assert a request to `srv` with `l5d-force-id` header succeeds
+    assert_eq!(
         client
             .request(
                 client
                     .request_builder("/")
-                    .header("l5d-force-id", app_id)
+                    .header("l5d-force-id", app_name)
                     .method("GET")
             )
-            .status()
-            == http::StatusCode::OK
+            .status(),
+        http::StatusCode::OK
+    );
+}
+
+#[test]
+fn discovery_client_can_connect_to_tls_server_with_force_id_header() {
+    let _ = env_logger_init();
+
+    let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
+
+    let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
+
+    // Make a server that expects app identity
+    let srv = server::http2_tls(app_identity.server_config)
+        .route("/", "hello")
+        .run();
+
+    // Add `srv` to discovery service
+    let ctrl = controller::new();
+    let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
+    dst.send(controller::destination_add_tls(srv.addr, app_name));
+
+    // Make a proxy that has app identity
+    let proxy = proxy::new()
+        .controller(ctrl.run())
+        .identity(proxy_identity.service().run())
+        .run_with_test_env(proxy_identity.env);
+
+    // Make a non-TLS client
+    let client = client::http2(proxy.outbound, "disco.test.svc.cluster.local");
+
+    // Assert a request to `srv` through discovery succeeds
+    assert_eq!(
+        client
+            .request(client.request_builder("/").method("GET"))
+            .status(),
+        http::StatusCode::OK
+    );
+
+    // Assert a request to `srv` through discovery with incorrect
+    // `l5d-force-id` fails
+    assert_eq!(
+        client
+            .request(
+                client
+                    .request_builder("/")
+                    .header("l5d-force-id", "hey-its-me")
+                    .method("GET")
+            )
+            .status(),
+        http::StatusCode::BAD_GATEWAY
+    );
+
+    // Assert a request to `srv` through discovery with `l5d-force-id` succeeds
+    assert_eq!(
+        client
+            .request(
+                client
+                    .request_builder("/")
+                    .header("l5d-force-id", app_name)
+                    .method("GET")
+            )
+            .status(),
+        http::StatusCode::OK
     );
 }
