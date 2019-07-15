@@ -434,10 +434,10 @@ where
             use super::outbound::{
                 self,
                 discovery::Resolve,
-
                 orig_proto_upgrade,
-                //add_remote_ip_on_rsp, add_server_id_on_rsp,
                 require_identity_on_endpoint,
+                //add_remote_ip_on_rsp, add_server_id_on_rsp,
+            };
             use proxy::{
                 http::{
                     balance, canonicalize, fallback, header_from_target, identity_from_header,
@@ -528,7 +528,8 @@ where
                     router::Config::new("out ep", capacity, max_idle_age),
                     |req: &http::Request<_>| {
                         let ep = outbound::Endpoint::from_orig_dst(req).and_then(|mut ep| {
-                            if let Some(require_id) = identity_from_header(req, super::L5D_REQUIRE_ID)
+                            if let Some(require_id) =
+                                identity_from_header(req, super::L5D_REQUIRE_ID)
                             {
                                 debug!("outbound ep require id={:?}", require_id);
                                 ep.identity = Conditional::Some(require_id);
