@@ -441,7 +441,7 @@ where
             use proxy::{
                 http::{
                     balance, canonicalize, fallback, header_from_target, identity_from_header,
-                    metrics, retry
+                    metrics, retry,
                 },
                 resolve,
             };
