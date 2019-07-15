@@ -434,10 +434,10 @@ where
             use super::outbound::{
                 self,
                 discovery::Resolve,
-                force_identity_check,
+
                 orig_proto_upgrade,
                 //add_remote_ip_on_rsp, add_server_id_on_rsp,
-            };
+                require_identity_on_endpoint,
             use proxy::{
                 http::{
                     balance, canonicalize, fallback, header_from_target, identity_from_header,
@@ -485,7 +485,7 @@ where
             // 6. Strips any `l5d-server-id` that may have been received from
             //    the server, before we apply our own.
             let endpoint_stack = svc::builder()
-                .layer(force_identity_check::layer())
+                .layer(require_identity_on_endpoint::layer())
                 .layer(metrics::layer::<_, classify::Response>(
                     endpoint_http_metrics,
                 ))
@@ -494,7 +494,7 @@ where
                 // disabled on purpose
                 //.layer(add_server_id_on_rsp::layer())
                 //.layer(add_remote_ip_on_rsp::layer())
-                .layer(strip_header::request::layer(super::L5D_FORCE_ID))
+                .layer(strip_header::request::layer(super::L5D_REQUIRE_ID))
                 .layer(strip_header::response::layer(super::L5D_SERVER_ID))
                 .layer(strip_header::response::layer(super::L5D_REMOTE_IP))
                 .service(client_stack);
@@ -521,16 +521,17 @@ where
             // Routes requests to their original destination endpoints. Used as
             // a fallback when service discovery has no endpoints for a destination.
             //
-            // If the `l5d-force-id` header is present, then that identity is
+            // If the `l5d-require-id` header is present, then that identity is
             // used as the server name when connecting to the endpoint.
             let orig_dst_router = svc::builder()
                 .layer(router::layer(
                     router::Config::new("out ep", capacity, max_idle_age),
                     |req: &http::Request<_>| {
                         let ep = outbound::Endpoint::from_orig_dst(req).and_then(|mut ep| {
-                            if let Some(force_id) = identity_from_header(req, super::L5D_FORCE_ID) {
-                                debug!("outbound ep force server id={:?}", force_id);
-                                ep.identity = Conditional::Some(force_id);
+                            if let Some(require_id) = identity_from_header(req, super::L5D_REQUIRE_ID)
+                            {
+                                debug!("outbound ep require id={:?}", require_id);
+                                ep.identity = Conditional::Some(require_id);
                             }
                             Some(ep)
                         });
