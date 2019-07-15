@@ -269,7 +269,7 @@ fn refresh() {
 }
 
 #[test]
-fn orig_dst_client_can_connect_to_tls_server_with_force_id_header() {
+fn orig_dst_client_can_connect_to_tls_server_with_require_id_header() {
     let _ = trace_init();
 
     let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
@@ -292,7 +292,7 @@ fn orig_dst_client_can_connect_to_tls_server_with_force_id_header() {
     // Make a non-TLS client
     let client = client::http2(proxy.outbound, app_name);
 
-    // Assert a request to `srv` with incorrect `l5d-force-id` header fails
+    // Assert a request to `srv` with incorrect `l5d-require-id` header fails
     //
     // Fails because of reconnect backoff; results in status code 502
     assert_eq!(
@@ -300,20 +300,20 @@ fn orig_dst_client_can_connect_to_tls_server_with_force_id_header() {
             .request(
                 client
                     .request_builder("/")
-                    .header("l5d-force-id", "hey-its-me")
+                    .header("l5d-require-id", "hey-its-me")
                     .method("GET")
             )
             .status(),
         http::StatusCode::SERVICE_UNAVAILABLE
     );
 
-    // Assert a request to `srv` with `l5d-force-id` header succeeds
+    // Assert a request to `srv` with `l5d-require-id` header succeeds
     assert_eq!(
         client
             .request(
                 client
                     .request_builder("/")
-                    .header("l5d-force-id", app_name)
+                    .header("l5d-require-id", app_name)
                     .method("GET")
             )
             .status(),
@@ -322,7 +322,7 @@ fn orig_dst_client_can_connect_to_tls_server_with_force_id_header() {
 }
 
 #[test]
-fn discovery_client_can_connect_to_tls_server_with_force_id_header() {
+fn discovery_client_can_connect_to_tls_server_with_require_id_header() {
     let _ = trace_init();
 
     let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
@@ -360,26 +360,26 @@ fn discovery_client_can_connect_to_tls_server_with_force_id_header() {
     );
 
     // Assert a request to `srv` through discovery with incorrect
-    // `l5d-force-id` fails
+    // `l5d-require-id` fails
     assert_eq!(
         client
             .request(
                 client
                     .request_builder("/")
-                    .header("l5d-force-id", "hey-its-me")
+                    .header("l5d-require-id", "hey-its-me")
                     .method("GET")
             )
             .status(),
         http::StatusCode::BAD_GATEWAY
     );
 
-    // Assert a request to `srv` through discovery with `l5d-force-id` succeeds
+    // Assert a request to `srv` through discovery with `l5d-require-id` succeeds
     assert_eq!(
         client
             .request(
                 client
                     .request_builder("/")
-                    .header("l5d-force-id", app_name)
+                    .header("l5d-require-id", app_name)
                     .method("GET")
             )
             .status(),
@@ -388,7 +388,7 @@ fn discovery_client_can_connect_to_tls_server_with_force_id_header() {
 }
 
 #[test]
-fn orig_dst_client_cannot_connect_to_plaintext_server_with_force_id_header() {
+fn orig_dst_client_cannot_connect_to_plaintext_server_with_require_id_header() {
     let _ = trace_init();
 
     let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
@@ -414,7 +414,7 @@ fn orig_dst_client_cannot_connect_to_plaintext_server_with_force_id_header() {
         http::StatusCode::OK
     );
 
-    // Assert a request to `srv` with `l5d-force-header` fails
+    // Assert a request to `srv` with `l5d-require-id` header fails
     //
     // Fails because of reconnect backoff; results in status code 502
     assert_eq!(
@@ -422,7 +422,7 @@ fn orig_dst_client_cannot_connect_to_plaintext_server_with_force_id_header() {
             .request(
                 client
                     .request_builder("/")
-                    .header("l5d-force-id", "hey-its-me")
+                    .header("l5d-require-id", "hey-its-me")
                     .method("GET")
             )
             .status(),

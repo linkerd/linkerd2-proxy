@@ -398,9 +398,9 @@ pub mod orig_proto_upgrade {
     }
 }
 
-pub mod force_identity_check {
+pub mod require_identity_on_endpoint {
     use super::Endpoint;
-    use app::L5D_FORCE_ID;
+    use app::L5D_REQUIRE_ID;
     use futures::{
         future::{self, Either, FutureResult},
         Async, Future, Poll,
@@ -415,8 +415,8 @@ pub mod force_identity_check {
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     #[derive(Debug)]
-    struct IdentityCheckError {
-        force_identity: identity::Name,
+    struct RequireIdentityError {
+        require_identity: identity::Name,
         peer_identity: Option<identity::Name>,
     }
 
@@ -433,7 +433,7 @@ pub mod force_identity_check {
         _marker: PhantomData<fn(A) -> B>,
     }
 
-    pub struct IdentityCheck<M, A, B> {
+    pub struct RequireIdentity<M, A, B> {
         peer_identity: tls::PeerIdentity,
         inner: M,
         _marker: PhantomData<fn(A) -> B>,
@@ -471,7 +471,7 @@ pub mod force_identity_check {
     where
         M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
     {
-        type Response = IdentityCheck<M::Service, A, B>;
+        type Response = RequireIdentity<M::Service, A, B>;
         type Error = M::MakeError;
         type Future = MakeFuture<M::Future, A, B>;
 
@@ -482,7 +482,12 @@ pub mod force_identity_check {
         fn call(&mut self, target: Endpoint) -> Self::Future {
             // After the inner service is made, we want to wrap that service
             // with a filter that compares the target's `peer_identity` and
-            // `l5d-force_id` header if present
+            // `l5d_require_id` header if present
+
+            // After the inner service is made, we want to wrap that service
+            // with a service that checks for the presence of the
+            // `l5d-require-id` header. If is present then assert it is the
+            // endpoint identity; otherwise fail the request.
             let peer_identity = target.peer_identity().clone();
             let inner = self.inner.make_service(target);
 
@@ -499,21 +504,22 @@ pub mod force_identity_check {
         F: Future,
         F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>,
     {
-        type Item = IdentityCheck<F::Item, A, B>;
+        type Item = RequireIdentity<F::Item, A, B>;
         type Error = F::Error;
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             let inner = try_ready!(self.inner.poll());
 
             // The inner service is ready and we now create a new service
-            // that filters based off `peer_identity` and `l5d-force-id` header
-            let identity_check = IdentityCheck {
+            // that filters based off `peer_identity` and `l5d-require-id`
+            // header
+            let svc = RequireIdentity {
                 peer_identity: self.peer_identity.clone(),
                 inner,
                 _marker: PhantomData,
             };
 
-            Ok(Async::Ready(identity_check))
+            Ok(Async::Ready(svc))
         }
     }
 
@@ -526,9 +532,9 @@ pub mod force_identity_check {
         }
     }
 
-    // ===== impl IdentityCheck =====
+    // ===== impl RequireIdentity =====
 
-    impl<M, A, B> svc::Service<http::Request<A>> for IdentityCheck<M, A, B>
+    impl<M, A, B> svc::Service<http::Request<A>> for RequireIdentity<M, A, B>
     where
         M: svc::Service<http::Request<A>, Response = http::Response<B>>,
         M::Error: Into<Error>,
@@ -545,27 +551,30 @@ pub mod force_identity_check {
         }
 
         fn call(&mut self, request: http::Request<A>) -> Self::Future {
-            // If the `l5d-force-id` header is present, then we should expect
-            // the target's `peer_identity` to match. If the two values do not
-            // match or there is no `peer_identity`, then we fail the request.
-            if let Some(force_identity) = identity_from_header(&request, L5D_FORCE_ID) {
-                debug!("found l5d-force-id={:?}", force_identity.as_ref());
+            // If the `l5d-require-id` header is present, then we should expect
+            // the target's `peer_identity` to match; if the two values do not
+            // match or there is no `peer_identity`, then we fail the request
+            if let Some(require_identity) = identity_from_header(&request, L5D_REQUIRE_ID) {
+                debug!("found l5d-require-id={:?}", require_identity.as_ref());
                 match self.peer_identity {
                     Conditional::Some(ref peer_identity) => {
-                        if force_identity != *peer_identity {
+                        if require_identity != *peer_identity {
                             warn!(
-                                "force identity check failed; found peer_identity={:?}",
+                                "require identity check failed; found peer_identity={:?}",
                                 peer_identity
                             );
                             return Either::A(future::err(identity_check_error(
-                                force_identity,
+                                require_identity,
                                 Some(peer_identity.clone()),
                             )));
                         }
                     }
                     Conditional::None(_) => {
-                        warn!("force identity check failed; no peer_identity found");
-                        return Either::A(future::err(identity_check_error(force_identity, None)));
+                        warn!("require identity check failed; no peer_identity found");
+                        return Either::A(future::err(identity_check_error(
+                            require_identity,
+                            None,
+                        )));
                     }
                 }
             }
@@ -574,30 +583,30 @@ pub mod force_identity_check {
         }
     }
 
-    // ===== impl IdentityCheckError =====
+    // ===== impl RequireIdentityError =====
 
     fn identity_check_error(
-        force_identity: identity::Name,
+        require_identity: identity::Name,
         peer_identity: Option<identity::Name>,
     ) -> Error {
-        let error = IdentityCheckError {
-            force_identity,
+        let error = RequireIdentityError {
+            require_identity,
             peer_identity,
         };
 
         error.into()
     }
 
-    impl std::error::Error for IdentityCheckError {}
+    impl std::error::Error for RequireIdentityError {}
 
-    impl std::fmt::Display for IdentityCheckError {
-        // TODO(kleimkuhler): Use force_identity and peer_identity fields?
+    impl std::fmt::Display for RequireIdentityError {
+        // TODO(kleimkuhler): Use `require_identity` and `peer_identity` fields?
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            write!(f, "force identity check failed")
+            write!(f, "require identity check failed")
         }
     }
 
-    impl HasH2Reason for IdentityCheckError {
+    impl HasH2Reason for RequireIdentityError {
         // TODO(kleimkuhler): Properly map the StatusCode
         fn h2_reason(&self) -> Option<h2::Reason> {
             (self as &(dyn std::error::Error + 'static)).h2_reason()
