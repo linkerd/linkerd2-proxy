@@ -66,7 +66,7 @@ fn wait_for_profile_stage(client: &client::Client, metrics: &client::Client, sta
 
 #[test]
 fn add_a_dst_override() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
@@ -111,7 +111,7 @@ fn add_a_dst_override() {
 
 #[test]
 fn add_multiple_dst_overrides() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
@@ -164,7 +164,7 @@ fn add_multiple_dst_overrides() {
 
 #[test]
 fn set_a_dst_override_weight_to_zero() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
@@ -227,7 +227,7 @@ fn set_a_dst_override_weight_to_zero() {
 
 #[test]
 fn set_all_dst_override_weights_to_zero() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
@@ -290,7 +290,7 @@ fn set_all_dst_override_weights_to_zero() {
 
 #[test]
 fn remove_a_dst_override() {
-    let _ = env_logger_init();
+    let _ = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
