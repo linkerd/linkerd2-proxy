@@ -3,7 +3,7 @@
 //! * `/metrics` -- reports prometheus-formatted metrics.
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
-use futures::future::{self, FutureResult};
+use futures::future::{self, Future};
 use http::StatusCode;
 use hyper::{service::Service, Body, Request, Response};
 use std::io;
@@ -11,7 +11,9 @@ use std::io;
 use metrics;
 
 mod readiness;
+mod trace_level;
 pub use self::readiness::{Latch, Readiness};
+use self::trace_level::TraceLevel;
 
 #[derive(Debug, Clone)]
 pub struct Admin<M>
@@ -19,16 +21,20 @@ where
     M: metrics::FmtMetrics,
 {
     metrics: metrics::Serve<M>,
+    trace_level: TraceLevel,
     ready: Readiness,
 }
+
+pub type ResponseFuture = Box<Future<Item = Response<Body>, Error = io::Error> + Send + 'static>;
 
 impl<M> Admin<M>
 where
     M: metrics::FmtMetrics,
 {
-    pub fn new(m: M, ready: Readiness) -> Self {
+    pub fn new(m: M, ready: Readiness, trace_level: TraceLevel) -> Self {
         Self {
             metrics: metrics::Serve::new(m),
+            trace_level,
             ready,
         }
     }
@@ -55,20 +61,23 @@ where
     type ReqBody = Body;
     type ResBody = Body;
     type Error = io::Error;
-    type Future = FutureResult<Response<Body>, Self::Error>;
+    type Future = ResponseFuture;
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         match req.uri().path() {
-            "/metrics" => self.metrics.call(req),
-            "/ready" => future::ok(self.ready_rsp()),
-            _ => future::ok(
-                Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::empty())
-                    .expect("builder with known status code must not fail"),
-            ),
+            "/metrics" => Box::new(self.metrics.call(req)),
+            "/proxy-log-level" => self.trace_level.call(req),
+            "/ready" => Box::new(future::ok(self.ready_rsp())),
+            _ => Box::new(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
     }
+}
+
+fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
+    Response::builder()
+        .status(status)
+        .body(body.into())
+        .expect("builder with known status code must not fail")
 }
 
 #[cfg(test)]
@@ -88,7 +97,7 @@ mod tests {
         let l1 = l0.clone();
 
         let mut rt = Runtime::new().unwrap();
-        let mut srv = Admin::new((), r);
+        let mut srv = Admin::new((), r, TraceLevel::dangling());
         macro_rules! call {
             () => {{
                 let r = Request::builder()
