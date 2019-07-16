@@ -415,7 +415,7 @@ pub mod require_identity_on_endpoint {
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     #[derive(Debug)]
-    struct RequireIdentityError {
+    pub struct RequireIdentityError {
         require_identity: identity::Name,
         peer_identity: Option<identity::Name>,
     }
@@ -601,7 +601,11 @@ pub mod require_identity_on_endpoint {
     impl std::fmt::Display for RequireIdentityError {
         // TODO(kleimkuhler): Use `require_identity` and `peer_identity` fields?
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            write!(f, "require identity check failed")
+            write!(
+                f,
+                "require identity check failed; required={:?} found={:?}",
+                self.require_identity, self.peer_identity
+            )
         }
     }
 

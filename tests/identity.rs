@@ -277,6 +277,16 @@ fn orig_dst_client_can_connect_to_tls_server_with_require_id_header() {
 
     let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
     let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
+    // let identity::Identity {
+    //     mut certify_rsp,
+    //     server_config,
+    //     env,
+    //     ..
+    // } = identity::Identity::new("bar-ns1", app_name.to_string());
+    // certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
+
+    // Certify the server's identity
+    // let app_identity = controller::identity().certify(move |_| certify_rsp).run();
 
     // Make a server that expects `app_identity` identity
     let srv = server::http2_tls(app_identity.server_config)
@@ -284,21 +294,31 @@ fn orig_dst_client_can_connect_to_tls_server_with_require_id_header() {
         .run();
 
     // Make a proxy that has `proxy_identity` identity
-    let proxy = proxy::new()
+    let out_proxy = proxy::new()
         .outbound(srv)
         .identity(proxy_identity.service().run())
         .run_with_test_env(proxy_identity.env);
 
+    // Wait for `out_proxy` identity to become ready
+    let client = client::http1(out_proxy.metrics, "localhost");
+    let ready = || client.request(client.request_builder("/ready").method("GET"));
+    assert_eventually!(ready().status() == http::StatusCode::OK);
+
     // Make a non-TLS client
-    let client = client::http2(proxy.outbound, app_name);
+    let client = client::http2(out_proxy.outbound, app_name);
 
     // Assert a request to `srv` with no `l5d-require-id` header fails
-    // assert_eq!(
-    //     client
-    //         .request(client.request_builder("/").method("GET"))
-    //         .status(),
-    //     http::StatusCode::BAD_GATEWAY
-    // );
+    assert_eq!(
+        client
+            .request(
+                client
+                    .request_builder("/")
+                    .header("l5d-require-id", proxy_name)
+                    .method("GET")
+            )
+            .status(),
+        http::StatusCode::BAD_GATEWAY
+    );
 
     // Assert a request to `srv` with `l5d-require-id` header succeeds
     assert_eq!(
@@ -363,7 +383,7 @@ fn discovery_client_can_connect_to_tls_server_with_require_id_header() {
                     .method("GET")
             )
             .status(),
-        http::StatusCode::BAD_GATEWAY
+        http::StatusCode::FORBIDDEN
     );
 
     // Assert a request to `srv` through discovery with `l5d-require-id` succeeds
@@ -399,14 +419,6 @@ fn orig_dst_client_cannot_connect_to_plaintext_server_with_require_id_header() {
     // Make a non-TLS client
     let client = client::http2(proxy.outbound, "localhost");
 
-    // Assert a request to `srv` succeeds
-    assert_eq!(
-        client
-            .request(client.request_builder("/").method("GET"))
-            .status(),
-        http::StatusCode::OK
-    );
-
     // Assert a request to `srv` with `l5d-require-id` header fails
     //
     // Fails because of reconnect backoff; results in status code 502
@@ -420,5 +432,13 @@ fn orig_dst_client_cannot_connect_to_plaintext_server_with_require_id_header() {
             )
             .status(),
         http::StatusCode::SERVICE_UNAVAILABLE
+    );
+
+    // Assert a request to `srv` succeeds
+    assert_eq!(
+        client
+            .request(client.request_builder("/").method("GET"))
+            .status(),
+        http::StatusCode::OK
     );
 }
