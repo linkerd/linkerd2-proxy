@@ -599,18 +599,16 @@ pub mod require_identity_on_endpoint {
     impl std::error::Error for RequireIdentityError {}
 
     impl std::fmt::Display for RequireIdentityError {
-        // TODO(kleimkuhler): Use `require_identity` and `peer_identity` fields?
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             write!(
                 f,
-                "require identity check failed; required={:?} found={:?}",
+                "require identity check failed; require={:?} found={:?}",
                 self.require_identity, self.peer_identity
             )
         }
     }
 
     impl HasH2Reason for RequireIdentityError {
-        // TODO(kleimkuhler): Properly map the StatusCode
         fn h2_reason(&self) -> Option<h2::Reason> {
             (self as &(dyn std::error::Error + 'static)).h2_reason()
         }

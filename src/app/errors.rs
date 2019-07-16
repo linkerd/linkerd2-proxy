@@ -127,10 +127,10 @@ fn map_err_to_5xx(e: Error) -> StatusCode {
     } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
         error!("could not recognize request");
         http::StatusCode::BAD_GATEWAY
-    } else if let Some(_) =
+    } else if let Some(err) =
         e.downcast_ref::<outbound::require_identity_on_endpoint::RequireIdentityError>()
     {
-        warn!("require identity check failed and downcasted");
+        error!("{}", err);
         http::StatusCode::FORBIDDEN
     } else {
         // we probably should have handled this before?
