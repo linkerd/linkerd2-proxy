@@ -563,7 +563,7 @@ pub mod require_identity_on_endpoint {
                                 "require identity check failed; found peer_identity={:?}",
                                 peer_identity
                             );
-                            return Either::A(future::err(identity_check_error(
+                            return Either::A(future::err(RequireIdentityError::new(
                                 require_identity,
                                 Some(peer_identity.clone()),
                             )));
@@ -571,7 +571,7 @@ pub mod require_identity_on_endpoint {
                     }
                     Conditional::None(_) => {
                         warn!("require identity check failed; no peer_identity found");
-                        return Either::A(future::err(identity_check_error(
+                        return Either::A(future::err(RequireIdentityError::new(
                             require_identity,
                             None,
                         )));
@@ -585,16 +585,15 @@ pub mod require_identity_on_endpoint {
 
     // ===== impl RequireIdentityError =====
 
-    fn identity_check_error(
-        require_identity: identity::Name,
-        peer_identity: Option<identity::Name>,
-    ) -> Error {
-        let error = RequireIdentityError {
-            require_identity,
-            peer_identity,
-        };
+    impl RequireIdentityError {
+        fn new(require_identity: identity::Name, peer_identity: Option<identity::Name>) -> Error {
+            let error = RequireIdentityError {
+                require_identity,
+                peer_identity,
+            };
 
-        error.into()
+            error.into()
+        }
     }
 
     impl std::error::Error for RequireIdentityError {}
