@@ -1,7 +1,6 @@
 use super::{rt, RequestMatch, Route, WeightedAddr, WithAddr, WithRoute};
 use http;
-use rand::distributions::Distribution;
-use rand::distributions::WeightedIndex;
+use rand::distributions::{Distribution, WeightedIndex};
 use std::hash::Hash;
 
 #[derive(Clone)]
