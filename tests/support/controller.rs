@@ -482,7 +482,7 @@ pub fn retry_budget(
     }
 }
 
-pub fn traffic_split(authority: String, weight: u32) -> pb::WeightedDst {
+pub fn dst_override(authority: String, weight: u32) -> pb::WeightedDst {
     pb::WeightedDst { authority, weight }
 }
 
