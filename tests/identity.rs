@@ -268,163 +268,185 @@ fn refresh() {
     assert_eventually!(refreshed.load(Ordering::SeqCst) == true);
 }
 
-#[test]
-fn orig_dst_client_can_connect_to_tls_server_with_require_id_header() {
-    let _ = trace_init();
+mod require_id_header {
+    macro_rules! generate_tests {
+        (client: $make_client:path, server: $make_server:path) => {
+            #[test]
+            fn orig_dst_client_connects_to_tls_server() {
+                let _ = trace_init();
 
-    let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
+                let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+                let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
 
-    let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
+                let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+                let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
 
-    let srv = server::http2_tls(app_identity.server_config)
-        .route("/", "hello")
-        .run();
+                // Make a server that expects `app_identity` identity
+                let srv = $make_server(app_identity.server_config)
+                    .route("/", "hello")
+                    .run();
 
-    // Make a proxy that has `proxy_identity` identity
-    let proxy = proxy::new()
-        .outbound(srv)
-        .identity(proxy_identity.service().run())
-        .run_with_test_env(proxy_identity.env);
+                // Make a proxy that has `proxy_identity` identity
+                let proxy = proxy::new()
+                    .outbound(srv)
+                    .identity(proxy_identity.service().run())
+                    .run_with_test_env(proxy_identity.env);
 
-    // Make a non-TLS client
-    let client = client::http2(proxy.outbound, app_name);
+                // Make a non-TLS client
+                let client = $make_client(proxy.outbound, app_name);
 
-    // Assert a request to `srv` with `l5d-require-id` header succeeds
-    assert_eq!(
-        client
-            .request(
-                client
-                    .request_builder("/")
-                    .header("l5d-require-id", app_name)
-                    .method("GET")
-            )
-            .status(),
-        http::StatusCode::OK
-    );
+                // Assert a request to `srv` with `l5d-require-id` header
+                // succeeds
+                assert_eq!(
+                    client
+                        .request(
+                            client
+                                .request_builder("/")
+                                .header("l5d-require-id", app_name)
+                                .method("GET")
+                        )
+                        .status(),
+                    http::StatusCode::OK
+                );
 
-    // Assert a request to `srv` with no `l5d-require-id` header fails
-    //
-    // Fails because of reconnect backoff; results in status code 502
-    assert_eq!(
-        client
-            .request(
-                client
-                    .request_builder("/")
-                    .header("l5d-require-id", "hey-its-me")
-                    .method("GET")
-            )
-            .status(),
-        http::StatusCode::SERVICE_UNAVAILABLE
-    );
-}
+                // Assert a request to `srv` with incorrect `l5d-require-id`
+                // header fails
+                //
+                // Fails because of reconnect backoff; results in status code
+                // 502
+                assert_eq!(
+                    client
+                        .request(
+                            client
+                                .request_builder("/")
+                                .header("l5d-require-id", "hey-its-me")
+                                .method("GET")
+                        )
+                        .status(),
+                    http::StatusCode::SERVICE_UNAVAILABLE
+                );
+            }
 
-#[test]
-fn discovery_client_can_connect_to_tls_server_with_require_id_header() {
-    let _ = trace_init();
+            #[test]
+            fn disco_client_connects_to_tls_server() {
+                let _ = trace_init();
 
-    let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
+                let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+                let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
 
-    let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
+                let app_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+                let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
 
-    // Make a server that expects `app_identity` identity
-    let srv = server::http2_tls(app_identity.server_config)
-        .route("/", "hello")
-        .run();
+                // Make a server that expects `app_identity` identity
+                let srv = $make_server(app_identity.server_config)
+                    .route("/", "hello")
+                    .run();
 
-    // Add `srv` to discovery service
-    let ctrl = controller::new();
-    let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
-    dst.send(controller::destination_add_tls(srv.addr, app_name));
+                // Add `srv` to discovery service
+                let ctrl = controller::new();
+                let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
+                dst.send(controller::destination_add_tls(srv.addr, app_name));
 
-    // Make a proxy that has `proxy_identity` identity and no SO_ORIGINAL_DST
-    // backup
-    let proxy = proxy::new()
-        .controller(ctrl.run())
-        .identity(proxy_identity.service().run())
-        .run_with_test_env(proxy_identity.env);
+                // Make a proxy that has `proxy_identity` identity and no
+                // SO_ORIGINAL_DST backup
+                let proxy = proxy::new()
+                    .controller(ctrl.run())
+                    .identity(proxy_identity.service().run())
+                    .run_with_test_env(proxy_identity.env);
 
-    // Make a non-TLS client
-    let client = client::http2(proxy.outbound, "disco.test.svc.cluster.local");
+                // Make a non-TLS client
+                let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-    // Assert a request to `srv` through discovery succeeds
-    assert_eq!(
-        client
-            .request(client.request_builder("/").method("GET"))
-            .status(),
-        http::StatusCode::OK
-    );
+                // Assert a request to `srv` through discovery succeeds
+                assert_eq!(
+                    client
+                        .request(client.request_builder("/").method("GET"))
+                        .status(),
+                    http::StatusCode::OK
+                );
 
-    // Assert a request to `srv` through discovery with incorrect
-    // `l5d-require-id` fails
-    assert_eq!(
-        client
-            .request(
-                client
-                    .request_builder("/")
-                    .header("l5d-require-id", "hey-its-me")
-                    .method("GET")
-            )
-            .status(),
-        http::StatusCode::FORBIDDEN
-    );
+                // Assert a request to `srv` through discovery with incorrect
+                // `l5d-require-id` fails
+                assert_eq!(
+                    client
+                        .request(
+                            client
+                                .request_builder("/")
+                                .header("l5d-require-id", "hey-its-me")
+                                .method("GET")
+                        )
+                        .status(),
+                    http::StatusCode::FORBIDDEN
+                );
 
-    // Assert a request to `srv` through discovery with `l5d-require-id` succeeds
-    assert_eq!(
-        client
-            .request(
-                client
-                    .request_builder("/")
-                    .header("l5d-require-id", app_name)
-                    .method("GET")
-            )
-            .status(),
-        http::StatusCode::OK
-    );
-}
+                // Assert a request to `srv` through discovery with
+                // `l5d-require-id` succeeds
+                assert_eq!(
+                    client
+                        .request(
+                            client
+                                .request_builder("/")
+                                .header("l5d-require-id", app_name)
+                                .method("GET")
+                        )
+                        .status(),
+                    http::StatusCode::OK
+                );
+            }
 
-#[test]
-fn orig_dst_client_cannot_connect_to_plaintext_server_with_require_id_header() {
-    let _ = trace_init();
+            #[test]
+            fn orig_dst_client_cannot_connect_to_plaintext_server() {
+                let _ = trace_init();
 
-    let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
+                let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+                let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
 
-    // Make a non-TLS server
-    let srv = server::http2().route("/", "hello").run();
+                // Make a non-TLS server
+                let srv = server::http2().route("/", "hello").run();
 
-    // Make a proxy that has `proxy_identity` identity
-    let proxy = proxy::new()
-        .outbound(srv)
-        .identity(proxy_identity.service().run())
-        .run_with_test_env(proxy_identity.env);
+                // Make a proxy that has `proxy_identity` identity
+                let proxy = proxy::new()
+                    .outbound(srv)
+                    .identity(proxy_identity.service().run())
+                    .run_with_test_env(proxy_identity.env);
 
-    // Make a non-TLS client
-    let client = client::http2(proxy.outbound, "localhost");
+                // Make a non-TLS client
+                let client = client::http2(proxy.outbound, "localhost");
 
-    // Assert a request to `srv` with `l5d-require-id` header fails
-    //
-    // Fails because of reconnect backoff; results in status code 502
-    assert_eq!(
-        client
-            .request(
-                client
-                    .request_builder("/")
-                    .header("l5d-require-id", "hey-its-me")
-                    .method("GET")
-            )
-            .status(),
-        http::StatusCode::SERVICE_UNAVAILABLE
-    );
+                // Assert a request to `srv` with `l5d-require-id` header fails
+                assert_eq!(
+                    client
+                        .request(
+                            client
+                                .request_builder("/")
+                                .header("l5d-require-id", "hey-its-me")
+                                .method("GET")
+                        )
+                        .status(),
+                    http::StatusCode::SERVICE_UNAVAILABLE
+                );
 
-    // Assert a request to `srv` succeeds
-    assert_eq!(
-        client
-            .request(client.request_builder("/").method("GET"))
-            .status(),
-        http::StatusCode::OK
-    );
+                // Assert a request to `srv` with no `l5d-require-id` header
+                // succeeds
+                assert_eq!(
+                    client
+                        .request(client.request_builder("/").method("GET"))
+                        .status(),
+                    http::StatusCode::OK
+                );
+            }
+        };
+    }
+
+    mod http1 {
+        use super::super::*;
+
+        generate_tests! { client: client::http1, server: server::http1_tls }
+    }
+
+    mod http2 {
+        use super::super::*;
+
+        generate_tests! { client: client::http2, server: server::http2_tls }
+    }
 }
