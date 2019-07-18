@@ -584,7 +584,7 @@ where
                 .layer(router::layer(
                     router::Config::new("out dst", capacity, max_idle_age),
                     |req: &http::Request<_>| {
-                        let addr = req.extensions().get::<Addr>().cloned().map(move |addr| {
+                        let addr = req.extensions().get::<Addr>().cloned().map(|addr| {
                             let settings = settings::Settings::from_request(req);
                             DstAddr::outbound(addr, settings)
                         });
