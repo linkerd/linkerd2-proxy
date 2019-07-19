@@ -85,10 +85,5 @@ where
     K: AsHeaderName,
     F: FnOnce(&str) -> Option<T>,
 {
-    req.headers().get(header).and_then(|value| {
-        value
-            .to_str()
-            .ok()
-            .and_then(|s| if s.is_empty() { None } else { try_from(s) })
-    })
+    req.headers().get(header)?.to_str().ok().and_then(try_from)
 }
