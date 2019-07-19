@@ -270,7 +270,12 @@ fn refresh() {
 
 mod require_id_header {
     macro_rules! generate_tests {
-        (client: $make_client:path, server: $make_server:path) => {
+        (
+            client: $make_client:path,
+            connect_error: $connect_error:expr,
+            server: $make_server:path,
+            tls_server: $make_tls_server:path,
+        ) => {
             #[test]
             fn orig_dst_client_connects_to_tls_server() {
                 let _ = trace_init();
@@ -282,7 +287,7 @@ mod require_id_header {
                 let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
 
                 // Make a server that expects `app_identity` identity
-                let srv = $make_server(app_identity.server_config)
+                let srv = $make_tls_server(app_identity.server_config)
                     .route("/", "hello")
                     .run();
 
@@ -323,7 +328,7 @@ mod require_id_header {
                                 .method("GET")
                         )
                         .status(),
-                    http::StatusCode::SERVICE_UNAVAILABLE
+                    $connect_error
                 );
             }
 
@@ -338,7 +343,7 @@ mod require_id_header {
                 let app_identity = identity::Identity::new("bar-ns1", app_name.to_string());
 
                 // Make a server that expects `app_identity` identity
-                let srv = $make_server(app_identity.server_config)
+                let srv = $make_tls_server(app_identity.server_config)
                     .route("/", "hello")
                     .run();
 
@@ -402,7 +407,7 @@ mod require_id_header {
                 let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
 
                 // Make a non-TLS server
-                let srv = server::http2().route("/", "hello").run();
+                let srv = $make_server().route("/", "hello").run();
 
                 // Make a proxy that has `proxy_identity` identity
                 let proxy = proxy::new()
@@ -411,7 +416,7 @@ mod require_id_header {
                     .run_with_test_env(proxy_identity.env);
 
                 // Make a non-TLS client
-                let client = client::http2(proxy.outbound, "localhost");
+                let client = $make_client(proxy.outbound, "localhost");
 
                 // Assert a request to `srv` with `l5d-require-id` header fails
                 assert_eq!(
@@ -423,7 +428,7 @@ mod require_id_header {
                                 .method("GET")
                         )
                         .status(),
-                    http::StatusCode::SERVICE_UNAVAILABLE
+                    $connect_error
                 );
 
                 // Assert a request to `srv` with no `l5d-require-id` header
@@ -441,12 +446,22 @@ mod require_id_header {
     mod http1 {
         use super::super::*;
 
-        generate_tests! { client: client::http1, server: server::http1_tls }
+        generate_tests! {
+            client: client::http1,
+            connect_error: http::StatusCode::BAD_GATEWAY,
+            server: server::http1,
+            tls_server: server::http1_tls,
+        }
     }
 
     mod http2 {
         use super::super::*;
 
-        generate_tests! { client: client::http2, server: server::http2_tls }
+        generate_tests! {
+            client: client::http2,
+            connect_error: http::StatusCode::SERVICE_UNAVAILABLE,
+            server: server::http2,
+            tls_server: server::http2_tls,
+        }
     }
 }
