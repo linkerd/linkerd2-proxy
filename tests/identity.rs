@@ -277,6 +277,7 @@ mod require_id_header {
             tls_server: $make_tls_server:path,
         ) => {
             #[test]
+            #[cfg_attr(not(feature = "flaky_tests"), ignore)]
             fn orig_dst_client_connects_to_tls_server() {
                 let _ = trace_init();
 
@@ -333,6 +334,7 @@ mod require_id_header {
             }
 
             #[test]
+            #[cfg_attr(not(feature = "flaky_tests"), ignore)]
             fn disco_client_connects_to_tls_server() {
                 let _ = trace_init();
 
@@ -400,6 +402,7 @@ mod require_id_header {
             }
 
             #[test]
+            #[cfg_attr(not(feature = "flaky_tests"), ignore)]
             fn orig_dst_client_cannot_connect_to_plaintext_server() {
                 let _ = trace_init();
 
