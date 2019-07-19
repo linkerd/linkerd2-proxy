@@ -48,11 +48,16 @@ impl Endpoint {
     }
 
     pub fn from_request<B>(req: &http::Request<B>) -> Option<Self> {
-        let addr = req.extensions().get::<proxy::Source>()?.orig_dst_if_not_local()?;
+        let addr = req
+            .extensions()
+            .get::<proxy::Source>()?
+            .orig_dst_if_not_local()?;
         let http_settings = settings::Settings::from_request(req);
         let identity = match identity_from_header(req, super::L5D_REQUIRE_ID) {
             Some(require_id) => Conditional::Some(require_id),
-            None => Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into()),
+            None => {
+                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
+            }
         };
 
         Some(Self {
