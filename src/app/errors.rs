@@ -110,6 +110,7 @@ where
 }
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
+    use app::outbound;
     use proxy::buffer;
     use proxy::http::router::error as router;
     use tower::load_shed::error as shed;
@@ -126,6 +127,11 @@ fn map_err_to_5xx(e: Error) -> StatusCode {
     } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
         error!("could not recognize request");
         http::StatusCode::BAD_GATEWAY
+    } else if let Some(err) =
+        e.downcast_ref::<outbound::require_identity_on_endpoint::RequireIdentityError>()
+    {
+        error!("{}", err);
+        http::StatusCode::FORBIDDEN
     } else {
         // we probably should have handled this before?
         error!("unexpected error: {}", e);

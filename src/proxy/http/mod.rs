@@ -23,6 +23,7 @@ pub use self::client::Client;
 pub use self::glue::{ClientUsedTls, HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
 
+use super::super::identity;
 use http::header::AsHeaderName;
 use http::uri::Authority;
 
@@ -63,13 +64,26 @@ pub fn authority_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<
 where
     K: AsHeaderName,
 {
-    req.headers().get(header).and_then(|value| {
-        value.to_str().ok().and_then(|s| {
-            if s.is_empty() {
-                None
-            } else {
-                s.parse::<Authority>().ok()
-            }
-        })
+    header_value_from_request(req, header, |s: &str| s.parse::<Authority>().ok())
+}
+
+pub fn identity_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<identity::Name>
+where
+    K: AsHeaderName,
+{
+    header_value_from_request(req, header, |s: &str| {
+        identity::Name::from_hostname(s.as_bytes()).ok()
     })
+}
+
+fn header_value_from_request<B, K, F, T>(
+    req: &http::Request<B>,
+    header: K,
+    try_from: F,
+) -> Option<T>
+where
+    K: AsHeaderName,
+    F: FnOnce(&str) -> Option<T>,
+{
+    req.headers().get(header)?.to_str().ok().and_then(try_from)
 }
