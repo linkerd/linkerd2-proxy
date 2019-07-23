@@ -5,8 +5,8 @@ use std::sync::Mutex;
 
 use self::futures::sync::{mpsc, oneshot};
 use self::tokio::net::TcpStream;
-use self::webpki::DNSName;
-use rustls::ClientSession;
+use self::webpki::{DNSName, DNSNameRef};
+use rustls::{ClientConfig, ClientSession};
 use std::sync::Arc;
 use support::bytes::IntoBuf;
 
@@ -14,6 +14,24 @@ type ClientError = hyper::Error;
 type Request = http::Request<Bytes>;
 type Response = http::Response<BytesBody>;
 type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, ClientError>>)>;
+
+#[derive(Clone)]
+pub struct TlsConfig {
+    client_config: Arc<ClientConfig>,
+    name: DNSName,
+}
+
+impl TlsConfig {
+    pub fn new(client_config: Arc<ClientConfig>, name: &str) -> Self {
+        let dns_name = DNSNameRef::try_from_ascii_str(name)
+            .expect("no_fail")
+            .to_owned();
+        TlsConfig {
+            client_config,
+            name: dns_name,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct BytesBody(hyper::Body);

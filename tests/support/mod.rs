@@ -47,8 +47,7 @@ use self::tokio_current_thread as current_thread;
 use self::tokio_rustls::TlsStream;
 pub use self::tower_grpc as grpc;
 pub use self::tower_service::Service;
-use self::webpki::{DNSName, DNSNameRef};
-use rustls::{ClientConfig, Session};
+use rustls::Session;
 use std::io;
 use std::io::{Read, Write};
 
@@ -348,25 +347,6 @@ impl<T: fmt::Debug, E: fmt::Debug> ResultWaitedExt for Result<T, Waited<E>> {
                 panic!("{}; expected TimedOut, was Error({:?})", msg, err);
             }
             Err(Waited::TimedOut) => (),
-        }
-    }
-}
-
-// Shared TLS configuration for clients
-#[derive(Clone)]
-pub struct TlsConfig {
-    client_config: Arc<ClientConfig>,
-    name: DNSName,
-}
-
-impl TlsConfig {
-    pub fn new(client_config: Arc<ClientConfig>, name: &str) -> Self {
-        let dns_name = DNSNameRef::try_from_ascii_str(name)
-            .expect("no_fail")
-            .to_owned();
-        TlsConfig {
-            client_config,
-            name: dns_name,
         }
     }
 }

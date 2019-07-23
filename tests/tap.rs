@@ -5,8 +5,6 @@ mod support;
 use self::support::*;
 use support::tap::TapEventExt;
 
-use std::time::SystemTime;
-
 // Flaky: sometimes the admin thread hasn't had a chance to register
 // the Taps before the `client.get` is called.
 #[test]
@@ -97,6 +95,7 @@ fn can_disable_tap() {
 
 mod expected_identity {
     use super::*;
+    use std::time::SystemTime;
 
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
