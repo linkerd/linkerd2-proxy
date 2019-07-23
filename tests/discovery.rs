@@ -180,11 +180,6 @@ macro_rules! generate_tests {
             )
         }
 
-        fn init_env() -> app::config::TestEnv {
-            let _ = trace_init();
-            app::config::TestEnv::new()
-        }
-
         fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update) {
             use std::thread;
 

@@ -95,142 +95,147 @@ fn can_disable_tap() {
     assert!(proxy.control.is_none())
 }
 
-#[test]
-#[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn tap_accepts_no_identity_when_identity_is_not_expected() {
-    let _ = env_logger_init();
-    let auth = "tap.test.svc.cluster.local";
+mod expected_identity {
+    use super::*;
 
-    let srv = server::http1().route("/", "hello").run();
+    #[test]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
+    fn tap_accepts_no_identity_when_identity_is_not_expected() {
+        let _ = trace_init();
+        let auth = "tap.test.svc.cluster.local";
 
-    let proxy = proxy::new().inbound(srv).run();
-    let mut tap = tap::client(proxy.control.unwrap());
-    let events = tap.observe(tap::observe_request());
+        let srv = server::http1().route("/", "hello").run();
 
-    let client = client::http1(proxy.inbound, auth);
-    assert_eq!(client.get("/"), "hello");
+        let proxy = proxy::new().inbound(srv).run();
+        let mut tap = tap::client(proxy.control.unwrap());
+        let events = tap.observe(tap::observe_request());
 
-    let mut events = events.wait().take(1);
-    let ev1 = events.next().expect("next1").expect("stream1");
-    assert!(ev1.is_inbound());
-}
+        let client = client::http1(proxy.inbound, auth);
+        assert_eq!(client.get("/"), "hello");
 
-#[test]
-fn tap_rejects_no_identity_when_identity_is_expected() {
-    let auth = "tap.test.svc.cluster.local";
-    let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let mut events = events.wait().take(1);
 
-    let mut env = init_env();
-    env.put(app::config::ENV_IDENTITY_TAP_IDENTITY, id.to_owned());
+        let ev1 = events.next().expect("next1").expect("stream1");
+        assert!(ev1.is_inbound());
+        assert_eq!(ev1.request_init_authority(), auth);
+        assert_eq!(ev1.request_init_path(), "/");
+    }
 
-    let srv = server::http1().route("/", "hello").run();
+    #[test]
+    fn tap_rejects_no_identity_when_identity_is_expected() {
+        let auth = "tap.test.svc.cluster.local";
+        let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
 
-    let proxy = proxy::new().inbound(srv).run_with_test_env(env);
-    let mut tap = tap::client(proxy.control.unwrap());
-    let events = tap.observe(tap::observe_request());
+        let mut env = init_env();
+        env.put(app::config::ENV_IDENTITY_TAP_IDENTITY, id.to_owned());
 
-    let client = client::http1(proxy.inbound, auth);
-    assert_eq!(client.get("/"), "hello");
+        let srv = server::http1().route("/", "hello").run();
 
-    let mut events = events.wait().take(1);
-    assert!(events.next().expect("next1").is_err());
-}
+        let proxy = proxy::new().inbound(srv).run_with_test_env(env);
+        let mut tap = tap::client(proxy.control.unwrap());
+        let events = tap.observe(tap::observe_request());
 
-#[test]
-#[ignore]
-fn tap_rejects_incorrect_identity_when_identity_is_expected() {
-    let _ = env_logger_init();
+        let client = client::http1(proxy.inbound, auth);
+        assert_eq!(client.get("/"), "hello");
 
-    let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
+        let mut events = events.wait().take(1);
+        assert!(events.next().expect("next1").is_err());
+    }
 
-    let expected_identity = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let mut expected_identity_env = identity_env.env.clone();
-    expected_identity_env.put(
-        app::config::ENV_IDENTITY_TAP_IDENTITY,
-        expected_identity.to_owned(),
-    );
+    #[test]
+    fn tap_rejects_incorrect_identity_when_identity_is_expected() {
+        let _ = trace_init();
 
-    let srv = server::http1().route("/", "hello").run();
+        let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
 
-    let in_proxy = proxy::new()
-        .inbound(srv)
-        .identity(identity_env.service().run())
-        .run_with_test_env(expected_identity_env);
+        let expected_identity = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let mut expected_identity_env = identity_env.env.clone();
+        expected_identity_env.put(
+            app::config::ENV_IDENTITY_TAP_IDENTITY,
+            expected_identity.to_owned(),
+        );
 
-    let tap_proxy = proxy::new()
-        .outbound_ip(in_proxy.control.unwrap())
-        .identity(identity_env.service().run())
-        .run_with_test_env(identity_env.env.clone());
+        let srv = server::http1().route("/", "hello").run();
 
-    let mut tap = tap::client(tap_proxy.outbound_server.unwrap());
-    let events = tap.observe(tap::observe_request());
+        let in_proxy = proxy::new()
+            .inbound(srv)
+            .identity(identity_env.service().run())
+            .run_with_test_env(expected_identity_env);
 
-    let client = client::http1(in_proxy.inbound, "localhost");
-    assert_eq!(client.get("/"), "hello");
+        let tap_proxy = proxy::new()
+            .outbound_ip(in_proxy.control.unwrap())
+            .identity(identity_env.service().run())
+            .run_with_test_env(identity_env.env.clone());
 
-    let mut events = events.wait().take(1);
-    assert!(events.next().expect("next1").is_err());
-}
+        let mut tap = tap::client(tap_proxy.outbound_server.unwrap());
+        let events = tap.observe(tap::observe_request());
 
-#[test]
-fn tap_accepts_expected_identity_when_identity_is_expected() {
-    let _ = env_logger_init();
+        let client = client::http1(in_proxy.inbound, "localhost");
+        assert_eq!(client.get("/"), "hello");
 
-    // Setup server proxy authority and identity
-    let srv_proxy_authority = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let identity::Identity {
-        mut env,
-        mut certify_rsp,
-        client_config,
-        ..
-    } = identity::Identity::new("foo-ns1", srv_proxy_authority.to_string());
+        let mut events = events.wait().take(1);
+        assert!(events.next().expect("next1").is_err());
+    }
 
-    // Setup client proxy authority and identity
-    let client_proxy_authority = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let client_proxy_identity =
-        identity::Identity::new("bar-ns1", client_proxy_authority.to_string());
+    #[test]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
+    fn tap_accepts_expected_identity_when_identity_is_expected() {
+        let _ = trace_init();
 
-    // Certify server proxy identity
-    certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
-    let srv_proxy_identity_svc = controller::identity().certify(move |_| certify_rsp).run();
+        // Setup server proxy authority and identity
+        let srv_proxy_authority = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let identity::Identity {
+            mut env,
+            mut certify_rsp,
+            ..
+        } = identity::Identity::new("foo-ns1", srv_proxy_authority.to_string());
 
-    // Add expected tap service identity
-    env.put(
-        app::config::ENV_IDENTITY_TAP_IDENTITY,
-        client_proxy_authority.to_owned(),
-    );
+        // Setup client proxy authority and identity
+        let client_proxy_authority = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let client_proxy_identity =
+            identity::Identity::new("bar-ns1", client_proxy_authority.to_string());
 
-    let srv = server::http1().route("/", "hello").run();
+        // Certify server proxy identity
+        certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
+        let srv_proxy_identity_svc = controller::identity().certify(move |_| certify_rsp).run();
 
-    // Run server proxy with server proxy identity service
-    let srv_proxy = proxy::new()
-        .inbound(srv)
-        .identity(srv_proxy_identity_svc)
-        .run_with_test_env(env);
+        // Add expected tap service identity
+        env.put(
+            app::config::ENV_IDENTITY_TAP_IDENTITY,
+            client_proxy_authority.to_owned(),
+        );
 
-    // Run client proxy with client proxy identity service.
-    let client_proxy = proxy::new()
-        .outbound_ip(srv_proxy.control.unwrap())
-        .identity(client_proxy_identity.service().run())
-        .run_with_test_env(client_proxy_identity.env);
+        let srv = server::http1().route("/", "hello").run();
 
-    // Wait for the server proxy to become ready
-    let client = client::http1(srv_proxy.metrics, "localhost");
-    let ready = || client.request(client.request_builder("/ready").method("GET"));
-    assert_eventually!(ready().status() == http::StatusCode::OK);
+        // Run server proxy with server proxy identity service
+        let srv_proxy = proxy::new()
+            .inbound(srv)
+            .identity(srv_proxy_identity_svc)
+            .run_with_test_env(env);
 
-    let mut tap = tap::tls_client(
-        client_proxy.outbound,
-        srv_proxy_authority,
-        TlsConfig::new(client_config, srv_proxy_authority),
-    );
-    let events = tap.observe(tap::observe_request());
+        // Run client proxy with client proxy identity service.
+        let client_proxy = proxy::new()
+            .outbound_ip(srv_proxy.control.unwrap())
+            .identity(client_proxy_identity.service().run())
+            .run_with_test_env(client_proxy_identity.env);
 
-    // Send a request that will be observed via the tap client
-    let client = client::http1(srv_proxy.inbound, "localhost");
-    assert_eq!(client.get("/"), "hello");
+        // Wait for the server proxy to become ready
+        let client = client::http1(srv_proxy.metrics, "localhost");
+        let ready = || client.request(client.request_builder("/ready").method("GET"));
+        assert_eventually!(ready().status() == http::StatusCode::OK);
 
-    let mut events = events.wait().take(1);
-    events.next().expect("next1").expect("stream1");
+        let mut tap = tap::client_with_auth(client_proxy.outbound, srv_proxy_authority);
+        let events = tap.observe_with_require_id(tap::observe_request(), srv_proxy_authority);
+
+        // Send a request that will be observed via the tap client
+        let client = client::http1(srv_proxy.inbound, "localhost");
+        assert_eq!(client.get("/"), "hello");
+
+        let mut events = events.wait().take(1);
+        let ev1 = events.next().expect("next1").expect("stream1");
+        assert!(ev1.is_inbound());
+        assert_eq!(ev1.request_init_authority(), "localhost");
+        assert_eq!(ev1.request_init_path(), "/");
+    }
 }
