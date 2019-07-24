@@ -104,6 +104,7 @@ pub struct Config {
 
     pub identity_config: tls::Conditional<identity::Config>,
 
+    /// The expected identity of the Tap service.
     pub tap_identity: tls::PeerIdentity,
     //
     // Destination Config

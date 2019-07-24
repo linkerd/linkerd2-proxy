@@ -1,9 +1,8 @@
-use std::error;
-
 use super::identity;
 use futures::{future, Future};
 use logging;
 use proxy;
+use std::error;
 use svc;
 use tokio::executor;
 use tower_grpc as grpc;
@@ -61,15 +60,15 @@ where
                 let log_context = log.clone();
 
                 if let Conditional::Some(ref tap_identity) = tap_identity {
-                    debug!("expected tap_identity: {:?}", tap_identity);
+                    debug!("expected Tap client identity: {:?}", tap_identity);
 
                     let is_expected_identity = match session.peer_identity() {
                         Conditional::Some(ref peer_identity) => {
-                            debug!("found peer_identity: {:?}", peer_identity);
+                            debug!("found Tap client identity: {:?}", peer_identity);
                             peer_identity == tap_identity
                         }
                         _ => {
-                            debug!("did not find peer_identity");
+                            debug!("did not find Tap client identity");
                             false
                         }
                     };
