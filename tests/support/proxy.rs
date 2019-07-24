@@ -9,8 +9,12 @@ pub fn new() -> Proxy {
 pub struct Proxy {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
-    inbound: Option<server::Listening>,
+
+    inbound: Option<SocketAddr>,
     outbound: Option<SocketAddr>,
+
+    inbound_server: Option<server::Listening>,
+    outbound_server: Option<server::Listening>,
 
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
     outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
@@ -24,7 +28,7 @@ pub struct Listening {
     pub outbound: SocketAddr,
     pub metrics: SocketAddr,
 
-    pub outbound_server: Option<SocketAddr>,
+    pub outbound_server: Option<server::Listening>,
     pub inbound_server: Option<server::Listening>,
 
     shutdown: Shutdown,
@@ -34,9 +38,13 @@ impl Proxy {
     pub fn new() -> Self {
         Proxy {
             controller: None,
+            identity: None,
+
             inbound: None,
             outbound: None,
-            identity: None,
+
+            inbound_server: None,
+            outbound_server: None,
 
             inbound_disable_ports_protocol_detection: None,
             outbound_disable_ports_protocol_detection: None,
@@ -58,7 +66,9 @@ impl Proxy {
     }
 
     pub fn inbound(mut self, s: server::Listening) -> Self {
-        self.inbound = Some(s);
+        let addr = s.addr.clone();
+        self.inbound = Some(addr);
+        self.inbound_server = Some(s);
         self
     }
 
@@ -76,8 +86,9 @@ impl Proxy {
     }
 
     pub fn outbound(mut self, s: server::Listening) -> Self {
-        let addr = s.addr;
+        let addr = s.addr.clone();
         self.outbound = Some(addr);
+        self.outbound_server = Some(s);
         self
     }
 
@@ -158,14 +169,14 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         app::config::ENV_OUTBOUND_LISTEN_ADDR,
         "127.0.0.1:0".to_owned(),
     );
-    if let Some(ref inbound) = inbound {
-        env.put(
-            app::config::ENV_INBOUND_FORWARD,
-            format!("{}", inbound.addr),
-        );
-        mock_orig_dst.inbound_orig_addr = Some(inbound.addr);
+
+    if let Some(inbound) = inbound {
+        env.put(app::config::ENV_INBOUND_FORWARD, format!("{}", inbound));
+        mock_orig_dst.inbound_orig_addr = Some(inbound);
     }
+
     mock_orig_dst.outbound_orig_addr = outbound;
+
     env.put(
         app::config::ENV_INBOUND_LISTEN_ADDR,
         "127.0.0.1:0".to_owned(),
@@ -291,7 +302,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         inbound_addr,
         inbound
             .as_ref()
-            .map(|i| format!(" (SO_ORIGINAL_DST={})", i.addr))
+            .map(|i| format!(" (SO_ORIGINAL_DST={})", i))
             .unwrap_or_else(String::new),
         outbound_addr,
         outbound
@@ -307,8 +318,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         outbound: outbound_addr,
         metrics: metrics_addr,
 
-        outbound_server: outbound,
-        inbound_server: inbound,
+        outbound_server: proxy.outbound_server,
+        inbound_server: proxy.inbound_server,
 
         shutdown: tx,
     }

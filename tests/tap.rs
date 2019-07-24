@@ -167,7 +167,7 @@ mod expected_identity {
             .identity(identity_env.service().run())
             .run_with_test_env(identity_env.env.clone());
 
-        let mut tap = tap::client(tap_proxy.outbound_server.unwrap());
+        let mut tap = tap::client(tap_proxy.outbound);
         let events = tap.observe(tap::observe_request());
 
         let client = client::http1(in_proxy.inbound, "localhost");
