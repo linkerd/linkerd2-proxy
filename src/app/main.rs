@@ -433,7 +433,7 @@ where
         let outbound = {
             use super::outbound::{
                 self,
-                discovery::Resolve,
+                discovery::Resolver,
                 orig_proto_upgrade,
                 require_identity_on_endpoint,
                 //add_remote_ip_on_rsp, add_server_id_on_rsp,
@@ -535,7 +535,7 @@ where
             // over all endpoints returned from the destination service.
             let balancer = svc::builder()
                 .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .layer(resolve::layer(Resolve::new(resolver)))
+                .layer(resolve::layer(Resolver::new(resolver)))
                 .spawn_ready();
 
             let distributor = svc::builder()

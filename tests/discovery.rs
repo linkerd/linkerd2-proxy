@@ -264,26 +264,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_skips_controller_if_destination_is_address() {
-            let _ = init_env();
-
-            let srv = $make_server()
-                .route("/", "hello")
-                .route("/bye", "bye")
-                .run();
-
-            let host = srv.addr.to_string();
-
-            // don't set outbound() or controller()
-            let proxy = proxy::new()
-                .run();
-            let client = $make_client(proxy.outbound, &*host);
-
-            assert_eq!(client.get("/"), "hello");
-            assert_eq!(client.get("/bye"), "bye");
-        }
-
-        #[test]
         fn outbound_error_reconnects_after_backoff() {
             let mut env = init_env();
 

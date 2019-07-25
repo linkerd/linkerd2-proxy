@@ -95,11 +95,19 @@ pub struct NoOriginalDst;
 impl Source {
     pub fn orig_dst_if_not_local(&self) -> Option<SocketAddr> {
         match self.orig_dst {
-            None => None,
+            None => {
+                trace!("no SO_ORIGINAL_DST on source");
+                None
+            }
             Some(orig_dst) => {
                 // If the original destination is actually the listening socket,
                 // we don't want to create a loop.
                 if Self::same_addr(orig_dst, self.local) {
+                    trace!(
+                        "SO_ORIGINAL_DST={}; local={}; avoiding loop",
+                        orig_dst,
+                        self.local
+                    );
                     None
                 } else {
                     Some(orig_dst)

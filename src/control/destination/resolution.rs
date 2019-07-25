@@ -304,6 +304,12 @@ impl fmt::Display for LogCtx {
 
 // === impl Unresolvable ===
 
+impl Unresolvable {
+    pub fn new() -> Self {
+        Self { _p: () }
+    }
+}
+
 impl fmt::Display for Unresolvable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         "this name cannot be resolved by the destination service".fmt(f)
