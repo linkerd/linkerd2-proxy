@@ -165,13 +165,15 @@ pub mod discovery {
     use transport::tls;
     use {Addr, Conditional, NameAddr};
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct Resolve<R: resolve::Resolve<NameAddr>>(R);
 
+    #[derive(Debug)]
     pub struct ResolveFuture<F> {
         resolving: Option<Resolution<F>>,
     }
 
+    #[derive(Debug)]
     pub struct Resolution<R> {
         http_settings: settings::Settings,
         name: NameAddr,
@@ -184,8 +186,8 @@ pub mod discovery {
     where
         R: resolve::Resolve<NameAddr, Endpoint = Metadata>,
     {
-        pub fn new(resolver: R) -> Self {
-            Resolve(resolver)
+        pub fn new(resolve: R) -> Self {
+            Resolve(resolve)
         }
     }
 
