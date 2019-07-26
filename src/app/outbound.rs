@@ -166,7 +166,7 @@ pub mod discovery {
     use {Addr, Conditional, NameAddr};
 
     #[derive(Clone)]
-    pub struct Resolver<R: resolve::Resolve<NameAddr>>(R);
+    pub struct Resolve<R: resolve::Resolve<NameAddr>>(R);
 
     pub struct ResolveFuture<F> {
         resolving: Option<Resolution<F>>,
@@ -180,18 +180,19 @@ pub mod discovery {
 
     // ===== impl Resolver =====
 
-    impl<R> Resolver<R>
+    impl<R> Resolve<R>
     where
         R: resolve::Resolve<NameAddr, Endpoint = Metadata>,
     {
         pub fn new(resolver: R) -> Self {
-            Resolver(resolver)
+            Resolve(resolver)
         }
     }
 
-    impl<R> resolve::Resolve<DstAddr> for Resolver<R>
+    impl<R> resolve::Resolve<DstAddr> for Resolve<R>
     where
         R: resolve::Resolve<NameAddr, Endpoint = Metadata>,
+        <R as resolve::Resolve<NameAddr>>::Future: Future<Error = Unresolvable>,
     {
         type Endpoint = Endpoint;
         type Resolution = Resolution<R::Resolution>;
@@ -227,7 +228,7 @@ pub mod discovery {
 
     impl<F: Future> Future for ResolveFuture<F>
     where
-        F: Future,
+        F: Future<Error = Unresolvable>,
     {
         type Item = Resolution<F::Item>;
         type Error = Unresolvable;
@@ -239,14 +240,7 @@ pub mod discovery {
                 ref mut resolution,
             }) = self.resolving
             {
-                let resolution = match resolution.poll() {
-                    Ok(Async::Ready(resolution)) => resolution,
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(_) => {
-                        trace!("name={} is unresolvable", name);
-                        return Err(Unresolvable::new());
-                    }
-                };
+                let resolution = try_ready!(resolution.poll());
 
                 return Ok(Async::Ready(Resolution {
                     http_settings: http_settings.clone(),
