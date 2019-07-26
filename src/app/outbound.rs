@@ -157,10 +157,11 @@ impl tap::Inspect for Endpoint {
 }
 
 pub mod discovery {
+    use futures::{future::Future, Async, Poll};
+
     use super::super::dst::DstAddr;
     use super::Endpoint;
     use control::destination::{Metadata, Unresolvable};
-    use futures::{future::Future, Async, Poll};
     use proxy::{http::settings, resolve};
     use transport::tls;
     use {Addr, Conditional, NameAddr};
@@ -169,18 +170,18 @@ pub mod discovery {
     pub struct Resolve<R: resolve::Resolve<NameAddr>>(R);
 
     #[derive(Debug)]
-    pub struct ResolveFuture<F> {
-        resolving: Option<Resolution<F>>,
+    pub struct Resolution<R> {
+        resolving: Resolving<R>,
+        http_settings: settings::Settings,
     }
 
     #[derive(Debug)]
-    pub struct Resolution<R> {
-        http_settings: settings::Settings,
-        name: NameAddr,
-        resolution: R,
+    enum Resolving<R> {
+        Name(NameAddr, R),
+        Unresolvable,
     }
 
-    // ===== impl Resolve =====
+    // === impl Resolve ===
 
     impl<R> Resolve<R>
     where
@@ -198,65 +199,45 @@ pub mod discovery {
     {
         type Endpoint = Endpoint;
         type Resolution = Resolution<R::Resolution>;
-        type Future = ResolveFuture<R::Future>;
+        type Future = Resolution<R::Future>;
 
         fn resolve(&self, dst: &DstAddr) -> Self::Future {
-            match dst.as_ref() {
-                Addr::Name(ref name) => {
-                    ResolveFuture::new(dst.http_settings, name.clone(), self.0.resolve(&name))
-                }
-                Addr::Socket(_) => ResolveFuture::unresolvable(),
+            let resolving = match dst.as_ref() {
+                Addr::Name(ref name) => Resolving::Name(name.clone(), self.0.resolve(&name)),
+                Addr::Socket(_) => Resolving::Unresolvable,
+            };
+
+            Resolution {
+                http_settings: dst.http_settings,
+                resolving,
             }
         }
     }
 
-    // ===== impl ResolveFuture =====
+    // === impl Resolution ===
 
-    impl<F> ResolveFuture<F> {
-        fn new(http_settings: settings::Settings, name: NameAddr, resolution: F) -> Self {
-            Self {
-                resolving: Some(Resolution {
-                    http_settings,
-                    name,
-                    resolution,
-                }),
-            }
-        }
-
-        fn unresolvable() -> Self {
-            Self { resolving: None }
-        }
-    }
-
-    impl<F: Future> Future for ResolveFuture<F>
+    impl<F: Future> Future for Resolution<F>
     where
         F: Future<Error = Unresolvable>,
     {
         type Item = Resolution<F::Item>;
-        type Error = Unresolvable;
-
+        type Error = F::Error;
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            if let Some(Resolution {
-                http_settings,
-                ref name,
-                ref mut resolution,
-            }) = self.resolving
-            {
-                let resolution = try_ready!(resolution.poll());
-
-                return Ok(Async::Ready(Resolution {
-                    http_settings: http_settings.clone(),
-                    name: name.clone(),
-                    resolution,
-                }));
-            }
-
-            trace!("addr is unresolvable");
-            Err(Unresolvable::new())
+            let resolving = match self.resolving {
+                Resolving::Name(ref name, ref mut f) => {
+                    let res = try_ready!(f.poll());
+                    // TODO: get rid of unnecessary arc bumps?
+                    Resolving::Name(name.clone(), res)
+                }
+                Resolving::Unresolvable => return Err(Unresolvable::new()),
+            };
+            Ok(Async::Ready(Resolution {
+                resolving,
+                // TODO: get rid of unnecessary clone
+                http_settings: self.http_settings.clone(),
+            }))
         }
     }
-
-    // ===== impl Resolution =====
 
     impl<R> resolve::Resolution for Resolution<R>
     where
@@ -266,30 +247,35 @@ pub mod discovery {
         type Error = R::Error;
 
         fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
-            match try_ready!(self.resolution.poll()) {
-                resolve::Update::Remove(addr) => {
-                    debug!("removing {}", addr);
-                    Ok(Async::Ready(resolve::Update::Remove(addr)))
-                }
-                resolve::Update::Add(addr, metadata) => {
-                    let identity = metadata
-                        .identity()
-                        .cloned()
-                        .map(Conditional::Some)
-                        .unwrap_or_else(|| {
-                            Conditional::None(
-                                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
-                            )
-                        });
-                    debug!("adding addr={} identity={:?}", addr, identity);
-                    let ep = Endpoint {
-                        dst_name: Some(self.name.clone()),
-                        addr,
-                        identity,
-                        metadata,
-                        http_settings: self.http_settings,
-                    };
-                    Ok(Async::Ready(resolve::Update::Add(addr, ep)))
+            match self.resolving {
+                Resolving::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
+                    resolve::Update::Remove(addr) => {
+                        debug!("removing {}", addr);
+                        Ok(Async::Ready(resolve::Update::Remove(addr)))
+                    }
+                    resolve::Update::Add(addr, metadata) => {
+                        let identity = metadata
+                            .identity()
+                            .cloned()
+                            .map(Conditional::Some)
+                            .unwrap_or_else(|| {
+                                Conditional::None(
+                                    tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+                                )
+                            });
+                        debug!("adding addr={}; identity={:?}", addr, identity);
+                        let ep = Endpoint {
+                            dst_name: Some(name.clone()),
+                            addr,
+                            identity,
+                            metadata,
+                            http_settings: self.http_settings,
+                        };
+                        Ok(Async::Ready(resolve::Update::Add(addr, ep)))
+                    }
+                },
+                Resolving::Unresolvable => {
+                    unreachable!("unresolvable endpoints have no resolutions")
                 }
             }
         }
