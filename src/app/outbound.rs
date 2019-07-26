@@ -158,11 +158,10 @@ impl tap::Inspect for Endpoint {
 
 pub mod discovery {
     use futures::{future::Future, Async, Poll};
-    use std::net::SocketAddr;
 
     use super::super::dst::DstAddr;
     use super::Endpoint;
-    use control::destination::Metadata;
+    use control::destination::{Metadata, Unresolvable};
     use proxy::{http::settings, resolve};
     use transport::tls;
     use {Addr, Conditional, NameAddr};
@@ -179,7 +178,7 @@ pub mod discovery {
     #[derive(Debug)]
     enum Resolving<R> {
         Name(NameAddr, R),
-        Addr(Option<SocketAddr>),
+        Unresolvable,
     }
 
     // === impl Resolve ===
@@ -196,6 +195,7 @@ pub mod discovery {
     impl<R> resolve::Resolve<DstAddr> for Resolve<R>
     where
         R: resolve::Resolve<NameAddr, Endpoint = Metadata>,
+        <R as resolve::Resolve<NameAddr>>::Future: Future<Error = Unresolvable>,
     {
         type Endpoint = Endpoint;
         type Resolution = Resolution<R::Resolution>;
@@ -204,7 +204,7 @@ pub mod discovery {
         fn resolve(&self, dst: &DstAddr) -> Self::Future {
             let resolving = match dst.as_ref() {
                 Addr::Name(ref name) => Resolving::Name(name.clone(), self.0.resolve(&name)),
-                Addr::Socket(ref addr) => Resolving::Addr(Some(*addr)),
+                Addr::Socket(_) => Resolving::Unresolvable,
             };
 
             Resolution {
@@ -216,7 +216,10 @@ pub mod discovery {
 
     // === impl Resolution ===
 
-    impl<F: Future> Future for Resolution<F> {
+    impl<F: Future> Future for Resolution<F>
+    where
+        F: Future<Error = Unresolvable>,
+    {
         type Item = Resolution<F::Item>;
         type Error = F::Error;
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -226,7 +229,7 @@ pub mod discovery {
                     // TODO: get rid of unnecessary arc bumps?
                     Resolving::Name(name.clone(), res)
                 }
-                Resolving::Addr(a) => Resolving::Addr(a),
+                Resolving::Unresolvable => return Err(Unresolvable::new()),
             };
             Ok(Async::Ready(Resolution {
                 resolving,
@@ -271,21 +274,9 @@ pub mod discovery {
                         Ok(Async::Ready(resolve::Update::Add(addr, ep)))
                     }
                 },
-                Resolving::Addr(ref mut addr) => match addr.take() {
-                    Some(addr) => {
-                        let ep = Endpoint {
-                            dst_name: None,
-                            addr,
-                            identity: Conditional::None(
-                                tls::ReasonForNoPeerName::NoAuthorityInHttpRequest.into(),
-                            ),
-                            metadata: Metadata::empty(),
-                            http_settings: self.http_settings,
-                        };
-                        Ok(Async::Ready(resolve::Update::Add(addr, ep)))
-                    }
-                    None => Ok(Async::NotReady),
-                },
+                Resolving::Unresolvable => {
+                    unreachable!("unresolvable endpoints have no resolutions")
+                }
             }
         }
     }
