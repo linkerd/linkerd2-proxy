@@ -180,7 +180,7 @@ pub mod discovery {
         resolution: R,
     }
 
-    // ===== impl Resolver =====
+    // ===== impl Resolve =====
 
     impl<R> Resolve<R>
     where
