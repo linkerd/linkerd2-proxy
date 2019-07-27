@@ -104,8 +104,8 @@ pub struct Config {
 
     pub identity_config: tls::Conditional<identity::Config>,
 
-    /// The expected identity of the Tap service.
-    pub tap_identity: tls::PeerIdentity,
+    /// The expected name of the Tap service.
+    pub tap_svc_name: tls::PeerIdentity,
     //
     // Destination Config
     //
@@ -268,7 +268,6 @@ pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
 pub const ENV_IDENTITY_IDENTITY_LOCAL_NAME: &str = "LINKERD2_PROXY_IDENTITY_LOCAL_NAME";
-pub const ENV_IDENTITY_TAP_IDENTITY: &str = "LINKERD2_PROXY_IDENTITY_TAP_IDENTITY";
 pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_IDENTITY_TOKEN_FILE";
 pub const ENV_IDENTITY_MIN_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MIN_REFRESH";
 pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MAX_REFRESH";
@@ -284,6 +283,7 @@ pub const ENV_CONTROL_EXP_BACKOFF_MIN: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOF
 pub const ENV_CONTROL_EXP_BACKOFF_MAX: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MAX";
 pub const ENV_CONTROL_EXP_BACKOFF_JITTER: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_JITTER";
 pub const ENV_TAP_DISABLED: &str = "LINKERD2_PROXY_TAP_DISABLED";
+pub const ENV_TAP_SVC_NAME: &str = "LINKERD2_PROXY_TAP_SVC_NAME";
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
 const ENV_CONTROL_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_DISPATCH_TIMEOUT";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
@@ -455,7 +455,7 @@ impl Config {
             parse_control_addr(strings, ENV_DESTINATION_SVC_BASE)
         };
 
-        let tap_identity = parse(strings, ENV_IDENTITY_TAP_IDENTITY, parse_identity);
+        let tap_svc_name = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
 
         let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
@@ -556,7 +556,7 @@ impl Config {
                 .map(Conditional::Some)
                 .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled)),
 
-            tap_identity: tap_identity?
+            tap_svc_name: tap_svc_name?
                 .map(Conditional::Some)
                 .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled)),
 

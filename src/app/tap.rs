@@ -37,7 +37,7 @@ macro_rules! tap_task {
 
 pub fn serve_tap<N, B>(
     bound_port: Listen<identity::Local, ()>,
-    tap_identity: tls::PeerIdentity,
+    tap_svc_name: tls::PeerIdentity,
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where
@@ -59,21 +59,21 @@ where
                 let log = log.clone().with_remote(remote);
                 let log_context = log.clone();
 
-                if let Conditional::Some(ref tap_identity) = tap_identity {
-                    debug!("expected Tap client identity: {:?}", tap_identity);
+                if let Conditional::Some(ref tap_svc_name) = tap_svc_name {
+                    debug!("expecting Tap client name: {:?}", tap_svc_name);
 
-                    let is_expected_identity = match session.peer_identity() {
-                        Conditional::Some(ref peer_identity) => {
-                            debug!("found Tap client identity: {:?}", peer_identity);
-                            peer_identity == tap_identity
+                    let is_expected_name = match session.peer_identity() {
+                        Conditional::Some(ref peer_name) => {
+                            debug!("found Tap client name: {:?}", peer_name);
+                            peer_name == tap_svc_name
                         }
                         _ => {
-                            debug!("did not find Tap client identity");
+                            debug!("did not find Tap client name");
                             false
                         }
                     };
 
-                    if !is_expected_identity {
+                    if !is_expected_name {
                         let svc = api::tap::server::TapServer::new(
                             proxy::grpc::unauthenticated::Unauthenticated,
                         );

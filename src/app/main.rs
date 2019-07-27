@@ -375,7 +375,7 @@ where
 
         // Spawn a separate thread to handle the admin stuff.
         {
-            let tap_identity = config.tap_identity.clone();
+            let tap_svc_name = config.tap_svc_name.clone();
             let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
             thread::Builder::new()
                 .name("admin".into())
@@ -393,7 +393,7 @@ where
 
                     if let Some(listener) = control_listener {
                         rt.spawn(tap_daemon.map_err(|_| ()));
-                        rt.spawn(serve_tap(listener, tap_identity, TapServer::new(tap_grpc)));
+                        rt.spawn(serve_tap(listener, tap_svc_name, TapServer::new(tap_grpc)));
                     }
 
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));

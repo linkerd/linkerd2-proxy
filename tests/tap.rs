@@ -126,7 +126,7 @@ mod expected_identity {
         let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
 
         let mut env = init_env();
-        env.put(app::config::ENV_IDENTITY_TAP_IDENTITY, id.to_owned());
+        env.put(app::config::ENV_TAP_SVC_NAME, id.to_owned());
 
         let srv = server::http1().route("/", "hello").run();
 
@@ -150,10 +150,7 @@ mod expected_identity {
 
         let expected_identity = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
         let mut expected_identity_env = identity_env.env.clone();
-        expected_identity_env.put(
-            app::config::ENV_IDENTITY_TAP_IDENTITY,
-            expected_identity.to_owned(),
-        );
+        expected_identity_env.put(app::config::ENV_TAP_SVC_NAME, expected_identity.to_owned());
 
         let srv = server::http1().route("/", "hello").run();
 
@@ -201,7 +198,7 @@ mod expected_identity {
 
         // Add expected tap service identity
         env.put(
-            app::config::ENV_IDENTITY_TAP_IDENTITY,
+            app::config::ENV_TAP_SVC_NAME,
             client_proxy_authority.to_owned(),
         );
 
