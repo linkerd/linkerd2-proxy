@@ -10,9 +10,13 @@ pub struct Proxy {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
 
+    /// Inbound/outbound addresses helpful for mocking connections that do not
+    /// implement `server::Listener`.
     inbound: Option<SocketAddr>,
     outbound: Option<SocketAddr>,
 
+    /// Inbound/outbound addresses for mocking connections that implement
+    /// `server::Listener`.
     inbound_server: Option<server::Listening>,
     outbound_server: Option<server::Listening>,
 

@@ -67,8 +67,8 @@ where
                             debug!("found Tap client name: {:?}", peer_name);
                             peer_name == tap_svc_name
                         }
-                        _ => {
-                            debug!("did not find Tap client name");
+                        Conditional::None(reason) => {
+                            debug!("did not find Tap client name: {}", reason);
                             false
                         }
                     };
