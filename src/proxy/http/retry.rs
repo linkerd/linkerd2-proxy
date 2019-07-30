@@ -5,7 +5,7 @@ use http::{Request, Response};
 use tower::retry as tower_retry;
 pub use tower::retry::budget::Budget;
 
-use proxy::http::metrics::{Scoped, Stats};
+use proxy::http::metrics::{Scoped, Stats, handle_time};
 use svc;
 
 pub trait CanRetry {
@@ -198,6 +198,11 @@ impl<B: TryClone> TryClone for Request<B> {
             *clone.version_mut() = self.version();
 
             if let Some(ext) = self.extensions().get::<::proxy::server::Source>() {
+                clone.extensions_mut().insert(ext.clone());
+            }
+
+            // Count retries toward the request's total handle time.
+            if let Some(ext) = self.extensions().get::<handle_time::Tracker>() {
                 clone.extensions_mut().insert(ext.clone());
             }
 

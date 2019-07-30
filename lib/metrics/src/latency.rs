@@ -38,6 +38,33 @@ pub const BOUNDS: &Bounds = &Bounds(&[
 #[derive(Debug, Default, Clone)]
 pub struct Ms(Duration);
 
+/// A duration in microseconds.
+#[derive(Debug, Default, Clone)]
+pub struct Us(Duration);
+
+impl Into<u64> for Us {
+    fn into(self) -> u64 {
+        use std::convert::TryInto;
+        self.0.as_micros().try_into().unwrap_or_else(|_| {
+            // These measurements should never be long enough to overflow
+            // warn!("Duration::as_micros would overflow u64");
+            std::u64::MAX
+        })
+    }
+}
+
+impl From<Duration> for Us {
+    fn from(d: Duration) -> Self {
+        Us(d)
+    }
+}
+
+impl Default for Histogram<Us> {
+    fn default() -> Self {
+        Histogram::new(BOUNDS)
+    }
+}
+
 impl Into<u64> for Ms {
     fn into(self) -> u64 {
         self.0

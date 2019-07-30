@@ -10,6 +10,7 @@ use metrics::{latency, Counter, FmtLabels, Histogram};
 pub mod classify;
 mod report;
 mod service;
+mod handle_time;
 
 pub use self::report::Report;
 pub use self::service::layer;

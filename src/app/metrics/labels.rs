@@ -29,7 +29,7 @@ pub struct RouteLabels {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-enum Direction {
+pub(in metrics) enum Direction {
     In,
     Out,
 }
