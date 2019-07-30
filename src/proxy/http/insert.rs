@@ -44,7 +44,7 @@ pub struct ValLazy<V>(V);
 
 pub fn layer<F, V>(f: F) -> Layer<FnLazy<F>, V>
 where
-    F: Fn() -> V,
+    F: Fn() -> V + Clone,
     V: Send + Sync + 'static,
 {
     Layer::new(FnLazy(f))

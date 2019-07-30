@@ -3,22 +3,21 @@ use metrics::{Metric, FmtMetrics};
 use super::metric_labels::Direction;
 use std::{iter, fmt};
 
-pub struct Scopes {
+#[derive(Clone, Debug)]
+pub struct Metrics {
     inbound: handle_time::Scope,
     outbound: handle_time::Scope,
-    metric: Metric<'static, handle_time::Scope>,
 }
 
-impl Scopes {
+impl Metrics {
     pub const HELP: &'static str =
         "A histogram of the time in microseconds between when a request is received and when it is sent upstream.";
     pub const NAME: &'static str = "request_handle_us";
 
     pub fn new() -> Self {
-        Scopes {
+        Self {
             inbound: handle_time::Scope::new(),
             outbound: handle_time::Scope::new(),
-            metric: Metric::new(Self::NAME, Self::HELP),
         }
     }
 
@@ -30,6 +29,10 @@ impl Scopes {
         self.inbound.clone()
     }
 
+    fn metric(&self) -> Metric<handle_time::Scope> {
+        Metric::new(Self::NAME, Self::HELP)
+    }
+
     fn scopes<'a>(&'a self) -> impl Iterator<Item = (Direction, &'a handle_time::Scope)> {
         iter::once((Direction::In, &self.inbound))
             .chain(iter::once((Direction::Out, &self.outbound)))
@@ -37,9 +40,10 @@ impl Scopes {
 }
 
 
-impl FmtMetrics for Scopes {
+impl FmtMetrics for Metrics {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.metric.fmt_help(f)?;
-        self.metric.fmt_scopes(f, self.scopes(), |s| s)
+        let metric = self.metric();
+        metric.fmt_help(f)?;
+        metric.fmt_scopes(f, self.scopes(), |s| s)
     }
 }
