@@ -8,7 +8,7 @@ use tokio::executor;
 use tower_grpc as grpc;
 use transport::{
     tls::{self, HasPeerIdentity},
-    Listen, Connection,
+    Connection, Listen,
 };
 use Conditional;
 
@@ -83,8 +83,8 @@ where
                         let svc = api::tap::server::TapServer::new(
                             proxy::grpc::unauthenticated::Unauthenticated,
                         );
-                        let spawn = spawn_tap_service(session, future::ok(svc), log)
-                            .map(|()| new_service);
+                        let spawn =
+                            spawn_tap_service(session, future::ok(svc), log).map(|()| new_service);
                         return future::result(spawn);
                     }
                 }
@@ -92,8 +92,7 @@ where
                 let svc = new_service
                     .make_service(())
                     .map_err(|err| error!("tap MakeService error: {}", err));
-                let spawn = spawn_tap_service(session, svc, log)
-                    .map(|()| new_service);
+                let spawn = spawn_tap_service(session, svc, log).map(|()| new_service);
                 future::result(spawn)
             })
             .map_err(|err| error!("tap listen error: {}", err))
