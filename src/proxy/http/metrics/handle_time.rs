@@ -176,7 +176,7 @@ impl Shared {
             None if panicking => return,
             None => panic!("recorders[{:?}] did not exist", idx),
         };
-        if recorder.ref_count.fetch_sub(1, Ordering::Relaxed) == 0 {
+        if recorder.ref_count.fetch_sub(1, Ordering::Relaxed) == 1 {
             atomic::fence(Ordering::Acquire);
             let elapsed = t0.elapsed();
 
