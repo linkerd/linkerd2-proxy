@@ -1,10 +1,13 @@
+use metrics::{latency, FmtLabels, FmtMetric, Histogram};
+use proxy::http::insert;
 use std::{
     fmt,
-    sync::{Arc, atomic::{AtomicUsize, Ordering, self}, Mutex, RwLock},
+    sync::{
+        atomic::{self, AtomicUsize, Ordering},
+        Arc, Mutex, RwLock,
+    },
     time::Instant,
 };
-use metrics::{Histogram, latency, FmtLabels, FmtMetric};
-use proxy::http::insert;
 
 #[derive(Debug, Clone)]
 pub struct Scope(Arc<Shared>);
@@ -122,7 +125,10 @@ impl Shared {
             // This is determined in a scope so that we can move `Self` into the
             // new tracker without doing a second (unecessary) arc bump.
             let free = {
-                let recorders = self.recorders.read().ok()
+                let recorders = self
+                    .recorders
+                    .read()
+                    .ok()
                     .filter(|recorders| idx < recorders.len())
                     .unwrap_or_else(|| {
                         self.grow();
@@ -131,14 +137,20 @@ impl Shared {
 
                 let next = recorders[idx].next.load(Ordering::Acquire);
 
-                recorders[idx].ref_count.compare_and_swap(0, 1, Ordering::AcqRel) == 0 &&
-                self.next_recorder.compare_and_swap(idx, next, Ordering::AcqRel) == idx
+                recorders[idx]
+                    .ref_count
+                    .compare_and_swap(0, 1, Ordering::AcqRel)
+                    == 0
+                    && self
+                        .next_recorder
+                        .compare_and_swap(idx, next, Ordering::AcqRel)
+                        == idx
             };
             if free {
                 return Tracker {
                     shared: self,
                     idx,
-                    t0
+                    t0,
                 };
             }
 
