@@ -42,21 +42,19 @@ impl insert::Lazy<Tracker> for InsertTracker {
 
 impl Scope {
     pub fn new() -> Self {
-        Scope {
-            inner: Arc::new(Shared::new()),
-        }
+        Scope(Arc::new(Shared::new()))
     }
 
     pub fn layer(&self) -> insert::Layer<InsertTracker, Tracker> {
-        insert::Layer::new(InsertTracker(self.inner.clone()))
+        insert::Layer::new(InsertTracker(self.0.clone()))
     }
 }
 
 impl FmtMetric for Scope {
-    const KIND: &'static str = <Histogram<Us> as FmtMetric>::KIND;
+    const KIND: &'static str = <Histogram<latency::Us> as FmtMetric>::KIND;
 
     fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        if let Ok(hist) = self.histogram.lock() {
+        if let Ok(hist) = self.0.lock() {
             hist.fmt_metric(f, name)
         }
         Ok(())
@@ -72,7 +70,7 @@ impl FmtMetric for Scope {
         N: fmt::Display,
         L: FmtLabels,
     {
-        if let Ok(hist) = self.histogram.lock() {
+        if let Ok(hist) = self.0.lock() {
             hist.fmt_metric_labeled(f, name, labels)
         }
         Ok(())
@@ -162,7 +160,7 @@ impl Shared {
         }
     }
 
-    fn drop_tracker(&self, Tracker { &idx, t0, .. }: &Tracker) {
+    fn drop_tracker(&self, Tracker { idx, t0, .. }: &Tracker) {
         let panicking = std::thread::panicking();
         let recorders = match self.recorders.read() {
             Ok(lock) => lock,
@@ -170,6 +168,7 @@ impl Shared {
             Err(_) if panicking => return,
             Err(e) => panic!("lock poisoned: {:?}", e),
         };
+        let idx = *idx;
 
         let recorder = match recorders.get(idx) {
             Some(recorder) => recorder,
@@ -178,7 +177,7 @@ impl Shared {
         };
         if recorder.ref_count.fetch_sub(1, Ordering::Relaxed) == 0 {
             atomic::fence(Ordering::Acquire);
-            let dur = t0.elapsed();
+            let dur = *t0.elapsed();
 
             let mut hist = match self.histogram.lock() {
                 Ok(lock) => lock,

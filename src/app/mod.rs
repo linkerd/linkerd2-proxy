@@ -12,12 +12,11 @@ mod handle_time;
 mod identity;
 mod inbound;
 mod main;
-mod metrics;
+mod metric_labels;
 mod outbound;
 mod profiles;
 
 pub use self::main::Main;
-use self::metrics::labels as metrics_labels;
 use addr::{self, Addr};
 use std::error::Error;
 use trace;
