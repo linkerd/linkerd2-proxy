@@ -9,24 +9,37 @@ use std::{
     time::Instant,
 };
 
+/// A single handle time histogram.
+///
+/// Higher-level code will use this to represent a single set of labels for
+/// handle-time metrics.
 #[derive(Debug, Clone)]
 pub struct Scope(Arc<Shared>);
 
-#[derive(Debug)]
-struct Shared {
-    histogram: Mutex<Histogram<latency::Us>>,
-    recorders: RwLock<Vec<Recorder>>,
-    next_recorder: AtomicUsize,
-}
-
+/// A layer that inserts a `Tracker` into each request passing through it.
 #[derive(Debug, Clone)]
 pub struct InsertTracker(Arc<Shared>);
 
+/// A request extension that, when dropped, records the time elapsed since it
+/// was created.
 #[derive(Debug)]
 pub struct Tracker {
     shared: Arc<Shared>,
     idx: usize,
     t0: Instant,
+}
+
+#[derive(Debug)]
+struct Shared {
+    // NOTE: this is inside a `Mutex` since recording a latency requires a mutable
+    // reference to the histogram. In the future, we could consider making the
+    // histogram counters `AtomicU64, so that the histogram could be updated
+    // with an immutable reference. Then, the mutex could be removed.
+    histogram: Mutex<Histogram<latency::Us>>,
+    // Stores the state of currently active `Tracker`s.
+    recorders: RwLock<Vec<Recorder>>,
+    // The next free index into `recorders`
+    next_recorder: AtomicUsize,
 }
 
 #[derive(Debug)]
@@ -124,19 +137,24 @@ impl Shared {
             let idx = self.next_recorder.load(Ordering::Relaxed);
             // This is determined in a scope so that we can move `Self` into the
             // new tracker without doing a second (unecessary) arc bump.
-            let free = {
+            let acquired = {
+                // Do we have any free recorders remaining, or must we grow the
+                // slab?
                 let recorders = self
                     .recorders
                     .read()
                     .ok()
                     .filter(|recorders| idx < recorders.len())
                     .unwrap_or_else(|| {
+                        // If there are no free recorders in the slab, extend it
+                        // (acquiring a write lock temporarily).
                         self.grow();
                         self.recorders.read().unwrap()
                     });
 
                 let next = recorders[idx].next.load(Ordering::Acquire);
-
+                // If the recorder is still idle, update its ref count & set the
+                // free index to point at the next free recorder.
                 recorders[idx]
                     .ref_count
                     .compare_and_swap(0, 1, Ordering::AcqRel)
@@ -146,7 +164,8 @@ impl Shared {
                         .compare_and_swap(idx, next, Ordering::AcqRel)
                         == idx
             };
-            if free {
+
+            if acquired {
                 return Tracker {
                     shared: self,
                     idx,
@@ -154,6 +173,8 @@ impl Shared {
                 };
             }
 
+            // The recorder at `idx` was not actually free! Try again with a
+            // fresh index.
             atomic::spin_loop_hint()
         }
     }
