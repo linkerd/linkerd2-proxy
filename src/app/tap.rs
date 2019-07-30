@@ -2,37 +2,44 @@ use super::identity;
 use futures::{future, Future};
 use logging;
 use proxy;
-use std::error;
+use std::{error, io};
 use svc;
 use tokio::executor;
 use tower_grpc as grpc;
 use transport::{
     tls::{self, HasPeerIdentity},
-    Listen,
+    Listen, Connection,
 };
 use Conditional;
 
-macro_rules! tap_server {
-    { $session:ident, $svc:ident, $log_context:ident } => {{
-        let svc = proxy::grpc::req_box_body::Service::new($svc);
+fn spawn_tap_service<S, B>(
+    session: Connection,
+    f: impl Future<Item = S, Error = ()> + 'static,
+    log: logging::Server,
+) -> Result<(), io::Error>
+where
+    B: tower_grpc::Body + Send + 'static,
+    B::Data: Send + 'static,
+    S: svc::Service<http::Request<grpc::BoxBody>, Response = http::Response<B>> + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Box<dyn error::Error + Send + Sync>>,
+{
+    let log2 = log.clone();
+    let f = f.and_then(move |svc| {
+        let svc = proxy::grpc::req_box_body::Service::new(svc);
         let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
         let svc = proxy::http::HyperServerSvc::new(svc);
 
         hyper::server::conn::Http::new()
-            .with_executor($log_context.executor())
+            .with_executor(log2.executor())
             .http2_only(true)
-            .serve_connection($session, svc)
+            .serve_connection(session, svc)
             .map_err(|err| debug!("tap connection error: {}", err))
-    };}
-}
+    });
 
-macro_rules! tap_task {
-    { $srv:ident, $log:ident, $new_service:ident } => {{
-        executor::current_thread::TaskExecutor::current()
-            .spawn_local(Box::new($log.future($srv)))
-            .map(|()| $new_service)
-            .map_err(task::Error::into_io)
-    };}
+    executor::current_thread::TaskExecutor::current()
+        .spawn_local(Box::new(log.future(f)))
+        .map_err(task::Error::into_io)
 }
 
 pub fn serve_tap<N, B>(
@@ -57,7 +64,6 @@ where
         bound_port
             .listen_and_fold(new_service, move |mut new_service, (session, remote)| {
                 let log = log.clone().with_remote(remote);
-                let log_context = log.clone();
 
                 if let Conditional::Some(ref tap_svc_name) = tap_svc_name {
                     debug!("expecting Tap client name: {:?}", tap_svc_name);
@@ -77,20 +83,18 @@ where
                         let svc = api::tap::server::TapServer::new(
                             proxy::grpc::unauthenticated::Unauthenticated,
                         );
-                        let srv = tap_server!(session, svc, log_context);
-                        let task = tap_task!(srv, log, new_service);
-
-                        return future::result(task);
+                        let spawn = spawn_tap_service(session, future::ok(svc), log)
+                            .map(|()| new_service);
+                        return future::result(spawn);
                     }
                 }
 
-                let srv = new_service
+                let svc = new_service
                     .make_service(())
-                    .map_err(|err| error!("tap MakeService error: {}", err))
-                    .and_then(move |svc| tap_server!(session, svc, log_context));
-                let task = tap_task!(srv, log, new_service);
-
-                future::result(task)
+                    .map_err(|err| error!("tap MakeService error: {}", err));
+                let spawn = spawn_tap_service(session, svc, log)
+                    .map(|()| new_service);
+                future::result(spawn)
             })
             .map_err(|err| error!("tap listen error: {}", err))
     };
