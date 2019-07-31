@@ -36,16 +36,30 @@ struct Shared {
     // histogram counters `AtomicU64, so that the histogram could be updated
     // with an immutable reference. Then, the mutex could be removed.
     histogram: Mutex<Histogram<latency::Us>>,
-    // Stores the state of currently active `Tracker`s.
+    /// Stores the state of currently active `Tracker`s.
     recorders: RwLock<Vec<Recorder>>,
-    // The next free index into `recorders`
-    next_recorder: AtomicUsize,
+    /// The index of the most recently finished recorder.
+    ///
+    /// When a new recorder is needed, the recorder at this index will be used,
+    /// and that recorder's next index will be set as the head. of the free
+    /// list.
+    ///
+    /// When an active recorder completes, this will be set to its index, and
+    /// the previous value will become the freed recorder's next pointer.
+    idle_head: AtomicUsize,
 }
 
 #[derive(Debug)]
 struct Recorder {
-    ref_count: AtomicUsize,
-    next: AtomicUsize,
+    /// The number of currently active `Tracker`s for this recorder.
+    ///
+    /// When a request is initially received, there will be one `Tracker` in its
+    /// `Extensions` map. If the request is cloned for retries, the `Tracker`
+    /// will be cloned, incrementing this count. Dropping a `Tracker` decrements
+    /// this count, and when it reaches 0, the handle time is recorded.
+    active_trackers: AtomicUsize,
+    /// Index of the next free recorder.
+    next_idle: AtomicUsize,
 }
 
 impl insert::Lazy<Tracker> for InsertTracker {
@@ -118,23 +132,23 @@ impl Shared {
     fn new() -> Self {
         let mut recorders = Vec::with_capacity(Self::INITIAL_RECORDERS);
         for i in 0..Self::INITIAL_RECORDERS {
-            let next = AtomicUsize::new(i + 1);
+            let next_idle = AtomicUsize::new(i + 1);
             recorders.push(Recorder {
-                ref_count: AtomicUsize::new(0),
-                next,
+                active_trackers: AtomicUsize::new(0),
+                next_idle,
             })
         }
         Self {
             histogram: Mutex::new(Histogram::default()), // TODO(eliza): should we change the bounds here?
             recorders: RwLock::new(recorders),
-            next_recorder: AtomicUsize::new(0),
+            idle_head: AtomicUsize::new(0),
         }
     }
 
     fn tracker(self: Arc<Self>) -> Tracker {
         let t0 = Instant::now();
         loop {
-            let idx = self.next_recorder.load(Ordering::Relaxed);
+            let idx = self.idle_head.load(Ordering::Relaxed);
             // This is determined in a scope so that we can move `Self` into the
             // new tracker without doing a second (unecessary) arc bump.
             let acquired = {
@@ -152,17 +166,14 @@ impl Shared {
                         self.recorders.read().unwrap()
                     });
 
-                let next = recorders[idx].next.load(Ordering::Acquire);
+                let next = recorders[idx].next_idle.load(Ordering::Acquire);
                 // If the recorder is still idle, update its ref count & set the
                 // free index to point at the next free recorder.
                 recorders[idx]
-                    .ref_count
+                    .active_trackers
                     .compare_and_swap(0, 1, Ordering::AcqRel)
                     == 0
-                    && self
-                        .next_recorder
-                        .compare_and_swap(idx, next, Ordering::AcqRel)
-                        == idx
+                    && self.idle_head.compare_and_swap(idx, next, Ordering::AcqRel) == idx
             };
 
             if acquired {
@@ -179,7 +190,6 @@ impl Shared {
         }
     }
 
-    #[cold]
     #[inline(never)]
     fn grow(&self) {
         let mut recorders = self.recorders.write().unwrap();
@@ -187,10 +197,10 @@ impl Shared {
         let new_len = len * 2;
         recorders.reserve(new_len);
         for i in len..new_len {
-            let next = AtomicUsize::new(i + 1);
+            let next_idle = AtomicUsize::new(i + 1);
             recorders.push(Recorder {
-                ref_count: AtomicUsize::new(0),
-                next,
+                active_trackers: AtomicUsize::new(0),
+                next_idle,
             })
         }
     }
@@ -212,7 +222,7 @@ impl Shared {
 
         // If the prior ref count was 1, it's now 0 and the request has been
         // fully dropped.
-        if recorder.ref_count.fetch_sub(1, Ordering::Release) == 1 {
+        if recorder.active_trackers.fetch_sub(1, Ordering::Release) == 1 {
             let elapsed = t0.elapsed();
 
             let mut hist = match self.histogram.lock() {
@@ -221,15 +231,23 @@ impl Shared {
                 Err(_) if panicking => return,
                 Err(e) => panic!("lock poisoned: {:?}", e),
             };
+
+            // Record the handle time for this recorder.
             hist.add(elapsed);
-            let next_idx = self.next_recorder.swap(idx, Ordering::AcqRel);
-            recorder.next.store(next_idx, Ordering::Release);
+
+            // Link the recorder onto the free list by setting  the free-list
+            // head to its index, and setting the recorder's next pointer to the
+            // previous head index.
+            let next_idx = self.idle_head.swap(idx, Ordering::AcqRel);
+            recorder.next_idle.store(next_idx, Ordering::Release);
         }
     }
 
     fn clone_tracker(&self, idx: usize) {
         let recorders = self.recorders.read().unwrap();
-        let _prev = recorders[idx].ref_count.fetch_add(1, Ordering::Release);
+        let _prev = recorders[idx]
+            .active_trackers
+            .fetch_add(1, Ordering::Release);
         debug_assert!(_prev > 0, "cannot clone an idle tracker");
     }
 }
