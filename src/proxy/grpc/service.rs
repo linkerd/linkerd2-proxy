@@ -111,3 +111,24 @@ pub mod res_body_as_payload {
         }
     }
 }
+
+pub mod unauthenticated {
+    use api::tap as api;
+    use futures::{future, stream};
+    use tower_grpc::{Code, Request, Response, Status};
+
+    #[derive(Clone)]
+    pub struct Unauthenticated;
+
+    impl api::server::Tap for Unauthenticated {
+        type ObserveStream = stream::Empty<api::TapEvent, Status>;
+        type ObserveFuture = future::FutureResult<Response<Self::ObserveStream>, Status>;
+
+        fn observe(&mut self, _req: Request<api::ObserveRequest>) -> Self::ObserveFuture {
+            future::err(Status::new(
+                Code::Unauthenticated,
+                "client is not authenticated for the tap server",
+            ))
+        }
+    }
+}

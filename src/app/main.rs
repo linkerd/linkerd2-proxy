@@ -4,19 +4,18 @@ use hyper;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
-use std::{error, fmt, io};
-use tokio::executor::{self, DefaultExecutor, Executor};
+use std::{fmt, io};
+use tokio::executor::{DefaultExecutor, Executor};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::runtime::current_thread;
 use tokio_timer::clock;
-use tower_grpc as grpc;
 
 use app::classify::{self, Class};
 use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
+use app::tap::serve_tap;
 use control;
 use dns;
 use drain;
-use logging;
 use metrics::FmtMetrics;
 use never::Never;
 use proxy::{
@@ -243,8 +242,6 @@ where
                 panic!("invalid DNS configuration: {:?}", e);
             });
 
-        let (tap_layer, tap_grpc, tap_daemon) = tap::new();
-
         let (ctl_http_metrics, ctl_http_report) = {
             let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("control"))
@@ -374,8 +371,11 @@ where
             config.destination_context.clone(),
         );
 
+        let (tap_layer, tap_grpc, tap_daemon) = tap::new();
+
         // Spawn a separate thread to handle the admin stuff.
         {
+            let tap_svc_name = config.tap_svc_name.clone();
             let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
             thread::Builder::new()
                 .name("admin".into())
@@ -393,7 +393,7 @@ where
 
                     if let Some(listener) = control_listener {
                         rt.spawn(tap_daemon.map_err(|_| ()));
-                        rt.spawn(serve_tap(listener, TapServer::new(tap_grpc)));
+                        rt.spawn(serve_tap(listener, tap_svc_name, TapServer::new(tap_grpc)));
                     }
 
                     rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
@@ -952,53 +952,4 @@ where
             self.future.poll()
         }
     }
-}
-
-fn serve_tap<N, B>(
-    bound_port: Listen<identity::Local, ()>,
-    new_service: N,
-) -> impl Future<Item = (), Error = ()> + 'static
-where
-    B: tower_grpc::Body + Send + 'static,
-    B::Data: Send + 'static,
-    N: svc::MakeService<(), http::Request<grpc::BoxBody>, Response = http::Response<B>>
-        + Send
-        + 'static,
-    N::Error: Into<Box<dyn error::Error + Send + Sync>>,
-    N::MakeError: ::std::fmt::Display,
-    <N::Service as svc::Service<http::Request<grpc::BoxBody>>>::Future: Send + 'static,
-{
-    let log = logging::admin().server("tap", bound_port.local_addr());
-
-    let fut = {
-        let log = log.clone();
-        // TODO: serve over TLS.
-        bound_port
-            .listen_and_fold(new_service, move |mut new_service, (session, remote)| {
-                let log = log.clone().with_remote(remote);
-                let log_clone = log.clone();
-                let serve = new_service
-                    .make_service(())
-                    .map_err(|err| error!("tap MakeService error: {}", err))
-                    .and_then(move |svc| {
-                        let svc = proxy::grpc::req_box_body::Service::new(svc);
-                        let svc = proxy::grpc::res_body_as_payload::Service::new(svc);
-                        let svc = proxy::http::HyperServerSvc::new(svc);
-                        hyper::server::conn::Http::new()
-                            .with_executor(log_clone.executor())
-                            .http2_only(true)
-                            .serve_connection(session, svc)
-                            .map_err(|err| debug!("tap connection error: {}", err))
-                    });
-
-                let r = executor::current_thread::TaskExecutor::current()
-                    .spawn_local(Box::new(log.future(serve)))
-                    .map(|()| new_service)
-                    .map_err(task::Error::into_io);
-                future::result(r)
-            })
-            .map_err(|err| error!("tap listen error: {}", err))
-    };
-
-    log.future(fut)
 }
