@@ -12,8 +12,8 @@ use tokio_timer::clock;
 use tower_grpc as grpc;
 
 use app::classify::{self, Class};
-use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use app::handle_time;
+use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use control;
 use dns;
 use drain;

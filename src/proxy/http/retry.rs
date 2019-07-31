@@ -5,7 +5,7 @@ use http::{Request, Response};
 use tower::retry as tower_retry;
 pub use tower::retry::budget::Budget;
 
-use proxy::http::metrics::{Scoped, Stats, handle_time};
+use proxy::http::metrics::{handle_time, Scoped, Stats};
 use svc;
 
 pub trait CanRetry {

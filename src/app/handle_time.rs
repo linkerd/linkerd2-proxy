@@ -1,7 +1,7 @@
-use proxy::http::metrics::handle_time;
-use metrics::{Metric, FmtMetrics};
 use super::metric_labels::Direction;
-use std::{iter, fmt};
+use metrics::{FmtMetrics, Metric};
+use proxy::http::metrics::handle_time;
+use std::{fmt, iter};
 
 #[derive(Clone, Debug)]
 pub struct Metrics {
@@ -38,7 +38,6 @@ impl Metrics {
             .chain(iter::once((Direction::Out, &self.outbound)))
     }
 }
-
 
 impl FmtMetrics for Metrics {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
