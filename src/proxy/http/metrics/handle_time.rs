@@ -131,13 +131,7 @@ impl Shared {
 
     fn new() -> Self {
         let mut recorders = Vec::with_capacity(Self::INITIAL_RECORDERS);
-        for i in 0..Self::INITIAL_RECORDERS {
-            let next_idle = AtomicUsize::new(i + 1);
-            recorders.push(Recorder {
-                active_trackers: AtomicUsize::new(0),
-                next_idle,
-            })
-        }
+        Self::add_recorders(&mut recorders, Self::INITIAL_RECORDERS);
         Self {
             histogram: Mutex::new(Histogram::default()), // TODO(eliza): should we change the bounds here?
             recorders: RwLock::new(recorders),
@@ -160,8 +154,8 @@ impl Shared {
                     .ok()
                     .filter(|recorders| idx < recorders.len())
                     .unwrap_or_else(|| {
-                        // If there are no free recorders in the slab, extend it
-                        // (acquiring a write lock temporarily).
+                        // Slow path: if there are no free recorders in the
+                        // slab, extend it (acquiring a write lock temporarily).
                         self.grow();
                         self.recorders.read().unwrap()
                     });
@@ -193,16 +187,9 @@ impl Shared {
     #[inline(never)]
     fn grow(&self) {
         let mut recorders = self.recorders.write().unwrap();
-        let len = recorders.len();
-        let new_len = len * 2;
-        recorders.reserve(new_len);
-        for i in len..new_len {
-            let next_idle = AtomicUsize::new(i + 1);
-            recorders.push(Recorder {
-                active_trackers: AtomicUsize::new(0),
-                next_idle,
-            })
-        }
+        let amount = recorders.len() * 2;
+        recorders.reserve(amount);
+        Self::add_recorders(&mut recorders, amount);
     }
 
     fn drop_tracker(&self, Tracker { idx, t0, .. }: &Tracker) {
@@ -249,5 +236,17 @@ impl Shared {
             .active_trackers
             .fetch_add(1, Ordering::Release);
         debug_assert!(_prev > 0, "cannot clone an idle tracker");
+    }
+
+    fn add_recorders(recorders: &mut Vec<Recorder>, amount: usize) {
+        let len = recorders.len();
+        let new_len = len + amount;
+        for i in len..new_len {
+            let next_idle = AtomicUsize::new(i + 1);
+            recorders.push(Recorder {
+                active_trackers: AtomicUsize::new(0),
+                next_idle,
+            })
+        }
     }
 }
