@@ -200,8 +200,15 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         Some(identity.addr)
     } else {
         env.put(app::config::ENV_IDENTITY_DISABLED, "test".to_owned());
+        env.put(app::config::ENV_TAP_DISABLED, "test".to_owned());
         None
     };
+
+    if !env.contains_key(app::config::ENV_TAP_DISABLED)
+        && !env.contains_key(app::config::ENV_TAP_SVC_NAME)
+    {
+        env.put(app::config::ENV_TAP_SVC_NAME, "test-identity".to_owned())
+    }
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports

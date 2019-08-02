@@ -455,8 +455,6 @@ impl Config {
             parse_control_addr(strings, ENV_DESTINATION_SVC_BASE)
         };
 
-        let tap_svc_name = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
-
         let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
         let dst_get_suffixes = parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
@@ -471,7 +469,8 @@ impl Config {
         let initial_connection_window_size =
             parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
 
-        let control_listener = parse_control_listener(strings);
+        let control_listener = parse_control_listener(strings, id_disabled);
+        let tap_svc_name = parse_tap_svc_name(strings);
 
         Ok(Config {
             outbound_listener: Listener {
@@ -614,6 +613,14 @@ impl TestEnv {
     pub fn put(&mut self, key: &'static str, value: String) {
         self.values.insert(key, value);
     }
+
+    pub fn contains_key(&self, key: &'static str) -> bool {
+        self.values.contains_key(key)
+    }
+
+    pub fn remove(&mut self, key: &'static str) {
+        self.values.remove(key);
+    }
 }
 
 impl Strings for TestEnv {
@@ -624,7 +631,57 @@ impl Strings for TestEnv {
 
 // ===== Parsing =====
 
-fn parse_control_listener(strings: &Strings) -> Result<Option<Listener>, Error> {
+/// There is a dependency on identity being enabled for tap to properly work.
+/// Depending on the setting of both, a user could end up in an improperly
+/// configured proxy environment.
+///
+/// ```plain
+///     E = Enabled; D = Disabled
+///     +----------+-----+--------------+
+///     | Identity | Tap | Result       |
+///     +----------+-----+--------------+
+///     | E        | E   | Ok(Some(..)) |
+///     +----------+-----+--------------+
+///     | E        | D   | Ok(None)     |
+///     +----------+-----+--------------+
+///     | D        | E   | Err(..)      |
+///     +----------+-----+--------------+
+///     | D        | D   | Ok(None)     |
+///     +----------+-----+--------------+
+/// ```
+fn parse_control_listener(strings: &Strings, id_disabled: bool) -> Result<Option<Listener>, Error> {
+    let tap_disabled = strings
+        .get(ENV_TAP_DISABLED)?
+        .map(|d| !d.is_empty())
+        .unwrap_or(false);
+
+    //     E = Enabled; D = Disabled
+    //     +----------+-----+--------------+
+    //     | Identity | Tap | Result       |
+    //     +----------+-----+--------------+
+    //     | E        | E   | Ok(Some(..)) |
+    //     +----------+-----+--------------+
+    //     | E        | D   | Ok(None)     |
+    //     +----------+-----+--------------+
+    //     | D        | E   | Err(..)      |
+    //     +----------+-----+--------------+
+    //     | D        | D   | Ok(None)     |
+    //     +----------+-----+--------------+
+    match (id_disabled, tap_disabled) {
+        (_, true) => Ok(None),
+        (true, false) => {
+            error!("{} must be set if identity is disabled", ENV_TAP_DISABLED);
+            Err(Error::InvalidEnvVar)
+        }
+        (false, false) => {
+            let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
+                .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
+            Ok(Some(Listener { addr }))
+        }
+    }
+}
+
+fn parse_tap_svc_name(strings: &Strings) -> Result<Option<identity::Name>, Error> {
     let tap_disabled = strings
         .get(ENV_TAP_DISABLED)?
         .map(|d| !d.is_empty())
@@ -633,9 +690,15 @@ fn parse_control_listener(strings: &Strings) -> Result<Option<Listener>, Error> 
     if tap_disabled {
         Ok(None)
     } else {
-        let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
-            .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
-        Ok(Some(Listener { addr }))
+        let tap_svc_name = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
+
+        match tap_svc_name? {
+            Some(tap_svc_name) => Ok(Some(tap_svc_name)),
+            None => {
+                error!("{} must be set or tap must be disabled", ENV_TAP_SVC_NAME);
+                Err(Error::InvalidEnvVar)
+            }
+        }
     }
 }
 

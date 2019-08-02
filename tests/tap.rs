@@ -7,11 +7,25 @@ use std::time::SystemTime;
 use support::tap::TapEventExt;
 
 #[test]
-fn tap_enabled_by_default() {
+fn tap_enabled_when_identity_enabled() {
+    let _ = trace_init();
+
+    let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
+
+    let proxy = proxy::new()
+        .identity(identity_env.service().run())
+        .run_with_test_env(identity_env.env);
+
+    assert!(proxy.control.is_some())
+}
+
+#[test]
+fn tap_disabled_when_identity_disabled() {
     let _ = trace_init();
     let proxy = proxy::new().run();
 
-    assert!(proxy.control.is_some())
+    assert!(proxy.control.is_none())
 }
 
 #[test]
@@ -23,24 +37,6 @@ fn can_disable_tap() {
     let proxy = proxy::new().run_with_test_env(env);
 
     assert!(proxy.control.is_none())
-}
-
-#[test]
-fn rejects_no_identity_when_identity_is_not_expected() {
-    let _ = trace_init();
-    let auth = "tap.test.svc.cluster.local";
-
-    let srv = server::http1().route("/", "hello").run();
-
-    let proxy = proxy::new().inbound(srv).run();
-    let mut tap = tap::client(proxy.control.unwrap());
-    let events = tap.observe(tap::observe_request());
-
-    let client = client::http1(proxy.inbound, auth);
-    assert_eq!(client.get("/"), "hello");
-
-    let mut events = events.wait().take(1);
-    assert!(events.next().expect("next1").is_err());
 }
 
 #[test]
