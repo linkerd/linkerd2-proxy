@@ -469,8 +469,12 @@ impl Config {
         let initial_connection_window_size =
             parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
 
-        let control_listener = parse_control_listener(strings, id_disabled);
-        let tap_svc_name = parse_tap_svc_name(strings);
+        let tap_disabled = strings
+            .get(ENV_TAP_DISABLED)?
+            .map(|d| !d.is_empty())
+            .unwrap_or(false);
+        let control_listener = parse_control_listener(strings, id_disabled, tap_disabled);
+        let tap_svc_name = parse_tap_svc_name(strings, tap_disabled);
 
         Ok(Config {
             outbound_listener: Listener {
@@ -649,12 +653,11 @@ impl Strings for TestEnv {
 ///     | D        | D   | Ok(None)     |
 ///     +----------+-----+--------------+
 /// ```
-fn parse_control_listener(strings: &Strings, id_disabled: bool) -> Result<Option<Listener>, Error> {
-    let tap_disabled = strings
-        .get(ENV_TAP_DISABLED)?
-        .map(|d| !d.is_empty())
-        .unwrap_or(false);
-
+fn parse_control_listener(
+    strings: &Strings,
+    id_disabled: bool,
+    tap_disabled: bool,
+) -> Result<Option<Listener>, Error> {
     match (id_disabled, tap_disabled) {
         (_, true) => Ok(None),
         (true, false) => {
@@ -669,12 +672,10 @@ fn parse_control_listener(strings: &Strings, id_disabled: bool) -> Result<Option
     }
 }
 
-fn parse_tap_svc_name(strings: &Strings) -> Result<Option<identity::Name>, Error> {
-    let tap_disabled = strings
-        .get(ENV_TAP_DISABLED)?
-        .map(|d| !d.is_empty())
-        .unwrap_or(false);
-
+fn parse_tap_svc_name(
+    strings: &Strings,
+    tap_disabled: bool,
+) -> Result<Option<identity::Name>, Error> {
     if tap_disabled {
         Ok(None)
     } else {
