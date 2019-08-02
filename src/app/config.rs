@@ -655,18 +655,6 @@ fn parse_control_listener(strings: &Strings, id_disabled: bool) -> Result<Option
         .map(|d| !d.is_empty())
         .unwrap_or(false);
 
-    //     E = Enabled; D = Disabled
-    //     +----------+-----+--------------+
-    //     | Identity | Tap | Result       |
-    //     +----------+-----+--------------+
-    //     | E        | E   | Ok(Some(..)) |
-    //     +----------+-----+--------------+
-    //     | E        | D   | Ok(None)     |
-    //     +----------+-----+--------------+
-    //     | D        | E   | Err(..)      |
-    //     +----------+-----+--------------+
-    //     | D        | D   | Ok(None)     |
-    //     +----------+-----+--------------+
     match (id_disabled, tap_disabled) {
         (_, true) => Ok(None),
         (true, false) => {
