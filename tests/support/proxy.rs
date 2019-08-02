@@ -204,6 +204,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         None
     };
 
+    // If identity is enabled but the test is not concerned with tap, ensure
+    // there is a tap service name set
     if !env.contains_key(app::config::ENV_TAP_DISABLED)
         && !env.contains_key(app::config::ENV_TAP_SVC_NAME)
     {
