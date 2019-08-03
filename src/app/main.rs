@@ -392,6 +392,10 @@ where
                     ));
 
                     if let Some(listener) = control_listener {
+                        // Since tap is not disabled, a tap service name must
+                        // have been set in the environment
+                        let tap_svc_name = tap_svc_name.value().unwrap().clone();
+
                         rt.spawn(tap_daemon.map_err(|_| ()));
                         rt.spawn(serve_tap(listener, tap_svc_name, TapServer::new(tap_grpc)));
                     }

@@ -6,10 +6,7 @@ use std::{error, io};
 use svc;
 use tokio::executor;
 use tower_grpc as grpc;
-use transport::{
-    tls::{self, HasPeerIdentity},
-    Connection, Listen,
-};
+use transport::{tls::HasPeerIdentity, Connection, Listen};
 use Conditional;
 
 fn spawn_tap_service<S, B>(
@@ -44,7 +41,7 @@ where
 
 pub fn serve_tap<N, B>(
     bound_port: Listen<identity::Local, ()>,
-    tap_svc_name: tls::PeerIdentity,
+    tap_svc_name: identity::Name,
     new_service: N,
 ) -> impl Future<Item = (), Error = ()> + 'static
 where
@@ -64,35 +61,34 @@ where
         bound_port
             .listen_and_fold(new_service, move |mut new_service, (session, remote)| {
                 let log = log.clone().with_remote(remote);
+                trace!("expecting Tap client name: {:?}", tap_svc_name);
 
-                if let Conditional::Some(ref tap_svc_name) = tap_svc_name {
-                    trace!("expecting Tap client name: {:?}", tap_svc_name);
-
-                    let is_expected_name = match session.peer_identity() {
-                        Conditional::Some(ref peer_name) => {
-                            trace!("found Tap client name: {:?}", peer_name);
-                            peer_name == tap_svc_name
-                        }
-                        Conditional::None(reason) => {
-                            trace!("did not find Tap client name: {}", reason);
-                            false
-                        }
-                    };
-
-                    if is_expected_name {
-                        let svc = new_service
-                            .make_service(())
-                            .map_err(|err| error!("tap MakeService error: {}", err));
-                        let spawn = spawn_tap_service(session, svc, log).map(|()| new_service);
-
-                        return future::result(spawn);
+                let is_tap_service = match session.peer_identity() {
+                    Conditional::Some(peer_name) => {
+                        trace!("found Tap client name: {:?}", peer_name);
+                        peer_name == tap_svc_name
                     }
-                }
+                    Conditional::None(reason) => {
+                        trace!("did not find Tap client name: {}", reason);
+                        false
+                    }
+                };
 
-                let svc =
-                    api::tap::server::TapServer::new(proxy::grpc::unauthenticated::Unauthenticated);
-                let spawn = spawn_tap_service(session, future::ok(svc), log).map(|()| new_service);
-                future::result(spawn)
+                if is_tap_service {
+                    let svc = new_service
+                        .make_service(())
+                        .map_err(|err| error!("tap MakeService error: {}", err));
+                    let spawn = spawn_tap_service(session, svc, log).map(|()| new_service);
+
+                    future::result(spawn)
+                } else {
+                    let svc = api::tap::server::TapServer::new(
+                        proxy::grpc::unauthenticated::Unauthenticated,
+                    );
+                    let spawn =
+                        spawn_tap_service(session, future::ok(svc), log).map(|()| new_service);
+                    future::result(spawn)
+                }
             })
             .map_err(|err| error!("tap listen error: {}", err))
     };
