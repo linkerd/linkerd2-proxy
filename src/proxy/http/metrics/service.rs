@@ -144,7 +144,7 @@ where
 impl<M, K, R, C> svc::Layer<M> for Layer<K, R, C>
 where
     K: Clone + Hash + Eq,
-    R: Hash + Eq,    
+    R: Hash + Eq,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
@@ -288,7 +288,7 @@ where
                 let now = clock::now();
                 if let Ok(mut metrics) = lock.lock() {
                     (*metrics).last_update = now;
-                    
+
                     let dst_metrics = (*metrics).by_dst
                         .entry(dst.clone())
                         .or_insert_with(|| DstMetrics::default());
@@ -296,7 +296,7 @@ where
                     let route_metrics = dst_metrics.by_route
                         .entry(route.clone())
                         .or_insert_with(|| RouteMetrics::default());
-                    
+
                     route_metrics.total.incr();
 
                 }
@@ -568,7 +568,7 @@ fn measure_class<R: Hash + Eq, C: Hash + Eq>(
 impl<B, R, C> Payload for ResponseBody<B, R, C>
 where
     B: Payload,
-    R: Hash + Eq + Send + Clone + 'static, 
+    R: Hash + Eq + Send + Clone + 'static,
     C: ClassifyEos + Send + 'static,
     C::Class: Hash + Eq + Send,
 {

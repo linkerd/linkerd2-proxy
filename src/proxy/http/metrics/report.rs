@@ -134,7 +134,6 @@ where
         Ok(())
     }
 
-
     fn fmt_by_route<M, F>(
         &self,
         f: &mut fmt::Formatter,

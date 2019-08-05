@@ -123,7 +123,7 @@ where
 impl<T, R, C> Scoped<T> for Arc<Mutex<Registry<T, R, C>>>
 where
     T: Hash + Eq,
-    R: Hash + Eq,    
+    R: Hash + Eq,
     C: Hash + Eq,
 {
     type Scope = Arc<Mutex<RequestMetrics<R, C>>>;
