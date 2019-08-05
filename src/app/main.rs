@@ -65,7 +65,7 @@ struct ProxyParts<G> {
     trace_level: trace::LevelHandle,
 
     admin_listener: Listen<identity::Local, ()>,
-    control_listener: Option<Listen<identity::Local, ()>>,
+    control_listener: Option<(Listen<identity::Local, ()>, identity::Name)>,
 
     inbound_listener: Listen<identity::Local, G>,
     outbound_listener: Listen<identity::Local, G>,
@@ -102,10 +102,12 @@ where
         let identity = config.identity_config.as_ref().map(identity::Local::new);
         let local_identity = identity.as_ref().map(|(l, _)| l.clone());
 
-        let control_listener = config
-            .control_listener
-            .as_ref()
-            .map(|l| Listen::bind(l.addr, local_identity.clone()).expect("dst_svc listener bind"));
+        let control_listener = config.control_listener.as_ref().map(|cl| {
+            let listener = Listen::bind(cl.listener.addr, local_identity.clone())
+                .expect("dst_svc listener bind");
+
+            (listener, cl.tap_svc_name.clone())
+        });
 
         let admin_listener = Listen::bind(config.admin_listener.addr, local_identity.clone())
             .expect("metrics listener bind");
@@ -148,7 +150,7 @@ where
         self.proxy_parts
             .control_listener
             .as_ref()
-            .map(|l| l.local_addr().clone())
+            .map(|l| l.0.local_addr().clone())
     }
 
     pub fn inbound_addr(&self) -> SocketAddr {
@@ -375,7 +377,6 @@ where
 
         // Spawn a separate thread to handle the admin stuff.
         {
-            let tap_svc_name = config.tap_svc_name.clone();
             let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
             thread::Builder::new()
                 .name("admin".into())
@@ -391,11 +392,7 @@ where
                         Admin::new(report, readiness, trace_level),
                     ));
 
-                    if let Some(listener) = control_listener {
-                        // Since tap is not disabled, a tap service name must
-                        // have been set in the environment
-                        let tap_svc_name = tap_svc_name.value().unwrap().clone();
-
+                    if let Some((listener, tap_svc_name)) = control_listener {
                         rt.spawn(tap_daemon.map_err(|_| ()));
                         rt.spawn(serve_tap(listener, tap_svc_name, TapServer::new(tap_grpc)));
                     }

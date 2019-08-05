@@ -31,8 +31,8 @@ pub struct Config {
     /// Where to listen for connections initiated by external sources.
     pub inbound_listener: Listener,
 
-    /// Where to listen for connections initiated by the control plane.
-    pub control_listener: Option<Listener>,
+    /// Where to listen for connections initiated by the tap service.
+    pub control_listener: Option<TapSettings>,
 
     /// Where to serve admin HTTP.
     pub admin_listener: Listener,
@@ -104,8 +104,6 @@ pub struct Config {
 
     pub identity_config: tls::Conditional<identity::Config>,
 
-    /// The expected name of the Tap service.
-    pub tap_svc_name: tls::PeerIdentity,
     //
     // Destination Config
     //
@@ -155,6 +153,13 @@ pub struct Config {
 pub struct H2Settings {
     pub initial_stream_window_size: Option<u32>,
     pub initial_connection_window_size: Option<u32>,
+}
+
+/// Configuration settings for the tap server
+#[derive(Debug)]
+pub struct TapSettings {
+    pub listener: Listener,
+    pub tap_svc_name: identity::Name,
 }
 
 /// Configuration settings for binding a listener.
@@ -474,7 +479,6 @@ impl Config {
             .map(|d| !d.is_empty())
             .unwrap_or(false);
         let control_listener = parse_control_listener(strings, id_disabled, tap_disabled);
-        let tap_svc_name = parse_tap_svc_name(strings, tap_disabled);
 
         Ok(Config {
             outbound_listener: Listener {
@@ -559,10 +563,6 @@ impl Config {
                 .map(Conditional::Some)
                 .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled)),
 
-            tap_svc_name: tap_svc_name?
-                .map(Conditional::Some)
-                .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled)),
-
             resolv_conf_path: resolv_conf_path?
                 .unwrap_or(DEFAULT_RESOLV_CONF.into())
                 .into(),
@@ -633,6 +633,17 @@ impl Strings for TestEnv {
     }
 }
 
+// ===== impl TapSettings =====
+
+impl TapSettings {
+    fn new(addr: SocketAddr, tap_svc_name: identity::Name) -> Self {
+        Self {
+            listener: Listener { addr },
+            tap_svc_name,
+        }
+    }
+}
+
 // ===== Parsing =====
 
 /// There is a dependency on identity being enabled for tap to properly work.
@@ -657,7 +668,7 @@ fn parse_control_listener(
     strings: &Strings,
     id_disabled: bool,
     tap_disabled: bool,
-) -> Result<Option<Listener>, Error> {
+) -> Result<Option<TapSettings>, Error> {
     match (id_disabled, tap_disabled) {
         (_, true) => Ok(None),
         (true, false) => {
@@ -667,25 +678,14 @@ fn parse_control_listener(
         (false, false) => {
             let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
-            Ok(Some(Listener { addr }))
-        }
-    }
-}
+            let tap_svc_name = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
 
-fn parse_tap_svc_name(
-    strings: &Strings,
-    tap_disabled: bool,
-) -> Result<Option<identity::Name>, Error> {
-    if tap_disabled {
-        Ok(None)
-    } else {
-        let tap_svc_name = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
-
-        match tap_svc_name? {
-            Some(tap_svc_name) => Ok(Some(tap_svc_name)),
-            None => {
-                error!("{} must be set or tap must be disabled", ENV_TAP_SVC_NAME);
-                Err(Error::InvalidEnvVar)
+            match tap_svc_name? {
+                Some(tap_svc_name) => Ok(Some(TapSettings::new(addr, tap_svc_name))),
+                None => {
+                    error!("{} must be set or tap must be disabled", ENV_TAP_SVC_NAME);
+                    Err(Error::InvalidEnvVar)
+                }
             }
         }
     }
