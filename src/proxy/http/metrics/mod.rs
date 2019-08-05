@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio_timer::clock;
 
+use addr::Addr;
 use metrics::{latency, Counter, FmtLabels, Histogram};
 
 pub mod classify;
@@ -14,9 +15,10 @@ mod service;
 pub use self::report::Report;
 pub use self::service::layer;
 
-pub fn new<T, C>(retain_idle: Duration) -> (Arc<Mutex<Registry<T, C>>>, Report<T, C>)
+pub fn new<T, R, C>(retain_idle: Duration) -> (Arc<Mutex<Registry<T, R, C>>>, Report<T, R, C>)
 where
     T: FmtLabels + Clone + Hash + Eq,
+    R: FmtLabels + Hash + Eq,
     C: FmtLabels + Hash + Eq,
 {
     let registry = Arc::new(Mutex::new(Registry::default()));
@@ -24,12 +26,13 @@ where
 }
 
 #[derive(Debug)]
-pub struct Registry<T, C>
+pub struct Registry<T, R, C>
 where
     T: Hash + Eq,
+    R: Hash + Eq,
     C: Hash + Eq,
 {
-    by_target: IndexMap<T, Arc<Mutex<RequestMetrics<C>>>>,
+    by_target: IndexMap<T, Arc<Mutex<RequestMetrics<R, C>>>>,
 }
 
 pub trait Scoped<T> {
@@ -42,13 +45,31 @@ pub trait Stats {
 }
 
 #[derive(Debug)]
-pub struct RequestMetrics<C>
+pub struct RequestMetrics<R, C>
 where
+    R: Hash + Eq,
     C: Hash + Eq,
 {
     last_update: Instant,
-    total: Counter,
     by_retry_skipped: IndexMap<RetrySkipped, Counter>,
+    by_dst: IndexMap<Option<Addr>, DstMetrics<R, C>>,
+}
+
+#[derive(Debug)]
+struct DstMetrics<R, C>
+where
+    R: Hash + Eq,
+    C: Hash + Eq,
+{
+    by_route: IndexMap<Option<R>, RouteMetrics<C>>,
+}
+
+#[derive(Debug)]
+struct RouteMetrics<C>
+where
+    C: Hash + Eq,
+{
+    total: Counter,
     by_status: IndexMap<Option<http::StatusCode>, StatusMetrics<C>>,
 }
 
@@ -71,9 +92,10 @@ enum RetrySkipped {
     Budget,
 }
 
-impl<T, C> Default for Registry<T, C>
+impl<T, R, C> Default for Registry<T, R, C>
 where
     T: Hash + Eq,
+    R: Hash + Eq,
     C: Hash + Eq,
 {
     fn default() -> Self {
@@ -83,9 +105,10 @@ where
     }
 }
 
-impl<T, C> Registry<T, C>
+impl<T, R, C> Registry<T, R, C>
 where
     T: Hash + Eq,
+    R: Hash + Eq,
     C: Hash + Eq,
 {
     /// Retains metrics for all targets that (1) no longer have an active
@@ -97,12 +120,13 @@ where
     }
 }
 
-impl<T, C> Scoped<T> for Arc<Mutex<Registry<T, C>>>
+impl<T, R, C> Scoped<T> for Arc<Mutex<Registry<T, R, C>>>
 where
     T: Hash + Eq,
+    R: Hash + Eq,    
     C: Hash + Eq,
 {
-    type Scope = Arc<Mutex<RequestMetrics<C>>>;
+    type Scope = Arc<Mutex<RequestMetrics<R, C>>>;
 
     fn scoped(&self, target: T) -> Self::Scope {
         self.lock()
@@ -114,8 +138,9 @@ where
     }
 }
 
-impl<C> RequestMetrics<C>
+impl<R, C> RequestMetrics<R, C>
 where
+    R: Hash + Eq,
     C: Hash + Eq,
 {
     fn incr_retry_skipped(&mut self, reason: RetrySkipped) {
@@ -126,28 +151,53 @@ where
     }
 }
 
-impl<C> Default for RequestMetrics<C>
+impl<R, C> Default for RequestMetrics<R, C>
 where
+    R: Hash + Eq,
     C: Hash + Eq,
 {
     fn default() -> Self {
         Self {
             last_update: clock::now(),
-            total: Counter::default(),
             by_retry_skipped: IndexMap::default(),
-            by_status: IndexMap::default(),
+            by_dst: IndexMap::default(),
         }
     }
 }
 
-impl<C> Stats for Arc<Mutex<RequestMetrics<C>>>
+impl<R, C> Stats for Arc<Mutex<RequestMetrics<R, C>>>
 where
+    R: Hash + Eq,
     C: Hash + Eq,
 {
     fn incr_retry_skipped_budget(&self) {
         if let Ok(mut metrics) = self.lock() {
             metrics.last_update = clock::now();
             metrics.incr_retry_skipped(RetrySkipped::Budget);
+        }
+    }
+}
+
+impl<R, C> Default for DstMetrics<R, C>
+where
+    R: Hash + Eq,
+    C: Hash + Eq,
+{
+    fn default() -> Self {
+        Self {
+            by_route: IndexMap::default(),
+        }
+    }
+}
+
+impl<C> Default for RouteMetrics<C>
+where
+    C: Hash + Eq,
+{
+    fn default() -> Self {
+        Self {
+            total: Counter::default(),
+            by_status: IndexMap::default(),
         }
     }
 }

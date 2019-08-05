@@ -8,100 +8,115 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio_timer::clock;
 
+use addr::Addr;
 use super::super::retry::TryClone;
 use super::classify::{ClassifyEos, ClassifyResponse};
-use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
+use super::{ClassMetrics, DstMetrics, Registry, RequestMetrics, RouteMetrics, StatusMetrics};
 use proxy::Error;
 use svc;
 
 /// A stack module that wraps services to record metrics.
 #[derive(Debug)]
-pub struct Layer<K, C>
+pub struct Layer<K, R, C>
 where
     K: Hash + Eq,
+    R: Hash + Eq,
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    registry: Arc<Mutex<Registry<K, C::Class>>>,
-    _p: PhantomData<fn() -> C>,
+    registry: Arc<Mutex<Registry<K, R, C::Class>>>,
+    _p: PhantomData<fn(R) -> C>,
 }
 
 /// Wraps services to record metrics.
 #[derive(Debug)]
-pub struct MakeSvc<M, K, C>
+pub struct MakeSvc<M, K, R, C>
 where
     K: Hash + Eq,
+    R: Hash + Eq,
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    registry: Arc<Mutex<Registry<K, C::Class>>>,
+    registry: Arc<Mutex<Registry<K, R, C::Class>>>,
     inner: M,
-    _p: PhantomData<fn() -> C>,
+    _p: PhantomData<fn(R) -> C>,
 }
 
-pub struct MakeFuture<F, C>
+pub struct MakeFuture<F, R, C>
 where
+    R: Hash + Eq,
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<R, C::Class>>>>,
     inner: F,
-    _p: PhantomData<fn() -> C>,
+    _p: PhantomData<fn(R) -> C>,
 }
 
 /// A middleware that records HTTP metrics.
 #[derive(Debug)]
-pub struct Service<S, C>
+pub struct Service<S, R, C>
 where
+    R: Hash + Eq,
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<R, C::Class>>>>,
     inner: S,
     _p: PhantomData<fn() -> C>,
 }
 
-pub struct ResponseFuture<F, C>
+pub struct ResponseFuture<F, R, C>
 where
+    R: Hash + Eq,
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
     classify: Option<C>,
-    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<R, C::Class>>>>,
     stream_open_at: Instant,
+    dst: Option<Addr>,
+    route: Option<R>,
     inner: F,
 }
 
 #[derive(Debug)]
-pub struct RequestBody<B, C>
+pub struct RequestBody<B, R, C>
 where
     B: Payload,
+    R: Hash + Eq,
     C: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<RequestMetrics<C>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<R, C>>>>,
+    dst: Option<Addr>,
+    route: Option<R>,
     inner: B,
 }
 
 #[derive(Debug)]
-pub struct ResponseBody<B, C>
+pub struct ResponseBody<B, R, C>
 where
     B: Payload,
+    R: Hash + Eq + Clone,
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {
     status: http::StatusCode,
     classify: Option<C>,
-    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<RequestMetrics<R, C::Class>>>>,
     stream_open_at: Instant,
+    dst: Option<Addr>,
+    route: Option<R>,
     latency_recorded: bool,
     inner: B,
 }
 
 // === impl Layer ===
 
-pub fn layer<K, C>(registry: Arc<Mutex<Registry<K, C::Class>>>) -> Layer<K, C>
+pub fn layer<K, R, C>(registry: Arc<Mutex<Registry<K, R, C::Class>>>) -> Layer<K, R, C>
 where
     K: Clone + Hash + Eq,
+    R: Hash + Eq,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
@@ -111,9 +126,10 @@ where
     }
 }
 
-impl<K, C> Clone for Layer<K, C>
+impl<K, R, C> Clone for Layer<K, R, C>
 where
     K: Hash + Eq,
+    R: Hash + Eq,
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
@@ -125,13 +141,14 @@ where
     }
 }
 
-impl<M, K, C> svc::Layer<M> for Layer<K, C>
+impl<M, K, R, C> svc::Layer<M> for Layer<K, R, C>
 where
     K: Clone + Hash + Eq,
+    R: Hash + Eq,    
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Service = MakeSvc<M, K, C>;
+    type Service = MakeSvc<M, K, R, C>;
 
     fn layer(&self, inner: M) -> Self::Service {
         MakeSvc {
@@ -144,10 +161,11 @@ where
 
 // === impl MakeSvc ===
 
-impl<M, K, C> Clone for MakeSvc<M, K, C>
+impl<M, K, R, C> Clone for MakeSvc<M, K, R, C>
 where
     M: Clone,
     K: Clone + Hash + Eq,
+    R: Hash + Eq,
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
@@ -160,17 +178,18 @@ where
     }
 }
 
-impl<T, M, K, C> svc::Service<T> for MakeSvc<M, K, C>
+impl<T, M, K, R, C> svc::Service<T> for MakeSvc<M, K, R, C>
 where
     T: Clone + Debug,
     K: Hash + Eq + From<T>,
     M: svc::Service<T>,
+    R: Hash + Eq,
     C: ClassifyResponse + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Response = Service<M::Response, C>;
+    type Response = Service<M::Response, R, C>;
     type Error = M::Error;
-    type Future = MakeFuture<M::Future, C>;
+    type Future = MakeFuture<M::Future, R, C>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
@@ -201,13 +220,14 @@ where
 
 // === impl MakeFuture ===
 
-impl<C, F> Future for MakeFuture<F, C>
+impl<F, R, C> Future for MakeFuture<F, R, C>
 where
     F: Future,
+    R: Hash + Eq,
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Item = Service<F::Item, C>;
+    type Item = Service<F::Item, R, C>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -223,9 +243,10 @@ where
 
 // === impl Service ===
 
-impl<S, C> Clone for Service<S, C>
+impl<S, R, C> Clone for Service<S, R, C>
 where
     S: Clone,
+    R: Hash + Eq,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
@@ -238,18 +259,19 @@ where
     }
 }
 
-impl<C, S, A, B> svc::Service<http::Request<A>> for Service<S, C>
+impl<S, A, B, R, C> svc::Service<http::Request<A>> for Service<S, R, C>
 where
-    S: svc::Service<http::Request<RequestBody<A, C::Class>>, Response = http::Response<B>>,
+    S: svc::Service<http::Request<RequestBody<A, R, C::Class>>, Response = http::Response<B>>,
     S::Error: Into<Error>,
     A: Payload,
     B: Payload,
+    R: Hash + Eq + Clone + Send + Sync + 'static,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
-    type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
+    type Response = http::Response<ResponseBody<B, R, C::ClassifyEos>>;
     type Error = Error;
-    type Future = ResponseFuture<S::Future, C>;
+    type Future = ResponseFuture<S::Future, R, C>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready().map_err(Into::into)
@@ -258,12 +280,25 @@ where
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
         let mut req_metrics = self.metrics.clone();
 
+        let dst = req.extensions().get::<Addr>().cloned();
+        let route = req.extensions().get::<R>().cloned();
+
         if req.body().is_end_stream() {
             if let Some(lock) = req_metrics.take() {
                 let now = clock::now();
                 if let Ok(mut metrics) = lock.lock() {
                     (*metrics).last_update = now;
-                    (*metrics).total.incr();
+                    
+                    let dst_metrics = (*metrics).by_dst
+                        .entry(dst.clone())
+                        .or_insert_with(|| DstMetrics::default());
+
+                    let route_metrics = dst_metrics.by_route
+                        .entry(route.clone())
+                        .or_insert_with(|| RouteMetrics::default());
+                    
+                    route_metrics.total.incr();
+
                 }
             }
         }
@@ -272,6 +307,8 @@ where
             let (head, inner) = req.into_parts();
             let body = RequestBody {
                 metrics: req_metrics,
+                dst: dst.clone(),
+                route: route.clone(),
                 inner,
             };
             http::Request::from_parts(head, body)
@@ -283,20 +320,23 @@ where
             classify: Some(classify),
             metrics: self.metrics.clone(),
             stream_open_at: clock::now(),
+            dst: dst,
+            route: route,
             inner: self.inner.call(req),
         }
     }
 }
 
-impl<C, F, B> Future for ResponseFuture<F, C>
+impl<F, B, R, C> Future for ResponseFuture<F, R, C>
 where
     F: Future<Item = http::Response<B>>,
     F::Error: Into<Error>,
     B: Payload,
+    R: Hash + Eq + Clone,
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
-    type Item = http::Response<ResponseBody<B, C::ClassifyEos>>;
+    type Item = http::Response<ResponseBody<B, R, C::ClassifyEos>>;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -317,6 +357,8 @@ where
                     classify,
                     metrics,
                     stream_open_at: self.stream_open_at,
+                    dst: self.dst.take(),
+                    route: self.route.take(),
                     latency_recorded: false,
                     inner,
                 };
@@ -327,7 +369,7 @@ where
                 if let Some(lock) = metrics {
                     if let Some(classify) = classify {
                         let class = classify.error(&e);
-                        measure_class(&lock, class, None);
+                        measure_class(&lock, class, None, self.dst.take(), self.route.take());
                     }
                 }
                 Err(e)
@@ -336,9 +378,10 @@ where
     }
 }
 
-impl<B, C> Payload for RequestBody<B, C>
+impl<B, R, C> Payload for RequestBody<B, R, C>
 where
     B: Payload,
+    R: Send + Hash + Eq + Clone + 'static,
     C: Send + Hash + Eq + 'static,
 {
     type Data = B::Data;
@@ -355,7 +398,16 @@ where
             let now = clock::now();
             if let Ok(mut metrics) = lock.lock() {
                 (*metrics).last_update = now;
-                (*metrics).total.incr();
+
+                let dst_metrics = (*metrics).by_dst
+                    .entry(self.dst.clone())
+                    .or_insert_with(|| DstMetrics::default());
+
+                let route_metrics = dst_metrics.by_route
+                    .entry(self.route.clone())
+                    .or_insert_with(|| RouteMetrics::default());
+
+                route_metrics.total.incr();
             }
         }
 
@@ -367,9 +419,10 @@ where
     }
 }
 
-impl<B, C> http_body::Body for RequestBody<B, C>
+impl<B, R, C> http_body::Body for RequestBody<B, R, C>
 where
     B: Payload,
+    R: Hash + Eq + Send + Clone + 'static,
     C: Hash + Eq + Send + 'static,
 {
     type Data = B::Data;
@@ -388,22 +441,26 @@ where
     }
 }
 
-impl<B, C> TryClone for RequestBody<B, C>
+impl<B, R, C> TryClone for RequestBody<B, R, C>
 where
     B: Payload + TryClone,
+    R: Hash + Eq + Clone,
     C: Eq + Hash,
 {
     fn try_clone(&self) -> Option<Self> {
         self.inner.try_clone().map(|inner| RequestBody {
             inner,
+            dst: self.dst.clone(),
+            route: self.route.clone(),
             metrics: self.metrics.clone(),
         })
     }
 }
 
-impl<B, C> Default for ResponseBody<B, C>
+impl<B, R, C> Default for ResponseBody<B, R, C>
 where
     B: Payload + Default,
+    R: Hash + Eq + Clone,
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {
@@ -414,14 +471,17 @@ where
             stream_open_at: clock::now(),
             classify: None,
             metrics: None,
+            dst: None,
+            route: None,
             latency_recorded: false,
         }
     }
 }
 
-impl<B, C> ResponseBody<B, C>
+impl<B, R, C> ResponseBody<B, R, C>
 where
     B: Payload,
+    R: Hash + Eq + Clone,
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {
@@ -439,7 +499,15 @@ where
 
         (*metrics).last_update = now;
 
-        let status_metrics = metrics
+        let dst_metrics = metrics.by_dst
+            .entry(self.dst.clone())
+            .or_insert_with(|| DstMetrics::default());
+
+        let route_metrics = dst_metrics.by_route
+            .entry(self.route.clone())
+            .or_insert_with(|| RouteMetrics::default());
+
+        let status_metrics = route_metrics
             .by_status
             .entry(Some(self.status))
             .or_insert_with(|| StatusMetrics::default());
@@ -451,7 +519,7 @@ where
 
     fn record_class(&mut self, class: C::Class) {
         if let Some(lock) = self.metrics.take() {
-            measure_class(&lock, class, Some(self.status));
+            measure_class(&lock, class, Some(self.status), self.dst.take(), self.route.take());
         }
     }
 
@@ -463,10 +531,12 @@ where
     }
 }
 
-fn measure_class<C: Hash + Eq>(
-    lock: &Arc<Mutex<RequestMetrics<C>>>,
+fn measure_class<R: Hash + Eq, C: Hash + Eq>(
+    lock: &Arc<Mutex<RequestMetrics<R, C>>>,
     class: C,
     status: Option<http::StatusCode>,
+    dst: Option<Addr>,
+    route: Option<R>,
 ) {
     let now = clock::now();
     let mut metrics = match lock.lock() {
@@ -476,22 +546,29 @@ fn measure_class<C: Hash + Eq>(
 
     (*metrics).last_update = now;
 
-    let status_metrics = metrics
-        .by_status
+    let dst_metrics = metrics.by_dst
+        .entry(dst)
+        .or_insert_with(|| DstMetrics::default());
+
+    let route_metrics = dst_metrics.by_route
+        .entry(route)
+        .or_insert_with(|| RouteMetrics::default());
+
+    let status_metrics = route_metrics.by_status
         .entry(status)
         .or_insert_with(|| StatusMetrics::default());
 
-    let class_metrics = status_metrics
-        .by_class
+    let class_metrics = status_metrics.by_class
         .entry(class)
         .or_insert_with(|| ClassMetrics::default());
 
     class_metrics.total.incr();
 }
 
-impl<B, C> Payload for ResponseBody<B, C>
+impl<B, R, C> Payload for ResponseBody<B, R, C>
 where
     B: Payload,
+    R: Hash + Eq + Send + Clone + 'static, 
     C: ClassifyEos + Send + 'static,
     C::Class: Hash + Eq + Send,
 {
@@ -529,9 +606,10 @@ where
     }
 }
 
-impl<B, C> http_body::Body for ResponseBody<B, C>
+impl<B, R, C> http_body::Body for ResponseBody<B, R, C>
 where
     B: Payload,
+    R: Hash + Eq + Send + Clone + 'static,
     C: ClassifyEos + Send + 'static,
     C::Class: Hash + Eq + Send + 'static,
 {
@@ -551,9 +629,10 @@ where
     }
 }
 
-impl<B, C> Drop for ResponseBody<B, C>
+impl<B, R, C> Drop for ResponseBody<B, R, C>
 where
     B: Payload,
+    R: Hash + Eq + Clone,
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {

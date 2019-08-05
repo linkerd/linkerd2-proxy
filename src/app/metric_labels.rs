@@ -74,6 +74,17 @@ impl From<dst::Route> for RouteLabels {
     }
 }
 
+impl FmtLabels for dst::Route {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let labels = prefix_labels("rt", self.labels().as_ref().into_iter());
+        if let Some(labels) = labels.as_ref() {
+            write!(f, "{}", labels)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.dst.fmt_labels(f)?;
@@ -171,6 +182,12 @@ impl FmtLabels for dst::DstAddr {
         }
 
         write!(f, ",dst=\"{}\"", self.as_ref())
+    }
+}
+
+impl FmtLabels for Addr {
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "dst=\"{}\"", self)
     }
 }
 

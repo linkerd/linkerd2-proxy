@@ -7,18 +7,19 @@ use tokio_timer::clock;
 
 use metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 
-use super::{ClassMetrics, Registry, RequestMetrics, RetrySkipped, StatusMetrics};
+use super::{ClassMetrics, Registry, RetrySkipped, RouteMetrics, StatusMetrics};
 
 /// Reports HTTP metrics for prometheus.
 #[derive(Clone, Debug)]
-pub struct Report<T, C>
+pub struct Report<T, R, C>
 where
     T: FmtLabels + Hash + Eq,
+    R: FmtLabels + Hash + Eq,
     C: FmtLabels + Hash + Eq,
 {
     prefix: &'static str,
     scope: Scope,
-    registry: Arc<Mutex<Registry<T, C>>>,
+    registry: Arc<Mutex<Registry<T, R, C>>>,
     retain_idle: Duration,
 }
 
@@ -34,12 +35,13 @@ struct Scope {
 
 // ===== impl Report =====
 
-impl<T, C> Report<T, C>
+impl<T, R, C> Report<T, R, C>
 where
     T: FmtLabels + Hash + Eq,
+    R: FmtLabels + Hash + Eq,
     C: FmtLabels + Hash + Eq,
 {
-    pub(super) fn new(retain_idle: Duration, registry: Arc<Mutex<Registry<T, C>>>) -> Self {
+    pub(super) fn new(retain_idle: Duration, registry: Arc<Mutex<Registry<T, R, C>>>) -> Self {
         Self {
             prefix: "",
             registry,
@@ -61,9 +63,10 @@ where
     }
 }
 
-impl<T, C> FmtMetrics for Report<T, C>
+impl<T, R, C> FmtMetrics for Report<T, R, C>
 where
     T: FmtLabels + Hash + Eq,
+    R: FmtLabels + Hash + Eq,
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -94,7 +97,7 @@ where
         }
 
         self.scope.request_total().fmt_help(f)?;
-        registry.fmt_by_target(f, self.scope.request_total(), |s| &s.total)?;
+        registry.fmt_by_route(f, self.scope.request_total(), |s| &s.total)?;
 
         self.scope.response_latency_ms().fmt_help(f)?;
         registry.fmt_by_status(f, self.scope.response_latency_ms(), |s| &s.latency)?;
@@ -109,30 +112,12 @@ where
     }
 }
 
-impl<T, C> Registry<T, C>
+impl<T, R, C> Registry<T, R, C>
 where
     T: FmtLabels + Hash + Eq,
+    R: FmtLabels + Hash + Eq,
     C: FmtLabels + Hash + Eq,
 {
-    fn fmt_by_target<M, F>(
-        &self,
-        f: &mut fmt::Formatter,
-        metric: Metric<M>,
-        get_metric: F,
-    ) -> fmt::Result
-    where
-        M: FmtMetric,
-        F: Fn(&RequestMetrics<C>) -> &M,
-    {
-        for (tgt, tm) in &self.by_target {
-            if let Ok(m) = tm.lock() {
-                get_metric(&*m).fmt_metric_labeled(f, metric.name, tgt)?;
-            }
-        }
-
-        Ok(())
-    }
-
     fn fmt_by_retry<M>(&self, f: &mut fmt::Formatter, metric: Metric<M>) -> fmt::Result
     where
         M: FmtMetric,
@@ -149,6 +134,32 @@ where
         Ok(())
     }
 
+
+    fn fmt_by_route<M, F>(
+        &self,
+        f: &mut fmt::Formatter,
+        metric: Metric<M>,
+        get_metric: F,
+    ) -> fmt::Result
+    where
+        M: FmtMetric,
+        F: Fn(&RouteMetrics<C>) -> &M,
+    {
+        for (tgt, tm) in &self.by_target {
+            if let Ok(tm) = tm.lock() {
+                for (dst, dm) in &tm.by_dst {
+                    for (route, m) in &dm.by_route {
+                        let labels = ((tgt, dst.as_ref()), route.as_ref());
+                        get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+
     fn fmt_by_status<M, F>(
         &self,
         f: &mut fmt::Formatter,
@@ -161,10 +172,14 @@ where
     {
         for (tgt, tm) in &self.by_target {
             if let Ok(tm) = tm.lock() {
-                for (status, m) in &tm.by_status {
-                    let status = status.as_ref().map(|s| Status(*s));
-                    let labels = (tgt, status);
-                    get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
+                for (dst, dm) in &tm.by_dst {
+                    for (route, rm) in &dm.by_route {
+                        for (status, m) in &rm.by_status {
+                            let status = status.as_ref().map(|s| Status(*s));
+                            let labels = (((tgt, dst.as_ref()), route.as_ref()), status);
+                            get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
+                        }
+                    }
                 }
             }
         }
@@ -184,11 +199,15 @@ where
     {
         for (tgt, tm) in &self.by_target {
             if let Ok(tm) = tm.lock() {
-                for (status, sm) in &tm.by_status {
-                    for (cls, m) in &sm.by_class {
-                        let status = status.as_ref().map(|s| Status(*s));
-                        let labels = (tgt, (status, cls));
-                        get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
+                for (dst, dm) in &tm.by_dst {
+                    for (route, rm) in &dm.by_route {
+                        for (status, sm) in &rm.by_status {
+                            for (cls, m) in &sm.by_class {
+                                let status = status.as_ref().map(|s| Status(*s));
+                                let labels = ((((tgt, dst.as_ref()), route.as_ref()), status), cls);
+                                get_metric(&*m).fmt_metric_labeled(f, metric.name, labels)?;
+                            }
+                        }
                     }
                 }
             }

@@ -36,7 +36,7 @@ use {Addr, Conditional};
 
 use super::admin::{Admin, Readiness};
 use super::config::{Config, H2Settings};
-use super::dst::DstAddr;
+use super::{dst, dst::DstAddr};
 use super::identity;
 use super::profiles::Client as ProfilesClient;
 
@@ -243,20 +243,20 @@ where
             });
 
         let (ctl_http_metrics, ctl_http_report) = {
-            let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
+            let (m, r) = http_metrics::new::<ControlLabels, dst::Route, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("control"))
         };
 
         let (endpoint_http_metrics, endpoint_http_report) =
-            http_metrics::new::<EndpointLabels, Class>(config.metrics_retain_idle);
+            http_metrics::new::<EndpointLabels, dst::Route, Class>(config.metrics_retain_idle);
 
         let (route_http_metrics, route_http_report) = {
-            let (m, r) = http_metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
+            let (m, r) = http_metrics::new::<RouteLabels, dst::Route, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("route"))
         };
 
         let (retry_http_metrics, retry_http_report) = {
-            let (m, r) = http_metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
+            let (m, r) = http_metrics::new::<RouteLabels, dst::Route, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("route_actual"))
         };
 
@@ -300,7 +300,7 @@ where
                     )
                     .layer(control::add_origin::layer())
                     .layer(proxy::grpc::req_body_as_payload::layer().per_make())
-                    .layer(http_metrics::layer::<_, classify::Response>(
+                    .layer(http_metrics::layer::<_, dst::Route, classify::Response>(
                         ctl_http_metrics.clone(),
                     ))
                     .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
@@ -352,7 +352,7 @@ where
                 )
                 .layer(control::add_origin::layer())
                 .layer(proxy::grpc::req_body_as_payload::layer().per_make())
-                .layer(http_metrics::layer::<_, classify::Response>(
+                .layer(http_metrics::layer::<_, dst::Route, classify::Response>(
                     ctl_http_metrics.clone(),
                 ))
                 .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
@@ -483,7 +483,7 @@ where
             //    the server, before we apply our own.
             let endpoint_stack = svc::builder()
                 .layer(require_identity_on_endpoint::layer())
-                .layer(metrics::layer::<_, classify::Response>(
+                .layer(metrics::layer::<_, dst::Route, classify::Response>(
                     endpoint_http_metrics,
                 ))
                 .layer(tap_layer.clone())
@@ -509,10 +509,10 @@ where
             let dst_route_layer = svc::builder()
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .layer(classify::layer())
-                .layer(metrics::layer::<_, classify::Response>(route_http_metrics))
+                .layer(metrics::layer::<_, dst::Route, classify::Response>(route_http_metrics))
                 .layer(proxy::http::timeout::layer())
                 .layer(retry::layer(retry_http_metrics.clone()))
-                .layer(metrics::layer::<_, classify::Response>(retry_http_metrics))
+                .layer(metrics::layer::<_, dst::Route, classify::Response>(retry_http_metrics))
                 .layer(insert::target::layer());
 
             // Routes requests to their original destination endpoints. Used as
@@ -713,7 +713,7 @@ where
                     RecognizeEndpoint::new(default_fwd_addr),
                 ))
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
-                .layer(http_metrics::layer::<_, classify::Response>(
+                .layer(http_metrics::layer::<_, dst::Route, classify::Response>(
                     endpoint_http_metrics,
                 ))
                 .layer(tap_layer)
@@ -729,7 +729,7 @@ where
             let dst_route_stack = svc::builder()
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .layer(classify::layer())
-                .layer(http_metrics::layer::<_, classify::Response>(
+                .layer(http_metrics::layer::<_, dst::Route, classify::Response>(
                     route_http_metrics,
                 ))
                 .layer(insert::target::layer());
