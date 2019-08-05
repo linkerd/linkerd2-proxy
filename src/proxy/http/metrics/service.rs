@@ -8,10 +8,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio_timer::clock;
 
-use addr::Addr;
 use super::super::retry::TryClone;
 use super::classify::{ClassifyEos, ClassifyResponse};
 use super::{ClassMetrics, DstMetrics, Registry, RequestMetrics, RouteMetrics, StatusMetrics};
+use addr::Addr;
 use proxy::Error;
 use svc;
 
@@ -289,16 +289,17 @@ where
                 if let Ok(mut metrics) = lock.lock() {
                     (*metrics).last_update = now;
 
-                    let dst_metrics = (*metrics).by_dst
+                    let dst_metrics = (*metrics)
+                        .by_dst
                         .entry(dst.clone())
                         .or_insert_with(|| DstMetrics::default());
 
-                    let route_metrics = dst_metrics.by_route
+                    let route_metrics = dst_metrics
+                        .by_route
                         .entry(route.clone())
                         .or_insert_with(|| RouteMetrics::default());
 
                     route_metrics.total.incr();
-
                 }
             }
         }
@@ -399,11 +400,13 @@ where
             if let Ok(mut metrics) = lock.lock() {
                 (*metrics).last_update = now;
 
-                let dst_metrics = (*metrics).by_dst
+                let dst_metrics = (*metrics)
+                    .by_dst
                     .entry(self.dst.clone())
                     .or_insert_with(|| DstMetrics::default());
 
-                let route_metrics = dst_metrics.by_route
+                let route_metrics = dst_metrics
+                    .by_route
                     .entry(self.route.clone())
                     .or_insert_with(|| RouteMetrics::default());
 
@@ -499,11 +502,13 @@ where
 
         (*metrics).last_update = now;
 
-        let dst_metrics = metrics.by_dst
+        let dst_metrics = metrics
+            .by_dst
             .entry(self.dst.clone())
             .or_insert_with(|| DstMetrics::default());
 
-        let route_metrics = dst_metrics.by_route
+        let route_metrics = dst_metrics
+            .by_route
             .entry(self.route.clone())
             .or_insert_with(|| RouteMetrics::default());
 
@@ -519,7 +524,13 @@ where
 
     fn record_class(&mut self, class: C::Class) {
         if let Some(lock) = self.metrics.take() {
-            measure_class(&lock, class, Some(self.status), self.dst.take(), self.route.take());
+            measure_class(
+                &lock,
+                class,
+                Some(self.status),
+                self.dst.take(),
+                self.route.take(),
+            );
         }
     }
 
@@ -546,19 +557,23 @@ fn measure_class<R: Hash + Eq, C: Hash + Eq>(
 
     (*metrics).last_update = now;
 
-    let dst_metrics = metrics.by_dst
+    let dst_metrics = metrics
+        .by_dst
         .entry(dst)
         .or_insert_with(|| DstMetrics::default());
 
-    let route_metrics = dst_metrics.by_route
+    let route_metrics = dst_metrics
+        .by_route
         .entry(route)
         .or_insert_with(|| RouteMetrics::default());
 
-    let status_metrics = route_metrics.by_status
+    let status_metrics = route_metrics
+        .by_status
         .entry(status)
         .or_insert_with(|| StatusMetrics::default());
 
-    let class_metrics = status_metrics.by_class
+    let class_metrics = status_metrics
+        .by_class
         .entry(class)
         .or_insert_with(|| ClassMetrics::default());
 

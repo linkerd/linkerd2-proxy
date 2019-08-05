@@ -158,7 +158,6 @@ where
         Ok(())
     }
 
-
     fn fmt_by_status<M, F>(
         &self,
         f: &mut fmt::Formatter,

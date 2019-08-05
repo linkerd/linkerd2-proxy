@@ -36,9 +36,9 @@ use {Addr, Conditional};
 
 use super::admin::{Admin, Readiness};
 use super::config::{Config, H2Settings};
-use super::{dst, dst::DstAddr};
 use super::identity;
 use super::profiles::Client as ProfilesClient;
+use super::{dst, dst::DstAddr};
 
 /// Runs a sidecar proxy.
 ///
@@ -243,7 +243,8 @@ where
             });
 
         let (ctl_http_metrics, ctl_http_report) = {
-            let (m, r) = http_metrics::new::<ControlLabels, dst::Route, Class>(config.metrics_retain_idle);
+            let (m, r) =
+                http_metrics::new::<ControlLabels, dst::Route, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("control"))
         };
 
@@ -251,12 +252,14 @@ where
             http_metrics::new::<EndpointLabels, dst::Route, Class>(config.metrics_retain_idle);
 
         let (route_http_metrics, route_http_report) = {
-            let (m, r) = http_metrics::new::<RouteLabels, dst::Route, Class>(config.metrics_retain_idle);
+            let (m, r) =
+                http_metrics::new::<RouteLabels, dst::Route, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("route"))
         };
 
         let (retry_http_metrics, retry_http_report) = {
-            let (m, r) = http_metrics::new::<RouteLabels, dst::Route, Class>(config.metrics_retain_idle);
+            let (m, r) =
+                http_metrics::new::<RouteLabels, dst::Route, Class>(config.metrics_retain_idle);
             (m, r.with_prefix("route_actual"))
         };
 
@@ -509,10 +512,14 @@ where
             let dst_route_layer = svc::builder()
                 .buffer_pending(max_in_flight, DispatchDeadline::extract)
                 .layer(classify::layer())
-                .layer(metrics::layer::<_, dst::Route, classify::Response>(route_http_metrics))
+                .layer(metrics::layer::<_, dst::Route, classify::Response>(
+                    route_http_metrics,
+                ))
                 .layer(proxy::http::timeout::layer())
                 .layer(retry::layer(retry_http_metrics.clone()))
-                .layer(metrics::layer::<_, dst::Route, classify::Response>(retry_http_metrics))
+                .layer(metrics::layer::<_, dst::Route, classify::Response>(
+                    retry_http_metrics,
+                ))
                 .layer(insert::target::layer());
 
             // Routes requests to their original destination endpoints. Used as
