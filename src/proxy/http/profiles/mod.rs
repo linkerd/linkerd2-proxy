@@ -113,7 +113,7 @@ pub struct Retries {
     budget: Arc<Budget>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct Labels(Arc<IndexMap<String, String>>);
 
 // === impl Route ===
@@ -278,5 +278,13 @@ impl Hash for Labels {
 impl fmt::Debug for Labels {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl Default for Labels {
+    fn default() -> Self {
+        let mut labels = IndexMap::with_capacity(1);
+        labels.insert("route".to_string(), "".to_string());
+        Self(Arc::new(labels))
     }
 }
