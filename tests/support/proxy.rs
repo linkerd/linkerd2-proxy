@@ -69,6 +69,11 @@ impl Proxy {
         self
     }
 
+    pub fn disable_identity(mut self) -> Self {
+        self.identity = None;
+        self
+    }
+
     pub fn inbound(mut self, s: server::Listening) -> Self {
         let addr = s.addr.clone();
         self.inbound = Some(addr);

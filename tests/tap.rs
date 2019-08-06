@@ -23,7 +23,7 @@ fn tap_enabled_when_identity_enabled() {
 #[test]
 fn tap_disabled_when_identity_disabled() {
     let _ = trace_init();
-    let proxy = proxy::new().run();
+    let proxy = proxy::new().disable_identity().run();
 
     assert!(proxy.control.is_none())
 }
@@ -76,7 +76,7 @@ fn rejects_incorrect_identity_when_identity_is_expected() {
 // the Taps before the `client.get` is called.
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn accepts_expected_identity_when_identity_is_expected() {
+fn inbound_http1() {
     let _ = trace_init();
 
     // Setup server proxy authority and identity
