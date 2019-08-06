@@ -32,8 +32,8 @@ pub struct Retry {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DstAddr {
-    logical_dst: Addr,
-    concrete_dst: Addr,
+    dst_logical: Addr,
+    dst_concrete: Addr,
     direction: Direction,
     pub(super) http_settings: settings::Settings,
 }
@@ -106,15 +106,15 @@ impl retry::Retry for Retry {
 
 impl AsRef<Addr> for DstAddr {
     fn as_ref(&self) -> &Addr {
-        &self.concrete_dst
+        &self.dst_concrete
     }
 }
 
 impl DstAddr {
     pub fn outbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
-            logical_dst: addr.clone(),
-            concrete_dst: addr,
+            dst_logical: addr.clone(),
+            dst_concrete: addr,
             direction: Direction::Out,
             http_settings,
         }
@@ -122,8 +122,8 @@ impl DstAddr {
 
     pub fn inbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
-            logical_dst: addr.clone(),
-            concrete_dst: addr,
+            dst_logical: addr.clone(),
+            dst_concrete: addr,
             direction: Direction::In,
             http_settings,
         }
@@ -133,12 +133,12 @@ impl DstAddr {
         self.direction
     }
 
-    pub fn logical_dst(&self) -> &Addr {
-        &self.logical_dst
+    pub fn dst_logical(&self) -> &Addr {
+        &self.dst_logical
     }
 
-    pub fn concrete_dst(&self) -> &Addr {
-        &self.concrete_dst
+    pub fn dst_concrete(&self) -> &Addr {
+        &self.dst_concrete
     }
 }
 
@@ -150,13 +150,13 @@ impl<'t> From<&'t DstAddr> for http::header::HeaderValue {
 
 impl fmt::Display for DstAddr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.concrete_dst.fmt(f)
+        self.dst_concrete.fmt(f)
     }
 }
 
 impl profiles::CanGetDestination for DstAddr {
     fn get_destination(&self) -> Option<&NameAddr> {
-        self.logical_dst.name_addr()
+        self.dst_logical.name_addr()
     }
 }
 
@@ -173,7 +173,7 @@ impl profiles::WithRoute for DstAddr {
 
 impl profiles::WithAddr for DstAddr {
     fn with_addr(mut self, addr: NameAddr) -> Self {
-        self.concrete_dst = Addr::Name(addr);
+        self.dst_concrete = Addr::Name(addr);
         self
     }
 }
