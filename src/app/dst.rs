@@ -32,7 +32,8 @@ pub struct Retry {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DstAddr {
-    addr: Addr,
+    logical_dst: Addr,
+    concrete_dst: Addr,
     direction: Direction,
     pub(super) http_settings: settings::Settings,
 }
@@ -105,14 +106,15 @@ impl retry::Retry for Retry {
 
 impl AsRef<Addr> for DstAddr {
     fn as_ref(&self) -> &Addr {
-        &self.addr
+        &self.concrete_dst
     }
 }
 
 impl DstAddr {
     pub fn outbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
-            addr,
+            logical_dst: addr.clone(),
+            concrete_dst: addr,
             direction: Direction::Out,
             http_settings,
         }
@@ -120,7 +122,8 @@ impl DstAddr {
 
     pub fn inbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
-            addr,
+            logical_dst: addr.clone(),
+            concrete_dst: addr,
             direction: Direction::In,
             http_settings,
         }
@@ -128,6 +131,14 @@ impl DstAddr {
 
     pub fn direction(&self) -> Direction {
         self.direction
+    }
+
+    pub fn logical_dst(&self) -> &Addr {
+        &self.logical_dst
+    }
+
+    pub fn concrete_dst(&self) -> &Addr {
+        &self.concrete_dst
     }
 }
 
@@ -139,13 +150,13 @@ impl<'t> From<&'t DstAddr> for http::header::HeaderValue {
 
 impl fmt::Display for DstAddr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.addr.fmt(f)
+        self.concrete_dst.fmt(f)
     }
 }
 
 impl profiles::CanGetDestination for DstAddr {
     fn get_destination(&self) -> Option<&NameAddr> {
-        self.addr.name_addr()
+        self.logical_dst.name_addr()
     }
 }
 
@@ -162,7 +173,7 @@ impl profiles::WithRoute for DstAddr {
 
 impl profiles::WithAddr for DstAddr {
     fn with_addr(mut self, addr: NameAddr) -> Self {
-        self.addr = Addr::Name(addr);
+        self.concrete_dst = Addr::Name(addr);
         self
     }
 }

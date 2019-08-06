@@ -18,7 +18,8 @@ pub struct ControlLabels {
 pub struct EndpointLabels {
     direction: Direction,
     tls_id: Conditional<TlsId, tls::ReasonForNoIdentity>,
-    dst_name: Option<NameAddr>,
+    logical_dst: Option<NameAddr>,
+    concrete_dst: Option<NameAddr>,
     labels: Option<String>,
 }
 
@@ -91,7 +92,8 @@ impl FmtLabels for RouteLabels {
 impl From<inbound::Endpoint> for EndpointLabels {
     fn from(ep: inbound::Endpoint) -> Self {
         Self {
-            dst_name: ep.dst_name,
+            logical_dst: ep.dst_name.clone(),
+            concrete_dst: ep.dst_name,
             direction: Direction::In,
             tls_id: ep.tls_client_id.map(TlsId::ClientId),
             labels: None,
@@ -115,7 +117,8 @@ where
 impl From<outbound::Endpoint> for EndpointLabels {
     fn from(ep: outbound::Endpoint) -> Self {
         Self {
-            dst_name: ep.dst_name,
+            logical_dst: ep.logical_dst,
+            concrete_dst: ep.concrete_dst,
             direction: Direction::Out,
             tls_id: ep.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
             labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
@@ -125,7 +128,7 @@ impl From<outbound::Endpoint> for EndpointLabels {
 
 impl FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let authority = self.dst_name.as_ref().map(Authority);
+        let authority = self.logical_dst.as_ref().map(Authority);
         (authority, &self.direction).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {

@@ -15,7 +15,8 @@ use {Conditional, NameAddr};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Endpoint {
-    pub dst_name: Option<NameAddr>,
+    pub logical_dst: Option<NameAddr>,
+    pub concrete_dst: Option<NameAddr>,
     pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
@@ -62,7 +63,8 @@ impl Endpoint {
 
         Some(Self {
             addr,
-            dst_name: None,
+            logical_dst: None,
+            concrete_dst: None,
             identity,
             metadata: Metadata::empty(),
             http_settings,
@@ -74,7 +76,8 @@ impl From<SocketAddr> for Endpoint {
     fn from(addr: SocketAddr) -> Self {
         Self {
             addr,
-            dst_name: None,
+            logical_dst: None,
+            concrete_dst: None,
             identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
             metadata: Metadata::empty(),
             http_settings: settings::Settings::NotHttp,
@@ -90,7 +93,8 @@ impl fmt::Display for Endpoint {
 
 impl hash::Hash for Endpoint {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.dst_name.hash(state);
+        self.logical_dst.hash(state);
+        self.concrete_dst.hash(state);
         self.addr.hash(state);
         self.identity.hash(state);
         self.http_settings.hash(state);
@@ -177,7 +181,11 @@ pub mod discovery {
 
     #[derive(Debug)]
     enum Resolving<R> {
-        Name(NameAddr, R),
+        Name {
+            logical_dst: Option<NameAddr>,
+            concrete_dst: NameAddr,
+            resolution: R,
+        },
         Unresolvable,
     }
 
@@ -202,8 +210,12 @@ pub mod discovery {
         type Future = Resolution<R::Future>;
 
         fn resolve(&self, dst: &DstAddr) -> Self::Future {
-            let resolving = match dst.as_ref() {
-                Addr::Name(ref name) => Resolving::Name(name.clone(), self.0.resolve(&name)),
+            let resolving = match dst.concrete_dst() {
+                Addr::Name(ref name) => Resolving::Name {
+                    logical_dst: dst.logical_dst().name_addr().cloned(),
+                    concrete_dst: name.clone(),
+                    resolution: self.0.resolve(&name),
+                },
                 Addr::Socket(_) => Resolving::Unresolvable,
             };
 
@@ -224,10 +236,18 @@ pub mod discovery {
         type Error = F::Error;
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             let resolving = match self.resolving {
-                Resolving::Name(ref name, ref mut f) => {
-                    let res = try_ready!(f.poll());
+                Resolving::Name {
+                    ref logical_dst,
+                    ref concrete_dst,
+                    ref mut resolution,
+                } => {
+                    let res = try_ready!(resolution.poll());
                     // TODO: get rid of unnecessary arc bumps?
-                    Resolving::Name(name.clone(), res)
+                    Resolving::Name {
+                        logical_dst: logical_dst.clone(),
+                        concrete_dst: concrete_dst.clone(),
+                        resolution: res,
+                    }
                 }
                 Resolving::Unresolvable => return Err(Unresolvable::new()),
             };
@@ -248,7 +268,11 @@ pub mod discovery {
 
         fn poll(&mut self) -> Poll<resolve::Update<Self::Endpoint>, Self::Error> {
             match self.resolving {
-                Resolving::Name(ref name, ref mut res) => match try_ready!(res.poll()) {
+                Resolving::Name {
+                    ref logical_dst,
+                    ref concrete_dst,
+                    ref mut resolution,
+                } => match try_ready!(resolution.poll()) {
                     resolve::Update::Remove(addr) => {
                         debug!("removing {}", addr);
                         Ok(Async::Ready(resolve::Update::Remove(addr)))
@@ -265,7 +289,8 @@ pub mod discovery {
                             });
                         debug!("adding addr={}; identity={:?}", addr, identity);
                         let ep = Endpoint {
-                            dst_name: Some(name.clone()),
+                            logical_dst: logical_dst.clone(),
+                            concrete_dst: Some(concrete_dst.clone()),
                             addr,
                             identity,
                             metadata,
