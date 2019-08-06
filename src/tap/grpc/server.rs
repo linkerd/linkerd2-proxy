@@ -40,6 +40,7 @@ struct Shared {
     count: AtomicUsize,
     limit: usize,
     match_: Match,
+    events_tx: mpsc::Sender<api::TapEvent>,
 }
 
 #[derive(Clone, Debug)]
@@ -50,7 +51,6 @@ struct TapTx {
 
 #[derive(Clone, Debug)]
 pub struct Tap {
-    events_tx: mpsc::Sender<api::TapEvent>,
     shared: Weak<Shared>,
 }
 
@@ -144,11 +144,11 @@ where
             count: AtomicUsize::new(0),
             limit,
             match_,
+            events_tx,
         });
 
         let tap = Tap {
             shared: Arc::downgrade(&shared),
-            events_tx,
         };
         let subscribe = self.subscribe.subscribe(tap);
 
@@ -245,16 +245,17 @@ impl iface::Tap for Tap {
         B: Payload,
         I: Inspect,
     {
-        let id = self.shared.upgrade().and_then(|shared| {
+        let (id, mut events_tx) = self.shared.upgrade().and_then(|shared| {
             if !shared.match_.matches(req, inspect) {
                 return None;
             }
             let next_id = shared.count.fetch_add(1, Ordering::Relaxed);
             if next_id < shared.limit {
-                Some(api::tap_event::http::StreamId {
+                let id = api::tap_event::http::StreamId {
                     base: shared.base_id,
                     stream: next_id as u64,
-                })
+                };
+                Some((id, shared.events_tx.clone()))
             } else {
                 None
             }
@@ -280,12 +281,9 @@ impl iface::Tap for Tap {
         };
 
         // If try_send fails, just return `None`...
-        self.events_tx.try_send(event).ok()?;
+        events_tx.try_send(event).ok()?;
 
-        let tap = TapTx {
-            id,
-            tx: self.events_tx.clone(),
-        };
+        let tap = TapTx { id, tx: events_tx };
 
         let req = TapRequestPayload {
             tap: tap.clone(),
