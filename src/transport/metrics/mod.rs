@@ -49,7 +49,7 @@ pub struct Accept {
 pub struct LayerConnect<T, M> {
     direction: Direction,
     registry: Arc<Mutex<Inner>>,
-    _p: PhantomData<fn() -> (T, M)>,
+    _p: PhantomData<fn() -> (T, M) -> (T, M)>,
 }
 
 #[derive(Debug)]
@@ -57,7 +57,7 @@ pub struct Connect<T, M> {
     inner: M,
     direction: Direction,
     registry: Arc<Mutex<Inner>>,
-    _p: PhantomData<fn() -> (T)>,
+    _p: PhantomData<fn() -> (T) -> (T)>,
 }
 
 pub struct Connecting<F> {

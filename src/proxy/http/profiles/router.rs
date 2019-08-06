@@ -45,7 +45,9 @@ pub struct Layer<G, Inner, RouteLayer, RouteBody, InnerBody> {
     /// This is saved into a field so that the same `Arc`s are used and
     /// cloned, instead of calling `Route::default()` every time.
     default_route: Route,
-    _p: ::std::marker::PhantomData<fn() -> (Inner, RouteBody, InnerBody)>,
+    _p: ::std::marker::PhantomData<
+        fn() -> (Inner, RouteBody, InnerBody) -> (Inner, RouteBody, InnerBody),
+    >,
 }
 
 #[derive(Debug)]
