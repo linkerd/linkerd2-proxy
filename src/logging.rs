@@ -20,12 +20,12 @@ pub mod trace {
     pub use tracing::*;
     pub use tracing_fmt::*;
 
-    type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
+    type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::EnvFilter>;
     pub type Error = Box<dyn error::Error + Send + Sync + 'static>;
 
     #[derive(Clone)]
     pub struct LevelHandle {
-        inner: filter::reload::Handle<filter::EnvFilter, default::NewRecorder>,
+        inner: filter::reload::Handle<filter::EnvFilter, format::NewRecorder>,
     }
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
@@ -44,9 +44,7 @@ pub mod trace {
         let handle = builder.reload_handle();
         let dispatch = Dispatch::new(builder.finish());
         dispatcher::set_global_default(dispatch)?;
-        let logger = tracing_log::LogTracer::with_filter(log::LevelFilter::max());
-        log::set_boxed_logger(Box::new(logger))?;
-        log::set_max_level(log::LevelFilter::max());
+        tracing_log::LogTracer::init()?;
 
         Ok(LevelHandle { inner: handle })
     }
