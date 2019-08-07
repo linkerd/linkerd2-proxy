@@ -8,7 +8,6 @@ publish = false
 [dependencies]
 log = "0.4.1"
 futures = "0.1"
-futures-watch = { git = "https://github.com/carllerche/better-future" }
 linkerd2-never = { path = "../never" }
 tower-layer = "0.1"
 tower-service = "0.2"

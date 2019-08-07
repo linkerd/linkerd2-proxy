@@ -59,7 +59,7 @@ pub struct Main<G> {
 
 struct ProxyParts<G> {
     config: Config,
-    identity: tls::Conditional<(identity::Local, identity::CrtKeyStore)>,
+    identity: tls::Conditional<(identity::Local, identity::CrtKeySender)>,
 
     start_time: SystemTime,
     trace_level: trace::LevelHandle,
