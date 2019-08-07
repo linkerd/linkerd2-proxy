@@ -69,6 +69,11 @@ impl Proxy {
         self
     }
 
+    pub fn disable_identity(mut self) -> Self {
+        self.identity = None;
+        self
+    }
+
     pub fn inbound(mut self, s: server::Listening) -> Self {
         let addr = s.addr.clone();
         self.inbound = Some(addr);
@@ -200,8 +205,17 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         Some(identity.addr)
     } else {
         env.put(app::config::ENV_IDENTITY_DISABLED, "test".to_owned());
+        env.put(app::config::ENV_TAP_DISABLED, "test".to_owned());
         None
     };
+
+    // If identity is enabled but the test is not concerned with tap, ensure
+    // there is a tap service name set
+    if !env.contains_key(app::config::ENV_TAP_DISABLED)
+        && !env.contains_key(app::config::ENV_TAP_SVC_NAME)
+    {
+        env.put(app::config::ENV_TAP_SVC_NAME, "test-identity".to_owned())
+    }
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports
