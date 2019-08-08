@@ -1,9 +1,9 @@
-extern crate linkerd2_router as rt;
-extern crate tower_discover;
-
+use super::retry::Budget;
+use crate::NameAddr;
 use futures::Stream;
 use http;
 use indexmap::IndexMap;
+use linkerd2_never::Never;
 use regex::Regex;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -11,11 +11,6 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-
-use never::Never;
-
-use super::retry::Budget;
-use NameAddr;
 
 pub mod recognize;
 /// A stack module that produces a Service that routes requests through alternate
@@ -217,7 +212,7 @@ impl Hash for ResponseClasses {
 }
 
 impl fmt::Debug for ResponseClasses {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -276,7 +271,7 @@ impl Hash for Labels {
 }
 
 impl fmt::Debug for Labels {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }

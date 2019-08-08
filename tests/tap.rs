@@ -3,8 +3,8 @@
 #[macro_use]
 mod support;
 use self::support::*;
+use crate::support::tap::TapEventExt;
 use std::time::SystemTime;
-use support::tap::TapEventExt;
 
 #[test]
 fn tap_enabled_when_identity_enabled() {

@@ -1,5 +1,4 @@
-use super::{untrusted, webpki};
-use convert::TryFrom;
+use crate::convert::TryFrom;
 use std::fmt;
 
 /// A `Name` is guaranteed to be syntactically valid. The validity rules
@@ -20,20 +19,20 @@ impl Name {
         self.as_ref().trim_end_matches('.')
     }
 
-    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
+    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef<'_> {
         self.0.as_ref()
     }
 }
 
 impl fmt::Debug for Name {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let s: &str = AsRef::<str>::as_ref(&self.0);
         s.fmt(f)
     }
 }
 
 impl fmt::Display for Name {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let s: &str = AsRef::<str>::as_ref(&self.0);
         s.fmt(f)
     }

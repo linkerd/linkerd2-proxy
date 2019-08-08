@@ -8,8 +8,8 @@ extern crate regex;
 #[macro_use]
 mod support;
 use self::support::*;
+use crate::support::bytes::IntoBuf;
 use std::io::Read;
-use support::bytes::IntoBuf;
 
 struct Fixture {
     client: client::Client,

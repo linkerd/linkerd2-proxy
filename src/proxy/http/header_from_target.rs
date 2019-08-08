@@ -1,8 +1,7 @@
-use futures::{Future, Poll};
+use crate::svc;
+use futures::{try_ready, Future, Poll};
 use http;
 use http::header::{HeaderValue, IntoHeaderName};
-
-use svc;
 
 /// Wraps HTTP `Service`s  so that a displayable `T` is cloned into each request's
 /// extensions.

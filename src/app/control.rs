@@ -1,7 +1,6 @@
+use crate::transport::tls;
+use crate::Addr;
 use std::fmt;
-
-use transport::tls;
-use Addr;
 
 #[derive(Clone, Debug)]
 pub struct ControlAddr {
@@ -10,21 +9,19 @@ pub struct ControlAddr {
 }
 
 impl fmt::Display for ControlAddr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.addr, f)
     }
 }
 
 /// Sets the request's URI from `Config`.
 pub mod add_origin {
-    extern crate tower_request_modifier;
-
-    use self::tower_request_modifier::{Builder, RequestModifier};
+    use super::ControlAddr;
+    use crate::svc;
+    use futures::try_ready;
     use futures::{Future, Poll};
     use std::marker::PhantomData;
-
-    use super::ControlAddr;
-    use svc;
+    use tower_request_modifier::{Builder, RequestModifier};
 
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -142,7 +139,7 @@ pub mod add_origin {
 
     impl std::error::Error for BuildError {}
     impl std::fmt::Display for BuildError {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "failed to build the add-origin request modifier")
         }
     }
@@ -150,14 +147,11 @@ pub mod add_origin {
 
 /// Resolves the controller's `addr` once before building a client.
 pub mod resolve {
-    use futures::{Future, Poll};
+    use super::{client, ControlAddr};
+    use crate::{dns, logging, svc, Addr};
+    use futures::{try_ready, Future, Poll};
     use std::net::SocketAddr;
     use std::{error, fmt};
-
-    use super::{client, ControlAddr};
-    use dns;
-    use svc;
-    use Addr;
 
     #[derive(Clone, Debug)]
     pub struct Layer {
@@ -272,7 +266,7 @@ pub mod resolve {
             let target = client::Target {
                 addr,
                 server_name: dst.identity.clone(),
-                log_ctx: ::logging::admin().client("control", dst.addr.clone()),
+                log_ctx: logging::admin().client("control", dst.addr.clone()),
             };
 
             State::Inner(mk_svc.call(target))
@@ -282,7 +276,7 @@ pub mod resolve {
     // === impl Error ===
 
     impl<I: fmt::Display> fmt::Display for Error<I> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 Error::Dns(dns::Error::NoAddressesFound) => write!(f, "no addresses found"),
                 Error::Dns(dns::Error::ResolutionFailed(e)) => fmt::Display::fmt(&e, f),
@@ -296,21 +290,18 @@ pub mod resolve {
 
 /// Creates a client suitable for gRPC.
 pub mod client {
-    use std::net::SocketAddr;
-
-    use futures::Poll;
-
     use super::super::config::H2Settings;
-    use proxy::http;
-    use svc;
-    use transport::{connect, tls};
-    use Addr;
+    use crate::proxy::http;
+    use crate::transport::{connect, tls};
+    use crate::{logging, svc, Addr};
+    use futures::Poll;
+    use std::net::SocketAddr;
 
     #[derive(Clone, Debug)]
     pub struct Target {
         pub(super) addr: SocketAddr,
         pub(super) server_name: tls::PeerIdentity,
-        pub(super) log_ctx: ::logging::Client<&'static str, Addr>,
+        pub(super) log_ctx: logging::Client<&'static str, Addr>,
     }
 
     #[derive(Debug)]
@@ -340,7 +331,7 @@ pub mod client {
     {
         svc::layer::mk(|mk_conn| {
             let inner =
-                http::h2::Connect::new(mk_conn, ::task::LazyExecutor, H2Settings::default());
+                http::h2::Connect::new(mk_conn, linkerd2_task::LazyExecutor, H2Settings::default());
             Client { inner }
         })
     }

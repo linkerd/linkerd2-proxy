@@ -1,18 +1,17 @@
+use crate::proxy::http::{profiles, retry::Budget};
+use crate::NameAddr;
 use futures::sync::{mpsc, oneshot};
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use http;
+use linkerd2_never::Never;
+use linkerd2_proxy_api::destination as api;
 use regex::Regex;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-
-use api::destination as api;
-use never::Never;
-
-use proxy::http::{profiles, retry::Budget};
-use NameAddr;
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Clone, Debug)]
 pub struct Client<T> {

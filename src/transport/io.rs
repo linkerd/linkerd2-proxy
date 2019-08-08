@@ -13,7 +13,7 @@ use super::{AddrInfo, SetKeepalive};
 /// This type ensures that the proper write_buf method is called,
 /// to allow vectored writes to occur.
 #[derive(Debug)]
-pub struct BoxedIo(Box<Io>);
+pub struct BoxedIo(Box<dyn Io>);
 
 impl BoxedIo {
     pub fn new<T: Io + 'static>(io: T) -> Self {
@@ -97,7 +97,7 @@ pub(super) mod internal {
 
         /// This method is to allow using `Async::write_buf` even through a
         /// trait object.
-        fn write_buf_erased(&mut self, buf: &mut Buf) -> Poll<usize, io::Error>;
+        fn write_buf_erased(&mut self, buf: &mut dyn Buf) -> Poll<usize, io::Error>;
     }
 
     impl Io for TcpStream {
@@ -105,7 +105,7 @@ pub(super) mod internal {
             TcpStream::shutdown(self, Shutdown::Write)
         }
 
-        fn write_buf_erased(&mut self, mut buf: &mut Buf) -> Poll<usize, io::Error> {
+        fn write_buf_erased(&mut self, mut buf: &mut dyn Buf) -> Poll<usize, io::Error> {
             self.write_buf(&mut buf)
         }
     }
@@ -170,7 +170,7 @@ mod tests {
             unreachable!("not called in test")
         }
 
-        fn write_buf_erased(&mut self, mut buf: &mut Buf) -> Poll<usize, io::Error> {
+        fn write_buf_erased(&mut self, mut buf: &mut dyn Buf) -> Poll<usize, io::Error> {
             self.write_buf(&mut buf)
         }
     }

@@ -1,22 +1,18 @@
+use super::control::ControlAddr;
+use super::identity;
+use crate::convert::TryFrom;
+use crate::proxy::reconnect::Backoff;
+use crate::transport::tls;
+use crate::{addr, dns, Addr, Conditional};
+use indexmap::IndexSet;
 use std::collections::HashMap;
-use std::fmt;
-use std::fs;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
-
-use indexmap::IndexSet;
-
-use super::control::ControlAddr;
-use super::identity;
-use addr;
-use convert::TryFrom;
-use dns;
-use proxy::reconnect::Backoff;
-use transport::tls;
-use {Addr, Conditional};
+use std::{fmt, fs};
+use tracing::{error, warn};
 
 const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
@@ -665,7 +661,7 @@ impl TapSettings {
 ///     +----------+-----+--------------+
 /// ```
 fn parse_control_listener(
-    strings: &Strings,
+    strings: &dyn Strings,
     id_disabled: bool,
     tap_disabled: bool,
 ) -> Result<Option<TapSettings>, Error> {
@@ -750,7 +746,7 @@ pub(super) fn parse_identity(s: &str) -> Result<identity::Name, ParseError> {
 }
 
 pub(super) fn parse<T, Parse>(
-    strings: &Strings,
+    strings: &dyn Strings,
     name: &str,
     parse: Parse,
 ) -> Result<Option<T>, Error>
@@ -771,7 +767,7 @@ where
 
 #[allow(dead_code)]
 fn parse_deprecated<T, Parse>(
-    strings: &Strings,
+    strings: &dyn Strings,
     name: &str,
     deprecated_name: &str,
     f: Parse,
@@ -1020,7 +1016,7 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::InvalidEnvVar => fmt::Display::fmt("invalid environment variable", f),
         }

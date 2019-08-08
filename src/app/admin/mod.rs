@@ -6,10 +6,8 @@
 use futures::future::{self, Future};
 use http::StatusCode;
 use hyper::{service::Service, Body, Request, Response};
+use linkerd2_metrics as metrics;
 use std::io;
-
-use metrics;
-
 mod readiness;
 mod trace_level;
 pub use self::readiness::{Latch, Readiness};
@@ -25,7 +23,8 @@ where
     ready: Readiness,
 }
 
-pub type ResponseFuture = Box<Future<Item = Response<Body>, Error = io::Error> + Send + 'static>;
+pub type ResponseFuture =
+    Box<dyn Future<Item = Response<Body>, Error = io::Error> + Send + 'static>;
 
 impl<M> Admin<M>
 where
@@ -82,12 +81,11 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-    use task::test_util::BlockOnFor;
-    use tokio::runtime::current_thread::Runtime;
-
     use super::*;
     use http::method::Method;
+    use linkerd2_task::test_util::BlockOnFor;
+    use std::time::Duration;
+    use tokio::runtime::current_thread::Runtime;
 
     const TIMEOUT: Duration = Duration::from_secs(1);
 

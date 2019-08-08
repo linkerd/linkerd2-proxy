@@ -1,19 +1,16 @@
+use crate::logging;
+use crate::proxy::Error;
+use crate::svc;
+use crate::trace;
 use futures::Poll;
 use http;
+use linkerd2_never::Never;
+use linkerd2_router as rt;
+pub use linkerd2_router::{error, Recognize, Router};
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
-use trace;
-
-use logging;
-use never::Never;
-
-use proxy::Error;
-use svc;
-
-extern crate linkerd2_router as rt;
-
-pub use self::rt::{error, Recognize, Router};
+use tracing::{debug_span, trace};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -66,7 +63,7 @@ impl Config {
 
 // Used for logging contexts
 impl fmt::Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.proxy_name.fmt(f)
     }
 }

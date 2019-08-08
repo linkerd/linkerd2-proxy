@@ -1,21 +1,19 @@
 use futures::future::{ExecuteError, Executor};
 use futures::{Future, Poll};
+use linkerd2_task;
 use std::cell::RefCell;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio_timer::clock;
 
-use task;
-
 const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 
 thread_local! {
-    static CONTEXT: RefCell<Vec<*const fmt::Display>> = RefCell::new(Vec::new());
+    static CONTEXT: RefCell<Vec<*const dyn fmt::Display>> = RefCell::new(Vec::new());
 }
 
 pub mod trace {
-    extern crate tracing_log;
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
 
     use std::{env, error, fmt, str, time::Instant};
@@ -23,7 +21,7 @@ pub mod trace {
     pub use tracing_fmt::*;
 
     type SubscriberBuilder = Builder<default::NewRecorder, Format, filter::EnvFilter>;
-    pub type Error = Box<error::Error + Send + Sync + 'static>;
+    pub type Error = Box<dyn error::Error + Send + Sync + 'static>;
 
     #[derive(Clone)]
     pub struct LevelHandle {
@@ -69,9 +67,9 @@ pub mod trace {
     {
         fn format_event(
             &self,
-            span_ctx: &Context<N>,
+            span_ctx: &Context<'_, N>,
             f: &mut dyn fmt::Write,
-            event: &Event,
+            event: &Event<'_>,
         ) -> fmt::Result {
             let meta = event.metadata();
             let level = match meta.level() {
@@ -134,7 +132,7 @@ pub mod trace {
     }
 
     impl fmt::Debug for LevelHandle {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             self.inner
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
@@ -150,10 +148,10 @@ pub mod trace {
     }
 
     /// Implements `fmt::Display` for a `tokio-trace-fmt` span context.
-    struct SpanContext<'a, N: 'a>(&'a Context<'a, N>);
+    struct SpanContext<'a, N>(&'a Context<'a, N>);
 
     impl<'a, N> fmt::Display for SpanContext<'a, N> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             let mut seen = false;
             self.0.visit_spans(|_, span| {
                 write!(f, "{}", span.name())?;
@@ -244,27 +242,27 @@ pub struct ContextualExecutor<T> {
     context: Arc<T>,
 }
 
-impl<C, T> task::TypedExecutor<T> for ContextualExecutor<C>
+impl<C, T> linkerd2_task::TypedExecutor<T> for ContextualExecutor<C>
 where
     T: Future<Item = (), Error = ()> + Send + 'static,
     C: fmt::Display + 'static + Send + Sync,
 {
     fn spawn(&mut self, future: T) -> Result<(), tokio::executor::SpawnError> {
         let fut = context_future(self.context.clone(), future);
-        ::task::LazyExecutor.spawn(fut)
+        linkerd2_task::LazyExecutor.spawn(fut)
     }
 }
 
-impl<T> task::TokioExecutor for ContextualExecutor<T>
+impl<T> linkerd2_task::TokioExecutor for ContextualExecutor<T>
 where
     T: fmt::Display + 'static + Send + Sync,
 {
     fn spawn(
         &mut self,
-        future: Box<Future<Item = (), Error = ()> + 'static + Send>,
+        future: Box<dyn Future<Item = (), Error = ()> + 'static + Send>,
     ) -> Result<(), ::tokio::executor::SpawnError> {
         let fut = context_future(self.context.clone(), future);
-        task::LazyExecutor.spawn(Box::new(fut))
+        linkerd2_task::LazyExecutor.spawn(Box::new(fut))
     }
 }
 
@@ -275,7 +273,7 @@ where
 {
     fn execute(&self, future: F) -> Result<(), ExecuteError<F>> {
         let fut = context_future(self.context.clone(), future);
-        match ::task::LazyExecutor.execute(fut) {
+        match linkerd2_task::LazyExecutor.execute(fut) {
             Ok(()) => Ok(()),
             Err(err) => {
                 let kind = err.kind();
@@ -297,10 +295,10 @@ impl<T> Clone for ContextualExecutor<T> {
     }
 }
 
-struct Context<'a>(&'a [*const fmt::Display]);
+struct Context<'a>(&'a [*const dyn fmt::Display]);
 
 impl<'a> fmt::Display for Context<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.0.is_empty() {
             return Ok(());
         }
@@ -318,17 +316,17 @@ impl<'a> fmt::Display for Context<'a> {
 ///
 /// Specifically, this protects even if the passed function panics,
 /// as destructors are run while unwinding.
-struct ContextGuard<'a>(&'a (fmt::Display + 'static));
+struct ContextGuard<'a>(&'a (dyn fmt::Display + 'static));
 
 impl<'a> ContextGuard<'a> {
-    fn new(context: &'a (fmt::Display + 'static)) -> Self {
+    fn new(context: &'a (dyn fmt::Display + 'static)) -> Self {
         // This is a raw pointer because of lifetime conflicts that require
         // the thread local to have a static lifetime.
         //
         // We don't want to require a static lifetime, and in fact,
         // only use the reference within this closure, so converting
         // to a raw pointer is safe.
-        let raw = context as *const fmt::Display;
+        let raw = context as *const dyn fmt::Display;
         CONTEXT.with(|ctxt| {
             ctxt.borrow_mut().push(raw);
         });
@@ -369,7 +367,7 @@ pub struct Client<C: fmt::Display, D: fmt::Display> {
     section: Section,
     client: C,
     dst: D,
-    settings: Option<::proxy::http::Settings>,
+    settings: Option<crate::proxy::http::Settings>,
     remote: Option<SocketAddr>,
 }
 
@@ -409,7 +407,7 @@ impl Section {
 }
 
 impl fmt::Display for Section {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Section::Proxy => "proxy".fmt(f),
             Section::Admin => "admin".fmt(f),
@@ -444,7 +442,7 @@ impl Server {
 }
 
 impl fmt::Display for Server {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}={{server={} listen={}",
@@ -464,7 +462,7 @@ impl<D: fmt::Display> Client<&'static str, D> {
 }
 
 impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
-    pub fn with_settings(self, p: ::proxy::http::Settings) -> Self {
+    pub fn with_settings(self, p: crate::proxy::http::Settings) -> Self {
         Self {
             settings: Some(p),
             ..self
@@ -484,7 +482,7 @@ impl<C: fmt::Display, D: fmt::Display> Client<C, D> {
 }
 
 impl<C: fmt::Display, D: fmt::Display> fmt::Display for Client<C, D> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}={{client={} dst={}",
@@ -507,7 +505,7 @@ impl<T: fmt::Display> Bg<T> {
 }
 
 impl<T: fmt::Display> fmt::Display for Bg<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}={{bg={}}}", self.section, self.name)
     }
 }

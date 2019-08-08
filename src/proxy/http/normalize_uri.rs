@@ -1,11 +1,10 @@
-use futures::{Future, Poll};
-use http;
-
 use super::{
     h1,
     settings::{HasSettings, Settings},
 };
-use svc;
+use crate::svc;
+use futures::{try_ready, Future, Poll};
+use http;
 
 #[derive(Clone, Debug)]
 pub struct Stack<N> {

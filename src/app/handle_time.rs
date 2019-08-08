@@ -1,6 +1,6 @@
 use super::metric_labels::Direction;
-use metrics::{FmtMetrics, Metric};
-use proxy::http::metrics::handle_time;
+use crate::proxy::http::metrics::handle_time;
+use linkerd2_metrics::{FmtMetrics, Metric};
 use std::{fmt, iter};
 
 #[derive(Clone, Debug)]
@@ -29,7 +29,7 @@ impl Metrics {
         self.inbound.clone()
     }
 
-    fn metric(&self) -> Metric<handle_time::Scope> {
+    fn metric(&self) -> Metric<'_, handle_time::Scope> {
         Metric::new(Self::NAME, Self::HELP)
     }
 
@@ -40,7 +40,7 @@ impl Metrics {
 }
 
 impl FmtMetrics for Metrics {
-    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let metric = self.metric();
         metric.fmt_help(f)?;
         metric.fmt_scopes(f, self.scopes(), |s| s)

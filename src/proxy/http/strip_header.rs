@@ -1,9 +1,7 @@
-use std::marker::PhantomData;
-
-use futures::{Future, Poll};
+use crate::svc;
+use futures::{try_ready, Future, Poll};
 use http::header::AsHeaderName;
-
-use svc;
+use std::marker::PhantomData;
 
 /// Wraps HTTP `Service` `Stack<T>`s so that a given header is removed from a
 /// request or response.
@@ -112,11 +110,10 @@ where
 }
 
 pub mod request {
+    use crate::svc;
     use futures::Poll;
     use http;
     use http::header::AsHeaderName;
-
-    use svc;
 
     pub fn layer<H>(header: H) -> super::Layer<H, ReqHeader>
     where
@@ -150,11 +147,10 @@ pub mod request {
 }
 
 pub mod response {
-    use futures::{Future, Poll};
+    use crate::svc;
+    use futures::{try_ready, Future, Poll};
     use http;
     use http::header::AsHeaderName;
-
-    use svc;
 
     pub fn layer<H>(header: H) -> super::Layer<H, ResHeader>
     where

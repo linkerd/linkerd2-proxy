@@ -13,7 +13,7 @@ impl<C: Into<self::code::Code>> From<C> for Errno {
 }
 
 impl fmt::Display for Errno {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.0, f)
     }
 }
@@ -32,7 +32,7 @@ mod code {
             }
 
             impl fmt::Display for $name {
-                fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                     match self {
                         $(
                             $name::$reason => f.pad(stringify!($reason))
@@ -207,7 +207,7 @@ mod code {
     }
 
     impl fmt::Display for Code {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             fmt::Display.fmt(self.0, f)
         }
     }

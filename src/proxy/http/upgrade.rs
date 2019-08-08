@@ -1,20 +1,19 @@
 //! HTTP/1.1 Upgrades
-use std::fmt;
-use std::mem;
-use std::sync::Arc;
-
+use super::{glue::HttpBody, h1};
+use crate::drain;
+use crate::proxy::tcp;
+use crate::svc;
 use futures::{
     future::{self, Either},
     Future, Poll,
 };
 use hyper::upgrade::OnUpgrade;
+use linkerd2_task::{BoxSendFuture, ErasedExecutor, Executor};
+use std::fmt;
+use std::mem;
+use std::sync::Arc;
+use tracing::{debug, info, trace};
 use try_lock::TryLock;
-
-use super::{glue::HttpBody, h1};
-use drain;
-use proxy::tcp;
-use svc;
-use task::{BoxSendFuture, ErasedExecutor, Executor};
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
 ///
@@ -131,7 +130,7 @@ impl Http11Upgrade {
 }
 
 impl fmt::Debug for Http11Upgrade {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Http11Upgrade")
             .field("half", &self.half)
             .finish()
@@ -182,7 +181,7 @@ impl Drop for Inner {
 
 // ===== impl Service =====
 impl<S, E> Service<S, E> {
-    pub(in proxy) fn new(
+    pub(in crate::proxy) fn new(
         service: S,
         upgrade_drain_signal: drain::Watch,
         upgrade_executor: E,

@@ -1,6 +1,6 @@
-use super::untrusted;
-
-use identity;
+use crate::identity;
+use tracing::trace;
+use untrusted;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Match {
@@ -175,7 +175,7 @@ where
 }
 
 /// Like `read_vector` except the contents are ignored.
-fn skip_vector(input: &mut untrusted::Reader) -> Result<bool, untrusted::EndOfInput> {
+fn skip_vector(input: &mut untrusted::Reader<'_>) -> Result<bool, untrusted::EndOfInput> {
     let r = read_vector(input, |input| {
         input.skip_to_end();
         Ok(Some(()))
@@ -184,13 +184,13 @@ fn skip_vector(input: &mut untrusted::Reader) -> Result<bool, untrusted::EndOfIn
 }
 
 /// Like `skip_vector` for vectors with `u8` lengths.
-fn skip_vector_u8(input: &mut untrusted::Reader) -> Result<(), untrusted::EndOfInput> {
+fn skip_vector_u8(input: &mut untrusted::Reader<'_>) -> Result<(), untrusted::EndOfInput> {
     let length = input.read_byte()?;
     input.skip(usize::from(length))
 }
 
 /// Read a big-endian-encoded `u16`.
-fn read_u16(input: &mut untrusted::Reader) -> Result<u16, untrusted::EndOfInput> {
+fn read_u16(input: &mut untrusted::Reader<'_>) -> Result<u16, untrusted::EndOfInput> {
     let hi = input.read_byte()?;
     let lo = input.read_byte()?;
     Ok(u16::from(hi) << 8 | u16::from(lo))

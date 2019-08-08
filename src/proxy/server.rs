@@ -1,28 +1,27 @@
-use futures::{future::Either, Future};
-use http;
-use hyper;
-use std::marker::PhantomData;
-use std::net::SocketAddr;
-use std::{error, fmt};
-
-use futures::{future, Poll};
-use tokio::io::{AsyncRead, AsyncWrite};
-
 use super::Accept;
-use app::config::H2Settings;
-use drain;
-use never::Never;
-use proxy::http::{
+use crate::app::config::H2Settings;
+use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
     upgrade,
 };
-use proxy::protocol::Protocol;
-use proxy::{tcp, Error};
-use svc::{MakeService, Service};
-use transport::{
+use crate::proxy::protocol::Protocol;
+use crate::proxy::{tcp, Error};
+use crate::svc::{MakeService, Service};
+use crate::transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
+use crate::{drain, logging};
+use futures::{future, Poll};
+use futures::{future::Either, Future};
+use http;
+use hyper;
+use linkerd2_never::Never;
+use std::marker::PhantomData;
+use std::net::SocketAddr;
+use std::{error, fmt};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tracing::{debug, trace};
 
 /// A protocol-transparent Server!
 ///
@@ -68,7 +67,7 @@ where
     accept: A,
     connect: ForwardConnect<T, C>,
     route: R,
-    log: ::logging::Server,
+    log: logging::Server,
 }
 
 /// Describes an accepted connection.
@@ -145,7 +144,7 @@ impl Source {
 
 // for logging context
 impl fmt::Display for Source {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.remote.fmt(f)
     }
 }
@@ -186,7 +185,7 @@ impl<T, C: Clone> Clone for ForwardConnect<T, C> {
 impl error::Error for NoOriginalDst {}
 
 impl fmt::Display for NoOriginalDst {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Missing SO_ORIGINAL_DST address")
     }
 }
@@ -224,7 +223,7 @@ where
         drain_signal: drain::Watch,
     ) -> Self {
         let connect = ForwardConnect(connect, PhantomData);
-        let log = ::logging::Server::proxy(proxy_name, listen_addr);
+        let log = logging::Server::proxy(proxy_name, listen_addr);
         Server {
             drain_signal,
             http: hyper::server::conn::Http::new(),
@@ -236,7 +235,7 @@ where
         }
     }
 
-    pub fn log(&self) -> &::logging::Server {
+    pub fn log(&self) -> &logging::Server {
         &self.log
     }
 

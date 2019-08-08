@@ -1,11 +1,8 @@
 //! Unix signal handling for the proxy binary.
 
-extern crate futures;
-extern crate tokio_signal;
+use futures::Future;
 
-use self::futures::Future;
-
-type ShutdownSignal = Box<Future<Item = (), Error = ()> + Send>;
+type ShutdownSignal = Box<dyn Future<Item = (), Error = ()> + Send>;
 
 /// Returns a `Future` that completes when the proxy should start to shutdown.
 pub fn shutdown() -> ShutdownSignal {
@@ -14,11 +11,11 @@ pub fn shutdown() -> ShutdownSignal {
 
 #[cfg(unix)]
 mod imp {
-    use std::fmt;
-
-    use super::futures::{future, Future, Stream};
-    use super::tokio_signal::unix::{Signal, SIGINT, SIGTERM};
     use super::ShutdownSignal;
+    use futures::{future, Future, Stream};
+    use std::fmt;
+    use tokio_signal::unix::{Signal, SIGINT, SIGTERM};
+    use tracing::info;
 
     pub(super) fn shutdown() -> ShutdownSignal {
         // SIGTERM - Kubernetes sends this to start a graceful shutdown.
@@ -62,7 +59,7 @@ mod imp {
     struct DisplaySignal(i32);
 
     impl fmt::Display for DisplaySignal {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             let s = match self.0 {
                 SIGINT => "SIGINT",
                 SIGTERM => "SIGTERM",
@@ -75,8 +72,9 @@ mod imp {
 
 #[cfg(not(unix))]
 mod imp {
-    use super::futures::{Future, Stream};
-    use super::{tokio_signal, ShutdownSignal};
+    use super::ShutdownSignal;
+    use futures::{Future, Stream};
+    use tokio_signal;
 
     pub(super) fn shutdown() -> ShutdownSignal {
         // On Windows, we don't have all the signals, but Windows also

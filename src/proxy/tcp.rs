@@ -1,10 +1,9 @@
+use crate::svc::{self, ServiceExt};
 use bytes::{Buf, BufMut};
-use futures::{Async, Future, Poll};
+use futures::{try_ready, Async, Future, Poll};
 use std::{fmt, io};
 use tokio::io::{AsyncRead, AsyncWrite};
-
-use svc;
-use svc::ServiceExt;
+use tracing::{debug, info, trace};
 
 /// Attempt to proxy the `server_io` stream to a `T`-typed target.
 ///

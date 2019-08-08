@@ -1,9 +1,7 @@
-extern crate linkerd2_router as rt;
-
-use futures::{Future, Poll};
-
-use proxy::Error;
-use svc::{self, ServiceExt};
+use crate::proxy::Error;
+use crate::svc::{self, ServiceExt};
+use futures::{try_ready, Future, Poll};
+use linkerd2_router as rt;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Layer(());

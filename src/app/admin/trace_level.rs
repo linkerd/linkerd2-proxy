@@ -1,20 +1,20 @@
 use super::rsp;
-use control::ClientAddr;
+use crate::control::ClientAddr;
+pub use crate::trace::LevelHandle as TraceLevel;
 use futures::{
     future::{self, Future},
     Stream,
 };
 use http::{Method, StatusCode};
 use hyper::{service::Service, Body, Request, Response};
-pub use trace::LevelHandle as TraceLevel;
-
 use std::{io, net::SocketAddr, str};
+use tracing::{error, trace, warn};
 
 impl Service for TraceLevel {
     type ReqBody = Body;
     type ResBody = Body;
     type Error = io::Error;
-    type Future = Box<Future<Item = Response<Body>, Error = Self::Error> + Send + 'static>;
+    type Future = Box<dyn Future<Item = Response<Body>, Error = Self::Error> + Send + 'static>;
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         // `/proxy-log-level` endpoint can only be called from loopback IPs

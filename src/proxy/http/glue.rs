@@ -1,13 +1,12 @@
-use futures::{Async, Future, Poll};
+use crate::proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
+use crate::svc;
+use crate::transport::tls::HasStatus as HasTlsStatus;
+use crate::Conditional;
+use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::client::connect as hyper_connect;
 use hyper::{self, body::Payload};
-
-use proxy;
-use proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
-use svc;
-use transport::tls::HasStatus as HasTlsStatus;
-use Conditional;
+use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[derive(Debug)]
@@ -135,7 +134,7 @@ impl<S> HyperServerSvc<S> {
 impl<S, B> hyper::service::Service for HyperServerSvc<S>
 where
     S: svc::Service<http::Request<HttpBody>, Response = http::Response<B>>,
-    S::Error: Into<proxy::Error>,
+    S::Error: Into<crate::proxy::Error>,
     B: Payload,
 {
     type ReqBody = hyper::Body;
@@ -171,7 +170,7 @@ impl<C, T> hyper_connect::Connect for HyperConnect<C, T>
 where
     C: svc::MakeConnection<T> + Clone + Send + Sync,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<proxy::Error>,
+    <C::Future as Future>::Error: Into<crate::proxy::Error>,
     C::Connection: HasTlsStatus + Send + 'static,
     T: Clone + Send + Sync,
 {
@@ -191,7 +190,7 @@ impl<F> Future for HyperConnectFuture<F>
 where
     F: Future + 'static,
     F::Item: HasTlsStatus,
-    F::Error: Into<proxy::Error>,
+    F::Error: Into<crate::proxy::Error>,
 {
     type Item = (F::Item, hyper_connect::Connected);
     type Error = F::Error;

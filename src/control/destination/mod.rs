@@ -23,19 +23,20 @@
 //!   more explicit.
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
-use indexmap::IndexMap;
-use std::sync::Arc;
-use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
-
-use dns;
-use identity;
-use proxy::resolve::{Resolve, Update};
 
 mod client;
 mod resolution;
+
 use self::client::Client;
 pub use self::resolution::{Resolution, ResolveFuture, Unresolvable};
-use NameAddr;
+use crate::dns;
+use crate::identity;
+use crate::proxy::resolve::{Resolve, Update};
+use crate::NameAddr;
+use indexmap::IndexMap;
+use std::sync::Arc;
+use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
+use tracing::trace;
 
 /// A handle to request resolutions from the destination service.
 #[derive(Clone)]

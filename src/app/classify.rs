@@ -1,9 +1,8 @@
-use std::borrow::Cow;
-
+pub use crate::proxy::http::metrics::classify::{self, layer, CanClassify};
+use crate::proxy::http::{profiles, timeout, HasH2Reason};
 use http;
-
-pub use proxy::http::metrics::classify::{self, layer, CanClassify};
-use proxy::http::{profiles, timeout, HasH2Reason};
+use std::borrow::Cow;
+use tracing::trace;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -220,10 +219,9 @@ impl Class {
 
 #[cfg(test)]
 mod tests {
-    use http::{HeaderMap, Response, StatusCode};
-
     use super::{Class, SuccessOrFailure};
-    use proxy::http::metrics::classify::{ClassifyEos as _CE, ClassifyResponse as _CR};
+    use crate::proxy::http::metrics::classify::{ClassifyEos as _CE, ClassifyResponse as _CR};
+    use http::{HeaderMap, Response, StatusCode};
 
     #[test]
     fn http_response_status_ok() {

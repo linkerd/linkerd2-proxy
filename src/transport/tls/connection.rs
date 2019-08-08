@@ -1,13 +1,13 @@
+use crate::identity;
+use crate::transport::io::internal::Io;
+use crate::transport::tls::{ReasonForNoIdentity, ReasonForNoPeerName};
+use crate::transport::{AddrInfo, BoxedIo, Peek, SetKeepalive};
+use crate::Conditional;
 use bytes::{Buf, BytesMut};
+use futures::try_ready;
 use std::net::SocketAddr;
 use std::{cmp, io};
 use tokio::prelude::*;
-
-use identity;
-use transport::io::internal::Io;
-use transport::tls::{ReasonForNoIdentity, ReasonForNoPeerName};
-use transport::{AddrInfo, BoxedIo, Peek, SetKeepalive};
-use Conditional;
 
 /// Abstracts a plaintext socket vs. a TLS decorated one.
 ///

@@ -1,19 +1,18 @@
+use super::match_::Match;
+use crate::proxy::http::HasH2Reason;
+use crate::tap::{iface, Inspect};
+use crate::Conditional;
 use bytes::Buf;
 use futures::sync::mpsc;
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
+use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
 use tokio_timer::clock;
 use tower_grpc::{self as grpc, Response};
-
-use api::{http_types, pb_duration, tap as api};
-
-use super::match_::Match;
-use proxy::http::HasH2Reason;
-use tap::{iface, Inspect};
-use Conditional;
+use tracing::{debug, trace, warn};
 
 #[derive(Clone, Debug)]
 pub struct Server<T> {
@@ -81,7 +80,7 @@ pub struct TapResponsePayload {
 // === impl Server ===
 
 impl<T: iface::Subscribe<Tap>> Server<T> {
-    pub(in tap) fn new(subscribe: T) -> Self {
+    pub(in crate::tap) fn new(subscribe: T) -> Self {
         let base_id = Arc::new(0.into());
         Self { base_id, subscribe }
     }

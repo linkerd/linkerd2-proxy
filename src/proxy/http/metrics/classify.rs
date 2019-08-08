@@ -1,8 +1,7 @@
-use futures::{Future, Poll};
+use crate::proxy::Error;
+use crate::svc;
+use futures::{try_ready, Future, Poll};
 use http;
-
-use proxy::Error;
-use svc;
 
 /// Determines how a request's response should be classified.
 pub trait Classify {

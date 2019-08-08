@@ -119,7 +119,7 @@ macro_rules! assert_eventually {
                 } else if i == $retries {
                     panic!(
                         "assertion failed after {} (retried {} times): {}",
-                        ::support::HumanDuration(start_t.elapsed()),
+                        crate::support::HumanDuration(start_t.elapsed()),
                         i,
                         format_args!($($arg)+)
                     )
@@ -265,7 +265,7 @@ fn assert_eventually() {
 pub struct HumanDuration(pub Duration);
 
 impl fmt::Display for HumanDuration {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         let secs = self.0.as_secs();
         let subsec_ms = self.0.subsec_nanos() as f64 / 1_000_000f64;
         if secs == 0 {
@@ -325,7 +325,7 @@ impl<E> From<E> for Waited<E> {
 }
 
 impl<E: fmt::Display> fmt::Display for Waited<E> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Waited::Error(ref e) => fmt::Display::fmt(e, fmt),
             Waited::TimedOut => fmt.write_str("wait timed out"),

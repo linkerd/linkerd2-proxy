@@ -1,11 +1,8 @@
-#![allow(dead_code)] // TODO #2597
-
-use std::{fmt, marker::PhantomData};
-
-use futures::{Future, Poll};
+use crate::svc;
+use futures::{try_ready, Future, Poll};
 use http::header::{AsHeaderName, HeaderValue};
-
-use svc;
+use std::{fmt, marker::PhantomData};
+use tracing::trace;
 
 /// A function used to get the header value for a given Stack target.
 type GetHeader<T> = fn(&T) -> Option<HeaderValue>;
@@ -123,7 +120,7 @@ where
     T: fmt::Debug,
     M: fmt::Debug,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Stack")
             .field("header", &self.header)
             .field("get_header", &format_args!("{}", "..."))
@@ -158,11 +155,10 @@ where
 }
 
 pub mod request {
+    use crate::svc;
     use futures::Poll;
     use http;
     use http::header::{AsHeaderName, IntoHeaderName};
-
-    use svc;
 
     pub fn layer<H, T>(header: H, get_header: super::GetHeader<T>) -> super::Layer<H, T, ReqHeader>
     where
@@ -197,11 +193,10 @@ pub mod request {
 }
 
 pub mod response {
-    use futures::{Future, Poll};
+    use crate::svc;
+    use futures::{try_ready, Future, Poll};
     use http;
     use http::header::{AsHeaderName, HeaderValue, IntoHeaderName};
-
-    use svc;
 
     pub fn layer<H, T>(header: H, get_header: super::GetHeader<T>) -> super::Layer<H, T, ResHeader>
     where
