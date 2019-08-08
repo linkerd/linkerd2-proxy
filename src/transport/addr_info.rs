@@ -35,7 +35,7 @@ impl AddrInfo for TcpStream {
 
     #[cfg(not(target_os = "linux"))]
     fn get_original_dst(&self) -> Option<SocketAddr> {
-        debug!("no support for SO_ORIGINAL_DST");
+        tracing::debug!("no support for SO_ORIGINAL_DST");
         None
     }
 }

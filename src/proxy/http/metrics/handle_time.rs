@@ -1,5 +1,5 @@
-use linkerd2_metrics::{latency, FmtLabels, FmtMetric, Histogram};
 use crate::proxy::http::insert;
+use linkerd2_metrics::{latency, FmtLabels, FmtMetric, Histogram};
 use std::{
     fmt,
     sync::{

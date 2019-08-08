@@ -1,4 +1,4 @@
-use crate::proxy::http::metrics::{Scoped, Stats, handle_time};
+use crate::proxy::http::metrics::{handle_time, Scoped, Stats};
 use crate::svc;
 use futures::{future, try_ready, Future, Poll};
 use http::{Request, Response};

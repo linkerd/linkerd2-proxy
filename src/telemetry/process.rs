@@ -53,10 +53,10 @@ impl FmtMetrics for Report {
 #[cfg(target_os = "linux")]
 mod system {
     use libc::{self, pid_t};
-    use linkerd2_metrics::{Counter, FmtMetrics, Gauge, metrics};
+    use linkerd2_metrics::{metrics, Counter, FmtMetrics, Gauge};
     use procinfo::pid;
-    use std::{fs, io};
     use std::fmt;
+    use std::{fs, io};
     use tracing::{error, warn};
 
     metrics! {
@@ -168,9 +168,8 @@ mod system {
 
 #[cfg(not(target_os = "linux"))]
 mod system {
+    use super::metrics::FmtMetrics;
     use std::{fmt, io};
-
-    use super::super::metrics::FmtMetrics;
 
     #[derive(Clone, Debug)]
     pub(super) struct System {}
