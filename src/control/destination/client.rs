@@ -1,13 +1,10 @@
+use crate::control::remote_stream::{self, Remote};
+use crate::NameAddr;
 use futures::{Async, Poll, Stream};
-
-use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
-
-use api::destination::{client::Destination, GetDestination, Update};
-
-use control::remote_stream::{self, Remote};
+use linkerd2_proxy_api::destination::{client::Destination, GetDestination, Update};
 use std::sync::Arc;
-
-use NameAddr;
+use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
+use tracing::trace;
 
 /// A client for making service discovery requests to the destination service.
 #[derive(Clone)]

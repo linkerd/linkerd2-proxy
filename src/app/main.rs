@@ -1,6 +1,34 @@
+use super::admin::{Admin, Readiness};
+use super::config::{Config, H2Settings};
+use super::dst::DstAddr;
+use super::identity;
+use super::profiles::Client as ProfilesClient;
+use crate::app::classify::{self, Class};
+use crate::app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
+use crate::app::tap::serve_tap;
+use crate::control;
+use crate::dns;
+use crate::drain;
+use crate::proxy::{
+    self, accept,
+    http::{
+        client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
+        strip_header,
+    },
+    reconnect,
+};
+use crate::svc::{self, LayerExt};
+use crate::tap;
+use crate::telemetry;
+use crate::trace;
+use crate::transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
+use crate::{Addr, Conditional};
 use futures::{self, future, Future, Poll};
 use http;
 use hyper;
+use linkerd2_metrics::FmtMetrics;
+use linkerd2_never::Never;
+use linkerd2_task;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -9,36 +37,7 @@ use tokio::executor::{DefaultExecutor, Executor};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::runtime::current_thread;
 use tokio_timer::clock;
-
-use app::classify::{self, Class};
-use app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
-use app::tap::serve_tap;
-use control;
-use dns;
-use drain;
-use metrics::FmtMetrics;
-use never::Never;
-use proxy::{
-    self, accept,
-    http::{
-        client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
-        strip_header,
-    },
-    reconnect,
-};
-use svc::{self, LayerExt};
-use tap;
-use task;
-use telemetry;
-use trace;
-use transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
-use {Addr, Conditional};
-
-use super::admin::{Admin, Readiness};
-use super::config::{Config, H2Settings};
-use super::dst::DstAddr;
-use super::identity;
-use super::profiles::Client as ProfilesClient;
+use tracing::{debug, error, info, trace};
 
 /// Runs a sidecar proxy.
 ///
@@ -54,7 +53,7 @@ use super::profiles::Client as ProfilesClient;
 ///
 pub struct Main<G> {
     proxy_parts: ProxyParts<G>,
-    runtime: task::MainRuntime,
+    runtime: linkerd2_task::MainRuntime,
 }
 
 struct ProxyParts<G> {
@@ -95,7 +94,7 @@ where
         runtime: R,
     ) -> Self
     where
-        R: Into<task::MainRuntime>,
+        R: Into<linkerd2_task::MainRuntime>,
     {
         let start_time = SystemTime::now();
 
@@ -318,7 +317,7 @@ where
 
                 identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
 
-                task::spawn(
+                linkerd2_task::spawn(
                     local_identity
                         .clone()
                         .await_crt()
@@ -381,7 +380,7 @@ where
             thread::Builder::new()
                 .name("admin".into())
                 .spawn(move || {
-                    use api::tap::server::TapServer;
+                    use linkerd2_proxy_api::tap::server::TapServer;
 
                     let mut rt =
                         current_thread::Runtime::new().expect("initialize admin thread runtime");
@@ -397,11 +396,11 @@ where
                         rt.spawn(serve_tap(listener, tap_svc_name, TapServer::new(tap_grpc)));
                     }
 
-                    rt.spawn(::logging::admin().bg("dns-resolver").future(dns_bg));
+                    rt.spawn(crate::logging::admin().bg("dns-resolver").future(dns_bg));
 
                     if let Some(d) = identity_daemon {
                         rt.spawn(
-                            ::logging::admin()
+                            crate::logging::admin()
                                 .bg("identity")
                                 .future(d.map_err(|_| error!("identity task failed"))),
                         );
@@ -423,7 +422,7 @@ where
                 Ok(futures::Async::NotReady)
             })
             .map(|()| drop(tx));
-            task::spawn(admin_shutdown);
+            linkerd2_task::spawn(admin_shutdown);
         }
 
         // Build the outbound and inbound proxies using the dst_svc client.
@@ -439,7 +438,7 @@ where
                 require_identity_on_endpoint,
                 //add_remote_ip_on_rsp, add_server_id_on_rsp,
             };
-            use proxy::{
+            use crate::proxy::{
                 http::{balance, canonicalize, fallback, header_from_target, metrics, retry},
                 resolve,
             };
@@ -669,7 +668,7 @@ where
             )
             .map_err(|e| error!("outbound proxy background task failed: {}", e))
         };
-        task::spawn(outbound);
+        linkerd2_task::spawn(outbound);
 
         let inbound = {
             use super::inbound::{
@@ -850,7 +849,7 @@ where
             )
             .map_err(|e| error!("inbound proxy background task failed: {}", e))
         };
-        task::spawn(inbound);
+        linkerd2_task::spawn(inbound);
     }
 }
 
@@ -911,7 +910,7 @@ where
             // Logging context is configured by the server.
             let r = DefaultExecutor::current()
                 .spawn(Box::new(s))
-                .map_err(task::Error::into_io);
+                .map_err(linkerd2_task::Error::into_io);
             future::result(r)
         }),
     );

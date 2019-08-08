@@ -1,22 +1,13 @@
-extern crate hyper_balance;
-extern crate tower_balance;
-extern crate tower_discover;
-extern crate tower_load;
-
-use std::{marker::PhantomData, time::Duration};
-
-use futures::{Async, Future, Poll};
-use hyper::body::Payload;
-use rand::{rngs::SmallRng, FromEntropy};
-
-use self::tower_discover::Discover;
-
-pub use self::hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
-pub use self::tower_balance::p2c::Balance;
-pub use self::tower_load::{Load, PeakEwmaDiscover};
-
+use crate::svc;
+use futures::{try_ready, Async, Future, Poll};
 use http;
-use svc;
+use hyper::body::Payload;
+pub use hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
+use rand::{rngs::SmallRng, FromEntropy};
+use std::{marker::PhantomData, time::Duration};
+pub use tower_balance::p2c::Balance;
+use tower_discover::Discover;
+pub use tower_load::{Load, PeakEwmaDiscover};
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
 /// `M`-typed endpoint stacks.

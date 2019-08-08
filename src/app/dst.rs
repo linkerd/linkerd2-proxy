@@ -1,16 +1,14 @@
+use super::classify;
+use crate::proxy::http::{
+    metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
+    profiles, retry, settings, timeout,
+};
+use crate::{Addr, NameAddr};
 use http;
 use indexmap::IndexMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
-
-use proxy::http::{
-    metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
-    profiles, retry, settings, timeout,
-};
-use {Addr, NameAddr};
-
-use super::classify;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -149,7 +147,7 @@ impl<'t> From<&'t DstAddr> for http::header::HeaderValue {
 }
 
 impl fmt::Display for DstAddr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.dst_concrete.fmt(f)
     }
 }
@@ -187,7 +185,7 @@ impl Route {
 }
 
 impl fmt::Display for Route {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.dst_addr.fmt(f)
     }
 }

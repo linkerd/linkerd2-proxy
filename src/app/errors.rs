@@ -1,10 +1,10 @@
 //! Layer to map HTTP service errors into appropriate `http::Response`s.
 
+use crate::proxy::http::HasH2Reason;
+use crate::svc;
 use futures::{Future, Poll};
 use http::{header, Request, Response, StatusCode, Version};
-
-use proxy::http::HasH2Reason;
-use svc;
+use tracing::{debug, error, warn};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -110,9 +110,9 @@ where
 }
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
-    use app::outbound;
-    use proxy::buffer;
-    use proxy::http::router::error as router;
+    use crate::app::outbound;
+    use crate::proxy::buffer;
+    use crate::proxy::http::router::error as router;
     use tower::load_shed::error as shed;
 
     if let Some(ref c) = e.downcast_ref::<router::NoCapacity>() {

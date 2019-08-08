@@ -1,9 +1,8 @@
+use super::io::internal::Io;
+use crate::transport::{AddrInfo, SetKeepalive};
 use bytes::{Buf, Bytes};
 use std::{cmp, fmt::Debug, io, net::SocketAddr};
 use tokio::prelude::*;
-
-use super::io::internal::Io;
-use transport::{AddrInfo, SetKeepalive};
 
 /// A TcpStream where the initial reads will be served from `prefix`.
 #[derive(Debug)]
@@ -116,7 +115,7 @@ where
         self.io.shutdown_write()
     }
 
-    fn write_buf_erased(&mut self, buf: &mut Buf) -> Result<Async<usize>, io::Error> {
+    fn write_buf_erased(&mut self, buf: &mut dyn Buf) -> Result<Async<usize>, io::Error> {
         self.io.write_buf_erased(buf)
     }
 }

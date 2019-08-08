@@ -1,14 +1,11 @@
-extern crate linkerd2_router as rt;
-extern crate tower_discover;
-
-use futures::{stream::FuturesUnordered, Async, Future, Poll, Stream};
+use crate::proxy::Error;
+use crate::svc;
+use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use std::{fmt, net::SocketAddr};
 use tokio::sync::oneshot;
-
-pub use self::tower_discover::Change;
-use proxy::Error;
-use svc;
+pub use tower_discover::Change;
+use tracing::trace;
 
 /// Resolves `T`-typed names/addresses as a `Resolution`.
 pub trait Resolve<T> {
@@ -295,11 +292,11 @@ impl<E> From<E> for MakeError<E> {
 
 #[cfg(test)]
 mod tests {
-    use self::tower_discover::{Change, Discover as _Discover};
     use super::*;
     use futures::future;
     use svc::Service;
     use tokio::sync::mpsc;
+    use tower_discover::{Change, Discover as _Discover};
     use tower_util::service_fn;
 
     impl<E> Resolution for mpsc::Receiver<Update<E>> {

@@ -1,4 +1,4 @@
-use support::*;
+use crate::support::*;
 
 use bytes::{BufMut, BytesMut};
 use linkerd2_proxy_api::tap as pb;

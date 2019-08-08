@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::io;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
+use tracing::trace;
 
 pub trait AddrInfo: Debug {
     fn local_addr(&self) -> Result<SocketAddr, io::Error>;
@@ -43,14 +44,14 @@ impl AddrInfo for TcpStream {
 ///
 /// This is especially useful to allow tests to provide a mock implementation.
 pub trait GetOriginalDst {
-    fn get_original_dst(&self, socket: &AddrInfo) -> Option<SocketAddr>;
+    fn get_original_dst(&self, socket: &dyn AddrInfo) -> Option<SocketAddr>;
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct SoOriginalDst;
 
 impl GetOriginalDst for SoOriginalDst {
-    fn get_original_dst(&self, sock: &AddrInfo) -> Option<SocketAddr> {
+    fn get_original_dst(&self, sock: &dyn AddrInfo) -> Option<SocketAddr> {
         trace!("get_original_dst {:?}", sock);
         sock.get_original_dst()
     }
@@ -62,6 +63,7 @@ mod linux {
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
     use std::os::unix::io::RawFd;
     use std::{io, mem};
+    use tracing::warn;
 
     pub unsafe fn so_original_dst(fd: RawFd) -> io::Result<SocketAddr> {
         let mut sockaddr: libc::sockaddr_storage = mem::zeroed();

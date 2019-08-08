@@ -1,9 +1,10 @@
+use crate::proxy;
+use crate::svc;
 use bytes::Buf;
-use futures::{Future, Poll};
+use futures::{try_ready, Future, Poll};
 use http;
 use hyper::body::Payload;
-use proxy;
-use svc;
+use tracing::trace;
 
 /// A fallback layer composing two service builders.
 ///

@@ -1,8 +1,7 @@
-use futures::{Future, Poll};
+use crate::svc;
+use futures::{try_ready, Future, Poll};
 use http;
 use std::marker::PhantomData;
-
-use svc;
 
 pub trait Lazy<V>: Clone {
     fn value(&self) -> V;

@@ -1,17 +1,16 @@
+use super::identity;
+use crate::control::destination::{Metadata, ProtocolHint};
+use crate::proxy::{
+    self,
+    http::{identity_from_header, settings},
+};
+use crate::tap;
+use crate::transport::{connect, tls};
+use crate::{Conditional, NameAddr};
 use indexmap::IndexMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::{fmt, hash};
-
-use super::identity;
-use control::destination::{Metadata, ProtocolHint};
-use proxy::{
-    self,
-    http::{identity_from_header, settings},
-};
-use tap;
-use transport::{connect, tls};
-use {Conditional, NameAddr};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Endpoint {
@@ -86,7 +85,7 @@ impl From<SocketAddr> for Endpoint {
 }
 
 impl fmt::Display for Endpoint {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.addr.fmt(f)
     }
 }
@@ -161,14 +160,14 @@ impl tap::Inspect for Endpoint {
 }
 
 pub mod discovery {
-    use futures::{future::Future, Async, Poll};
-
     use super::super::dst::DstAddr;
     use super::Endpoint;
-    use control::destination::{Metadata, Unresolvable};
-    use proxy::{http::settings, resolve};
-    use transport::tls;
-    use {Addr, Conditional, NameAddr};
+    use crate::control::destination::{Metadata, Unresolvable};
+    use crate::proxy::{http::settings, resolve};
+    use crate::transport::tls;
+    use crate::{Addr, Conditional, NameAddr};
+    use futures::{future::Future, try_ready, Async, Poll};
+    use tracing::debug;
 
     #[derive(Clone, Debug)]
     pub struct Resolve<R: resolve::Resolve<NameAddr>>(R);
@@ -308,14 +307,13 @@ pub mod discovery {
 }
 
 pub mod orig_proto_upgrade {
-    use std::marker::PhantomData;
-
-    use futures::{Future, Poll};
-    use http;
-
     use super::Endpoint;
-    use proxy::http::{orig_proto, settings::Settings};
-    use svc;
+    use crate::proxy::http::{orig_proto, settings::Settings};
+    use crate::svc;
+    use futures::{try_ready, Future, Poll};
+    use http;
+    use std::marker::PhantomData;
+    use tracing::trace;
 
     #[derive(Debug)]
     pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
@@ -423,18 +421,19 @@ pub mod orig_proto_upgrade {
 }
 
 pub mod require_identity_on_endpoint {
+    use super::super::L5D_REQUIRE_ID;
     use super::Endpoint;
-    use app::L5D_REQUIRE_ID;
+    use crate::identity;
+    use crate::proxy::http::{identity_from_header, HasH2Reason};
+    use crate::svc;
+    use crate::transport::tls::{self, HasPeerIdentity};
+    use crate::Conditional;
     use futures::{
         future::{self, Either, FutureResult},
-        Async, Future, Poll,
+        try_ready, Async, Future, Poll,
     };
-    use identity;
-    use proxy::http::{identity_from_header, HasH2Reason};
     use std::marker::PhantomData;
-    use svc;
-    use transport::tls::{self, HasPeerIdentity};
-    use Conditional;
+    use tracing::{debug, warn};
 
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -623,7 +622,7 @@ pub mod require_identity_on_endpoint {
     impl std::error::Error for RequireIdentityError {}
 
     impl std::fmt::Display for RequireIdentityError {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
                 "require identity check failed; require={:?} found={:?}",
@@ -645,9 +644,10 @@ pub mod require_identity_on_endpoint {
 pub mod add_server_id_on_rsp {
     use super::super::L5D_SERVER_ID;
     use super::Endpoint;
+    use crate::proxy::http::add_header::{self, response::ResHeader, Layer};
+    use crate::Conditional;
     use http::header::HeaderValue;
-    use proxy::http::add_header::{self, response::ResHeader, Layer};
-    use Conditional;
+    use tracing::{debug, warn};
 
     pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
         add_header::response::layer(L5D_SERVER_ID, |endpoint: &Endpoint| {
@@ -674,9 +674,9 @@ pub mod add_server_id_on_rsp {
 pub mod add_remote_ip_on_rsp {
     use super::super::L5D_REMOTE_IP;
     use super::Endpoint;
+    use crate::proxy::http::add_header::{self, response::ResHeader, Layer};
     use bytes::Bytes;
     use http::header::HeaderValue;
-    use proxy::http::add_header::{self, response::ResHeader, Layer};
 
     pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
         add_header::response::layer(L5D_REMOTE_IP, |endpoint: &Endpoint| {

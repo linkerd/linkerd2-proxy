@@ -1,4 +1,9 @@
-use futures::{Async, Future, Poll};
+use super::super::retry::TryClone;
+use super::classify::{ClassifyEos, ClassifyResponse};
+use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
+use crate::proxy::Error;
+use crate::svc;
+use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::body::Payload;
 use std::fmt::Debug;
@@ -7,12 +12,7 @@ use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio_timer::clock;
-
-use super::super::retry::TryClone;
-use super::classify::{ClassifyEos, ClassifyResponse};
-use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
-use proxy::Error;
-use svc;
+use tracing::trace;
 
 /// A stack module that wraps services to record metrics.
 #[derive(Debug)]

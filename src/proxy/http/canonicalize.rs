@@ -9,18 +9,18 @@
 //! DNS TTLs are honored and the most recent value is added to each request's
 //! extensions.
 
-use futures::{Async, Future, Poll, Stream};
+use crate::dns;
+use crate::svc;
+use crate::{Addr, NameAddr};
+use futures::{try_ready, Async, Future, Poll, Stream};
 use http;
+use linkerd2_never::Never;
 use log::trace;
-use never::Never;
 use std::time::Duration;
 use tokio;
 use tokio::sync::{mpsc, oneshot};
 use tokio_timer::{clock, Delay, Timeout};
-
-use dns;
-use svc;
-use {Addr, NameAddr};
+use tracing::{debug, warn};
 
 /// Duration to wait before polling DNS again after an error (or a NXDOMAIN
 /// response with no TTL).

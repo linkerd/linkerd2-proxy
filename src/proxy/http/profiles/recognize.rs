@@ -1,7 +1,9 @@
-use super::{rt, RequestMatch, Route, WeightedAddr, WithAddr, WithRoute};
+use super::{RequestMatch, Route, WeightedAddr, WithAddr, WithRoute};
 use http;
+use linkerd2_router as rt;
 use rand::distributions::{Distribution, WeightedIndex};
 use std::hash::Hash;
+use tracing::trace;
 
 #[derive(Clone)]
 pub struct RouteRecognize<T> {

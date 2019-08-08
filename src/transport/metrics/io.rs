@@ -1,11 +1,9 @@
+use super::{Eos, Sensor};
+use crate::transport::{tls, Peek};
 use bytes::Buf;
-use futures::{Async, Poll};
+use futures::{try_ready, Async, Poll};
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
-
-use transport::{tls, Peek};
-
-use super::{Eos, Sensor};
 
 /// Wraps a transport with telemetry.
 #[derive(Debug)]
@@ -47,7 +45,7 @@ impl<T: AsyncRead + AsyncWrite> Io<T> {
 }
 
 impl<T: AsyncRead + AsyncWrite> io::Read for Io<T> {
-    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let bytes = self.sense_err(move |io| io.read(buf))?;
         self.sensor.record_read(bytes);
 

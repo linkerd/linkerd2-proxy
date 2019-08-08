@@ -1,13 +1,11 @@
-use futures::{Async, Future, Poll};
+use crate::svc;
+use crate::transport::{io::internal::Io, tls, BoxedIo, Connection};
+use crate::Conditional;
+use futures::{try_ready, Async, Future, Poll};
+pub use rustls::ClientConfig as Config;
 use std::sync::Arc;
 use std::{fmt, io};
-
-use identity;
-use svc;
-use transport::{io::internal::Io, tls, BoxedIo, Connection};
-use Conditional;
-
-pub use super::rustls::ClientConfig as Config;
+use tracing::trace;
 
 pub trait HasConfig {
     fn tls_client_config(&self) -> Arc<Config>;
@@ -26,11 +24,11 @@ pub struct Connect<L, C> {
 pub enum ConnectFuture<L, F: Future> {
     Init {
         future: F,
-        tls: tls::Conditional<(identity::Name, L)>,
+        tls: tls::Conditional<(crate::identity::Name, L)>,
     },
     Handshake {
-        future: tls::tokio_rustls::Connect<F::Item>,
-        server_name: identity::Name,
+        future: tokio_rustls::Connect<F::Item>,
+        server_name: crate::identity::Name,
     },
 }
 

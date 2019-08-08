@@ -1,14 +1,14 @@
 use self::tokio::net::TcpStream;
 use self::tokio_rustls::TlsAcceptor;
 use self::RunningIo;
+use crate::support::futures::future::Either;
+use crate::support::*;
 use rustls::{ServerConfig, ServerSession};
 use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
-use support::futures::future::Either;
-use support::*;
 
 pub fn new() -> Server {
     http2()
@@ -258,7 +258,7 @@ impl Route {
 }
 
 impl ::std::fmt::Debug for Route {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         f.write_str("Route")
     }
 }

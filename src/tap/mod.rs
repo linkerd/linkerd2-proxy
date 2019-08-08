@@ -1,11 +1,10 @@
+use crate::identity;
+use crate::transport::tls::ReasonForNoIdentity;
+use crate::Conditional;
 use http;
 use indexmap::IndexMap;
 use std::net;
 use std::sync::Arc;
-
-use identity;
-use transport::tls::ReasonForNoIdentity;
-use Conditional;
 
 mod daemon;
 mod grpc;
@@ -87,12 +86,11 @@ pub trait Inspect {
 /// for Layer/Server/Daemon, but need not be implemented outside of the `tap`
 /// module.
 mod iface {
+    use crate::proxy::http::HasH2Reason;
     use bytes::Buf;
     use futures::{Future, Stream};
     use http;
     use hyper::body::Payload;
-
-    use proxy::http::HasH2Reason;
 
     /// Registers a stack to receive taps.
     pub trait Register {
@@ -153,7 +151,7 @@ mod iface {
     pub struct NoCapacity;
 
     impl ::std::fmt::Display for NoCapacity {
-        fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             write!(f, "capacity exhausted")
         }
     }

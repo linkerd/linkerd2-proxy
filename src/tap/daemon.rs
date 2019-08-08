@@ -1,8 +1,8 @@
-use futures::sync::{mpsc, oneshot};
-use futures::{Async, Future, Poll, Stream};
-use never::Never;
-
 use super::iface::Tap;
+use futures::sync::{mpsc, oneshot};
+use futures::{try_ready, Async, Future, Poll, Stream};
+use linkerd2_never::Never;
+use tracing::{debug, trace, warn};
 
 pub fn new<T>() -> (Daemon<T>, Register<T>, Subscribe<T>) {
     let (svc_tx, svc_rx) = mpsc::channel(super::REGISTER_CHANNEL_CAPACITY);

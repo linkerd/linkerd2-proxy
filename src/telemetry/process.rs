@@ -1,9 +1,8 @@
+use self::system::System;
+use linkerd2_metrics::{metrics, FmtMetrics, Gauge};
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use super::metrics::{FmtMetrics, Gauge};
-
-use self::system::System;
+use tracing::{debug, error, warn};
 
 metrics! {
     process_start_time_seconds: Gauge {
@@ -39,7 +38,7 @@ impl Report {
 }
 
 impl FmtMetrics for Report {
-    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         process_start_time_seconds.fmt_help(f)?;
         process_start_time_seconds.fmt_metric(f, self.start_time)?;
 
@@ -53,12 +52,11 @@ impl FmtMetrics for Report {
 
 #[cfg(target_os = "linux")]
 mod system {
+    use super::*;
     use libc::{self, pid_t};
+    use linkerd2_metrics::{Counter, FmtMetrics, Gauge};
     use procinfo::pid;
     use std::{fs, io};
-
-    use super::super::metrics::{Counter, FmtMetrics, Gauge};
-    use super::*;
 
     metrics! {
         process_cpu_seconds_total: Counter {
@@ -119,7 +117,7 @@ mod system {
     }
 
     impl FmtMetrics for System {
-        fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             // XXX potentially blocking call
             let stat = match pid::stat_self() {
                 Ok(stat) => stat,
@@ -186,7 +184,7 @@ mod system {
     }
 
     impl FmtMetrics for System {
-        fn fmt_metrics(&self, _: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt_metrics(&self, _: &mut fmt::Formatter<'_>) -> fmt::Result {
             Ok(())
         }
     }

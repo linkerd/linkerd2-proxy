@@ -1,4 +1,4 @@
-use support::*;
+use crate::support::*;
 
 use std::io;
 use std::sync::Mutex;
@@ -6,9 +6,9 @@ use std::sync::Mutex;
 use self::futures::sync::{mpsc, oneshot};
 use self::tokio::net::TcpStream;
 use self::webpki::{DNSName, DNSNameRef};
+use crate::support::bytes::IntoBuf;
 use rustls::{ClientConfig, ClientSession};
 use std::sync::Arc;
-use support::bytes::IntoBuf;
 
 type ClientError = hyper::Error;
 type Request = http::Request<Bytes>;

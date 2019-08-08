@@ -1,26 +1,23 @@
+use super::client;
+use crate::control::destination::{Metadata, ProtocolHint, Update};
+use crate::identity;
+use crate::logging;
+use crate::proxy::resolve;
+use crate::NameAddr;
 use futures::{future::Future, sync::mpsc, Async, Poll, Stream};
 use indexmap::{IndexMap, IndexSet};
-use std::{collections::HashMap, error::Error, fmt, net::SocketAddr};
-
-use tokio;
-use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-
-use api::{
+use linkerd2_never::Never;
+use linkerd2_proxy_api::{
     destination::{
         protocol_hint::Protocol, update::Update as PbUpdate2, TlsIdentity, Update as PbUpdate,
         WeightedAddr,
     },
     net::TcpAddress,
 };
-
-use control::destination::{Metadata, ProtocolHint, Update};
-
-use super::client;
-use identity;
-use logging;
-use never::Never;
-use proxy::resolve;
-use NameAddr;
+use std::{collections::HashMap, error::Error, fmt, net::SocketAddr};
+use tokio;
+use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
+use tracing::{trace, warn};
 
 /// A resolution for a single authority.
 pub struct Resolution {
@@ -288,7 +285,7 @@ impl Updater {
 }
 
 impl<'a> fmt::Display for DisplayUpdate<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             Update::Remove(ref addr) => write!(f, "remove {}", addr),
             Update::Add(ref addr, ..) => write!(f, "add {}", addr),
@@ -297,7 +294,7 @@ impl<'a> fmt::Display for DisplayUpdate<'a> {
 }
 
 impl fmt::Display for LogCtx {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "resolver addr={}", self.0)
     }
 }
@@ -311,7 +308,7 @@ impl Unresolvable {
 }
 
 impl fmt::Display for Unresolvable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         "this name cannot be resolved by the destination service".fmt(f)
     }
 }
@@ -357,7 +354,7 @@ fn pb_to_addr_meta(
 }
 
 fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
-    use api::destination::tls_identity::Strategy;
+    use linkerd2_proxy_api::destination::tls_identity::Strategy;
 
     let Strategy::DnsLikeIdentity(i) = pb.strategy?;
     match identity::Name::from_hostname(i.name.as_bytes()) {
@@ -370,7 +367,7 @@ fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
 }
 
 fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
-    use api::net::ip_address::Ip;
+    use linkerd2_proxy_api::net::ip_address::Ip;
     use std::net::{Ipv4Addr, Ipv6Addr};
     /*
     current structure is:

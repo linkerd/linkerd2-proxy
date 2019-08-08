@@ -1,9 +1,15 @@
+use crate::identity;
+use crate::transport::prefixed::Prefixed;
+use crate::transport::tls::{self, conditional_accept, Acceptor, Connection, ReasonForNoPeerName};
+use crate::transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst};
+use crate::Conditional;
 use bytes::BytesMut;
 use futures::{
     future::{self, Either},
-    stream, Async, Future, IntoFuture, Poll, Stream,
+    stream, try_ready, Async, Future, IntoFuture, Poll, Stream,
 };
 use indexmap::IndexSet;
+pub use rustls::ServerConfig as Config;
 use std::io;
 use std::net::{SocketAddr, TcpListener as StdListener};
 use std::sync::Arc;
@@ -12,15 +18,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     reactor::Handle,
 };
-
-use super::{rustls, tokio_rustls, webpki};
-use identity;
-use transport::prefixed::Prefixed;
-use transport::tls::{self, conditional_accept, Acceptor, Connection, ReasonForNoPeerName};
-use transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst};
-use Conditional;
-
-pub use super::rustls::ServerConfig as Config;
+use tracing::{debug, trace};
 
 pub trait HasConfig {
     fn tls_server_name(&self) -> identity::Name;
@@ -246,13 +244,13 @@ impl<L: HasConfig, G> Listen<L, G> {
 }
 
 impl<L> GetOriginalDst for Listen<L, ()> {
-    fn get_original_dst(&self, _socket: &AddrInfo) -> Option<SocketAddr> {
+    fn get_original_dst(&self, _socket: &dyn AddrInfo) -> Option<SocketAddr> {
         None
     }
 }
 
 impl<L, G: GetOriginalDst> GetOriginalDst for Listen<L, G> {
-    fn get_original_dst(&self, socket: &AddrInfo) -> Option<SocketAddr> {
+    fn get_original_dst(&self, socket: &dyn AddrInfo) -> Option<SocketAddr> {
         self.get_original_dst.get_original_dst(socket)
     }
 }
@@ -272,8 +270,8 @@ impl Handshake {
     fn client_identity<S>(
         tls: &tokio_rustls::TlsStream<S, rustls::ServerSession>,
     ) -> Option<identity::Name> {
-        use super::rustls::Session;
-        use dns;
+        use crate::dns;
+        use rustls::Session;
 
         let (_io, session) = tls.get_ref();
         let certs = session.get_peer_certificates()?;

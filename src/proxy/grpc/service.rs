@@ -1,10 +1,9 @@
 pub mod req_body_as_payload {
+    use super::super::GrpcBody;
+    use crate::svc;
     use futures::Poll;
     use http;
     use hyper::body::Payload;
-
-    use super::super::GrpcBody;
-    use svc;
 
     #[derive(Debug)]
     pub struct Service<S>(S);
@@ -39,12 +38,11 @@ pub mod req_body_as_payload {
 }
 
 pub mod req_box_body {
+    use crate::svc;
     use bytes::Bytes;
     use futures::Poll;
     use http;
     use tower_grpc::{Body, BoxBody};
-
-    use svc;
 
     pub struct Service<S>(S);
 
@@ -75,13 +73,12 @@ pub mod req_box_body {
 }
 
 pub mod res_body_as_payload {
+    use super::super::GrpcBody;
+    use crate::svc;
     use futures::{future, Future, Poll};
     use http;
     use hyper::body::Payload;
     use tower_grpc::Body;
-
-    use super::super::GrpcBody;
-    use svc;
 
     pub struct Service<S>(S);
 
@@ -113,8 +110,8 @@ pub mod res_body_as_payload {
 }
 
 pub mod unauthenticated {
-    use api::tap as api;
     use futures::{future, stream};
+    use linkerd2_proxy_api::tap as api;
     use tower_grpc::{Code, Request, Response, Status};
 
     #[derive(Clone)]

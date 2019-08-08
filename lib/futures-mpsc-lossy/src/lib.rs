@@ -1,11 +1,10 @@
 #![deny(warnings, rust_2018_idioms)]
 
+use futures::sync::mpsc;
+use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-use futures::sync::mpsc;
-use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
 
 /// Creates a lossy multi-producer single-consumer channel.
 ///

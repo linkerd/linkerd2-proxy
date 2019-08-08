@@ -1,17 +1,17 @@
+use super::classify;
+use super::dst::DstAddr;
+use super::identity;
+use crate::proxy::http::{router, settings};
+use crate::proxy::server::Source;
+use crate::tap;
+use crate::transport::{connect, tls};
+use crate::{Conditional, NameAddr};
 use http;
 use indexmap::IndexMap;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
-
-use super::classify;
-use super::dst::DstAddr;
-use super::identity;
-use proxy::http::{router, settings};
-use proxy::server::Source;
-use tap;
-use transport::{connect, tls};
-use {Conditional, NameAddr};
+use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Endpoint {
@@ -107,7 +107,7 @@ impl tap::Inspect for Endpoint {
 }
 
 impl fmt::Display for Endpoint {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.addr.fmt(f)
     }
 }
@@ -157,12 +157,13 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
 }
 
 pub mod orig_proto_downgrade {
+    use crate::proxy::http::orig_proto;
+    use crate::proxy::server::Source;
+    use crate::svc;
     use futures::{Future, Poll};
     use http;
-    use proxy::http::orig_proto;
-    use proxy::server::Source;
     use std::marker::PhantomData;
-    use svc;
+    use tracing::trace;
 
     #[derive(Debug)]
     pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
@@ -239,8 +240,9 @@ pub mod orig_proto_downgrade {
 /// with the same port still set.
 pub mod rewrite_loopback_addr {
     use super::Endpoint;
+    use crate::svc::stack::map_target;
     use std::net::SocketAddr;
-    use svc::stack::map_target;
+    use tracing::debug;
 
     pub fn layer() -> map_target::Layer<impl Fn(Endpoint) -> Endpoint + Copy> {
         map_target::layer(|mut ep: Endpoint| {
@@ -256,13 +258,13 @@ pub mod rewrite_loopback_addr {
 #[allow(dead_code)] // TODO #2597
 pub mod set_client_id_on_req {
     use super::super::L5D_CLIENT_ID;
-    use http::header::HeaderValue;
-
-    use proxy::{
+    use crate::proxy::{
         http::add_header::{self, request::ReqHeader, Layer},
         server::Source,
     };
-    use Conditional;
+    use crate::Conditional;
+    use http::header::HeaderValue;
+    use tracing::{debug, warn};
 
     pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
         add_header::request::layer(L5D_CLIENT_ID, |source: &Source| {
@@ -288,12 +290,12 @@ pub mod set_client_id_on_req {
 #[allow(dead_code)] // TODO #2597
 pub mod set_remote_ip_on_req {
     use super::super::L5D_REMOTE_IP;
-    use bytes::Bytes;
-    use http::header::HeaderValue;
-    use proxy::{
+    use crate::proxy::{
         http::add_header::{self, request::ReqHeader, Layer},
         server::Source,
     };
+    use bytes::Bytes;
+    use http::header::HeaderValue;
 
     pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
         add_header::request::layer(L5D_REMOTE_IP, |source: &Source| {
@@ -304,14 +306,14 @@ pub mod set_remote_ip_on_req {
 
 #[cfg(test)]
 mod tests {
-    use http;
-    use std::net;
-
     use super::{Endpoint, RecognizeEndpoint};
-    use proxy::http::{router::Recognize, Settings};
-    use proxy::server::Source;
-    use transport::tls;
-    use Conditional;
+    use crate::proxy::http::{router::Recognize, Settings};
+    use crate::proxy::server::Source;
+    use crate::transport::tls;
+    use crate::Conditional;
+    use http;
+    use quickcheck::quickcheck;
+    use std::net;
 
     fn make_test_endpoint(addr: net::SocketAddr) -> Endpoint {
         let tls_client_id = TLS_DISABLED;
@@ -324,8 +326,8 @@ mod tests {
     }
 
     fn dst_addr(req: &mut http::Request<()>) {
-        use app::dst::DstAddr;
-        use Addr;
+        use crate::app::dst::DstAddr;
+        use crate::Addr;
         req.extensions_mut().insert(DstAddr::inbound(
             Addr::Socket(([0, 0, 0, 0], 0).into()),
             Settings::Http2,

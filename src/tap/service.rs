@@ -1,12 +1,11 @@
-use bytes::IntoBuf;
-use futures::{Async, Future, Poll, Stream};
-use http;
-use hyper::body::Payload as HyperPayload;
-
 use super::iface::{Register, Tap, TapPayload, TapResponse};
 use super::Inspect;
-use proxy::http::HasH2Reason;
-use svc;
+use crate::proxy::http::HasH2Reason;
+use crate::svc;
+use bytes::IntoBuf;
+use futures::{try_ready, Async, Future, Poll, Stream};
+use http;
+use hyper::body::Payload as HyperPayload;
 
 /// A layer that wraps MakeServices to record taps.
 #[derive(Clone, Debug)]

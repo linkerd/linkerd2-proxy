@@ -1,20 +1,14 @@
-extern crate trust_dns_resolver;
-extern crate untrusted;
-extern crate webpki;
-
-use self::trust_dns_resolver::{
-    config::ResolverConfig, system_conf, AsyncResolver, BackgroundLookupIp,
-};
-use convert::TryFrom;
-use futures::prelude::*;
-use std::time::Instant;
-use std::{fmt, net};
-
 mod name;
 
 pub use self::name::{InvalidName, Name};
-pub use self::trust_dns_resolver::config::ResolverOpts;
-pub use self::trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
+use crate::convert::TryFrom;
+use futures::{prelude::*, try_ready};
+use std::time::Instant;
+use std::{fmt, net};
+use tracing::trace;
+pub use trust_dns_resolver::config::ResolverOpts;
+pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
+use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver, BackgroundLookupIp};
 
 #[derive(Clone)]
 pub struct Resolver {
@@ -22,7 +16,7 @@ pub struct Resolver {
 }
 
 pub trait ConfigureResolver {
-    fn configure_resolver(&self, &mut ResolverOpts);
+    fn configure_resolver(&self, _: &mut ResolverOpts);
 }
 
 #[derive(Debug)]
@@ -31,9 +25,9 @@ pub enum Error {
     ResolutionFailed(ResolveError),
 }
 
-pub struct IpAddrFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
+pub struct IpAddrFuture(crate::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 
-pub struct RefineFuture(::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
+pub struct RefineFuture(crate::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Suffix {
@@ -49,13 +43,13 @@ pub struct Refine {
 }
 
 impl fmt::Display for Ctx {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "dns={}", self.0)
     }
 }
 
 impl fmt::Display for Suffix {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Suffix::Root => write!(f, "."),
             Suffix::Name(n) => n.fmt(f),
@@ -138,7 +132,7 @@ impl Resolver {
 
     pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {
         let f = self.resolver.lookup_ip(name.as_ref());
-        IpAddrFuture(::logging::context_future(Ctx(name.clone()), f))
+        IpAddrFuture(crate::logging::context_future(Ctx(name.clone()), f))
     }
 
     /// Attempts to refine `name` to a fully-qualified name.
@@ -150,14 +144,14 @@ impl Resolver {
     /// depending on the DNS search path.
     pub fn refine(&self, name: &Name) -> RefineFuture {
         let f = self.resolver.lookup_ip(name.as_ref());
-        RefineFuture(::logging::context_future(Ctx(name.clone()), f))
+        RefineFuture(crate::logging::context_future(Ctx(name.clone()), f))
     }
 }
 
 /// Note: `AsyncResolver` does not implement `Debug`, so we must manually
 ///       implement this.
 impl fmt::Debug for Resolver {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Resolver")
             .field("resolver", &"...")
             .finish()
@@ -197,7 +191,7 @@ impl Future for RefineFuture {
 #[cfg(test)]
 mod tests {
     use super::{Name, Suffix};
-    use convert::TryFrom;
+    use crate::convert::TryFrom;
 
     #[test]
     fn test_dns_name_parsing() {

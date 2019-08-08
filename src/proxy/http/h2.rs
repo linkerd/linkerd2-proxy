@@ -1,19 +1,18 @@
-use std::marker::PhantomData;
-
-use futures::{Future, Poll};
+use super::{Body, ClientUsedTls};
+use crate::app::config::H2Settings;
+use crate::proxy::Error;
+use crate::svc;
+use crate::transport::tls::HasStatus as HasTlsStatus;
+use futures::{try_ready, Future, Poll};
 use http;
 use hyper::{
     body::Payload,
     client::conn::{self, Handshake, SendRequest},
 };
+use linkerd2_task::{ArcExecutor, BoxSendFuture, Executor};
+use std::marker::PhantomData;
 use tokio::io::{AsyncRead, AsyncWrite};
-
-use super::{Body, ClientUsedTls};
-use app::config::H2Settings;
-use proxy::Error;
-use svc;
-use task::{ArcExecutor, BoxSendFuture, Executor};
-use transport::tls::HasStatus as HasTlsStatus;
+use tracing::debug;
 
 #[derive(Debug)]
 pub struct Connect<C, B> {

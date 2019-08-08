@@ -1,19 +1,19 @@
-use futures::{Async, Future, Poll};
-use http;
-use hyper;
-use std::fmt;
-use std::marker::PhantomData;
-
 use super::glue::{HttpBody, HyperConnect};
 use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{
     h1, h2,
     settings::{HasSettings, Settings},
 };
-use app::config::H2Settings;
-use proxy::Error;
-use svc::{self, ServiceExt};
-use transport::{connect, tls};
+use crate::app::config::H2Settings;
+use crate::proxy::Error;
+use crate::svc::{self, ServiceExt};
+use crate::transport::{connect, tls};
+use futures::{try_ready, Async, Future, Poll};
+use http;
+use hyper;
+use std::fmt;
+use std::marker::PhantomData;
+use tracing::{debug, trace};
 
 /// Configurs an HTTP client that uses a `C`-typed connector
 ///
@@ -133,7 +133,7 @@ where
         debug!("building client={:?}", config);
 
         let connect = self.connect.clone();
-        let executor = ::logging::Client::proxy(self.proxy_name, config.peer_addr())
+        let executor = crate::logging::Client::proxy(self.proxy_name, config.peer_addr())
             .with_settings(config.http_settings().clone())
             .executor();
 

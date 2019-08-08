@@ -1,12 +1,12 @@
+use crate::transport::io::internal::Io;
+use crate::transport::{AddrInfo, SetKeepalive};
 use bytes::Buf;
+use rustls::Session;
 use std::fmt::Debug;
 use std::io;
 use std::net::SocketAddr;
 use tokio::prelude::*;
-
-use super::{rustls::Session, tokio_rustls::TlsStream};
-use transport::io::internal::Io;
-use transport::{AddrInfo, SetKeepalive};
+use tokio_rustls::TlsStream;
 
 /// Wraps a TLS stream to implement Io.
 #[derive(Debug)]
@@ -112,7 +112,7 @@ where
         self.0.get_mut().0.shutdown_write()
     }
 
-    fn write_buf_erased(&mut self, mut buf: &mut Buf) -> Poll<usize, io::Error> {
+    fn write_buf_erased(&mut self, mut buf: &mut dyn Buf) -> Poll<usize, io::Error> {
         self.0.write_buf(&mut buf)
     }
 }

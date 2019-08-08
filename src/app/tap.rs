@@ -1,13 +1,14 @@
 use super::identity;
+use crate::logging;
+use crate::proxy;
+use crate::svc;
+use crate::transport::{tls::HasPeerIdentity, Connection, Listen};
+use crate::Conditional;
 use futures::{future, Future};
-use logging;
-use proxy;
 use std::{error, io};
-use svc;
 use tokio::executor;
 use tower_grpc as grpc;
-use transport::{tls::HasPeerIdentity, Connection, Listen};
-use Conditional;
+use tracing::{debug, error, trace};
 
 fn spawn_tap_service<S, B>(
     session: Connection,
@@ -36,7 +37,7 @@ where
 
     executor::current_thread::TaskExecutor::current()
         .spawn_local(Box::new(log.future(f)))
-        .map_err(task::Error::into_io)
+        .map_err(linkerd2_task::Error::into_io)
 }
 
 pub fn serve_tap<N, B>(
@@ -82,7 +83,7 @@ where
 
                     future::result(spawn)
                 } else {
-                    let svc = api::tap::server::TapServer::new(
+                    let svc = linkerd2_proxy_api::tap::server::TapServer::new(
                         proxy::grpc::unauthenticated::Unauthenticated,
                     );
                     let spawn =

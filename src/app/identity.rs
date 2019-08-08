@@ -1,13 +1,14 @@
-use api::identity as api;
-use futures::{Async, Future, Poll};
-pub use identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
-use never::Never;
+pub use crate::identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
+use crate::transport::tls;
+use futures::{try_ready, Async, Future, Poll};
+use linkerd2_never::Never;
+use linkerd2_proxy_api::identity as api;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
-use transport::tls;
+use tracing::{debug, error, trace};
 
 /// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]

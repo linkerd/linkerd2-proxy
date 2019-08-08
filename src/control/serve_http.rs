@@ -1,14 +1,14 @@
+use crate::transport::{tls, Listen};
 use futures::{future, Future};
 use hyper::{
     server::conn::Http,
     service::{service_fn, Service},
     Body,
 };
-use tokio::executor::current_thread::TaskExecutor;
-
+use linkerd2_task;
 use std::net::SocketAddr;
-use task;
-use transport::{tls, Listen};
+use tokio::executor::current_thread::TaskExecutor;
+use tracing::error;
 
 #[derive(Clone, Debug)]
 pub struct ClientAddr(SocketAddr);
@@ -24,7 +24,7 @@ where
     <S as Service>::Future: Send,
 {
     let ename = name.clone();
-    let log = ::logging::admin().server(name, bound_port.local_addr());
+    let log = crate::logging::admin().server(name, bound_port.local_addr());
     let fut = {
         let log = log.clone();
         bound_port
@@ -49,7 +49,7 @@ where
                 let r = TaskExecutor::current()
                     .spawn_local(Box::new(serve))
                     .map(move |()| hyper)
-                    .map_err(task::Error::into_io);
+                    .map_err(linkerd2_task::Error::into_io);
 
                 future::result(r)
             })

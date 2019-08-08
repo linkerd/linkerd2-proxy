@@ -1,14 +1,15 @@
 use super::recognize::{ConcreteDstRecognize, RouteRecognize};
-use super::rt;
 use super::{CanGetDestination, GetRoutes, Route, Routes, WeightedAddr, WithAddr, WithRoute};
-use dns;
+use crate::dns;
+use crate::proxy::Error;
+use crate::svc;
 use futures::{Async, Poll, Stream};
 use http;
 use indexmap::IndexMap;
-use never::Never;
-use proxy::Error;
+use linkerd2_never::Never;
+use linkerd2_router as rt;
 use std::hash::Hash;
-use svc;
+use tracing::{debug, error};
 
 // A router which routes based on the `dst_overrides` of the profile or, if
 // no `dst_overrdies` exist, on the router's target.
@@ -151,7 +152,7 @@ where
     RouteSvc::Error: Into<Error>,
 {
     type Response = Service<G::Stream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody>;
-    type Error = never::Never;
+    type Error = linkerd2_never::Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
