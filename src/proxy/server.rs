@@ -1,6 +1,5 @@
 use super::Accept;
 use crate::app::config::H2Settings;
-use crate::drain;
 use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
     upgrade,
@@ -12,6 +11,7 @@ use crate::transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
+use crate::{drain, logging};
 use futures::{future, Poll};
 use futures::{future::Either, Future};
 use http;
@@ -67,7 +67,7 @@ where
     accept: A,
     connect: ForwardConnect<T, C>,
     route: R,
-    log: crate::logging::Server,
+    log: logging::Server,
 }
 
 /// Describes an accepted connection.
@@ -223,7 +223,7 @@ where
         drain_signal: drain::Watch,
     ) -> Self {
         let connect = ForwardConnect(connect, PhantomData);
-        let log = crate::logging::Server::proxy(proxy_name, listen_addr);
+        let log = logging::Server::proxy(proxy_name, listen_addr);
         Server {
             drain_signal,
             http: hyper::server::conn::Http::new(),
@@ -235,7 +235,7 @@ where
         }
     }
 
-    pub fn log(&self) -> &crate::logging::Server {
+    pub fn log(&self) -> &logging::Server {
         &self.log
     }
 

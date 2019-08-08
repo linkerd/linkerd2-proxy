@@ -148,9 +148,7 @@ pub mod add_origin {
 /// Resolves the controller's `addr` once before building a client.
 pub mod resolve {
     use super::{client, ControlAddr};
-    use crate::dns;
-    use crate::svc;
-    use crate::Addr;
+    use crate::{dns, logging, svc, Addr};
     use futures::{try_ready, Future, Poll};
     use std::net::SocketAddr;
     use std::{error, fmt};
@@ -268,7 +266,7 @@ pub mod resolve {
             let target = client::Target {
                 addr,
                 server_name: dst.identity.clone(),
-                log_ctx: crate::logging::admin().client("control", dst.addr.clone()),
+                log_ctx: logging::admin().client("control", dst.addr.clone()),
             };
 
             State::Inner(mk_svc.call(target))
@@ -294,9 +292,8 @@ pub mod resolve {
 pub mod client {
     use super::super::config::H2Settings;
     use crate::proxy::http;
-    use crate::svc;
     use crate::transport::{connect, tls};
-    use crate::Addr;
+    use crate::{logging, svc, Addr};
     use futures::Poll;
     use std::net::SocketAddr;
 
@@ -304,7 +301,7 @@ pub mod client {
     pub struct Target {
         pub(super) addr: SocketAddr,
         pub(super) server_name: tls::PeerIdentity,
-        pub(super) log_ctx: crate::logging::Client<&'static str, Addr>,
+        pub(super) log_ctx: logging::Client<&'static str, Addr>,
     }
 
     #[derive(Debug)]

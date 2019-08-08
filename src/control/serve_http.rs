@@ -1,3 +1,4 @@
+use crate::logging;
 use crate::transport::{tls, Listen};
 use futures::{future, Future};
 use hyper::{
@@ -24,7 +25,7 @@ where
     <S as Service>::Future: Send,
 {
     let ename = name.clone();
-    let log = crate::logging::admin().server(name, bound_port.local_addr());
+    let log = logging::admin().server(name, bound_port.local_addr());
     let fut = {
         let log = log.clone();
         bound_port

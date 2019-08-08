@@ -1,20 +1,17 @@
 use super::control::ControlAddr;
 use super::identity;
-use crate::addr;
 use crate::convert::TryFrom;
-use crate::dns;
 use crate::proxy::reconnect::Backoff;
 use crate::transport::tls;
-use crate::{Addr, Conditional};
+use crate::{addr, dns, Addr, Conditional};
 use indexmap::IndexSet;
 use std::collections::HashMap;
-use std::fmt;
-use std::fs;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
+use std::{fmt, fs};
 use tracing::{error, warn};
 
 const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";

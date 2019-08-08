@@ -1,7 +1,7 @@
 mod name;
 
 pub use self::name::{InvalidName, Name};
-use crate::convert::TryFrom;
+use crate::{convert::TryFrom, logging};
 use futures::{prelude::*, try_ready};
 use std::time::Instant;
 use std::{fmt, net};
@@ -25,9 +25,9 @@ pub enum Error {
     ResolutionFailed(ResolveError),
 }
 
-pub struct IpAddrFuture(crate::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
+pub struct IpAddrFuture(logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 
-pub struct RefineFuture(crate::logging::ContextualFuture<Ctx, BackgroundLookupIp>);
+pub struct RefineFuture(logging::ContextualFuture<Ctx, BackgroundLookupIp>);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Suffix {
@@ -132,7 +132,7 @@ impl Resolver {
 
     pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {
         let f = self.resolver.lookup_ip(name.as_ref());
-        IpAddrFuture(crate::logging::context_future(Ctx(name.clone()), f))
+        IpAddrFuture(logging::context_future(Ctx(name.clone()), f))
     }
 
     /// Attempts to refine `name` to a fully-qualified name.
@@ -144,7 +144,7 @@ impl Resolver {
     /// depending on the DNS search path.
     pub fn refine(&self, name: &Name) -> RefineFuture {
         let f = self.resolver.lookup_ip(name.as_ref());
-        RefineFuture(crate::logging::context_future(Ctx(name.clone()), f))
+        RefineFuture(logging::context_future(Ctx(name.clone()), f))
     }
 }
 

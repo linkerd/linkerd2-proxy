@@ -7,9 +7,6 @@ use crate::app::classify::{self, Class};
 use crate::app::handle_time;
 use crate::app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use crate::app::tap::serve_tap;
-use crate::control;
-use crate::dns;
-use crate::drain;
 use crate::proxy::{
     self, accept,
     http::{
@@ -19,11 +16,8 @@ use crate::proxy::{
     reconnect,
 };
 use crate::svc::{self, LayerExt};
-use crate::tap;
-use crate::telemetry;
-use crate::trace;
 use crate::transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
-use crate::{Addr, Conditional};
+use crate::{control, dns, drain, logging, tap, telemetry, trace, Addr, Conditional};
 use futures::{self, future, Future, Poll};
 use http;
 use hyper;
@@ -402,11 +396,11 @@ where
                         rt.spawn(serve_tap(listener, tap_svc_name, TapServer::new(tap_grpc)));
                     }
 
-                    rt.spawn(crate::logging::admin().bg("dns-resolver").future(dns_bg));
+                    rt.spawn(logging::admin().bg("dns-resolver").future(dns_bg));
 
                     if let Some(d) = identity_daemon {
                         rt.spawn(
-                            crate::logging::admin()
+                            logging::admin()
                                 .bg("identity")
                                 .future(d.map_err(|_| error!("identity task failed"))),
                         );
