@@ -43,16 +43,26 @@ pub struct ValLazy<V>(V);
 
 pub fn layer<F, V>(f: F) -> Layer<FnLazy<F>, V>
 where
-    F: Fn() -> V,
+    F: Fn() -> V + Clone,
     V: Send + Sync + 'static,
 {
-    Layer {
-        lazy: FnLazy(f),
-        _marker: PhantomData,
-    }
+    Layer::new(FnLazy(f))
 }
 
-// === impl Make ===
+// === impl Layer ===
+
+impl<L, V> Layer<L, V>
+where
+    L: Lazy<V>,
+    V: Send + Sync + 'static,
+{
+    pub fn new(lazy: L) -> Self {
+        Self {
+            lazy,
+            _marker: PhantomData,
+        }
+    }
+}
 
 impl<M, L, V> svc::Layer<M> for Layer<L, V>
 where

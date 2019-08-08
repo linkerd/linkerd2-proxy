@@ -5,6 +5,7 @@ use super::identity;
 use super::profiles::Client as ProfilesClient;
 use crate::app::classify::{self, Class};
 use crate::app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
+use crate::app::handle_time;
 use crate::app::tap::serve_tap;
 use crate::control;
 use crate::dns;
@@ -261,6 +262,10 @@ where
             (m, r.with_prefix("route_actual"))
         };
 
+        let handle_time_report = handle_time::Metrics::new();
+        let outbound_handle_time = handle_time_report.outbound();
+        let inbound_handle_time = handle_time_report.inbound();
+
         let (transport_metrics, transport_report) = transport::metrics::new();
 
         let report = endpoint_http_report
@@ -269,6 +274,7 @@ where
             .and_then(transport_report)
             //.and_then(tls_config_report)
             .and_then(ctl_http_report)
+            .and_then(handle_time_report)
             .and_then(telemetry::process::Report::new(start_time));
 
         let mut identity_daemon = None;
@@ -644,6 +650,7 @@ where
             // shared `addr_router`. The `Source` is stored in the request's
             // extensions so that it can be used by the `addr_router`.
             let server_stack = svc::builder()
+                .layer(outbound_handle_time.layer())
                 .layer(super::errors::layer())
                 .layer(insert::target::layer())
                 .layer(insert::layer(move || {
@@ -818,6 +825,7 @@ where
             // `orig-proto` headers. This happens in the source stack so that
             // the router need not detect whether a request _will be_ downgraded.
             let source_stack = svc::builder()
+                .layer(inbound_handle_time.layer())
                 .layer(super::errors::layer())
                 .layer(insert::layer(move || {
                     DispatchDeadline::after(dispatch_timeout)

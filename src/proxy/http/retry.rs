@@ -1,4 +1,4 @@
-use crate::proxy::http::metrics::{Scoped, Stats};
+use crate::proxy::http::metrics::{Scoped, Stats, handle_time};
 use crate::svc;
 use futures::{future, try_ready, Future, Poll};
 use http::{Request, Response};
@@ -197,6 +197,11 @@ impl<B: TryClone> TryClone for Request<B> {
             *clone.version_mut() = self.version();
 
             if let Some(ext) = self.extensions().get::<crate::proxy::server::Source>() {
+                clone.extensions_mut().insert(ext.clone());
+            }
+
+            // Count retries toward the request's total handle time.
+            if let Some(ext) = self.extensions().get::<handle_time::Tracker>() {
                 clone.extensions_mut().insert(ext.clone());
             }
 

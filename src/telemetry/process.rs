@@ -2,7 +2,7 @@ use self::system::System;
 use linkerd2_metrics::{metrics, FmtMetrics, Gauge};
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, warn};
+use tracing::debug;
 
 metrics! {
     process_start_time_seconds: Gauge {
@@ -52,11 +52,12 @@ impl FmtMetrics for Report {
 
 #[cfg(target_os = "linux")]
 mod system {
-    use super::*;
     use libc::{self, pid_t};
-    use linkerd2_metrics::{Counter, FmtMetrics, Gauge};
+    use linkerd2_metrics::{Counter, FmtMetrics, Gauge, metrics};
     use procinfo::pid;
     use std::{fs, io};
+    use std::fmt;
+    use tracing::{error, warn};
 
     metrics! {
         process_cpu_seconds_total: Counter {

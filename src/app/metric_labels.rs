@@ -28,7 +28,7 @@ pub struct RouteLabels {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-enum Direction {
+pub(in crate::app) enum Direction {
     In,
     Out,
 }
