@@ -30,7 +30,7 @@ pub struct RouteLabels {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-enum Direction {
+pub(in app) enum Direction {
     In,
     Out,
 }
