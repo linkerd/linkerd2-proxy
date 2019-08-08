@@ -47,7 +47,7 @@ impl Into<u64> for Us {
         use std::convert::TryInto;
         self.0.as_micros().try_into().unwrap_or_else(|_| {
             // These measurements should never be long enough to overflow
-            // warn!("Duration::as_micros would overflow u64");
+            tracing::warn!("Duration::as_micros would overflow u64");
             std::u64::MAX
         })
     }

@@ -33,7 +33,7 @@ pub struct Tracker {
 struct Shared {
     // NOTE: this is inside a `Mutex` since recording a latency requires a mutable
     // reference to the histogram. In the future, we could consider making the
-    // histogram counters `AtomicU64, so that the histogram could be updated
+    // histogram counters `AtomicU64`, so that the histogram could be updated
     // with an immutable reference. Then, the mutex could be removed.
     histogram: Mutex<Histogram<latency::Us>>,
     /// Stores the state of currently active `Tracker`s.
@@ -186,7 +186,7 @@ impl Shared {
         }
     }
 
-    #[inline(never)]
+    #[cold]
     fn grow(&self) {
         let mut counts = self.counts.write().unwrap();
         let amount = counts.len() * 2;
