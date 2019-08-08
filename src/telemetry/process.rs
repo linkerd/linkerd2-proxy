@@ -168,7 +168,7 @@ mod system {
 
 #[cfg(not(target_os = "linux"))]
 mod system {
-    use super::metrics::FmtMetrics;
+    use linkerd2_metrics::FmtMetrics;
     use std::{fmt, io};
 
     #[derive(Clone, Debug)]
