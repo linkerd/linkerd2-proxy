@@ -7,6 +7,7 @@ members = [
     "lib/linkerd2-drain",
     "lib/linkerd2-metrics",
     "lib/linkerd2-router",
+    "lib/linkerd2-signal",
     "lib/linkerd2-stack",
     "lib/linkerd2-task",
     "lib/linkerd2-timeout",
@@ -32,6 +33,7 @@ linkerd2-drain       = { path = "lib/linkerd2-drain" }
 linkerd2-metrics     = { path = "lib/linkerd2-metrics" }
 linkerd2-never       = { path = "lib/linkerd2-never" }
 linkerd2-router      = { path = "lib/linkerd2-router" }
+linkerd2-signal      = { path = "lib/linkerd2-signal" }
 linkerd2-stack       = { path = "lib/linkerd2-stack" }
 linkerd2-task        = { path = "lib/linkerd2-task" }
 linkerd2-timeout     = { path = "lib/linkerd2-timeout" }
@@ -58,7 +60,6 @@ regex = "1.0.0"
 
 # networking
 tokio = "0.1.14"
-tokio-signal = "0.2"
 tokio-timer = "0.2.6"   # for tokio_timer::clock
 tower = "0.1"
 tower-discover = "0.1"

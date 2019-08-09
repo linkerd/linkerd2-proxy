@@ -17,7 +17,7 @@ mod tap;
 
 pub use self::main::Main;
 use crate::addr::{self, Addr};
-use crate::trace;
+use crate::logging::trace;
 use http;
 use std::error::Error;
 

@@ -1,0 +1,11 @@
+[package]
+name = "linkerd2-signal"
+version = "0.1.0"
+authors = ["Oliver Gould <ver@buoyant.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.1"
+tokio-signal = "0.2"
+tracing = "0.1.2"
