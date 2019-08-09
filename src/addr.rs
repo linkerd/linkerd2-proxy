@@ -1,10 +1,9 @@
+pub use crate::dns::Name;
 use http;
+use std::convert::TryFrom;
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
-
-use crate::convert::TryFrom;
-pub use crate::dns::Name;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Addr {

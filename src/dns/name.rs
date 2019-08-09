@@ -1,4 +1,4 @@
-use crate::convert::TryFrom;
+use std::convert::TryFrom;
 use std::fmt;
 
 /// A `Name` is guaranteed to be syntactically valid. The validity rules
@@ -45,8 +45,8 @@ impl From<webpki::DNSName> for Name {
 }
 
 impl<'a> TryFrom<&'a [u8]> for Name {
-    type Err = InvalidName;
-    fn try_from(s: &[u8]) -> Result<Self, Self::Err> {
+    type Error = InvalidName;
+    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
         webpki::DNSNameRef::try_from_ascii(untrusted::Input::from(s))
             .map_err(|()| InvalidName)
             .map(|r| r.to_owned().into())

@@ -1,9 +1,9 @@
-use crate::convert::TryFrom;
 use crate::dns;
 use crate::transport::tls;
 pub use ring::error::KeyRejected;
 use ring::rand;
 use ring::signature::EcdsaKeyPair;
+use std::convert::TryFrom;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::SystemTime;

@@ -5,7 +5,6 @@ mod addr;
 pub mod app;
 mod conditional;
 pub mod control;
-pub mod convert;
 mod dns;
 mod drain;
 mod identity;
