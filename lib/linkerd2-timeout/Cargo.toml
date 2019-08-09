@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 futures = "0.1"
-linkerd2-stack = { path = "../stack" }
+linkerd2-stack = { path = "../linkerd2-stack" }
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-timer = "0.2.4"
 tower-service = "0.2"
