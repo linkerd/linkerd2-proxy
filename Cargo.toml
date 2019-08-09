@@ -2,6 +2,7 @@
 members = [
     ".",
     "lib/hyper-balance",
+    "lib/linkerd2-dns-name",
     "lib/linkerd2-metrics",
     "lib/linkerd2-router",
     "lib/linkerd2-stack",
@@ -23,6 +24,7 @@ flaky_tests = []
 
 [dependencies]
 hyper-balance      = { path = "lib/hyper-balance" }
+linkerd2-dns-name  = { path = "lib/linkerd2-dns-name" }
 linkerd2-metrics   = { path = "lib/linkerd2-metrics" }
 linkerd2-never     = { path = "lib/linkerd2-never" }
 linkerd2-router    = { path = "lib/linkerd2-router" }

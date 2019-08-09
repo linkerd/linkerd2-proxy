@@ -463,6 +463,14 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "linkerd2-dns-name"
+version = "0.1.0"
+dependencies = [
+ "untrusted 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "webpki 0.19.1 (git+https://github.com/seanmonstar/webpki?branch=cert-dns-names)",
+]
+
+[[package]]
 name = "linkerd2-metrics"
 version = "0.1.0"
 dependencies = [
@@ -495,6 +503,7 @@ dependencies = [
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ipnet 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.48 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-dns-name 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",
  "linkerd2-proxy-api 0.1.8 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=ddbc3a4f7f8b0058801f896d27974d19ee98094c)",
