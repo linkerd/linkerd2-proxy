@@ -4,7 +4,11 @@ use crate::identity;
 use crate::logging;
 use crate::proxy::resolve;
 use crate::NameAddr;
-use futures::{future::Future, sync::mpsc, Async, Poll, Stream};
+use futures::{
+    future::Future,
+    sync::{mpsc, oneshot},
+    Async, Poll, Stream,
+};
 use indexmap::{IndexMap, IndexSet};
 use linkerd2_never::Never;
 use linkerd2_proxy_api::{
@@ -17,11 +21,12 @@ use linkerd2_proxy_api::{
 use std::{collections::HashMap, error::Error, fmt, net::SocketAddr};
 use tokio;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tracing::{trace, warn};
+use tracing::{debug, trace, warn};
 
 /// A resolution for a single authority.
 pub struct Resolution {
     rx: mpsc::UnboundedReceiver<Update<Metadata>>,
+    _hangup: oneshot::Sender<Never>,
 }
 
 pub struct ResolveFuture<T>
@@ -58,6 +63,8 @@ where
 /// state necessary to reset stale endpoints when reconnecting.
 struct Updater {
     tx: mpsc::UnboundedSender<Update<Metadata>>,
+    /// This receiver is used to detect if the resolution has been dropped.
+    hangup: oneshot::Receiver<Never>,
     /// All the endpoint addresses seen since the last reset.
     seen: IndexSet<SocketAddr>,
     /// Set to true on reconnects to indicate that previously seen addresses
@@ -89,7 +96,15 @@ impl resolve::Resolution for Resolution {
 impl Resolution {
     fn new() -> (Self, Updater) {
         let (tx, rx) = mpsc::unbounded();
-        (Self { rx }, Updater::new(tx))
+
+        // This oneshot allows the daemon to be notified when the Self::Stream
+        // is dropped.
+        let (hangup_tx, hangup_rx) = oneshot::channel();
+        let resolution = Self {
+            rx,
+            _hangup: hangup_tx,
+        };
+        (resolution, Updater::new(tx, hangup_rx))
     }
 }
 
@@ -175,7 +190,21 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             match self.query.poll() {
-                Ok(Async::NotReady) => return Ok(Async::NotReady),
+                Ok(Async::NotReady) => {
+                    match self.updater.hangup.poll() {
+                        Ok(Async::Ready(never)) => match never {}, // unreachable!
+                        Ok(Async::NotReady) => {
+                            // We are now scheduled to be notified if the hangup
+                            // tx is dropped.
+                            return Ok(Async::NotReady);
+                        }
+                        Err(_) => {
+                            // Hangup tx has been dropped.
+                            debug!("resolution cancelled");
+                            return Ok(Async::Ready(()));
+                        }
+                    }
+                }
                 Ok(Async::Ready(Some(update))) => {
                     if let Err(_) = self.updater.update(update) {
                         trace!("resolution dropped, daemon terminating...");
@@ -200,9 +229,10 @@ where
 // ===== impl Updater =====
 
 impl Updater {
-    fn new(tx: mpsc::UnboundedSender<Update<Metadata>>) -> Self {
+    fn new(tx: mpsc::UnboundedSender<Update<Metadata>>, hangup: oneshot::Receiver<Never>) -> Self {
         Self {
             tx,
+            hangup,
             seen: IndexSet::new(),
             reset: false,
         }
