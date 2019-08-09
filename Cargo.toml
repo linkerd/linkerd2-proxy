@@ -1,7 +1,6 @@
 [workspace]
 members = [
     ".",
-    "lib/futures-mpsc-lossy",
     "lib/hyper-balance",
     "lib/metrics",
     "lib/router",
@@ -23,7 +22,6 @@ default = ["flaky_tests"]
 flaky_tests = []
 
 [dependencies]
-futures-mpsc-lossy = { path = "lib/futures-mpsc-lossy" }
 hyper-balance      = { path = "lib/hyper-balance" }
 linkerd2-metrics   = { path = "lib/metrics" }
 linkerd2-never     = { path = "lib/never" }
