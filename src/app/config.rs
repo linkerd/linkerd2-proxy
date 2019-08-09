@@ -1,11 +1,11 @@
 use super::control::ControlAddr;
 use super::identity;
-use crate::convert::TryFrom;
 use crate::proxy::reconnect::Backoff;
 use crate::transport::tls;
 use crate::{addr, dns, Addr, Conditional};
 use indexmap::IndexSet;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;

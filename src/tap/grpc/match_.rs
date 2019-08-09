@@ -1,4 +1,3 @@
-use crate::convert::TryFrom;
 use crate::tap::Inspect;
 use http;
 use indexmap::IndexMap;
@@ -6,6 +5,7 @@ use ipnet::{Contains, Ipv4Net, Ipv6Net};
 use linkerd2_proxy_api::net::ip_address;
 use linkerd2_proxy_api::tap::observe_request;
 use std::boxed::Box;
+use std::convert::TryFrom;
 use std::net;
 use std::{error, fmt};
 
@@ -104,10 +104,10 @@ impl Match {
 }
 
 impl TryFrom<observe_request::r#match::Match> for Match {
-    type Err = InvalidMatch;
+    type Error = InvalidMatch;
 
     #[allow(unconditional_recursion)]
-    fn try_from(m: observe_request::r#match::Match) -> Result<Self, Self::Err> {
+    fn try_from(m: observe_request::r#match::Match) -> Result<Self, Self::Error> {
         use linkerd2_proxy_api::tap::observe_request::r#match;
 
         match m {
@@ -138,7 +138,7 @@ impl LabelMatch {
 }
 
 impl TryFrom<observe_request::r#match::Label> for LabelMatch {
-    type Err = InvalidMatch;
+    type Error = InvalidMatch;
 
     fn try_from(m: observe_request::r#match::Label) -> Result<Self, InvalidMatch> {
         if m.key.is_empty() || m.value.is_empty() {
@@ -166,7 +166,7 @@ impl TcpMatch {
 }
 
 impl TryFrom<observe_request::r#match::Tcp> for TcpMatch {
-    type Err = InvalidMatch;
+    type Error = InvalidMatch;
 
     fn try_from(m: observe_request::r#match::Tcp) -> Result<Self, InvalidMatch> {
         use linkerd2_proxy_api::tap::observe_request::r#match::tcp;
@@ -209,7 +209,7 @@ impl NetMatch {
 }
 
 impl TryFrom<observe_request::r#match::tcp::Netmask> for NetMatch {
-    type Err = InvalidMatch;
+    type Error = InvalidMatch;
 
     fn try_from(m: observe_request::r#match::tcp::Netmask) -> Result<Self, InvalidMatch> {
         let mask = if m.mask == 0 {
@@ -271,7 +271,7 @@ impl HttpMatch {
 }
 
 impl TryFrom<observe_request::r#match::Http> for HttpMatch {
-    type Err = InvalidMatch;
+    type Error = InvalidMatch;
     fn try_from(m: observe_request::r#match::Http) -> Result<Self, InvalidMatch> {
         use linkerd2_proxy_api::http_types::scheme::{Registered, Type};
         use linkerd2_proxy_api::tap::observe_request::r#match::http::Match as Pb;

@@ -1,8 +1,9 @@
 mod name;
 
 pub use self::name::{InvalidName, Name};
-use crate::{convert::TryFrom, logging};
+use crate::logging;
 use futures::{prelude::*, try_ready};
+use std::convert::TryFrom;
 use std::time::Instant;
 use std::{fmt, net};
 use tracing::trace;
@@ -64,8 +65,9 @@ impl From<Name> for Suffix {
 }
 
 impl<'s> TryFrom<&'s str> for Suffix {
-    type Err = <Name as TryFrom<&'s [u8]>>::Err;
-    fn try_from(s: &str) -> Result<Self, Self::Err> {
+    type Error = <Name as TryFrom<&'s [u8]>>::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
         if s == "." {
             Ok(Suffix::Root)
         } else {
@@ -191,7 +193,7 @@ impl Future for RefineFuture {
 #[cfg(test)]
 mod tests {
     use super::{Name, Suffix};
-    use crate::convert::TryFrom;
+    use std::convert::TryFrom;
 
     #[test]
     fn test_dns_name_parsing() {
@@ -273,8 +275,8 @@ mod tests {
             ("a.b.c.", "b.c"),
             ("hacker.example.com", "example.com"),
         ] {
-            let n = Name::try_from(name.as_bytes()).unwrap();
-            let s = Suffix::try_from(suffix).unwrap();
+            let n = Name::try_from((*name).as_bytes()).unwrap();
+            let s = Suffix::try_from(*suffix).unwrap();
             assert!(
                 s.contains(&n),
                 format!("{} should contain {}", suffix, name)
@@ -290,8 +292,8 @@ mod tests {
             ("b.a", "b"),
             ("hackerexample.com", "example.com"),
         ] {
-            let n = Name::try_from(name.as_bytes()).unwrap();
-            let s = Suffix::try_from(suffix).unwrap();
+            let n = Name::try_from((*name).as_bytes()).unwrap();
+            let s = Suffix::try_from(*suffix).unwrap();
             assert!(
                 !s.contains(&n),
                 format!("{} should not contain {}", suffix, name)
