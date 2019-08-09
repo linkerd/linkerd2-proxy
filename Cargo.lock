@@ -463,6 +463,10 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "linkerd2-conditional"
+version = "0.1.0"
+
+[[package]]
 name = "linkerd2-dns-name"
 version = "0.1.0"
 dependencies = [
@@ -503,6 +507,7 @@ dependencies = [
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ipnet 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.48 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-conditional 0.1.0",
  "linkerd2-dns-name 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",

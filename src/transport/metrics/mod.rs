@@ -216,7 +216,7 @@ where
     type Io = Io<I>;
 
     fn accept(&self, source: &crate::proxy::Source, io: I) -> Self::Io {
-        let tls_status = source.tls_peer.as_ref().map(|_| {});
+        let tls_status = source.tls_peer.as_ref().map(|_| {}).into();
         let key = Key::accept(self.direction, tls_status);
         let metrics = match self.registry.lock() {
             Ok(mut inner) => Some(inner.get_or_default(key).clone()),
@@ -295,7 +295,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         // TODO use target metadata in `key`
-        let tls_status = target.peer_identity().as_ref().map(|_| ());
+        let tls_status = target.peer_identity().as_ref().map(|_| ()).into();
         let key = Key::connect(self.direction, tls_status);
         let metrics = match self.registry.lock() {
             Ok(mut inner) => Some(inner.get_or_default(key).clone()),

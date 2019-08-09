@@ -17,7 +17,9 @@ use tokio_rustls::{Accept, TlsAcceptor as Acceptor, TlsConnector as Connector};
 pub type Conditional<T> = crate::Conditional<T, ReasonForNoIdentity>;
 
 pub type PeerIdentity = Conditional<identity::Name>;
-pub type Status = Conditional<()>;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Status(Conditional<()>);
 
 pub trait HasPeerIdentity {
     fn peer_identity(&self) -> PeerIdentity;
@@ -29,7 +31,7 @@ pub trait HasStatus {
 
 impl<T: HasPeerIdentity> HasStatus for T {
     fn tls_status(&self) -> Status {
-        self.peer_identity().map(|_| ())
+        self.peer_identity().map(|_| ()).into()
     }
 }
 
@@ -64,12 +66,37 @@ pub enum ReasonForNoPeerName {
     NotProvidedByRemote,
 }
 
+impl<T> From<Conditional<T>> for Status {
+    fn from(inner: Conditional<T>) -> Self {
+        Status(inner.map(|_| ()))
+    }
+}
+
+impl Into<Conditional<()>> for Status {
+    fn into(self) -> Conditional<()> {
+        self.0
+    }
+}
+
+impl Status {
+    pub fn as_ref(&self) -> Conditional<&()> {
+        self.0.as_ref()
+    }
+
+    pub fn is_tls(&self) -> bool {
+        self.0.is_some()
+    }
+
+    pub fn no_tls_reason(&self) -> Option<ReasonForNoIdentity> {
+        self.0.reason()
+    }
+}
+
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use crate::Conditional;
-        match self {
-            Conditional::Some(()) => write!(f, "true"),
-            Conditional::None(r) => fmt::Display::fmt(&r, f),
+        match self.0 {
+            crate::Conditional::Some(()) => write!(f, "true"),
+            crate::Conditional::None(r) => fmt::Display::fmt(&r, f),
         }
     }
 }

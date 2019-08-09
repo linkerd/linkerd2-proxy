@@ -3,7 +3,6 @@
 
 mod addr;
 pub mod app;
-mod conditional;
 pub mod control;
 mod dns;
 mod drain;
@@ -16,7 +15,7 @@ pub mod telemetry;
 pub mod transport;
 
 use self::addr::{Addr, NameAddr};
-use self::conditional::Conditional;
+use linkerd2_conditional::Conditional;
 
 pub use self::logging::trace;
 pub use self::transport::SoOriginalDst;
