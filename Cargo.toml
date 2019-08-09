@@ -2,11 +2,11 @@
 members = [
     ".",
     "lib/hyper-balance",
-    "lib/metrics",
-    "lib/router",
-    "lib/stack",
-    "lib/task",
-    "lib/timeout",
+    "lib/linkerd2-metrics",
+    "lib/linkerd2-router",
+    "lib/linkerd2-stack",
+    "lib/linkerd2-task",
+    "lib/linkerd2-timeout",
 ]
 
 [package]
@@ -23,12 +23,12 @@ flaky_tests = []
 
 [dependencies]
 hyper-balance      = { path = "lib/hyper-balance" }
-linkerd2-metrics   = { path = "lib/metrics" }
-linkerd2-never     = { path = "lib/never" }
-linkerd2-router    = { path = "lib/router" }
-linkerd2-stack     = { path = "lib/stack" }
-linkerd2-task      = { path = "lib/task" }
-linkerd2-timeout   = { path = "lib/timeout" }
+linkerd2-metrics   = { path = "lib/linkerd2-metrics" }
+linkerd2-never     = { path = "lib/linkerd2-never" }
+linkerd2-router    = { path = "lib/linkerd2-router" }
+linkerd2-stack     = { path = "lib/linkerd2-stack" }
+linkerd2-task      = { path = "lib/linkerd2-task" }
+linkerd2-timeout   = { path = "lib/linkerd2-timeout" }
 
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 
@@ -88,8 +88,8 @@ procinfo = "0.4.2"
 [dev-dependencies]
 net2 = "0.2"
 quickcheck = { version = "0.8", default-features = false }
-linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
-linkerd2-task    = { path = "lib/task", features = ["test_util"] }
+linkerd2-metrics = { path = "./lib/linkerd2-metrics", features = ["test_util"] }
+linkerd2-task    = { path = "lib/linkerd2-task", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
