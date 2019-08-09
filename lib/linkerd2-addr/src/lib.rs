@@ -1,5 +1,5 @@
-pub use crate::dns::Name;
 use http;
+use linkerd2_dns_name::Name;
 use std::convert::TryFrom;
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
