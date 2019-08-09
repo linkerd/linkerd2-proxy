@@ -1,5 +1,4 @@
-use crate::dns;
-use crate::transport::tls;
+use linkerd2_dns_name;
 pub use ring::error::KeyRejected;
 use ring::rand;
 use ring::signature::EcdsaKeyPair;
@@ -13,7 +12,7 @@ use tracing::{debug, warn};
 #[cfg(test)]
 pub mod test_util;
 
-pub use dns::InvalidName;
+pub use linkerd2_dns_name::InvalidName;
 
 pub trait LocalIdentity {
     fn name(&self) -> &Name;
@@ -26,7 +25,7 @@ pub struct Csr(Arc<Vec<u8>>);
 
 /// An endpoint's identity.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct Name(Arc<dns::Name>);
+pub struct Name(Arc<linkerd2_dns_name::Name>);
 
 #[derive(Clone, Debug)]
 pub struct Key(Arc<EcdsaKeyPair>);
@@ -130,8 +129,8 @@ impl rustls::sign::Signer for Signer {
 
 // === impl Name ===
 
-impl From<dns::Name> for Name {
-    fn from(n: dns::Name) -> Self {
+impl From<linkerd2_dns_name::Name> for Name {
+    fn from(n: linkerd2_dns_name::Name) -> Self {
         Name(Arc::new(n))
     }
 }
@@ -139,10 +138,10 @@ impl From<dns::Name> for Name {
 impl Name {
     pub fn from_hostname(hostname: &[u8]) -> Result<Self, InvalidName> {
         if hostname.last() == Some(&b'.') {
-            return Err(dns::InvalidName); // SNI hostnames are implicitly absolute.
+            return Err(InvalidName); // SNI hostnames are implicitly absolute.
         }
 
-        dns::Name::try_from(hostname).map(|n| Name(Arc::new(n)))
+        linkerd2_dns_name::Name::try_from(hostname).map(|n| Name(Arc::new(n)))
     }
 
     pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef<'_> {
@@ -276,10 +275,8 @@ impl TrustAnchors {
             server_config: Arc::new(server),
         })
     }
-}
 
-impl tls::client::HasConfig for TrustAnchors {
-    fn tls_client_config(&self) -> Arc<rustls::ClientConfig> {
+    pub fn tls_client_config(&self) -> Arc<rustls::ClientConfig> {
         self.0.clone()
     }
 }
@@ -308,18 +305,16 @@ impl Crt {
 
 // === CrtKey ===
 
-impl tls::client::HasConfig for CrtKey {
-    fn tls_client_config(&self) -> Arc<tls::client::Config> {
+impl CrtKey {
+    pub fn tls_client_config(&self) -> Arc<rustls::ClientConfig> {
         self.client_config.clone()
     }
-}
 
-impl tls::listen::HasConfig for CrtKey {
-    fn tls_server_name(&self) -> Name {
+    pub fn tls_server_name(&self) -> Name {
         self.name.clone()
     }
 
-    fn tls_server_config(&self) -> Arc<tls::listen::Config> {
+    pub fn tls_server_config(&self) -> Arc<rustls::ServerConfig> {
         self.server_config.clone()
     }
 }

@@ -4,7 +4,6 @@
 pub mod app;
 pub mod control;
 mod dns;
-mod identity;
 pub mod logging;
 mod proxy;
 mod svc;
@@ -12,6 +11,7 @@ mod tap;
 pub mod telemetry;
 pub mod transport;
 
+use linkerd2_identity as identity;
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_conditional::Conditional;
 

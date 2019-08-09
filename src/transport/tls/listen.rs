@@ -362,3 +362,13 @@ impl Inner {
         )
     }
 }
+
+impl HasConfig for identity::CrtKey {
+    fn tls_server_name(&self) -> identity::Name {
+        identity::CrtKey::tls_server_name(self)
+    }
+
+    fn tls_server_config(&self) -> Arc<Config> {
+        identity::CrtKey::tls_server_config(self)
+    }
+}
