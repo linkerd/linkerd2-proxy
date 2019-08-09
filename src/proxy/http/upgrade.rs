@@ -1,6 +1,5 @@
 //! HTTP/1.1 Upgrades
 use super::{glue::HttpBody, h1};
-use crate::drain;
 use crate::proxy::tcp;
 use crate::svc;
 use futures::{
@@ -8,6 +7,7 @@ use futures::{
     Future, Poll,
 };
 use hyper::upgrade::OnUpgrade;
+use linkerd2_drain as drain;
 use linkerd2_task::{BoxSendFuture, ErasedExecutor, Executor};
 use std::fmt;
 use std::mem;

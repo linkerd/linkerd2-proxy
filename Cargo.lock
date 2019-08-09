@@ -475,6 +475,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-drain"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-never 0.1.0",
+]
+
+[[package]]
 name = "linkerd2-metrics"
 version = "0.1.0"
 dependencies = [
@@ -509,6 +517,7 @@ dependencies = [
  "libc 0.2.48 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-conditional 0.1.0",
  "linkerd2-dns-name 0.1.0",
+ "linkerd2-drain 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",
  "linkerd2-proxy-api 0.1.8 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=ddbc3a4f7f8b0058801f896d27974d19ee98094c)",

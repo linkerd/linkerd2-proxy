@@ -5,7 +5,6 @@ mod addr;
 pub mod app;
 pub mod control;
 mod dns;
-mod drain;
 mod identity;
 pub mod logging;
 mod proxy;

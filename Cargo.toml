@@ -4,6 +4,7 @@ members = [
     "lib/hyper-balance",
     "lib/linkerd2-conditional",
     "lib/linkerd2-dns-name",
+    "lib/linkerd2-drain",
     "lib/linkerd2-metrics",
     "lib/linkerd2-router",
     "lib/linkerd2-stack",
@@ -27,6 +28,7 @@ flaky_tests = []
 hyper-balance = { path = "lib/hyper-balance" }
 linkerd2-conditional = { path = "lib/linkerd2-conditional" }
 linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
+linkerd2-drain       = { path = "lib/linkerd2-drain" }
 linkerd2-metrics     = { path = "lib/linkerd2-metrics" }
 linkerd2-never       = { path = "lib/linkerd2-never" }
 linkerd2-router      = { path = "lib/linkerd2-router" }
