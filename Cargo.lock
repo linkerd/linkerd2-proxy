@@ -541,7 +541,6 @@ dependencies = [
  "linkerd2-addr 0.1.0",
  "linkerd2-conditional 0.1.0",
  "linkerd2-dns-name 0.1.0",
- "linkerd2-drain 0.1.0",
  "linkerd2-identity 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",
@@ -608,6 +607,10 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-core"
 version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-drain 0.1.0",
+]
 
 [[package]]
 name = "linkerd2-router"

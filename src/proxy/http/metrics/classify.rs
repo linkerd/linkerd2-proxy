@@ -1,5 +1,4 @@
-use crate::svc;
-use crate::Error;
+use crate::{svc, Error};
 use futures::{try_ready, Future, Poll};
 use http;
 

@@ -71,7 +71,6 @@ where
 {
     type Item = Resolution<F::Item>;
     type Error = F::Error;
-
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let resolving = match self.resolving {
             Resolving::Name {

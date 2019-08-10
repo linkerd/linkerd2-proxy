@@ -37,17 +37,26 @@ pub struct Connection {
 
     /// The connection's original destination address, if there was one.
     orig_dst: Option<SocketAddr>,
+
+    remote_addr: SocketAddr,
 }
 
 // === impl Connection ===
 
 impl Connection {
-    pub(super) fn plain<I: Io + 'static>(io: I, why_no_tls: ReasonForNoIdentity) -> Self {
-        Self::plain_with_peek_buf(io, BytesMut::new(), why_no_tls)
+    pub(super) fn plain<I: Io + 'static>(
+        io: I,
+        remote_addr: SocketAddr,
+        why_no_tls: ReasonForNoIdentity,
+    ) -> Self {
+        Self::plain_with_peek_buf(io, remote_addr, BytesMut::new(), why_no_tls)
     }
 
-    pub(super) fn without_protocol_detection<I: Io + 'static>(io: I) -> Self {
-        Connection {
+    pub(super) fn without_protocol_detection<I: Io + 'static>(
+        io: I,
+        remote_addr: SocketAddr,
+    ) -> Self {
+        Self {
             io: BoxedIo::new(io),
             peek_buf: BytesMut::new(),
             tls_peer_identity: Conditional::None(ReasonForNoIdentity::NoPeerName(
@@ -55,33 +64,38 @@ impl Connection {
             )),
             detect_protocol: false,
             orig_dst: None,
+            remote_addr,
         }
     }
 
     pub(super) fn plain_with_peek_buf<I: Io + 'static>(
         io: I,
+        remote_addr: SocketAddr,
         peek_buf: BytesMut,
         why_no_tls: ReasonForNoIdentity,
     ) -> Self {
-        Connection {
+        Self {
             io: BoxedIo::new(io),
             peek_buf,
             tls_peer_identity: Conditional::None(why_no_tls),
             detect_protocol: true,
             orig_dst: None,
+            remote_addr,
         }
     }
 
     pub(super) fn tls(
         io: BoxedIo,
+        remote_addr: SocketAddr,
         tls_peer_identity: Conditional<identity::Name, super::ReasonForNoPeerName>,
     ) -> Self {
-        Connection {
+        Self {
             io: io,
             peek_buf: BytesMut::new(),
             tls_peer_identity: tls_peer_identity.map_reason(|r| r.into()),
             detect_protocol: true,
             orig_dst: None,
+            remote_addr,
         }
     }
 
@@ -95,6 +109,10 @@ impl Connection {
 
     pub fn local_addr(&self) -> Result<SocketAddr, std::io::Error> {
         self.io.local_addr()
+    }
+
+    pub fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
     }
 
     pub fn should_detect_protocol(&self) -> bool {

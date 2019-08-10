@@ -16,8 +16,7 @@ impl fmt::Display for ControlAddr {
 /// Sets the request's URI from `Config`.
 pub mod add_origin {
     use super::ControlAddr;
-    use crate::svc;
-    use crate::Error;
+    use crate::{svc, Error};
     use futures::try_ready;
     use futures::{Future, Poll};
     use std::marker::PhantomData;

@@ -1,4 +1,4 @@
-use crate::transport::{io::internal::Io, tls, BoxedIo, Connection};
+use super::super::{io::internal::Io, tls, AddrInfo, BoxedIo, Connection};
 use crate::{identity, svc, Conditional};
 use futures::{try_ready, Async, Future, Poll};
 pub use rustls::ClientConfig as Config;
@@ -23,11 +23,12 @@ pub struct Connect<L, C> {
 pub enum ConnectFuture<L, F: Future> {
     Init {
         future: F,
-        tls: tls::Conditional<(crate::identity::Name, L)>,
+        tls: tls::Conditional<(identity::Name, L)>,
     },
     Handshake {
         future: tokio_rustls::Connect<F::Item>,
-        server_name: crate::identity::Name,
+        remote_addr: std::net::SocketAddr,
+        server_name: identity::Name,
     },
 }
 
@@ -99,6 +100,7 @@ where
             *self = match self {
                 ConnectFuture::Init { future, tls } => {
                     let io = try_ready!(future.poll());
+                    let remote_addr = io.remote_addr().expect("socket must have remote addr");
 
                     match tls {
                         Conditional::Some((server_name, local_tls)) => {
@@ -107,24 +109,26 @@ where
                                 .connect(server_name.as_dns_name_ref(), io);
                             ConnectFuture::Handshake {
                                 future,
+                                remote_addr,
                                 server_name: server_name.clone(),
                             }
                         }
                         Conditional::None(why) => {
                             trace!("skipping TLS ({:?})", why);
-                            return Ok(Async::Ready(tls::Connection::plain(io, *why)));
+                            return Ok(Async::Ready(tls::Connection::plain(io, remote_addr, *why)));
                         }
                     }
                 }
                 ConnectFuture::Handshake {
                     future,
+                    remote_addr,
                     server_name,
                 } => {
                     let io = try_ready!(future.poll());
                     let io = BoxedIo::new(super::TlsIo::from(io));
                     trace!("established TLS to {}", server_name.as_ref());
-                    let c = Connection::tls(io, Conditional::Some(server_name.clone()));
-                    return Ok(Async::Ready(c));
+                    let tls = Conditional::Some(server_name.clone());
+                    return Ok(Async::Ready(Connection::tls(io, *remote_addr, tls)));
                 }
             };
         }

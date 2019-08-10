@@ -63,6 +63,10 @@ impl AsyncWrite for BoxedIo {
 }
 
 impl AddrInfo for BoxedIo {
+    fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.0.remote_addr()
+    }
+
     fn local_addr(&self) -> Result<SocketAddr, io::Error> {
         self.0.local_addr()
     }
@@ -146,6 +150,10 @@ mod tests {
     }
 
     impl AddrInfo for WriteBufDetector {
+        fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
+            unreachable!("not called in test")
+        }
+
         fn local_addr(&self) -> Result<SocketAddr, io::Error> {
             unreachable!("not called in test")
         }
