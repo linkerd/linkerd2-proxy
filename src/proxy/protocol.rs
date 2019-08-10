@@ -6,6 +6,7 @@ use httparse;
 pub enum Protocol {
     Http1,
     Http2,
+    Kafka,
 }
 
 const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
@@ -77,6 +78,7 @@ impl Protocol {
             println!("\tcorrelation_id: {}", correlation_id);
             println!("\tlen_client_id: {}", len_client_id);
             println!("\tclient_id: {}", client_id);
+            return Some(Protocol::Kafka);
         }
 
         println!("^^^^^ is None");
