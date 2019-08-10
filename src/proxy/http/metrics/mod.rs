@@ -13,7 +13,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio_timer::clock;
 
-pub fn new<T, C>(retain_idle: Duration) -> (Arc<Mutex<Registry<T, C>>>, Report<T, C>)
+pub type SharedRegistry<T, C> = Arc<Mutex<Registry<T, C>>>;
+
+pub fn new<T, C>(retain_idle: Duration) -> (SharedRegistry<T, C>, Report<T, C>)
 where
     T: FmtLabels + Clone + Hash + Eq,
     C: FmtLabels + Hash + Eq,

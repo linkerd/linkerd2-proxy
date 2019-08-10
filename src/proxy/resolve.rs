@@ -10,8 +10,9 @@ use tracing::trace;
 /// Resolves `T`-typed names/addresses as a `Resolution`.
 pub trait Resolve<T> {
     type Endpoint;
+    type Error;
+    type Future: Future<Item = Self::Resolution, Error = Self::Error>;
     type Resolution: Resolution<Endpoint = Self::Endpoint>;
-    type Future: Future<Item = Self::Resolution>;
 
     /// Asynchronously returns a `Resolution` for the given `target`.
     ///

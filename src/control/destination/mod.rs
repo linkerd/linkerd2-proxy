@@ -106,6 +106,7 @@ where
     T::Future: Send,
 {
     type Endpoint = Metadata;
+    type Error = Unresolvable;
     type Resolution = Resolution;
     type Future = ResolveFuture<T>;
 
