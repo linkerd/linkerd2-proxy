@@ -1,12 +1,12 @@
+use super::super::server::Source;
+use super::upgrade::HttpConnect;
 use bytes::BytesMut;
 use http;
 use http::header::{CONNECTION, HOST, UPGRADE};
 use http::uri::{Authority, Parts, Scheme, Uri};
 use std::fmt::Write;
 use std::mem;
-
-use super::super::server::Source;
-use super::upgrade::HttpConnect;
+use tracing::debug;
 
 /// Tries to make sure the `Uri` of the request is in a form needed by
 /// hyper's Client.

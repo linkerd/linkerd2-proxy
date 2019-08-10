@@ -1,17 +1,14 @@
-extern crate tower_reconnect;
-
+use crate::proxy::Error;
+use crate::svc;
+use futures::{task, Async, Future, Poll};
 use rand;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Mul;
 use std::time::Duration;
-
-use self::tower_reconnect::Reconnect;
-use futures::{task, Async, Future, Poll};
 use tokio_timer::{clock, Delay};
-
-use proxy::Error;
-use svc;
+use tower_reconnect::Reconnect;
+use tracing::{debug, error, warn};
 
 #[derive(Debug)]
 pub struct Layer<Req> {
@@ -142,7 +139,7 @@ where
     Error: From<M::Error> + From<S::Error>,
 {
     type Response = Service<M, T>;
-    type Error = never::Never;
+    type Error = linkerd2_never::Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -266,7 +263,7 @@ where
 mod tests {
     use super::*;
     use futures::{future, Future};
-    use never::Never;
+    use linkerd2_never::Never;
     use quickcheck::*;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::{error, fmt, time};
@@ -330,7 +327,7 @@ mod tests {
     }
 
     impl fmt::Display for InitErr {
-        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(&self, _: &mut fmt::Formatter<'_>) -> fmt::Result {
             Ok(())
         }
     }

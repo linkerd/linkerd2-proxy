@@ -1,17 +1,16 @@
+use crate::logging;
+use crate::proxy::Error;
+use crate::svc;
+use crate::trace;
 use futures::Poll;
 use http;
+use linkerd2_never::Never;
+use linkerd2_router as rt;
+pub use linkerd2_router::{error, Recognize, Router};
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
-
-use never::Never;
-
-use proxy::Error;
-use svc;
-
-extern crate linkerd2_router as rt;
-
-pub use self::rt::{error, Recognize, Router};
+use tracing::{debug_span, trace};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -47,6 +46,7 @@ where
     Mk::Value: svc::Service<Req>,
 {
     inner: Router<Req, Rec, Mk>,
+    span: trace::Span,
 }
 
 // === impl Config ===
@@ -63,7 +63,7 @@ impl Config {
 
 // Used for logging contexts
 impl fmt::Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.proxy_name.fmt(f)
     }
 }
@@ -114,27 +114,34 @@ where
 impl<Req, Rec, Mk, B> Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
+    <Rec as Recognize<Req>>::Target: Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
     pub fn make(&self) -> Service<Req, Rec, Mk> {
-        let inner = Router::new(
+        let (inner, cache_bg) = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
             self.config.capacity,
             self.config.max_idle_age,
         );
-        Service { inner }
+        let span = debug_span!("router", name = self.config.proxy_name);
+        let ctx = logging::Section::Proxy.bg(self.config.proxy_name);
+        let cache_daemon = ctx.future(cache_bg);
+        tokio::spawn(cache_daemon);
+
+        Service { inner, span }
     }
 }
 
 impl<Req, Rec, Mk, B, T> svc::Service<T> for Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
+    <Rec as Recognize<Req>>::Target: Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
+    Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
@@ -170,7 +177,7 @@ where
 impl<Req, Rec, Mk, B> svc::Service<Req> for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Send + Sync + 'static,
-    Mk: rt::Make<Rec::Target> + Send + Sync + 'static,
+    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
     Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
@@ -184,6 +191,7 @@ where
     }
 
     fn call(&mut self, request: Req) -> Self::Future {
+        let _enter = self.span.enter();
         trace!("routing...");
         self.inner.call(request)
     }
@@ -199,6 +207,7 @@ where
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            span: self.span.clone(),
         }
     }
 }

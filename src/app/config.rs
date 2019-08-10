@@ -1,21 +1,18 @@
+use super::control::ControlAddr;
+use super::identity;
+use crate::proxy::reconnect::Backoff;
+use crate::transport::tls;
+use crate::{addr, dns, Addr, Conditional};
+use indexmap::IndexSet;
 use std::collections::HashMap;
-use std::fs;
+use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
-
-use indexmap::IndexSet;
-
-use super::control::ControlAddr;
-use super::identity;
-use addr;
-use convert::TryFrom;
-use dns;
-use proxy::reconnect::Backoff;
-use transport::tls;
-use {Addr, Conditional};
+use std::{fmt, fs};
+use tracing::{error, warn};
 
 const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
@@ -30,8 +27,8 @@ pub struct Config {
     /// Where to listen for connections initiated by external sources.
     pub inbound_listener: Listener,
 
-    /// Where to listen for connections initiated by the control plane.
-    pub control_listener: Option<Listener>,
+    /// Where to listen for connections initiated by the tap service.
+    pub control_listener: Option<TapSettings>,
 
     /// Where to serve admin HTTP.
     pub admin_listener: Listener,
@@ -102,6 +99,7 @@ pub struct Config {
     pub control_connect_timeout: Duration,
 
     pub identity_config: tls::Conditional<identity::Config>,
+
     //
     // Destination Config
     //
@@ -151,6 +149,13 @@ pub struct Config {
 pub struct H2Settings {
     pub initial_stream_window_size: Option<u32>,
     pub initial_connection_window_size: Option<u32>,
+}
+
+/// Configuration settings for the tap server
+#[derive(Debug)]
+pub struct TapSettings {
+    pub listener: Listener,
+    pub tap_svc_name: identity::Name,
 }
 
 /// Configuration settings for binding a listener.
@@ -279,6 +284,7 @@ pub const ENV_CONTROL_EXP_BACKOFF_MIN: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOF
 pub const ENV_CONTROL_EXP_BACKOFF_MAX: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_MAX";
 pub const ENV_CONTROL_EXP_BACKOFF_JITTER: &str = "LINKERD2_PROXY_CONTROL_EXP_BACKOFF_JITTER";
 pub const ENV_TAP_DISABLED: &str = "LINKERD2_PROXY_TAP_DISABLED";
+pub const ENV_TAP_SVC_NAME: &str = "LINKERD2_PROXY_TAP_SVC_NAME";
 const ENV_CONTROL_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_CONNECT_TIMEOUT";
 const ENV_CONTROL_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_CONTROL_DISPATCH_TIMEOUT";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
@@ -316,7 +322,7 @@ const DEFAULT_INBOUND_CONNECT_BACKOFF: Backoff = Backoff::Exponential {
     max: Duration::from_millis(500),
     jitter: 0.1,
 };
-const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
+const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_OUTBOUND_CONNECT_BACKOFF: Backoff = Backoff::Exponential {
     min: Duration::from_millis(100),
@@ -464,7 +470,11 @@ impl Config {
         let initial_connection_window_size =
             parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
 
-        let control_listener = parse_control_listener(strings);
+        let tap_disabled = strings
+            .get(ENV_TAP_DISABLED)?
+            .map(|d| !d.is_empty())
+            .unwrap_or(false);
+        let control_listener = parse_control_listener(strings, id_disabled, tap_disabled);
 
         Ok(Config {
             outbound_listener: Listener {
@@ -603,6 +613,14 @@ impl TestEnv {
     pub fn put(&mut self, key: &'static str, value: String) {
         self.values.insert(key, value);
     }
+
+    pub fn contains_key(&self, key: &'static str) -> bool {
+        self.values.contains_key(key)
+    }
+
+    pub fn remove(&mut self, key: &'static str) {
+        self.values.remove(key);
+    }
 }
 
 impl Strings for TestEnv {
@@ -611,20 +629,61 @@ impl Strings for TestEnv {
     }
 }
 
+// ===== impl TapSettings =====
+
+impl TapSettings {
+    fn new(addr: SocketAddr, tap_svc_name: identity::Name) -> Self {
+        Self {
+            listener: Listener { addr },
+            tap_svc_name,
+        }
+    }
+}
+
 // ===== Parsing =====
 
-fn parse_control_listener(strings: &Strings) -> Result<Option<Listener>, Error> {
-    let tap_disabled = strings
-        .get(ENV_TAP_DISABLED)?
-        .map(|d| !d.is_empty())
-        .unwrap_or(false);
+/// There is a dependency on identity being enabled for tap to properly work.
+/// Depending on the setting of both, a user could end up in an improperly
+/// configured proxy environment.
+///
+/// ```plain
+///     E = Enabled; D = Disabled
+///     +----------+-----+--------------+
+///     | Identity | Tap | Result       |
+///     +----------+-----+--------------+
+///     | E        | E   | Ok(Some(..)) |
+///     +----------+-----+--------------+
+///     | E        | D   | Ok(None)     |
+///     +----------+-----+--------------+
+///     | D        | E   | Err(..)      |
+///     +----------+-----+--------------+
+///     | D        | D   | Ok(None)     |
+///     +----------+-----+--------------+
+/// ```
+fn parse_control_listener(
+    strings: &dyn Strings,
+    id_disabled: bool,
+    tap_disabled: bool,
+) -> Result<Option<TapSettings>, Error> {
+    match (id_disabled, tap_disabled) {
+        (_, true) => Ok(None),
+        (true, false) => {
+            error!("{} must be set if identity is disabled", ENV_TAP_DISABLED);
+            Err(Error::InvalidEnvVar)
+        }
+        (false, false) => {
+            let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
+                .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
+            let tap_svc_name = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
 
-    if tap_disabled {
-        Ok(None)
-    } else {
-        let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
-            .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
-        Ok(Some(Listener { addr }))
+            match tap_svc_name? {
+                Some(tap_svc_name) => Ok(Some(TapSettings::new(addr, tap_svc_name))),
+                None => {
+                    error!("{} must be set or tap must be disabled", ENV_TAP_SVC_NAME);
+                    Err(Error::InvalidEnvVar)
+                }
+            }
+        }
     }
 }
 
@@ -687,7 +746,7 @@ pub(super) fn parse_identity(s: &str) -> Result<identity::Name, ParseError> {
 }
 
 pub(super) fn parse<T, Parse>(
-    strings: &Strings,
+    strings: &dyn Strings,
     name: &str,
     parse: Parse,
 ) -> Result<Option<T>, Error>
@@ -708,7 +767,7 @@ where
 
 #[allow(dead_code)]
 fn parse_deprecated<T, Parse>(
-    strings: &Strings,
+    strings: &dyn Strings,
     name: &str,
     deprecated_name: &str,
     f: Parse,
@@ -955,6 +1014,16 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
         }
     }
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::InvalidEnvVar => fmt::Display::fmt("invalid environment variable", f),
+        }
+    }
+}
+
+impl ::std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {

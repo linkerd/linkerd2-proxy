@@ -1,11 +1,10 @@
-use std::time::Duration;
-
-use futures::{future, Future, Poll};
+use crate::proxy::Error;
+use crate::svc;
+use futures::{future, try_ready, Future, Poll};
 use http::{Request, Response, StatusCode};
-
-use proxy::Error;
-use svc;
-use svc::linkerd2_timeout::{error, Timeout};
+use linkerd2_timeout::{error, Timeout};
+use std::time::Duration;
+use tracing::{debug, error};
 
 /// Implement on targets to determine if a service has a timeout.
 pub trait HasTimeout {

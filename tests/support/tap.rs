@@ -1,10 +1,15 @@
-use support::*;
+use crate::support::*;
 
 use bytes::{BufMut, BytesMut};
 use linkerd2_proxy_api::tap as pb;
 
 pub fn client(addr: SocketAddr) -> Client {
     let api = pb::client::Tap::new(SyncSvc(client::http2(addr, "localhost")));
+    Client { api }
+}
+
+pub fn client_with_auth<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
+    let api = pb::client::Tap::new(SyncSvc(client::http2(addr, auth)));
     Client { api }
 }
 
@@ -18,6 +23,23 @@ impl Client {
         req: ObserveBuilder,
     ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Status> {
         let req = tower_grpc::Request::new(req.0);
+        self.api
+            .observe(req)
+            .wait()
+            .expect("tap observe wait")
+            .into_inner()
+    }
+
+    pub fn observe_with_require_id(
+        &mut self,
+        req: ObserveBuilder,
+        require_id: &str,
+    ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Status> {
+        let mut req = tower_grpc::Request::new(req.0);
+
+        let require_id = tower_grpc::metadata::MetadataValue::from_str(require_id).unwrap();
+        req.metadata_mut().insert("l5d-require-id", require_id);
+
         self.api
             .observe(req)
             .wait()

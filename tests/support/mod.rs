@@ -6,7 +6,6 @@
 #![allow(dead_code)]
 
 pub extern crate bytes;
-extern crate env_logger;
 extern crate futures;
 extern crate h2;
 pub extern crate http;
@@ -15,7 +14,6 @@ extern crate hyper;
 extern crate linkerd2_proxy;
 pub extern crate linkerd2_proxy_api;
 extern crate linkerd2_task;
-extern crate log;
 pub extern crate net2;
 extern crate prost;
 pub extern crate rustls;
@@ -31,6 +29,7 @@ extern crate webpki;
 pub use std::collections::HashMap;
 use std::fmt;
 pub use std::net::SocketAddr;
+pub use std::sync::Arc;
 pub use std::time::Duration;
 
 pub use self::bytes::Bytes;
@@ -62,19 +61,20 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy::proxy::http::router=off,\
                                    linkerd2_proxy::proxy::tcp=off";
 
-pub fn env_logger_init() -> Result<(), String> {
-    use std::env;
+pub fn init_env() -> app::config::TestEnv {
+    let _ = trace_init();
+    app::config::TestEnv::new()
+}
 
+pub fn trace_init() -> Result<(), trace::Error> {
+    use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
         .unwrap_or_else(|_| DEFAULT_LOG.to_owned());
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    self::linkerd2_proxy::logging::formatted_builder()
-        .parse(&log)
-        .try_init()
-        .map_err(|e| e.to_string())
+    trace::init_with_filter(&log).map(|_| ())
 }
 
 /// Retry an assertion up to a specified number of times, waiting
@@ -119,7 +119,7 @@ macro_rules! assert_eventually {
                 } else if i == $retries {
                     panic!(
                         "assertion failed after {} (retried {} times): {}",
-                        ::support::HumanDuration(start_t.elapsed()),
+                        crate::support::HumanDuration(start_t.elapsed()),
                         i,
                         format_args!($($arg)+)
                     )
@@ -265,7 +265,7 @@ fn assert_eventually() {
 pub struct HumanDuration(pub Duration);
 
 impl fmt::Display for HumanDuration {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         let secs = self.0.as_secs();
         let subsec_ms = self.0.subsec_nanos() as f64 / 1_000_000f64;
         if secs == 0 {
@@ -281,7 +281,6 @@ pub trait FutureWaitExt: Future {
     where
         Self: Sized,
     {
-        use std::sync::Arc;
         use std::thread;
         use std::time::Instant;
 
@@ -326,7 +325,7 @@ impl<E> From<E> for Waited<E> {
 }
 
 impl<E: fmt::Display> fmt::Display for Waited<E> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Waited::Error(ref e) => fmt::Display::fmt(e, fmt),
             Waited::TimedOut => fmt.write_str("wait timed out"),

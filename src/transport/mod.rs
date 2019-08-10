@@ -19,7 +19,7 @@ pub use self::{
 
 fn set_nodelay_or_warn(socket: &::tokio::net::TcpStream) {
     if let Err(e) = socket.set_nodelay(true) {
-        warn!(
+        tracing::warn!(
             "could not set TCP_NODELAY on {:?}/{:?}: {}",
             socket.local_addr(),
             socket.peer_addr(),

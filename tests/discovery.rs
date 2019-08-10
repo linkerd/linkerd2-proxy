@@ -10,7 +10,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_asks_controller_api() {
-            let _ = env_logger_init();
+            let _ = trace_init();
             let srv = $make_server().route("/", "hello").route("/bye", "bye").run();
 
             let ctrl = controller::new()
@@ -25,7 +25,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_router_capacity() {
-            let _ = env_logger_init();
+            let _ = trace_init();
             let srv = $make_server().route("/", "hello").run();
             let srv_addr = srv.addr;
 
@@ -70,7 +70,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_reconnects_if_controller_stream_ends() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = $make_server().route("/recon", "nect").run();
 
@@ -85,34 +85,29 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_falls_back_to_orig_dst_when_destination_has_no_endpoints() {
-            let _ = env_logger_init();
-
-            let srv = $make_server().route("/", "hello").run();
-
-            let ctrl = controller::new();
-            ctrl.destination_tx("disco.test.svc.cluster.local")
-                .send(controller::destination_exists_with_no_endpoints());
-
-            let proxy = proxy::new()
-                .controller(ctrl.run())
-                .outbound(srv)
-                .run();
-
-            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
-
-            assert_eq!(client.get("/"), "hello");
+        fn outbound_fails_fast_when_destination_has_no_endpoints() {
+            outbound_fails_fast(controller::destination_exists_with_no_endpoints())
         }
 
         #[test]
-        fn outbound_falls_back_to_orig_dst_when_destination_doesnt_exist() {
-            let _ = env_logger_init();
+        fn outbound_fails_fast_when_destination_does_not_exist() {
+            outbound_fails_fast(controller::destination_does_not_exist())
+        }
 
-            let srv = $make_server().route("/", "hello").run();
+        fn outbound_fails_fast(up: pb::destination::Update) {
+            use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+            let _ = trace_init();
+
+            let did_not_fall_back = Arc::new(AtomicBool::new(true));
+            let did_not_fall_back2 = did_not_fall_back.clone();
+
+            let srv = $make_server().route_fn("/", move |_| {
+                did_not_fall_back2.store(false, Ordering::Release);
+                panic!()
+            }).run();
 
             let ctrl = controller::new();
-            ctrl.destination_tx("disco.test.svc.cluster.local")
-                .send(controller::destination_does_not_exist());
+            ctrl.destination_tx("disco.test.svc.cluster.local").send(up);
 
             let proxy = proxy::new()
                 .controller(ctrl.run())
@@ -121,12 +116,19 @@ macro_rules! generate_tests {
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-            assert_eq!(client.get("/"), "hello");
+            let rsp = client.request(&mut client.request_builder("/"));
+
+            assert!(
+                did_not_fall_back.load(Ordering::Acquire),
+                "original destination should not have been used!",
+            );
+            // We should have gotten an HTTP response, not an error.
+            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
         }
 
         #[test]
         fn outbound_falls_back_to_orig_dst_when_outside_search_path() {
-            let _ = env_logger_init();
+            let _ = trace_init();
 
             let srv = $make_server().route("/", "hello from my great website").run();
 
@@ -141,8 +143,8 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_does_not_reconnect_after_invalid_argument() {
-            let _ = env_logger_init();
+        fn outbound_falls_back_to_orig_dst_after_invalid_argument() {
+            let _ = trace_init();
 
             let srv = $make_server().route("/", "hello").run();
 
@@ -178,11 +180,6 @@ macro_rules! generate_tests {
             )
         }
 
-        fn init_env() -> app::config::TestEnv {
-            let _ = env_logger_init();
-            app::config::TestEnv::new()
-        }
-
         fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update) {
             use std::thread;
 
@@ -210,13 +207,9 @@ macro_rules! generate_tests {
             // Wait for the reconnect to happen. TODO: Replace this flaky logic.
             thread::sleep(Duration::from_millis(1000));
 
+            let rsp = initially_exists.request(&mut initially_exists.request_builder("/"));
+            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
 
-            // This would wait since there are no endpoints.
-            let mut req = initially_exists.request_builder("/");
-            initially_exists
-                .request_async(req.method("GET"))
-                .wait_timeout(Duration::from_secs(1))
-                .expect_timedout("request should wait for destination capacity");
         }
 
         #[test]
@@ -260,26 +253,6 @@ macro_rules! generate_tests {
                 // used as a backup
                 .run();
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
-
-            assert_eq!(client.get("/"), "hello");
-            assert_eq!(client.get("/bye"), "bye");
-        }
-
-        #[test]
-        fn outbound_skips_controller_if_destination_is_address() {
-            let _ = init_env();
-
-            let srv = $make_server()
-                .route("/", "hello")
-                .route("/bye", "bye")
-                .run();
-
-            let host = srv.addr.to_string();
-
-            // don't set outbound() or controller()
-            let proxy = proxy::new()
-                .run();
-            let client = $make_client(proxy.outbound, &*host);
 
             assert_eq!(client.get("/"), "hello");
             assert_eq!(client.get("/bye"), "bye");
@@ -335,7 +308,7 @@ macro_rules! generate_tests {
 
             #[test]
             fn outbound_should_strip() {
-                let _ = env_logger_init();
+                let _ = trace_init();
                 let header = HeaderValue::from_static(IP_1);
 
                 let srv = $make_server().route_fn("/strip", |_req| {
@@ -353,7 +326,7 @@ macro_rules! generate_tests {
 
             #[test]
             fn inbound_should_strip() {
-                let _ = env_logger_init();
+                let _ = trace_init();
                 let header = HeaderValue::from_static(IP_1);
 
                 let srv = $make_server().route_fn("/strip", move |req| {
@@ -371,7 +344,7 @@ macro_rules! generate_tests {
             #[test]
             #[ignore] // #2597
             fn outbound_should_set() {
-                let _ = env_logger_init();
+                let _ = trace_init();
                 let header = HeaderValue::from_static(IP_2);
 
                 let srv = $make_server().route("/set", "hello").run();
@@ -387,7 +360,7 @@ macro_rules! generate_tests {
             #[test]
             #[ignore] // #2597
             fn inbound_should_set() {
-                let _ = env_logger_init();
+                let _ = trace_init();
 
                 let header = HeaderValue::from_static(IP_2);
 
@@ -423,37 +396,64 @@ macro_rules! generate_tests {
 
             impl Fixture {
                 fn new() -> Fixture {
-                    let _ = env_logger_init();
+                    let _ = trace_init();
 
                     let foo_reqs = Arc::new(AtomicUsize::new(0));
                     let foo_reqs2 = foo_reqs.clone();
-                    let foo = $make_server().route_fn("/", move |req| {
-                        assert!(
-                            !req.headers().contains_key(OVERRIDE_HEADER),
-                            "dst override header should be stripped before forwarding request",
-                        );
-                        foo_reqs2.clone().fetch_add(1, Ordering::Release);
-                        Response::builder().status(200)
-                            .body(Bytes::from_static(&b"hello from foo"[..]))
-                            .unwrap()
-                    }).run();
+                    let foo = $make_server()
+                        .route_fn("/", move |req| {
+                            assert!(
+                                !req.headers().contains_key(OVERRIDE_HEADER),
+                                "dst override header should be stripped before forwarding request",
+                            );
+                            foo_reqs2.clone().fetch_add(1, Ordering::Release);
+                            Response::builder().status(200)
+                                .body(Bytes::from_static(&b"hello from foo"[..]))
+                                .unwrap()
+                        })
+                        .route_fn("/load-profile", |_| {
+                            Response::builder().status(200)
+                                .body("".into())
+                                .unwrap()
+                        })
+                        .run();
 
                     let bar_reqs = Arc::new(AtomicUsize::new(0));
                     let bar_reqs2 = bar_reqs.clone();
-                    let bar = $make_server().route_fn("/", move |req| {
-                        assert!(
-                            !req.headers().contains_key(OVERRIDE_HEADER),
-                            "dst override header should be stripped before forwarding request",
-                        );
-                        bar_reqs2.clone().fetch_add(1, Ordering::Release);
-                        Response::builder().status(200)
-                            .body(Bytes::from_static(&b"hello from bar"[..]))
-                            .unwrap()
-                    }).run();
+                    let bar = $make_server()
+                        .route_fn("/", move |req| {
+                            assert!(
+                                !req.headers().contains_key(OVERRIDE_HEADER),
+                                "dst override header should be stripped before forwarding request",
+                            );
+                            bar_reqs2.clone().fetch_add(1, Ordering::Release);
+                            Response::builder().status(200)
+                                .body(Bytes::from_static(&b"hello from bar"[..]))
+                                .unwrap()
+                        })
+                        .route_fn("/load-profile", |_| {
+                            Response::builder().status(200)
+                                .body("".into())
+                                .unwrap()
+                        })
+                        .run();
 
                     let ctrl = controller::new()
                         .destination_and_close(FOO, foo.addr)
                         .destination_and_close(BAR, bar.addr);
+                    ctrl.profile_tx(FOO).send(controller::profile(vec![
+                        controller::route().request_path("/")
+                            .label("hello", "foo"),
+                        controller::route().request_path("/load-profile")
+                            .label("load_profile", "foo"),
+                    ], None, vec![]));
+                    ctrl.profile_tx(BAR).send(controller::profile(vec![
+                        controller::route().request_path("/")
+                            .label("hello", "bar"),
+                        controller::route().request_path("/load-profile")
+                            .label("load_profile", "bar"),
+                    ], None, vec![]));
+
                     Fixture {
                         foo_reqs, bar_reqs,
                         foo: Some(foo),
@@ -488,6 +488,25 @@ macro_rules! generate_tests {
                 )
             }
 
+            fn load_both_profiles(addr: SocketAddr, metrics: &client::Client) {
+                let foo_client = $make_client(addr, FOO);
+                let bar_client = $make_client(addr, BAR);
+                // ensure profiles are loaded
+                loop {
+                    assert_eq!(foo_client.get("/load-profile"), "");
+                    assert_eq!(bar_client.get("/load-profile"), "");
+                    let m = metrics.get("/metrics");
+                    let has_foo = m.contains("rt_load_profile=\"foo\"");
+                    let has_bar = m.contains("rt_load_profile=\"bar\"");
+                    println!("load profile; foo={}; bar={};", has_foo, has_bar);
+                    if  has_foo && has_bar  {
+                        break;
+                    }
+
+                    ::std::thread::sleep(::std::time::Duration::from_millis(200));
+                }
+            }
+
             #[test]
             fn outbound_honors_override_header() {
                 let mut fixture = Fixture::new();
@@ -516,6 +535,25 @@ macro_rules! generate_tests {
                 assert_eq!(client.get("/"), "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 1);
+            }
+
+            #[test]
+            fn outbound_overrides_profile() {
+                let mut fixture = Fixture::new();
+                let proxy = fixture.proxy().run();
+
+                let client = $make_client(proxy.outbound, FOO);
+                let metrics = client::http1(proxy.metrics, "localhost");
+                load_both_profiles(proxy.outbound, &metrics);
+
+                // Request 1 --- without override header.
+                client.get("/");
+                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"foo\"");
+
+                // Request 2 --- with override header
+                let res = override_req(&client);
+                assert_eq!(res.status(), http::StatusCode::OK);
+                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"bar\"");
             }
 
             #[test]
@@ -551,7 +589,28 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            fn inbound_does_not_honor_override_header() {
+            fn inbound_overrides_profile() {
+                let mut fixture = Fixture::new();
+                let proxy = fixture.proxy()
+                    .inbound(fixture.foo())
+                    .run();
+
+                let client = $make_client(proxy.inbound, FOO);
+                let metrics = client::http1(proxy.metrics, "localhost");
+                load_both_profiles(proxy.inbound, &metrics);
+
+                // Request 1 --- without override header.
+                client.get("/");
+                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"foo\"");
+
+                // Request 2 --- with override header
+                let res = override_req(&client);
+                assert_eq!(res.status(), http::StatusCode::OK);
+                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"bar\"");
+            }
+
+            #[test]
+            fn inbound_still_routes_to_orig_dst() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
                     .inbound(fixture.foo())
@@ -594,7 +653,7 @@ mod http2 {
     #[test]
     fn outbound_balancer_waits_for_ready_endpoint() {
         // See https://github.com/linkerd/linkerd2/issues/2550
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv1 = server::http2()
             .route("/", "hello")
@@ -666,7 +725,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn outbound_http1() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         // Instead of a second proxy, this mocked h2 server will be the target.
         let srv = server::http2()
@@ -694,7 +753,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn inbound_http1() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/h1", |req| {
@@ -725,7 +784,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn inbound_should_strip_l5d_client_id() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/stripped", |req| {
@@ -748,7 +807,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn outbound_should_strip_l5d_client_id() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/stripped", |req| {
@@ -774,7 +833,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn inbound_should_strip_l5d_server_id() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/strip-me", |_req| {
@@ -796,7 +855,7 @@ mod proxy_to_proxy {
 
     #[test]
     fn outbound_should_strip_l5d_server_id() {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let srv = server::http1()
             .route_fn("/strip-me", |_req| {
@@ -821,7 +880,7 @@ mod proxy_to_proxy {
 
     macro_rules! generate_l5d_tls_id_test {
         (server: $make_server:path, client: $make_client:path) => {
-            let _ = env_logger_init();
+            let _ = trace_init();
             let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
             let id_env = identity::Identity::new("foo-ns1", id.to_string());
 

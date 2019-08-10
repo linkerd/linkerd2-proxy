@@ -1,19 +1,18 @@
+use super::match_::Match;
+use crate::proxy::http::HasH2Reason;
+use crate::tap::{iface, Inspect};
+use crate::Conditional;
 use bytes::Buf;
 use futures::sync::mpsc;
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
+use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
 use tokio_timer::clock;
 use tower_grpc::{self as grpc, Response};
-
-use api::{http_types, pb_duration, tap as api};
-
-use super::match_::Match;
-use proxy::http::HasH2Reason;
-use tap::{iface, Inspect};
-use Conditional;
+use tracing::{debug, trace, warn};
 
 #[derive(Clone, Debug)]
 pub struct Server<T> {
@@ -40,6 +39,7 @@ struct Shared {
     count: AtomicUsize,
     limit: usize,
     match_: Match,
+    events_tx: mpsc::Sender<api::TapEvent>,
 }
 
 #[derive(Clone, Debug)]
@@ -50,7 +50,6 @@ struct TapTx {
 
 #[derive(Clone, Debug)]
 pub struct Tap {
-    events_tx: mpsc::Sender<api::TapEvent>,
     shared: Weak<Shared>,
 }
 
@@ -81,7 +80,7 @@ pub struct TapResponsePayload {
 // === impl Server ===
 
 impl<T: iface::Subscribe<Tap>> Server<T> {
-    pub(in tap) fn new(subscribe: T) -> Self {
+    pub(in crate::tap) fn new(subscribe: T) -> Self {
         let base_id = Arc::new(0.into());
         Self { base_id, subscribe }
     }
@@ -144,11 +143,11 @@ where
             count: AtomicUsize::new(0),
             limit,
             match_,
+            events_tx,
         });
 
         let tap = Tap {
             shared: Arc::downgrade(&shared),
-            events_tx,
         };
         let subscribe = self.subscribe.subscribe(tap);
 
@@ -245,16 +244,17 @@ impl iface::Tap for Tap {
         B: Payload,
         I: Inspect,
     {
-        let id = self.shared.upgrade().and_then(|shared| {
+        let (id, mut events_tx) = self.shared.upgrade().and_then(|shared| {
             if !shared.match_.matches(req, inspect) {
                 return None;
             }
             let next_id = shared.count.fetch_add(1, Ordering::Relaxed);
             if next_id < shared.limit {
-                Some(api::tap_event::http::StreamId {
+                let id = api::tap_event::http::StreamId {
                     base: shared.base_id,
                     stream: next_id as u64,
-                })
+                };
+                Some((id, shared.events_tx.clone()))
             } else {
                 None
             }
@@ -280,12 +280,9 @@ impl iface::Tap for Tap {
         };
 
         // If try_send fails, just return `None`...
-        self.events_tx.try_send(event).ok()?;
+        events_tx.try_send(event).ok()?;
 
-        let tap = TapTx {
-            id,
-            tx: self.events_tx.clone(),
-        };
+        let tap = TapTx { id, tx: events_tx };
 
         let req = TapRequestPayload {
             tap: tap.clone(),

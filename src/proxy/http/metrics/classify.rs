@@ -1,7 +1,7 @@
-use futures::{Future, Poll};
+use crate::proxy::Error;
+use crate::svc;
+use futures::{try_ready, Future, Poll};
 use http;
-
-use svc;
 
 /// Determines how a request's response should be classified.
 pub trait Classify {
@@ -32,7 +32,7 @@ pub trait ClassifyResponse {
     fn start<B>(self, headers: &http::Response<B>) -> Self::ClassifyEos;
 
     /// Classifies the given error.
-    fn error(self, error: &(dyn std::error::Error + 'static)) -> Self::Class;
+    fn error(self, error: &Error) -> Self::Class;
 }
 
 pub trait ClassifyEos {
@@ -47,7 +47,7 @@ pub trait ClassifyEos {
     ///
     /// Because errors indicate an end-of-stream, a classification must be
     /// returned.
-    fn error(self, error: &(dyn std::error::Error + 'static)) -> Self::Class;
+    fn error(self, error: &Error) -> Self::Class;
 }
 
 // Used for stack targets that can produce a `Classify` implementation.

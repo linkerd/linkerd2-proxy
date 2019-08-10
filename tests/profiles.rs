@@ -24,7 +24,7 @@ macro_rules! profile_test {
         }
     };
     (http: $http:ident, routes: [$($route:expr),+], budget: $budget:expr, with_client: $with_client:expr, with_metrics: $with_metrics:expr) => {
-        let _ = env_logger_init();
+        let _ = trace_init();
 
         let counter = AtomicUsize::new(0);
         let counter2 = AtomicUsize::new(0);
@@ -104,7 +104,7 @@ macro_rules! profile_test {
                 .label("load_profile", "test"),
             $($route,),+
         ];
-        profile_tx.send(controller::profile(routes, $budget));
+        profile_tx.send(controller::profile(routes, $budget, vec![]));
 
         let ctrl = ctrl.run();
         let proxy = proxy::new()

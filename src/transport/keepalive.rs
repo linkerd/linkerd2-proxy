@@ -20,6 +20,7 @@ impl SetKeepalive for TcpStream {
 pub mod accept {
     use std::time::Duration;
     use tokio::io::{AsyncRead, AsyncWrite};
+    use tracing::debug;
 
     use super::SetKeepalive;
 
@@ -32,13 +33,13 @@ pub mod accept {
         keepalive: Option<Duration>,
     }
 
-    impl<I> ::proxy::Accept<I> for Accept
+    impl<I> crate::proxy::Accept<I> for Accept
     where
         I: AsyncRead + AsyncWrite + SetKeepalive,
     {
         type Io = I;
 
-        fn accept(&self, _: &::proxy::Source, mut io: I) -> Self::Io {
+        fn accept(&self, _: &crate::proxy::Source, mut io: I) -> Self::Io {
             if let Err(e) = io.set_keepalive(self.keepalive) {
                 debug!("failed to set keepalive: {}", e);
             }
@@ -49,11 +50,11 @@ pub mod accept {
 }
 
 pub mod connect {
-    use futures::{Future, Poll};
-    use std::time::Duration;
-
     use super::SetKeepalive;
-    use svc;
+    use crate::svc;
+    use futures::{try_ready, Future, Poll};
+    use std::time::Duration;
+    use tracing::debug;
 
     pub fn layer(keepalive: Option<Duration>) -> Layer {
         Layer { keepalive }

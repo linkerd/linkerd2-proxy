@@ -1,5 +1,4 @@
-use super::{untrusted, webpki};
-use convert::TryFrom;
+use std::convert::TryFrom;
 use std::fmt;
 
 /// A `Name` is guaranteed to be syntactically valid. The validity rules
@@ -20,20 +19,20 @@ impl Name {
         self.as_ref().trim_end_matches('.')
     }
 
-    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
+    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef<'_> {
         self.0.as_ref()
     }
 }
 
 impl fmt::Debug for Name {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let s: &str = AsRef::<str>::as_ref(&self.0);
         s.fmt(f)
     }
 }
 
 impl fmt::Display for Name {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let s: &str = AsRef::<str>::as_ref(&self.0);
         s.fmt(f)
     }
@@ -46,8 +45,8 @@ impl From<webpki::DNSName> for Name {
 }
 
 impl<'a> TryFrom<&'a [u8]> for Name {
-    type Err = InvalidName;
-    fn try_from(s: &[u8]) -> Result<Self, Self::Err> {
+    type Error = InvalidName;
+    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
         webpki::DNSNameRef::try_from_ascii(untrusted::Input::from(s))
             .map_err(|()| InvalidName)
             .map(|r| r.to_owned().into())

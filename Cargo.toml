@@ -1,19 +1,19 @@
 [workspace]
 members = [
     ".",
-    "lib/futures-mpsc-lossy",
     "lib/hyper-balance",
-    "lib/metrics",
-    "lib/router",
-    "lib/stack",
-    "lib/task",
-    "lib/timeout",
+    "lib/linkerd2-metrics",
+    "lib/linkerd2-router",
+    "lib/linkerd2-stack",
+    "lib/linkerd2-task",
+    "lib/linkerd2-timeout",
 ]
 
 [package]
 name = "linkerd2-proxy"
 version = "0.1.0"
 authors = ["Oliver Gould <ver@buoyant.io>"]
+edition = "2018"
 publish = false
 
 [features]
@@ -22,29 +22,26 @@ default = ["flaky_tests"]
 flaky_tests = []
 
 [dependencies]
-futures-mpsc-lossy = { path = "lib/futures-mpsc-lossy" }
 hyper-balance      = { path = "lib/hyper-balance" }
-linkerd2-metrics   = { path = "lib/metrics" }
-linkerd2-never     = { path = "lib/never" }
-linkerd2-router    = { path = "lib/router" }
-linkerd2-stack     = { path = "lib/stack" }
-linkerd2-task      = { path = "lib/task" }
-linkerd2-timeout   = { path = "lib/timeout" }
+linkerd2-metrics   = { path = "lib/linkerd2-metrics" }
+linkerd2-never     = { path = "lib/linkerd2-never" }
+linkerd2-router    = { path = "lib/linkerd2-router" }
+linkerd2-stack     = { path = "lib/linkerd2-stack" }
+linkerd2-task      = { path = "lib/linkerd2-task" }
+linkerd2-timeout   = { path = "lib/linkerd2-timeout" }
 
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.8" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 
 byteorder = "1.3.1"
 bytes = "0.4"
-env_logger = { version = "0.5", default-features = false }
 futures = "0.1"
-futures-watch = { git = "https://github.com/carllerche/better-future" }
 h2 = "0.1.15"
 http = "0.1"
 http-body = "0.1"
 httparse = "1.2"
 hyper = "0.12.3"
 ipnet = "1.0"
-log = "0.4.1"
+log = { version = "0.4.1", features = ["std"] }
 indexmap = "1.0.0"
 prost = "0.5.0"
 prost-types = "0.5.0"
@@ -64,12 +61,19 @@ tower-service = "0.2"
 tower-util = "0.1"
 tokio-connect          = { git = "https://github.com/carllerche/tokio-connect" }
 tower-balance          = { git = "https://github.com/tower-rs/tower" }
+tower-load             = { git = "https://github.com/tower-rs/tower" }
 tower-reconnect        = { git = "https://github.com/tower-rs/tower" }
 tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
+tower-spawn-ready      = { git = "https://github.com/tower-rs/tower" }
 tower-grpc             = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
 
 # FIXME update to a release when available (>0.11)
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060", default-features = false }
+
+tracing         = "0.1.2"
+tracing-fmt     = { git = "https://github.com/tokio-rs/tracing" }
+tracing-futures = { git = "https://github.com/tokio-rs/tracing" }
+tracing-log     = { git = "https://github.com/tokio-rs/tracing" }
 
 # tls
 ring = "0.14.6"
@@ -85,9 +89,9 @@ procinfo = "0.4.2"
 [dev-dependencies]
 net2 = "0.2"
 quickcheck = { version = "0.8", default-features = false }
-linkerd2-metrics = { path = "./lib/metrics", features = ["test_util"] }
-linkerd2-task    = { path = "lib/task", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.8" }
+linkerd2-metrics = { path = "./lib/linkerd2-metrics", features = ["test_util"] }
+linkerd2-task    = { path = "lib/linkerd2-task", features = ["test_util"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.
@@ -103,3 +107,4 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }
+

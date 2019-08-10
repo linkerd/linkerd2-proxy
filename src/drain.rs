@@ -1,10 +1,8 @@
-use std::mem;
-
 use futures::future::Shared;
 use futures::sync::{mpsc, oneshot};
-use futures::{Async, Future, Poll, Stream};
-
-use never::Never;
+use futures::{try_ready, Async, Future, Poll, Stream};
+use linkerd2_never::Never;
+use std::mem;
 
 /// Creates a drain channel.
 ///

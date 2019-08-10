@@ -1,17 +1,14 @@
-extern crate linkerd2_router as rt;
-
+use crate::logging;
+use crate::proxy::Error;
+use crate::svc;
+use futures::{try_ready, Async, Future, Poll};
+use linkerd2_router as rt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 use std::{error, fmt};
-
-use futures::{Async, Future, Poll};
 use tokio_timer::{clock, Delay};
 use tower::buffer;
-
-use logging;
-use proxy::Error;
-use svc;
 
 /// Determines the dispatch deadline for a request.
 pub trait Deadline<Req>: Clone {
@@ -371,7 +368,7 @@ where
 // === Aborted ===
 
 impl fmt::Display for Aborted {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "the request could not be dispatched in a timely fashion")
     }
 }

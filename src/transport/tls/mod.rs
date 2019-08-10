@@ -1,29 +1,20 @@
-// These crates are only used within the `tls` module.
-extern crate rustls;
-extern crate tokio_rustls;
-extern crate untrusted;
-extern crate webpki;
-
-use self::tokio_rustls::{Accept, TlsAcceptor as Acceptor, TlsConnector as Connector};
-use std::fmt;
-
-use identity;
-
 pub mod client;
 mod conditional_accept;
 mod connection;
 mod io;
 pub mod listen;
 
-use self::io::TlsIo;
-
 pub use self::connection::Connection;
+use self::io::TlsIo;
 pub use self::listen::Listen;
-pub use self::rustls::TLSError as Error;
+use crate::identity;
+pub use rustls::TLSError as Error;
+use std::fmt;
+use tokio_rustls::{Accept, TlsAcceptor as Acceptor, TlsConnector as Connector};
 
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.
-pub type Conditional<T> = ::Conditional<T, ReasonForNoIdentity>;
+pub type Conditional<T> = crate::Conditional<T, ReasonForNoIdentity>;
 
 pub type PeerIdentity = Conditional<identity::Name>;
 pub type Status = Conditional<()>;
@@ -74,10 +65,11 @@ pub enum ReasonForNoPeerName {
 }
 
 impl fmt::Display for Status {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::Conditional;
         match self {
-            ::Conditional::Some(()) => write!(f, "true"),
-            ::Conditional::None(r) => fmt::Display::fmt(&r, f),
+            Conditional::Some(()) => write!(f, "true"),
+            Conditional::None(r) => fmt::Display::fmt(&r, f),
         }
     }
 }
@@ -89,7 +81,7 @@ impl From<ReasonForNoPeerName> for ReasonForNoIdentity {
 }
 
 impl fmt::Display for ReasonForNoIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ReasonForNoIdentity::Disabled => write!(f, "disabled"),
             ReasonForNoIdentity::NoPeerName(n) => write!(f, "{}", n),
@@ -98,7 +90,7 @@ impl fmt::Display for ReasonForNoIdentity {
 }
 
 impl fmt::Display for ReasonForNoPeerName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ReasonForNoPeerName::Loopback => write!(f, "loopback"),
             ReasonForNoPeerName::NoAuthorityInHttpRequest => {

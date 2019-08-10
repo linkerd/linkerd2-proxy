@@ -1,5 +1,3 @@
-use metrics;
-
 mod errno;
 pub mod process;
 

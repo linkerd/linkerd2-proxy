@@ -1,12 +1,11 @@
-use std::marker::PhantomData;
-
-use futures::{future, Future, Poll};
+use crate::proxy::http::metrics::{handle_time, Scoped, Stats};
+use crate::svc;
+use futures::{future, try_ready, Future, Poll};
 use http::{Request, Response};
+use std::marker::PhantomData;
 use tower::retry as tower_retry;
 pub use tower::retry::budget::Budget;
-
-use proxy::http::metrics::{Scoped, Stats};
-use svc;
+use tracing::trace;
 
 pub trait CanRetry {
     type Retry: Retry + Clone;
@@ -197,7 +196,12 @@ impl<B: TryClone> TryClone for Request<B> {
             *clone.headers_mut() = self.headers().clone();
             *clone.version_mut() = self.version();
 
-            if let Some(ext) = self.extensions().get::<::proxy::server::Source>() {
+            if let Some(ext) = self.extensions().get::<crate::proxy::server::Source>() {
+                clone.extensions_mut().insert(ext.clone());
+            }
+
+            // Count retries toward the request's total handle time.
+            if let Some(ext) = self.extensions().get::<handle_time::Tracker>() {
                 clone.extensions_mut().insert(ext.clone());
             }
 

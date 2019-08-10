@@ -1,4 +1,4 @@
-use futures::{Future, Poll, Stream};
+use futures::{try_ready, Future, Poll, Stream};
 use prost::Message;
 use tower_grpc::{
     self as grpc, client::server_streaming::ResponseFuture, generic::client::GrpcService, BoxBody,

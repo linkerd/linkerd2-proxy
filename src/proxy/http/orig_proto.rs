@@ -1,9 +1,9 @@
+use super::h1;
+use crate::svc;
 use futures::{future, Future, Poll};
 use http;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
-
-use super::h1;
-use svc;
+use tracing::{debug, warn};
 
 pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 

@@ -1,8 +1,6 @@
 use byteorder::{BigEndian, ByteOrder};
 use httparse;
 
-use kafka::primitives::hello;
-
 /// Transport protocols that can be transparently detected by `Server`.
 #[derive(Debug)]
 pub enum Protocol {
@@ -17,7 +15,6 @@ impl Protocol {
     ///
     /// If no protocol can be determined, returns `None`.
     pub fn detect(bytes: &[u8]) -> Option<Protocol> {
-        hello();
         // http2 is easiest to detect
         if bytes.len() >= H2_PREFACE.len() {
             if &bytes[..H2_PREFACE.len()] == H2_PREFACE {

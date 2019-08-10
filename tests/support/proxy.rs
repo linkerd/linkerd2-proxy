@@ -1,4 +1,4 @@
-use support::*;
+use crate::support::*;
 
 use std::sync::{Arc, Mutex};
 
@@ -9,8 +9,16 @@ pub fn new() -> Proxy {
 pub struct Proxy {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
-    inbound: Option<server::Listening>,
-    outbound: Option<server::Listening>,
+
+    /// Inbound/outbound addresses helpful for mocking connections that do not
+    /// implement `server::Listener`.
+    inbound: Option<SocketAddr>,
+    outbound: Option<SocketAddr>,
+
+    /// Inbound/outbound addresses for mocking connections that implement
+    /// `server::Listener`.
+    inbound_server: Option<server::Listening>,
+    outbound_server: Option<server::Listening>,
 
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
     outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
@@ -34,9 +42,13 @@ impl Proxy {
     pub fn new() -> Self {
         Proxy {
             controller: None,
+            identity: None,
+
             inbound: None,
             outbound: None,
-            identity: None,
+
+            inbound_server: None,
+            outbound_server: None,
 
             inbound_disable_ports_protocol_detection: None,
             outbound_disable_ports_protocol_detection: None,
@@ -57,8 +69,15 @@ impl Proxy {
         self
     }
 
+    pub fn disable_identity(mut self) -> Self {
+        self.identity = None;
+        self
+    }
+
     pub fn inbound(mut self, s: server::Listening) -> Self {
-        self.inbound = Some(s);
+        let addr = s.addr.clone();
+        self.inbound = Some(addr);
+        self.inbound_server = Some(s);
         self
     }
 
@@ -76,6 +95,13 @@ impl Proxy {
     }
 
     pub fn outbound(mut self, s: server::Listening) -> Self {
+        let addr = s.addr.clone();
+        self.outbound = Some(addr);
+        self.outbound_server = Some(s);
+        self
+    }
+
+    pub fn outbound_ip(mut self, s: SocketAddr) -> Self {
         self.outbound = Some(s);
         self
     }
@@ -138,8 +164,6 @@ impl linkerd2_proxy::transport::GetOriginalDst for MockOriginalDst {
 }
 
 fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
-    use self::linkerd2_proxy::app;
-
     let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
@@ -154,16 +178,14 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         app::config::ENV_OUTBOUND_LISTEN_ADDR,
         "127.0.0.1:0".to_owned(),
     );
-    if let Some(ref inbound) = inbound {
-        env.put(
-            app::config::ENV_INBOUND_FORWARD,
-            format!("{}", inbound.addr),
-        );
-        mock_orig_dst.inbound_orig_addr = Some(inbound.addr);
+
+    if let Some(inbound) = inbound {
+        env.put(app::config::ENV_INBOUND_FORWARD, format!("{}", inbound));
+        mock_orig_dst.inbound_orig_addr = Some(inbound);
     }
-    if let Some(ref outbound) = outbound {
-        mock_orig_dst.outbound_orig_addr = Some(outbound.addr);
-    }
+
+    mock_orig_dst.outbound_orig_addr = outbound;
+
     env.put(
         app::config::ENV_INBOUND_LISTEN_ADDR,
         "127.0.0.1:0".to_owned(),
@@ -183,8 +205,17 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         Some(identity.addr)
     } else {
         env.put(app::config::ENV_IDENTITY_DISABLED, "test".to_owned());
+        env.put(app::config::ENV_TAP_DISABLED, "test".to_owned());
         None
     };
+
+    // If identity is enabled but the test is not concerned with tap, ensure
+    // there is a tap service name set
+    if !env.contains_key(app::config::ENV_TAP_DISABLED)
+        && !env.contains_key(app::config::ENV_TAP_SVC_NAME)
+    {
+        env.put(app::config::ENV_TAP_SVC_NAME, "test-identity".to_owned())
+    }
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports
@@ -230,7 +261,15 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             // TODO: a mock timer could be injected here?
             let runtime =
                 tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
-            let main = linkerd2_proxy::app::Main::new(config, mock_orig_dst.clone(), runtime);
+            // TODO: it would be nice for this to not be stubbed out, so that it
+            // can be tested.
+            let trace_handle = super::trace::LevelHandle::dangling();
+            let main = linkerd2_proxy::app::Main::new(
+                config,
+                trace_handle,
+                mock_orig_dst.clone(),
+                runtime,
+            );
 
             let control_addr = main.control_addr();
             let identity_addr = identity_addr;
@@ -281,12 +320,12 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         inbound_addr,
         inbound
             .as_ref()
-            .map(|i| format!(" (SO_ORIGINAL_DST={})", i.addr))
+            .map(|i| format!(" (SO_ORIGINAL_DST={})", i))
             .unwrap_or_else(String::new),
         outbound_addr,
         outbound
             .as_ref()
-            .map(|o| format!(" (SO_ORIGINAL_DST={})", o.addr))
+            .map(|o| format!(" (SO_ORIGINAL_DST={})", o))
             .unwrap_or_else(String::new),
         metrics_addr,
     );
@@ -297,8 +336,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         outbound: outbound_addr,
         metrics: metrics_addr,
 
-        outbound_server: outbound,
-        inbound_server: inbound,
+        outbound_server: proxy.outbound_server,
+        inbound_server: proxy.inbound_server,
 
         shutdown: tx,
     }

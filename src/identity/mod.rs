@@ -1,20 +1,14 @@
-extern crate ring;
-extern crate rustls;
-extern crate tokio_rustls;
-extern crate untrusted;
-
-use self::ring::rand;
-use self::ring::signature::EcdsaKeyPair;
+use crate::dns;
+use crate::transport::tls;
+pub use ring::error::KeyRejected;
+use ring::rand;
+use ring::signature::EcdsaKeyPair;
+use std::convert::TryFrom;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::{fmt, fs, io};
-
-pub use self::ring::error::KeyRejected;
-
-use convert::TryFrom;
-use dns;
-use transport::tls;
+use tracing::{debug, warn};
 
 #[cfg(test)]
 pub mod test_util;
@@ -105,7 +99,7 @@ impl rustls::sign::SigningKey for SigningKey {
     fn choose_scheme(
         &self,
         offered: &[rustls::SignatureScheme],
-    ) -> Option<Box<rustls::sign::Signer>> {
+    ) -> Option<Box<dyn rustls::sign::Signer>> {
         if offered.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
             Some(Box::new(Signer(self.0.clone())))
         } else {
@@ -151,7 +145,7 @@ impl Name {
         dns::Name::try_from(hostname).map(|n| Name(Arc::new(n)))
     }
 
-    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef {
+    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef<'_> {
         self.0.as_dns_name_ref()
     }
 }
@@ -163,7 +157,7 @@ impl AsRef<str> for Name {
 }
 
 impl fmt::Debug for Name {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         fmt::Debug::fmt(&self.0, f)
     }
 }
@@ -291,7 +285,7 @@ impl tls::client::HasConfig for TrustAnchors {
 }
 
 impl fmt::Debug for TrustAnchors {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TrustAnchors").finish()
     }
 }
@@ -331,7 +325,7 @@ impl tls::listen::HasConfig for CrtKey {
 }
 
 impl fmt::Debug for CrtKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.debug_struct("CrtKey")
             .field("name", &self.name)
             .field("expiry", &self.expiry)
@@ -373,7 +367,7 @@ impl CertResolver {
 impl rustls::ResolvesServerCert for CertResolver {
     fn resolve(
         &self,
-        server_name: Option<webpki::DNSNameRef>,
+        server_name: Option<webpki::DNSNameRef<'_>>,
         sigschemes: &[rustls::SignatureScheme],
     ) -> Option<rustls::sign::CertifiedKey> {
         let server_name = if let Some(server_name) = server_name {
@@ -405,7 +399,7 @@ impl rustls::ResolvesServerCert for CertResolver {
 // === impl InvalidCrt ===
 
 impl fmt::Display for InvalidCrt {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.0, f)
     }
 }

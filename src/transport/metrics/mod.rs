@@ -1,21 +1,20 @@
-use futures::{Future, Poll};
+mod io;
+
+pub use self::io::Io;
+use crate::svc;
+use crate::telemetry::Errno;
+use crate::transport::tls;
+use futures::{try_ready, Future, Poll};
 use indexmap::IndexMap;
+use linkerd2_metrics::{
+    latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
+};
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
-
-use metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric};
-
-use proxy;
-use svc;
-use telemetry::Errno;
-use transport::tls;
-
-mod io;
-
-pub use self::io::Io;
+use tracing::{debug, error};
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
@@ -142,14 +141,19 @@ impl Inner {
         self.0.is_empty()
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&Key, MutexGuard<Metrics>)> {
+    fn iter(&self) -> impl Iterator<Item = (&Key, MutexGuard<'_, Metrics>)> {
         self.0
             .iter()
             .filter_map(|(k, l)| l.lock().ok().map(move |m| (k, m)))
     }
 
     /// Formats a metric across all instances of `Metrics` in the registry.
-    fn fmt_by<F, M>(&self, f: &mut fmt::Formatter, metric: Metric<M>, get_metric: F) -> fmt::Result
+    fn fmt_by<F, M>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        metric: Metric<'_, M>,
+        get_metric: F,
+    ) -> fmt::Result
     where
         F: Fn(&Metrics) -> &M,
         M: FmtMetric,
@@ -164,8 +168,8 @@ impl Inner {
     /// Formats a metric across all instances of `EosMetrics` in the registry.
     fn fmt_eos_by<F, M>(
         &self,
-        f: &mut fmt::Formatter,
-        metric: Metric<M>,
+        f: &mut fmt::Formatter<'_>,
+        metric: Metric<'_, M>,
         get_metric: F,
     ) -> fmt::Result
     where
@@ -205,13 +209,13 @@ impl Registry {
     }
 }
 
-impl<I> proxy::Accept<I> for Accept
+impl<I> crate::proxy::Accept<I> for Accept
 where
     I: AsyncRead + AsyncWrite,
 {
     type Io = Io<I>;
 
-    fn accept(&self, source: &proxy::Source, io: I) -> Self::Io {
+    fn accept(&self, source: &crate::proxy::Source, io: I) -> Self::Io {
         let tls_status = source.tls_peer.as_ref().map(|_| {});
         let key = Key::accept(self.direction, tls_status);
         let metrics = match self.registry.lock() {
@@ -336,7 +340,7 @@ where
 // ===== impl Report =====
 
 impl FmtMetrics for Report {
-    fn fmt_metrics(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let metrics = match self.0.lock() {
             Err(_) => return Ok(()),
             Ok(lock) => lock,
@@ -452,7 +456,7 @@ impl Key {
 }
 
 impl FmtLabels for Key {
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         ((self.direction, self.peer), self.tls_status).fmt_labels(f)
     }
 }
@@ -460,7 +464,7 @@ impl FmtLabels for Key {
 // ===== impl Peer =====
 
 impl FmtLabels for Direction {
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "direction=\"{}\"", self.0)
     }
 }
@@ -468,7 +472,7 @@ impl FmtLabels for Direction {
 // ===== impl Peer =====
 
 impl FmtLabels for Peer {
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Peer::Src => f.pad("peer=\"src\""),
             Peer::Dst => f.pad("peer=\"dst\""),
@@ -479,7 +483,7 @@ impl FmtLabels for Peer {
 // ===== impl Eos =====
 
 impl FmtLabels for Eos {
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Eos::Clean => f.pad("errno=\"\""),
             Eos::Error(errno) => write!(f, "errno=\"{}\"", errno),

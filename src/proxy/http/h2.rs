@@ -1,19 +1,18 @@
-use std::marker::PhantomData;
-
-use futures::{Future, Poll};
+use super::{Body, ClientUsedTls};
+use crate::app::config::H2Settings;
+use crate::proxy::Error;
+use crate::svc;
+use crate::transport::tls::HasStatus as HasTlsStatus;
+use futures::{try_ready, Future, Poll};
 use http;
 use hyper::{
     body::Payload,
     client::conn::{self, Handshake, SendRequest},
 };
+use linkerd2_task::{ArcExecutor, BoxSendFuture, Executor};
+use std::marker::PhantomData;
 use tokio::io::{AsyncRead, AsyncWrite};
-
-use super::{Body, ClientUsedTls};
-use app::config::H2Settings;
-use proxy::Error;
-use svc;
-use task::{ArcExecutor, BoxSendFuture, Executor};
-use transport::tls::HasStatus as HasTlsStatus;
+use tracing::debug;
 
 #[derive(Debug)]
 pub struct Connect<C, B> {
@@ -171,7 +170,21 @@ where
         self.tx.poll_ready().map_err(From::from)
     }
 
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        debug_assert_eq!(
+            req.version(),
+            http::Version::HTTP_2,
+            "request version should be HTTP/2",
+        );
+
+        // A request translated from HTTP/1 to 2 might not include an
+        // authority. In order to support that case, our h2 library requires
+        // the version to be dropped down from HTTP/2, as a form of us
+        // explicitly acknowledging that its not a normal HTTP/2 form.
+        if req.uri().authority_part().is_none() {
+            *req.version_mut() = http::Version::HTTP_11;
+        }
+
         ResponseFuture {
             client_used_tls: self.client_used_tls,
             inner: self.tx.send_request(req),

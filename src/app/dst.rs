@@ -1,16 +1,14 @@
+use super::classify;
+use crate::proxy::http::{
+    metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
+    profiles, retry, settings, timeout,
+};
+use crate::{Addr, NameAddr};
 use http;
 use indexmap::IndexMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
-
-use proxy::http::{
-    metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
-    profiles, retry, settings, timeout,
-};
-use {Addr, NameAddr};
-
-use super::classify;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -32,7 +30,8 @@ pub struct Retry {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DstAddr {
-    addr: Addr,
+    dst_logical: Addr,
+    dst_concrete: Addr,
     direction: Direction,
     pub(super) http_settings: settings::Settings,
 }
@@ -105,14 +104,15 @@ impl retry::Retry for Retry {
 
 impl AsRef<Addr> for DstAddr {
     fn as_ref(&self) -> &Addr {
-        &self.addr
+        &self.dst_concrete
     }
 }
 
 impl DstAddr {
     pub fn outbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
-            addr,
+            dst_logical: addr.clone(),
+            dst_concrete: addr,
             direction: Direction::Out,
             http_settings,
         }
@@ -120,7 +120,8 @@ impl DstAddr {
 
     pub fn inbound(addr: Addr, http_settings: settings::Settings) -> Self {
         DstAddr {
-            addr,
+            dst_logical: addr.clone(),
+            dst_concrete: addr,
             direction: Direction::In,
             http_settings,
         }
@@ -128,6 +129,14 @@ impl DstAddr {
 
     pub fn direction(&self) -> Direction {
         self.direction
+    }
+
+    pub fn dst_logical(&self) -> &Addr {
+        &self.dst_logical
+    }
+
+    pub fn dst_concrete(&self) -> &Addr {
+        &self.dst_concrete
     }
 }
 
@@ -138,14 +147,14 @@ impl<'t> From<&'t DstAddr> for http::header::HeaderValue {
 }
 
 impl fmt::Display for DstAddr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.addr.fmt(f)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.dst_concrete.fmt(f)
     }
 }
 
 impl profiles::CanGetDestination for DstAddr {
     fn get_destination(&self) -> Option<&NameAddr> {
-        self.addr.name_addr()
+        self.dst_logical.name_addr()
     }
 }
 
@@ -160,6 +169,13 @@ impl profiles::WithRoute for DstAddr {
     }
 }
 
+impl profiles::WithAddr for DstAddr {
+    fn with_addr(mut self, addr: NameAddr) -> Self {
+        self.dst_concrete = Addr::Name(addr);
+        self
+    }
+}
+
 // === impl Route ===
 
 impl Route {
@@ -169,7 +185,7 @@ impl Route {
 }
 
 impl fmt::Display for Route {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.dst_addr.fmt(f)
     }
 }

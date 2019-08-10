@@ -2,6 +2,7 @@
 name = "hyper-balance"
 version = "0.1.0"
 authors = ["Oliver Gould <ver@buoyant.io>"]
+edition = "2018"
 publish = false
 
 [dependencies]
@@ -10,4 +11,5 @@ http = "0.1"
 hyper = "0.12"
 
 tower-balance = { git = "https://github.com/tower-rs/tower" }
+tower-load = { git = "https://github.com/tower-rs/tower" }
 tower-service = "0.2"

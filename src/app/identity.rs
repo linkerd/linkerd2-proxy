@@ -1,15 +1,14 @@
-use futures::{Async, Future, Poll};
-use futures_watch::{Store, Watch};
+pub use crate::identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
+use crate::transport::tls;
+use futures::{try_ready, Async, Future, Poll};
+use linkerd2_never::Never;
+use linkerd2_proxy_api::identity as api;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::watch;
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
-
-use api::identity as api;
-use never::Never;
-
-pub use identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
-use transport::tls;
+use tracing::{debug, error, trace};
 
 /// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
@@ -31,7 +30,7 @@ pub struct Config {
 pub struct Local {
     trust_anchors: TrustAnchors,
     name: Name,
-    crt_key: Watch<Option<CrtKey>>,
+    crt_key: watch::Receiver<Option<CrtKey>>,
 }
 
 /// Produces a `Local` identity once a certificate is available.
@@ -41,7 +40,7 @@ pub struct AwaitCrt(Option<Local>);
 #[derive(Copy, Clone, Debug)]
 pub struct LostDaemon;
 
-pub type CrtKeyStore = Store<Option<CrtKey>>;
+pub type CrtKeySender = watch::Sender<Option<CrtKey>>;
 
 /// Drives updates.
 pub struct Daemon<T>
@@ -51,7 +50,7 @@ where
 {
     config: Config,
     client: api::client::Identity<T>,
-    crt_key: Store<Option<CrtKey>>,
+    crt_key: watch::Sender<Option<CrtKey>>,
     expiry: SystemTime,
     inner: Inner<T>,
 }
@@ -94,8 +93,8 @@ impl Config {
 // === impl Local ===
 
 impl Local {
-    pub fn new(config: &Config) -> (Self, CrtKeyStore) {
-        let (w, s) = Watch::new(None);
+    pub fn new(config: &Config) -> (Self, CrtKeySender) {
+        let (s, w) = watch::channel(None);
         let l = Local {
             name: config.local_name.clone(),
             trust_anchors: config.trust_anchors.clone(),
@@ -115,7 +114,7 @@ impl Local {
 
 impl tls::client::HasConfig for Local {
     fn tls_client_config(&self) -> Arc<tls::client::Config> {
-        if let Some(ref c) = *self.crt_key.borrow() {
+        if let Some(ref c) = *self.crt_key.get_ref() {
             return c.tls_client_config();
         }
 
@@ -129,7 +128,7 @@ impl tls::listen::HasConfig for Local {
     }
 
     fn tls_server_config(&self) -> Arc<tls::listen::Config> {
-        if let Some(ref c) = *self.crt_key.borrow() {
+        if let Some(ref c) = *self.crt_key.get_ref() {
             return c.tls_server_config();
         }
 
@@ -143,7 +142,7 @@ impl<T> Daemon<T>
 where
     T: GrpcService<BoxBody> + Clone,
 {
-    pub fn new(config: Config, crt_key: CrtKeyStore, client: T) -> Self {
+    pub fn new(config: Config, crt_key: CrtKeySender, client: T) -> Self {
         Self {
             config,
             crt_key,
@@ -226,7 +225,7 @@ where
                                         }
                                         Ok(crt_key) => {
                                             debug!("daemon certified until {:?}", expiry);
-                                            if self.crt_key.store(Some(crt_key)).is_err() {
+                                            if self.crt_key.broadcast(Some(crt_key)).is_err() {
                                                 // If we can't store a value, than all observations
                                                 // have been dropped and we can stop refreshing.
                                                 return Ok(Async::Ready(()));
@@ -258,20 +257,19 @@ impl Future for AwaitCrt {
     type Error = LostDaemon;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        use futures::Stream;
-
         let mut local = self.0.take().expect("polled after ready");
         loop {
-            if (*local.crt_key.borrow()).is_some() {
+            if (*local.crt_key.get_ref()).is_some() {
                 return Ok(Async::Ready(local));
             }
 
-            match local.crt_key.poll() {
+            let poll = local.crt_key.poll_ref().map(|a| a.map(|v| v.map(|_| ())));
+            match poll {
+                Ok(Async::Ready(Some(()))) => {} // continue
                 Ok(Async::NotReady) => {
                     self.0 = Some(local);
                     return Ok(Async::NotReady);
                 }
-                Ok(Async::Ready(Some(()))) => {} // continue
                 Err(_) | Ok(Async::Ready(None)) => return Err(LostDaemon),
             }
         }

@@ -1,0 +1,17 @@
+[package]
+name = "linkerd2-task"
+version = "0.1.0"
+authors = ["Oliver Gould <ver@buoyant.io>"]
+edition = "2018"
+publish = false
+
+[features]
+default = []
+test_util = ["tokio-timer"]
+
+[dependencies]
+futures = "0.1"
+tokio = "0.1.7"
+tokio-executor = "0.1.7"
+tokio-timer = { version = "0.2", optional = true }
+tracing = "0.1.2"

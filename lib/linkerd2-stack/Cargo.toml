@@ -1,0 +1,18 @@
+[package]
+name = "linkerd2-stack"
+version = "0.1.0"
+authors = ["Oliver Gould <ver@buoyant.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+log = "0.4.1"
+futures = "0.1"
+linkerd2-never = { path = "../linkerd2-never" }
+tower-layer = "0.1"
+tower-service = "0.2"
+
+[dev-dependencies]
+linkerd2-task = { path = "../linkerd2-task", features = ["test_util"] }
+log = "0.4"
+tokio = "0.1.7"

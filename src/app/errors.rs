@@ -1,9 +1,10 @@
 //! Layer to map HTTP service errors into appropriate `http::Response`s.
 
+use crate::proxy::http::HasH2Reason;
+use crate::svc;
 use futures::{Future, Poll};
-use http::{header, Request, Response, StatusCode};
-
-use svc;
+use http::{header, Request, Response, StatusCode, Version};
+use tracing::{debug, error, warn};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -26,6 +27,7 @@ pub struct Service<S>(S);
 #[derive(Debug)]
 pub struct ResponseFuture<F> {
     inner: F,
+    is_http2: bool,
 }
 
 impl<M> svc::Layer<M> for Layer {
@@ -67,8 +69,9 @@ where
     }
 
     fn call(&mut self, req: Request<B1>) -> Self::Future {
+        let is_http2 = req.version() == Version::HTTP_2;
         let inner = self.0.call(req);
-        ResponseFuture { inner }
+        ResponseFuture { inner, is_http2 }
     }
 }
 
@@ -85,8 +88,17 @@ where
         match self.inner.poll() {
             Ok(ok) => Ok(ok),
             Err(err) => {
+                let err = err.into();
+
+                if self.is_http2 {
+                    if err.h2_reason().is_some() {
+                        debug!("propagating http2 response error: {:?}", err);
+                        return Err(err);
+                    }
+                }
+
                 let response = Response::builder()
-                    .status(map_err_to_5xx(err.into()))
+                    .status(map_err_to_5xx(err))
                     .header(header::CONTENT_LENGTH, "0")
                     .body(B::default())
                     .expect("app::errors response is valid");
@@ -98,8 +110,9 @@ where
 }
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
-    use proxy::buffer;
-    use proxy::http::router::error as router;
+    use crate::app::outbound;
+    use crate::proxy::buffer;
+    use crate::proxy::http::router::error as router;
     use tower::load_shed::error as shed;
 
     if let Some(ref c) = e.downcast_ref::<router::NoCapacity>() {
@@ -114,6 +127,11 @@ fn map_err_to_5xx(e: Error) -> StatusCode {
     } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
         error!("could not recognize request");
         http::StatusCode::BAD_GATEWAY
+    } else if let Some(err) =
+        e.downcast_ref::<outbound::require_identity_on_endpoint::RequireIdentityError>()
+    {
+        error!("{}", err);
+        http::StatusCode::FORBIDDEN
     } else {
         // we probably should have handled this before?
         error!("unexpected error: {}", e);

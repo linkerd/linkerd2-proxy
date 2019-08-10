@@ -1,7 +1,0 @@
-[package]
-name = "linkerd2-never"
-version = "0.1.0"
-authors = ["Sean McArthur <sean@buoyant.io>"]
-publish = false
-
-[dependencies]

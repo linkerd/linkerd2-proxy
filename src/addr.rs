@@ -1,10 +1,9 @@
+pub use crate::dns::Name;
 use http;
+use std::convert::TryFrom;
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
-
-use convert::TryFrom;
-pub use dns::Name;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Addr {
@@ -104,7 +103,7 @@ impl Addr {
 }
 
 impl fmt::Display for Addr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Addr::Name(name) => name.fmt(f),
             Addr::Socket(addr) => addr.fmt(f),
@@ -181,7 +180,7 @@ impl NameAddr {
 }
 
 impl fmt::Display for NameAddr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.name.without_trailing_dot(), self.port)
     }
 }

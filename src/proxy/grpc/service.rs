@@ -1,10 +1,9 @@
 pub mod req_body_as_payload {
+    use super::super::GrpcBody;
+    use crate::svc;
     use futures::Poll;
     use http;
     use hyper::body::Payload;
-
-    use super::super::GrpcBody;
-    use svc;
 
     #[derive(Debug)]
     pub struct Service<S>(S);
@@ -39,12 +38,11 @@ pub mod req_body_as_payload {
 }
 
 pub mod req_box_body {
+    use crate::svc;
     use bytes::Bytes;
     use futures::Poll;
     use http;
     use tower_grpc::{Body, BoxBody};
-
-    use svc;
 
     pub struct Service<S>(S);
 
@@ -75,13 +73,12 @@ pub mod req_box_body {
 }
 
 pub mod res_body_as_payload {
+    use super::super::GrpcBody;
+    use crate::svc;
     use futures::{future, Future, Poll};
     use http;
     use hyper::body::Payload;
     use tower_grpc::Body;
-
-    use super::super::GrpcBody;
-    use svc;
 
     pub struct Service<S>(S);
 
@@ -108,6 +105,27 @@ pub mod res_body_as_payload {
 
         fn call(&mut self, req: http::Request<B1>) -> Self::Future {
             self.0.call(req).map(|res| res.map(GrpcBody::new))
+        }
+    }
+}
+
+pub mod unauthenticated {
+    use futures::{future, stream};
+    use linkerd2_proxy_api::tap as api;
+    use tower_grpc::{Code, Request, Response, Status};
+
+    #[derive(Clone)]
+    pub struct Unauthenticated;
+
+    impl api::server::Tap for Unauthenticated {
+        type ObserveStream = stream::Empty<api::TapEvent, Status>;
+        type ObserveFuture = future::FutureResult<Response<Self::ObserveStream>, Status>;
+
+        fn observe(&mut self, _req: Request<api::ObserveRequest>) -> Self::ObserveFuture {
+            future::err(Status::new(
+                Code::Unauthenticated,
+                "client is not authenticated for the tap server",
+            ))
         }
     }
 }

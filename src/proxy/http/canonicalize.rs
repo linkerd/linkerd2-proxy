@@ -6,18 +6,21 @@
 //! this module may build its inner stack with either `web.example.com.:8080`,
 //! `web.example.net.:8080`, or `web:8080`, depending on the state of DNS.
 //!
-//! DNS TTLs are honored and, if the resolution changes, the inner stack is
-//! rebuilt with the updated value.
+//! DNS TTLs are honored and the most recent value is added to each request's
+//! extensions.
 
-use futures::{sync::mpsc, Async, Future, Poll, Stream};
+use crate::dns;
+use crate::svc;
+use crate::{Addr, NameAddr};
+use futures::{try_ready, Async, Future, Poll, Stream};
 use http;
+use linkerd2_never::Never;
+use log::trace;
 use std::time::Duration;
 use tokio;
+use tokio::sync::{mpsc, oneshot};
 use tokio_timer::{clock, Delay, Timeout};
-
-use dns;
-use svc;
-use {Addr, NameAddr};
+use tracing::{debug, warn};
 
 /// Duration to wait before polling DNS again after an error (or a NXDOMAIN
 /// response with no TTL).
@@ -45,6 +48,8 @@ pub struct Service<S> {
     canonicalized: Option<Addr>,
     inner: S,
     rx: mpsc::Receiver<NameAddr>,
+    /// Notifies the daemon `Task` on drop.
+    _tx_stop: oneshot::Sender<Never>,
 }
 
 struct Task {
@@ -54,6 +59,7 @@ struct Task {
     state: State,
     timeout: Duration,
     tx: mpsc::Sender<NameAddr>,
+    rx_stop: oneshot::Receiver<Never>,
 }
 
 /// Tracks the state of the last resolution.
@@ -136,14 +142,16 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
         let svc = if let Some((na, resolver, timeout)) = self.task.take() {
-            let (tx, rx) = mpsc::channel(2);
+            let (tx, rx) = mpsc::channel(1);
+            let (_tx_stop, rx_stop) = oneshot::channel();
 
-            tokio::spawn(Task::new(na, resolver, timeout, tx));
+            tokio::spawn(Task::new(na, resolver, timeout, tx, rx_stop));
 
             svc::Either::A(Service {
                 canonicalized: None,
                 inner,
                 rx,
+                _tx_stop,
             })
         } else {
             svc::Either::B(inner)
@@ -161,6 +169,7 @@ impl Task {
         resolver: dns::Resolver,
         timeout: Duration,
         tx: mpsc::Sender<NameAddr>,
+        rx_stop: oneshot::Receiver<Never>,
     ) -> Self {
         Self {
             original,
@@ -169,6 +178,7 @@ impl Task {
             state: State::Init,
             timeout,
             tx,
+            rx_stop,
         }
     }
 }
@@ -179,33 +189,62 @@ impl Future for Task {
 
     fn poll(&mut self) -> Poll<(), ()> {
         loop {
+            // If the receiver has been dropped, stop watching for updates.
+            match self.rx_stop.poll() {
+                Ok(Async::NotReady) => {}
+                _ => {
+                    trace!("task complete; name={:?}", self.original);
+                    return Ok(Async::Ready(()));
+                }
+            }
+
             self.state = match self.state {
                 State::Init => {
+                    trace!("task init; name={:?}", self.original);
                     let f = self.resolver.refine(self.original.name());
                     State::Pending(Timeout::new(f, self.timeout))
                 }
                 State::Pending(ref mut fut) => {
+                    // Only poll the resolution for updates when the receiver is
+                    // ready to receive an update.
+                    match self.tx.poll_ready() {
+                        Ok(Async::Ready(())) => {}
+                        Ok(Async::NotReady) => {
+                            trace!("task awaiting capacity; name={:?}", self.original);
+                            return Ok(Async::NotReady);
+                        }
+                        Err(_) => {
+                            trace!("task complete; name={:?}", self.original);
+                            return Ok(Async::Ready(()));
+                        }
+                    };
+
                     match fut.poll() {
                         Ok(Async::NotReady) => {
                             return Ok(Async::NotReady);
                         }
                         Ok(Async::Ready(refine)) => {
+                            trace!(
+                                "task update; name={:?} refined={:?}",
+                                self.original,
+                                refine.name
+                            );
                             // If the resolved name is a new name, bind a
                             // service with it and set a delay that will notify
                             // when the resolver should be consulted again.
                             let resolved = NameAddr::new(refine.name, self.original.port());
                             if self.resolved.get() != Some(&resolved) {
-                                let err = self.tx.try_send(resolved.clone()).err();
-                                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
-                                    return Ok(().into());
-                                }
-
+                                self.tx
+                                    .try_send(resolved.clone())
+                                    .expect("tx failed despite being ready");
                                 self.resolved = Cache::Resolved(resolved);
                             }
 
                             State::ValidUntil(Delay::new(refine.valid_until))
                         }
                         Err(e) => {
+                            trace!("task error; name={:?} err={:?}", self.original, e);
+
                             if self.resolved == Cache::AwaitingInitial {
                                 // The service needs a value, so we need to
                                 // publish the original name so it can proceed.
@@ -214,10 +253,9 @@ impl Future for Task {
                                     self.original.name(),
                                     e,
                                 );
-                                let err = self.tx.try_send(self.original.clone()).err();
-                                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
-                                    return Ok(().into());
-                                }
+                                self.tx
+                                    .try_send(self.original.clone())
+                                    .expect("tx failed despite being ready");
 
                                 // There's now no need to re-publish the
                                 // original name on subsequent failures.
@@ -247,6 +285,8 @@ impl Future for Task {
                 }
 
                 State::ValidUntil(ref mut f) => {
+                    trace!("task idle; name={:?}", self.original);
+
                     match f.poll().expect("timer must not fail") {
                         Async::NotReady => return Ok(Async::NotReady),
                         Async::Ready(()) => {
@@ -286,12 +326,11 @@ where
             debug!("refined: {}", addr);
             self.canonicalized = Some(addr.into());
         }
-
-        if self.canonicalized.is_some() {
-            Ok(Async::Ready(()))
-        } else {
-            Ok(Async::NotReady)
+        if self.canonicalized.is_none() {
+            return Ok(Async::NotReady);
         }
+
+        Ok(Async::Ready(()))
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
@@ -301,5 +340,11 @@ where
             .expect("called before canonicalized address");
         req.extensions_mut().insert(addr);
         self.inner.call(req)
+    }
+}
+
+impl<S> Drop for Service<S> {
+    fn drop(&mut self) {
+        trace!("dropping service; name={:?}", self.canonicalized);
     }
 }

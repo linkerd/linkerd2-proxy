@@ -1,4 +1,9 @@
-use futures::{Async, Future, Poll};
+use super::super::retry::TryClone;
+use super::classify::{ClassifyEos, ClassifyResponse};
+use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
+use crate::proxy::Error;
+use crate::svc;
+use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::body::Payload;
 use std::fmt::Debug;
@@ -7,12 +12,7 @@ use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio_timer::clock;
-
-use super::super::retry::TryClone;
-use super::classify::{ClassifyEos, ClassifyResponse};
-use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
-use proxy::Error;
-use svc;
+use tracing::trace;
 
 /// A stack module that wraps services to record metrics.
 #[derive(Debug)]
@@ -241,17 +241,18 @@ where
 impl<C, S, A, B> svc::Service<http::Request<A>> for Service<S, C>
 where
     S: svc::Service<http::Request<RequestBody<A, C::Class>>, Response = http::Response<B>>,
+    S::Error: Into<Error>,
     A: Payload,
     B: Payload,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
-    type Error = S::Error;
+    type Error = Error;
     type Future = ResponseFuture<S::Future, C>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+        self.inner.poll_ready().map_err(Into::into)
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
@@ -290,32 +291,48 @@ where
 impl<C, F, B> Future for ResponseFuture<F, C>
 where
     F: Future<Item = http::Response<B>>,
+    F::Error: Into<Error>,
     B: Payload,
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Item = http::Response<ResponseBody<B, C::ClassifyEos>>;
-    type Error = F::Error;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let rsp = try_ready!(self.inner.poll());
-
-        let classify = self.classify.take().map(|c| c.start(&rsp));
-
-        let rsp = {
-            let (head, inner) = rsp.into_parts();
-            let body = ResponseBody {
-                status: head.status,
-                classify,
-                metrics: self.metrics.clone(),
-                stream_open_at: self.stream_open_at,
-                latency_recorded: false,
-                inner,
-            };
-            http::Response::from_parts(head, body)
+        let rsp = match self.inner.poll() {
+            Ok(Async::NotReady) => return Ok(Async::NotReady),
+            Ok(Async::Ready(rsp)) => Ok(rsp),
+            Err(e) => Err(e),
         };
 
-        Ok(rsp.into())
+        let classify = self.classify.take();
+        let metrics = self.metrics.take();
+        match rsp {
+            Ok(rsp) => {
+                let classify = classify.map(|c| c.start(&rsp));
+                let (head, inner) = rsp.into_parts();
+                let body = ResponseBody {
+                    status: head.status,
+                    classify,
+                    metrics,
+                    stream_open_at: self.stream_open_at,
+                    latency_recorded: false,
+                    inner,
+                };
+                Ok(http::Response::from_parts(head, body).into())
+            }
+            Err(e) => {
+                let e = e.into();
+                if let Some(lock) = metrics {
+                    if let Some(classify) = classify {
+                        let class = classify.error(&e);
+                        measure_class(&lock, class, None);
+                    }
+                }
+                Err(e)
+            }
+        }
     }
 }
 
@@ -424,7 +441,7 @@ where
 
         let status_metrics = metrics
             .by_status
-            .entry(self.status)
+            .entry(Some(self.status))
             .or_insert_with(|| StatusMetrics::default());
 
         status_metrics.latency.add(now - self.stream_open_at);
@@ -433,37 +450,43 @@ where
     }
 
     fn record_class(&mut self, class: C::Class) {
-        let now = clock::now();
-        let lock = match self.metrics.take() {
-            Some(lock) => lock,
-            None => return,
-        };
-        let mut metrics = match lock.lock() {
-            Ok(m) => m,
-            Err(_) => return,
-        };
-
-        (*metrics).last_update = now;
-
-        let status_metrics = metrics
-            .by_status
-            .entry(self.status)
-            .or_insert_with(|| StatusMetrics::default());
-
-        let class_metrics = status_metrics
-            .by_class
-            .entry(class)
-            .or_insert_with(|| ClassMetrics::default());
-
-        class_metrics.total.incr();
+        if let Some(lock) = self.metrics.take() {
+            measure_class(&lock, class, Some(self.status));
+        }
     }
 
     fn measure_err(&mut self, err: Error) -> Error {
-        if let Some(c) = self.classify.take().map(|c| c.error(&*err)) {
+        if let Some(c) = self.classify.take().map(|c| c.error(&err)) {
             self.record_class(c);
         }
         err
     }
+}
+
+fn measure_class<C: Hash + Eq>(
+    lock: &Arc<Mutex<RequestMetrics<C>>>,
+    class: C,
+    status: Option<http::StatusCode>,
+) {
+    let now = clock::now();
+    let mut metrics = match lock.lock() {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+
+    (*metrics).last_update = now;
+
+    let status_metrics = metrics
+        .by_status
+        .entry(status)
+        .or_insert_with(|| StatusMetrics::default());
+
+    let class_metrics = status_metrics
+        .by_class
+        .entry(class)
+        .or_insert_with(|| ClassMetrics::default());
+
+    class_metrics.total.incr();
 }
 
 impl<B, C> Payload for ResponseBody<B, C>
