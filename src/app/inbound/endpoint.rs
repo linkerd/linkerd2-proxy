@@ -1,11 +1,9 @@
-use super::classify;
-use super::dst::DstAddr;
-use super::identity;
+use super::super::dst::{DstAddr, Route};
+use super::super::{classify, identity};
 use crate::proxy::http::{router, settings};
 use crate::proxy::server::Source;
-use crate::tap;
 use crate::transport::{connect, tls};
-use crate::{Conditional, NameAddr};
+use crate::{tap, Conditional, NameAddr};
 use http;
 use indexmap::IndexMap;
 use std::fmt;
@@ -96,9 +94,7 @@ impl tap::Inspect for Endpoint {
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
-        req.extensions()
-            .get::<super::dst::Route>()
-            .map(|r| r.labels().clone())
+        req.extensions().get::<Route>().map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
@@ -152,154 +148,6 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
             dst_name,
             http_settings,
             tls_client_id,
-        })
-    }
-}
-
-pub mod orig_proto_downgrade {
-    use crate::proxy::http::orig_proto;
-    use crate::proxy::server::Source;
-    use crate::svc;
-    use futures::{Future, Poll};
-    use http;
-    use std::marker::PhantomData;
-    use tracing::trace;
-
-    #[derive(Debug)]
-    pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
-
-    #[derive(Debug)]
-    pub struct Stack<M, A, B> {
-        inner: M,
-        _marker: PhantomData<fn(A) -> B>,
-    }
-
-    // === impl Layer ===
-
-    pub fn layer<A, B>() -> Layer<A, B> {
-        Layer(PhantomData)
-    }
-
-    impl<A, B> Clone for Layer<A, B> {
-        fn clone(&self) -> Self {
-            Layer(PhantomData)
-        }
-    }
-
-    impl<M, A, B> svc::Layer<M> for Layer<A, B>
-    where
-        M: svc::MakeService<Source, http::Request<A>, Response = http::Response<B>>,
-    {
-        type Service = Stack<M, A, B>;
-
-        fn layer(&self, inner: M) -> Self::Service {
-            Stack {
-                inner,
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    // === impl Stack ===
-
-    impl<M: Clone, A, B> Clone for Stack<M, A, B> {
-        fn clone(&self) -> Self {
-            Stack {
-                inner: self.inner.clone(),
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    impl<M, A, B> svc::Service<Source> for Stack<M, A, B>
-    where
-        M: svc::MakeService<Source, http::Request<A>, Response = http::Response<B>>,
-    {
-        type Response = orig_proto::Downgrade<M::Service>;
-        type Error = M::MakeError;
-        type Future = futures::future::Map<M::Future, fn(M::Service) -> Self::Response>;
-
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
-        }
-
-        fn call(&mut self, target: Source) -> Self::Future {
-            trace!(
-                "supporting {} downgrades for source={:?}",
-                orig_proto::L5D_ORIG_PROTO,
-                target,
-            );
-            self.inner
-                .make_service(target)
-                .map(orig_proto::Downgrade::new)
-        }
-    }
-}
-
-/// Rewrites connect `SocketAddr`s IP address to the loopback address (`127.0.0.1`),
-/// with the same port still set.
-pub mod rewrite_loopback_addr {
-    use super::Endpoint;
-    use crate::svc::stack::map_target;
-    use std::net::SocketAddr;
-    use tracing::debug;
-
-    pub fn layer() -> map_target::Layer<impl Fn(Endpoint) -> Endpoint + Copy> {
-        map_target::layer(|mut ep: Endpoint| {
-            debug!("rewriting inbound address to loopback; addr={:?}", ep.addr);
-            ep.addr = SocketAddr::from(([127, 0, 0, 1], ep.addr.port()));
-            ep
-        })
-    }
-}
-
-/// Adds `l5d-client-id` headers to http::Requests derived from the
-/// TlsIdentity of a `Source`.
-#[allow(dead_code)] // TODO #2597
-pub mod set_client_id_on_req {
-    use super::super::L5D_CLIENT_ID;
-    use crate::proxy::{
-        http::add_header::{self, request::ReqHeader, Layer},
-        server::Source,
-    };
-    use crate::Conditional;
-    use http::header::HeaderValue;
-    use tracing::{debug, warn};
-
-    pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
-        add_header::request::layer(L5D_CLIENT_ID, |source: &Source| {
-            if let Conditional::Some(ref id) = source.tls_peer {
-                match HeaderValue::from_str(id.as_ref()) {
-                    Ok(value) => {
-                        debug!("l5d-client-id enabled for {:?}", source);
-                        return Some(value);
-                    }
-                    Err(_err) => {
-                        warn!("l5d-client-id identity header is invalid: {:?}", source);
-                    }
-                };
-            }
-
-            None
-        })
-    }
-}
-
-/// Adds `l5d-remote-ip` headers to http::Requests derived from the
-/// `remote` of a `Source`.
-#[allow(dead_code)] // TODO #2597
-pub mod set_remote_ip_on_req {
-    use super::super::L5D_REMOTE_IP;
-    use crate::proxy::{
-        http::add_header::{self, request::ReqHeader, Layer},
-        server::Source,
-    };
-    use bytes::Bytes;
-    use http::header::HeaderValue;
-
-    pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
-        add_header::request::layer(L5D_REMOTE_IP, |source: &Source| {
-            HeaderValue::from_shared(Bytes::from(source.remote.ip().to_string())).ok()
         })
     }
 }
