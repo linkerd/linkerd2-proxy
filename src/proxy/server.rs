@@ -72,9 +72,8 @@ where
     log: logging::Server,
 }
 
-pub trait Serve {
-    type Future: Future<Item = (), Error = ()> + Send + 'static;
-    fn serve(&mut self, conn: Connection, addr: SocketAddr) -> Self::Future;
+pub trait SpawnConnection {
+    fn spawn_connection(&mut self, conn: Connection, remote: SocketAddr);
 }
 
 /// Describes an accepted connection.
@@ -207,7 +206,7 @@ where
             MakeError = Never,
         > + Clone,
     B: hyper::body::Payload,
-    Self: Serve,
+    Self: SpawnConnection,
 {
     /// Creates a new `Server`.
     pub fn new(
@@ -234,7 +233,7 @@ where
     }
 }
 
-impl<A, T, C, H, B> Serve for Server<A, T, C, H, B>
+impl<A, T, C, H, B> SpawnConnection for Server<A, T, C, H, B>
 where
     A: Accept<Connection> + Send + 'static,
     A::Io: fmt::Debug + Send + Peek + 'static,
@@ -257,15 +256,13 @@ where
     <H::Service as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
 {
-    type Future = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
-
     /// Handle a new connection.
     ///
     /// This will peek on the connection for the first bytes to determine
     /// what protocol the connection is speaking. From there, the connection
     /// will be mapped into respective services, and spawned into an
     /// executor.
-    fn serve(&mut self, connection: Connection, remote_addr: SocketAddr) -> Self::Future {
+    fn spawn_connection(&mut self, connection: Connection, remote_addr: SocketAddr) {
         let source = Source {
             remote: remote_addr,
             local: connection.local_addr().unwrap_or(self.listen_addr),
@@ -347,6 +344,6 @@ where
             }),
         });
 
-        Box::new(log.future(serve_fut))
+        linkerd2_task::spawn(log.future(serve_fut));
     }
 }

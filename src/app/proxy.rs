@@ -1,5 +1,5 @@
 use crate::app::identity::Local as LocalIdentity;
-use crate::proxy::Serve;
+use crate::proxy::SpawnConnection;
 use crate::transport::{GetOriginalDst, Listen};
 use futures::{self, future, Future, Poll};
 use tracing::error;
@@ -9,21 +9,20 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 
 pub fn spawn<G, S>(listen: Listen<LocalIdentity, G>, server: S, drain: linkerd2_drain::Watch)
 where
-    S: Serve + Send + 'static,
+    S: SpawnConnection + Send + 'static,
     G: GetOriginalDst + Send + 'static,
 {
     let serve = listen
-        .listen_and_fold(server, move |mut server, (connection, remote)| {
-            linkerd2_task::spawn(server.serve(connection, remote));
+        .listen_and_fold(server, move |mut server, (conn, addr)| {
+            server.spawn_connection(conn, addr);
             future::ok(server)
         })
         .map_err(|e| error!("failed to listen for connection: {}", e));
 
     // As soon as we get a shutdown signal, the listener task completes and
     // stops accepting new connections.
-    linkerd2_task::spawn(drain.watch(Cancelable::new(serve), |c| {
-        c.canceled = true;
-    }));
+    let fut = drain.watch(Cancelable::new(serve), |c| c.cancel());
+    linkerd2_task::spawn(fut);
 }
 
 /// Can cancel a future by setting a flag.
@@ -41,6 +40,10 @@ impl<F: Future<Item = ()>> Cancelable<F> {
             future,
             canceled: false,
         }
+    }
+
+    fn cancel(&mut self) {
+        self.canceled = true;
     }
 }
 
