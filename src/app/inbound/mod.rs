@@ -12,25 +12,25 @@ use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{accept, reconnect, Server};
-use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
+use crate::proxy::{accept, reconnect, Server, SpawnConnection};
+use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr};
+use std::net::SocketAddr;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
 
-pub fn spawn<G, P>(
-    drain: linkerd2_drain::Watch,
+pub fn server<P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
-    listen: Listen<identity::Local, G>,
+    local_addr: SocketAddr,
     profiles_client: super::profiles::Client<P>,
     tap_layer: crate::tap::Layer,
     handle_time: http_metrics::handle_time::Scope,
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-) where
-    G: GetOriginalDst + Send + 'static,
+) -> impl SpawnConnection
+where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
@@ -197,15 +197,12 @@ pub fn spawn<G, P>(
         .layer(transport_metrics.accept("inbound"))
         .layer(keepalive::accept::layer(config.inbound_accept_keepalive));
 
-    let server = Server::new(
+    Server::new(
         "out",
-        listen.local_addr(),
+        local_addr,
         accept,
         connect,
         source_stack,
         config.h2_settings,
-        drain.clone(),
-    );
-
-    super::proxy::spawn(listen, server, drain);
+    )
 }

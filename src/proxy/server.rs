@@ -62,7 +62,6 @@ where
         > + Clone,
     B: hyper::body::Payload,
 {
-    drain_signal: drain::Watch,
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
     listen_addr: SocketAddr,
@@ -73,7 +72,7 @@ where
 }
 
 pub trait SpawnConnection {
-    fn spawn_connection(&mut self, conn: Connection, remote: SocketAddr);
+    fn spawn_connection(&mut self, conn: Connection, remote: SocketAddr, drain: drain::Watch);
 }
 
 /// Describes an accepted connection.
@@ -216,12 +215,10 @@ where
         connect: C,
         make_http: H,
         h2_settings: H2Settings,
-        drain_signal: drain::Watch,
     ) -> Self {
         let connect = ForwardConnect(connect, PhantomData);
         let log = logging::Server::proxy(proxy_name, listen_addr);
         Self {
-            drain_signal,
             http: hyper::server::conn::Http::new(),
             h2_settings,
             listen_addr,
@@ -262,7 +259,12 @@ where
     /// what protocol the connection is speaking. From there, the connection
     /// will be mapped into respective services, and spawned into an
     /// executor.
-    fn spawn_connection(&mut self, connection: Connection, remote_addr: SocketAddr) {
+    fn spawn_connection(
+        &mut self,
+        connection: Connection,
+        remote_addr: SocketAddr,
+        drain: drain::Watch,
+    ) {
         let source = Source {
             remote: remote_addr,
             local: connection.local_addr().unwrap_or(self.listen_addr),
@@ -293,7 +295,6 @@ where
 
         let mut http = self.http.clone();
         let mut make_http = self.make_http.clone();
-        let drain_signal = self.drain_signal.clone();
         let log_clone = log.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
@@ -301,7 +302,7 @@ where
             None => {
                 trace!("did not detect protocol; forwarding TCP");
                 let fwd = tcp::forward(io, connect, source);
-                Either::A(drain_signal.watch(fwd, |_| {}))
+                Either::A(drain.watch(fwd, |_| {}))
             }
 
             Some(proto) => Either::B({
@@ -314,14 +315,14 @@ where
                             // Enable support for HTTP upgrades (CONNECT and websockets).
                             let svc = upgrade::Service::new(
                                 http_svc,
-                                drain_signal.clone(),
+                                drain.clone(),
                                 log_clone.executor(),
                             );
                             let conn = http
                                 .http1_only(true)
                                 .serve_connection(io, HyperServerSvc::new(svc))
                                 .with_upgrades();
-                            drain_signal
+                            drain
                                 .watch(conn, |conn| conn.graceful_shutdown())
                                 .map(|_| ())
                                 .map_err(|e| debug!("http1 server error: {:?}", e))
@@ -335,7 +336,7 @@ where
                                 .http2_initial_stream_window_size(initial_stream_window_size)
                                 .http2_initial_connection_window_size(initial_conn_window_size)
                                 .serve_connection(io, HyperServerSvc::new(http_svc));
-                            drain_signal
+                            drain
                                 .watch(conn, |conn| conn.graceful_shutdown())
                                 .map(|_| ())
                                 .map_err(|e| debug!("http2 server error: {:?}", e))

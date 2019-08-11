@@ -17,9 +17,10 @@ use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, reconnect, resolve, Server};
-use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
+use crate::proxy::{self, accept, reconnect, resolve, Server, SpawnConnection};
+use crate::transport::{self, connect, keepalive, tls, Listen};
 use crate::{svc, Addr, NameAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
@@ -27,11 +28,10 @@ use tracing::debug;
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-pub fn spawn<G, R, P>(
-    drain: linkerd2_drain::Watch,
+pub fn server<R, P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
-    listen: Listen<identity::Local, G>,
+    local_addr: SocketAddr,
     resolve: R,
     dns_resolver: crate::dns::Resolver,
     profiles_client: super::profiles::Client<P>,
@@ -41,8 +41,8 @@ pub fn spawn<G, R, P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-) where
-    G: GetOriginalDst + Send + 'static,
+) -> impl SpawnConnection
+where
     R: resolve::Resolve<NameAddr, Endpoint = Metadata, Error = Unresolvable>
         + Clone
         + Send
@@ -272,15 +272,12 @@ pub fn spawn<G, R, P>(
         .layer(transport_metrics.accept("outbound"))
         .layer(keepalive::accept::layer(config.outbound_accept_keepalive));
 
-    let server = Server::new(
+    Server::new(
         "out",
-        listen.local_addr(),
+        local_addr,
         accept,
         connect,
         server_stack,
         config.h2_settings,
-        drain.clone(),
-    );
-
-    super::proxy::spawn(listen, server, drain);
+    )
 }

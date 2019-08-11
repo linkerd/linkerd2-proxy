@@ -13,6 +13,6 @@ mod tcp;
 
 pub use self::accept::Accept;
 pub use self::resolve::{Resolution, Resolve};
-pub use self::server::{SpawnConnection, Server, Source};
+pub use self::server::{Server, Source, SpawnConnection};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;

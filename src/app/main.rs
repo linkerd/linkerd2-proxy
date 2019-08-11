@@ -401,11 +401,10 @@ where
             config.destination_context.clone(),
         );
 
-        outbound::spawn(
-            drain_rx.clone(),
+        let outbound_server = outbound::server(
             &config,
             local_identity.clone(),
-            outbound_listener,
+            outbound_listener.local_addr(),
             resolver,
             dns_resolver,
             profiles_client.clone(),
@@ -417,11 +416,10 @@ where
             transport_metrics.clone(),
         );
 
-        inbound::spawn(
-            drain_rx,
+        let inbound_server = inbound::server(
             &config,
             local_identity.clone(),
-            inbound_listener,
+            inbound_listener.local_addr(),
             profiles_client,
             tap_layer,
             inbound_handle_time,
@@ -429,5 +427,8 @@ where
             route_http_metrics,
             transport_metrics,
         );
+
+        super::proxy::spawn(outbound_listener, outbound_server, drain_rx.clone());
+        super::proxy::spawn(inbound_listener, inbound_server, drain_rx);
     }
 }

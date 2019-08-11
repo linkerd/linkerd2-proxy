@@ -13,10 +13,13 @@ where
     G: GetOriginalDst + Send + 'static,
 {
     let serve = listen
-        .listen_and_fold(server, move |mut server, (conn, addr)| {
-            server.spawn_connection(conn, addr);
-            future::ok(server)
-        })
+        .listen_and_fold(
+            (server, drain.clone()),
+            |(mut server, drain), (conn, addr)| {
+                server.spawn_connection(conn, addr, drain.clone());
+                future::ok((server, drain))
+            },
+        )
         .map_err(|e| error!("failed to listen for connection: {}", e));
 
     // As soon as we get a shutdown signal, the listener task completes and
