@@ -7,19 +7,19 @@ mod set_client_id_on_req;
 mod set_remote_ip_on_req;
 
 pub use self::endpoint::{Endpoint, RecognizeEndpoint};
-use super::proxy::{Proxy, Spawn};
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{accept, reconnect};
+use crate::proxy::{accept, reconnect, Server};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{svc, Addr};
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
 
-pub fn proxy<G, P>(
+pub fn spawn<G, P>(
+    drain: linkerd2_drain::Watch,
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
     listen: Listen<identity::Local, G>,
@@ -29,8 +29,7 @@ pub fn proxy<G, P>(
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-) -> impl Spawn
-where
+) where
     G: GetOriginalDst + Send + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
@@ -198,12 +197,15 @@ where
         .layer(transport_metrics.accept("inbound"))
         .layer(keepalive::accept::layer(config.inbound_accept_keepalive));
 
-    Proxy::new(
-        "in",
-        listen,
+    let server = Server::new(
+        "out",
+        listen.local_addr(),
         accept,
         connect,
         source_stack,
         config.h2_settings,
-    )
+        drain.clone(),
+    );
+
+    super::proxy::spawn(listen, server, drain);
 }

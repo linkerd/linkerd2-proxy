@@ -11,14 +11,13 @@ mod require_identity_on_endpoint;
 
 pub(super) use self::endpoint::Endpoint;
 pub(super) use self::require_identity_on_endpoint::RequireIdentityError;
-use super::proxy::{Proxy, Spawn};
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::control::destination::{Metadata, Unresolvable};
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, reconnect, resolve};
+use crate::proxy::{self, accept, reconnect, resolve, Server};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{svc, Addr, NameAddr};
 use std::time::Duration;
@@ -28,7 +27,8 @@ use tracing::debug;
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-pub fn proxy<G, R, P>(
+pub fn spawn<G, R, P>(
+    drain: linkerd2_drain::Watch,
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
     listen: Listen<identity::Local, G>,
@@ -41,8 +41,7 @@ pub fn proxy<G, R, P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-) -> impl Spawn
-where
+) where
     G: GetOriginalDst + Send + 'static,
     R: resolve::Resolve<NameAddr, Endpoint = Metadata, Error = Unresolvable>
         + Clone
@@ -273,12 +272,15 @@ where
         .layer(transport_metrics.accept("outbound"))
         .layer(keepalive::accept::layer(config.outbound_accept_keepalive));
 
-    Proxy::new(
+    let server = Server::new(
         "out",
-        listen,
+        listen.local_addr(),
         accept,
         connect,
         server_stack,
         config.h2_settings,
-    )
+        drain.clone(),
+    );
+
+    super::proxy::spawn(listen, server, drain);
 }

@@ -1,11 +1,9 @@
 use super::admin::{Admin, Readiness};
 use super::classify::{self, Class};
-use super::handle_time;
 use super::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use super::profiles::Client as ProfilesClient;
-use super::proxy::Spawn;
-use super::tap::serve_tap;
 use super::{config::Config, identity};
+use super::{handle_time, inbound, outbound, tap::serve_tap};
 use crate::proxy::{self, http::metrics as http_metrics, reconnect};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
@@ -403,7 +401,8 @@ where
             config.destination_context.clone(),
         );
 
-        let outbound = super::outbound::proxy(
+        outbound::spawn(
+            drain_rx.clone(),
             &config,
             local_identity.clone(),
             outbound_listener,
@@ -417,9 +416,9 @@ where
             retry_http_metrics,
             transport_metrics.clone(),
         );
-        outbound.spawn(drain_rx.clone());
 
-        let inbound = super::inbound::proxy(
+        inbound::spawn(
+            drain_rx,
             &config,
             local_identity.clone(),
             inbound_listener,
@@ -430,6 +429,5 @@ where
             route_http_metrics,
             transport_metrics,
         );
-        inbound.spawn(drain_rx);
     }
 }
