@@ -7,7 +7,7 @@ use tracing::{debug, info, trace};
 
 /// Attempt to proxy the `server_io` stream to a `T`-typed target.
 ///
-/// If the trget is not valid, an error is logged and the server stream is
+/// If the target is not valid, an error is logged and the server stream is
 /// dropped.
 pub(super) fn forward<I, C, T>(
     server_io: I,

@@ -41,7 +41,7 @@ use tracing::{debug, trace};
 ///    buffered until the server can determine whether the streams begins with a
 ///    HTTP/1 or HTTP/2 preamble.
 ///
-/// 5. If the stream is not determined to be HTTP, then the orignal destination
+/// 5. If the stream is not determined to be HTTP, then the original destination
 ///    address is used to transparently forward the TCP stream. A `C`-typed
 ///    `Connect` `Stack` is used to build a connection to the destination (i.e.,
 ///    instrumented with telemetry, etc).
