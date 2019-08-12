@@ -190,12 +190,12 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self.updater.hangup.poll() {
             Ok(Async::Ready(never)) => match never {}, // unreachable!
-            Ok(Async::NotReady) => {},
+            Ok(Async::NotReady) => {}
             Err(_) => {
                 // Hangup tx has been dropped.
                 debug!("resolution cancelled");
                 return Ok(Async::Ready(()));
-            },
+            }
         };
 
         loop {
