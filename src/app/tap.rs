@@ -60,8 +60,8 @@ where
     let fut = {
         let log = log.clone();
         bound_port
-            .listen_and_fold(new_service, move |mut new_service, (session, remote)| {
-                let log = log.clone().with_remote(remote);
+            .listen_and_fold(new_service, move |mut new_service, session| {
+                let log = log.clone().with_remote(session.remote_addr());
                 trace!("expecting Tap client name: {:?}", tap_svc_name);
 
                 let is_tap_service = match session.peer_identity() {

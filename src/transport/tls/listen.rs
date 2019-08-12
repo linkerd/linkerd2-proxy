@@ -9,6 +9,7 @@ use futures::{
     stream, try_ready, Async, Future, IntoFuture, Poll, Stream,
 };
 use indexmap::IndexSet;
+use linkerd2_proxy_core::{drain, Error, ListenAndSpawn, ServeConnection};
 pub use rustls::ServerConfig as Config;
 use std::io;
 use std::net::{SocketAddr, TcpListener as StdListener};
@@ -42,11 +43,12 @@ pub struct Listen<L, G = ()> {
 /// A server socket that is in the process of conditionally upgrading to TLS.
 enum Handshake {
     Init(Option<Inner>),
-    Upgrade(super::Accept<Prefixed<TcpStream>>),
+    Upgrade(super::Accept<Prefixed<TcpStream>>, SocketAddr),
 }
 
 struct Inner {
     socket: TcpStream,
+    remote_addr: SocketAddr,
     config: Arc<Config>,
     server_name: identity::Name,
     peek_buf: BytesMut,
@@ -107,7 +109,7 @@ impl<L: HasConfig, G> Listen<L, G> {
         f: F,
     ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
     where
-        F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
+        F: Fn(T, Connection) -> Fut + Send + 'static,
         T: Send + 'static,
         L: Send + 'static,
         G: Send + 'static,
@@ -126,7 +128,7 @@ impl<L: HasConfig, G> Listen<L, G> {
         f: F,
     ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
     where
-        F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
+        F: Fn(T, Connection) -> Fut + Send + 'static,
         T: Send + 'static,
         L: Send + 'static,
         G: Send + 'static,
@@ -144,7 +146,7 @@ impl<L: HasConfig, G> Listen<L, G> {
         f: F,
     ) -> impl Future<Item = (), Error = io::Error> + Send + 'static
     where
-        F: Fn(T, (Connection, SocketAddr)) -> Fut + Send + 'static,
+        F: Fn(T, Connection) -> Fut + Send + 'static,
         T: Send + 'static,
         L: Send + 'static,
         G: Send + 'static,
@@ -182,7 +184,7 @@ impl<L: HasConfig, G> Listen<L, G> {
 
                     self.new_conn(socket, remote_addr).then(move |r| {
                         future::ok(match r {
-                            Ok(conn) => Some((conn, remote_addr)),
+                            Ok(conn) => Some(conn),
                             Err(err) => {
                                 debug!("error handshaking with {}: {}", remote_addr, err);
                                 None
@@ -217,8 +219,8 @@ impl<L: HasConfig, G> Listen<L, G> {
                     "accepted connection from {} to {}; skipping protocol detection",
                     remote_addr, addr,
                 );
-                let conn =
-                    Connection::without_protocol_detection(socket).with_original_dst(Some(addr));
+                let conn = Connection::without_protocol_detection(socket, remote_addr)
+                    .with_original_dst(Some(addr));
                 Either::A(future::ok(conn))
             }
             // TLS is enabled. Try to accept a TLS handshake.
@@ -227,7 +229,8 @@ impl<L: HasConfig, G> Listen<L, G> {
                     "accepted connection from {} to {:?}; attempting TLS handshake",
                     remote_addr, dst,
                 );
-                let handshake = Handshake::new(socket, tls).map(move |c| c.with_original_dst(dst));
+                let handshake =
+                    Handshake::new(socket, remote_addr, tls).map(move |c| c.with_original_dst(dst));
                 Either::B(Either::A(handshake))
             }
             // TLS is disabled. Return a new plaintext connection.
@@ -236,10 +239,35 @@ impl<L: HasConfig, G> Listen<L, G> {
                     "accepted connection from {} to {:?}; skipping TLS ({})",
                     remote_addr, dst, why_no_tls,
                 );
-                let conn = Connection::plain(socket, *why_no_tls).with_original_dst(dst);
+                let conn =
+                    Connection::plain(socket, remote_addr, *why_no_tls).with_original_dst(dst);
                 Either::B(Either::B(future::ok(conn)))
             }
         }
+    }
+}
+
+impl<L, G> ListenAndSpawn for Listen<L, G>
+where
+    L: HasConfig + Send + 'static,
+    G: Send + 'static,
+    Self: GetOriginalDst,
+{
+    type Connection = Connection;
+
+    fn listen_and_spawn<S>(
+        self,
+        serve: S,
+        drain: drain::Watch,
+    ) -> Box<dyn Future<Item = (), Error = Error> + Send + 'static>
+    where
+        S: ServeConnection<Self::Connection> + Send + 'static,
+    {
+        let fut = self.listen_and_fold((serve, drain), |(mut serve, drain), conn| {
+            linkerd2_task::spawn(serve.serve_connection(conn, drain.clone()));
+            future::ok((serve, drain))
+        });
+        Box::new(fut.map_err(Into::into))
     }
 }
 
@@ -258,9 +286,10 @@ impl<L, G: GetOriginalDst> GetOriginalDst for Listen<L, G> {
 // === impl Handshake ===
 
 impl Handshake {
-    fn new<T: HasConfig>(socket: TcpStream, tls: &T) -> Self {
+    fn new<T: HasConfig>(socket: TcpStream, remote_addr: SocketAddr, tls: &T) -> Self {
         Handshake::Init(Some(Inner {
             socket,
+            remote_addr,
             server_name: tls.tls_server_name(),
             config: tls.tls_server_config(),
             peek_buf: BytesMut::with_capacity(8192),
@@ -312,7 +341,7 @@ impl Future for Handshake {
                         }
                     }
                 }
-                Handshake::Upgrade(future) => {
+                Handshake::Upgrade(future, remote_addr) => {
                     let io = try_ready!(future.poll());
                     let client_id = Self::client_identity(&io)
                         .map(Conditional::Some)
@@ -322,7 +351,7 @@ impl Future for Handshake {
                     trace!("accepted TLS connection; client={:?}", client_id);
 
                     let io = BoxedIo::new(super::TlsIo::from(io));
-                    return Ok(Async::Ready(Connection::tls(io, client_id)));
+                    return Ok(Async::Ready(Connection::tls(io, *remote_addr, client_id)));
                 }
             }
         }
@@ -351,12 +380,13 @@ impl Inner {
     fn into_tls_upgrade(self) -> Handshake {
         let future = Acceptor::from(self.config.clone())
             .accept(Prefixed::new(self.peek_buf.freeze(), self.socket));
-        Handshake::Upgrade(future)
+        Handshake::Upgrade(future, self.remote_addr)
     }
 
     fn into_plaintext(self) -> Connection {
         Connection::plain_with_peek_buf(
             self.socket,
+            self.remote_addr,
             self.peek_buf,
             ReasonForNoPeerName::NotProvidedByRemote.into(),
         )

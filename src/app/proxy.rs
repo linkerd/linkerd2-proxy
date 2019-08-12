@@ -1,25 +1,14 @@
-use crate::app::identity::Local as LocalIdentity;
-use crate::proxy::SpawnConnection;
-use crate::transport::{GetOriginalDst, Listen};
-use futures::{self, future, Future, Poll};
+use futures::{self, Future, Poll};
+use linkerd2_proxy_core::{drain, ListenAndSpawn, ServeConnection};
 use tracing::error;
 
-#[allow(dead_code)] // rustc can't detect this is used in constraints
-type Error = Box<dyn std::error::Error + Send + Sync>;
-
-pub fn spawn<G, S>(listen: Listen<LocalIdentity, G>, server: S, drain: linkerd2_drain::Watch)
+pub fn spawn<L, S>(listen: L, server: S, drain: drain::Watch)
 where
-    S: SpawnConnection + Send + 'static,
-    G: GetOriginalDst + Send + 'static,
+    L: ListenAndSpawn + Send + 'static,
+    S: ServeConnection<L::Connection> + Send + 'static,
 {
     let serve = listen
-        .listen_and_fold(
-            (server, drain.clone()),
-            |(mut server, drain), (conn, addr)| {
-                server.spawn_connection(conn, addr, drain.clone());
-                future::ok((server, drain))
-            },
-        )
+        .listen_and_spawn(server, drain.clone())
         .map_err(|e| error!("failed to listen for connection: {}", e));
 
     // As soon as we get a shutdown signal, the listener task completes and

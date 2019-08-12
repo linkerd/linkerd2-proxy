@@ -85,6 +85,10 @@ impl<S> AddrInfo for Prefixed<S>
 where
     S: AddrInfo,
 {
+    fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.io.remote_addr()
+    }
+
     fn local_addr(&self) -> Result<SocketAddr, io::Error> {
         self.io.local_addr()
     }

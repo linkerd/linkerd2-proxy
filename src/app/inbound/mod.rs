@@ -12,9 +12,10 @@ use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{accept, reconnect, Server, SpawnConnection};
-use crate::transport::{self, connect, keepalive, tls};
+use crate::proxy::{accept, reconnect, Server};
+use crate::transport::{self, connect, keepalive, tls, Connection};
 use crate::{svc, Addr};
+use linkerd2_proxy_core::ServeConnection;
 use std::net::SocketAddr;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
@@ -29,7 +30,7 @@ pub fn server<P>(
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-) -> impl SpawnConnection
+) -> impl ServeConnection<Connection>
 where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,

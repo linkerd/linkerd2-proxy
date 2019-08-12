@@ -29,10 +29,11 @@ where
     let fut = {
         let log = log.clone();
         bound_port
-            .listen_and_fold(Http::new(), move |hyper, (conn, remote)| {
+            .listen_and_fold(Http::new(), move |hyper, conn| {
                 // Since the `/proxy-log-level` controls access based on the
                 // client's IP address, we wrap the service with a new service
                 // that adds the remote IP as a request extension.
+                let remote = conn.remote_addr();
                 let svc = service.clone();
                 let svc = service_fn(move |mut req| {
                     let mut svc = svc.clone();

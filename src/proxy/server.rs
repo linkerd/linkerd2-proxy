@@ -5,19 +5,17 @@ use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
     upgrade,
 };
-use crate::proxy::protocol::Protocol;
-use crate::proxy::{tcp, Error};
+use crate::proxy::{protocol::Protocol, tcp};
 use crate::svc::{MakeService, Service};
 use crate::transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
-use futures::{future, Poll};
-use futures::{future::Either, Future};
+use futures::future::{self, Either};
+use futures::{Future, Poll};
 use http;
 use hyper;
-use linkerd2_drain as drain;
-use linkerd2_never::Never;
+use linkerd2_proxy_core::{drain, Error, Never, ServeConnection};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
@@ -69,10 +67,6 @@ where
     connect: ForwardConnect<T, C>,
     make_http: H,
     log: logging::Server,
-}
-
-pub trait SpawnConnection {
-    fn spawn_connection(&mut self, conn: Connection, remote: SocketAddr, drain: drain::Watch);
 }
 
 /// Describes an accepted connection.
@@ -205,7 +199,7 @@ where
             MakeError = Never,
         > + Clone,
     B: hyper::body::Payload,
-    Self: SpawnConnection,
+    Self: ServeConnection<Connection>,
 {
     /// Creates a new `Server`.
     pub fn new(
@@ -230,7 +224,7 @@ where
     }
 }
 
-impl<A, T, C, H, B> SpawnConnection for Server<A, T, C, H, B>
+impl<A, T, C, H, B> ServeConnection<Connection> for Server<A, T, C, H, B>
 where
     A: Accept<Connection> + Send + 'static,
     A::Io: fmt::Debug + Send + Peek + 'static,
@@ -259,14 +253,13 @@ where
     /// what protocol the connection is speaking. From there, the connection
     /// will be mapped into respective services, and spawned into an
     /// executor.
-    fn spawn_connection(
+    fn serve_connection(
         &mut self,
         connection: Connection,
-        remote_addr: SocketAddr,
         drain: drain::Watch,
-    ) {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send + 'static> {
         let source = Source {
-            remote: remote_addr,
+            remote: connection.remote_addr(),
             local: connection.local_addr().unwrap_or(self.listen_addr),
             orig_dst: connection.original_dst_addr(),
             tls_peer: connection.peer_identity(),
@@ -291,7 +284,7 @@ where
         };
 
         let connect = self.connect.clone();
-        let log = self.log.clone().with_remote(remote_addr);
+        let log = self.log.clone().with_remote(source.remote);
 
         let mut http = self.http.clone();
         let mut make_http = self.make_http.clone();
@@ -345,6 +338,6 @@ where
             }),
         });
 
-        linkerd2_task::spawn(log.future(serve_fut));
+        Box::new(serve_fut)
     }
 }

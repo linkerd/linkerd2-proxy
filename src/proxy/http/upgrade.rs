@@ -7,7 +7,7 @@ use futures::{
     Future, Poll,
 };
 use hyper::upgrade::OnUpgrade;
-use linkerd2_drain as drain;
+use linkerd2_proxy_core::drain;
 use linkerd2_task::{BoxSendFuture, ErasedExecutor, Executor};
 use std::fmt;
 use std::mem;

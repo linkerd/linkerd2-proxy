@@ -17,9 +17,11 @@ use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, reconnect, resolve, Server, SpawnConnection};
+use crate::proxy::{self, accept, reconnect, resolve, Server};
+use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls, Listen};
 use crate::{svc, Addr, NameAddr};
+use linkerd2_proxy_core::ServeConnection;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -41,7 +43,7 @@ pub fn server<R, P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-) -> impl SpawnConnection
+) -> impl ServeConnection<Connection>
 where
     R: resolve::Resolve<NameAddr, Endpoint = Metadata, Error = Unresolvable>
         + Clone

@@ -6,10 +6,15 @@ use tracing::trace;
 
 pub trait AddrInfo: Debug {
     fn local_addr(&self) -> Result<SocketAddr, io::Error>;
+    fn remote_addr(&self) -> Result<SocketAddr, io::Error>;
     fn get_original_dst(&self) -> Option<SocketAddr>;
 }
 
 impl<T: AddrInfo + ?Sized> AddrInfo for Box<T> {
+    fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.as_ref().remote_addr()
+    }
+
     fn local_addr(&self) -> Result<SocketAddr, io::Error> {
         self.as_ref().local_addr()
     }
@@ -20,6 +25,10 @@ impl<T: AddrInfo + ?Sized> AddrInfo for Box<T> {
 }
 
 impl AddrInfo for TcpStream {
+    fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
+        TcpStream::peer_addr(&self)
+    }
+
     fn local_addr(&self) -> Result<SocketAddr, io::Error> {
         TcpStream::local_addr(&self)
     }
