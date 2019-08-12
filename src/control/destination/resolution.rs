@@ -188,23 +188,19 @@ where
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        match self.updater.hangup.poll() {
+            Ok(Async::Ready(never)) => match never {}, // unreachable!
+            Ok(Async::NotReady) => {},
+            Err(_) => {
+                // Hangup tx has been dropped.
+                debug!("resolution cancelled");
+                return Ok(Async::Ready(()));
+            },
+        };
+
         loop {
             match self.query.poll() {
-                Ok(Async::NotReady) => {
-                    match self.updater.hangup.poll() {
-                        Ok(Async::Ready(never)) => match never {}, // unreachable!
-                        Ok(Async::NotReady) => {
-                            // We are now scheduled to be notified if the hangup
-                            // tx is dropped.
-                            return Ok(Async::NotReady);
-                        }
-                        Err(_) => {
-                            // Hangup tx has been dropped.
-                            debug!("resolution cancelled");
-                            return Ok(Async::Ready(()));
-                        }
-                    }
-                }
+                Ok(Async::NotReady) => return Ok(Async::NotReady),
                 Ok(Async::Ready(Some(update))) => {
                     if let Err(_) = self.updater.update(update) {
                         trace!("resolution dropped, daemon terminating...");
