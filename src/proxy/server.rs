@@ -295,7 +295,7 @@ where
             }),
 
             Some(proto) => Either::B(match proto {
-                Protocol::Http1 => Either::A({
+                Protocol::Http1 => Either::A(Either::A({
                     trace!("detected HTTP/1");
                     route
                         .make_service(source)
@@ -319,8 +319,8 @@ where
                                 .map(|_| ())
                                 .map_err(|e| trace!("http1 server error: {:?}", e))
                         })
-                }),
-                Protocol::Http2 => Either::B({
+                })),
+                Protocol::Http2 => Either::A(Either::B({
                     trace!("detected HTTP/2");
                     route
                         .make_service(source)
@@ -344,6 +344,12 @@ where
                                 .map(|_| ())
                                 .map_err(|e| trace!("http2 server error: {:?}", e))
                         })
+                })),
+                Protocol::Kafka => Either::B({
+                    trace!("detected Kafka");
+                    println!("detected Kafka");
+                    let fwd = tcp::forward(io, connect, source);
+                    drain_signal.watch(fwd, |_| {})
                 }),
             }),
         });
