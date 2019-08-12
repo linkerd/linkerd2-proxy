@@ -11,10 +11,10 @@
 
 use crate::dns;
 use crate::svc;
+use crate::Never;
 use crate::{Addr, NameAddr};
 use futures::{try_ready, Async, Future, Poll, Stream};
 use http;
-use linkerd2_never::Never;
 use log::trace;
 use std::time::Duration;
 use tokio;

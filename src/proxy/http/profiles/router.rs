@@ -1,12 +1,11 @@
 use super::recognize::{ConcreteDstRecognize, RouteRecognize};
 use super::{CanGetDestination, GetRoutes, Route, Routes, WeightedAddr, WithAddr, WithRoute};
 use crate::dns;
-use crate::proxy::Error;
 use crate::svc;
+use crate::{Error, Never};
 use futures::{Async, Poll, Stream};
 use http;
 use indexmap::IndexMap;
-use linkerd2_never::Never;
 use linkerd2_router as rt;
 use std::hash::Hash;
 use tracing::{debug, error};
@@ -152,7 +151,7 @@ where
     RouteSvc::Error: Into<Error>,
 {
     type Response = Service<G::Stream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody>;
-    type Error = linkerd2_never::Never;
+    type Error = Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {

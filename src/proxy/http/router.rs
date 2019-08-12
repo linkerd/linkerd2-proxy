@@ -1,10 +1,9 @@
 use crate::logging;
-use crate::proxy::Error;
 use crate::svc;
 use crate::trace;
+use crate::{Error, Never};
 use futures::Poll;
 use http;
-use linkerd2_never::Never;
 use linkerd2_router as rt;
 pub use linkerd2_router::{error, Recognize, Router};
 use std::fmt;

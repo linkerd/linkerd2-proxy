@@ -1,8 +1,8 @@
 use super::super::retry::TryClone;
 use super::classify::{ClassifyEos, ClassifyResponse};
 use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
-use crate::proxy::Error;
 use crate::svc;
+use crate::Error;
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::body::Payload;

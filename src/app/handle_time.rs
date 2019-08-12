@@ -1,6 +1,6 @@
 use super::metric_labels::Direction;
+use crate::metrics::{FmtMetrics, Metric};
 use crate::proxy::http::metrics::handle_time;
-use linkerd2_metrics::{FmtMetrics, Metric};
 use std::{fmt, iter};
 
 #[derive(Clone, Debug)]

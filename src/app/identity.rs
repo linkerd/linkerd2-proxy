@@ -1,8 +1,8 @@
+use crate::api::identity as api;
 pub use crate::identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
 use crate::transport::tls;
+use crate::Never;
 use futures::{try_ready, Async, Future, Poll};
-use linkerd2_never::Never;
-use linkerd2_proxy_api::identity as api;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;

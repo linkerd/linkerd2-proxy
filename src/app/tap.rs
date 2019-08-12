@@ -1,9 +1,6 @@
 use super::identity;
-use crate::logging;
-use crate::proxy;
-use crate::svc;
 use crate::transport::{tls::HasPeerIdentity, Connection, Listen};
-use crate::Conditional;
+use crate::{logging, proxy, svc, task, Conditional};
 use futures::{future, Future};
 use std::{error, io};
 use tokio::executor;
@@ -37,7 +34,7 @@ where
 
     executor::current_thread::TaskExecutor::current()
         .spawn_local(Box::new(log.future(f)))
-        .map_err(linkerd2_task::Error::into_io)
+        .map_err(task::Error::into_io)
 }
 
 pub fn serve_tap<N, B>(

@@ -1,5 +1,4 @@
-use crate::transport::tls;
-use crate::Addr;
+use crate::{transport::tls, Addr};
 use std::fmt;
 
 #[derive(Clone, Debug)]
@@ -18,12 +17,11 @@ impl fmt::Display for ControlAddr {
 pub mod add_origin {
     use super::ControlAddr;
     use crate::svc;
+    use crate::Error;
     use futures::try_ready;
     use futures::{Future, Poll};
     use std::marker::PhantomData;
     use tower_request_modifier::{Builder, RequestModifier};
-
-    type Error = Box<dyn std::error::Error + Send + Sync>;
 
     #[derive(Debug)]
     pub struct Layer<M, B> {
@@ -291,9 +289,8 @@ pub mod resolve {
 /// Creates a client suitable for gRPC.
 pub mod client {
     use super::super::config::H2Settings;
-    use crate::proxy::http;
     use crate::transport::{connect, tls};
-    use crate::{logging, svc, Addr};
+    use crate::{logging, proxy::http, svc, task, Addr};
     use futures::Poll;
     use std::net::SocketAddr;
 
@@ -330,8 +327,7 @@ pub mod client {
         http::h2::Connect<C, B>: svc::Service<Target>,
     {
         svc::layer::mk(|mk_conn| {
-            let inner =
-                http::h2::Connect::new(mk_conn, linkerd2_task::LazyExecutor, H2Settings::default());
+            let inner = http::h2::Connect::new(mk_conn, task::LazyExecutor, H2Settings::default());
             Client { inner }
         })
     }

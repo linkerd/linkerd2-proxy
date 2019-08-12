@@ -1,23 +1,19 @@
 use super::client;
-use crate::control::destination::{Metadata, ProtocolHint, Update};
-use crate::identity;
-use crate::logging;
-use crate::proxy::resolve;
-use crate::NameAddr;
-use futures::{
-    future::Future,
-    sync::{mpsc, oneshot},
-    Async, Poll, Stream,
-};
-use indexmap::{IndexMap, IndexSet};
-use linkerd2_never::Never;
-use linkerd2_proxy_api::{
+use crate::api::{
     destination::{
         protocol_hint::Protocol, update::Update as PbUpdate2, TlsIdentity, Update as PbUpdate,
         WeightedAddr,
     },
     net::TcpAddress,
 };
+use crate::control::destination::{Metadata, ProtocolHint, Update};
+use crate::{identity, logging, proxy::resolve, NameAddr, Never};
+use futures::{
+    future::Future,
+    sync::{mpsc, oneshot},
+    Async, Poll, Stream,
+};
+use indexmap::{IndexMap, IndexSet};
 use std::{collections::HashMap, error::Error, fmt, net::SocketAddr};
 use tokio;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
@@ -380,7 +376,7 @@ fn pb_to_addr_meta(
 }
 
 fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
-    use linkerd2_proxy_api::destination::tls_identity::Strategy;
+    use crate::api::destination::tls_identity::Strategy;
 
     let Strategy::DnsLikeIdentity(i) = pb.strategy?;
     match identity::Name::from_hostname(i.name.as_bytes()) {
@@ -393,7 +389,7 @@ fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
 }
 
 fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
-    use linkerd2_proxy_api::net::ip_address::Ip;
+    use crate::api::net::ip_address::Ip;
     use std::net::{Ipv4Addr, Ipv6Addr};
     /*
     current structure is:

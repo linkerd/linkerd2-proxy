@@ -3,10 +3,10 @@
 //! * `/metrics` -- reports prometheus-formatted metrics.
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
+use crate::metrics;
 use futures::future::{self, Future};
 use http::StatusCode;
 use hyper::{service::Service, Body, Request, Response};
-use linkerd2_metrics as metrics;
 use std::io;
 mod readiness;
 mod trace_level;
@@ -82,8 +82,8 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::test_util::BlockOnFor;
     use http::method::Method;
-    use linkerd2_task::test_util::BlockOnFor;
     use std::time::Duration;
     use tokio::runtime::current_thread::Runtime;
 

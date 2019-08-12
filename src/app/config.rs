@@ -1,10 +1,10 @@
 use super::control::ControlAddr;
 use super::identity;
+use crate::addr::{self, Addr};
 use crate::proxy::reconnect::Backoff;
 use crate::transport::tls;
 use crate::{dns, Conditional};
 use indexmap::IndexSet;
-use linkerd2_addr::{self as addr, Addr};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::iter::FromIterator;

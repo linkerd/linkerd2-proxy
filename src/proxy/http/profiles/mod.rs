@@ -1,9 +1,8 @@
 use super::retry::Budget;
-use crate::NameAddr;
+use crate::{NameAddr, Never};
 use futures::Stream;
 use http;
 use indexmap::IndexMap;
-use linkerd2_never::Never;
 use regex::Regex;
 use std::fmt;
 use std::hash::{Hash, Hasher};

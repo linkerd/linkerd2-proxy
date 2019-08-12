@@ -1,23 +1,22 @@
 use super::Accept;
 use crate::app::config::H2Settings;
+use crate::drain;
 use crate::logging;
 use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
     upgrade,
 };
-use crate::proxy::protocol::Protocol;
-use crate::proxy::{tcp, Error};
+use crate::proxy::{protocol::Protocol, tcp};
 use crate::svc::{MakeService, Service};
 use crate::transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
+use crate::{Error, Never};
 use futures::{future, Poll};
 use futures::{future::Either, Future};
 use http;
 use hyper;
-use linkerd2_drain as drain;
-use linkerd2_never::Never;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};

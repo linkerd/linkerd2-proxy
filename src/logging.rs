@@ -1,6 +1,6 @@
+use crate::task;
 use futures::future::{ExecuteError, Executor};
 use futures::{Future, Poll};
-use linkerd2_task;
 use std::cell::RefCell;
 use std::fmt;
 use std::net::SocketAddr;
@@ -15,13 +15,12 @@ thread_local! {
 
 pub mod trace {
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-
-    use std::{env, error, fmt, str, time::Instant};
+    use crate::Error;
+    use std::{env, fmt, str, time::Instant};
     pub use tracing::*;
     pub use tracing_fmt::*;
 
     type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::EnvFilter>;
-    pub type Error = Box<dyn error::Error + Send + Sync + 'static>;
 
     #[derive(Clone)]
     pub struct LevelHandle {
@@ -245,18 +244,18 @@ pub struct ContextualExecutor<T> {
     context: Arc<T>,
 }
 
-impl<C, T> linkerd2_task::TypedExecutor<T> for ContextualExecutor<C>
+impl<C, T> crate::task::TypedExecutor<T> for ContextualExecutor<C>
 where
     T: Future<Item = (), Error = ()> + Send + 'static,
     C: fmt::Display + 'static + Send + Sync,
 {
     fn spawn(&mut self, future: T) -> Result<(), tokio::executor::SpawnError> {
         let fut = context_future(self.context.clone(), future);
-        linkerd2_task::LazyExecutor.spawn(fut)
+        task::LazyExecutor.spawn(fut)
     }
 }
 
-impl<T> linkerd2_task::TokioExecutor for ContextualExecutor<T>
+impl<T> task::TokioExecutor for ContextualExecutor<T>
 where
     T: fmt::Display + 'static + Send + Sync,
 {
@@ -265,7 +264,7 @@ where
         future: Box<dyn Future<Item = (), Error = ()> + 'static + Send>,
     ) -> Result<(), ::tokio::executor::SpawnError> {
         let fut = context_future(self.context.clone(), future);
-        linkerd2_task::LazyExecutor.spawn(Box::new(fut))
+        task::LazyExecutor.spawn(Box::new(fut))
     }
 }
 
@@ -276,7 +275,7 @@ where
 {
     fn execute(&self, future: F) -> Result<(), ExecuteError<F>> {
         let fut = context_future(self.context.clone(), future);
-        match linkerd2_task::LazyExecutor.execute(fut) {
+        match task::LazyExecutor.execute(fut) {
             Ok(()) => Ok(()),
             Err(err) => {
                 let kind = err.kind();

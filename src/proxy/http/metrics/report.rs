@@ -1,6 +1,6 @@
 use super::{ClassMetrics, Registry, RequestMetrics, RetrySkipped, StatusMetrics};
+use crate::metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 use http;
-use linkerd2_metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};

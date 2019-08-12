@@ -1,9 +1,9 @@
+use crate::api::net::ip_address;
+use crate::api::tap::observe_request;
 use crate::tap::Inspect;
 use http;
 use indexmap::IndexMap;
 use ipnet::{Contains, Ipv4Net, Ipv6Net};
-use linkerd2_proxy_api::net::ip_address;
-use linkerd2_proxy_api::tap::observe_request;
 use std::boxed::Box;
 use std::convert::TryFrom;
 use std::net;
@@ -108,7 +108,7 @@ impl TryFrom<observe_request::r#match::Match> for Match {
 
     #[allow(unconditional_recursion)]
     fn try_from(m: observe_request::r#match::Match) -> Result<Self, Self::Error> {
-        use linkerd2_proxy_api::tap::observe_request::r#match;
+        use crate::api::tap::observe_request::r#match;
 
         match m {
             r#match::Match::All(seq) => Self::from_seq(seq).map(Match::All),
@@ -169,7 +169,7 @@ impl TryFrom<observe_request::r#match::Tcp> for TcpMatch {
     type Error = InvalidMatch;
 
     fn try_from(m: observe_request::r#match::Tcp) -> Result<Self, InvalidMatch> {
-        use linkerd2_proxy_api::tap::observe_request::r#match::tcp;
+        use crate::api::tap::observe_request::r#match::tcp;
 
         m.r#match.ok_or(InvalidMatch::Empty).and_then(|t| match t {
             tcp::Match::Ports(range) => {
@@ -261,7 +261,7 @@ impl HttpMatch {
         string_match: &observe_request::r#match::http::string_match::Match,
         value: &str,
     ) -> bool {
-        use linkerd2_proxy_api::tap::observe_request::r#match::http::string_match::Match::*;
+        use crate::api::tap::observe_request::r#match::http::string_match::Match::*;
 
         match string_match {
             Exact(ref exact) => value == exact,
@@ -273,8 +273,8 @@ impl HttpMatch {
 impl TryFrom<observe_request::r#match::Http> for HttpMatch {
     type Error = InvalidMatch;
     fn try_from(m: observe_request::r#match::Http) -> Result<Self, InvalidMatch> {
-        use linkerd2_proxy_api::http_types::scheme::{Registered, Type};
-        use linkerd2_proxy_api::tap::observe_request::r#match::http::Match as Pb;
+        use crate::api::http_types::scheme::{Registered, Type};
+        use crate::api::tap::observe_request::r#match::http::Match as Pb;
 
         m.r#match.ok_or(InvalidMatch::Empty).and_then(|m| match m {
             Pb::Scheme(s) => s.r#type.ok_or(InvalidMatch::Empty).and_then(|s| match s {
@@ -317,7 +317,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use linkerd2_proxy_api::http_types;
+    use crate::api::http_types;
 
     impl Arbitrary for LabelMatch {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {
