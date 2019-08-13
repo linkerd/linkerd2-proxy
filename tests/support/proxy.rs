@@ -23,7 +23,7 @@ pub struct Proxy {
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
     outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
 
-    shutdown_signal: Option<Box<Future<Item = (), Error = ()> + Send>>,
+    shutdown_signal: Option<Box<dyn Future<Item = (), Error = ()> + Send>>,
 }
 
 pub struct Listening {
@@ -149,7 +149,7 @@ struct DstInner {
 }
 
 impl linkerd2_proxy::transport::GetOriginalDst for MockOriginalDst {
-    fn get_original_dst(&self, sock: &transport::AddrInfo) -> Option<SocketAddr> {
+    fn get_original_dst(&self, sock: &dyn transport::AddrInfo) -> Option<SocketAddr> {
         sock.local_addr().ok().and_then(|local| {
             let inner = self.0.lock().unwrap();
             if inner.inbound_local_addr == Some(local) {

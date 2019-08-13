@@ -1,7 +1,4 @@
-use self::tokio::net::TcpStream;
-use self::tokio_rustls::TlsAcceptor;
-use self::RunningIo;
-use crate::support::futures::future::Either;
+use futures::future::Either;
 use crate::support::*;
 use rustls::{ServerConfig, ServerSession};
 use std::collections::HashMap;
@@ -9,6 +6,9 @@ use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
+use tokio::net::TcpStream;
+use tokio_rustls::TlsAcceptor;
+use RunningIo;
 
 pub fn new() -> Server {
     http2()
@@ -137,7 +137,7 @@ impl Server {
         self.run_inner(None)
     }
 
-    fn run_inner(self, delay: Option<Box<Future<Item = (), Error = ()> + Send>>) -> Listening {
+    fn run_inner(self, delay: Option<Box<dyn Future<Item = (), Error = ()> + Send>>) -> Listening {
         let (tx, rx) = shutdown_signal();
         let (listening_tx, listening_rx) = oneshot::channel();
         let mut listening_tx = Some(listening_tx);

@@ -1,12 +1,10 @@
 use crate::support::*;
-
 use std::io;
 use std::sync::Mutex;
-
-use self::futures::sync::{mpsc, oneshot};
-use self::tokio::net::TcpStream;
-use self::webpki::{DNSName, DNSNameRef};
-use crate::support::bytes::IntoBuf;
+use futures::sync::{mpsc, oneshot};
+use tokio::net::TcpStream;
+use webpki::{DNSName, DNSNameRef};
+use bytes::IntoBuf;
 use rustls::{ClientConfig, ClientSession};
 use std::sync::Arc;
 
@@ -132,7 +130,7 @@ impl Client {
     pub fn request_async(
         &self,
         builder: &mut http::request::Builder,
-    ) -> Box<Future<Item = Response, Error = ClientError> + Send> {
+    ) -> Box<dyn Future<Item = Response, Error = ClientError> + Send> {
         self.send_req(builder.body(Bytes::new()).unwrap())
     }
 
@@ -147,7 +145,7 @@ impl Client {
     pub fn request_body_async(
         &self,
         req: Request,
-    ) -> Box<Future<Item = Response, Error = ClientError> + Send> {
+    ) -> Box<dyn Future<Item = Response, Error = ClientError> + Send> {
         self.send_req(req)
     }
 
@@ -168,7 +166,7 @@ impl Client {
     fn send_req(
         &self,
         mut req: Request,
-    ) -> Box<Future<Item = Response, Error = ClientError> + Send> {
+    ) -> Box<dyn Future<Item = Response, Error = ClientError> + Send> {
         if req.uri().scheme_part().is_none() {
             if self.tls.is_some() {
                 *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
@@ -258,7 +256,7 @@ struct Conn {
 impl Conn {
     fn connect_(
         &self,
-    ) -> Box<Future<Item = RunningIo<ClientSession>, Error = ::std::io::Error> + Send> {
+    ) -> Box<dyn Future<Item = RunningIo<ClientSession>, Error = ::std::io::Error> + Send> {
         Box::new(ConnectorFuture::Init {
             future: TcpStream::connect(&self.addr),
             tls: self.tls.clone(),
@@ -270,7 +268,7 @@ impl Conn {
 impl Connect for Conn {
     type Connected = RunningIo<ClientSession>;
     type Error = ::std::io::Error;
-    type Future = Box<Future<Item = Self::Connected, Error = ::std::io::Error>>;
+    type Future = Box<dyn Future<Item = Self::Connected, Error = ::std::io::Error>>;
 
     fn connect(&self) -> Self::Future {
         self.connect_()
@@ -280,7 +278,7 @@ impl Connect for Conn {
 impl hyper::client::connect::Connect for Conn {
     type Transport = RunningIo<ClientSession>;
     type Future = Box<
-        Future<
+        dyn Future<
                 Item = (Self::Transport, hyper::client::connect::Connected),
                 Error = ::std::io::Error,
             > + Send,

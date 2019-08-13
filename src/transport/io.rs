@@ -150,6 +150,10 @@ mod tests {
     }
 
     impl AddrInfo for WriteBufDetector {
+        fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
+            unreachable!("not called in test")
+        }
+
         fn local_addr(&self) -> Result<SocketAddr, io::Error> {
             unreachable!("not called in test")
         }
