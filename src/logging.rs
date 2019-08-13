@@ -15,13 +15,12 @@ thread_local! {
 
 pub mod trace {
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
-
-    use std::{env, error, fmt, str, time::Instant};
+    use linkerd2_proxy_core::Error;
+    use std::{env, fmt, str, time::Instant};
     pub use tracing::*;
     pub use tracing_fmt::*;
 
     type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::EnvFilter>;
-    pub type Error = Box<dyn error::Error + Send + Sync + 'static>;
 
     #[derive(Clone)]
     pub struct LevelHandle {

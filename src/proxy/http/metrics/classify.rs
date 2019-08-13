@@ -1,7 +1,7 @@
-use crate::proxy::Error;
 use crate::svc;
 use futures::{try_ready, Future, Poll};
 use http;
+use linkerd2_proxy_core::Error;
 
 /// Determines how a request's response should be classified.
 pub trait Classify {

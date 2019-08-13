@@ -1,11 +1,11 @@
 use super::super::retry::TryClone;
 use super::classify::{ClassifyEos, ClassifyResponse};
 use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
-use crate::proxy::Error;
 use crate::svc;
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::body::Payload;
+use linkerd2_proxy_core::Error;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;

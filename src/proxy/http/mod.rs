@@ -47,7 +47,7 @@ impl<'a> HasH2Reason for &'a (dyn std::error::Error + 'static) {
     }
 }
 
-impl HasH2Reason for crate::proxy::Error {
+impl HasH2Reason for linkerd2_proxy_core::Error {
     fn h2_reason(&self) -> Option<::h2::Reason> {
         (&**self as &(dyn std::error::Error + 'static)).h2_reason()
     }

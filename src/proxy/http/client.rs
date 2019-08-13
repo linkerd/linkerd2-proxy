@@ -5,12 +5,12 @@ use super::{
     settings::{HasSettings, Settings},
 };
 use crate::app::config::H2Settings;
-use crate::proxy::Error;
 use crate::svc::{self, ServiceExt};
 use crate::transport::{connect, tls};
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper;
+use linkerd2_proxy_core::Error;
 use std::fmt;
 use std::marker::PhantomData;
 use tracing::{debug, trace};

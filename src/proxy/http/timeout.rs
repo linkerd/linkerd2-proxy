@@ -1,7 +1,7 @@
-use crate::proxy::Error;
 use crate::svc;
 use futures::{future, try_ready, Future, Poll};
 use http::{Request, Response, StatusCode};
+use linkerd2_proxy_core::Error;
 use linkerd2_timeout::{error, Timeout};
 use std::time::Duration;
 use tracing::{debug, error};

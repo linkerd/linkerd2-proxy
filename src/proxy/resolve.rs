@@ -1,7 +1,7 @@
-use crate::proxy::Error;
 use crate::svc;
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
+use linkerd2_proxy_core::Error;
 use std::{fmt, net::SocketAddr};
 use tokio::sync::oneshot;
 pub use tower_discover::Change;

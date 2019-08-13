@@ -500,7 +500,7 @@ dependencies = [
  "linkerd2-dns-name 0.1.0",
  "ring 0.14.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls 0.15.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "untrusted 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "webpki 0.19.1 (git+https://github.com/seanmonstar/webpki?branch=cert-dns-names)",
 ]
@@ -635,7 +635,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-signal 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

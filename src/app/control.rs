@@ -20,10 +20,9 @@ pub mod add_origin {
     use crate::svc;
     use futures::try_ready;
     use futures::{Future, Poll};
+    use linkerd2_proxy_core::Error;
     use std::marker::PhantomData;
     use tower_request_modifier::{Builder, RequestModifier};
-
-    type Error = Box<dyn std::error::Error + Send + Sync>;
 
     #[derive(Debug)]
     pub struct Layer<M, B> {

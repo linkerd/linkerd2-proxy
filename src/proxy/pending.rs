@@ -1,6 +1,6 @@
-use crate::proxy::Error;
 use crate::svc::{self, ServiceExt};
 use futures::{try_ready, Future, Poll};
+use linkerd2_proxy_core::Error;
 use linkerd2_router as rt;
 
 #[derive(Copy, Clone, Debug)]

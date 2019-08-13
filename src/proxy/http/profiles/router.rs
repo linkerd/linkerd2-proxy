@@ -1,12 +1,12 @@
 use super::recognize::{ConcreteDstRecognize, RouteRecognize};
 use super::{CanGetDestination, GetRoutes, Route, Routes, WeightedAddr, WithAddr, WithRoute};
 use crate::dns;
-use crate::proxy::Error;
 use crate::svc;
 use futures::{Async, Poll, Stream};
 use http;
 use indexmap::IndexMap;
 use linkerd2_never::Never;
+use linkerd2_proxy_core::Error;
 use linkerd2_router as rt;
 use std::hash::Hash;
 use tracing::{debug, error};

@@ -1,10 +1,9 @@
 pub use crate::proxy::http::metrics::classify::{self, layer, CanClassify};
 use crate::proxy::http::{profiles, timeout, HasH2Reason};
 use http;
+use linkerd2_proxy_core::Error;
 use std::borrow::Cow;
 use tracing::trace;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Clone, Debug)]
 pub enum Request {

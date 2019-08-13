@@ -9,10 +9,9 @@ use futures::{
     future::{self, Either, FutureResult},
     try_ready, Async, Future, Poll,
 };
+use linkerd2_proxy_core::Error;
 use std::marker::PhantomData;
 use tracing::{debug, warn};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub struct RequireIdentityError {

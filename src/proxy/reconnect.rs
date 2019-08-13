@@ -1,6 +1,6 @@
-use crate::proxy::Error;
 use crate::svc;
 use futures::{task, Async, Future, Poll};
+use linkerd2_proxy_core::Error;
 use rand;
 use std::fmt;
 use std::marker::PhantomData;

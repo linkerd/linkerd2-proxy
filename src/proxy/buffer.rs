@@ -1,7 +1,7 @@
 use crate::logging;
-use crate::proxy::Error;
 use crate::svc;
 use futures::{try_ready, Async, Future, Poll};
+use linkerd2_proxy_core::Error;
 use linkerd2_router as rt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, Weak};
