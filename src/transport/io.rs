@@ -1,3 +1,4 @@
+use byteorder::{BigEndian, ByteOrder};
 use std::io;
 use std::net::{Shutdown, SocketAddr};
 
@@ -29,7 +30,12 @@ impl BoxedIo {
 
 impl io::Read for BoxedIo {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
+        let result = self.0.read(buf);
+        let request_size = BigEndian::read_i32(&buf);
+        if request_size > 0 {
+            println!("Kafka Request Size: {}", request_size);
+        }
+        result
     }
 }
 

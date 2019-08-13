@@ -95,7 +95,8 @@ fn outbound_kafka() {
         0, 10, 99, 111, 110, 115, 117, 109, 101, 114, 45, 49,
     ]; // value: consumer-1
        // Just echo to make things easier for now
-    const KAFKA_RESPONSE_API_VERSIONS: &[u8] = KAFKA_REQUEST_API_VERSIONS;
+       //const KAFKA_RESPONSE_API_VERSIONS: &[u8] = KAFKA_REQUEST_API_VERSIONS;
+    const KAFKA_RESPONSE_API_VERSIONS: &[u8] = &[0, 0, 0, 0, 0, 0];
 
     let srv = server::tcp()
         .accept(move |read| {
