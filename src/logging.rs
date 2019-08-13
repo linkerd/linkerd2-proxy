@@ -69,7 +69,12 @@ pub mod trace {
             f: &mut dyn fmt::Write,
             event: &Event<'_>,
         ) -> fmt::Result {
-            let meta = event.metadata();
+            use tracing_log::NormalizeEvent;
+            // If the event was converted from a `log` record, use the
+            // normalized tracing metadata for that log record.
+            let norm_meta = event.normalized_metadata();
+            let meta = norm_meta.as_ref().unwrap_or_else(|| event.metadata());
+
             let level = match meta.level() {
                 &Level::TRACE => "TRCE",
                 &Level::DEBUG => "DBUG",
