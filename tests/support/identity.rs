@@ -25,9 +25,9 @@ pub struct Controller {
 type Certify = Box<
     dyn FnMut(
             pb::CertifyRequest,
-        )
-            -> Box<dyn Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>
-        + Send,
+        ) -> Box<
+            dyn Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send,
+        > + Send,
 >;
 
 const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];

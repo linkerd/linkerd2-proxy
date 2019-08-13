@@ -1,12 +1,12 @@
+use crate::support::*;
 use bytes::IntoBuf;
 use hyper::body::Payload;
-use crate::support::*;
+use linkerd2_proxy_api::destination as pb;
+use linkerd2_proxy_api::net;
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::ops::{Bound, DerefMut, RangeBounds};
 use std::sync::{Arc, Mutex};
-use linkerd2_proxy_api::destination as pb;
-use linkerd2_proxy_api::net;
 
 pub fn new() -> Controller {
     Controller::new()

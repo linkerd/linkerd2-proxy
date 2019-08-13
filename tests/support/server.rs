@@ -1,5 +1,5 @@
-use futures::future::Either;
 use crate::support::*;
+use futures::future::Either;
 use rustls::{ServerConfig, ServerSession};
 use std::collections::HashMap;
 use std::io;

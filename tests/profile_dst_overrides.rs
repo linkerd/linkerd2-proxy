@@ -4,8 +4,8 @@
 mod support;
 
 use self::support::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use linkerd2_proxy_api::destination as pb;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct Service {
     name: &'static str,
