@@ -3,57 +3,39 @@
 // means some of it is unused.
 //
 // Note, lints like `unused_variable` should not be ignored.
+#![deny(warnings, rust_2018_idioms)]
 #![allow(dead_code)]
 
-pub extern crate bytes;
-extern crate futures;
-extern crate h2;
-pub extern crate http;
-extern crate http_body;
-extern crate hyper;
-extern crate linkerd2_proxy;
-pub extern crate linkerd2_proxy_api;
-extern crate linkerd2_task;
-pub extern crate net2;
-extern crate prost;
-pub extern crate rustls;
-extern crate tokio;
-extern crate tokio_connect;
-extern crate tokio_current_thread;
-pub extern crate tokio_io;
-extern crate tokio_rustls;
-pub extern crate tower_grpc;
-extern crate tower_service;
-extern crate webpki;
-
+pub use bytes::Bytes;
+pub use futures::sync::oneshot;
+pub use futures::{future::Executor, *};
+pub use http::{HeaderMap, Request, Response, StatusCode};
+use http_body::Body as HttpBody;
+pub use linkerd2_proxy::*;
+pub use linkerd2_task::LazyExecutor;
+use rustls::Session;
 pub use std::collections::HashMap;
 use std::fmt;
+use std::io;
+use std::io::{Read, Write};
 pub use std::net::SocketAddr;
 pub use std::sync::Arc;
 pub use std::time::Duration;
-
-pub use self::bytes::Bytes;
-pub use self::futures::sync::oneshot;
-pub use self::futures::{future::Executor, *};
-pub use self::http::{HeaderMap, Request, Response, StatusCode};
-use self::http_body::Body as HttpBody;
-pub use self::linkerd2_proxy::*;
-pub use self::linkerd2_task::LazyExecutor;
-use self::tokio::io::{AsyncRead, AsyncWrite};
-use self::tokio::net::TcpStream;
-use self::tokio::{net::TcpListener, reactor, runtime};
-use self::tokio_connect::Connect;
-use self::tokio_current_thread as current_thread;
-use self::tokio_rustls::TlsStream;
-pub use self::tower_grpc as grpc;
-pub use self::tower_service::Service;
-use rustls::Session;
-use std::io;
-use std::io::{Read, Write};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::TcpStream;
+use tokio::{net::TcpListener, reactor, runtime};
+use tokio_connect::Connect;
+use tokio_current_thread as current_thread;
+use tokio_rustls::TlsStream;
+pub use tower_grpc as grpc;
+pub use tower_service::Service;
+pub use tracing::*;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";
 pub const DEFAULT_TEST_PATIENCE: Duration = Duration::from_millis(15);
+
+pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 /// By default, disable logging in modules that are expected to error in tests.
 const DEFAULT_LOG: &'static str = "error,\
@@ -66,7 +48,7 @@ pub fn init_env() -> app::config::TestEnv {
     app::config::TestEnv::new()
 }
 
-pub fn trace_init() -> Result<(), trace::Error> {
+pub fn trace_init() -> Result<(), Error> {
     use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
@@ -228,7 +210,7 @@ impl Shutdown {
     }
 }
 
-pub type ShutdownRx = Box<Future<Item = (), Error = ()> + Send>;
+pub type ShutdownRx = Box<dyn Future<Item = (), Error = ()> + Send>;
 
 /// A channel used to signal when a Client's related connection is running or closed.
 pub fn running() -> (oneshot::Sender<()>, Running) {
@@ -237,7 +219,7 @@ pub fn running() -> (oneshot::Sender<()>, Running) {
     (tx, rx)
 }
 
-pub type Running = Box<Future<Item = (), Error = ()> + Send>;
+pub type Running = Box<dyn Future<Item = (), Error = ()> + Send>;
 
 pub fn s(bytes: &[u8]) -> &str {
     ::std::str::from_utf8(bytes.as_ref()).unwrap()
@@ -256,7 +238,7 @@ pub fn thread_name() -> String {
 
 #[test]
 #[should_panic]
-fn assert_eventually() {
+fn test_assert_eventually() {
     assert_eventually!(false)
 }
 

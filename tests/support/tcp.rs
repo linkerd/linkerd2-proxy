@@ -1,13 +1,11 @@
 use crate::support::*;
-
+use futures::sync::{mpsc, oneshot};
 use std::collections::VecDeque;
 use std::io;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-use self::futures::sync::{mpsc, oneshot};
-use self::tokio::net::TcpStream;
+use tokio::net::TcpStream;
 
 type TcpSender = mpsc::UnboundedSender<oneshot::Sender<TcpConnSender>>;
 type TcpConnSender = mpsc::UnboundedSender<(
@@ -31,14 +29,16 @@ pub struct TcpClient {
     tx: TcpSender,
 }
 
-type Handler = Box<CallBox + Send>;
+type Handler = Box<dyn CallBox + Send>;
 
 trait CallBox: 'static {
-    fn call_box(self: Box<Self>, sock: TcpStream) -> Box<Future<Item = (), Error = ()>>;
+    fn call_box(self: Box<Self>, sock: TcpStream) -> Box<dyn Future<Item = (), Error = ()>>;
 }
 
-impl<F: FnOnce(TcpStream) -> Box<Future<Item = (), Error = ()>> + Send + 'static> CallBox for F {
-    fn call_box(self: Box<Self>, sock: TcpStream) -> Box<Future<Item = (), Error = ()>> {
+impl<F: FnOnce(TcpStream) -> Box<dyn Future<Item = (), Error = ()>> + Send + 'static> CallBox
+    for F
+{
+    fn call_box(self: Box<Self>, sock: TcpStream) -> Box<dyn Future<Item = (), Error = ()>> {
         (*self)(sock)
     }
 }
@@ -91,10 +91,11 @@ impl TcpServer {
         F: FnOnce(TcpStream) -> U + Send + 'static,
         U: IntoFuture<Item = (), Error = ()> + 'static,
     {
-        self.accepts
-            .push_back(Box::new(move |tcp| -> Box<Future<Item = (), Error = ()>> {
+        self.accepts.push_back(Box::new(
+            move |tcp| -> Box<dyn Future<Item = (), Error = ()>> {
                 Box::new(cb(tcp).into_future())
-            }));
+            },
+        ));
         self
     }
 
@@ -110,8 +111,8 @@ impl TcpConn {
     }
 
     pub fn read_timeout(&self, timeout: Duration) -> Vec<u8> {
-        use self::linkerd2_task::test_util::BlockOnFor;
-        use self::tokio::runtime::current_thread;
+        use linkerd2_task::test_util::BlockOnFor;
+        use tokio::runtime::current_thread;
         current_thread::Runtime::new()
             .unwrap()
             .block_on_for(timeout, self.read_future())
@@ -164,38 +165,38 @@ fn run_client(addr: SocketAddr) -> TcpSender {
                                     Option<Vec<u8>>,
                                     oneshot::Sender<io::Result<Option<Vec<u8>>>>,
                                 )| {
-                                    let f: Box<Future<Item = TcpStream, Error = ()>> = match action
-                                    {
-                                        None => {
-                                            Box::new(tokio_io::io::read(tcp, vec![0; 1024]).then(
-                                                move |res| match res {
-                                                    Ok((tcp, mut vec, n)) => {
-                                                        vec.truncate(n);
-                                                        cb.send(Ok(Some(vec))).unwrap();
-                                                        Ok(tcp)
-                                                    }
-                                                    Err(e) => {
-                                                        cb.send(Err(e)).unwrap();
-                                                        Err(())
-                                                    }
-                                                },
-                                            ))
-                                        }
-                                        Some(vec) => {
-                                            Box::new(tokio_io::io::write_all(tcp, vec).then(
-                                                move |res| match res {
-                                                    Ok((tcp, _)) => {
-                                                        cb.send(Ok(None)).unwrap();
-                                                        Ok(tcp)
-                                                    }
-                                                    Err(e) => {
-                                                        cb.send(Err(e)).unwrap();
-                                                        Err(())
-                                                    }
-                                                },
-                                            ))
-                                        }
-                                    };
+                                    let f: Box<dyn Future<Item = TcpStream, Error = ()>> =
+                                        match action {
+                                            None => Box::new(
+                                                tokio_io::io::read(tcp, vec![0; 1024]).then(
+                                                    move |res| match res {
+                                                        Ok((tcp, mut vec, n)) => {
+                                                            vec.truncate(n);
+                                                            cb.send(Ok(Some(vec))).unwrap();
+                                                            Ok(tcp)
+                                                        }
+                                                        Err(e) => {
+                                                            cb.send(Err(e)).unwrap();
+                                                            Err(())
+                                                        }
+                                                    },
+                                                ),
+                                            ),
+                                            Some(vec) => {
+                                                Box::new(tokio_io::io::write_all(tcp, vec).then(
+                                                    move |res| match res {
+                                                        Ok((tcp, _)) => {
+                                                            cb.send(Ok(None)).unwrap();
+                                                            Ok(tcp)
+                                                        }
+                                                        Err(e) => {
+                                                            cb.send(Err(e)).unwrap();
+                                                            Err(())
+                                                        }
+                                                    },
+                                                ))
+                                            }
+                                        };
                                     f
                                 },
                             )

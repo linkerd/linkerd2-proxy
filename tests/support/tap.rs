@@ -188,7 +188,7 @@ where
 {
     type Response = http::Response<client::BytesBody>;
     type Error = String;
-    type Future = Box<Future<Item = Self::Response, Error = Self::Error> + Send>;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         unreachable!("tap SyncSvc poll_ready");

@@ -1,7 +1,9 @@
-#![deny(warnings)]
+#![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
+
 #[macro_use]
 mod support;
+
 use self::support::*;
 
 macro_rules! generate_tests {

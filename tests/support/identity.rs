@@ -23,11 +23,11 @@ pub struct Controller {
 }
 
 type Certify = Box<
-    FnMut(
+    dyn FnMut(
             pb::CertifyRequest,
-        )
-            -> Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>
-        + Send,
+        ) -> Box<
+            dyn Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send,
+        > + Send,
 >;
 
 const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
@@ -219,7 +219,7 @@ impl Controller {
 
 impl pb::server::Identity for Controller {
     type CertifyFuture =
-        Box<Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
+        Box<dyn Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
     fn certify(&mut self, req: grpc::Request<pb::CertifyRequest>) -> Self::CertifyFuture {
         if let Some(mut f) = self.expect_calls.lock().unwrap().pop_front() {
             return f(req.into_inner());
