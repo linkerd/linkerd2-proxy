@@ -1,9 +1,10 @@
-#![deny(warnings)]
+#![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
+
 #[macro_use]
 mod support;
-use self::support::*;
 
+use self::support::*;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},

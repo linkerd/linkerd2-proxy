@@ -1,4 +1,4 @@
-#![deny(warnings)]
+#![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
 mod support;
 use self::support::*;

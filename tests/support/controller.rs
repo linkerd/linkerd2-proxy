@@ -1,15 +1,12 @@
-use crate::support::bytes::IntoBuf;
-use crate::support::hyper::body::Payload;
 use crate::support::*;
-// use crate::support::tokio::executor::Executor as _TokioExecutor;
-
+use bytes::IntoBuf;
+use hyper::body::Payload;
+use linkerd2_proxy_api::destination as pb;
+use linkerd2_proxy_api::net;
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::ops::{Bound, DerefMut, RangeBounds};
 use std::sync::{Arc, Mutex};
-
-use linkerd2_proxy_api::destination as pb;
-use linkerd2_proxy_api::net;
 
 pub fn new() -> Controller {
     Controller::new()
@@ -291,7 +288,7 @@ impl pb::server::Destination for Controller {
 pub(in crate::support) fn run<T, B>(
     svc: T,
     name: &'static str,
-    delay: Option<Box<Future<Item = (), Error = ()> + Send>>,
+    delay: Option<Box<dyn Future<Item = (), Error = ()> + Send>>,
 ) -> Listening
 where
     T: Service<http::Request<tower_grpc::BoxBody>, Response = http::Response<B>>,
