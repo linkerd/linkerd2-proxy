@@ -1,6 +1,5 @@
-use crate::svc;
 use crate::transport::{io::internal::Io, tls, BoxedIo, Connection};
-use crate::Conditional;
+use crate::{identity, svc, Conditional};
 use futures::{try_ready, Async, Future, Poll};
 pub use rustls::ClientConfig as Config;
 use std::sync::Arc;
@@ -129,5 +128,17 @@ where
                 }
             };
         }
+    }
+}
+
+impl HasConfig for identity::CrtKey {
+    fn tls_client_config(&self) -> Arc<Config> {
+        identity::CrtKey::tls_client_config(self)
+    }
+}
+
+impl HasConfig for identity::TrustAnchors {
+    fn tls_client_config(&self) -> Arc<Config> {
+        identity::TrustAnchors::tls_client_config(self)
     }
 }

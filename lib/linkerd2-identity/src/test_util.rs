@@ -29,7 +29,7 @@ pub static BAR_NS1: Strings = Strings {
 
 impl Strings {
     fn read(n: &str) -> Vec<u8> {
-        let dir = PathBuf::from("src/identity/testdata");
+        let dir = PathBuf::from("src/testdata");
         let p = dir.join(n);
         match fs::read(&p) {
             Ok(b) => b,

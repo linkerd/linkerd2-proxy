@@ -17,10 +17,11 @@ use crate::proxy::{
 };
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
-use crate::{control, dns, drain, logging, tap, telemetry, trace, Addr, Conditional};
+use crate::{control, dns, logging, tap, telemetry, trace, Addr, Conditional};
 use futures::{self, future, Future, Poll};
 use http;
 use hyper;
+use linkerd2_drain as drain;
 use linkerd2_metrics::FmtMetrics;
 use linkerd2_never::Never;
 use linkerd2_task;

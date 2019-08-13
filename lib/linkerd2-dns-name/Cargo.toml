@@ -1,0 +1,10 @@
+[package]
+name = "linkerd2-dns-name"
+version = "0.1.0"
+authors = ["Oliver Gould <ver@buoyant.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+webpki = "0.19"
+untrusted = "0.6"

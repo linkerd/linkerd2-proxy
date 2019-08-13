@@ -1,0 +1,13 @@
+[package]
+name = "linkerd2-identity"
+version = "0.1.0"
+authors = ["Oliver Gould <ver@buoyant.io>"]
+edition = "2018"
+
+[dependencies]
+linkerd2-dns-name = { path = "../linkerd2-dns-name" }
+ring = "0.14.6"
+rustls = "0.15"
+tracing = "0.1.2"
+untrusted = "0.6"
+webpki = "0.19"

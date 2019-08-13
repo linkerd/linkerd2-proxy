@@ -138,7 +138,7 @@ where
                 }
             };
 
-            let client_used_tls = io.tls_status().is_some();
+            let client_used_tls = io.tls_status().is_tls();
 
             let hs = conn::Builder::new()
                 .executor(self.executor.clone())

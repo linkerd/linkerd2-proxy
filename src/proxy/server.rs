@@ -1,5 +1,6 @@
 use super::Accept;
 use crate::app::config::H2Settings;
+use crate::logging;
 use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
     upgrade,
@@ -11,11 +12,11 @@ use crate::transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
-use crate::{drain, logging};
 use futures::{future, Poll};
 use futures::{future::Either, Future};
 use http;
 use hyper;
+use linkerd2_drain as drain;
 use linkerd2_never::Never;
 use std::marker::PhantomData;
 use std::net::SocketAddr;

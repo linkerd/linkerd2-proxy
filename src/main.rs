@@ -1,23 +1,21 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
 
-mod signal;
+use linkerd2_proxy::{app, transport::SoOriginalDst};
+use linkerd2_signal as signal;
+use tokio::runtime::current_thread;
 
-// Look in lib.rs.
+/// Loads configuration from the environment
 fn main() {
-    // Load configuration.
-    let (config, trace_admin) = match linkerd2_proxy::app::init() {
+    let (config, trace_admin) = match app::init() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("configuration error: {:#?}", e);
             std::process::exit(64)
         }
     };
-    // NOTE: eventually, this is where we would choose to use the threadpool
-    //       runtime instead, if acting as an ingress proxy.
-    let runtime = tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
-    let main =
-        linkerd2_proxy::app::Main::new(config, trace_admin, linkerd2_proxy::SoOriginalDst, runtime);
+    let runtime = current_thread::Runtime::new().expect("initialize main runtime");
+    let main = app::Main::new(config, trace_admin, SoOriginalDst, runtime);
     let shutdown_signal = signal::shutdown();
     main.run_until(shutdown_signal);
 }

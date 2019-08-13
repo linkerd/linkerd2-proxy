@@ -48,7 +48,7 @@ impl From<control::ControlAddr> for ControlLabels {
     fn from(c: control::ControlAddr) -> Self {
         ControlLabels {
             addr: c.addr.clone(),
-            tls_status: c.identity.as_ref().map(|_| {}),
+            tls_status: c.identity.as_ref().into(),
         }
     }
 }
@@ -134,7 +134,7 @@ impl FmtLabels for EndpointLabels {
         }
 
         write!(f, ",")?;
-        self.tls_id.as_ref().map(|_| ()).fmt_labels(f)?;
+        tls::Status::from(self.tls_id.as_ref()).fmt_labels(f)?;
 
         if let Conditional::Some(ref id) = self.tls_id {
             write!(f, ",")?;
@@ -194,22 +194,20 @@ impl FmtLabels for classify::Class {
 
 impl fmt::Display for classify::SuccessOrFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use self::classify::SuccessOrFailure::{Failure, Success};
         match self {
-            Success => write!(f, "success"),
-            Failure => write!(f, "failure"),
+            classify::SuccessOrFailure::Success => write!(f, "success"),
+            classify::SuccessOrFailure::Failure => write!(f, "failure"),
         }
     }
 }
 
 impl FmtLabels for tls::Status {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Conditional::None(tls::ReasonForNoIdentity::NoPeerName(why)) => {
-                write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
-            }
-            status => write!(f, "tls=\"{}\"", status),
+        if let Some(tls::ReasonForNoIdentity::NoPeerName(why)) = self.no_tls_reason() {
+            return write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why);
         }
+
+        write!(f, "tls=\"{}\"", self)
     }
 }
 

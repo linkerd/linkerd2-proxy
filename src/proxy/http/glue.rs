@@ -1,7 +1,6 @@
 use crate::proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
 use crate::svc;
 use crate::transport::tls::HasStatus as HasTlsStatus;
-use crate::Conditional;
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::client::connect as hyper_connect;
@@ -198,7 +197,7 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let transport = try_ready!(self.inner.poll());
         let connected = hyper_connect::Connected::new().proxy(self.absolute_form);
-        let connected = if let Conditional::Some(()) = transport.tls_status() {
+        let connected = if transport.tls_status().is_tls() {
             connected.extra(ClientUsedTls(()))
         } else {
             connected

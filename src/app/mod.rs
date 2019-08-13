@@ -16,9 +16,9 @@ mod profiles;
 mod tap;
 
 pub use self::main::Main;
-use crate::addr::{self, Addr};
-use crate::trace;
+use crate::logging::trace;
 use http;
+use linkerd2_addr::{self as addr, Addr};
 use std::error::Error;
 
 const CANONICAL_DST_HEADER: &'static str = "l5d-dst-canonical";
