@@ -1,10 +1,10 @@
+#![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
-#![deny(warnings)]
+
 mod support;
+
 use self::support::*;
-
 use std::sync::atomic::{AtomicUsize, Ordering};
-
 use linkerd2_proxy_api::destination as pb;
 
 struct Service {

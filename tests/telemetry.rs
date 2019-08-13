@@ -1,14 +1,11 @@
-#![deny(warnings)]
+#![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
-#[macro_use]
-extern crate log;
-extern crate flate2;
-extern crate regex;
 
 #[macro_use]
 mod support;
+
 use self::support::*;
-use crate::support::bytes::IntoBuf;
+use bytes::IntoBuf;
 use std::io::Read;
 
 struct Fixture {
@@ -147,6 +144,7 @@ fn metrics_endpoint_outbound_request_count() {
 mod response_classification {
     use super::support::*;
     use super::Fixture;
+    use tracing::info;
 
     const REQ_STATUS_HEADER: &'static str = "x-test-status-requested";
     const REQ_GRPC_STATUS_HEADER: &'static str = "x-test-grpc-status-requested";
