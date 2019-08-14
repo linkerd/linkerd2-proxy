@@ -110,8 +110,8 @@ pub mod res_body_as_payload {
 }
 
 pub mod unauthenticated {
+    use crate::api::tap as api;
     use futures::{future, stream};
-    use linkerd2_proxy_api::tap as api;
     use tower_grpc::{Code, Request, Response, Status};
 
     #[derive(Clone)]

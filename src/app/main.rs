@@ -1,8 +1,7 @@
 use super::admin::{Admin, Readiness};
 use super::config::{Config, H2Settings};
-use super::dst::DstAddr;
-use super::identity;
 use super::profiles::Client as ProfilesClient;
+use super::{dst::DstAddr, identity};
 use crate::app::classify::{self, Class};
 use crate::app::handle_time;
 use crate::app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
@@ -17,14 +16,13 @@ use crate::proxy::{
 };
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, Connection, GetOriginalDst, Listen};
-use crate::{control, dns, logging, tap, telemetry, trace, Addr, Conditional};
+use crate::{
+    control, dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Addr,
+    Conditional, Never,
+};
 use futures::{self, future, Future, Poll};
 use http;
 use hyper;
-use linkerd2_drain as drain;
-use linkerd2_metrics::FmtMetrics;
-use linkerd2_never::Never;
-use linkerd2_task;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -49,7 +47,7 @@ use tracing::{debug, error, info, trace};
 ///
 pub struct Main<G> {
     proxy_parts: ProxyParts<G>,
-    runtime: linkerd2_task::MainRuntime,
+    runtime: task::MainRuntime,
 }
 
 struct ProxyParts<G> {
@@ -90,7 +88,7 @@ where
         runtime: R,
     ) -> Self
     where
-        R: Into<linkerd2_task::MainRuntime>,
+        R: Into<task::MainRuntime>,
     {
         let start_time = SystemTime::now();
 
@@ -318,7 +316,7 @@ where
 
                 identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
 
-                linkerd2_task::spawn(
+                task::spawn(
                     local_identity
                         .clone()
                         .await_crt()
@@ -381,7 +379,7 @@ where
             thread::Builder::new()
                 .name("admin".into())
                 .spawn(move || {
-                    use linkerd2_proxy_api::tap::server::TapServer;
+                    use crate::api::tap::server::TapServer;
 
                     let mut rt =
                         current_thread::Runtime::new().expect("initialize admin thread runtime");
@@ -423,7 +421,7 @@ where
                 Ok(futures::Async::NotReady)
             })
             .map(|()| drop(tx));
-            linkerd2_task::spawn(admin_shutdown);
+            task::spawn(admin_shutdown);
         }
 
         // Build the outbound and inbound proxies using the dst_svc client.
@@ -670,7 +668,7 @@ where
             )
             .map_err(|e| error!("outbound proxy background task failed: {}", e))
         };
-        linkerd2_task::spawn(outbound);
+        task::spawn(outbound);
 
         let inbound = {
             use super::inbound::{
@@ -852,7 +850,7 @@ where
             )
             .map_err(|e| error!("inbound proxy background task failed: {}", e))
         };
-        linkerd2_task::spawn(inbound);
+        task::spawn(inbound);
     }
 }
 
@@ -913,7 +911,7 @@ where
             // Logging context is configured by the server.
             let r = DefaultExecutor::current()
                 .spawn(Box::new(s))
-                .map_err(linkerd2_task::Error::into_io);
+                .map_err(task::Error::into_io);
             future::result(r)
         }),
     );

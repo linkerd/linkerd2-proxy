@@ -1,7 +1,4 @@
-use crate::identity;
-use crate::transport::tls;
-use crate::{Addr, Conditional, NameAddr};
-use linkerd2_metrics::FmtLabels;
+use crate::{identity, metrics::FmtLabels, transport::tls, Addr, Conditional, NameAddr};
 use std::fmt::{self, Write};
 
 use super::{classify, control, dst, inbound, outbound};

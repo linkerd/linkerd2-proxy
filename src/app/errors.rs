@@ -2,11 +2,10 @@
 
 use crate::proxy::http::HasH2Reason;
 use crate::svc;
+use crate::Error;
 use futures::{Future, Poll};
 use http::{header, Request, Response, StatusCode, Version};
 use tracing::{debug, error, warn};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Layer to map HTTP service errors into appropriate `http::Response`s.
 pub fn layer() -> Layer {

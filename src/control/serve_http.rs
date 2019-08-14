@@ -1,12 +1,11 @@
-use crate::logging;
 use crate::transport::{tls, Listen};
+use crate::{logging, task};
 use futures::{future, Future};
 use hyper::{
     server::conn::Http,
     service::{service_fn, Service},
     Body,
 };
-use linkerd2_task;
 use std::net::SocketAddr;
 use tokio::executor::current_thread::TaskExecutor;
 use tracing::error;
@@ -50,7 +49,7 @@ where
                 let r = TaskExecutor::current()
                     .spawn_local(Box::new(serve))
                     .map(move |()| hyper)
-                    .map_err(linkerd2_task::Error::into_io);
+                    .map_err(task::Error::into_io);
 
                 future::result(r)
             })

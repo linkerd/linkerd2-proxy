@@ -1,7 +1,7 @@
 use super::iface::Tap;
+use crate::Never;
 use futures::sync::{mpsc, oneshot};
 use futures::{try_ready, Async, Future, Poll, Stream};
-use linkerd2_never::Never;
 use tracing::{debug, trace, warn};
 
 pub fn new<T>() -> (Daemon<T>, Register<T>, Subscribe<T>) {

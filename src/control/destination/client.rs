@@ -1,7 +1,7 @@
+use crate::api::destination::{client::Destination, GetDestination, Update};
 use crate::control::remote_stream::{self, Remote};
 use crate::NameAddr;
 use futures::{Async, Poll, Stream};
-use linkerd2_proxy_api::destination::{client::Destination, GetDestination, Update};
 use std::sync::Arc;
 use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
 use tracing::trace;

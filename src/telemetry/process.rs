@@ -1,5 +1,5 @@
 use self::system::System;
-use linkerd2_metrics::{metrics, FmtMetrics, Gauge};
+use crate::metrics::{metrics, FmtMetrics, Gauge};
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
@@ -52,8 +52,8 @@ impl FmtMetrics for Report {
 
 #[cfg(target_os = "linux")]
 mod system {
+    use crate::metrics::{metrics, Counter, FmtMetrics, Gauge};
     use libc::{self, pid_t};
-    use linkerd2_metrics::{metrics, Counter, FmtMetrics, Gauge};
     use procinfo::pid;
     use std::fmt;
     use std::{fs, io};
@@ -168,7 +168,7 @@ mod system {
 
 #[cfg(not(target_os = "linux"))]
 mod system {
-    use linkerd2_metrics::FmtMetrics;
+    use crate::metrics::FmtMetrics;
     use std::{fmt, io};
 
     #[derive(Clone, Debug)]

@@ -1,10 +1,10 @@
+use crate::api::destination as api;
 use crate::proxy::http::{profiles, retry::Budget};
 use crate::NameAddr;
+use crate::Never;
 use futures::sync::{mpsc, oneshot};
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use http;
-use linkerd2_never::Never;
-use linkerd2_proxy_api::destination as api;
 use regex::Regex;
 use std::sync::Arc;
 use std::time::Duration;

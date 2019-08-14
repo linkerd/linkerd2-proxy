@@ -1,5 +1,6 @@
-use crate::proxy::Error;
 use crate::svc;
+use crate::Error;
+use crate::Never;
 use futures::{task, Async, Future, Poll};
 use rand;
 use std::fmt;
@@ -139,7 +140,7 @@ where
     Error: From<M::Error> + From<S::Error>,
 {
     type Response = Service<M, T>;
-    type Error = linkerd2_never::Never;
+    type Error = Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -262,8 +263,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Never;
     use futures::{future, Future};
-    use linkerd2_never::Never;
     use quickcheck::*;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::{error, fmt, time};

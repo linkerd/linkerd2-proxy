@@ -1,4 +1,5 @@
 use super::match_::Match;
+use crate::api::{http_types, pb_duration, tap as api};
 use crate::proxy::http::HasH2Reason;
 use crate::tap::{iface, Inspect};
 use crate::transport::tls;
@@ -7,7 +8,6 @@ use bytes::Buf;
 use futures::sync::mpsc;
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
-use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;

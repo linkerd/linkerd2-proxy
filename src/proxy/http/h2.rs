@@ -1,15 +1,14 @@
 use super::{Body, ClientUsedTls};
 use crate::app::config::H2Settings;
-use crate::proxy::Error;
-use crate::svc;
+use crate::task::{ArcExecutor, BoxSendFuture, Executor};
 use crate::transport::tls::HasStatus as HasTlsStatus;
+use crate::{svc, Error};
 use futures::{try_ready, Future, Poll};
 use http;
 use hyper::{
     body::Payload,
     client::conn::{self, Handshake, SendRequest},
 };
-use linkerd2_task::{ArcExecutor, BoxSendFuture, Executor};
 use std::marker::PhantomData;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;

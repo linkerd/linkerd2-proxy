@@ -1,14 +1,12 @@
 mod io;
 
 pub use self::io::Io;
-use crate::svc;
-use crate::telemetry::Errno;
-use crate::transport::tls;
-use futures::{try_ready, Future, Poll};
-use indexmap::IndexMap;
-use linkerd2_metrics::{
+use crate::metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
 };
+use crate::{svc, telemetry::Errno, transport::tls};
+use futures::{try_ready, Future, Poll};
+use indexmap::IndexMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, MutexGuard};

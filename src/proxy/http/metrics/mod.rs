@@ -1,3 +1,11 @@
+use crate::metrics::{latency, Counter, FmtLabels, Histogram};
+use http;
+use indexmap::IndexMap;
+use std::hash::Hash;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio_timer::clock;
+
 pub mod classify;
 pub mod handle_time;
 mod report;
@@ -5,13 +13,6 @@ mod service;
 
 pub use self::report::Report;
 pub use self::service::layer;
-use http;
-use indexmap::IndexMap;
-use linkerd2_metrics::{latency, Counter, FmtLabels, Histogram};
-use std::hash::Hash;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use tokio_timer::clock;
 
 pub fn new<T, C>(retain_idle: Duration) -> (Arc<Mutex<Registry<T, C>>>, Report<T, C>)
 where
@@ -167,7 +168,7 @@ where
 mod tests {
     #[test]
     fn expiry() {
-        use linkerd2_metrics::FmtLabels;
+        use crate::metrics::FmtLabels;
         use std::fmt;
         use std::time::Duration;
         use tokio_timer::clock;
