@@ -5,7 +5,7 @@ use crate::proxy::http::{
 };
 use crate::proxy::{accept, reconnect, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
-use crate::{core::ServeConnection, svc, Addr};
+use crate::{core::listen::ServeConnection, svc, Addr};
 use std::net::SocketAddr;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;

@@ -1,39 +1,11 @@
 use crate::{svc, Error};
+use crate::core::resolve::{Resolution, Resolve, Update};
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use std::{fmt, net::SocketAddr};
 use tokio::sync::oneshot;
 pub use tower_discover::Change;
 use tracing::trace;
-
-/// Resolves `T`-typed names/addresses as a `Resolution`.
-pub trait Resolve<T> {
-    type Endpoint;
-    type Resolution: Resolution<Endpoint = Self::Endpoint>;
-    type Future: Future<Item = Self::Resolution>;
-
-    /// Asynchronously returns a `Resolution` for the given `target`.
-    ///
-    /// The returned future will complete with a `Resolution` if this resolver
-    /// was able to successfully resolve `target`. Otherwise, if it completes
-    /// with an error, that name or address should not be resolved by this
-    /// resolver.
-    fn resolve(&self, target: &T) -> Self::Future;
-}
-
-/// An infinite stream of endpoint updates.
-pub trait Resolution {
-    type Endpoint;
-    type Error;
-
-    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
-}
-
-#[derive(Clone, Debug)]
-pub enum Update<T> {
-    Add(SocketAddr, T),
-    Remove(SocketAddr),
-}
 
 #[derive(Clone, Debug)]
 pub struct Layer<R> {
