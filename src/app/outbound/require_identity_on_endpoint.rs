@@ -1,8 +1,8 @@
 use super::super::L5D_REQUIRE_ID;
 use super::Endpoint;
 use crate::proxy::http::{identity_from_header, HasH2Reason};
-use crate::{identity, svc, Conditional, Error};
 use crate::transport::tls::{self, HasPeerIdentity};
+use crate::{identity, svc, Conditional, Error};
 use futures::{
     future::{self, Either, FutureResult},
     try_ready, Async, Future, Poll,

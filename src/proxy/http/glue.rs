@@ -1,6 +1,6 @@
 use crate::proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
-use crate::{Error, svc};
 use crate::transport::tls::HasStatus as HasTlsStatus;
+use crate::{svc, Error};
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::client::connect as hyper_connect;

@@ -1,5 +1,4 @@
 use super::Accept;
-use crate::{app::config::H2Settings, drain, logging, Error, Never};
 use crate::core::ServeConnection;
 use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
@@ -11,6 +10,7 @@ use crate::transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
+use crate::{app::config::H2Settings, drain, logging, Error, Never};
 use futures::future::{self, Either};
 use futures::{Future, Poll};
 use http;

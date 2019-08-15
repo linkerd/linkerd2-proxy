@@ -1,7 +1,7 @@
 use super::admin::{Admin, Readiness};
 use super::config::{Config, H2Settings};
 use super::profiles::Client as ProfilesClient;
-use super::{DispatchDeadline, dst::DstAddr, identity};
+use super::{dst::DstAddr, identity, DispatchDeadline};
 use crate::app::classify::{self, Class};
 use crate::app::handle_time;
 use crate::app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
@@ -23,10 +23,10 @@ use crate::{
 use futures::{self, future, Future};
 use http;
 use hyper;
+use std::fmt;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::fmt;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::runtime::current_thread;
 use tracing::{debug, error, info, trace};
@@ -847,8 +847,7 @@ fn spawn_server<A, T, C, R, B, G>(
     router: R,
     h2_settings: H2Settings,
     drain_rx: drain::Watch,
-)
-where
+) where
     A: proxy::Accept<Connection> + Send + 'static,
     A::Io: transport::Peek + fmt::Debug + Send + 'static,
 
