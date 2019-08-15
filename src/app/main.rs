@@ -1,7 +1,7 @@
 use super::admin::{Admin, Readiness};
 use super::config::{Config, H2Settings};
 use super::profiles::Client as ProfilesClient;
-use super::{dst::DstAddr, identity};
+use super::{dst::DstAddr, identity, DispatchDeadline};
 use crate::app::classify::{self, Class};
 use crate::app::handle_time;
 use crate::app::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
@@ -20,17 +20,15 @@ use crate::{
     control, dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Addr,
     Conditional, Never,
 };
-use futures::{self, future, Future, Poll};
+use futures::{self, future, Future};
 use http;
 use hyper;
+use std::fmt;
 use std::net::SocketAddr;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
-use std::{fmt, io};
-use tokio::executor::{DefaultExecutor, Executor};
+use std::time::{Duration, SystemTime};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::runtime::current_thread;
-use tokio_timer::clock;
 use tracing::{debug, error, info, trace};
 
 /// Runs a sidecar proxy.
@@ -62,19 +60,6 @@ struct ProxyParts<G> {
 
     inbound_listener: Listen<identity::Local, G>,
     outbound_listener: Listen<identity::Local, G>,
-}
-
-#[derive(Copy, Clone, Debug)]
-struct DispatchDeadline(Instant);
-
-impl DispatchDeadline {
-    fn after(allowance: Duration) -> DispatchDeadline {
-        DispatchDeadline(clock::now() + allowance)
-    }
-
-    fn extract<A>(req: &http::Request<A>) -> Option<Instant> {
-        req.extensions().get::<DispatchDeadline>().map(|d| d.0)
-    }
 }
 
 impl<G> Main<G>
@@ -429,7 +414,8 @@ where
         let profiles_client =
             ProfilesClient::new(dst_svc, Duration::from_secs(3), config.destination_context);
 
-        let outbound = {
+        // Outbound
+        {
             use super::outbound::{
                 self,
                 discovery::Resolve,
@@ -657,7 +643,7 @@ where
                 .layer(transport_metrics.accept("outbound"))
                 .layer(keepalive::accept::layer(config.outbound_accept_keepalive));
 
-            serve(
+            spawn_server(
                 "out",
                 outbound_listener,
                 accept,
@@ -665,12 +651,11 @@ where
                 server_stack,
                 config.h2_settings,
                 drain_rx.clone(),
-            )
-            .map_err(|e| error!("outbound proxy background task failed: {}", e))
+            );
         };
-        task::spawn(outbound);
 
-        let inbound = {
+        // Inbound
+        {
             use super::inbound::{
                 orig_proto_downgrade,
                 rewrite_loopback_addr,
@@ -839,7 +824,7 @@ where
                 .layer(transport_metrics.accept("inbound"))
                 .layer(keepalive::accept::layer(config.inbound_accept_keepalive));
 
-            serve(
+            spawn_server(
                 "in",
                 inbound_listener,
                 accept,
@@ -847,16 +832,14 @@ where
                 source_stack,
                 config.h2_settings,
                 drain_rx.clone(),
-            )
-            .map_err(|e| error!("inbound proxy background task failed: {}", e))
+            );
         };
-        task::spawn(inbound);
     }
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
-fn serve<A, T, C, R, B, G>(
+fn spawn_server<A, T, C, R, B, G>(
     proxy_name: &'static str,
     bound_port: Listen<identity::Local, G>,
     accept: A,
@@ -864,8 +847,7 @@ fn serve<A, T, C, R, B, G>(
     router: R,
     h2_settings: H2Settings,
     drain_rx: drain::Watch,
-) -> impl Future<Item = (), Error = io::Error> + Send + 'static
-where
+) where
     A: proxy::Accept<Connection> + Send + 'static,
     A::Io: transport::Peek + fmt::Debug + Send + 'static,
 
@@ -892,65 +874,13 @@ where
     B: hyper::body::Payload + Default + Send + 'static,
     G: GetOriginalDst + Send + 'static,
 {
-    let listen_addr = bound_port.local_addr();
     let server = proxy::Server::new(
         proxy_name,
-        listen_addr,
+        bound_port.local_addr(),
         accept,
         connect,
         router,
-        drain_rx.clone(),
+        h2_settings,
     );
-    let log = server.log().clone();
-
-    let future = log.future(
-        bound_port.listen_and_fold((), move |(), (connection, remote)| {
-            let s = server.serve(connection, remote, h2_settings);
-            // TODO: use trace spans for log contexts.
-            // .instrument(info_span!("conn", %remote));
-            // Logging context is configured by the server.
-            let r = DefaultExecutor::current()
-                .spawn(Box::new(s))
-                .map_err(task::Error::into_io);
-            future::result(r)
-        }),
-    );
-    // TODO: use trace spans for log contexts.
-    // .instrument(info_span!("proxy", server = %proxy_name, local = %listen_addr));
-
-    let accept_until = Cancelable {
-        future,
-        canceled: false,
-    };
-
-    // As soon as we get a shutdown signal, the listener
-    // is canceled immediately.
-    drain_rx.watch(accept_until, |accept| {
-        accept.canceled = true;
-    })
-}
-
-/// Can cancel a future by setting a flag.
-///
-/// Used to 'watch' the accept futures, and close the listeners
-/// as soon as the shutdown signal starts.
-struct Cancelable<F> {
-    future: F,
-    canceled: bool,
-}
-
-impl<F> Future for Cancelable<F>
-where
-    F: Future<Item = ()>,
-{
-    type Item = ();
-    type Error = F::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if self.canceled {
-            Ok(().into())
-        } else {
-            self.future.poll()
-        }
-    }
+    super::proxy::spawn(bound_port, server, drain_rx)
 }

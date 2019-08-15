@@ -1,8 +1,6 @@
 //! Layer to map HTTP service errors into appropriate `http::Response`s.
 
-use crate::proxy::http::HasH2Reason;
-use crate::svc;
-use crate::Error;
+use crate::{proxy::http::HasH2Reason, svc, Error};
 use futures::{Future, Poll};
 use http::{header, Request, Response, StatusCode, Version};
 use tracing::{debug, error, warn};

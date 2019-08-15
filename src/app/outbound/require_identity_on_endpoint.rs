@@ -1,18 +1,14 @@
 use super::super::L5D_REQUIRE_ID;
 use super::Endpoint;
-use crate::identity;
 use crate::proxy::http::{identity_from_header, HasH2Reason};
-use crate::svc;
 use crate::transport::tls::{self, HasPeerIdentity};
-use crate::Conditional;
+use crate::{identity, svc, Conditional, Error};
 use futures::{
     future::{self, Either, FutureResult},
     try_ready, Async, Future, Poll,
 };
 use std::marker::PhantomData;
 use tracing::{debug, warn};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub struct RequireIdentityError {

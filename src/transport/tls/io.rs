@@ -80,6 +80,10 @@ where
     S: AddrInfo + Debug,
     C: Session + Debug,
 {
+    fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.0.get_ref().0.remote_addr()
+    }
+
     fn local_addr(&self) -> Result<SocketAddr, io::Error> {
         self.0.get_ref().0.local_addr()
     }

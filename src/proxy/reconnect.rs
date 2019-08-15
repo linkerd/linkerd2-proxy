@@ -1,6 +1,4 @@
-use crate::svc;
-use crate::Error;
-use crate::Never;
+use crate::{svc, Error, Never};
 use futures::{task, Async, Future, Poll};
 use rand;
 use std::fmt;

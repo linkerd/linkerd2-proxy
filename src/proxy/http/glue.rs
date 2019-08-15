@@ -1,6 +1,6 @@
 use crate::proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
-use crate::svc;
 use crate::transport::tls::HasStatus as HasTlsStatus;
+use crate::{svc, Error};
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::client::connect as hyper_connect;
@@ -133,7 +133,7 @@ impl<S> HyperServerSvc<S> {
 impl<S, B> hyper::service::Service for HyperServerSvc<S>
 where
     S: svc::Service<http::Request<HttpBody>, Response = http::Response<B>>,
-    S::Error: Into<linkerd2_proxy_core::Error>,
+    S::Error: Into<Error>,
     B: Payload,
 {
     type ReqBody = hyper::Body;
@@ -169,7 +169,7 @@ impl<C, T> hyper_connect::Connect for HyperConnect<C, T>
 where
     C: svc::MakeConnection<T> + Clone + Send + Sync,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<linkerd2_proxy_core::Error>,
+    <C::Future as Future>::Error: Into<Error>,
     C::Connection: HasTlsStatus + Send + 'static,
     T: Clone + Send + Sync,
 {
@@ -189,7 +189,7 @@ impl<F> Future for HyperConnectFuture<F>
 where
     F: Future + 'static,
     F::Item: HasTlsStatus,
-    F::Error: Into<linkerd2_proxy_core::Error>,
+    F::Error: Into<Error>,
 {
     type Item = (F::Item, hyper_connect::Connected);
     type Error = F::Error;

@@ -1,3 +1,8 @@
+use super::super::identity;
+use crate::Error;
+use http::header::AsHeaderName;
+use http::uri::Authority;
+
 pub mod add_header;
 pub mod balance;
 pub mod canonicalize;
@@ -23,10 +28,6 @@ pub use self::client::Client;
 pub use self::glue::{ClientUsedTls, HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
 
-use super::super::identity;
-use http::header::AsHeaderName;
-use http::uri::Authority;
-
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
 }
@@ -47,7 +48,7 @@ impl<'a> HasH2Reason for &'a (dyn std::error::Error + 'static) {
     }
 }
 
-impl HasH2Reason for linkerd2_proxy_core::Error {
+impl HasH2Reason for Error {
     fn h2_reason(&self) -> Option<::h2::Reason> {
         (&**self as &(dyn std::error::Error + 'static)).h2_reason()
     }

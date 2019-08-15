@@ -1,5 +1,4 @@
-use crate::svc;
-use crate::Error;
+use crate::{svc, Error};
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use std::{fmt, net::SocketAddr};
