@@ -30,12 +30,7 @@ impl BoxedIo {
 
 impl io::Read for BoxedIo {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let result = self.0.read(buf);
-        let request_size = BigEndian::read_i32(&buf);
-        if request_size > 0 {
-            println!("Kafka Request Size: {}", request_size);
-        }
-        result
+        self.0.read(buf)
     }
 }
 
@@ -190,5 +185,74 @@ mod tests {
         // BoxedIo doesn't call write_buf_erased, but write_buf, and triggering
         // a regular write.
         io.write_buf(&mut "hello".into_buf()).expect("write_buf");
+    }
+}
+
+#[derive(Debug)]
+pub struct KafkaIo<I>
+where
+    I: AsyncRead + AsyncWrite,
+{
+    inner: I,
+}
+
+impl<I> KafkaIo<I>
+where
+    I: AsyncRead + AsyncWrite,
+{
+    pub fn new(io: I) -> Self {
+        KafkaIo { inner: io }
+    }
+}
+
+impl<I> io::Read for KafkaIo<I>
+where
+    I: AsyncRead + AsyncWrite,
+{
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let result = self.inner.read(buf);
+        let request_size = BigEndian::read_i32(&buf);
+        if request_size > 0 {
+            println!("Kafka Request Size: {}", request_size);
+        }
+        result
+    }
+}
+
+impl<I> io::Write for KafkaIo<I>
+where
+    I: AsyncRead + AsyncWrite,
+{
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl<I> AsyncRead for KafkaIo<I>
+where
+    I: AsyncRead + AsyncWrite,
+{
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
+        self.inner.prepare_uninitialized_buffer(buf)
+    }
+}
+
+impl<I> AsyncWrite for KafkaIo<I>
+where
+    I: AsyncRead + AsyncWrite,
+{
+    fn shutdown(&mut self) -> Poll<(), io::Error> {
+        self.inner.shutdown()
+    }
+
+    fn write_buf<B: Buf>(&mut self, mut buf: &mut B) -> Poll<usize, io::Error> {
+        // A trait object of AsyncWrite would use the default write_buf,
+        // which doesn't allow vectored writes. Going through this method
+        // allows the trait object to call the specialized write_buf method.
+        self.inner.write_buf(&mut buf)
     }
 }

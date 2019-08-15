@@ -10,6 +10,7 @@ pub mod tls;
 pub use self::{
     addr_info::{AddrInfo, GetOriginalDst, SoOriginalDst},
     io::BoxedIo,
+    io::KafkaIo,
     keepalive::SetKeepalive,
     peek::Peek,
     tls::{Connection, Listen},

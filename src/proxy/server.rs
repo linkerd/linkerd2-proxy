@@ -9,7 +9,7 @@ use crate::proxy::{tcp, Error};
 use crate::svc::{MakeService, Service};
 use crate::transport::{
     tls::{self, HasPeerIdentity},
-    Connection, Peek,
+    Connection, KafkaIo, Peek,
 };
 use crate::{drain, logging};
 use futures::{future, Poll};
@@ -348,7 +348,8 @@ where
                 Protocol::Kafka => Either::B({
                     trace!("detected Kafka");
                     println!("detected Kafka");
-                    let fwd = tcp::forward(io, connect, source);
+                    //let fwd = tcp::forward(io, connect, source);
+                    let fwd = tcp::forward(KafkaIo::new(io), connect, source);
                     drain_signal.watch(fwd, |_| {})
                 }),
             }),
