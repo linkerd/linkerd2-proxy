@@ -8,9 +8,14 @@ use futures::future::{self, Future};
 use http::StatusCode;
 use hyper::{service::Service, Body, Request, Response};
 use std::io;
+
 mod readiness;
+mod serve_http;
 mod trace_level;
+
 pub use self::readiness::{Latch, Readiness};
+use self::serve_http::ClientAddr;
+pub use self::serve_http::serve_http;
 use self::trace_level::TraceLevel;
 
 #[derive(Debug, Clone)]

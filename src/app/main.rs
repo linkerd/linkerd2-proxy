@@ -1,4 +1,4 @@
-use super::admin::{Admin, Readiness};
+use super::admin::{self, Admin, Readiness};
 use super::classify::{self, Class};
 use super::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use super::profiles::Client as ProfilesClient;
@@ -8,7 +8,7 @@ use crate::proxy::{self, http::metrics as http_metrics, reconnect};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{
-    control, dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional,
+    dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional,
 };
 use futures::{self, future, Future};
 use std::net::SocketAddr;
@@ -333,7 +333,7 @@ where
                 .make(addr.clone())
         });
 
-        let resolver = control::destination::Resolver::new(
+        let resolver = crate::resolve::Resolver::new(
             dst_svc.clone(),
             config.destination_get_suffixes.clone(),
             config.destination_context.clone(),
@@ -352,7 +352,7 @@ where
                     let mut rt =
                         current_thread::Runtime::new().expect("initialize admin thread runtime");
 
-                    rt.spawn(control::serve_http(
+                    rt.spawn(admin::serve_http(
                         "admin",
                         admin_listener,
                         Admin::new(report, readiness, trace_level),

@@ -24,10 +24,10 @@
 //! - We need some means to limit the number of endpoints that can be returned for a
 //!   single resolution so that `control::Cache` is not effectively unbounded.
 
+use crate::addr::NameAddr;
 use crate::core::resolve::Resolve;
 use crate::dns;
 use crate::identity;
-use crate::NameAddr;
 use indexmap::IndexMap;
 use std::sync::Arc;
 use tower_grpc::{generic::client::GrpcService, Body, BoxBody};

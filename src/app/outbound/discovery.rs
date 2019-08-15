@@ -1,8 +1,8 @@
 use super::super::dst::DstAddr;
 use super::Endpoint;
-use crate::control::destination::{Metadata, Unresolvable};
 use crate::core::resolve;
 use crate::proxy::http::settings;
+use crate::resolve::{Metadata, Unresolvable};
 use crate::transport::tls;
 use crate::{Addr, Conditional, NameAddr};
 use futures::{future::Future, try_ready, Async, Poll};

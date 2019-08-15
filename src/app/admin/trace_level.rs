@@ -1,5 +1,4 @@
-use super::rsp;
-use crate::control::ClientAddr;
+use super::{rsp, ClientAddr};
 pub use crate::trace::LevelHandle as TraceLevel;
 use futures::{
     future::{self, Future},

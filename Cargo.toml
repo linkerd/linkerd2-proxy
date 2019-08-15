@@ -9,6 +9,7 @@ members = [
     "lib/linkerd2-identity",
     "lib/linkerd2-metrics",
     "lib/linkerd2-proxy-core",
+    "lib/linkerd2-proxy-resolve",
     "lib/linkerd2-router",
     "lib/linkerd2-signal",
     "lib/linkerd2-stack",
@@ -30,18 +31,19 @@ flaky_tests = []
 
 [dependencies]
 hyper-balance = { path = "lib/hyper-balance" }
-linkerd2-addr        = { path = "lib/linkerd2-addr" }
-linkerd2-conditional = { path = "lib/linkerd2-conditional" }
-linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
-linkerd2-identity    = { path = "lib/linkerd2-identity" }
-linkerd2-metrics     = { path = "lib/linkerd2-metrics" }
-linkerd2-never       = { path = "lib/linkerd2-never" }
-linkerd2-proxy-core  = { path = "lib/linkerd2-proxy-core" }
-linkerd2-router      = { path = "lib/linkerd2-router" }
-linkerd2-signal      = { path = "lib/linkerd2-signal" }
-linkerd2-stack       = { path = "lib/linkerd2-stack" }
-linkerd2-task        = { path = "lib/linkerd2-task" }
-linkerd2-timeout     = { path = "lib/linkerd2-timeout" }
+linkerd2-addr          = { path = "lib/linkerd2-addr" }
+linkerd2-conditional   = { path = "lib/linkerd2-conditional" }
+linkerd2-dns-name      = { path = "lib/linkerd2-dns-name" }
+linkerd2-identity      = { path = "lib/linkerd2-identity" }
+linkerd2-metrics       = { path = "lib/linkerd2-metrics" }
+linkerd2-never         = { path = "lib/linkerd2-never" }
+linkerd2-proxy-core    = { path = "lib/linkerd2-proxy-core" }
+linkerd2-proxy-resolve = { path = "lib/linkerd2-proxy-resolve" }
+linkerd2-router        = { path = "lib/linkerd2-router" }
+linkerd2-signal        = { path = "lib/linkerd2-signal" }
+linkerd2-stack         = { path = "lib/linkerd2-stack" }
+linkerd2-task          = { path = "lib/linkerd2-task" }
+linkerd2-timeout       = { path = "lib/linkerd2-timeout" }
 
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 

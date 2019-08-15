@@ -1,12 +1,12 @@
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
-use crate::control::destination::{Metadata, Unresolvable};
+use crate::core::listen::ServeConnection;
+use crate::core::resolve::{Resolution, Resolve};
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::core::listen::ServeConnection;
-use crate::core::resolve::{Resolve, Resolution};
-use crate::proxy::{self, accept, resolve, reconnect, Server};
+use crate::proxy::{self, accept, reconnect, resolve, Server};
+use crate::resolve::{Metadata, Unresolvable};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr, NameAddr};
