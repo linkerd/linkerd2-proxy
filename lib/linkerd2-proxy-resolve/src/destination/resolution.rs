@@ -18,7 +18,8 @@ use futures::{
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::HashMap, error::Error, fmt, net::SocketAddr};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tracing::{debug, trace, warn};
+use tracing::{debug, info_span, trace, warn};
+use tracing_futures::Instrument;
 
 /// A resolution for a single authority.
 pub struct Resolution {
@@ -166,8 +167,10 @@ where
 
             let query = self.query.take().expect("invalid state");
 
-            // todo: set logging context within the daemon task.
-            task::spawn(Daemon { updater, query });
+            let authority = query.authority().clone();
+            let fut = Daemon { updater, query }
+                .instrument(info_span!("resolve", authority = %authority));
+            task::spawn(fut);
 
             return Ok(Async::Ready(res));
         }
