@@ -12,5 +12,4 @@ pub mod server;
 mod tcp;
 
 pub use self::accept::Accept;
-pub use self::resolve::{Resolution, Resolve};
 pub use self::server::{Server, Source};

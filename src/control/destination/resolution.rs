@@ -6,8 +6,9 @@ use crate::api::{
     },
     net::TcpAddress,
 };
-use crate::control::destination::{Metadata, ProtocolHint, Update};
-use crate::{identity, logging, proxy::resolve, NameAddr, Never};
+use crate::control::destination::{Metadata, ProtocolHint};
+use crate::core::resolve::{self, Update};
+use crate::{identity, logging, NameAddr, Never};
 use futures::{
     future::Future,
     sync::{mpsc, oneshot},

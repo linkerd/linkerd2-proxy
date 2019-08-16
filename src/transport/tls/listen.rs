@@ -1,15 +1,14 @@
-use crate::identity;
+use crate::core::listen::{ListenAndSpawn, ServeConnection};
 use crate::transport::prefixed::Prefixed;
 use crate::transport::tls::{self, conditional_accept, Acceptor, Connection, ReasonForNoPeerName};
 use crate::transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst};
-use crate::Conditional;
+use crate::{drain, identity, Conditional, Error};
 use bytes::BytesMut;
 use futures::{
     future::{self, Either},
     stream, try_ready, Async, Future, IntoFuture, Poll, Stream,
 };
 use indexmap::IndexSet;
-use linkerd2_proxy_core::{drain, Error, ListenAndSpawn, ServeConnection};
 pub use rustls::ServerConfig as Config;
 use std::io;
 use std::net::{SocketAddr, TcpListener as StdListener};

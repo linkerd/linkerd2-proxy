@@ -1,5 +1,7 @@
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::control::destination::{Metadata, Unresolvable};
+use crate::core::listen::ServeConnection;
+use crate::core::resolve::{Resolution, Resolve};
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
@@ -7,7 +9,7 @@ use crate::proxy::http::{
 use crate::proxy::{self, accept, reconnect, resolve, Server};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
-use crate::{core::ServeConnection, svc, Addr, NameAddr};
+use crate::{svc, Addr, NameAddr};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -43,10 +45,10 @@ pub fn server<R, P>(
     transport_metrics: transport::metrics::Registry,
 ) -> impl ServeConnection<Connection>
 where
-    R: resolve::Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
+    R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
     R::Future: futures::Future<Error = Unresolvable> + Send,
     R::Resolution: Send,
-    <R::Resolution as resolve::Resolution>::Error: std::error::Error + Send + Sync + 'static,
+    <R::Resolution as Resolution>::Error: std::error::Error + Send + Sync + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,

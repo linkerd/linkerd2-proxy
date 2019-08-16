@@ -1,3 +1,4 @@
+use crate::core::resolve::{Resolution, Resolve, Update};
 use crate::{svc, Error};
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
@@ -5,35 +6,6 @@ use std::{fmt, net::SocketAddr};
 use tokio::sync::oneshot;
 pub use tower_discover::Change;
 use tracing::trace;
-
-/// Resolves `T`-typed names/addresses as a `Resolution`.
-pub trait Resolve<T> {
-    type Endpoint;
-    type Resolution: Resolution<Endpoint = Self::Endpoint>;
-    type Future: Future<Item = Self::Resolution>;
-
-    /// Asynchronously returns a `Resolution` for the given `target`.
-    ///
-    /// The returned future will complete with a `Resolution` if this resolver
-    /// was able to successfully resolve `target`. Otherwise, if it completes
-    /// with an error, that name or address should not be resolved by this
-    /// resolver.
-    fn resolve(&self, target: &T) -> Self::Future;
-}
-
-/// An infinite stream of endpoint updates.
-pub trait Resolution {
-    type Endpoint;
-    type Error;
-
-    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
-}
-
-#[derive(Clone, Debug)]
-pub enum Update<T> {
-    Add(SocketAddr, T),
-    Remove(SocketAddr),
-}
 
 #[derive(Clone, Debug)]
 pub struct Layer<R> {
@@ -298,12 +270,13 @@ mod tests {
     use tower_discover::{Change, Discover as _Discover};
     use tower_util::service_fn;
 
-    impl<E> Resolution for mpsc::Receiver<Update<E>> {
+    struct Urx<E>(mpsc::Receiver<Update<E>>);
+    impl<E> Resolution for Urx<E> {
         type Endpoint = E;
         type Error = mpsc::error::RecvError;
 
         fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-            let ep = try_ready!(Stream::poll(self)).expect("stream must not terminate");
+            let ep = try_ready!(self.0.poll()).expect("stream must not terminate");
             Ok(Async::Ready(ep))
         }
     }
@@ -332,7 +305,7 @@ mod tests {
             let (make1_tx, make1_rx) = oneshot::channel::<Svc<usize>>();
             let make = Svc(vec![make1_rx, make0_rx]);
 
-            let mut discover = Discover::new(resolution, make);
+            let mut discover = Discover::new(Urx(resolution), make);
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
@@ -435,7 +408,7 @@ mod tests {
             let (make1_tx, make1_rx) = oneshot::channel::<Svc<usize>>();
             let make = Svc(vec![make1_rx, make0_rx]);
 
-            let mut discover = Discover::new(resolution, make);
+            let mut discover = Discover::new(Urx(resolution), make);
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
@@ -510,7 +483,7 @@ mod tests {
             let (mut tx, resolution) = mpsc::channel(1);
             let make = service_fn(|()| future::empty::<Svc<()>, Error>());
 
-            let mut discover = Discover::new(resolution, make);
+            let mut discover = Discover::new(Urx(resolution), make);
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
