@@ -83,3 +83,8 @@ impl DispatchDeadline {
         req.extensions().get::<DispatchDeadline>().map(|d| d.0)
     }
 }
+
+type HttpEndpointMetricsRegistry =
+    crate::proxy::http::metrics::SharedRegistry<metric_labels::EndpointLabels, classify::Class>;
+type HttpRouteMetricsRegistry =
+    crate::proxy::http::metrics::SharedRegistry<metric_labels::RouteLabels, classify::Class>;
