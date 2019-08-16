@@ -194,6 +194,7 @@ where
     I: AsyncRead + AsyncWrite,
 {
     inner: I,
+    start_pos_next_message: usize,
 }
 
 impl<I> KafkaIo<I>
@@ -201,8 +202,22 @@ where
     I: AsyncRead + AsyncWrite,
 {
     pub fn new(io: I) -> Self {
-        KafkaIo { inner: io }
+        KafkaIo {
+            inner: io,
+            start_pos_next_message: 0,
+        }
     }
+}
+
+fn analyze_kafka_message(buf: &[u8]) -> i32 {
+    if buf.len() > 4 {
+        if buf[0..4] == [0, 0, 0, 20] && buf.len() >= 24 {
+            println!("Kafka Message Size: {}", BigEndian::read_i32(&buf));
+            return 24;
+        }
+    }
+
+    return -1;
 }
 
 impl<I> io::Read for KafkaIo<I>
@@ -211,9 +226,18 @@ where
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let result = self.inner.read(buf);
-        let request_size = BigEndian::read_i32(&buf);
-        if request_size > 0 {
-            println!("Kafka Request Size: {}", request_size);
+        match result {
+            Ok(n) => {
+                while self.start_pos_next_message <= n {
+                    let len_msg = analyze_kafka_message(&buf[self.start_pos_next_message..]);
+                    if len_msg > 0 {
+                        self.start_pos_next_message += len_msg as usize;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            _ => {}
         }
         result
     }
@@ -250,9 +274,6 @@ where
     }
 
     fn write_buf<B: Buf>(&mut self, mut buf: &mut B) -> Poll<usize, io::Error> {
-        // A trait object of AsyncWrite would use the default write_buf,
-        // which doesn't allow vectored writes. Going through this method
-        // allows the trait object to call the specialized write_buf method.
         self.inner.write_buf(&mut buf)
     }
 }
