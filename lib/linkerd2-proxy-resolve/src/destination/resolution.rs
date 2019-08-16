@@ -166,7 +166,7 @@ where
 
             let query = self.query.take().expect("invalid state");
 
-            // todo
+            // todo: set logging context within the daemon task.
             task::spawn(Daemon { updater, query });
 
             return Ok(Async::Ready(res));
