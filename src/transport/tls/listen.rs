@@ -9,6 +9,7 @@ use futures::{
     stream, try_ready, Async, Future, IntoFuture, Poll, Stream,
 };
 use indexmap::IndexSet;
+use linkerd2_proxy_core::{drain, Error, ListenAndSpawn, ServeConnection};
 pub use rustls::ServerConfig as Config;
 use std::io;
 use std::net::{SocketAddr, TcpListener as StdListener};

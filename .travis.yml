@@ -16,11 +16,12 @@ jobs:
       install:
         - rustup component add rustfmt
         - export RUSTFLAGS="-C debuginfo=0" RUST_TEST_THREADS=1 RUST_TEST_PATIENCE_MS=200
+      # # Cache debugging:
+      # before_script:
+      #   - du -sh . && find . -type f |xargs -n 1000 du -s |sort -rn |head |awk '{print $2}' |xargs du -sh
       script:
         - make check-fmt
-        - travis_wait 40 make test
-        # If you're debugging disk utilization/caching... This finds the largest files in `target`:
-        #- du -sh target && find target -type f |xargs -n 1000 du -s |sort -rn |head |awk '{print $2}' |xargs du -sh
+        - travis_wait 40 make test clean
 
     # On master, package an artifact and run tests in release mode before
     # publishing the artifact to build.l5d.io/linkerd2-proxy.
