@@ -1,5 +1,5 @@
-use crate::{svc, Error};
 use crate::core::resolve::{Resolution, Resolve, Update};
+use crate::{svc, Error};
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use std::{fmt, net::SocketAddr};
