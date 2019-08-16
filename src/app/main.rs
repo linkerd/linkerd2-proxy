@@ -7,9 +7,7 @@ use super::{handle_time, inbound, outbound, tap::serve_tap};
 use crate::proxy::{self, http::metrics as http_metrics, reconnect};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
-use crate::{
-    dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional,
-};
+use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
 use futures::{self, future, Future};
 use std::net::SocketAddr;
 use std::thread;

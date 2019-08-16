@@ -9,4 +9,4 @@ use linkerd2_task as task;
 mod destination;
 mod remote_stream;
 
-pub use self::destination::{Resolver, Metadata, ProtocolHint, Unresolvable};
+pub use self::destination::{Metadata, ProtocolHint, Resolver, Unresolvable};

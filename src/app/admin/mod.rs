@@ -14,8 +14,8 @@ mod serve_http;
 mod trace_level;
 
 pub use self::readiness::{Latch, Readiness};
-use self::serve_http::ClientAddr;
 pub use self::serve_http::serve_http;
+use self::serve_http::ClientAddr;
 use self::trace_level::TraceLevel;
 
 #[derive(Debug, Clone)]

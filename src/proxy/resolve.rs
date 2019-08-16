@@ -270,14 +270,13 @@ mod tests {
     use tower_discover::{Change, Discover as _Discover};
     use tower_util::service_fn;
 
-    struct UpdateRx<E>(mpsc::Receiver<Update<E>>);
-
-    impl<E> Resolution for UpdateRx<E> {
+    struct Urx<E>(mpsc::Receiver<Update<E>>);
+    impl<E> Resolution for Urx<E> {
         type Endpoint = E;
         type Error = mpsc::error::RecvError;
 
         fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-            let ep = try_ready!(Stream::poll(&mut self.0)).expect("stream must not terminate");
+            let ep = try_ready!(self.0.poll()).expect("stream must not terminate");
             Ok(Async::Ready(ep))
         }
     }
@@ -306,7 +305,7 @@ mod tests {
             let (make1_tx, make1_rx) = oneshot::channel::<Svc<usize>>();
             let make = Svc(vec![make1_rx, make0_rx]);
 
-            let mut discover = Discover::new(UpdateRx(resolution), make);
+            let mut discover = Discover::new(Urx(resolution), make);
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
@@ -409,7 +408,7 @@ mod tests {
             let (make1_tx, make1_rx) = oneshot::channel::<Svc<usize>>();
             let make = Svc(vec![make1_rx, make0_rx]);
 
-            let mut discover = Discover::new(UpdateRx(resolution), make);
+            let mut discover = Discover::new(Urx(resolution), make);
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
@@ -484,7 +483,7 @@ mod tests {
             let (mut tx, resolution) = mpsc::channel(1);
             let make = service_fn(|()| future::empty::<Svc<()>, Error>());
 
-            let mut discover = Discover::new(UpdateRx(resolution), make);
+            let mut discover = Discover::new(Urx(resolution), make);
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
