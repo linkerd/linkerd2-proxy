@@ -168,8 +168,7 @@ where
             let query = self.query.take().expect("invalid state");
 
             let authority = query.authority().clone();
-            let fut =
-                Daemon { updater, query }.instrument(info_span!("resolve", authority = %authority));
+            let fut = Daemon { updater, query }.instrument(info_span!("resolve", %authority));
             task::spawn(fut);
 
             return Ok(Async::Ready(res));
