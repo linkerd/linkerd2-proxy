@@ -8,7 +8,6 @@ pub mod control;
 mod dns;
 mod drain;
 mod identity;
-mod kafka;
 pub mod logging;
 mod proxy;
 mod svc;
