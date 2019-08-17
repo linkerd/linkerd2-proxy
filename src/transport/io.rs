@@ -229,6 +229,8 @@ impl<I> io::Read for KafkaIo<I>
 where
     I: AsyncRead + AsyncWrite,
 {
+    // Is it possible to read by frame? If so, then we need to handle the frame case
+    // for example, a Kafka message is splitted into two frames
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let result = self.inner.read(buf);
         match result {
