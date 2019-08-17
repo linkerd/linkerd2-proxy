@@ -21,7 +21,14 @@ jobs:
       #   - du -sh . && find . -type f |xargs -n 1000 du -s |sort -rn |head |awk '{print $2}' |xargs du -sh
       script:
         - make check-fmt
-        - travis_wait 40 make test clean
+        - travis_wait 20 make test-lib clean
+
+    # On master, run the (much longer) set of integration tests.
+    - stage: publish
+      if: branch = master && type != pull_request
+      rust: stable
+      script:
+        - travis_wait 40 make test-integration clean
 
     # On master, package an artifact and run tests in release mode before
     # publishing the artifact to build.l5d.io/linkerd2-proxy.
