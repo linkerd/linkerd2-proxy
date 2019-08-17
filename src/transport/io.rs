@@ -219,7 +219,7 @@ fn analyze_kafka_message(buf: &[u8]) -> i32 {
             return decoded_reuquest.size;
         }
         Err(e) => {
-            println!("Error when decoding: {:?}", e);
+            println!("Error when decoding: {:?} ; buf: {:?}", e, buf);
             return -1;
         }
     }
