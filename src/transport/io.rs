@@ -1,4 +1,3 @@
-use byteorder::{BigEndian, ByteOrder};
 use std::io;
 use std::net::{Shutdown, SocketAddr};
 
@@ -210,14 +209,20 @@ where
 }
 
 fn analyze_kafka_message(buf: &[u8]) -> i32 {
-    if buf.len() > 4 {
-        if buf[0..4] == [0, 0, 0, 20] && buf.len() >= 24 {
-            println!("Kafka Message Size: {}", BigEndian::read_i32(&buf));
-            return 24;
+    let decode_result = kafka_codec::primitives::DecodedRequest::decode(buf);
+    match decode_result {
+        Ok(decoded_reuquest) => {
+            println!("Message decoded successfully;");
+            println!("Message Size: {}", decoded_reuquest.size);
+            println!("Message Header: {}", decoded_reuquest.header);
+            println!("Message Body: {:?}", decoded_reuquest.body);
+            return decoded_reuquest.size;
+        }
+        Err(e) => {
+            println!("Error when decoding: {:?}", e);
+            return -1;
         }
     }
-
-    return -1;
 }
 
 impl<I> io::Read for KafkaIo<I>

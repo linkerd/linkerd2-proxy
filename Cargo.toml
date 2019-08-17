@@ -108,3 +108,5 @@ debug = false
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }
 
+[dependencies.kafka_codec]
+path = "../kafka_codec"
