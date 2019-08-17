@@ -1,6 +1,6 @@
+use super::super::remote_stream::{self, Remote};
+use crate::addr::NameAddr;
 use crate::api::destination::{client::Destination, GetDestination, Update};
-use crate::control::remote_stream::{self, Remote};
-use crate::NameAddr;
 use futures::{Async, Poll, Stream};
 use std::sync::Arc;
 use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};

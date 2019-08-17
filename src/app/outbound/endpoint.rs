@@ -1,7 +1,7 @@
 use super::super::{dst::Route, L5D_REQUIRE_ID};
-use crate::control::destination::{Metadata, ProtocolHint};
 use crate::proxy::http::{identity_from_header, settings};
 use crate::proxy::Source;
+use crate::resolve::{Metadata, ProtocolHint};
 use crate::transport::{connect, tls};
 use crate::{identity, tap};
 use crate::{Conditional, NameAddr};

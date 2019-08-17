@@ -1,4 +1,5 @@
 use super::client;
+use crate::addr::NameAddr;
 use crate::api::{
     destination::{
         protocol_hint::Protocol, update::Update as PbUpdate2, TlsIdentity, Update as PbUpdate,
@@ -6,9 +7,9 @@ use crate::api::{
     },
     net::TcpAddress,
 };
-use crate::control::destination::{Metadata, ProtocolHint};
 use crate::core::resolve::{self, Update};
-use crate::{identity, logging, NameAddr, Never};
+use crate::destination::{Metadata, ProtocolHint};
+use crate::{identity, task, Never};
 use futures::{
     future::Future,
     sync::{mpsc, oneshot},
@@ -16,9 +17,9 @@ use futures::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::HashMap, error::Error, fmt, net::SocketAddr};
-use tokio;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tracing::{debug, trace, warn};
+use tracing::{debug, info_span, trace, warn};
+use tracing_futures::Instrument;
 
 /// A resolution for a single authority.
 pub struct Resolution {
@@ -165,10 +166,10 @@ where
                 .expect("resolution should not have been dropped");
 
             let query = self.query.take().expect("invalid state");
-            let ctx = logging::Section::Proxy.bg(LogCtx(query.authority().clone()));
 
-            let daemon = ctx.future(Daemon { updater, query });
-            tokio::spawn(Box::new(daemon));
+            let authority = query.authority().clone();
+            let fut = Daemon { updater, query }.instrument(info_span!("resolve", %authority));
+            task::spawn(fut);
 
             return Ok(Async::Ready(res));
         }
