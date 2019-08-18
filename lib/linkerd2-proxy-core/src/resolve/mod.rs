@@ -1,6 +1,8 @@
 use futures::{Future, Poll};
 use std::net::SocketAddr;
 
+pub mod filter;
+
 /// Resolves `T`-typed names/addresses as a `Resolution`.
 pub trait Resolve<T> {
     type Endpoint;
