@@ -95,7 +95,13 @@ fn outbound_kafka() {
     ]; // value: consumer-1
        // Just echo to make things easier for now
        //const KAFKA_RESPONSE_API_VERSIONS: &[u8] = KAFKA_REQUEST_API_VERSIONS;
-    const KAFKA_RESPONSE_API_VERSIONS: &[u8] = &[0, 0, 0, 0, 0, 0];
+    const KAFKA_RESPONSE_API_VERSIONS: &[u8] = &[
+        // Request/response Size => INT32
+        0, 0, 0, 99, // value: 99
+        // correlation_id => INT32
+        0, 0, 0, 88, // value: 1
+            // No Response body
+    ];
 
     let srv = server::tcp()
         .accept(move |read| {
@@ -103,9 +109,9 @@ fn outbound_kafka() {
             KAFKA_RESPONSE_API_VERSIONS
         })
         .run();
-    let proxy = proxy::new().outbound(srv).run();
+    let proxy = proxy::new().inbound(srv).run();
 
-    let client = client::tcp(proxy.outbound);
+    let client = client::tcp(proxy.inbound);
 
     let tcp_client = client.connect();
 

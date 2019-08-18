@@ -208,15 +208,32 @@ where
     }
 }
 
-fn analyze_kafka_message(buf: &[u8]) -> i32 {
+fn analyze_kafka_request(buf: &[u8]) -> i32 {
     let decode_result = kafka_codec::primitives::DecodedRequest::decode(buf);
     match decode_result {
         Ok(decoded_reuquest) => {
-            println!("Message decoded successfully;");
-            println!("Message Size: {}", decoded_reuquest.size);
-            println!("Message Header: {}", decoded_reuquest.header);
-            println!("Message Body: {:?}", decoded_reuquest.body);
+            println!("Request decoded successfully;");
+            println!("Request Size: {}", decoded_reuquest.size);
+            println!("Request Header: {}", decoded_reuquest.header);
+            println!("Request Body: {:?}", decoded_reuquest.body);
             return decoded_reuquest.size;
+        }
+        Err(e) => {
+            println!("Error when decoding: {:?} ; buf: {:?}", e, buf);
+            return -1;
+        }
+    }
+}
+
+fn analyze_kafka_response(buf: &[u8]) -> i32 {
+    let decode_result = kafka_codec::primitives::DecodedResponse::decode(buf);
+    match decode_result {
+        Ok(decoded_response) => {
+            println!("Response decoded successfully;");
+            println!("Response Size: {}", decoded_response.size);
+            println!("Response Header: {}", decoded_response.header);
+            println!("Response Body: {:?}", decoded_response.body);
+            return decoded_response.size;
         }
         Err(e) => {
             println!("Error when decoding: {:?} ; buf: {:?}", e, buf);
@@ -233,10 +250,11 @@ where
     // for example, a Kafka message is splitted into two frames
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let result = self.inner.read(buf);
+        println!("!!!reading; buf: {:?}", buf);
         match result {
             Ok(n) => {
-                while self.start_pos_next_message <= n {
-                    let len_msg = analyze_kafka_message(&buf[self.start_pos_next_message..]);
+                while self.start_pos_next_message < n {
+                    let len_msg = analyze_kafka_request(&buf[self.start_pos_next_message..]);
                     if len_msg > 0 {
                         self.start_pos_next_message += len_msg as usize;
                     } else {
@@ -281,6 +299,12 @@ where
     }
 
     fn write_buf<B: Buf>(&mut self, mut buf: &mut B) -> Poll<usize, io::Error> {
+        println!("!!!writing bytes {:?}", buf.bytes());
+        analyze_kafka_response(&buf.bytes());
+
+        // Note that `write_buf` will advance the buf automatically after writing,
+        // since the buffer may be written in a framed way,
+        // we may need to cache the buffer until a full Kafka response is in the cache
         self.inner.write_buf(&mut buf)
     }
 }
