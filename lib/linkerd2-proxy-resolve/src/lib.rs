@@ -7,6 +7,9 @@ use linkerd2_proxy_core as core;
 use linkerd2_task as task;
 
 mod destination;
+mod metadata;
+mod pb;
 mod remote_stream;
 
-pub use self::destination::{Metadata, ProtocolHint, Resolver, Unresolvable};
+pub use self::destination::{Resolve, Unresolvable};
+pub use self::metadata::{Metadata, ProtocolHint};

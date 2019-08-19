@@ -10,10 +10,8 @@ use crate::api::{
 use crate::core::resolve::{self, Update};
 use crate::destination::{Metadata, ProtocolHint};
 use crate::{identity, task, Never};
-use futures::{
-    future::Future,
-    sync::{mpsc, oneshot},
-    Async, Poll, Stream,
+use futures::{Async, Future, Poll, Stream};
+
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::HashMap, error::Error, fmt, net::SocketAddr};
@@ -31,7 +29,7 @@ pub struct ResolveFuture<T>
 where
     T: GrpcService<BoxBody>,
 {
-    query: Option<client::Query<T>>,
+    query: client::Query<T>,
 }
 
 /// An error indicating that the Destination service cannot resolve the
@@ -112,14 +110,8 @@ impl<T> ResolveFuture<T>
 where
     T: GrpcService<BoxBody> + Send,
 {
-    pub(super) fn new(authority: &NameAddr, client: client::Client<T>) -> Self {
-        Self {
-            query: Some(client.connect(&authority)),
-        }
-    }
-
-    pub(super) fn unresolvable() -> Self {
-        Self { query: None }
+    pub(super) fn new(query: client::Query<T>) -> Self {
+        Self { query }
     }
 }
 
@@ -338,106 +330,3 @@ impl fmt::Display for Unresolvable {
 }
 
 impl Error for Unresolvable {}
-
-/// Construct a new labeled `SocketAddr `from a protobuf `WeightedAddr`.
-fn pb_to_addr_meta(
-    pb: WeightedAddr,
-    set_labels: &HashMap<String, String>,
-) -> Option<(SocketAddr, Metadata)> {
-    let addr = pb.addr.and_then(pb_to_sock_addr)?;
-
-    let meta = {
-        let mut t = set_labels
-            .iter()
-            .chain(pb.metric_labels.iter())
-            .collect::<Vec<(&String, &String)>>();
-        t.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
-
-        let mut m = IndexMap::with_capacity(t.len());
-        for (k, v) in t.into_iter() {
-            m.insert(k.clone(), v.clone());
-        }
-
-        m
-    };
-
-    let mut proto_hint = ProtocolHint::Unknown;
-    if let Some(hint) = pb.protocol_hint {
-        if let Some(proto) = hint.protocol {
-            match proto {
-                Protocol::H2(..) => {
-                    proto_hint = ProtocolHint::Http2;
-                }
-            }
-        }
-    }
-
-    let tls_id = pb.tls_identity.and_then(pb_to_id);
-    let meta = Metadata::new(meta, proto_hint, tls_id, pb.weight);
-    Some((addr, meta))
-}
-
-fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
-    use crate::api::destination::tls_identity::Strategy;
-
-    let Strategy::DnsLikeIdentity(i) = pb.strategy?;
-    match identity::Name::from_hostname(i.name.as_bytes()) {
-        Ok(i) => Some(i),
-        Err(_) => {
-            warn!("Ignoring invalid identity: {}", i.name);
-            None
-        }
-    }
-}
-
-fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
-    use crate::api::net::ip_address::Ip;
-    use std::net::{Ipv4Addr, Ipv6Addr};
-    /*
-    current structure is:
-    TcpAddress {
-        ip: Option<IpAddress {
-            ip: Option<enum Ip {
-                Ipv4(u32),
-                Ipv6(IPv6 {
-                    first: u64,
-                    last: u64,
-                }),
-            }>,
-        }>,
-        port: u32,
-    }
-    */
-    match pb.ip {
-        Some(ip) => match ip.ip {
-            Some(Ip::Ipv4(octets)) => {
-                let ipv4 = Ipv4Addr::from(octets);
-                Some(SocketAddr::from((ipv4, pb.port as u16)))
-            }
-            Some(Ip::Ipv6(v6)) => {
-                let octets = [
-                    (v6.first >> 56) as u8,
-                    (v6.first >> 48) as u8,
-                    (v6.first >> 40) as u8,
-                    (v6.first >> 32) as u8,
-                    (v6.first >> 24) as u8,
-                    (v6.first >> 16) as u8,
-                    (v6.first >> 8) as u8,
-                    v6.first as u8,
-                    (v6.last >> 56) as u8,
-                    (v6.last >> 48) as u8,
-                    (v6.last >> 40) as u8,
-                    (v6.last >> 32) as u8,
-                    (v6.last >> 24) as u8,
-                    (v6.last >> 16) as u8,
-                    (v6.last >> 8) as u8,
-                    v6.last as u8,
-                ];
-                let ipv6 = Ipv6Addr::from(octets);
-                Some(SocketAddr::from((ipv6, pb.port as u16)))
-            }
-            None => None,
-        },
-        None => None,
-    }
-}

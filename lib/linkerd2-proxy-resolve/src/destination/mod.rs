@@ -15,154 +15,135 @@
 //! Furthermore, there are not currently any bounds on the number of endpoints that may be
 //! returned for a single resolution. It is expected that the Destination service enforce
 //! some reasonable upper bounds.
-//!
-//! ## TODO
-//!
-//! - Given that the underlying gRPC client has some max number of concurrent streams, we
-//!   actually do have an upper bound on concurrent resolutions. This needs to be made
-//!   more explicit.
-//! - We need some means to limit the number of endpoints that can be returned for a
-//!   single resolution so that `control::Cache` is not effectively unbounded.
 
-use crate::addr::NameAddr;
-use crate::core::resolve::Resolve;
-use crate::dns;
-use crate::identity;
-use indexmap::IndexMap;
-use std::sync::Arc;
-use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
+pub use crate::api::destination::GetDestination as Target;
+use crate::api::destination::{client::Destination, Update as ApiUpdate};
+use crate::core::resolve;
+use crate::metadata::Metadata;
+use futures::{try_ready, Async, Future, Poll};
+use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::trace;
 
-mod client;
-mod resolution;
-
-use self::client::Client;
-pub use self::resolution::{Resolution, ResolveFuture, Unresolvable};
+pub trait CanResolve {
+    fn target(&self) -> Target;
+}
 
 /// A handle to request resolutions from the destination service.
 #[derive(Clone)]
-pub struct Resolver<T> {
-    client: Option<Client<T>>,
-    suffixes: Arc<Vec<dns::Suffix>>,
+pub struct Resolve<S>(Destination<S>);
+
+pub struct ResolveFuture<S: GrpcService<BoxBody>> {
+    inner: Option<Inner<S>>,
 }
 
-/// Metadata describing an endpoint.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Metadata {
-    /// An endpoint's relative weight.
-    ///
-    /// A weight of 0 means that the endpoint should never be preferred over a
-    /// non 0-weighted endpoint.
-    ///
-    /// The default weight, corresponding to 1.0, is 10,000. This enables us to
-    /// specify weights as small as 0.0001 and as large as 400,000+.
-    ///
-    /// A float is not used so that this type can implement `Eq`.
-    weight: u32,
-
-    /// Arbitrary endpoint labels. Primarily used for telemetry.
-    labels: IndexMap<String, String>,
-
-    /// A hint from the controller about what protocol (HTTP1, HTTP2, etc) the
-    /// destination understands.
-    protocol_hint: ProtocolHint,
-
-    /// How to verify TLS for the endpoint.
-    identity: Option<identity::Name>,
+pub struct Resolution<S: GrpcService<BoxBody>> {
+    inner: Inner<S>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProtocolHint {
-    /// We don't what the destination understands, so forward messages in the
-    /// protocol we received them in.
-    Unknown,
-    /// The destination can receive HTTP2 messages.
-    Http2,
+struct Inner<S: GrpcService<BoxBody>> {
+    svc: Destination<S>,
+    target: Target,
+    state: State<S>,
 }
 
-// ==== impl Resolver =====
+enum State<S: GrpcService<BoxBody>> {
+    NotReady,
+    Pending(grpc::client::server_streaming::ResponseFuture<ApiUpdate, S::Future>),
+    Streaming(grpc::Streaming<ApiUpdate, S::ResponseBody>),
+}
 
-impl<T> Resolver<T>
+// === impl Resolver ===
+
+impl<S> Resolve<S>
 where
-    T: GrpcService<BoxBody> + Clone + Send + 'static,
-    T::ResponseBody: Send,
-    <T::ResponseBody as Body>::Data: Send,
-    T::Future: Send,
+    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S::ResponseBody: Send,
+    <S::ResponseBody as Body>::Data: Send,
+    S::Future: Send,
 {
     /// Returns a `Resolver` for requesting destination resolutions.
-    pub fn new(client: Option<T>, suffixes: Vec<dns::Suffix>, proxy_id: String) -> Resolver<T> {
-        let client = client.map(|client| Client::new(client, proxy_id));
-        Resolver {
-            suffixes: Arc::new(suffixes),
-            client,
-        }
+    pub fn new(svc: T) -> Self {
+        Resolve(Destination::new(svc))
     }
 }
 
-impl<T> Resolve<NameAddr> for Resolver<T>
+impl<T, S> resolve::Resolve<T> for Resolve<S>
 where
-    T: GrpcService<BoxBody> + Clone + Send + 'static,
-    T::ResponseBody: Send,
-    <T::ResponseBody as Body>::Data: Send,
-    T::Future: Send,
+    T: CanResolve,
+    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S::ResponseBody: Send,
+    <S::ResponseBody as Body>::Data: Send,
+    S::Future: Send,
 {
     type Endpoint = Metadata;
-    type Resolution = Resolution;
-    type Future = ResolveFuture<T>;
+    type Future = ResolveFuture<S>;
+    type Resolution = Resolution<S>;
 
     /// Start watching for address changes for a certain authority.
-    fn resolve(&self, authority: &NameAddr) -> Self::Future {
-        trace!("resolve; authority={:?}", authority);
-
-        if self.suffixes.iter().any(|s| s.contains(authority.name())) {
-            if let Some(client) = self.client.as_ref().cloned() {
-                return ResolveFuture::new(authority, client);
-            } else {
-                trace!("-> control plane client disabled");
-            }
-        } else {
-            trace!("-> authority {} not in search suffixes", authority);
+    fn resolve(&self, target: &T) -> Self::Future {
+        let target = target.target();
+        trace!("resolve {:?}", dst);
+        let svc = self.0.clone();
+        ResolveFuture {
+            svc,
+            target,
+            state: State::NotReady,
         }
-        ResolveFuture::unresolvable()
     }
 }
 
-// ===== impl Metadata =====
+// === impl ResolveFuture ===
 
-impl Metadata {
-    pub fn empty() -> Self {
-        Self {
-            labels: IndexMap::default(),
-            protocol_hint: ProtocolHint::Unknown,
-            identity: None,
-            weight: 10_000,
+impl<S> Future for ResolveFuture<S>
+where
+    S: GrpcService<BoxBody>,
+{
+    type Item = Resolution<S>;
+    type Error = grpc::Status;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            let Inner { ref mut state, ref mut svc, ref target } = self.inner.as_mut().expect("polled after ready");
+            *state = match state {
+                State::NotReady => {
+                    try_ready!(svc.poll_ready());
+                    let req = grpc::Request::new(target.clone());
+                    State::Pending(svc.get(req))
+                }
+                State::Pending(ref mut fut) => {
+                    let rsp = try_ready!(fut.poll());
+                    State::Streaming(rsp.into_inner())
+                }
+                State::Streaming(_) => break,
+            };
         }
-    }
 
-    pub fn new(
-        labels: IndexMap<String, String>,
-        protocol_hint: ProtocolHint,
-        identity: Option<identity::Name>,
-        weight: u32,
-    ) -> Self {
-        Self {
-            labels,
-            protocol_hint,
-            identity,
-            weight,
-        }
+        let inner = self.inner.take().expect("polled after ready");
+        return Ok(Async::Ready(Resolution { inner }));
     }
+}
 
-    /// Returns the endpoint's labels from the destination service, if it has them.
-    pub fn labels(&self) -> &IndexMap<String, String> {
-        &self.labels
-    }
+// === impl ResolveFuture ===
 
-    pub fn protocol_hint(&self) -> ProtocolHint {
-        self.protocol_hint
-    }
+impl<S> resolve::Resolution for Resolution<S>
+where
+    S: GrpcService<BoxBody>,
+{
+    type Endpoint = Metadata;
 
-    pub fn identity(&self) -> Option<&identity::Name> {
-        self.identity.as_ref()
+    loop {
+        self.inner.state = match self.inner.state {
+            State::Streaming(ref mut rsp) => {
+                match rsp.poll() {
+                    Ok(Async::NotReady) => Ok(Async::NotReady),
+                    Ok(Async::Ready(Some(update))) => {
+                        unimplemented!();
+                    }
+                    Ok(Async::Ready(None)) => {
+                        unimplemented!();
+                    }
+                }
+            }
+        };
     }
 }
