@@ -6,7 +6,7 @@ use crate::proxy::http::{
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
 use crate::proxy::{self, accept, reconnect, resolve, Server};
-use crate::resolve::{Metadata, Unresolvable};
+use crate::resolve::Metadata;
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr, NameAddr};
@@ -46,7 +46,7 @@ pub fn server<R, P>(
 ) -> impl ServeConnection<Connection>
 where
     R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
-    R::Future: futures::Future<Error = Unresolvable> + Send,
+    R::Future: Send,
     R::Resolution: Send,
     <R::Resolution as Resolution>::Error: std::error::Error + Send + Sync + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,

@@ -27,8 +27,10 @@ pub trait Resolution {
 
 #[derive(Clone, Debug)]
 pub enum Update<T> {
-    Add(SocketAddr, T),
-    Remove(SocketAddr),
+    Add(Vec<(SocketAddr, T)>),
+    Remove(Vec<SocketAddr>),
+    Empty,
+    DoesNotExist,
 }
 
 /// Indicates that a stream peer of a resolution was lost.

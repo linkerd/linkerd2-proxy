@@ -17,13 +17,15 @@
 //! some reasonable upper bounds.
 
 use crate::api::destination as api;
-pub use crate::api::destination::GetDestination as Target;
 use crate::metadata::Metadata;
 use crate::pb;
 use futures::{try_ready, Async, Future, Poll, Stream};
 use tower::Service;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::trace;
+
+pub use crate::api::destination::GetDestination as Target;
+pub use crate::core::resolve::Update;
 
 pub trait CanResolve {
     fn target(&self) -> Target;
@@ -34,23 +36,11 @@ pub trait CanResolve {
 pub struct Resolve<S>(api::client::Destination<S>);
 
 pub struct ResolveFuture<S: GrpcService<BoxBody>> {
-    inner: Option<Inner<S>>,
+    inner: grpc::client::server_streaming::ResponseFuture<api::Update, S::Future>,
 }
 
 pub struct Resolution<S: GrpcService<BoxBody>> {
-    inner: Inner<S>,
-}
-
-struct Inner<S: GrpcService<BoxBody>> {
-    svc: api::client::Destination<S>,
-    target: Target,
-    state: State<S>,
-}
-
-enum State<S: GrpcService<BoxBody>> {
-    NotReady,
-    Pending(grpc::client::server_streaming::ResponseFuture<api::Update, S::Future>),
-    Streaming(grpc::Streaming<api::Update, S::ResponseBody>),
+    inner: grpc::Streaming<api::Update, S::ResponseBody>,
 }
 
 // === impl Resolver ===
@@ -88,14 +78,8 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         let target = target.target();
         trace!("resolve {:?}", target);
-        let svc = self.0.clone();
-        ResolveFuture {
-            inner: Some(Inner {
-                svc,
-                target,
-                state: State::NotReady,
-            }),
-        }
+        let inner = self.0.get(grpc::Request::new(target));
+        ResolveFuture { inner }
     }
 }
 
@@ -109,27 +93,7 @@ where
     type Error = grpc::Status;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            let Inner {
-                ref mut state,
-                ref mut svc,
-                ref target,
-            } = self.inner.as_mut().expect("polled after ready");
-            *state = match state {
-                State::NotReady => {
-                    try_ready!(svc.poll_ready());
-                    let req = grpc::Request::new(target.clone());
-                    State::Pending(svc.get(req))
-                }
-                State::Pending(ref mut fut) => {
-                    let rsp = try_ready!(fut.poll());
-                    State::Streaming(rsp.into_inner())
-                }
-                State::Streaming(_) => break,
-            };
-        }
-
-        let inner = self.inner.take().expect("polled after ready");
+        let inner = try_ready!(self.inner.poll()).into_inner();
         return Ok(Async::Ready(Resolution { inner }));
     }
 }
@@ -145,47 +109,38 @@ where
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
-            self.inner.state = match self.inner.state {
-                State::Streaming(ref mut rsp) => match rsp.poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+            match self.inner.poll()? {
+                Async::NotReady => return Ok(Async::NotReady),
 
-                    Ok(Async::Ready(Some(api::Update { update }))) => match update {
-                        Some(api::update::Update::Add(api::WeightedAddrSet {
-                            addrs,
-                            metric_labels,
-                            ..
-                        })) => {
-                            let addrs = addrs
-                                .into_iter()
-                                .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
-                                .collect::<Vec<_>>();
-                            unimplemented!("add: {}", addrs.len());
-                        }
-
-                        Some(api::update::Update::Remove(api::AddrSet {
-                            addrs, ..
-                        })) => {
-                            let addrs = addrs.into_iter().filter_map(pb::to_sock_addr)
-                                .collect::<Vec<_>>();
-                            unimplemented!("rm: {}", addrs.len());
-                        }
-
-                        Some(api::update::Update::NoEndpoints(_)) => {
-                            trace!("has no endpoints");
-                            unimplemented!("no endpoints")
-                        }
-
-                        None => continue,
-                    },
-
-                    Ok(Async::Ready(None)) => {
-                        return Err(grpc::Status::new(grpc::Code::Ok, "server shutdown"))
+                Async::Ready(Some(api::Update { update })) => match update {
+                    Some(api::update::Update::Add(api::WeightedAddrSet {
+                        addrs,
+                        metric_labels,
+                    })) => {
+                        let addr_metas = addrs
+                            .into_iter()
+                            .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels));
+                        return Ok(Async::Ready(Some(Update::Add(addr_metas.collect()))));
                     }
 
-                    Err(e) => {
-                        return Err(e);
+                    Some(api::update::Update::Remove(api::AddrSet { addrs })) => {
+                        let sock_addrs = addrs.into_iter().filter_map(pb::to_sock_addr);
+                        return Ok(Async::Ready(Some(Update::Remove(sock_addrs.collect()))));
                     }
+
+                    Some(api::update::Update::NoEndpoints(api::NoEndpoints { exists })) => {
+                        let update = if exists {
+                            Update::Empty
+                        } else {
+                            Update::DoesNotExist
+                        };
+                        return Ok(Async::Ready(Some(update)));
+                    }
+
+                    None => {} // continue
                 },
+
+                Async::Ready(None) => return Ok(Async::Ready(None)),
             };
         }
     }
