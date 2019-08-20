@@ -16,12 +16,12 @@
 //! returned for a single resolution. It is expected that the Destination service enforce
 //! some reasonable upper bounds.
 
-use super::super::pb;
-pub use crate::api::destination::GetDestination as Target;
 use crate::api::destination as api;
-use crate::core::resolve;
+pub use crate::api::destination::GetDestination as Target;
 use crate::metadata::Metadata;
-use futures::{try_ready, Async, Future, Poll};
+use crate::pb;
+use futures::{try_ready, Async, Future, Poll, Stream};
+use tower::Service;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::trace;
 
@@ -63,12 +63,12 @@ where
     S::Future: Send,
 {
     /// Returns a `Resolver` for requesting destination resolutions.
-    pub fn new(svc: T) -> Self {
+    pub fn new(svc: S) -> Self {
         Resolve(api::client::Destination::new(svc))
     }
 }
 
-impl<T, S> resolve::Resolve<T> for Resolve<S>
+impl<T, S> Service<T> for Resolve<S>
 where
     T: CanResolve,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
@@ -76,12 +76,16 @@ where
     <S::ResponseBody as Body>::Data: Send,
     S::Future: Send,
 {
-    type Endpoint = Metadata;
+    type Response = Resolution<S>;
+    type Error = grpc::Status;
     type Future = ResolveFuture<S>;
-    type Resolution = Resolution<S>;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.0.poll_ready()
+    }
 
     /// Start watching for address changes for a certain authority.
-    fn resolve(&self, target: &T) -> Self::Future {
+    fn call(&mut self, target: T) -> Self::Future {
         let target = target.target();
         trace!("resolve {:?}", target);
         let svc = self.0.clone();
@@ -106,7 +110,11 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            let Inner { ref mut state, ref mut svc, ref target } = self.inner.as_mut().expect("polled after ready");
+            let Inner {
+                ref mut state,
+                ref mut svc,
+                ref target,
+            } = self.inner.as_mut().expect("polled after ready");
             *state = match state {
                 State::NotReady => {
                     try_ready!(svc.poll_ready());
@@ -128,48 +136,57 @@ where
 
 // === impl ResolveFuture ===
 
-impl<S> resolve::Resolution for Resolution<S>
+impl<S> Stream for Resolution<S>
 where
     S: GrpcService<BoxBody>,
 {
-    type Endpoint = Metadata;
+    type Item = Update<Metadata>;
     type Error = grpc::Status;
 
-    loop {
-        self.inner.state = match self.inner.state {
-            State::Streaming(ref mut rsp) => {
-                match rsp.poll() {
-                    Ok(Async::NotReady) => Ok(Async::NotReady),
-                    Ok(Async::Ready(Some(api::Update { update }))) => {
-                        match update {
-                            Some(api::update::Update::Add(api::WeightedAddrSet { addrs, metric_labels, .. })) => {
-                                let addrs = a_set
-                                    .addrs
-                                    .into_iter()
-                                    .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels));
-                                self.add(addrs)?;
-                            }
-                            Some(api::update::Update::Remove(api::WeightedAddrSet { addrs, .. })) => {
-                                let addrs = r_set.addrs.into_iter().filter_map(pb::to_sock_addr);
-                                self.remove(addrs)?;
-                            }
-                            Some(ApiUpdate::NoEndpoints(_)) => {
-                                trace!("has no endpoints");
-                                self.remove_all("no endpoints")?;
-                            }
-                            None => {
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        loop {
+            self.inner.state = match self.inner.state {
+                State::Streaming(ref mut rsp) => match rsp.poll() {
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
 
-                            }
+                    Ok(Async::Ready(Some(api::Update { update }))) => match update {
+                        Some(api::update::Update::Add(api::WeightedAddrSet {
+                            addrs,
+                            metric_labels,
+                            ..
+                        })) => {
+                            let addrs = addrs
+                                .into_iter()
+                                .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
+                                .collect::<Vec<_>>();
+                            unimplemented!("add: {}", addrs.len());
                         }
-                    }
+
+                        Some(api::update::Update::Remove(api::AddrSet {
+                            addrs, ..
+                        })) => {
+                            let addrs = addrs.into_iter().filter_map(pb::to_sock_addr)
+                                .collect::<Vec<_>>();
+                            unimplemented!("rm: {}", addrs.len());
+                        }
+
+                        Some(api::update::Update::NoEndpoints(_)) => {
+                            trace!("has no endpoints");
+                            unimplemented!("no endpoints")
+                        }
+
+                        None => continue,
+                    },
+
                     Ok(Async::Ready(None)) => {
                         return Err(grpc::Status::new(grpc::Code::Ok, "server shutdown"))
                     }
+
                     Err(e) => {
                         return Err(e);
                     }
-                }
-            }
-        };
+                },
+            };
+        }
     }
 }

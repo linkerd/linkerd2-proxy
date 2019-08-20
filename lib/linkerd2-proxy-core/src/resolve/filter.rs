@@ -1,7 +1,8 @@
 use super::Resolve;
 use crate::Error;
 use futures::future::{self, Either, FutureResult, MapErr};
-use futures::Future;
+use futures::{Future, Poll};
+use tower::Service;
 
 /// Determines whether a given target is resolveable.
 pub trait Admit<T> {
@@ -30,25 +31,29 @@ where
     }
 }
 
-impl<T, A, R> Resolve<T> for Filter<T, A, R>
+impl<T, A, R> Service<T> for Filter<T, A, R>
 where
     A: Admit<T>,
     R: Resolve<T>,
     <R::Future as Future>::Error: Into<Error>,
 {
-    type Endpoint = R::Endpoint;
+    type Response = R::Resolution;
+    type Error = Error;
     type Future = Either<
         MapErr<R::Future, fn(<R::Future as Future>::Error) -> Error>,
         FutureResult<R::Resolution, Error>,
     >;
-    type Resolution = R::Resolution;
 
-    fn resolve(&self, target: &T) -> Self::Future {
-        if self.admit.admit(target) {
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.resolve.poll_ready().map_err(Into::into)
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        if self.admit.admit(&target) {
             let fut = self.resolve.resolve(target);
             Either::A(fut.map_err(Into::into))
         } else {
-            let err = (self.mk_err)(target);
+            let err = (self.mk_err)(&target);
             Either::B(future::err(err))
         }
     }

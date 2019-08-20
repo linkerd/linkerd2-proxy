@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use std::{collections::HashMap, net::SocketAddr};
 
 /// Construct a new labeled `SocketAddr `from a protobuf `WeightedAddr`.
-fn to_addr_meta(
+pub(in crate) fn to_addr_meta(
     pb: WeightedAddr,
     set_labels: &HashMap<String, String>,
 ) -> Option<(SocketAddr, Metadata)> {
@@ -56,7 +56,7 @@ fn to_id(pb: TlsIdentity) -> Option<identity::Name> {
     }
 }
 
-fn to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
+pub(in crate) fn to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
     use crate::api::net::ip_address::Ip;
     use std::net::{Ipv4Addr, Ipv6Addr};
     /*
