@@ -16,8 +16,9 @@
 //! returned for a single resolution. It is expected that the Destination service enforce
 //! some reasonable upper bounds.
 
+use super::super::pb;
 pub use crate::api::destination::GetDestination as Target;
-use crate::api::destination::{client::Destination, Update as ApiUpdate};
+use crate::api::destination as api;
 use crate::core::resolve;
 use crate::metadata::Metadata;
 use futures::{try_ready, Async, Future, Poll};
@@ -30,7 +31,7 @@ pub trait CanResolve {
 
 /// A handle to request resolutions from the destination service.
 #[derive(Clone)]
-pub struct Resolve<S>(Destination<S>);
+pub struct Resolve<S>(api::client::Destination<S>);
 
 pub struct ResolveFuture<S: GrpcService<BoxBody>> {
     inner: Option<Inner<S>>,
@@ -41,15 +42,15 @@ pub struct Resolution<S: GrpcService<BoxBody>> {
 }
 
 struct Inner<S: GrpcService<BoxBody>> {
-    svc: Destination<S>,
+    svc: api::client::Destination<S>,
     target: Target,
     state: State<S>,
 }
 
 enum State<S: GrpcService<BoxBody>> {
     NotReady,
-    Pending(grpc::client::server_streaming::ResponseFuture<ApiUpdate, S::Future>),
-    Streaming(grpc::Streaming<ApiUpdate, S::ResponseBody>),
+    Pending(grpc::client::server_streaming::ResponseFuture<api::Update, S::Future>),
+    Streaming(grpc::Streaming<api::Update, S::ResponseBody>),
 }
 
 // === impl Resolver ===
@@ -63,7 +64,7 @@ where
 {
     /// Returns a `Resolver` for requesting destination resolutions.
     pub fn new(svc: T) -> Self {
-        Resolve(Destination::new(svc))
+        Resolve(api::client::Destination::new(svc))
     }
 }
 
@@ -82,12 +83,14 @@ where
     /// Start watching for address changes for a certain authority.
     fn resolve(&self, target: &T) -> Self::Future {
         let target = target.target();
-        trace!("resolve {:?}", dst);
+        trace!("resolve {:?}", target);
         let svc = self.0.clone();
         ResolveFuture {
-            svc,
-            target,
-            state: State::NotReady,
+            inner: Some(Inner {
+                svc,
+                target,
+                state: State::NotReady,
+            }),
         }
     }
 }
@@ -130,17 +133,40 @@ where
     S: GrpcService<BoxBody>,
 {
     type Endpoint = Metadata;
+    type Error = grpc::Status;
 
     loop {
         self.inner.state = match self.inner.state {
             State::Streaming(ref mut rsp) => {
                 match rsp.poll() {
                     Ok(Async::NotReady) => Ok(Async::NotReady),
-                    Ok(Async::Ready(Some(update))) => {
-                        unimplemented!();
+                    Ok(Async::Ready(Some(api::Update { update }))) => {
+                        match update {
+                            Some(api::update::Update::Add(api::WeightedAddrSet { addrs, metric_labels, .. })) => {
+                                let addrs = a_set
+                                    .addrs
+                                    .into_iter()
+                                    .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels));
+                                self.add(addrs)?;
+                            }
+                            Some(api::update::Update::Remove(api::WeightedAddrSet { addrs, .. })) => {
+                                let addrs = r_set.addrs.into_iter().filter_map(pb::to_sock_addr);
+                                self.remove(addrs)?;
+                            }
+                            Some(ApiUpdate::NoEndpoints(_)) => {
+                                trace!("has no endpoints");
+                                self.remove_all("no endpoints")?;
+                            }
+                            None => {
+
+                            }
+                        }
                     }
                     Ok(Async::Ready(None)) => {
-                        unimplemented!();
+                        return Err(grpc::Status::new(grpc::Code::Ok, "server shutdown"))
+                    }
+                    Err(e) => {
+                        return Err(e);
                     }
                 }
             }

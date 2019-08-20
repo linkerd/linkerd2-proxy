@@ -6,11 +6,11 @@ use indexmap::IndexMap;
 use std::{collections::HashMap, net::SocketAddr};
 
 /// Construct a new labeled `SocketAddr `from a protobuf `WeightedAddr`.
-fn pb_to_addr_meta(
+fn to_addr_meta(
     pb: WeightedAddr,
     set_labels: &HashMap<String, String>,
 ) -> Option<(SocketAddr, Metadata)> {
-    let addr = pb.addr.and_then(pb_to_sock_addr)?;
+    let addr = pb.addr.and_then(to_sock_addr)?;
 
     let meta = {
         let mut t = set_labels
@@ -38,25 +38,25 @@ fn pb_to_addr_meta(
         }
     }
 
-    let tls_id = pb.tls_identity.and_then(pb_to_id);
+    let tls_id = pb.tls_identity.and_then(to_id);
     let meta = Metadata::new(meta, proto_hint, tls_id, pb.weight);
     Some((addr, meta))
 }
 
-fn pb_to_id(pb: TlsIdentity) -> Option<identity::Name> {
+fn to_id(pb: TlsIdentity) -> Option<identity::Name> {
     use crate::api::destination::tls_identity::Strategy;
 
     let Strategy::DnsLikeIdentity(i) = pb.strategy?;
     match identity::Name::from_hostname(i.name.as_bytes()) {
         Ok(i) => Some(i),
         Err(_) => {
-            warn!("Ignoring invalid identity: {}", i.name);
+            tracing::warn!("Ignoring invalid identity: {}", i.name);
             None
         }
     }
 }
 
-fn pb_to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
+fn to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
     use crate::api::net::ip_address::Ip;
     use std::net::{Ipv4Addr, Ipv6Addr};
     /*
