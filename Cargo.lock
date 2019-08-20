@@ -546,7 +546,7 @@ dependencies = [
  "linkerd2-never 0.1.0",
  "linkerd2-proxy-api 0.1.8 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=ddbc3a4f7f8b0058801f896d27974d19ee98094c)",
  "linkerd2-proxy-core 0.1.0",
- "linkerd2-proxy-resolve 0.1.0",
+ "linkerd2-proxy-resolve-dst-api 0.1.0",
  "linkerd2-router 0.1.0",
  "linkerd2-signal 0.1.0",
  "linkerd2-stack 0.1.0",
@@ -615,7 +615,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-proxy-resolve"
+name = "linkerd2-proxy-resolve-discover"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-addr 0.1.0",
+ "linkerd2-dns-name 0.1.0",
+ "linkerd2-identity 0.1.0",
+ "linkerd2-never 0.1.0",
+ "linkerd2-proxy-core 0.1.0",
+ "linkerd2-task 0.1.0",
+ "tokio-sync 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "linkerd2-proxy-resolve-dst-api"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -630,10 +648,8 @@ dependencies = [
  "prost 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-sync 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower-discover 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-grpc 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
  "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
