@@ -1,12 +1,14 @@
 use crate::svc;
 use bytes::Bytes;
-use http::header::HeaderValue;
-use futures::{Async, try_ready, Future, Poll};
 use futures::sync::mpsc;
+use futures::{try_ready, Async, Future, Poll};
+use http::header::HeaderValue;
 use rand::Rng;
 use std::fmt;
 use std::time::Instant;
 use tracing::{trace, warn};
+
+const TRACE_HEADER: &str = "traceparent";
 
 #[derive(Debug)]
 struct TraceContext {
@@ -57,13 +59,22 @@ pub struct Service<S> {
     sender: mpsc::Sender<Span>,
 }
 
-// === impl Layer ===
-
+/// A layer that adds distributed tracing instrumentation.
+///
+/// This layer reads the `traceparent` HTTP header from the request.  If this
+/// header is absent, the request is fowarded unmodified.  If the header is
+/// present, a new span will be started in the current trace by creating a new
+/// random span id setting it into the `traceparent` header before forwarding
+/// the request.  If the sampled bit of the header was set, we emit metadata
+/// about the span to the returned channel when the span is complete, i.e. when
+/// we receive the response.
 pub fn layer(buffer_size: usize) -> (mpsc::Receiver<Span>, Layer) {
     let (sender, receiver) = mpsc::channel(buffer_size);
     let layer = Layer { sender };
     (receiver, layer)
 }
+
+// === impl Layer ===
 
 impl<M> svc::Layer<M> for Layer {
     type Service = Stack<M>;
@@ -128,13 +139,17 @@ where
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
-
         let mut trace_context = unpack_trace_context(&request);
-        let path = request.uri().path().to_string();
-        
+        let mut path: Option<String> = None;
+
         if let Some(ref mut context) = trace_context {
             trace!("got trace contex: {:?}", context);
             increment_span_id(&mut request, context);
+            // If we plan to sample this span, we need to copy the path from
+            // the request before dispatching it to inner.
+            if is_sampled(&context.flags) {
+                path = Some(request.uri().path().to_string());
+            }
         }
 
         let f = self.inner.call(request);
@@ -145,15 +160,17 @@ where
             parent_id,
             flags,
             span_id: Some(span_id),
-        }) = trace_context {
+        }) = trace_context
+        {
             if is_sampled(&flags) {
-                trace!("span will be sampled");
+                trace!("span {:?} will be sampled", span_id);
                 let span = Span {
                     trace_id: trace_id,
                     span_id: span_id,
                     parent_id: parent_id,
-                    span_name: path,
+                    span_name: path.unwrap_or(String::new()),
                     start: Instant::now(),
+                    // End time will be updated when the span completes.
                     end: Instant::now(),
                 };
                 let span_fut = SpanFuture {
@@ -173,7 +190,7 @@ where
 
 // === impl SpanFuture ===
 
-impl <F: Future> Future for SpanFuture<F> {
+impl<F: Future> Future for SpanFuture<F> {
     type Item = F::Item;
     type Error = F::Error;
 
@@ -181,7 +198,7 @@ impl <F: Future> Future for SpanFuture<F> {
         let inner = try_ready!(self.inner.poll());
         let mut span = self.span.take().expect("span missing");
         span.end = Instant::now();
-        trace!("emitting span: {} duration={:?}", span.span_id, span.end - span.start);
+        trace!("emitting span: {:?}", span);
         self.sender.try_send(span).unwrap_or_else(|_| {
             warn!("span dropped due to backpressure");
         });
@@ -208,19 +225,22 @@ impl fmt::Display for SpanId {
 }
 
 fn unpack_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
-    request.headers().get("traceparent")
+    request
+        .headers()
+        .get(TRACE_HEADER)
         .and_then(|hv| hv.to_str().ok())
         .and_then(|trace_context| {
             let fields: Vec<&str> = trace_context.split('-').collect();
             match (fields.get(0), fields.get(1), fields.get(2), fields.get(3)) {
-                (Some(version), Some(trace_id), Some(parent_id), Some(flags)) => 
+                (Some(version), Some(trace_id), Some(parent_id), Some(flags)) => {
                     Some(TraceContext {
                         version: version.to_string(),
                         trace_id: trace_id.to_string(),
                         parent_id: parent_id.to_string(),
                         flags: flags.to_string(),
                         span_id: None,
-                    }),
+                    })
+                }
                 _ => None,
             }
         })
@@ -228,19 +248,20 @@ fn unpack_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
 
 fn increment_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
     let span_id = SpanId::new();
-    let next = format!("{}-{}-{}-{}", context.version, context.trace_id, span_id, context.flags);
+    let next = format!(
+        "{}-{}-{}-{}",
+        context.version, context.trace_id, span_id, context.flags
+    );
     trace!("incremented span id: {}", span_id);
     if let Result::Ok(hv) = HeaderValue::from_shared(Bytes::from(next)) {
-        request.headers_mut().insert("traceparent", hv);
+        request.headers_mut().insert(TRACE_HEADER, hv);
     }
     context.span_id = Some(format!("{}", span_id));
 }
 
 // Quick and dirty bitmask of the low bit
 fn is_sampled(bitfield: &String) -> bool {
-    bitfield.chars().last().map_or(false, |c|
-        c == '1' || c == '3' || c == '5' ||
-        c == '7' || c == '9' || c == 'b' ||
-        c == 'd' || c == 'f'
-    )
+    bitfield.chars().last().map_or(false, |c| {
+        c == '1' || c == '3' || c == '5' || c == '7' || c == '9' || c == 'b' || c == 'd' || c == 'f'
+    })
 }
