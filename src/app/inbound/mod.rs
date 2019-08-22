@@ -1,7 +1,7 @@
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
-    strip_header,
+    strip_header, trace,
 };
 use crate::proxy::{accept, reconnect, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
@@ -54,9 +54,12 @@ where
         .layer(tls::client::layer(local_identity))
         .service(connect::svc());
 
+    let (_span_rx, trace_layer) = trace::layer(100);
+
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = svc::builder()
         .layer(normalize_uri::layer())
+        .layer(trace_layer)
         .layer(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
         .layer(client::layer("in", config.h2_settings))
         .service(connect.clone());

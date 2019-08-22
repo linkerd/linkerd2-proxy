@@ -4,6 +4,7 @@ use http::header::HeaderValue;
 use futures::{Async, try_ready, Future, Poll};
 use futures::sync::mpsc;
 use rand::Rng;
+use std::fmt;
 use std::time::Instant;
 use tracing::{trace, warn};
 
@@ -15,6 +16,8 @@ struct TraceContext {
     flags: String,
     span_id: Option<String>,
 }
+
+struct SpanId([u8; 8]);
 
 #[derive(Debug)]
 pub struct Span {
@@ -184,7 +187,25 @@ impl <F: Future> Future for SpanFuture<F> {
         });
         Ok(Async::Ready(inner))
     }
-} 
+}
+
+// === impl SpanId ===
+
+impl SpanId {
+    fn new() -> Self {
+        let mut rng = rand::thread_rng();
+        Self(rng.gen::<[u8; 8]>())
+    }
+}
+
+impl fmt::Display for SpanId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for b in &self.0 {
+            write!(f, "{:x?}", b)?;
+        }
+        Ok(())
+    }
+}
 
 fn unpack_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
     request.headers().get("traceparent")
@@ -206,14 +227,13 @@ fn unpack_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
 }
 
 fn increment_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
-    let mut rng = rand::thread_rng();
-    let span_id = format!("{:x?}", rng.gen::<[u8; 8]>());
+    let span_id = SpanId::new();
     let next = format!("{}-{}-{}-{}", context.version, context.trace_id, span_id, context.flags);
     trace!("incremented span id: {}", span_id);
     if let Result::Ok(hv) = HeaderValue::from_shared(Bytes::from(next)) {
         request.headers_mut().insert("traceparent", hv);
     }
-    context.span_id = Some(span_id);
+    context.span_id = Some(format!("{}", span_id));
 }
 
 // Quick and dirty bitmask of the low bit
