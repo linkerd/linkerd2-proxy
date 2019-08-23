@@ -1,34 +1,31 @@
-use crate::core::resolve::{Resolution, Resolve, Update};
-use crate::{svc, Error};
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
-use indexmap::IndexMap;
-use std::{fmt, net::SocketAddr};
+use indexmap::{IndexMap, IndexSet};
+use linkerd2_proxy_core::resolve::{Resolution, Resolve, Update};
+use linkerd2_proxy_core::Error;
 use tokio::sync::oneshot;
-pub use tower_discover::Change;
+use tokio::timer;
+use tower::discover::Change;
 use tracing::trace;
-
-#[derive(Clone, Debug)]
-pub struct Layer<R> {
-    resolve: R,
-}
-
-#[derive(Clone, Debug)]
-pub struct MakeSvc<R, M> {
-    resolve: R,
-    inner: M,
-}
+use std::net::SocketAddr;
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
-pub struct Discover<R: Resolution, M: svc::Service<R::Endpoint>> {
-    resolution: R,
-    make: M,
+pub struct Discover<T, R: Resolve<T>, M: tower::Service<R::Endpoint>> {
+    state: State<R::Future, R::Resolution>,
+    target: T,
+    resolve: R,
+    make_endpoint: M,
     make_futures: MakeFutures<M::Future>,
+    pending_removals: Vec<SocketAddr>,
+    active_endpoints: IndexSet<SocketAddr>,
+    _marker: std::marker::PhantomData<fn(T)>,
 }
 
-pub struct DiscoverFuture<F, M> {
-    future: F,
-    make: M,
+enum State<F, R> {
+    Disconnected,
+    Resolving(F),
+    Resolution(R),
+    Backoff(timer::Delay),
 }
 
 struct MakeFutures<F> {
@@ -47,128 +44,40 @@ enum MakeError<E> {
     Canceled,
 }
 
-// === impl Layer ===
-
-pub fn layer<T, R>(resolve: R) -> Layer<R>
-where
-    R: Resolve<T> + Clone,
-    R::Endpoint: fmt::Debug,
-{
-    Layer { resolve }
-}
-
-impl<R, M> svc::Layer<M> for Layer<R>
-where
-    R: Clone,
-{
-    type Service = MakeSvc<R, M>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        MakeSvc {
-            resolve: self.resolve.clone(),
-            inner,
-        }
-    }
-}
-
-// === impl MakeSvc ===
-
-impl<T, R, M> svc::Service<T> for MakeSvc<R, M>
-where
-    R: Resolve<T>,
-    R::Endpoint: fmt::Debug,
-    M: svc::Service<R::Endpoint> + Clone,
-{
-    type Response = Discover<R::Resolution, M>;
-    type Error = <R::Future as Future>::Error;
-    type Future = DiscoverFuture<R::Future, Option<M>>;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into()) // always ready to make a Discover
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let future = self.resolve.resolve(&target);
-        DiscoverFuture {
-            future,
-            make: Some(self.inner.clone()),
-        }
-    }
-}
-
-// === impl DiscoverFuture ===
-
-impl<F, M> Future for DiscoverFuture<F, Option<M>>
-where
-    F: Future,
-    F::Item: Resolution,
-    M: svc::Service<<F::Item as Resolution>::Endpoint>,
-{
-    type Item = Discover<F::Item, M>;
-    type Error = F::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let resolution = try_ready!(self.future.poll());
-        let make = self.make.take().expect("polled after ready");
-        Ok(Async::Ready(Discover::new(resolution, make)))
-    }
-}
-
 // === impl Discover ===
 
-impl<R, M> Discover<R, M>
+impl<T, R, M> Discover<T, R, M>
 where
-    R: Resolution,
-    M: svc::Service<R::Endpoint>,
+    R: Resolve<T>,
+    M: tower::Service<R::Endpoint>,
 {
-    fn new(resolution: R, make: M) -> Self {
+    pub fn new(target: T, resolve: R, make_endpoint: M) -> Self {
         Self {
-            resolution,
-            make,
+            state: State::Disconnected,
+            target,
+            resolve,
+            make_endpoint,
             make_futures: MakeFutures::new(),
+            pending_removals: Vec::new(),
+            active_endpoints: IndexSet::default(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn with_resolution(self, resolution: R::Resolution) -> Self {
+        Self {
+            state: State::Resolution(resolution),
+            ..self
         }
     }
 }
 
-impl<R, M> Discover<R, M>
+impl<T, R, M> tower::discover::Discover for Discover<T, R, M>
 where
-    R: Resolution,
-    R::Endpoint: fmt::Debug,
+    R: Resolve<T>,
+    R::Endpoint: std::fmt::Debug,
     R::Error: Into<Error>,
-    M: svc::Service<R::Endpoint>,
-    M::Error: Into<Error>,
-{
-    fn poll_resolution(&mut self) -> Poll<Change<SocketAddr, M::Response>, Error> {
-        loop {
-            // Before polling the resolution, where we could potentially receive
-            // an `Add`, poll_ready to ensure that `make` is ready to build new
-            // services. Don't process any updates until we can do so.
-            try_ready!(self.make.poll_ready().map_err(Into::into));
-
-            let update = try_ready!(self.resolution.poll().map_err(Into::into));
-            trace!("watch: {:?}", update);
-            match update {
-                Update::Add(addr, target) => {
-                    // Start building the service and continue. If a pending
-                    // service exists for this addr, it will be canceled.
-                    let fut = self.make.call(target);
-                    self.make_futures.push(addr, fut);
-                }
-                Update::Remove(addr) => {
-                    self.make_futures.remove(&addr);
-                    return Ok(Async::Ready(Change::Remove(addr)));
-                }
-            }
-        }
-    }
-}
-
-impl<R, M> tower_discover::Discover for Discover<R, M>
-where
-    R: Resolution,
-    R::Endpoint: fmt::Debug,
-    R::Error: Into<Error>,
-    M: svc::Service<R::Endpoint>,
+    M: tower::Service<R::Endpoint>,
     M::Error: Into<Error>,
 {
     type Key = SocketAddr;
@@ -176,8 +85,8 @@ where
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
-        if let Async::Ready(change) = self.poll_resolution()? {
-            return Ok(Async::Ready(change));
+        if let Async::Ready(addr) = self.poll_resolution_for_removals()? {
+            return Ok(Async::Ready(Change::Remove(addr)));
         }
 
         if let Async::Ready(Some((addr, svc))) = self.make_futures.poll().map_err(Into::into)? {
@@ -185,6 +94,53 @@ where
         }
 
         Ok(Async::NotReady)
+    }
+}
+
+impl<T, R, M> Discover<T, R, M>
+where
+    R: Resolve<T>,
+    R::Endpoint: std::fmt::Debug,
+    R::Error: Into<Error>,
+    M: tower::Service<R::Endpoint>,
+    M::Error: Into<Error>,
+{
+    fn poll_resolution_for_removals(&mut self) -> Poll<SocketAddr, Error> {
+        loop {
+            if let Some(addr) = self.pending_removals.pop() {
+                self.make_futures.remove(&addr);
+                return Ok(addr.into());
+            }
+
+            // Before polling the resolution, where we could potentially receive
+            // an `Add`, poll_ready to ensure that `make` is ready to build new
+            // services. Don't process any updates until we can do so.
+            try_ready!(self.make_endpoint.poll_ready().map_err(Into::into));
+
+            match self.state {
+                State::Resolution(ref mut resolution) => {
+                    let update = try_ready!(resolution.poll().map_err(Into::into));
+                    trace!("watch: {:?}", update);
+                    match update {
+                        Update::Add(additions) => {
+                            for (addr, target) in additions.into_iter() {
+                                // Start building the service and continue. If a pending
+                                // service exists for this addr, it will be canceled.
+                                let fut = self.make_endpoint.call(target);
+                                self.make_futures.push(addr, fut);
+                            }
+                        }
+                        Update::Remove(removals) => {
+                            self.pending_removals.extend(removals);
+                        }
+
+                        Update::Empty | Update::DoesNotExist => unimplemented!(),
+
+                    }
+                }
+                _ => unreachable!("illegal state"),
+            }
+        }
     }
 }
 
@@ -261,13 +217,14 @@ impl<E> From<E> for MakeError<E> {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use futures::future;
-    use svc::Service;
+
     use tokio::sync::mpsc;
-    use tower_discover::{Change, Discover as _Discover};
+    use tower::Service;
     use tower_util::service_fn;
 
     struct Urx<E>(mpsc::Receiver<Update<E>>);

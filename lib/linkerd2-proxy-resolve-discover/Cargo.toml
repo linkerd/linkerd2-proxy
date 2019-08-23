@@ -14,7 +14,7 @@ linkerd2-proxy-core = { path = "../linkerd2-proxy-core" }
 linkerd2-never = { path = "../linkerd2-never" }
 linkerd2-task = { path = "../linkerd2-task" }
 indexmap = "1.0"
-tokio-sync = "0.1"
+tokio = "0.1"
 tower = "0.1"
 tracing = "0.1"
 tracing-futures = "0.0.1-alpha.1"
