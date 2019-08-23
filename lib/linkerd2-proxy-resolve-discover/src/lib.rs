@@ -1,4 +1,3 @@
-
 // use crate::core::resolve::{Resolution, Resolve, Update};
 // use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 // use indexmap::IndexMap;
@@ -7,5 +6,8 @@
 // use tower_discover::Change;
 // use tracing::trace;
 
-pub mod discover;
-pub mod layer;
+mod discover;
+mod layer;
+
+pub use self::discover::Discover;
+pub use self::layer::{layer, DiscoverFuture, Layer, MakeDiscover};

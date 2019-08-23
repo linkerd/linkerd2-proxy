@@ -9,7 +9,7 @@ pub struct Layer<R> {
 }
 
 #[derive(Clone, Debug)]
-pub struct MakeSvc<R, M> {
+pub struct MakeDiscover<R, M> {
     resolve: R,
     make_endpoint: M,
 }
@@ -33,19 +33,19 @@ impl<R, M> tower::layer::Layer<M> for Layer<R>
 where
     R: Clone,
 {
-    type Service = MakeSvc<R, M>;
+    type Service = MakeDiscover<R, M>;
 
     fn layer(&self, make_endpoint: M) -> Self::Service {
-        MakeSvc {
+        MakeDiscover {
             resolve: self.resolve.clone(),
             make_endpoint,
         }
     }
 }
 
-// === impl MakeSvc ===
+// === impl MakeDiscover ===
 
-impl<T, R, M> tower::Service<T> for MakeSvc<R, M>
+impl<T, R, M> tower::Service<T> for MakeDiscover<R, M>
 where
     T: Clone,
     R: Resolve<T> + Clone,
