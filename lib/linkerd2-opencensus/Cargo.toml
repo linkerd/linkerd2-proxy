@@ -1,0 +1,13 @@
+[package]
+name = "linkerd2-opencensus"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.1"
+opencensus-proto = { path = "../opencensus-proto" }
+tokio = "0.1"
+tower-grpc = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
+tracing = "0.1"

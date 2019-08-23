@@ -8,6 +8,7 @@ members = [
     "lib/linkerd2-drain",
     "lib/linkerd2-identity",
     "lib/linkerd2-metrics",
+    "lib/linkerd2-opencensus",
     "lib/linkerd2-proxy-core",
     "lib/linkerd2-proxy-fallback",
     "lib/linkerd2-proxy-resolve",
@@ -16,6 +17,7 @@ members = [
     "lib/linkerd2-stack",
     "lib/linkerd2-task",
     "lib/linkerd2-timeout",
+    "lib/opencensus-proto",
 ]
 
 [package]

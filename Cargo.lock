@@ -537,6 +537,17 @@ name = "linkerd2-never"
 version = "0.1.0"
 
 [[package]]
+name = "linkerd2-opencensus"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "opencensus-proto 0.1.0",
+ "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-grpc 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
+ "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "linkerd2-proxy"
 version = "0.1.0"
 dependencies = [
@@ -890,6 +901,19 @@ version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "libc 0.2.48 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "opencensus-proto"
+version = "0.1.0"
+dependencies = [
+ "bytes 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "prost 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "prost-types 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-grpc 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
+ "tower-grpc-build 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
 ]
 
 [[package]]
