@@ -5,6 +5,7 @@ extern crate prost;
 extern crate prost_types;
 extern crate tokio;
 extern crate tower_grpc;
+extern crate tracing;
 
 pub mod span_exporter;
 
