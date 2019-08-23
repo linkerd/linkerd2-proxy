@@ -3,7 +3,7 @@ use crate::core::listen::ServeConnection;
 use crate::core::resolve::{Resolution, Resolve};
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
-    normalize_uri, profiles, retry, router, settings, strip_header,
+    normalize_uri, profiles, retry, router, settings, strip_header, trace,
 };
 use crate::proxy::{self, accept, reconnect, resolve, Server};
 use crate::resolve::{Metadata, Unresolvable};
@@ -70,9 +70,12 @@ where
         .layer(tls::client::layer(local_identity))
         .service(connect::svc());
 
+    let (_span_rx, trace_layer) = trace::layer(100);
+
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = svc::builder()
         .layer(normalize_uri::layer())
+        .layer(trace_layer)
         .layer(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
         .layer(client::layer("out", config.h2_settings))
         .service(connect.clone());
