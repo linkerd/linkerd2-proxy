@@ -15,6 +15,7 @@ members = [
     "lib/linkerd2-stack",
     "lib/linkerd2-task",
     "lib/linkerd2-timeout",
+    "lib/opencensus-proto",
 ]
 
 [package]
