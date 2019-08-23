@@ -2,11 +2,11 @@ use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::{IndexMap, IndexSet};
 use linkerd2_proxy_core::resolve::{Resolution, Resolve, Update};
 use linkerd2_proxy_core::Error;
+use std::net::SocketAddr;
 use tokio::sync::oneshot;
 use tokio::timer;
 use tower::discover::Change;
 use tracing::trace;
-use std::net::SocketAddr;
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
@@ -135,7 +135,6 @@ where
                         }
 
                         Update::Empty | Update::DoesNotExist => unimplemented!(),
-
                     }
                 }
                 _ => unreachable!("illegal state"),
@@ -216,7 +215,6 @@ impl<E> From<E> for MakeError<E> {
         MakeError::Inner(inner)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

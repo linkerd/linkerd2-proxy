@@ -24,15 +24,14 @@ use tower::Service;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::trace;
 
-pub use crate::api::destination::GetDestination as Target;
 pub use crate::core::resolve::Update;
 
-pub trait CanResolve {
-    fn target(&self) -> Target;
-}
-
 #[derive(Clone)]
-pub struct Resolve<S>(api::client::Destination<S>);
+pub struct Resolve<S> {
+    service: api::client::Destination<S>,
+    scheme: String,
+    context_token: String,
+}
 
 pub struct Resolution<S: GrpcService<BoxBody>> {
     inner: grpc::Streaming<api::Update, S::ResponseBody>,
@@ -48,13 +47,31 @@ where
     S::Future: Send,
 {
     pub fn new(svc: S) -> Self {
-        Resolve(api::client::Destination::new(svc))
+        Self {
+            service: api::client::Destination::new(svc),
+            scheme: "".into(),
+            context_token: "".into(),
+        }
+    }
+
+    pub fn with_scheme<T: ToString>(self, scheme: T) -> Self {
+        Self {
+            scheme: scheme.to_string(),
+            ..self
+        }
+    }
+
+    pub fn with_context_token<T: ToString>(self, context_token: T) -> Self {
+        Self {
+            context_token: context_token.to_string(),
+            ..self
+        }
     }
 }
 
 impl<T, S> Service<T> for Resolve<S>
 where
-    T: CanResolve,
+    T: ToString,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -68,14 +85,18 @@ where
     >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
+        self.service.poll_ready()
     }
 
-    fn call(&mut self, t: T) -> Self::Future {
-        let target = t.target();
-        trace!("resolve {:?}", target);
-        self.0
-            .get(grpc::Request::new(target))
+    fn call(&mut self, target: T) -> Self::Future {
+        let path = target.to_string();
+        trace!("resolve {:?}", path);
+        self.service
+            .get(grpc::Request::new(api::GetDestination {
+                path,
+                scheme: self.scheme.clone(),
+                context_token: self.context_token.clone(),
+            }))
             .map(|rsp| Resolution {
                 inner: rsp.into_inner(),
             })
@@ -103,13 +124,21 @@ where
                     })) => {
                         let addr_metas = addrs
                             .into_iter()
-                            .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels));
-                        return Ok(Async::Ready(Some(Update::Add(addr_metas.collect()))));
+                            .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
+                            .collect::<Vec<_>>();
+                        if !addr_metas.is_empty() {
+                            return Ok(Async::Ready(Some(Update::Add(addr_metas))));
+                        }
                     }
 
                     Some(api::update::Update::Remove(api::AddrSet { addrs })) => {
-                        let sock_addrs = addrs.into_iter().filter_map(pb::to_sock_addr);
-                        return Ok(Async::Ready(Some(Update::Remove(sock_addrs.collect()))));
+                        let sock_addrs = addrs
+                            .into_iter()
+                            .filter_map(pb::to_sock_addr)
+                            .collect::<Vec<_>>();
+                        if !sock_addrs.is_empty() {
+                            return Ok(Async::Ready(Some(Update::Remove(sock_addrs))));
+                        }
                     }
 
                     Some(api::update::Update::NoEndpoints(api::NoEndpoints { exists })) => {
