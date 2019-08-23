@@ -300,12 +300,12 @@ where
             }
         };
 
-        let dst_svc = config.destination_addr.as_ref().map(|addr| {
+        let dst_svc = {
             use super::control;
 
             // If the dst_svc is on localhost, use the inbound keepalive.
             // If the dst_svc is remote, use the outbound keepalive.
-            let keepalive = if addr.addr.is_loopback() {
+            let keepalive = if config.destination_addr.addr.is_loopback() {
                 config.inbound_connect_keepalive
             } else {
                 config.outbound_connect_keepalive
@@ -328,8 +328,8 @@ where
                 .layer(keepalive::connect::layer(keepalive))
                 .layer(tls::client::layer(local_identity.clone()))
                 .service(connect::svc())
-                .make(addr.clone())
-        });
+                .make(config.destination_addr.clone())
+        };
 
         let resolver = crate::resolve::Resolver::new(
             dst_svc.clone(),

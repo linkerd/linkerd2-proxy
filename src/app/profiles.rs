@@ -15,7 +15,7 @@ use tracing::{debug, error, info, trace, warn};
 
 #[derive(Clone, Debug)]
 pub struct Client<T> {
-    service: Option<T>,
+    service: api::client::Destination<T>,
     backoff: Duration,
     context_token: String,
 }
@@ -31,7 +31,7 @@ where
 {
     dst: String,
     backoff: Duration,
-    service: Option<T>,
+    service: api::client::Destination<T>,
     state: State<T>,
     tx: mpsc::Sender<profiles::Routes>,
     context_token: String,
@@ -60,9 +60,9 @@ where
     <T::ResponseBody as Body>::Data: Send,
     T::Future: Send,
 {
-    pub fn new(service: Option<T>, backoff: Duration, context_token: String) -> Self {
+    pub fn new(service: T, backoff: Duration, context_token: String) -> Self {
         Self {
-            service,
+            service: api::client::Destination::new(service),
             backoff,
             context_token,
         }
@@ -200,20 +200,17 @@ where
         loop {
             self.state = match self.state {
                 State::Disconnected => {
-                    let svc = match self.service {
-                        Some(ref mut svc) => match svc.poll_ready() {
-                            Ok(Async::Ready(())) => svc.as_service(),
-                            Ok(Async::NotReady) => return Ok(Async::NotReady),
-                            Err(err) => {
-                                error!(
-                                    "profile service unexpected error (dst = {}): {:?}",
-                                    self.dst,
-                                    err.into(),
-                                );
-                                return Ok(Async::Ready(()));
-                            }
-                        },
-                        None => return Ok(Async::Ready(())),
+                    match self.service.poll_ready() {
+                        Ok(Async::NotReady) => return Ok(Async::NotReady),
+                        Ok(Async::Ready(())) => {},
+                        Err(err) => {
+                            error!(
+                                "profile service unexpected error (dst = {}): {:?}",
+                                self.dst,
+                                err,
+                            );
+                            return Ok(Async::Ready(()));
+                        }
                     };
 
                     let req = api::GetDestination {
@@ -222,8 +219,7 @@ where
                         context_token: self.context_token.clone(),
                     };
                     debug!("getting profile: {:?}", req);
-                    let mut client = api::client::Destination::new(svc);
-                    let rspf = client.get_profile(grpc::Request::new(req));
+                    let rspf = self.service.get_profile(grpc::Request::new(req));
                     State::Waiting(rspf)
                 }
                 State::Waiting(ref mut f) => match f.poll() {
