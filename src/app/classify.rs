@@ -166,7 +166,7 @@ impl classify::ClassifyEos for Eos {
             Eos::Grpc(GrpcEos::NoBody(class)) => class,
             Eos::Grpc(GrpcEos::Open) => trailers
                 .and_then(grpc_class)
-                .unwrap_or_else(|| Class::Grpc(SuccessOrFailure::Failure, 0)),
+                .unwrap_or_else(|| Class::Grpc(SuccessOrFailure::Success, 0)),
             Eos::Profile(class) => class,
             Eos::Error(msg) => Class::Stream(SuccessOrFailure::Failure, msg.into()),
         }
@@ -289,6 +289,14 @@ mod tests {
 
         let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
         assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 3));
+    }
+
+    #[test]
+    fn grpc_response_trailer_missing() {
+        let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
+        let trailers = HeaderMap::new();
+        let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
+        assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
     }
 
     #[test]

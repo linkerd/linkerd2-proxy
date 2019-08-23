@@ -1,7 +1,7 @@
 [package]
 name = "linkerd2-addr"
 version = "0.1.0"
-authors = ["Oliver Gould <ver@buoyant.io>"]
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
 publish = false
 
