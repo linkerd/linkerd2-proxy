@@ -2,7 +2,7 @@ use super::super::dst::DstAddr;
 use super::Endpoint;
 use crate::core::resolve;
 use crate::proxy::http::settings;
-use crate::resolve::Metadata;
+use crate::resolve_dst_api::Metadata;
 use crate::svc::Service;
 use crate::transport::tls;
 use crate::{Addr, Conditional, Error, NameAddr};
@@ -53,7 +53,7 @@ where
     type Future = ResolveFuture<R::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
+        self.0.poll_ready().map_err(Into::into)
     }
 
     fn call(&mut self, dst: DstAddr) -> Self::Future {

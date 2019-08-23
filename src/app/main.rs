@@ -331,7 +331,7 @@ where
                 .make(addr.clone())
         });
 
-        let resolver = crate::resolve::Resolve::new(
+        let resolver = crate::resolve_dst_api::Resolve::new(
             dst_svc.clone(),
             config.destination_get_suffixes.clone(),
             config.destination_context.clone(),

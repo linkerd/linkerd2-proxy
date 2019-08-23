@@ -5,7 +5,6 @@ use linkerd2_proxy_core as core;
 mod destination;
 mod metadata;
 mod pb;
-mod remote_stream;
 
 pub use self::destination::Resolve;
 pub use self::metadata::{Metadata, ProtocolHint};

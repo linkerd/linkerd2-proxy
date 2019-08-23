@@ -40,6 +40,7 @@ linkerd2-metrics       = { path = "lib/linkerd2-metrics" }
 linkerd2-never         = { path = "lib/linkerd2-never" }
 linkerd2-proxy-core    = { path = "lib/linkerd2-proxy-core" }
 linkerd2-proxy-resolve-dst-api = { path = "lib/linkerd2-proxy-resolve-dst-api" }
+linkerd2-proxy-resolve-discover = { path = "lib/linkerd2-proxy-resolve-discover" }
 linkerd2-router        = { path = "lib/linkerd2-router" }
 linkerd2-signal        = { path = "lib/linkerd2-signal" }
 linkerd2-stack         = { path = "lib/linkerd2-stack" }

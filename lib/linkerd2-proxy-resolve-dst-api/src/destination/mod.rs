@@ -19,7 +19,7 @@
 use crate::api::destination as api;
 use crate::metadata::Metadata;
 use crate::pb;
-use futures::{try_ready, Async, Future, Poll, Stream};
+use futures::{future, Async, Future, Poll, Stream};
 use tower::Service;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::trace;
@@ -31,13 +31,8 @@ pub trait CanResolve {
     fn target(&self) -> Target;
 }
 
-/// A handle to request resolutions from the destination service.
 #[derive(Clone)]
 pub struct Resolve<S>(api::client::Destination<S>);
-
-pub struct ResolveFuture<S: GrpcService<BoxBody>> {
-    inner: grpc::client::server_streaming::ResponseFuture<api::Update, S::Future>,
-}
 
 pub struct Resolution<S: GrpcService<BoxBody>> {
     inner: grpc::Streaming<api::Update, S::ResponseBody>,
@@ -52,7 +47,6 @@ where
     <S::ResponseBody as Body>::Data: Send,
     S::Future: Send,
 {
-    /// Returns a `Resolver` for requesting destination resolutions.
     pub fn new(svc: S) -> Self {
         Resolve(api::client::Destination::new(svc))
     }
@@ -68,33 +62,23 @@ where
 {
     type Response = Resolution<S>;
     type Error = grpc::Status;
-    type Future = ResolveFuture<S>;
+    type Future = future::Map<
+        grpc::client::server_streaming::ResponseFuture<api::Update, S::Future>,
+        fn(grpc::Response<grpc::Streaming<api::Update, S::ResponseBody>>) -> Resolution<S>,
+    >;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.0.poll_ready()
     }
 
-    /// Start watching for address changes for a certain authority.
-    fn call(&mut self, target: T) -> Self::Future {
-        let target = target.target();
+    fn call(&mut self, t: T) -> Self::Future {
+        let target = t.target();
         trace!("resolve {:?}", target);
-        let inner = self.0.get(grpc::Request::new(target));
-        ResolveFuture { inner }
-    }
-}
-
-// === impl ResolveFuture ===
-
-impl<S> Future for ResolveFuture<S>
-where
-    S: GrpcService<BoxBody>,
-{
-    type Item = Resolution<S>;
-    type Error = grpc::Status;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll()).into_inner();
-        return Ok(Async::Ready(Resolution { inner }));
+        self.0
+            .get(grpc::Request::new(target))
+            .map(|rsp| Resolution {
+                inner: rsp.into_inner(),
+            })
     }
 }
 

@@ -5,11 +5,12 @@ use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, reconnect, resolve, Server};
-use crate::resolve::Metadata;
+use crate::proxy::{self, accept, reconnect, Server};
+use crate::resolve_dst_api::Metadata;
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr, NameAddr};
+use linkerd2_proxy_resolve_discover as discover;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -148,7 +149,7 @@ where
     // over all endpoints returned from the destination service.
     let balancer = svc::builder()
         .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-        .layer(resolve::layer(discovery::Resolve::new(resolve)))
+        .layer(discover::layer(discovery::Resolve::new(resolve)))
         .spawn_ready();
 
     let distributor = svc::builder()
@@ -156,7 +157,7 @@ where
             // Attempt to build a balancer. If the service is
             // unresolvable, fall back to using a router that dispatches
             // request to the application-selected original destination.
-            fallback::layer(balancer, orig_dst_router).on_error::<Unresolvable>(),
+            fallback::layer(balancer, orig_dst_router), // TODO .on_error::<Unresolvable>(),
         )
         .service(endpoint_stack);
 
