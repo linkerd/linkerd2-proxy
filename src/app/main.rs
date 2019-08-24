@@ -331,11 +331,8 @@ where
                 .make(config.destination_addr.clone())
         };
 
-        let resolver = crate::resolve::Resolver::new(
-            dst_svc.clone(),
-            config.destination_get_suffixes.clone(),
-            config.destination_context.clone(),
-        );
+        let resolver = crate::resolve_dst_api::Resolve::new(dst_svc.clone())
+            .with_context_token(&config.destination_context);
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
