@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use bytes::Buf;
 use futures::{try_ready, Future, Poll};
 use http;
