@@ -88,8 +88,8 @@ impl<A, B> Layer<A, B> {
 
 impl<A, B, P, M> tower::layer::Layer<M> for Layer<A, B, P>
 where
-    A: tower::layer::Layer<M> + Clone,
-    B: tower::layer::Layer<M> + Clone,
+    A: tower::layer::Layer<M>,
+    B: tower::layer::Layer<M>,
     M: Clone,
     P: Fn(&Error) -> bool + Clone,
 {
