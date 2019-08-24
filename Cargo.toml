@@ -9,6 +9,7 @@ members = [
     "lib/linkerd2-identity",
     "lib/linkerd2-metrics",
     "lib/linkerd2-proxy-core",
+    "lib/linkerd2-proxy-fallback",
     "lib/linkerd2-proxy-resolve",
     "lib/linkerd2-router",
     "lib/linkerd2-signal",
@@ -38,6 +39,7 @@ linkerd2-identity      = { path = "lib/linkerd2-identity" }
 linkerd2-metrics       = { path = "lib/linkerd2-metrics" }
 linkerd2-never         = { path = "lib/linkerd2-never" }
 linkerd2-proxy-core    = { path = "lib/linkerd2-proxy-core" }
+linkerd2-proxy-fallback = { path = "lib/linkerd2-proxy-fallback" }
 linkerd2-proxy-resolve = { path = "lib/linkerd2-proxy-resolve" }
 linkerd2-router        = { path = "lib/linkerd2-router" }
 linkerd2-signal        = { path = "lib/linkerd2-signal" }
