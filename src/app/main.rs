@@ -300,35 +300,42 @@ where
             }
         };
 
-        // If the dst_svc is on localhost, use the inbound keepalive.
-        // If the dst_svc is remote, use the outbound keepalive.
-        let keepalive = if config.destination_addr.addr.is_loopback() {
-            config.inbound_connect_keepalive
-        } else {
-            config.outbound_connect_keepalive
-        };
-        let dst_svc = svc::builder()
-            .buffer_pending(
-                config.destination_buffer_capacity,
-                config.control_dispatch_timeout,
-            )
-            .layer(proxy::grpc::req_body_as_payload::layer().per_make())
-            .layer(http_metrics::layer::<_, classify::Response>(
-                ctl_http_metrics,
-            ))
-            .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
-            .layer(super::control::add_origin::layer())
-            .layer(super::control::resolve::layer(dns_resolver.clone()))
-            .layer(super::control::client::layer())
-            .timeout(config.control_connect_timeout)
-            .layer(keepalive::connect::layer(keepalive))
-            .layer(tls::client::layer(local_identity.clone()))
-            .service(connect::svc())
-            .make(config.destination_addr);
+        let dst_svc = {
+            use super::control;
 
-        // TODO config.destination_get_suffixes.clone(),
-        let resolver = crate::resolve_dst_api::Resolve::new(dst_svc.clone())
-            .with_context_token(&config.destination_context);
+            // If the dst_svc is on localhost, use the inbound keepalive.
+            // If the dst_svc is remote, use the outbound keepalive.
+            let keepalive = if config.destination_addr.addr.is_loopback() {
+                config.inbound_connect_keepalive
+            } else {
+                config.outbound_connect_keepalive
+            };
+
+            svc::builder()
+                .buffer_pending(
+                    config.destination_buffer_capacity,
+                    config.control_dispatch_timeout,
+                )
+                .layer(control::add_origin::layer())
+                .layer(proxy::grpc::req_body_as_payload::layer().per_make())
+                .layer(http_metrics::layer::<_, classify::Response>(
+                    ctl_http_metrics.clone(),
+                ))
+                .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                .layer(control::resolve::layer(dns_resolver.clone()))
+                .layer(control::client::layer())
+                .timeout(config.control_connect_timeout)
+                .layer(keepalive::connect::layer(keepalive))
+                .layer(tls::client::layer(local_identity.clone()))
+                .service(connect::svc())
+                .make(config.destination_addr.clone())
+        };
+
+        let resolver = crate::resolve::Resolver::new(
+            dst_svc.clone(),
+            config.destination_get_suffixes.clone(),
+            config.destination_context.clone(),
+        );
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
