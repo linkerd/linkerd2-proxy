@@ -202,12 +202,11 @@ where
                 State::Disconnected => {
                     match self.service.poll_ready() {
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Ok(Async::Ready(())) => {},
+                        Ok(Async::Ready(())) => {}
                         Err(err) => {
                             error!(
                                 "profile service unexpected error (dst = {}): {:?}",
-                                self.dst,
-                                err,
+                                self.dst, err,
                             );
                             return Ok(Async::Ready(()));
                         }
