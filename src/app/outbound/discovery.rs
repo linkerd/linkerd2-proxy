@@ -12,7 +12,10 @@ use futures::{try_ready, Async, Future, Poll, Stream};
 pub struct Resolve<R: resolve::Resolve<NameAddr>>(R);
 
 #[derive(Debug)]
-pub enum ResolveFuture<F> {
+pub struct ResolveFuture<F>(Inner<F>);
+
+#[derive(Debug)]
+enum Inner<F> {
     Unresolvable,
     Future { inner: F, meta: Option<Meta> },
 }
@@ -23,7 +26,7 @@ pub struct Resolution<R> {
     meta: Meta,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Unresolvable(());
 
 #[derive(Clone, Debug)]
@@ -58,7 +61,7 @@ where
 
     fn call(&mut self, dst: DstAddr) -> Self::Future {
         match dst.dst_concrete() {
-            Addr::Socket(_) => ResolveFuture::Unresolvable,
+            Addr::Socket(_) => ResolveFuture(Inner::Unresolvable),
             Addr::Name(ref name) => {
                 let inner = self.0.resolve(name.clone());
                 let meta = Meta {
@@ -66,10 +69,10 @@ where
                     dst_concrete: name.clone(),
                     http_settings: dst.http_settings.clone(),
                 };
-                ResolveFuture::Future {
+                ResolveFuture(Inner::Future {
                     inner,
                     meta: Some(meta),
-                }
+                })
             }
         }
     }
@@ -86,9 +89,9 @@ where
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self {
-            ResolveFuture::Unresolvable => return Err(Unresolvable(()).into()),
-            ResolveFuture::Future {
+        match self.0 {
+            Inner::Unresolvable => return Err(Unresolvable(()).into()),
+            Inner::Future {
                 ref mut inner,
                 ref mut meta,
             } => {
