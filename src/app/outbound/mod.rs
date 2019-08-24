@@ -133,7 +133,7 @@ where
     //
     // If the `l5d-require-id` header is present, then that identity is
     // used as the server name when connecting to the endpoint.
-    let orig_dst_router = svc::builder()
+    let orig_dst_router_layer = svc::builder()
         .layer(router::layer(
             router::Config::new("out ep", capacity, max_idle_age),
             |req: &http::Request<_>| {
@@ -142,21 +142,23 @@ where
                 ep
             },
         ))
-        .buffer_pending(max_in_flight, DispatchDeadline::extract);
+        .buffer_pending(max_in_flight, DispatchDeadline::extract)
+        .into_inner();
 
     // Resolves the target via the control plane and balances requests
     // over all endpoints returned from the destination service.
-    let balancer = svc::builder()
+    let balancer_layer = svc::builder()
         .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
         .layer(discover::layer(discovery::Resolve::new(resolve)))
-        .spawn_ready();
+        .spawn_ready()
+        .into_inner();
 
     let distributor = svc::builder()
         .layer(
             // Attempt to build a balancer. If the service is
             // unresolvable, fall back to using a router that dispatches
             // request to the application-selected original destination.
-            fallback::layer(balancer, orig_dst_router), // TODO .on_error::<Unresolvable>(),
+            fallback::layer(balancer_layer, orig_dst_router_layer), // TODO .on_error::<Unresolvable>()
         )
         .service(endpoint_stack);
 

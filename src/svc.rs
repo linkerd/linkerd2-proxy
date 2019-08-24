@@ -58,6 +58,10 @@ impl<L> Builder<L> {
         Builder(self.0.timeout(timeout))
     }
 
+    pub fn into_inner(self) -> L {
+        self.0.into_inner()
+    }
+
     /// Wrap the service `S` with the layers.
     pub fn service<S>(self, service: S) -> L::Service
     where

@@ -1,8 +1,10 @@
-use crate::{svc, Error};
+#![deny(warnings, rust_2018_idioms)]
+
 use bytes::Buf;
 use futures::{try_ready, Future, Poll};
 use http;
 use hyper::body::Payload;
+use linkerd2_proxy_core::Error;
 use tracing::trace;
 
 /// A fallback layer composing two service builders.
@@ -12,8 +14,8 @@ use tracing::trace;
 /// to call the secondary `MakeService`.
 #[derive(Clone, Debug)]
 pub struct Layer<A, B, P = fn(&Error) -> bool> {
-    primary: svc::Builder<A>,
-    fallback: svc::Builder<B>,
+    primary: A,
+    fallback: B,
     predicate: P,
 }
 
@@ -28,7 +30,7 @@ pub struct MakeFuture<A, B, P, T>
 where
     A: Future,
     A::Error: Into<Error>,
-    B: svc::Service<T>,
+    B: tower::Service<T>,
 {
     fallback: B,
     target: Option<T>,
@@ -51,7 +53,7 @@ enum FallbackState<A, B, T> {
     Fallback(B),
 }
 
-pub fn layer<A, B>(primary: svc::Builder<A>, fallback: svc::Builder<B>) -> Layer<A, B> {
+pub fn layer<A, B>(primary: A, fallback: B) -> Layer<A, B> {
     let predicate: fn(&Error) -> bool = |_| true;
     Layer {
         primary,
@@ -86,10 +88,10 @@ impl<A, B> Layer<A, B> {
     }
 }
 
-impl<A, B, P, M> svc::Layer<M> for Layer<A, B, P>
+impl<A, B, P, M> tower::layer::Layer<M> for Layer<A, B, P>
 where
-    A: svc::Layer<M> + Clone,
-    B: svc::Layer<M> + Clone,
+    A: tower::layer::Layer<M>,
+    B: tower::layer::Layer<M>,
     M: Clone,
     P: Fn(&Error) -> bool + Clone,
 {
@@ -97,8 +99,8 @@ where
 
     fn layer(&self, inner: M) -> Self::Service {
         MakeSvc {
-            primary: self.primary.clone().service(inner.clone()),
-            fallback: self.fallback.clone().service(inner),
+            primary: self.primary.layer(inner.clone()),
+            fallback: self.fallback.layer(inner),
             predicate: self.predicate.clone(),
         }
     }
@@ -106,11 +108,11 @@ where
 
 // === impl MakeSvc ===
 
-impl<A, B, P, T> svc::Service<T> for MakeSvc<A, B, P>
+impl<A, B, P, T> tower::Service<T> for MakeSvc<A, B, P>
 where
-    A: svc::Service<T>,
+    A: tower::Service<T>,
     A::Error: Into<Error>,
-    B: svc::Service<T> + Clone,
+    B: tower::Service<T> + Clone,
     B::Error: Into<Error>,
     P: Fn(&Error) -> bool + Clone,
     T: Clone,
@@ -137,7 +139,7 @@ impl<A, B, P, T> Future for MakeFuture<A, B, P, T>
 where
     A: Future,
     A::Error: Into<Error>,
-    B: svc::Service<T>,
+    B: tower::Service<T>,
     B::Error: Into<Error>,
     P: Fn(&Error) -> bool,
 {
@@ -181,11 +183,11 @@ where
 
 // === impl Either ===
 
-impl<A, B, B1, B2, R> svc::Service<R> for Either<A, B>
+impl<A, B, B1, B2, R> tower::Service<R> for Either<A, B>
 where
-    A: svc::Service<R, Response = http::Response<B1>>,
+    A: tower::Service<R, Response = http::Response<B1>>,
     A::Error: Into<Error>,
-    B: svc::Service<R, Response = http::Response<B2>>,
+    B: tower::Service<R, Response = http::Response<B2>>,
     B::Error: Into<Error>,
 {
     type Response = http::Response<Either<B1, B2>>;
@@ -219,14 +221,14 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self {
-            Either::A(ref mut inner) => inner
-                .poll()
-                .map_err(Into::into)
-                .map(|ready| ready.map(|rsp| rsp.map(Either::A))),
-            Either::B(ref mut inner) => inner
-                .poll()
-                .map_err(Into::into)
-                .map(|ready| ready.map(|rsp| rsp.map(Either::B))),
+            Either::A(ref mut inner) => {
+                let rsp = try_ready!(inner.poll().map_err(Into::into));
+                Ok(rsp.map(Either::A).into())
+            }
+            Either::B(ref mut inner) => {
+                let rsp = try_ready!(inner.poll().map_err(Into::into));
+                Ok(rsp.map(Either::B).into())
+            }
         }
     }
 }

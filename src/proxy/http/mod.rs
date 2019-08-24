@@ -7,7 +7,6 @@ pub mod add_header;
 pub mod balance;
 pub mod canonicalize;
 pub mod client;
-pub mod fallback;
 pub(super) mod glue;
 pub mod h1;
 pub mod h2;
@@ -27,6 +26,7 @@ pub mod upgrade;
 pub use self::client::Client;
 pub use self::glue::{ClientUsedTls, HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
+pub use linkerd2_proxy_fallback as fallback;
 
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
