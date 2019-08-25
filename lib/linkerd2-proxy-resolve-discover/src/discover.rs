@@ -1,31 +1,36 @@
+use super::Backoff;
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
+use linkerd2_never::Never;
 use linkerd2_proxy_core::resolve::{Resolution, Resolve, Update};
 use linkerd2_proxy_core::Error;
 use std::net::SocketAddr;
 use tokio::sync::oneshot;
 use tokio::timer;
 use tower::discover::Change;
-use tracing::trace;
+use tracing::{debug, trace};
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
-pub struct Discover<T, R: Resolve<T>, M: tower::Service<R::Endpoint>> {
-    state: State<R::Future, R::Resolution>,
+pub struct Discover<T, R: Resolve<T>, M: tower::Service<R::Endpoint>, B = ()> {
+    state: State<R::Future, R::Resolution, R::Endpoint>,
     target: T,
     resolve: R,
     make_endpoint: M,
     make_futures: MakeFutures<M::Future>,
     pending_removals: Vec<SocketAddr>,
-    active_endpoints: IndexSet<SocketAddr>,
+    active_endpoints: IndexMap<SocketAddr, R::Endpoint>,
+    backoff: B,
     _marker: std::marker::PhantomData<fn(T)>,
 }
 
-enum State<F, R> {
+enum State<F, R, E> {
     Disconnected,
     Connecting(F),
     Connected(Option<R>),
+    Reconcile(Option<Update<E>>, Option<R>),
     Resolving(R),
+    Failed(Option<Error>),
     Backoff(timer::Delay),
 }
 
@@ -50,6 +55,7 @@ enum MakeError<E> {
 impl<T, R, M> Discover<T, R, M>
 where
     R: Resolve<T>,
+    R::Endpoint: Clone + PartialEq + std::fmt::Debug,
     M: tower::Service<R::Endpoint>,
 {
     pub fn new(target: T, resolve: R, make_endpoint: M) -> Self {
@@ -60,11 +66,33 @@ where
             make_endpoint,
             make_futures: MakeFutures::new(),
             pending_removals: Vec::new(),
-            active_endpoints: IndexSet::default(),
+            active_endpoints: IndexMap::default(),
+            backoff: (),
             _marker: std::marker::PhantomData,
         }
     }
 
+    pub fn with_backoff<B: Backoff>(self, backoff: B) -> Discover<T, R, M, B> {
+        Discover {
+            backoff,
+            state: self.state,
+            target: self.target,
+            resolve: self.resolve,
+            make_endpoint: self.make_endpoint,
+            make_futures: self.make_futures,
+            pending_removals: self.pending_removals,
+            active_endpoints: self.active_endpoints,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T, R, M, B> Discover<T, R, M, B>
+where
+    R: Resolve<T>,
+    R::Endpoint: Clone + PartialEq + std::fmt::Debug,
+    M: tower::Service<R::Endpoint>,
+{
     pub fn with_resolution(self, resolution: R::Resolution) -> Self {
         Self {
             state: State::Connected(Some(resolution)),
@@ -73,14 +101,15 @@ where
     }
 }
 
-impl<T, R, M> tower::discover::Discover for Discover<T, R, M>
+impl<T, R, M, B> tower::discover::Discover for Discover<T, R, M, B>
 where
-    T: Clone,
+    T: Clone + std::fmt::Debug,
     R: Resolve<T>,
-    R::Endpoint: std::fmt::Debug,
+    R::Endpoint: Clone + PartialEq + std::fmt::Debug,
     R::Error: Into<Error>,
     M: tower::Service<R::Endpoint>,
     M::Error: Into<Error>,
+    B: Backoff,
 {
     type Key = SocketAddr;
     type Service = M::Response;
@@ -99,33 +128,96 @@ where
     }
 }
 
-impl<T, R, M> Discover<T, R, M>
+impl<T, R, M, B> Discover<T, R, M, B>
 where
-    T: Clone,
+    T: Clone + std::fmt::Debug,
     R: Resolve<T>,
-    R::Endpoint: std::fmt::Debug,
+    R::Endpoint: Clone + PartialEq + std::fmt::Debug,
     R::Error: Into<Error>,
     M: tower::Service<R::Endpoint>,
     M::Error: Into<Error>,
+    B: Backoff,
 {
-    fn poll_resolution<'a>(&'a mut self) -> Poll<Update<R::Endpoint>, Error> {
+    fn poll_resolution(&mut self) -> Poll<Update<R::Endpoint>, Never> {
         loop {
             self.state = match self.state {
                 State::Disconnected => {
                     let fut = self.resolve.resolve(self.target.clone());
                     State::Connecting(fut)
                 }
-                State::Connecting(ref mut fut) => {
-                    let resolution = try_ready!(fut.poll().map_err(Into::into));
-                    State::Connected(Some(resolution))
-                }
+                State::Connecting(ref mut fut) => match fut.poll() {
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err(e) => State::Failed(Some(e.into())),
+                    Ok(Async::Ready(resolution)) => State::Connected(Some(resolution)),
+                },
                 State::Connected(ref mut resolution) => {
-                    State::Resolving(resolution.take().unwrap())
+                    // If there is a prior state -- endpoints that have already been created, for instance,
+                    // Get the first update after reconnecting, reconcile
+                    // against the prior state, and then continue resolving...
+                    if self.active_endpoints.is_empty() {
+                        self.backoff.reset_delay();
+                        State::Resolving(resolution.take().expect("illegal state"))
+                    } else {
+                        match resolution.as_mut().expect("illegal state").poll() {
+                            Ok(Async::NotReady) => return Ok(Async::NotReady),
+                            Err(e) => State::Failed(Some(e.into())),
+                            Ok(Async::Ready(update)) => {
+                                State::Reconcile(Some(update), resolution.take())
+                            }
+                        }
+                    }
                 }
-                State::Resolving(ref mut resolution) => {
-                    return resolution.poll().map_err(Into::into);
+                State::Reconcile(ref mut update, ref mut resolution) => match update.take() {
+                    Some(Update::Add(endpoints)) => {
+                        if self.active_endpoints.is_empty() {
+                            return Ok(Update::Add(endpoints).into());
+                        }
+
+                        let new_endpoints = Vec::with_capacity(endpoints.len());
+                        for (addr, ep) in endpoints.into_iter() {
+                            let remove = self
+                                .active_endpoints
+                                .get(&addr)
+                                .filter(|active| **active != ep)
+                                .is_some();
+                            if remove {
+                                self.active_endpoints.remove(&addr);
+                            }
+                        }
+                        *update = Some(Update::Add(new_endpoints));
+
+                        let rm_addrs = self.active_endpoints.drain(..).map(|(addr, _)| addr);
+                        return Ok(Update::Remove(rm_addrs.collect()).into());
+                    }
+                    Some(Update::Remove(mut addrs)) => {
+                        addrs.extend(self.active_endpoints.drain(..).map(|(addr, _)| addr));
+                        return Ok(Update::Remove(addrs).into());
+                    }
+                    Some(dne) => {
+                        if self.active_endpoints.is_empty() {
+                            return Ok(dne.into());
+                        }
+
+                        let addrs = self.active_endpoints.drain(..).map(|(addr, _)| addr);
+                        *update = Some(dne);
+                        return Ok(Update::Remove(addrs.collect()).into());
+                    }
+                    None => {
+                        self.backoff.reset_delay();
+                        State::Resolving(resolution.take().expect("illegal state"))
+                    }
+                },
+
+                State::Resolving(ref mut resolution) => match resolution.poll() {
+                    Ok(ready) => return Ok(ready),
+                    Err(e) => State::Failed(Some(e.into())),
+                },
+                State::Failed(ref mut e) => {
+                    let err = e.take().expect("illegal staet");
+                    debug!(message = %err, target = ?self.target);
+                    State::Backoff(self.backoff.next_delay())
                 }
-                State::Backoff(ref mut fut) => match fut.poll().expect("timer failed") {
+                State::Backoff(ref mut fut) => match fut.poll().expect("timer must not fail") {
                     Async::NotReady => return Ok(Async::NotReady),
                     Async::Ready(()) => State::Disconnected,
                 },

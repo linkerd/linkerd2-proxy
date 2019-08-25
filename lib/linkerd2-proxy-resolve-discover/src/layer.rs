@@ -49,7 +49,7 @@ impl<T, R, M> tower::Service<T> for MakeDiscover<R, M>
 where
     T: Clone,
     R: Resolve<T> + Clone,
-    R::Endpoint: fmt::Debug,
+    R::Endpoint: fmt::Debug + Clone + PartialEq,
     M: tower::Service<R::Endpoint> + Clone,
 {
     type Response = Discover<T, R, M>;
@@ -79,6 +79,7 @@ where
 impl<T, R, M> Future for DiscoverFuture<T, R, M>
 where
     R: Resolve<T>,
+    R::Endpoint: fmt::Debug + Clone + PartialEq,
     M: tower::Service<R::Endpoint>,
 {
     type Item = Discover<T, R, M>;
