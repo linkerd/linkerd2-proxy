@@ -23,8 +23,9 @@ pub struct Discover<T, R: Resolve<T>, M: tower::Service<R::Endpoint>> {
 
 enum State<F, R> {
     Disconnected,
+    Connecting(F),
+    Connected(Option<R>),
     Resolving(R),
-    Reconnecting(F),
     Backoff(timer::Delay),
 }
 
@@ -66,7 +67,7 @@ where
 
     pub fn with_resolution(self, resolution: R::Resolution) -> Self {
         Self {
-            state: State::Resolution(resolution),
+            state: State::Connected(Some(resolution)),
             ..self
         }
     }
@@ -74,6 +75,7 @@ where
 
 impl<T, R, M> tower::discover::Discover for Discover<T, R, M>
 where
+    T: Clone,
     R: Resolve<T>,
     R::Endpoint: std::fmt::Debug,
     R::Error: Into<Error>,
@@ -85,7 +87,7 @@ where
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
-        if let Async::Ready(addr) = self.poll_resolution_for_removals()? {
+        if let Async::Ready(addr) = self.poll_removals()? {
             return Ok(Async::Ready(Change::Remove(addr)));
         }
 
@@ -99,13 +101,39 @@ where
 
 impl<T, R, M> Discover<T, R, M>
 where
+    T: Clone,
     R: Resolve<T>,
     R::Endpoint: std::fmt::Debug,
     R::Error: Into<Error>,
     M: tower::Service<R::Endpoint>,
     M::Error: Into<Error>,
 {
-    fn poll_resolution_for_removals(&mut self) -> Poll<SocketAddr, Error> {
+    fn poll_resolution<'a>(&'a mut self) -> Poll<Update<R::Endpoint>, Error> {
+        loop {
+            self.state = match self.state {
+                State::Disconnected => {
+                    let fut = self.resolve.resolve(self.target.clone());
+                    State::Connecting(fut)
+                }
+                State::Connecting(ref mut fut) => {
+                    let resolution = try_ready!(fut.poll().map_err(Into::into));
+                    State::Connected(Some(resolution))
+                }
+                State::Connected(ref mut resolution) => {
+                    State::Resolving(resolution.take().unwrap())
+                }
+                State::Resolving(ref mut resolution) => {
+                    return resolution.poll().map_err(Into::into);
+                }
+                State::Backoff(ref mut fut) => match fut.poll().expect("timer failed") {
+                    Async::NotReady => return Ok(Async::NotReady),
+                    Async::Ready(()) => State::Disconnected,
+                },
+            };
+        }
+    }
+
+    fn poll_removals(&mut self) -> Poll<SocketAddr, Error> {
         loop {
             if let Some(addr) = self.pending_removals.pop() {
                 self.make_futures.remove(&addr);
@@ -117,27 +145,22 @@ where
             // services. Don't process any updates until we can do so.
             try_ready!(self.make_endpoint.poll_ready().map_err(Into::into));
 
-            match self.state {
-                State::Resolution(ref mut resolution) => {
-                    let update = try_ready!(resolution.poll().map_err(Into::into));
-                    trace!("watch: {:?}", update);
-                    match update {
-                        Update::Add(additions) => {
-                            for (addr, target) in additions.into_iter() {
-                                // Start building the service and continue. If a pending
-                                // service exists for this addr, it will be canceled.
-                                let fut = self.make_endpoint.call(target);
-                                self.make_futures.push(addr, fut);
-                            }
-                        }
-                        Update::Remove(removals) => {
-                            self.pending_removals.extend(removals);
-                        }
-
-                        Update::Empty | Update::DoesNotExist => unimplemented!(),
+            let update = try_ready!(self.poll_resolution());
+            trace!("watch: {:?}", update);
+            match update {
+                Update::Add(additions) => {
+                    for (addr, target) in additions.into_iter() {
+                        // Start building the service and continue. If a pending
+                        // service exists for this addr, it will be canceled.
+                        let fut = self.make_endpoint.call(target);
+                        self.make_futures.push(addr, fut);
                     }
                 }
-                _ => unreachable!("illegal state"),
+                Update::Remove(removals) => {
+                    self.pending_removals.extend(removals);
+                }
+
+                Update::Empty | Update::DoesNotExist => unimplemented!(),
             }
         }
     }
