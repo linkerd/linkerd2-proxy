@@ -23,8 +23,8 @@ pub struct Discover<T, R: Resolve<T>, M: tower::Service<R::Endpoint>> {
 
 enum State<F, R> {
     Disconnected,
-    Resolving(F),
-    Resolution(R),
+    Resolving(R),
+    Reconnecting(F),
     Backoff(timer::Delay),
 }
 
@@ -220,28 +220,18 @@ impl<E> From<E> for MakeError<E> {
 mod tests {
     use super::*;
     use futures::future;
-
+    use linkerd2_never::Never;
     use tokio::sync::mpsc;
+    use tower::discover::{Change, Discover as _Discover};
     use tower::Service;
     use tower_util::service_fn;
 
-    struct Urx<E>(mpsc::Receiver<Update<E>>);
-    impl<E> Resolution for Urx<E> {
-        type Endpoint = E;
-        type Error = mpsc::error::RecvError;
-
-        fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-            let ep = try_ready!(self.0.poll()).expect("stream must not terminate");
-            Ok(Async::Ready(ep))
-        }
-    }
-
     #[derive(Debug)]
-    struct Svc<T>(Vec<oneshot::Receiver<T>>);
-    impl<T> Service<()> for Svc<T> {
-        type Response = T;
-        type Error = oneshot::error::RecvError;
-        type Future = oneshot::Receiver<T>;
+    struct Svc<F>(Vec<F>);
+    impl<F: Future> Service<()> for Svc<F> {
+        type Response = F::Item;
+        type Error = F::Error;
+        type Future = F;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             Ok(().into())
@@ -255,19 +245,22 @@ mod tests {
     #[test]
     fn inserts_delivered_out_of_order() {
         with_task(move || {
-            let (mut reso_tx, resolution) = mpsc::channel(2);
-            let (make0_tx, make0_rx) = oneshot::channel::<Svc<usize>>();
-            let (make1_tx, make1_rx) = oneshot::channel::<Svc<usize>>();
-            let make = Svc(vec![make1_rx, make0_rx]);
+            let (mut reso_tx, reso_rx) = mpsc::channel(2);
+            let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
+            let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
 
-            let mut discover = Discover::new(Urx(resolution), make);
+            let mut discover = Discover::new(
+                (),
+                Svc(vec![future::ok::<_, Never>(reso_rx)]),
+                Svc(vec![make1_rx, make0_rx]),
+            );
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
             );
 
             let addr0 = SocketAddr::from(([127, 0, 0, 1], 80));
-            reso_tx.try_send(Update::Add(addr0, ())).unwrap();
+            reso_tx.try_send(Update::Add(vec![(addr0, ())])).unwrap();
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without service being made"
@@ -285,7 +278,7 @@ mod tests {
 
             let addr1 = SocketAddr::from(([127, 0, 0, 2], 80));
             reso_tx
-                .try_send(Update::Add(addr1, ()))
+                .try_send(Update::Add(vec![(addr1, ())]))
                 .expect("update must be sent");
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
@@ -358,19 +351,22 @@ mod tests {
     #[test]
     fn overwriting_insert_cancels_original() {
         with_task(move || {
-            let (mut reso_tx, resolution) = mpsc::channel(2);
-            let (make0_tx, make0_rx) = oneshot::channel::<Svc<usize>>();
-            let (make1_tx, make1_rx) = oneshot::channel::<Svc<usize>>();
-            let make = Svc(vec![make1_rx, make0_rx]);
+            let (mut reso_tx, reso_rx) = mpsc::channel(2);
+            let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
+            let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
 
-            let mut discover = Discover::new(Urx(resolution), make);
+            let mut discover = Discover::new(
+                (),
+                Svc(vec![future::ok::<_, Never>(reso_rx)]),
+                Svc(vec![make1_rx, make0_rx]),
+            );
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
             );
 
             let addr = SocketAddr::from(([127, 0, 0, 1], 80));
-            reso_tx.try_send(Update::Add(addr, ())).unwrap();
+            reso_tx.try_send(Update::Add(vec![(addr, ())])).unwrap();
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without service being made"
@@ -387,7 +383,7 @@ mod tests {
             );
 
             reso_tx
-                .try_send(Update::Add(addr, ()))
+                .try_send(Update::Add(vec![(addr, ())]))
                 .expect("update must be sent");
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
@@ -435,17 +431,20 @@ mod tests {
     #[test]
     fn cancelation_of_pending_service() {
         with_task(move || {
-            let (mut tx, resolution) = mpsc::channel(1);
-            let make = service_fn(|()| future::empty::<Svc<()>, Error>());
+            let (mut tx, reso_rx) = mpsc::channel(1);
 
-            let mut discover = Discover::new(Urx(resolution), make);
+            let mut discover = Discover::new(
+                (),
+                Svc(vec![future::ok::<_, Never>(reso_rx)]),
+                service_fn(|()| future::empty::<Svc<()>, Error>()),
+            );
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
             );
 
             let addr = SocketAddr::from(([127, 0, 0, 1], 80));
-            tx.try_send(Update::Add(addr, ())).unwrap();
+            tx.try_send(Update::Add(vec![(addr, ())])).unwrap();
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without service being made"
@@ -456,7 +455,7 @@ mod tests {
                 "no pending cancelation"
             );
 
-            tx.try_send(Update::Remove(addr)).unwrap();
+            tx.try_send(Update::Remove(vec![addr])).unwrap();
             match discover.poll().expect("discover can't fail") {
                 Async::NotReady => panic!("remove not processed"),
                 Async::Ready(Change::Insert(..)) => panic!("unexpected insert"),
