@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
+use tokio::sync::mpsc;
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;
@@ -43,6 +44,7 @@ pub fn server<R, P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
+    span_sink: mpsc::Sender<trace::Span>,
 ) -> impl ServeConnection<Connection>
 where
     R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
@@ -70,12 +72,10 @@ where
         .layer(tls::client::layer(local_identity))
         .service(connect::svc());
 
-    let (_span_rx, trace_layer) = trace::layer(100);
-
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = svc::builder()
         .layer(normalize_uri::layer())
-        .layer(trace_layer)
+        .layer(trace::layer(span_sink))
         .layer(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
         .layer(client::layer("out", config.h2_settings))
         .service(connect.clone());

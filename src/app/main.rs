@@ -1,19 +1,25 @@
 use super::admin::{self, Admin, Readiness};
 use super::classify::{self, Class};
+use super::control;
 use super::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use super::profiles::Client as ProfilesClient;
 use super::{config::Config, identity};
 use super::{handle_time, inbound, outbound, tap::serve_tap};
+use super::spans::SpanConverter;
 use crate::proxy::{self, http::metrics as http_metrics, reconnect};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
-use futures::{self, future, Future};
+use futures::{self, future, Future, Stream};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
 use tokio::runtime::current_thread;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
+use opencensus_proto::gen::agent::common::{v1 as oc};
+use opencensus_proto::span_exporter::SpanExporter;
 
 /// Runs a sidecar proxy.
 ///
@@ -244,8 +250,6 @@ where
                 Conditional::None(r)
             }
             Conditional::Some((local_identity, crt_store)) => {
-                use super::control;
-
                 let id_config = match config.identity_config.as_ref() {
                     Conditional::Some(c) => c.clone(),
                     Conditional::None(_) => unreachable!(),
@@ -301,7 +305,6 @@ where
         };
 
         let dst_svc = config.destination_addr.as_ref().map(|addr| {
-            use super::control;
 
             // If the dst_svc is on localhost, use the inbound keepalive.
             // If the dst_svc is remote, use the outbound keepalive.
@@ -398,6 +401,50 @@ where
             config.destination_context.clone(),
         );
 
+        let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| 
+            svc::builder()
+                // Reuse destination client settings for now...
+                .buffer_pending(
+                    config.destination_buffer_capacity,
+                    config.control_dispatch_timeout,
+                )
+                .layer(control::add_origin::layer())
+                .layer(proxy::grpc::req_body_as_payload::layer().per_make())
+                // TODO: we should have metrics of some kind, but the standard
+                // HTTP metrics aren't useful for a client where we never read
+                // the response.
+                .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                .layer(control::resolve::layer(dns_resolver.clone()))
+                // TODO: perhaps rename from "control" to "grpc"            
+                .layer(control::client::layer())
+                .timeout(config.control_connect_timeout)
+                .layer(keepalive::connect::layer(config.outbound_connect_keepalive))
+                .layer(tls::client::layer(local_identity.clone()))
+                .service(connect::svc())
+                .make(addr.clone())
+        );
+
+        let (inbound_spans_tx, inbound_spans_rx) = mpsc::channel(100);
+        let (outbound_spans_tx, outbound_spans_rx) = mpsc::channel(100);
+        if let Some(trace_collector) = trace_collector_svc {
+            let node = oc::Node {
+                identifier: Some(oc::ProcessIdentifier {
+                    host_name: "TODO: hostname".to_string(),
+                    pid: 0,
+                    start_timestamp: Some(start_time.into()),
+                }),
+                library_info: None,
+                service_info: Some(oc::ServiceInfo{
+                    name: "linkerd-proxy".to_string(),
+                }),
+                attributes: HashMap::new(),
+            };
+            let merged = SpanConverter::inbound(inbound_spans_rx)
+                .select(SpanConverter::outbound(outbound_spans_rx));
+            let span_exporter = SpanExporter::new(trace_collector, node, merged);
+            task::spawn(span_exporter);
+        }
+
         let outbound_server = outbound::server(
             &config,
             local_identity.clone(),
@@ -411,6 +458,7 @@ where
             route_http_metrics.clone(),
             retry_http_metrics,
             transport_metrics.clone(),
+            outbound_spans_tx,
         );
 
         let inbound_server = inbound::server(
@@ -423,6 +471,7 @@ where
             endpoint_http_metrics,
             route_http_metrics,
             transport_metrics,
+            inbound_spans_tx,
         );
 
         super::proxy::spawn(outbound_listener, outbound_server, drain_rx.clone());

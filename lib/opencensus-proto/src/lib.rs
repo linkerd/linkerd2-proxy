@@ -9,7 +9,7 @@ extern crate tracing;
 
 pub mod span_exporter;
 
-mod gen {
+pub mod gen {
     pub mod agent {
         pub mod trace {
             pub mod v1 {

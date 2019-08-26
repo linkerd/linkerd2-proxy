@@ -114,6 +114,8 @@ pub struct Config {
     /// experimental & testing purposes.
     pub destination_addr: Option<ControlAddr>,
 
+    pub trace_collector_addr: Option<ControlAddr>,
+
     /// The maximum number of queries to the Destination service which may be
     /// active concurrently.
     pub destination_buffer_capacity: usize,
@@ -278,6 +280,9 @@ pub const ENV_IDENTITY_SVC_BASE: &str = "LINKERD2_PROXY_IDENTITY_SVC";
 
 pub const ENV_DESTINATION_SVC_BASE: &str = "LINKERD2_PROXY_DESTINATION_SVC";
 pub const ENV_DESTINATION_SVC_ADDR: &str = "LINKERD2_PROXY_DESTINATION_SVC_ADDR";
+
+pub const ENV_TRACE_COLLECTOR_SVC_BASE: &str = "LINKERD2_PROXY_TRACE_COLLECTOR_SVC";
+pub const ENV_TRACE_COLLECTOR_SVC_ADDR: &str = "LINKERD2_PROXY_TRACE_COLLECTOR_SVC_ADDR";
 
 pub const ENV_DESTINATION_CONTEXT: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT";
 
@@ -456,6 +461,11 @@ impl Config {
         } else {
             parse_control_addr(strings, ENV_DESTINATION_SVC_BASE)
         };
+        let trace_collector_addr = if id_disabled {
+            parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
+        } else {
+            parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
+        };
 
         let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
@@ -554,6 +564,7 @@ impl Config {
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
 
             destination_addr: dst_addr?,
+            trace_collector_addr: trace_collector_addr?,
             destination_context: dst_token?.unwrap_or_default(),
 
             identity_config: identity_config?

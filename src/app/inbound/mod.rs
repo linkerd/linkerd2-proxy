@@ -7,6 +7,7 @@ use crate::proxy::{accept, reconnect, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
 use crate::{core::listen::ServeConnection, svc, Addr};
 use std::net::SocketAddr;
+use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
 
@@ -30,6 +31,7 @@ pub fn server<P>(
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
+    span_sink: mpsc::Sender<trace::Span>,
 ) -> impl ServeConnection<Connection>
 where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
@@ -54,12 +56,10 @@ where
         .layer(tls::client::layer(local_identity))
         .service(connect::svc());
 
-    let (_span_rx, trace_layer) = trace::layer(100);
-
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = svc::builder()
         .layer(normalize_uri::layer())
-        .layer(trace_layer)
+        .layer(trace::layer(span_sink))
         .layer(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
         .layer(client::layer("in", config.h2_settings))
         .service(connect.clone());

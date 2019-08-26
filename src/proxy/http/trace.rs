@@ -1,12 +1,12 @@
 use crate::svc;
 use bytes::Bytes;
-use futures::sync::mpsc;
 use futures::{try_ready, Async, Future, Poll};
 use http::header::HeaderValue;
 use rand::Rng;
 use std::fmt;
-use std::time::Instant;
+use tokio::sync::mpsc;
 use tracing::{trace, warn};
+use std::time::SystemTime;
 
 const TRACE_HEADER: &str = "traceparent";
 
@@ -27,8 +27,8 @@ pub struct Span {
     pub span_id: String,
     pub parent_id: String,
     pub span_name: String,
-    pub start: Instant,
-    pub end: Instant,
+    pub start: SystemTime,
+    pub end: SystemTime,
 }
 
 pub struct SpanFuture<F> {
@@ -39,6 +39,8 @@ pub struct SpanFuture<F> {
 
 #[derive(Clone, Debug)]
 pub struct Layer {
+    // TODO: Replace mpsc::Sender with a trait so that we can accept other
+    // implementations.
     sender: mpsc::Sender<Span>,
 }
 
@@ -68,10 +70,8 @@ pub struct Service<S> {
 /// the request.  If the sampled bit of the header was set, we emit metadata
 /// about the span to the returned channel when the span is complete, i.e. when
 /// we receive the response.
-pub fn layer(buffer_size: usize) -> (mpsc::Receiver<Span>, Layer) {
-    let (sender, receiver) = mpsc::channel(buffer_size);
-    let layer = Layer { sender };
-    (receiver, layer)
+pub fn layer(sender: mpsc::Sender<Span>) -> Layer {
+    Layer { sender }
 }
 
 // === impl Layer ===
@@ -169,9 +169,9 @@ where
                     span_id: span_id,
                     parent_id: parent_id,
                     span_name: path.unwrap_or(String::new()),
-                    start: Instant::now(),
+                    start: SystemTime::now(),
                     // End time will be updated when the span completes.
-                    end: Instant::now(),
+                    end: SystemTime::now(),
                 };
                 let span_fut = SpanFuture {
                     span: Some(span),
@@ -197,7 +197,7 @@ impl<F: Future> Future for SpanFuture<F> {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
         let mut span = self.span.take().expect("span missing");
-        span.end = Instant::now();
+        span.end = SystemTime::now();
         trace!("emitting span: {:?}", span);
         self.sender.try_send(span).unwrap_or_else(|_| {
             warn!("span dropped due to backpressure");
