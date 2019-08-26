@@ -71,9 +71,17 @@ check-fmt:
 fmt:
 	$(CARGO_FMT)
 
+
+.PHONY: test-lib
+test-lib:: fetch
+	$(CARGO_TEST) --lib --no-default-features
+
+.PHONY: test-integration
+test-integration: fetch
+	$(CARGO_TEST) --tests --no-default-features
+
 .PHONY: test
-test: fetch
-	$(CARGO_TEST) --no-default-features
+test: test-lib test-integration
 
 .PHONY: test-flakey
 test-flakey: fetch
