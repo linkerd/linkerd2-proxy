@@ -122,7 +122,15 @@ where
                         rsp,
                         sent_node: true,
                     },
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Ok(Async::NotReady) => {
+                        // Repair state before returning.
+                        self.state = Some(State::Sending {
+                            sender,
+                            rsp,
+                            sent_node,
+                        });
+                        return Ok(Async::NotReady)
+                    },
                     Err(_) => State::Idle,
                 },
             };
