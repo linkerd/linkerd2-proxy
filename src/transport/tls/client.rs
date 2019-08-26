@@ -125,7 +125,7 @@ where
                     server_name,
                 } => {
                     let io = try_ready!(future.poll());
-                    let io = BoxedIo::new(super::TlsIo::from(io));
+                    let io = BoxedIo::new(io);
                     trace!("established TLS to {}", server_name.as_ref());
                     let tls = Conditional::Some(server_name.clone());
                     return Ok(Async::Ready(Connection::tls(io, *remote_addr, tls)));

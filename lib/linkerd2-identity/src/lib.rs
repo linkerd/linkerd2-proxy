@@ -88,8 +88,7 @@ impl Csr {
 
 impl Key {
     pub fn from_pkcs8(b: &[u8]) -> Result<Self, KeyRejected> {
-        let i = untrusted::Input::from(b);
-        let k = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, i)?;
+        let k = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, b)?;
         Ok(Key(Arc::new(k)))
     }
 }
@@ -115,7 +114,7 @@ impl rustls::sign::Signer for Signer {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::TLSError> {
         let rng = rand::SystemRandom::new();
         self.0
-            .sign(&rng, untrusted::Input::from(message))
+            .sign(&rng, message)
             .map(|signature| signature.as_ref().to_owned())
             .map_err(|ring::error::Unspecified| {
                 rustls::TLSError::General("Signing Failed".to_owned())
@@ -377,8 +376,8 @@ impl rustls::ResolvesServerCert for CertResolver {
             .first()
             .map(rustls::Certificate::as_ref)
             .unwrap_or(&[]); // An empty input will fail to parse.
-        if let Err(err) = webpki::EndEntityCert::from(untrusted::Input::from(c))
-            .and_then(|c| c.verify_is_valid_for_dns_name(server_name))
+        if let Err(err) =
+            webpki::EndEntityCert::from(c).and_then(|c| c.verify_is_valid_for_dns_name(server_name))
         {
             debug!(
                 "our certificate is not valid for the SNI name -> no certificate: {:?}",

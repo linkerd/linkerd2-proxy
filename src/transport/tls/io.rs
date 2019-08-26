@@ -1,122 +1,100 @@
+//! Implement our traits {AddrInfo, SetKeepalive, Io} for tokio_rustls types.
+
 use crate::transport::io::internal::Io;
 use crate::transport::{AddrInfo, SetKeepalive};
 use bytes::Buf;
-use rustls::Session;
+use futures::Poll;
 use std::fmt::Debug;
 use std::io;
 use std::net::SocketAddr;
-use tokio::prelude::*;
-use tokio_rustls::TlsStream;
+use tokio::io::AsyncWrite;
 
-/// Wraps a TLS stream to implement Io.
-#[derive(Debug)]
-pub(super) struct TlsIo<S, C>(TlsStream<S, C>)
-where
-    S: Debug,
-    C: Debug;
+// impl server
 
-// === imp TlsIo ===
-
-impl<S, C> From<TlsStream<S, C>> for TlsIo<S, C>
-where
-    S: Debug,
-    C: Debug,
-{
-    fn from(s: TlsStream<S, C>) -> Self {
-        TlsIo(s)
-    }
-}
-
-impl<S, C> io::Read for TlsIo<S, C>
-where
-    S: Debug + io::Read + io::Write,
-    C: Session + Debug,
-{
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
-}
-
-impl<S, C> AsyncRead for TlsIo<S, C>
-where
-    S: AsyncRead + AsyncWrite + Debug + io::Read + io::Write,
-    C: Session + Debug,
-{
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
-        self.0.prepare_uninitialized_buffer(buf)
-    }
-}
-
-impl<S, C> io::Write for TlsIo<S, C>
-where
-    S: Debug + io::Read + io::Write,
-    C: Session + Debug,
-{
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
-    }
-}
-
-impl<S, C> AsyncWrite for TlsIo<S, C>
-where
-    S: AsyncRead + AsyncWrite + Debug + io::Read + io::Write,
-    C: Session + Debug,
-{
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.0.shutdown()
-    }
-
-    fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        self.0.write_buf(buf)
-    }
-}
-
-impl<S, C> AddrInfo for TlsIo<S, C>
+impl<S> AddrInfo for tokio_rustls::server::TlsStream<S>
 where
     S: AddrInfo + Debug,
-    C: Session + Debug,
 {
     fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.0.get_ref().0.remote_addr()
+        self.get_ref().0.remote_addr()
     }
 
     fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.0.get_ref().0.local_addr()
+        self.get_ref().0.local_addr()
     }
 
     fn get_original_dst(&self) -> Option<SocketAddr> {
-        self.0.get_ref().0.get_original_dst()
+        self.get_ref().0.get_original_dst()
     }
 }
 
-impl<S, C> SetKeepalive for TlsIo<S, C>
+impl<S> SetKeepalive for tokio_rustls::server::TlsStream<S>
 where
     S: SetKeepalive + Debug,
-    C: Session + Debug,
 {
     fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
-        self.0.get_ref().0.keepalive()
+        self.get_ref().0.keepalive()
     }
 
     fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
-        self.0.get_mut().0.set_keepalive(ka)
+        self.get_mut().0.set_keepalive(ka)
     }
 }
 
-impl<S, C> Io for TlsIo<S, C>
+impl<S> Io for tokio_rustls::server::TlsStream<S>
 where
     S: Io + Debug,
-    C: Session + Debug,
 {
     fn shutdown_write(&mut self) -> Result<(), io::Error> {
-        self.0.get_mut().0.shutdown_write()
+        self.get_mut().0.shutdown_write()
     }
 
     fn write_buf_erased(&mut self, mut buf: &mut dyn Buf) -> Poll<usize, io::Error> {
-        self.0.write_buf(&mut buf)
+        self.write_buf(&mut buf)
+    }
+}
+
+// impl client
+
+impl<S> AddrInfo for tokio_rustls::client::TlsStream<S>
+where
+    S: AddrInfo + Debug,
+{
+    fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.get_ref().0.remote_addr()
+    }
+
+    fn local_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.get_ref().0.local_addr()
+    }
+
+    fn get_original_dst(&self) -> Option<SocketAddr> {
+        self.get_ref().0.get_original_dst()
+    }
+}
+
+impl<S> SetKeepalive for tokio_rustls::client::TlsStream<S>
+where
+    S: SetKeepalive + Debug,
+{
+    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
+        self.get_ref().0.keepalive()
+    }
+
+    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
+        self.get_mut().0.set_keepalive(ka)
+    }
+}
+
+impl<S> Io for tokio_rustls::client::TlsStream<S>
+where
+    S: Io + Debug,
+{
+    fn shutdown_write(&mut self) -> Result<(), io::Error> {
+        self.get_mut().0.shutdown_write()
+    }
+
+    fn write_buf_erased(&mut self, mut buf: &mut dyn Buf) -> Poll<usize, io::Error> {
+        self.write_buf(&mut buf)
     }
 }
