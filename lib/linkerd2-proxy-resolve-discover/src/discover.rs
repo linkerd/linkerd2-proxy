@@ -173,20 +173,16 @@ where
                             return Ok(Update::Add(endpoints).into());
                         }
 
-                        let new_endpoints = Vec::with_capacity(endpoints.len());
-                        for (addr, ep) in endpoints.into_iter() {
-                            let remove = self
-                                .active_endpoints
-                                .get(&addr)
-                                .filter(|active| **active != ep)
-                                .is_some();
-                            if remove {
-                                self.active_endpoints.remove(&addr);
-                            }
+                        for (addr, _) in endpoints.iter() {
+                            self.active_endpoints.remove(addr);
                         }
-                        *update = Some(Update::Add(new_endpoints));
 
+                        // The next time through, there will be no
+                        // active_endpoints so the added endpoints will be
+                        // returned immediately.
                         let rm_addrs = self.active_endpoints.drain(..).map(|(addr, _)| addr);
+                        *update = Some(Update::Add(endpoints));
+
                         return Ok(Update::Remove(rm_addrs.collect()).into());
                     }
                     Some(Update::Remove(mut addrs)) => {
