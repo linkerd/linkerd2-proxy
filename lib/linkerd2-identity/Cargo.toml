@@ -6,8 +6,8 @@ edition = "2018"
 
 [dependencies]
 linkerd2-dns-name = { path = "../linkerd2-dns-name" }
-ring = "0.14.6"
-rustls = "0.15"
+ring = "0.16"
+rustls = "0.16"
 tracing = "0.1.2"
-untrusted = "0.6"
-webpki = "0.19"
+untrusted = "0.7"
+webpki = "0.21"
