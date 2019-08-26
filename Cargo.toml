@@ -90,11 +90,11 @@ tracing-futures = "0.0.1-alpha.1"
 tracing-log     = "0.0.1-alpha.1"
 
 # tls
-ring = "0.14.6"
-webpki = "0.19"
-rustls = "0.15"
-tokio-rustls = "0.9"
-untrusted = "0.6"
+ring = "0.16"
+webpki = "0.21"
+rustls = "0.16"
+tokio-rustls = "0.10"
+untrusted = "0.7"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -120,5 +120,5 @@ debug = false
 debug = false
 
 [patch.crates-io]
-webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }
+webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names-0.21" }
 

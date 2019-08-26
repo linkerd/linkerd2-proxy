@@ -1,7 +1,7 @@
 use crate::support::*;
 use bytes::IntoBuf;
 use futures::sync::{mpsc, oneshot};
-use rustls::{ClientConfig, ClientSession};
+use rustls::ClientConfig;
 use std::io;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -254,9 +254,7 @@ struct Conn {
 }
 
 impl Conn {
-    fn connect_(
-        &self,
-    ) -> Box<dyn Future<Item = RunningIo<ClientSession>, Error = ::std::io::Error> + Send> {
+    fn connect_(&self) -> Box<dyn Future<Item = RunningIo, Error = ::std::io::Error> + Send> {
         Box::new(ConnectorFuture::Init {
             future: TcpStream::connect(&self.addr),
             tls: self.tls.clone(),
@@ -266,7 +264,7 @@ impl Conn {
 }
 
 impl Connect for Conn {
-    type Connected = RunningIo<ClientSession>;
+    type Connected = RunningIo;
     type Error = ::std::io::Error;
     type Future = Box<dyn Future<Item = Self::Connected, Error = ::std::io::Error>>;
 
@@ -276,7 +274,7 @@ impl Connect for Conn {
 }
 
 impl hyper::client::connect::Connect for Conn {
-    type Transport = RunningIo<ClientSession>;
+    type Transport = RunningIo;
     type Future = Box<
         dyn Future<
                 Item = (Self::Transport, hyper::client::connect::Connected),
@@ -303,7 +301,7 @@ enum ConnectorFuture {
 }
 
 impl Future for ConnectorFuture {
-    type Item = RunningIo<ClientSession>;
+    type Item = RunningIo;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -325,8 +323,8 @@ impl Future for ConnectorFuture {
 
                     match tls {
                         None => {
-                            return Ok(Async::Ready(RunningIo::Plain(
-                                io,
+                            return Ok(Async::Ready(RunningIo(
+                                Box::new(io),
                                 Some(take_running(running)),
                             )));
                         }
@@ -347,8 +345,8 @@ impl Future for ConnectorFuture {
 
                 ConnectorFuture::Handshake { future, running } => {
                     let io = try_ready!(future.poll());
-                    return Ok(Async::Ready(RunningIo::Tls(
-                        io,
+                    return Ok(Async::Ready(RunningIo(
+                        Box::new(io),
                         Some(take_running(running)),
                     )));
                 }

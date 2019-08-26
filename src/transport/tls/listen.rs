@@ -295,20 +295,26 @@ impl Handshake {
         }))
     }
 
-    fn client_identity<S>(
-        tls: &tokio_rustls::TlsStream<S, rustls::ServerSession>,
-    ) -> Option<identity::Name> {
+    fn client_identity<S>(tls: &tokio_rustls::server::TlsStream<S>) -> Option<identity::Name> {
         use crate::dns;
         use rustls::Session;
+        use webpki::GeneralDNSNameRef;
 
         let (_io, session) = tls.get_ref();
         let certs = session.get_peer_certificates()?;
         let c = certs.first().map(rustls::Certificate::as_ref)?;
-        let end_cert = webpki::EndEntityCert::from(untrusted::Input::from(c)).ok()?;
+        let end_cert = webpki::EndEntityCert::from(c).ok()?;
         let dns_names = end_cert.dns_names().ok()?;
 
-        let n = dns_names.first()?.to_owned();
-        Some(identity::Name::from(dns::Name::from(n)))
+        match dns_names.first()? {
+            GeneralDNSNameRef::DNSName(n) => {
+                Some(identity::Name::from(dns::Name::from(n.to_owned())))
+            }
+            GeneralDNSNameRef::Wildcard(_) => {
+                // Wildcards can perhaps be handled in a future path...
+                None
+            }
+        }
     }
 }
 
@@ -349,7 +355,7 @@ impl Future for Handshake {
                         });
                     trace!("accepted TLS connection; client={:?}", client_id);
 
-                    let io = BoxedIo::new(super::TlsIo::from(io));
+                    let io = BoxedIo::new(io);
                     return Ok(Async::Ready(Connection::tls(io, *remote_addr, client_id)));
                 }
             }

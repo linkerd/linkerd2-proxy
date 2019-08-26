@@ -6,5 +6,5 @@ edition = "2018"
 publish = false
 
 [dependencies]
-webpki = "0.19"
-untrusted = "0.6"
+webpki = "0.21"
+untrusted = "0.7"
