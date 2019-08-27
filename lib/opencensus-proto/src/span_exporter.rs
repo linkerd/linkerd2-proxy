@@ -8,7 +8,7 @@ use futures::{try_ready, Async, Future, Poll, Stream};
 use tower_grpc::{
     self as grpc, client::streaming::ResponseFuture, generic::client::GrpcService, BoxBody,
 };
-use tracing::trace;
+use tracing::{debug, trace};
 
 /// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
 pub struct SpanExporter<T, S>
@@ -58,15 +58,15 @@ where
     fn poll_send_span(
         &mut self,
         sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
-        send_node: bool,
+        sent_node: bool,
     ) -> Poll<(), ()> {
         try_ready!(sender.poll_ready().map_err(|_| ()));
         let span = try_ready!(self.spans.poll().map_err(|_| ()))
             .expect("span stream should never terminate");
-        let node = if send_node {
-            Some(self.node.clone())
-        } else {
+        let node = if sent_node {
             None
+        } else {
+            Some(self.node.clone())
         };
         let msg = ExportTraceServiceRequest {
             node,
@@ -77,7 +77,7 @@ where
         sender
             .try_send(msg)
             .map(|()| Async::Ready(()))
-            .map_err(|_| ())
+            .map_err(|e| debug!("failed to transmit span: {}", e))
     }
 }
 
