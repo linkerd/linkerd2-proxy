@@ -1,6 +1,6 @@
 use super::discover::Discover;
 use futures::{try_ready, Async, Future, Poll};
-use linkerd2_proxy_core::resolve::Resolve;
+use linkerd2_proxy_core::resolve::{Resolve, Resolution};
 use std::fmt;
 
 #[derive(Clone, Debug)]
@@ -14,9 +14,10 @@ pub struct MakeDiscover<R, M> {
     make_endpoint: M,
 }
 
-pub struct DiscoverFuture<T, R: Resolve<T>, M: tower::Service<R::Endpoint>> {
-    future: R::Future,
-    discover: Option<Discover<T, R, M>>,
+#[derive(Debug)]
+pub struct DiscoverFuture<F, M> {
+    future: F,
+    make_endpoint: Option<M>,
 }
 
 // === impl Layer ===
@@ -47,47 +48,42 @@ where
 
 impl<T, R, M> tower::Service<T> for MakeDiscover<R, M>
 where
-    T: Clone,
     R: Resolve<T> + Clone,
     R::Endpoint: fmt::Debug + Clone + PartialEq,
     M: tower::Service<R::Endpoint> + Clone,
 {
-    type Response = Discover<T, R, M>;
+    type Response = Discover<R::Resolution, M>;
     type Error = <R::Future as Future>::Error;
-    type Future = DiscoverFuture<T, R, M>;
+    type Future = DiscoverFuture<R::Future, M>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.resolve.poll_ready()
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let discover = Discover::new(
-            target.clone(),
-            self.resolve.clone(),
-            self.make_endpoint.clone(),
-        );
         let future = self.resolve.resolve(target);
         DiscoverFuture {
             future,
-            discover: Some(discover),
+            make_endpoint: Some(self.make_endpoint.clone()),
         }
     }
 }
 
 // === impl DiscoverFuture ===
 
-impl<T, R, M> Future for DiscoverFuture<T, R, M>
+impl<F, M> Future for DiscoverFuture<F, M>
 where
-    R: Resolve<T>,
-    R::Endpoint: fmt::Debug + Clone + PartialEq,
-    M: tower::Service<R::Endpoint>,
+    F: Future,
+    F::Item: Resolution,
+    <F::Item as Resolution>::Endpoint: fmt::Debug + Clone + PartialEq,
+    M: tower::Service<<F::Item as Resolution>::Endpoint>,
 {
-    type Item = Discover<T, R, M>;
-    type Error = R::Error;
+    type Item = Discover<F::Item, M>;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let resolution = try_ready!(self.future.poll());
-        let discover = self.discover.take().expect("polled after ready");
-        Ok(Async::Ready(discover.with_resolution(resolution)))
+        let make_endpoint = self.make_endpoint.take().expect("polled after ready");
+        Ok(Async::Ready(Discover::new(resolution, make_endpoint)))
     }
 }

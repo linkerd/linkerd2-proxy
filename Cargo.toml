@@ -12,6 +12,7 @@ members = [
     "lib/linkerd2-proxy-fallback",
     "lib/linkerd2-proxy-resolve-dst-api",
     "lib/linkerd2-proxy-resolve-discover",
+    "lib/linkerd2-proxy-resolve-reconnect",
     "lib/linkerd2-router",
     "lib/linkerd2-signal",
     "lib/linkerd2-stack",
@@ -39,10 +40,11 @@ linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
 linkerd2-identity    = { path = "lib/linkerd2-identity" }
 linkerd2-metrics     = { path = "lib/linkerd2-metrics" }
 linkerd2-never       = { path = "lib/linkerd2-never" }
-linkerd2-proxy-core  = { path = "lib/linkerd2-proxy-core" }
-linkerd2-proxy-fallback         = { path = "lib/linkerd2-proxy-fallback" }
-linkerd2-proxy-resolve-dst-api  = { path = "lib/linkerd2-proxy-resolve-dst-api" }
-linkerd2-proxy-resolve-discover = { path = "lib/linkerd2-proxy-resolve-discover" }
+linkerd2-proxy-core     = { path = "lib/linkerd2-proxy-core" }
+linkerd2-proxy-fallback = { path = "lib/linkerd2-proxy-fallback" }
+linkerd2-proxy-resolve-dst-api   = { path = "lib/linkerd2-proxy-resolve-dst-api" }
+linkerd2-proxy-resolve-discover  = { path = "lib/linkerd2-proxy-resolve-discover" }
+linkerd2-proxy-resolve-reconnect = { path = "lib/linkerd2-proxy-resolve-reconnect" }
 linkerd2-router  = { path = "lib/linkerd2-router" }
 linkerd2-signal  = { path = "lib/linkerd2-signal" }
 linkerd2-stack   = { path = "lib/linkerd2-stack" }
