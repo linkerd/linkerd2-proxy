@@ -218,7 +218,7 @@ impl SpanId {
 impl fmt::Display for SpanId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in &self.0 {
-            write!(f, "{:x?}", b)?;
+            write!(f, "{:02x?}", b)?;
         }
         Ok(())
     }
