@@ -192,7 +192,6 @@ impl<E> From<E> for MakeError<E> {
 mod tests {
     use super::*;
     use futures::future;
-    use linkerd2_never::Never;
     use tokio::sync::mpsc;
     use tower::discover::{Change, Discover as _Discover};
     use tower::Service;
@@ -221,11 +220,7 @@ mod tests {
             let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
             let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
 
-            let mut discover = Discover::new(
-                (),
-                Svc(vec![future::ok::<_, Never>(reso_rx)]),
-                Svc(vec![make1_rx, make0_rx]),
-            );
+            let mut discover = Discover::new(reso_rx, Svc(vec![make1_rx, make0_rx]));
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
@@ -327,11 +322,7 @@ mod tests {
             let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
             let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
 
-            let mut discover = Discover::new(
-                (),
-                Svc(vec![future::ok::<_, Never>(reso_rx)]),
-                Svc(vec![make1_rx, make0_rx]),
-            );
+            let mut discover = Discover::new(reso_rx, Svc(vec![make1_rx, make0_rx]));
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
@@ -405,11 +396,8 @@ mod tests {
         with_task(move || {
             let (mut tx, reso_rx) = mpsc::channel(1);
 
-            let mut discover = Discover::new(
-                (),
-                Svc(vec![future::ok::<_, Never>(reso_rx)]),
-                service_fn(|()| future::empty::<Svc<()>, Error>()),
-            );
+            let mut discover =
+                Discover::new(reso_rx, service_fn(|()| future::empty::<Svc<()>, Error>()));
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"

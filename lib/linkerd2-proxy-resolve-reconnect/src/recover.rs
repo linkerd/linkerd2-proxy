@@ -1,24 +1,40 @@
+use futures::{try_ready, Future, Poll, Stream};
+use linkerd2_proxy_core::Error;
 use std::time::{Duration, Instant};
-use tokio::timer::Delay;
+use tokio::timer;
 
-pub trait Recover<E> {
-    fn recover(&mut self, err: E) -> Result<Delay, E>;
+pub trait Recover<E = Error> {
+    type Error: Into<Error>;
+    type Backoff: Stream<Item = (), Error = Self::Error>;
 
-    fn reset(&mut self);
+    fn recover(&self, err: E) -> Result<Self::Backoff, E>;
 }
 
-impl<E> Recover<E> for () {
-    fn recover(&mut self, e: E) -> Result<Delay, E> {
-        Err(e)
-    }
-
-    fn reset(&mut self) {}
-}
+#[derive(Debug)]
+pub struct ConstantBackoff(Duration, Option<timer::Delay>);
 
 impl<E> Recover<E> for Duration {
-    fn recover(&mut self, _: E) -> Result<Delay, E> {
-        Ok(Delay::new(Instant::now() + *self))
-    }
+    type Error = timer::Error;
+    type Backoff = ConstantBackoff;
 
-    fn reset(&mut self) {}
+    fn recover(&self, _: E) -> Result<Self::Backoff, E> {
+        Ok(ConstantBackoff(*self, None))
+    }
+}
+
+impl Stream for ConstantBackoff {
+    type Item = ();
+    type Error = timer::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        loop {
+            if let Some(ref mut delay) = self.1.as_mut() {
+                try_ready!(delay.poll());
+                self.1 = None;
+                return Ok(Some(()).into());
+            }
+
+            self.1 = Some(timer::Delay::new(Instant::now() + self.0));
+        }
+    }
 }

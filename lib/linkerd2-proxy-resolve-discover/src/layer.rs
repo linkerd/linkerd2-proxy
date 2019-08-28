@@ -1,6 +1,6 @@
 use super::discover::Discover;
 use futures::{try_ready, Async, Future, Poll};
-use linkerd2_proxy_core::resolve::{Resolve, Resolution};
+use linkerd2_proxy_core::resolve::{Resolution, Resolve};
 use std::fmt;
 
 #[derive(Clone, Debug)]
