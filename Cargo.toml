@@ -11,6 +11,7 @@ members = [
     "lib/linkerd2-proxy-core",
     "lib/linkerd2-proxy-fallback",
     "lib/linkerd2-proxy-resolve-dst-api",
+    "lib/linkerd2-proxy-resolve-buffer",
     "lib/linkerd2-proxy-resolve-discover",
     "lib/linkerd2-proxy-resolve-reconnect",
     "lib/linkerd2-router",

@@ -1,30 +1,11 @@
-//! A client for the controller's Destination service.
-//!
-//! This client is split into two primary components: A `Resolver`, that routers use to
-//! initiate service discovery for a given name, and a `background::Process` that
-//! satisfies these resolution requests. These components are separated by a channel so
-//! that the thread responsible for proxying data need not also do this administrative
-//! work of communicating with the control plane.
-//!
-//! The number of active resolutions is not currently bounded by this module. Instead, we
-//! trust that callers of `Resolver` enforce such a constraint (for example, via
-//! `linkerd2_proxy_router`'s LRU cache). Additionally, users of this module must ensure
-//! they consume resolutions as they are sent so that the response channels don't grow
-//! without bounds.
-//!
-//! Furthermore, there are not currently any bounds on the number of endpoints that may be
-//! returned for a single resolution. It is expected that the Destination service enforce
-//! some reasonable upper bounds.
-
 use crate::api::destination as api;
+use crate::core::resolve::Update;
 use crate::metadata::Metadata;
 use crate::pb;
 use futures::{future, Async, Future, Poll, Stream};
 use tower::Service;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::trace;
-
-pub use crate::core::resolve::Update;
 
 #[derive(Clone)]
 pub struct Resolve<S> {
