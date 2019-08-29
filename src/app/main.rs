@@ -332,6 +332,7 @@ where
         };
 
         let resolver = crate::resolve_dst_api::Resolve::new(dst_svc.clone())
+            .with_scheme("k8s")
             .with_context_token(&config.destination_context);
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
