@@ -1,7 +1,6 @@
 use crate::Error;
 use futures::{try_ready, Async, Future, Poll, Stream};
 use std::net::SocketAddr;
-use tower::Service;
 
 pub mod filter;
 
@@ -15,6 +14,10 @@ pub trait Resolve<T> {
     fn poll_ready(&mut self) -> Poll<(), Self::Error>;
 
     fn resolve(&mut self, target: T) -> Self::Future;
+
+    fn into_service(self) -> Service<Self> where Self: Sized {
+        Service(self)
+    }
 }
 
 /// An infinite stream of endpoint updates.
@@ -24,6 +27,9 @@ pub trait Resolution {
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
 }
+
+#[derive(Clone, Debug)]
+pub struct Service<S>(S);
 
 #[derive(Clone, Debug)]
 pub enum Update<T> {
@@ -41,7 +47,7 @@ pub struct ResolutionLost(());
 
 impl<S, T, R> Resolve<T> for S
 where
-    S: Service<T, Response = R>,
+    S: tower::Service<T, Response = R>,
     S::Error: Into<Error>,
     R: Resolution,
 {
@@ -51,11 +57,11 @@ where
     type Future = S::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Service::poll_ready(self)
+        tower::Service::poll_ready(self)
     }
 
     fn resolve(&mut self, target: T) -> Self::Future {
-        Service::call(self, target)
+        tower::Service::call(self, target)
     }
 }
 
@@ -85,3 +91,23 @@ impl std::fmt::Display for ResolutionLost {
 }
 
 impl std::error::Error for ResolutionLost {}
+
+// === impl Service ===
+
+impl<R, T> tower::Service<T> for Service<R>
+where
+    R: Resolve<T>,
+    R::Error: Into<Error>,
+{
+    type Error = R::Error;
+    type Response = R::Resolution;
+    type Future = R::Future;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.0.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        self.0.call(target)
+    }
+}
