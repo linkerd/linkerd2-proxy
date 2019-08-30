@@ -1,5 +1,4 @@
-use crate::svc;
-use bytes::Bytes;
+use crate::{Error, svc};
 use futures::{try_ready, Async, Future, Poll};
 use http::header::HeaderValue;
 use rand::Rng;
@@ -8,24 +7,33 @@ use tokio::sync::mpsc;
 use tracing::{trace, warn};
 use std::time::SystemTime;
 
-const TRACE_HEADER: &str = "traceparent";
+const GRPC_TRACE_HEADER: &str = "grpc-trace-bin";
+const GRPC_TRACE_FIELD_TRACE_ID: u8 = 0;
+const GRPC_TRACE_FIELD_SPAN_ID: u8 = 1;
+const GRPC_TRACE_FIELD_TRACE_OPTIONS: u8 = 2;
 
 #[derive(Debug)]
 struct TraceContext {
-    version: String,
-    trace_id: String,
-    parent_id: String,
-    flags: String,
-    span_id: Option<String>,
+    version: Id,
+    trace_id: Id,
+    parent_id: Id,
+    flags: Id,
+    span_id: Option<Id>,
 }
 
-struct SpanId([u8; 8]);
+#[derive(Debug, Default)]
+pub struct Id(Vec<u8>);
+
+#[derive(Debug)]
+struct InsufficientBytes;
+#[derive(Debug)]
+struct UnknownFieldId(u8);
 
 #[derive(Debug)]
 pub struct Span {
-    pub trace_id: String,
-    pub span_id: String,
-    pub parent_id: String,
+    pub trace_id: Id,
+    pub span_id: Id,
+    pub parent_id: Id,
     pub span_name: String,
     pub start: SystemTime,
     pub end: SystemTime,
@@ -139,12 +147,12 @@ where
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
-        let mut trace_context = unpack_trace_context(&request);
+        let mut trace_context = unpack_grpc_trace_context(&request);
         let mut path: Option<String> = None;
 
         if let Some(ref mut context) = trace_context {
             trace!("got trace contex: {:?}", context);
-            increment_span_id(&mut request, context);
+            increment_grpc_span_id(&mut request, context);
             // If we plan to sample this span, we need to copy the path from
             // the request before dispatching it to inner.
             if is_sampled(&context.flags) {
@@ -206,62 +214,151 @@ impl<F: Future> Future for SpanFuture<F> {
     }
 }
 
-// === impl SpanId ===
+// === impl Id ===
 
-impl SpanId {
-    fn new() -> Self {
+impl Id {
+    fn new(len: usize) -> Self {
         let mut rng = rand::thread_rng();
-        Self(rng.gen::<[u8; 8]>())
+        let mut bytes = vec![0; len];
+        rng.fill(bytes.as_mut_slice());
+        Self(bytes)
+    }
+
+    fn read_from_slice(len: usize, buf: &mut &[u8]) -> Result<Self, InsufficientBytes> {
+        if buf.len() >= len {
+            let bytes = Vec::from(&buf[..len]);
+            *buf = &buf[len..];
+            Ok(Self(bytes))
+        } else {
+            Err(InsufficientBytes)
+        }
+    }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        self.0
     }
 }
 
-impl fmt::Display for SpanId {
+impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for b in &self.0 {
+        for b in self.0.iter() {
             write!(f, "{:02x?}", b)?;
         }
         Ok(())
     }
 }
 
-fn unpack_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
+// === impl InsufficientBytes ===
+
+impl std::error::Error for InsufficientBytes {}
+
+impl fmt::Display for InsufficientBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Insufficient bytes when decoding binary header")
+    }
+}
+
+// === impl UnknownFieldId ===
+
+impl std::error::Error for UnknownFieldId {}
+
+impl fmt::Display for UnknownFieldId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Unknown field id {}", self.0)
+    }
+}
+
+fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
     request
         .headers()
-        .get(TRACE_HEADER)
-        .and_then(|hv| hv.to_str().ok())
+        .get(GRPC_TRACE_HEADER)
         .and_then(|trace_context| {
-            let fields: Vec<&str> = trace_context.split('-').collect();
-            match (fields.get(0), fields.get(1), fields.get(2), fields.get(3)) {
-                (Some(version), Some(trace_id), Some(parent_id), Some(flags)) => {
-                    Some(TraceContext {
-                        version: version.to_string(),
-                        trace_id: trace_id.to_string(),
-                        parent_id: parent_id.to_string(),
-                        flags: flags.to_string(),
-                        span_id: None,
-                    })
-                }
-                _ => None,
-            }
+            let mut bytes = trace_context.as_bytes();
+            parse_grpc_trace_context_fields(&mut bytes)
         })
 }
 
-fn increment_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
-    let span_id = SpanId::new();
-    let next = format!(
-        "{}-{}-{}-{}",
-        context.version, context.trace_id, span_id, context.flags
-    );
-    trace!("incremented span id: {}", span_id);
-    if let Result::Ok(hv) = HeaderValue::from_shared(Bytes::from(next)) {
-        request.headers_mut().insert(TRACE_HEADER, hv);
+fn parse_grpc_trace_context_fields(buf: &mut &[u8]) -> Option<TraceContext> {
+    let version = Id::read_from_slice(1, buf).ok()?;
+
+    let mut context = TraceContext {
+        version: version,
+        trace_id: Default::default(),
+        parent_id: Default::default(),
+        flags: Default::default(),
+        span_id: None,
+    };
+
+    while buf.len() > 0 {
+        match parse_grpc_trace_context_field(buf, &mut context) {
+            Ok(()) => {},
+            Err(ref e) if e.is::<UnknownFieldId>() => break,
+            Err(e) => {
+                warn!("error parsing {} header: {}", GRPC_TRACE_HEADER, e);
+                return None;
+            },
+        };
     }
-    context.span_id = Some(format!("{}", span_id));
+    Some(context)
 }
 
-// Quick and dirty bitmask of the low bit
-fn is_sampled(bitfield: &String) -> bool {
-    bitfield.chars().last().map_or(false, |c| {
-        c == '1' || c == '3' || c == '5' || c == '7' || c == '9' || c == 'b' || c == 'd' || c == 'f'
-    })
+fn parse_grpc_trace_context_field(buf: &mut &[u8], context: &mut TraceContext) -> Result<(), Error> {
+    let field_id = buf[0];
+    *buf = &buf[1..];
+    match field_id {
+        GRPC_TRACE_FIELD_SPAN_ID => {
+            let id = Id::read_from_slice(8, buf)?;
+            context.parent_id = id;
+        },
+        GRPC_TRACE_FIELD_TRACE_ID => {
+            let id = Id::read_from_slice(16, buf)?;
+            context.trace_id = id;
+        },
+        GRPC_TRACE_FIELD_TRACE_OPTIONS => {
+            let flags = Id::read_from_slice(1, buf)?;
+            context.flags = flags;
+        },
+        id => {
+            return Err(UnknownFieldId(id).into());
+        },
+    };
+    Ok(())
+}
+
+fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
+    let span_id = Id::new(8);
+
+    let mut bytes = Vec::<u8>::new();
+
+    // version
+    bytes.push(0);
+
+    // trace id
+    bytes.push(GRPC_TRACE_FIELD_TRACE_ID);
+    bytes.extend(context.trace_id.0.iter());
+
+    // span id
+    bytes.push(GRPC_TRACE_FIELD_SPAN_ID);
+    bytes.extend(span_id.0.iter());
+
+    // trace options
+    bytes.push(GRPC_TRACE_FIELD_TRACE_OPTIONS);
+    bytes.extend(context.flags.0.iter());
+
+    trace!("incremented span id: {}", span_id);
+
+    if let Result::Ok(hv) = HeaderValue::from_bytes(bytes.as_ref()) {
+        request.headers_mut().insert(GRPC_TRACE_HEADER, hv);
+    } else {
+        warn!("invalid binary header: {:?}", bytes);
+    }
+    context.span_id = Some(span_id);
+}
+
+fn is_sampled(flags: &Id) -> bool {
+    if flags.0.len() != 1 {
+        warn!("invalid trace flags: {:?}", flags);
+        return false
+    }
+    flags.0.first().copied().unwrap_or(0) & 1 == 1
 }

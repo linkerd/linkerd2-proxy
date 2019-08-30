@@ -1,10 +1,8 @@
-use hex;
 use super::dst::Direction;
 use crate::proxy::http::trace;
 use opencensus_proto::gen::trace::{v1 as oc};
 use futures::{Async, Poll, Stream, try_ready};
 use tracing::warn;
-use linkerd2_proxy_core::Error;
 use std::{error, fmt};
 
 const SPAN_KIND_SERVER: i32 = 1;
@@ -17,7 +15,7 @@ pub struct SpanConverter<S> {
 
 #[derive(Debug)]
 pub struct IdLengthError {
-    id: String,
+    id: Vec<u8>,
     expected_size: usize,
     actual_size: usize
 }
@@ -30,7 +28,7 @@ impl error::Error for IdLengthError {
 
 impl fmt::Display for IdLengthError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Id '{}' should have {} bytes but it has {}", self.id, self.expected_size, self.actual_size)
+        write!(f, "Id '{:?}' should have {} bytes but it has {}", self.id, self.expected_size, self.actual_size)
     }
 }
 
@@ -49,7 +47,7 @@ impl<S> SpanConverter<S> {
         }
     }
 
-    fn mk_span(&self, span: trace::Span) -> Result<oc::Span, Error> {
+    fn mk_span(&self, span: trace::Span) -> Result<oc::Span, IdLengthError> {
         Ok(oc::Span {
             trace_id: into_bytes(span.trace_id, 16)?,
             span_id: into_bytes(span.span_id, 8)?,
@@ -94,16 +92,17 @@ where
     }
 }
 
-fn into_bytes(id: String, size: usize) -> Result<Vec<u8>, Error> {
-    let bytes = hex::decode(&id)?;
+fn into_bytes(id: trace::Id, size: usize) -> Result<Vec<u8>, IdLengthError> {
+    let bytes = id.into_vec();
     if bytes.len() == size {
         Ok(bytes)
     } else {
+        let actual_size = bytes.len();
         Err(IdLengthError{
-            id,
+            id: bytes,
             expected_size: size,
-            actual_size: bytes.len(),
-        }.into())
+            actual_size,
+        })
     }
 }
 
