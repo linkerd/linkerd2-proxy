@@ -10,7 +10,6 @@ use crate::resolve_dst_api::Metadata;
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr, NameAddr};
-use linkerd2_proxy_resolve_discover as discover;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -20,7 +19,7 @@ use tracing::debug;
 mod add_remote_ip_on_rsp;
 #[allow(dead_code)] // TODO #2597
 mod add_server_id_on_rsp;
-mod discovery;
+mod discover;
 mod endpoint;
 mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
@@ -35,7 +34,7 @@ pub fn server<R, P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
     local_addr: SocketAddr,
-    resolve: R,
+    discover: D,
     dns_resolver: crate::dns::Resolver,
     profiles_client: super::profiles::Client<P>,
     tap_layer: crate::tap::Layer,
@@ -46,7 +45,7 @@ pub fn server<R, P>(
     transport_metrics: transport::metrics::Registry,
 ) -> impl ServeConnection<Connection>
 where
-    R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
+    D: svc::Service<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
     R::Future: Send,
     R::Resolution: Send,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,

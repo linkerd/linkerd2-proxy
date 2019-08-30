@@ -1,19 +1,12 @@
 use futures::{try_ready, Future, Poll, Stream};
-use linkerd2_proxy_core::Error;
+use linkerd2_proxy_core::{Error, Recover};
 use std::time::{Duration, Instant};
 use tokio::timer;
-
-pub trait Recover<E = Error> {
-    type Error: Into<Error>;
-    type Backoff: Stream<Item = (), Error = Self::Error>;
-
-    fn recover(&self, err: E) -> Result<Self::Backoff, E>;
-}
 
 #[derive(Debug)]
 pub struct ConstantBackoff(Duration, Option<timer::Delay>);
 
-impl<E> Recover<E> for Duration {
+impl<E: Into<Error>> Recover<E> for Duration {
     type Error = timer::Error;
     type Backoff = ConstantBackoff;
 

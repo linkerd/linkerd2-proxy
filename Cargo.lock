@@ -492,6 +492,19 @@ name = "linkerd2-conditional"
 version = "0.1.0"
 
 [[package]]
+name = "linkerd2-discover-buffer"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-never 0.1.0",
+ "linkerd2-task 0.1.0",
+ "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "linkerd2-dns-name"
 version = "0.1.0"
 dependencies = [
@@ -554,16 +567,17 @@ dependencies = [
  "libc 0.2.48 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-addr 0.1.0",
  "linkerd2-conditional 0.1.0",
+ "linkerd2-discover-buffer 0.1.0",
  "linkerd2-dns-name 0.1.0",
  "linkerd2-identity 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",
  "linkerd2-proxy-api 0.1.8 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=ddbc3a4f7f8b0058801f896d27974d19ee98094c)",
  "linkerd2-proxy-core 0.1.0",
+ "linkerd2-proxy-discover 0.1.0",
  "linkerd2-proxy-fallback 0.1.0",
- "linkerd2-proxy-resolve-discover 0.1.0",
  "linkerd2-proxy-resolve-dst-api 0.1.0",
- "linkerd2-proxy-resolve-reconnect 0.1.0",
+ "linkerd2-proxy-resolve-recover 0.1.0",
  "linkerd2-router 0.1.0",
  "linkerd2-signal 0.1.0",
  "linkerd2-stack 0.1.0",
@@ -632,34 +646,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-proxy-fallback"
-version = "0.1.0"
-dependencies = [
- "bytes 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "http 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
- "hyper 0.12.31 (registry+https://github.com/rust-lang/crates.io-index)",
- "linkerd2-proxy-core 0.1.0",
- "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "linkerd2-proxy-resolve-buffer"
-version = "0.1.0"
-dependencies = [
- "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "linkerd2-never 0.1.0",
- "linkerd2-proxy-core 0.1.0",
- "linkerd2-task 0.1.0",
- "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "linkerd2-proxy-resolve-discover"
+name = "linkerd2-proxy-discover"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -675,6 +662,19 @@ dependencies = [
  "tower-util 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "linkerd2-proxy-fallback"
+version = "0.1.0"
+dependencies = [
+ "bytes 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "http 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hyper 0.12.31 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-proxy-core 0.1.0",
+ "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -698,7 +698,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-proxy-resolve-reconnect"
+name = "linkerd2-proxy-resolve-recover"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",

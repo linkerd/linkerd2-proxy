@@ -3,13 +3,9 @@
 use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use linkerd2_proxy_core::resolve::{self, Update};
-use linkerd2_proxy_core::Error;
+use linkerd2_proxy_core::{Error, Recover};
 use std::fmt;
 use std::net::SocketAddr;
-
-mod recover;
-
-pub use self::recover::Recover;
 
 #[derive(Clone, Debug)]
 pub struct Resolve<R, E> {
@@ -17,16 +13,16 @@ pub struct Resolve<R, E> {
     recover: E,
 }
 
-pub struct Init<T, R: resolve::Resolve<T>, E: Recover<Error>> {
+pub struct Init<T, R: resolve::Resolve<T>, E: Recover> {
     inner: Option<Inner<T, R, E>>,
 }
 
-pub struct Resolution<T, R: resolve::Resolve<T>, E: Recover<Error>> {
+pub struct Resolution<T, R: resolve::Resolve<T>, E: Recover> {
     inner: Inner<T, R, E>,
     cache: Cache<R::Endpoint>,
 }
 
-struct Inner<T, R: resolve::Resolve<T>, E: Recover<Error>> {
+struct Inner<T, R: resolve::Resolve<T>, E: Recover> {
     target: T,
     resolve: R,
     recover: E,
@@ -68,7 +64,7 @@ where
     T: fmt::Display + Clone,
     R: resolve::Resolve<T> + Clone,
     R::Endpoint: Clone + PartialEq,
-    E: Recover<Error> + Clone,
+    E: Recover + Clone,
 {
     type Response = Resolution<T, R, E>;
     type Error = Error;
@@ -98,7 +94,7 @@ where
     T: fmt::Display + Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
-    E: Recover<Error>,
+    E: Recover,
 {
     fn poll_connected(&mut self) -> Poll<(), Error> {
         loop {
@@ -169,7 +165,7 @@ where
     T: fmt::Display + Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
-    E: Recover<Error>,
+    E: Recover,
 {
     type Item = Resolution<T, R, E>;
     type Error = Error;
@@ -278,7 +274,7 @@ where
     T: fmt::Display + Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
-    E: Recover<Error>,
+    E: Recover,
 {
     type Endpoint = R::Endpoint;
     type Error = Error;

@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 mod discover;
-mod layer;
+mod service;
 
 pub use self::discover::Discover;
-pub use self::layer::{layer, DiscoverFuture, Layer, MakeDiscover};
+pub use self::service::{DiscoverFuture, MakeDiscover};

@@ -1,5 +1,4 @@
-use super::super::dst::DstAddr;
-use super::Endpoint;
+use crate::app::{dst::DstAddr, outbound::Endpoint};
 use crate::core::resolve;
 use crate::proxy::http::settings;
 use crate::resolve_dst_api::Metadata;

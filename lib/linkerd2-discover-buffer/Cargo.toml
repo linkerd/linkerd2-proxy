@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-proxy-resolve-discover"
+name = "linkerd2-discover-buffer"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
@@ -7,17 +7,9 @@ publish = false
 
 [dependencies]
 futures = "0.1"
-linkerd2-addr = { path = "../linkerd2-addr" }
-linkerd2-dns-name = { path = "../linkerd2-dns-name" }
-linkerd2-identity = { path = "../linkerd2-identity" }
 linkerd2-never = { path = "../linkerd2-never" }
-linkerd2-proxy-core = { path = "../linkerd2-proxy-core" }
 linkerd2-task = { path = "../linkerd2-task" }
-indexmap = "1.0"
 tokio = "0.1"
 tower = "0.1"
 tracing = "0.1"
 tracing-futures = "0.0.1-alpha.1"
-
-[dev-dependencies]
-tower-util = "0.1"

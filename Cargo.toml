@@ -4,16 +4,16 @@ members = [
     "lib/hyper-balance",
     "lib/linkerd2-addr",
     "lib/linkerd2-conditional",
+    "lib/linkerd2-discover-buffer",
     "lib/linkerd2-dns-name",
     "lib/linkerd2-drain",
     "lib/linkerd2-identity",
     "lib/linkerd2-metrics",
     "lib/linkerd2-proxy-core",
+    "lib/linkerd2-proxy-discover",
     "lib/linkerd2-proxy-fallback",
     "lib/linkerd2-proxy-resolve-dst-api",
-    "lib/linkerd2-proxy-resolve-buffer",
-    "lib/linkerd2-proxy-resolve-discover",
-    "lib/linkerd2-proxy-resolve-reconnect",
+    "lib/linkerd2-proxy-resolve-recover",
     "lib/linkerd2-router",
     "lib/linkerd2-signal",
     "lib/linkerd2-stack",
@@ -38,14 +38,15 @@ hyper-balance = { path = "lib/hyper-balance" }
 linkerd2-addr        = { path = "lib/linkerd2-addr" }
 linkerd2-conditional = { path = "lib/linkerd2-conditional" }
 linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
+linkerd2-discover-buffer = { path = "lib/linkerd2-discover-buffer" }
 linkerd2-identity    = { path = "lib/linkerd2-identity" }
 linkerd2-metrics     = { path = "lib/linkerd2-metrics" }
 linkerd2-never       = { path = "lib/linkerd2-never" }
 linkerd2-proxy-core     = { path = "lib/linkerd2-proxy-core" }
+linkerd2-proxy-discover = { path = "lib/linkerd2-proxy-discover" }
 linkerd2-proxy-fallback = { path = "lib/linkerd2-proxy-fallback" }
 linkerd2-proxy-resolve-dst-api   = { path = "lib/linkerd2-proxy-resolve-dst-api" }
-linkerd2-proxy-resolve-discover  = { path = "lib/linkerd2-proxy-resolve-discover" }
-linkerd2-proxy-resolve-reconnect = { path = "lib/linkerd2-proxy-resolve-reconnect" }
+linkerd2-proxy-resolve-recover = { path = "lib/linkerd2-proxy-resolve-recover" }
 linkerd2-router  = { path = "lib/linkerd2-router" }
 linkerd2-signal  = { path = "lib/linkerd2-signal" }
 linkerd2-stack   = { path = "lib/linkerd2-stack" }
