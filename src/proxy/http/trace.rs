@@ -279,6 +279,9 @@ fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
 }
 
 fn parse_grpc_trace_context_fields(buf: &mut &[u8]) -> Option<TraceContext> {
+
+    trace!("reading binary trace context: {:?}", buf);
+
     let version = Id::read_from_slice(1, buf).ok()?;
 
     let mut context = TraceContext {
@@ -308,14 +311,17 @@ fn parse_grpc_trace_context_field(buf: &mut &[u8], context: &mut TraceContext) -
     match field_id {
         GRPC_TRACE_FIELD_SPAN_ID => {
             let id = Id::read_from_slice(8, buf)?;
+            trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_SPAN_ID, id);
             context.parent_id = id;
         },
         GRPC_TRACE_FIELD_TRACE_ID => {
             let id = Id::read_from_slice(16, buf)?;
+            trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_TRACE_ID, id);
             context.trace_id = id;
         },
         GRPC_TRACE_FIELD_TRACE_OPTIONS => {
             let flags = Id::read_from_slice(1, buf)?;
+            trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_TRACE_OPTIONS, flags);
             context.flags = flags;
         },
         id => {
