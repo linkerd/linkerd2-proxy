@@ -8,4 +8,5 @@ publish = false
 [dependencies]
 futures = "0.1"
 linkerd2-drain = { path = "../linkerd2-drain" }
+linkerd2-never = { path = "../linkerd2-never" }
 tower = "0.1"

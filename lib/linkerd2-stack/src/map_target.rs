@@ -18,23 +18,26 @@ pub trait MapTarget<T> {
 pub struct Layer<M>(M);
 
 #[derive(Clone, Debug)]
-pub struct Stack<S, M> {
+pub struct Service<S, M> {
     inner: S,
     map_target: M,
 }
 
 impl<S, M: Clone> tower_layer::Layer<S> for Layer<M> {
-    type Service = Stack<S, M>;
+    type Service = Service<S, M>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        Stack {
-            inner,
-            map_target: self.0.clone(),
-        }
+        Service::new(self.0.clone(), inner)
     }
 }
 
-impl<T, S, M> svc::Service<T> for Stack<S, M>
+impl<S, M> Service<S, M> {
+    pub fn new(map_target: M, inner: S) -> Self {
+        Self { inner, map_target }
+    }
+}
+
+impl<T, S, M> svc::Service<T> for Service<S, M>
 where
     S: svc::Service<M::Target>,
     M: MapTarget<T>,

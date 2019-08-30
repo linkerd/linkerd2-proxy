@@ -662,6 +662,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-drain 0.1.0",
+ "linkerd2-never 0.1.0",
  "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

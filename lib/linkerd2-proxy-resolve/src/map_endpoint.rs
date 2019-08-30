@@ -2,10 +2,11 @@
 
 use futures::{try_ready, Async, Future, Poll};
 use linkerd2_proxy_core::resolve;
+use std::net::SocketAddr;
 
-pub trait MapEndpoint<In> {
+pub trait MapEndpoint<Target, In> {
     type Out;
-    fn map_endpoint(&self, in_ep: In) -> Self::Out;
+    fn map_endpoint(&self, target: &Target, addr: SocketAddr, in_ep: In) -> Self::Out;
 }
 
 #[derive(Clone, Debug)]
@@ -15,21 +16,23 @@ pub struct Resolve<R, M> {
 }
 
 #[derive(Debug)]
-pub struct ResolveFuture<F, M> {
+pub struct ResolveFuture<T, F, M> {
     future: F,
+    target: Option<T>,
     map: Option<M>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Resolution<D, M> {
+pub struct Resolution<T, D, M> {
     resolution: D,
+    target: T,
     map: M,
 }
 
 // === impl Resolve ===
 
 impl<R, M> Resolve<R, M> {
-    pub fn new<T>(resolve: R, map: M) -> Self
+    pub fn new<T>(map: M, resolve: R) -> Self
     where
         Self: resolve::Resolve<T>,
     {
@@ -39,20 +42,23 @@ impl<R, M> Resolve<R, M> {
 
 impl<T, R, M> tower::Service<T> for Resolve<R, M>
 where
+    T: Clone,
     R: resolve::Resolve<T>,
-    M: MapEndpoint<R::Endpoint> + Clone,
+    M: MapEndpoint<T, R::Endpoint> + Clone,
 {
-    type Response = Resolution<R::Resolution, M>;
+    type Response = Resolution<T, R::Resolution, M>;
     type Error = R::Error;
-    type Future = ResolveFuture<R::Future, M>;
+    type Future = ResolveFuture<T, R::Future, M>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.resolve.poll_ready()
     }
 
     fn call(&mut self, target: T) -> Self::Future {
+        let future = self.resolve.resolve(target.clone());
         Self::Future {
-            future: self.resolve.resolve(target),
+            future,
+            target: Some(target),
             map: Some(self.map.clone()),
         }
     }
@@ -60,28 +66,33 @@ where
 
 // === impl ResolveFuture ===
 
-impl<F, M> Future for ResolveFuture<F, M>
+impl<T, F, M> Future for ResolveFuture<T, F, M>
 where
     F: Future,
     F::Item: resolve::Resolution,
-    M: MapEndpoint<<F::Item as resolve::Resolution>::Endpoint>,
+    M: MapEndpoint<T, <F::Item as resolve::Resolution>::Endpoint>,
 {
-    type Item = Resolution<F::Item, M>;
+    type Item = Resolution<T, F::Item, M>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let resolution = try_ready!(self.future.poll());
+        let target = self.target.take().expect("polled after ready");
         let map = self.map.take().expect("polled after ready");
-        Ok(Async::Ready(Resolution { resolution, map }))
+        Ok(Async::Ready(Resolution {
+            resolution,
+            target,
+            map,
+        }))
     }
 }
 
 // === impl Resolution ===
 
-impl<R, M> resolve::Resolution for Resolution<R, M>
+impl<T, R, M> resolve::Resolution for Resolution<T, R, M>
 where
     R: resolve::Resolution,
-    M: MapEndpoint<R::Endpoint>,
+    M: MapEndpoint<T, R::Endpoint>,
 {
     type Endpoint = M::Out;
     type Error = R::Error;
@@ -90,7 +101,10 @@ where
         let update = match try_ready!(self.resolution.poll()) {
             resolve::Update::Add(eps) => resolve::Update::Add(
                 eps.into_iter()
-                    .map(|(a, ep)| (a, self.map.map_endpoint(ep)))
+                    .map(|(a, ep)| {
+                        let ep = self.map.map_endpoint(&self.target, a, ep);
+                        (a, ep)
+                    })
                     .collect(),
             ),
             resolve::Update::Remove(addrs) => resolve::Update::Remove(addrs),
@@ -103,18 +117,18 @@ where
 
 // === impl MapEndpoint ===
 
-impl<T> MapEndpoint<T> for () {
-    type Out = T;
+impl<T, N> MapEndpoint<T, N> for () {
+    type Out = N;
 
-    fn map_endpoint(&self, ep: T) -> Self::Out {
+    fn map_endpoint(&self, _: &T, _: SocketAddr, ep: N) -> Self::Out {
         ep
     }
 }
 
-impl<In, Out, F: Fn(In) -> Out> MapEndpoint<In> for F {
+impl<T, In, Out, F: Fn(&T, SocketAddr, In) -> Out> MapEndpoint<T, In> for F {
     type Out = Out;
 
-    fn map_endpoint(&self, ep: In) -> Self::Out {
-        (self)(ep)
+    fn map_endpoint(&self, target: &T, addr: SocketAddr, ep: In) -> Self::Out {
+        (self)(target, addr, ep)
     }
 }

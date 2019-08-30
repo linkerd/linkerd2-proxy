@@ -27,22 +27,18 @@ impl<T, R> Layer<T, R> {
     }
 }
 
-impl<T, R, M> tower::layer::Layer<M> for Layer<T, R>
+impl<T, R, M, D> tower::layer::Layer<M> for Layer<T, R>
 where
     T: fmt::Display + Send + Clone,
     R: Resolve<T> + Send + Clone,
     R::Endpoint: fmt::Debug + Clone + PartialEq,
     R::Resolution: Send,
     M: tower::Service<R::Endpoint> + Clone + Send,
-    FromResolve<R, M>: tower::Service<T>,
-    <FromResolve<R, M> as tower::Service<T>>::Response: tower::discover::Discover + Send + 'static,
-    <<FromResolve<R, M> as tower::Service<T>>::Response as tower::discover::Discover>::Key: Send,
-    <<FromResolve<R, M> as tower::Service<T>>::Response as tower::discover::Discover>::Service:
-        Send,
-    <<FromResolve<R, M> as tower::Service<T>>::Response as tower::discover::Discover>::Error:
-        std::error::Error,
-    Buffer<FromResolve<R, M>>: tower::Service<T>,
-    <Buffer<FromResolve<R, M>> as tower::Service<T>>::Response: tower::discover::Discover,
+    FromResolve<R, M>: tower::Service<T, Response = D>,
+    D: tower::discover::Discover + Send + 'static,
+    <D as tower::discover::Discover>::Key: Send,
+    <D as tower::discover::Discover>::Service: Send,
+    <D as tower::discover::Discover>::Error: std::error::Error,
 {
     type Service = Buffer<FromResolve<R, M>>;
 

@@ -1,5 +1,6 @@
 use super::Error;
-use futures::Stream;
+use futures::{stream, Stream};
+use linkerd2_never::Never;
 
 /// An error recovery strategy.
 pub trait Recover<E: Into<Error> = Error> {
@@ -15,4 +16,17 @@ pub trait Recover<E: Into<Error> = Error> {
     ///
     /// If the error is not recoverable, it is returned immediately.
     fn recover(&self, err: E) -> Result<Self::Backoff, E>;
+}
+
+impl<E: Into<Error>> Recover<E> for bool {
+    type Error = Never;
+    type Backoff = stream::Empty<(), Never>;
+
+    fn recover(&self, err: E) -> Result<Self::Backoff, E> {
+        if *self {
+            Ok(stream::empty())
+        } else {
+            Err(err)
+        }
+    }
 }

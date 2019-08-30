@@ -1,15 +1,17 @@
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
+use crate::api_resolve::Metadata;
 use crate::core::listen::ServeConnection;
-use crate::core::resolve::Resolve;
+use crate::core::Resolve;
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
 use crate::proxy::{self, accept, reconnect, Server};
-use crate::resolve_dst_api::Metadata;
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr, NameAddr};
+use linkerd2_proxy_discover as discover;
+use linkerd2_proxy_resolve as resolve;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -19,7 +21,6 @@ use tracing::debug;
 mod add_remote_ip_on_rsp;
 #[allow(dead_code)] // TODO #2597
 mod add_server_id_on_rsp;
-mod discover;
 mod endpoint;
 mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
@@ -34,7 +35,7 @@ pub fn server<R, P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
     local_addr: SocketAddr,
-    discover: D,
+    resolve: R,
     dns_resolver: crate::dns::Resolver,
     profiles_client: super::profiles::Client<P>,
     tap_layer: crate::tap::Layer,
@@ -45,7 +46,7 @@ pub fn server<R, P>(
     transport_metrics: transport::metrics::Registry,
 ) -> impl ServeConnection<Connection>
 where
-    D: svc::Service<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
+    R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
     R::Future: Send,
     R::Resolution: Send,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
@@ -146,9 +147,24 @@ where
 
     // Resolves the target via the control plane and balances requests
     // over all endpoints returned from the destination service.
+    let resolve = resolve::recover::Resolve::new(
+        false,
+        resolve::map_endpoint::Resolve::new(
+            endpoint::FromMetadata,
+            svc::map_target::Service::new(
+                |dst: DstAddr| {
+                    dst.dst_concrete()
+                        .name_addr()
+                        .cloned()
+                        .expect("unnamed destinations must have been rejected")
+                },
+                resolve,
+            ),
+        ),
+    );
     let balancer_layer = svc::builder()
         .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-        .layer(discover::layer(discovery::Resolve::new(resolve)))
+        .layer(discover::Layer::new(2, resolve))
         .spawn_ready()
         .into_inner();
 

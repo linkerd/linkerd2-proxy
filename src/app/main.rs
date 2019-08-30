@@ -331,7 +331,7 @@ where
                 .make(config.destination_addr.clone())
         };
 
-        let resolver = crate::resolve_dst_api::Resolve::new(dst_svc.clone())
+        let resolver = crate::api_resolve::Resolve::new(dst_svc.clone())
             .with_scheme("k8s")
             .with_context_token(&config.destination_context);
 

@@ -1,11 +1,13 @@
-use super::super::{dst::Route, L5D_REQUIRE_ID};
+use crate::api_resolve::{Metadata, ProtocolHint};
+use crate::app::dst::{DstAddr, Route};
+use crate::app::L5D_REQUIRE_ID;
 use crate::proxy::http::{identity_from_header, settings};
 use crate::proxy::Source;
-use crate::resolve_dst_api::{Metadata, ProtocolHint};
 use crate::transport::{connect, tls};
 use crate::{identity, tap};
 use crate::{Conditional, NameAddr};
 use indexmap::IndexMap;
+use linkerd2_proxy_resolve::map_endpoint::MapEndpoint;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -18,6 +20,9 @@ pub struct Endpoint {
     pub metadata: Metadata,
     pub http_settings: settings::Settings,
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct FromMetadata;
 
 impl Endpoint {
     pub fn can_use_orig_proto(&self) -> bool {
@@ -144,5 +149,27 @@ impl tap::Inspect for Endpoint {
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
         true
+    }
+}
+
+impl MapEndpoint<DstAddr, Metadata> for FromMetadata {
+    type Out = Endpoint;
+
+    fn map_endpoint(&self, target: &DstAddr, addr: SocketAddr, metadata: Metadata) -> Endpoint {
+        let identity = metadata
+            .identity()
+            .cloned()
+            .map(Conditional::Some)
+            .unwrap_or_else(|| {
+                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
+            });
+        Endpoint {
+            addr,
+            identity,
+            metadata,
+            dst_logical: target.dst_logical().name_addr().cloned(),
+            dst_concrete: target.dst_concrete().name_addr().cloned(),
+            http_settings: target.http_settings.clone(),
+        }
     }
 }

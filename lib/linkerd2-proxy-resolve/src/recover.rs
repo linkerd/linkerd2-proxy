@@ -63,7 +63,7 @@ enum Connection {
 // === impl Resolve ===
 
 impl<R, E> Resolve<R, E> {
-    pub fn new<T>(resolve: R, recover: E) -> Self
+    pub fn new<T>(recover: E, resolve: R) -> Self
     where
         Self: resolve::Resolve<T>,
     {

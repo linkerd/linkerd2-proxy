@@ -2,3 +2,4 @@
 
 pub mod map_endpoint;
 pub mod recover;
+pub mod reject_targets;

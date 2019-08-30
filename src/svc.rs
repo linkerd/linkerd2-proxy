@@ -1,5 +1,5 @@
 use crate::proxy::{buffer, pending};
-pub use linkerd2_stack::{self as stack, layer, shared, Layer, LayerExt};
+pub use linkerd2_stack::{self as stack, layer, map_target, shared, Layer, LayerExt};
 pub use linkerd2_timeout::stack as timeout;
 use std::time::Duration;
 use tower::builder::ServiceBuilder;
