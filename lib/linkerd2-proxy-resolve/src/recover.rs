@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+//! A middleware that recovers a resolution after some failures.
 
 use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
@@ -13,7 +13,7 @@ pub struct Resolve<R, E> {
     recover: E,
 }
 
-pub struct Init<T, R: resolve::Resolve<T>, E: Recover> {
+pub struct ResolveFuture<T, R: resolve::Resolve<T>, E: Recover> {
     inner: Option<Inner<T, R, E>>,
 }
 
@@ -54,9 +54,21 @@ enum State<F, R: resolve::Resolution, B> {
     Backoff(Option<B>),
 }
 
+#[derive(Debug)]
 enum Connection {
     Reconnected,
     Established,
+}
+
+// === impl Resolve ===
+
+impl<R, E> Resolve<R, E> {
+    pub fn new<T>(resolve: R, recover: E) -> Self
+    where
+        Self: resolve::Resolve<T>,
+    {
+        Self { resolve, recover }
+    }
 }
 
 impl<T, R, E> tower::Service<T> for Resolve<R, E>
@@ -68,7 +80,7 @@ where
 {
     type Response = Resolution<T, R, E>;
     type Error = Error;
-    type Future = Init<T, R, E>;
+    type Future = ResolveFuture<T, R, E>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.resolve.poll_ready().map_err(Into::into)
@@ -85,9 +97,76 @@ where
                 backoff: None,
             },
         };
-        Init { inner: Some(inner) }
+
+        Self::Future { inner: Some(inner) }
     }
 }
+
+// === impl ResolveFuture ===
+
+impl<T, R, E> Future for ResolveFuture<T, R, E>
+where
+    T: fmt::Display + Clone,
+    R: resolve::Resolve<T>,
+    R::Endpoint: Clone + PartialEq,
+    E: Recover,
+{
+    type Item = Resolution<T, R, E>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let inner = self.inner.as_mut().expect("polled after complete");
+        try_ready!(inner.poll_connected());
+
+        Ok(Async::Ready(Resolution {
+            inner: self.inner.take().expect("polled after complete"),
+            cache: Cache::default(),
+        }))
+    }
+}
+
+// === impl Resolution ===
+
+impl<T, R, E> resolve::Resolution for Resolution<T, R, E>
+where
+    T: fmt::Display + Clone,
+    R: resolve::Resolve<T>,
+    R::Endpoint: Clone + PartialEq,
+    E: Recover,
+{
+    type Endpoint = R::Endpoint;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
+        loop {
+            // If a previous reconnect left endpoints to be added, add them
+            // immediately.
+            if let Some(pending) = self.cache.take_pending() {
+                return Ok(pending.into());
+            }
+
+            // Ensure that there is an active resolution.
+            try_ready!(self.inner.poll_connected());
+
+            let cache = &mut self.cache;
+            self.inner.state = match self.inner.state {
+                State::Connected {
+                    ref mut resolution,
+                    ref mut connection,
+                } => match resolve::Resolution::poll(resolution) {
+                    Ok(ready) => return Ok(ready.map(|u| cache.process_update(u, connection))),
+                    Err(e) => State::Failed {
+                        error: Some(e.into()),
+                        backoff: None,
+                    },
+                },
+                _ => unreachable!("poll_connected must only return ready when connected"),
+            };
+        }
+    }
+}
+
+// === impl Inner ===
 
 impl<T, R, E> Inner<T, R, E>
 where
@@ -160,26 +239,7 @@ where
     }
 }
 
-impl<T, R, E> Future for Init<T, R, E>
-where
-    T: fmt::Display + Clone,
-    R: resolve::Resolve<T>,
-    R::Endpoint: Clone + PartialEq,
-    E: Recover,
-{
-    type Item = Resolution<T, R, E>;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = self.inner.as_mut().expect("polled after complete");
-        try_ready!(inner.poll_connected());
-
-        Ok(Async::Ready(Resolution {
-            inner: self.inner.take().expect("polled after complete"),
-            cache: Cache::default(),
-        }))
-    }
-}
+// === impl Cache ===
 
 impl<T> Default for Cache<T> {
     fn default() -> Self {
@@ -266,44 +326,5 @@ where
         let endpoints = self.pending_add.drain(..).collect::<Vec<_>>();
         self.active.extend(endpoints.clone());
         Some(Update::Add(endpoints))
-    }
-}
-
-impl<T, R, E> resolve::Resolution for Resolution<T, R, E>
-where
-    T: fmt::Display + Clone,
-    R: resolve::Resolve<T>,
-    R::Endpoint: Clone + PartialEq,
-    E: Recover,
-{
-    type Endpoint = R::Endpoint;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-        loop {
-            // If a previous reconnect left endpoints to be added, add them
-            // immediately.
-            if let Some(pending) = self.cache.take_pending() {
-                return Ok(pending.into());
-            }
-
-            // Ensure that there is an active resolution.
-            try_ready!(self.inner.poll_connected());
-
-            let cache = &mut self.cache;
-            self.inner.state = match self.inner.state {
-                State::Connected {
-                    ref mut resolution,
-                    ref mut connection,
-                } => match resolve::Resolution::poll(resolution) {
-                    Ok(ready) => return Ok(ready.map(|u| cache.process_update(u, connection))),
-                    Err(e) => State::Failed {
-                        error: Some(e.into()),
-                        backoff: None,
-                    },
-                },
-                _ => unreachable!("poll_connected must only return ready when connected"),
-            };
-        }
     }
 }

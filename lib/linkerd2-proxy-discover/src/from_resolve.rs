@@ -1,10 +1,23 @@
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use linkerd2_proxy_core::resolve::{Resolution, Update};
+use linkerd2_proxy_core::resolve::{Resolution, Resolve, Update};
 use linkerd2_proxy_core::Error;
+use std::fmt;
 use std::net::SocketAddr;
 use tokio::sync::oneshot;
 use tower::discover::Change;
+
+#[derive(Clone, Debug)]
+pub struct FromResolve<R, M> {
+    resolve: R,
+    make_endpoint: M,
+}
+
+#[derive(Debug)]
+pub struct DiscoverFuture<F, M> {
+    future: F,
+    make_endpoint: Option<M>,
+}
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
@@ -29,6 +42,64 @@ struct MakeFuture<F> {
 enum MakeError<E> {
     Inner(E),
     Canceled,
+}
+
+// === impl FromResolve ===
+
+impl<R, M> FromResolve<R, M> {
+    pub fn new<T>(resolve: R, make_endpoint: M) -> Self
+    where
+        R: Resolve<T> + Clone,
+        R::Endpoint: fmt::Debug + Clone + PartialEq,
+        M: tower::Service<R::Endpoint> + Clone,
+    {
+        Self {
+            resolve,
+            make_endpoint,
+        }
+    }
+}
+
+impl<T, R, M> tower::Service<T> for FromResolve<R, M>
+where
+    R: Resolve<T> + Clone,
+    R::Endpoint: fmt::Debug + Clone + PartialEq,
+    M: tower::Service<R::Endpoint> + Clone,
+{
+    type Response = Discover<R::Resolution, M>;
+    type Error = R::Error;
+    type Future = DiscoverFuture<R::Future, M>;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.resolve.poll_ready()
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let future = self.resolve.resolve(target);
+        DiscoverFuture {
+            future,
+            make_endpoint: Some(self.make_endpoint.clone()),
+        }
+    }
+}
+
+// === impl DiscoverFuture ===
+
+impl<F, M> Future for DiscoverFuture<F, M>
+where
+    F: Future,
+    F::Item: Resolution,
+    <F::Item as Resolution>::Endpoint: fmt::Debug + Clone + PartialEq,
+    M: tower::Service<<F::Item as Resolution>::Endpoint>,
+{
+    type Item = Discover<F::Item, M>;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let resolution = try_ready!(self.future.poll());
+        let make_endpoint = self.make_endpoint.take().expect("polled after ready");
+        Ok(Async::Ready(Discover::new(resolution, make_endpoint)))
+    }
 }
 
 // === impl Discover ===

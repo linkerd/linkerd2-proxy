@@ -31,6 +31,20 @@ pub struct Daemon<D: discover::Discover> {
     tx: mpsc::Sender<discover::Change<D::Key, D::Service>>,
 }
 
+impl<M> Buffer<M> {
+    pub fn new<T, D>(capacity: usize, inner: M) -> Self
+    where
+        T: Clone + std::fmt::Display,
+        M: tower::Service<T, Response = D>,
+        D: discover::Discover + Send + 'static,
+        D::Error: std::error::Error,
+        D::Key: Send,
+        D::Service: Send,
+    {
+        Self { capacity, inner }
+    }
+}
+
 impl<T, M, D> tower::Service<T> for Buffer<M>
 where
     T: Clone + std::fmt::Display,
@@ -76,8 +90,12 @@ where
 
         let (tx, rx) = mpsc::channel(self.capacity);
         let (_disconnect_tx, disconnect_rx) = oneshot::channel();
-        let daemon =
-            Daemon { discover, disconnect_rx, tx }.instrument(info_span!("discover", target = %self.target));
+        let daemon = Daemon {
+            discover,
+            disconnect_rx,
+            tx,
+        }
+        .instrument(info_span!("discover", target = %self.target));
         task::spawn(daemon);
 
         Ok(Discover { rx, _disconnect_tx }.into())
@@ -87,7 +105,7 @@ where
 impl<D> Future for Daemon<D>
 where
     D: discover::Discover,
-    D::Error: std::error::Error,
+    D::Error: std::fmt::Display,
 {
     type Item = ();
     type Error = ();
@@ -99,16 +117,15 @@ where
                 Err(_lost) => return Ok(().into()),
                 Ok(Async::Ready(n)) => match n {},
             }
-            
+
             try_ready!(self
                 .tx
                 .poll_ready()
                 .map_err(|_| tracing::trace!("lost sender")));
 
-            let up = try_ready!(self
-                .discover
-                .poll()
-                .map_err(|e| tracing::debug!("resoution lost: {}", e)));
+            let up = try_ready!(self.discover.poll().map_err(|e| {
+                tracing::debug!("resoution lost: {}", e);
+            }));
 
             self.tx.try_send(up).ok().expect("sender must be ready");
         }

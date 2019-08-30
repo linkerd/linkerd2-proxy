@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-proxy-resolve-dst-api"
+name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
