@@ -4,7 +4,6 @@ members = [
     "lib/hyper-balance",
     "lib/linkerd2-addr",
     "lib/linkerd2-conditional",
-    "lib/linkerd2-discover-buffer",
     "lib/linkerd2-dns-name",
     "lib/linkerd2-drain",
     "lib/linkerd2-identity",
@@ -38,7 +37,6 @@ hyper-balance = { path = "lib/hyper-balance" }
 linkerd2-addr        = { path = "lib/linkerd2-addr" }
 linkerd2-conditional = { path = "lib/linkerd2-conditional" }
 linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
-linkerd2-discover-buffer = { path = "lib/linkerd2-discover-buffer" }
 linkerd2-identity    = { path = "lib/linkerd2-identity" }
 linkerd2-metrics     = { path = "lib/linkerd2-metrics" }
 linkerd2-never       = { path = "lib/linkerd2-never" }

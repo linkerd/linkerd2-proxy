@@ -10,7 +10,7 @@ pub trait MapEndpoint<Target, In> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Resolve<R, M> {
+pub struct Resolve<M, R> {
     resolve: R,
     map: M,
 }
@@ -23,15 +23,15 @@ pub struct ResolveFuture<T, F, M> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Resolution<T, D, M> {
-    resolution: D,
+pub struct Resolution<T, M, R> {
+    resolution: R,
     target: T,
     map: M,
 }
 
 // === impl Resolve ===
 
-impl<R, M> Resolve<R, M> {
+impl<M, R> Resolve<M, R> {
     pub fn new<T>(map: M, resolve: R) -> Self
     where
         Self: resolve::Resolve<T>,
@@ -40,13 +40,13 @@ impl<R, M> Resolve<R, M> {
     }
 }
 
-impl<T, R, M> tower::Service<T> for Resolve<R, M>
+impl<T, M, R> tower::Service<T> for Resolve<M, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,
     M: MapEndpoint<T, R::Endpoint> + Clone,
 {
-    type Response = Resolution<T, R::Resolution, M>;
+    type Response = Resolution<T, M, R::Resolution>;
     type Error = R::Error;
     type Future = ResolveFuture<T, R::Future, M>;
 
@@ -72,7 +72,7 @@ where
     F::Item: resolve::Resolution,
     M: MapEndpoint<T, <F::Item as resolve::Resolution>::Endpoint>,
 {
-    type Item = Resolution<T, F::Item, M>;
+    type Item = Resolution<T, M, F::Item>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -89,7 +89,7 @@ where
 
 // === impl Resolution ===
 
-impl<T, R, M> resolve::Resolution for Resolution<T, R, M>
+impl<T, M, R> resolve::Resolution for Resolution<T, M, R>
 where
     R: resolve::Resolution,
     M: MapEndpoint<T, R::Endpoint>,

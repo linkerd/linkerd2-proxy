@@ -15,7 +15,10 @@ pub trait Resolve<T> {
 
     fn resolve(&mut self, target: T) -> Self::Future;
 
-    fn into_service(self) -> Service<Self> where Self: Sized {
+    fn into_service(self) -> Service<Self>
+    where
+        Self: Sized,
+    {
         Service(self)
     }
 }
@@ -108,6 +111,6 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        self.0.call(target)
+        self.0.resolve(target)
     }
 }

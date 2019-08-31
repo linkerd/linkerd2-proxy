@@ -492,19 +492,6 @@ name = "linkerd2-conditional"
 version = "0.1.0"
 
 [[package]]
-name = "linkerd2-discover-buffer"
-version = "0.1.0"
-dependencies = [
- "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "linkerd2-never 0.1.0",
- "linkerd2-task 0.1.0",
- "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "linkerd2-dns-name"
 version = "0.1.0"
 dependencies = [
@@ -567,7 +554,6 @@ dependencies = [
  "libc 0.2.48 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-addr 0.1.0",
  "linkerd2-conditional 0.1.0",
- "linkerd2-discover-buffer 0.1.0",
  "linkerd2-dns-name 0.1.0",
  "linkerd2-identity 0.1.0",
  "linkerd2-metrics 0.1.0",
@@ -673,7 +659,6 @@ dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-addr 0.1.0",
- "linkerd2-discover-buffer 0.1.0",
  "linkerd2-dns-name 0.1.0",
  "linkerd2-identity 0.1.0",
  "linkerd2-never 0.1.0",

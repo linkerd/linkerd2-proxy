@@ -1,12 +1,13 @@
 use futures::{try_ready, Async, Future, Poll};
 use linkerd2_never::Never;
+use linkerd2_proxy_core::Error;
 use linkerd2_task as task;
 use tokio::sync::{mpsc, oneshot};
 use tower::discover;
 use tracing::info_span;
 use tracing_futures::Instrument;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Buffer<M> {
     capacity: usize,
     inner: M,
@@ -37,7 +38,7 @@ impl<M> Buffer<M> {
         T: Clone + std::fmt::Display,
         M: tower::Service<T, Response = D>,
         D: discover::Discover + Send + 'static,
-        D::Error: std::error::Error,
+        D::Error: Into<Error>,
         D::Key: Send,
         D::Service: Send,
     {
@@ -50,7 +51,7 @@ where
     T: Clone + std::fmt::Display,
     M: tower::Service<T, Response = D>,
     D: discover::Discover + Send + 'static,
-    D::Error: std::error::Error,
+    D::Error: Into<Error>,
     D::Key: Send,
     D::Service: Send,
 {
@@ -78,7 +79,7 @@ where
     T: std::fmt::Display,
     F: Future<Item = D>,
     D: discover::Discover + Send + 'static,
-    D::Error: std::error::Error,
+    D::Error: Into<Error>,
     D::Key: Send,
     D::Service: Send,
 {
@@ -105,7 +106,7 @@ where
 impl<D> Future for Daemon<D>
 where
     D: discover::Discover,
-    D::Error: std::fmt::Display,
+    D::Error: Into<Error>,
 {
     type Item = ();
     type Error = ();
@@ -124,6 +125,7 @@ where
                 .map_err(|_| tracing::trace!("lost sender")));
 
             let up = try_ready!(self.discover.poll().map_err(|e| {
+                let e: Error = e.into();
                 tracing::debug!("resoution lost: {}", e);
             }));
 

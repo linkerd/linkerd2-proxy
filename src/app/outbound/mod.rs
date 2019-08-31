@@ -46,7 +46,7 @@ pub fn server<R, P>(
     transport_metrics: transport::metrics::Registry,
 ) -> impl ServeConnection<Connection>
 where
-    R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
+    R: Resolve<DstAddr, Endpoint = endpoint::Endpoint> + Clone + Send + Sync + 'static,
     R::Future: Send,
     R::Resolution: Send,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
@@ -145,37 +145,26 @@ where
         .buffer_pending(max_in_flight, DispatchDeadline::extract)
         .into_inner();
 
-    // Resolves the target via the control plane and balances requests
-    // over all endpoints returned from the destination service.
-    let resolve = resolve::recover::Resolve::new(
-        false,
-        resolve::map_endpoint::Resolve::new(
-            endpoint::FromMetadata,
-            svc::map_target::Service::new(
-                |dst: DstAddr| {
-                    dst.dst_concrete()
-                        .name_addr()
-                        .cloned()
-                        .expect("unnamed destinations must have been rejected")
-                },
-                resolve,
-            ),
-        ),
-    );
-    let balancer_layer = svc::builder()
+    let distributor = svc::builder()
         .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
         .layer(discover::Layer::new(2, resolve))
         .spawn_ready()
-        .into_inner();
-
-    let distributor = svc::builder()
-        .layer(
-            // Attempt to build a balancer. If the service is
-            // unresolvable, fall back to using a router that dispatches
-            // request to the application-selected original destination.
-            fallback::layer(balancer_layer, orig_dst_router_layer), // TODO .on_error::<Unresolvable>()
-        )
         .service(endpoint_stack);
+
+    // let balancer_layer = svc::builder()
+    //     .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+    //     .layer(discover)
+    //     .spawn_ready()
+    //     .into_inner();
+
+    // let distributor = svc::builder()
+    //     .layer(
+    //         // Attempt to build a balancer. If the service is
+    //         // unresolvable, fall back to using a router that dispatches
+    //         // request to the application-selected original destination.
+    //         fallback::layer(balancer_layer, orig_dst_router_layer), // TODO .on_error::<Unresolvable>()
+    //     )
+    //     .service(endpoint_stack);
 
     // A per-`DstAddr` stack that does the following:
     //
@@ -296,3 +285,21 @@ where
         config.h2_settings,
     )
 }
+
+pub fn resolve<R>(
+    inner: R,
+) -> impl Resolve<DstAddr, Endpoint = endpoint::Endpoint> + Clone + Send + Sync + 'static
+where
+    R: Resolve<DstAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
+{
+    //let recovering_resolve = resolve::recover::Resolve::new(false, resolve_name_to_endpoints);
+    //svc::map_target::Service::new(get_name, inner.into_service()),
+    resolve::map_endpoint::Resolve::new(endpoint::FromMetadata, inner)
+}
+
+// fn get_name(dst: DstAddr) -> NameAddr {
+//     dst.dst_concrete()
+//         .name_addr()
+//         .cloned()
+//         .expect("unnamed destinations must have been rejected")
+// }

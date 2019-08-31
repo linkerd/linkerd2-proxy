@@ -133,24 +133,23 @@ where
     }
 }
 
-impl<G, Inner, RouteLayer, RouteBody, InnerBody, Target, InnerSvc, RouteMake, RouteSvc>
-    svc::Service<Target> for MakeSvc<G, Inner, RouteLayer, RouteBody, InnerBody>
+impl<G, Inner, RouteLayer, RouteBody, InnerBody, Target, RouteSvc> svc::Service<Target>
+    for MakeSvc<G, Inner, RouteLayer, RouteBody, InnerBody>
 where
+    G: GetRoutes,
     Target: CanGetDestination + WithRoute + WithAddr + Eq + Hash + Clone,
     <Target as WithRoute>::Output: Eq + Hash + Clone,
-    Inner: rt::Make<Target, Value = InnerSvc> + Clone,
-    InnerSvc: svc::Service<http::Request<InnerBody>> + Clone,
-    InnerSvc::Error: Into<Error>,
-    G: GetRoutes,
-    RouteLayer: svc::Layer<
-            svc::shared::Shared<ConcreteRouter<Target, Inner::Value, InnerBody>>,
-            Service = RouteMake,
-        > + Clone,
-    RouteMake: rt::Make<<Target as WithRoute>::Output, Value = RouteSvc> + Clone,
+    Inner: rt::Make<Target> + Clone,
+    Inner::Value: svc::Service<http::Request<InnerBody>> + Clone,
+    <Inner::Value as svc::Service<http::Request<InnerBody>>>::Error: Into<Error>,
+    RouteLayer:
+        svc::Layer<svc::shared::Shared<ConcreteRouter<Target, Inner::Value, InnerBody>>> + Clone,
+    RouteLayer::Service: rt::Make<<Target as WithRoute>::Output, Value = RouteSvc> + Clone,
     RouteSvc: svc::Service<http::Request<RouteBody>> + Clone,
     RouteSvc::Error: Into<Error>,
 {
-    type Response = Service<G::Stream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody>;
+    type Response =
+        Service<G::Stream, Target, RouteLayer, RouteLayer::Service, Inner, RouteBody, InnerBody>;
     type Error = Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
