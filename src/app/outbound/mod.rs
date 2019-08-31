@@ -63,19 +63,17 @@ where
 
     // Establishes connections to remote peers (for both TCP
     // forwarding and HTTP proxying).
-    let connect = svc::builder()
-        .layer(transport_metrics.connect("outbound"))
-        .timeout(config.outbound_connect_timeout)
-        .layer(keepalive::connect::layer(config.outbound_connect_keepalive))
-        .layer(tls::client::layer(local_identity))
-        .service(connect::svc());
+    let connect = svc::stack(connect::svc())
+        .push(tls::client::layer(local_identity))
+        .push(keepalive::connect::layer(config.outbound_connect_keepalive))
+        .push_timeout(config.outbound_connect_timeout)
+        .push(transport_metrics.connect("outbound"));
 
     // Instantiates an HTTP client for for a `client::Config`
-    let client_stack = svc::builder()
-        .layer(normalize_uri::layer())
-        .layer(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
-        .layer(client::layer("out", config.h2_settings))
-        .service(connect.clone());
+    let client_stack = svc::stack(connect.clone())
+        .push(client::layer("out", config.h2_settings))
+        .push(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
+        .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:
     //
@@ -89,20 +87,20 @@ where
     //    request version and headers).
     // 6. Strips any `l5d-server-id` that may have been received from
     //    the server, before we apply our own.
-    let endpoint_stack = svc::builder()
-        .layer(require_identity_on_endpoint::layer())
-        .layer(http_metrics::layer::<_, classify::Response>(
+    let endpoint_stack = svc::stack(client_stack)
+        .push(strip_header::response::layer(super::L5D_REMOTE_IP))
+        .push(strip_header::response::layer(super::L5D_SERVER_ID))
+        .push(strip_header::request::layer(super::L5D_REQUIRE_ID))
+        // disabled on purpose
+        //.push(add_remote_ip_on_rsp::layer())
+        //.push(add_server_id_on_rsp::layer())
+        .push(orig_proto_upgrade::layer())
+        .push(tap_layer.clone())
+        .push(http_metrics::layer::<_, classify::Response>(
             endpoint_http_metrics,
         ))
-        .layer(tap_layer.clone())
-        .layer(orig_proto_upgrade::layer())
-        // disabled on purpose
-        //.layer(add_server_id_on_rsp::layer())
-        //.layer(add_remote_ip_on_rsp::layer())
-        .layer(strip_header::request::layer(super::L5D_REQUIRE_ID))
-        .layer(strip_header::response::layer(super::L5D_SERVER_ID))
-        .layer(strip_header::response::layer(super::L5D_REMOTE_IP))
-        .service(client_stack);
+        .push(require_identity_on_endpoint::layer())
+        .serves::<Endpoint>();
 
     // A per-`dst::Route` layer that uses profile data to configure
     // a per-route layer.
@@ -115,7 +113,7 @@ where
     //    retries.
     // 3. Retries are optionally enabled depending on if the route
     //    is retryable.
-    let dst_route_layer = svc::builder()
+    let dst_route_layer = svc::layers()
         .buffer_pending(max_in_flight, DispatchDeadline::extract)
         .layer(classify::layer())
         .layer(http_metrics::layer::<_, classify::Response>(
@@ -134,7 +132,7 @@ where
     //
     // If the `l5d-require-id` header is present, then that identity is
     // used as the server name when connecting to the endpoint.
-    let orig_dst_router_layer = svc::builder()
+    let orig_dst_router_layer = svc::layers()
         .layer(router::layer(
             router::Config::new("out ep", capacity, max_idle_age),
             |req: &http::Request<_>| {
@@ -148,20 +146,20 @@ where
 
     // Resolves the target via the control plane and balances requests
     // over all endpoints returned from the destination service.
-    let balancer_layer = svc::builder()
+    let balancer_layer = svc::layers()
         .layer(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
         .layer(resolve::layer(discovery::Resolve::new(resolve)))
         .spawn_ready()
         .into_inner();
 
-    let distributor = svc::builder()
-        .layer(
+    let distributor = svc::stack(endpoint_stack)
+        .push(
             // Attempt to build a balancer. If the service is
             // unresolvable, fall back to using a router that dispatches
             // request to the application-selected original destination.
             fallback::layer(balancer_layer, orig_dst_router_layer).on_error::<Unresolvable>(),
         )
-        .service(endpoint_stack);
+        .serves::<DstAddr>();
 
     // A per-`DstAddr` stack that does the following:
     //
@@ -170,22 +168,22 @@ where
     //    per-route policy.
     // 3. Creates a load balancer , configured by resolving the
     //   `DstAddr` with a resolver.
-    let dst_stack = svc::builder()
-        .layer(header_from_target::layer(super::CANONICAL_DST_HEADER))
-        .layer(profiles::router::layer(
+    let dst_stack = svc::stack(distributor)
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
+        .push(profiles::router::layer(
             profile_suffixes,
             profiles_client,
             dst_route_layer,
         ))
-        .buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .service(distributor);
+        .push(header_from_target::layer(super::CANONICAL_DST_HEADER));
 
     // Routes request using the `DstAddr` extension.
     //
     // This is shared across addr-stacks so that multiple addrs that
     // canonicalize to the same DstAddr use the same dst-stack service.
-    let dst_router = svc::builder()
-        .layer(router::layer(
+    let dst_router = svc::stack(dst_stack)
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
+        .push(router::layer(
             router::Config::new("out dst", capacity, max_idle_age),
             |req: &http::Request<_>| {
                 let addr = req.extensions().get::<Addr>().cloned().map(|addr| {
@@ -196,16 +194,14 @@ where
                 addr
             },
         ))
-        .buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .service(dst_stack)
+        .into_inner()
         .make();
 
     // Canonicalizes the request-specified `Addr` via DNS, and
     // annotates each request with a refined `Addr` so that it may be
     // routed by the dst_router.
-    let addr_stack = svc::builder()
-        .layer(canonicalize::layer(dns_resolver, canonicalize_timeout))
-        .service(svc::shared(dst_router));
+    let addr_stack = svc::stack(svc::shared(dst_router))
+        .push(canonicalize::layer(dns_resolver, canonicalize_timeout));
 
     // Routes requests to an `Addr`:
     //
@@ -222,8 +218,12 @@ where
     //
     // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
     // address is used.
-    let addr_router = svc::builder()
-        .layer(router::layer(
+    let addr_router = svc::stack(addr_stack)
+        .push(strip_header::request::layer(super::L5D_CLIENT_ID))
+        .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
+        .push(insert::target::layer())
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
+        .push(router::layer(
             router::Config::new("out addr", capacity, max_idle_age),
             |req: &http::Request<_>| {
                 super::http_request_l5d_override_dst_addr(req)
@@ -241,31 +241,25 @@ where
                     .ok()
             },
         ))
-        .buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .layer(insert::target::layer())
-        .layer(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
-        .layer(strip_header::request::layer(super::L5D_CLIENT_ID))
-        .service(addr_stack)
+        .into_inner()
         .make();
 
     // Share a single semaphore across all requests to signal when
     // the proxy is overloaded.
-    let admission_control = svc::builder()
-        .load_shed()
-        .concurrency_limit(max_in_flight)
-        .service(addr_router);
+    let admission_control = svc::stack(addr_router)
+        .push_concurrency_limit(max_in_flight)
+        .push_load_shed();
 
     // Instantiates an HTTP service for each `Source` using the
     // shared `addr_router`. The `Source` is stored in the request's
     // extensions so that it can be used by the `addr_router`.
-    let server_stack = svc::builder()
-        .layer(handle_time.layer())
-        .layer(super::errors::layer())
-        .layer(insert::target::layer())
-        .layer(insert::layer(move || {
+    let server_stack = svc::stack(svc::shared(admission_control))
+        .push(insert::layer(move || {
             DispatchDeadline::after(dispatch_timeout)
         }))
-        .service(svc::shared(admission_control));
+        .push(insert::target::layer())
+        .push(super::errors::layer())
+        .push(handle_time.layer());
 
     // Instantiated for each TCP connection received from the local
     // application (including HTTP connections).

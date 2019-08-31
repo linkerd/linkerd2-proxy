@@ -259,25 +259,25 @@ where
                     config.outbound_connect_keepalive
                 };
 
-                let svc = svc::builder()
-                    .buffer_pending(
+                let svc = svc::stack(connect::svc())
+                    .push(tls::client::layer(Conditional::Some(
+                        id_config.trust_anchors.clone(),
+                    )))
+                    .push(keepalive::connect::layer(keepalive))
+                    .push_timeout(config.control_connect_timeout)
+                    .push(control::client::layer())
+                    .push(control::resolve::layer(dns_resolver.clone()))
+                    .push(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                    .push(http_metrics::layer::<_, classify::Response>(
+                        ctl_http_metrics.clone(),
+                    ))
+                    .push(proxy::grpc::req_body_as_payload::layer().per_make())
+                    .push(control::add_origin::layer())
+                    .push_buffer_pending(
                         config.destination_buffer_capacity,
                         config.control_dispatch_timeout,
                     )
-                    .layer(control::add_origin::layer())
-                    .layer(proxy::grpc::req_body_as_payload::layer().per_make())
-                    .layer(http_metrics::layer::<_, classify::Response>(
-                        ctl_http_metrics.clone(),
-                    ))
-                    .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
-                    .layer(control::resolve::layer(dns_resolver.clone()))
-                    .layer(control::client::layer())
-                    .timeout(config.control_connect_timeout)
-                    .layer(keepalive::connect::layer(keepalive))
-                    .layer(tls::client::layer(Conditional::Some(
-                        id_config.trust_anchors.clone(),
-                    )))
-                    .service(connect::svc())
+                    .into_inner()
                     .make(id_config.svc.clone());
 
                 identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
@@ -311,23 +311,23 @@ where
                 config.outbound_connect_keepalive
             };
 
-            svc::builder()
-                .buffer_pending(
+            svc::stack(connect::svc())
+                .push(tls::client::layer(local_identity.clone()))
+                .push(keepalive::connect::layer(keepalive))
+                .push_timeout(config.control_connect_timeout)
+                .push(control::client::layer())
+                .push(control::resolve::layer(dns_resolver.clone()))
+                .push(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                .push(http_metrics::layer::<_, classify::Response>(
+                    ctl_http_metrics.clone(),
+                ))
+                .push(proxy::grpc::req_body_as_payload::layer().per_make())
+                .push(control::add_origin::layer())
+                .push_buffer_pending(
                     config.destination_buffer_capacity,
                     config.control_dispatch_timeout,
                 )
-                .layer(control::add_origin::layer())
-                .layer(proxy::grpc::req_body_as_payload::layer().per_make())
-                .layer(http_metrics::layer::<_, classify::Response>(
-                    ctl_http_metrics.clone(),
-                ))
-                .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
-                .layer(control::resolve::layer(dns_resolver.clone()))
-                .layer(control::client::layer())
-                .timeout(config.control_connect_timeout)
-                .layer(keepalive::connect::layer(keepalive))
-                .layer(tls::client::layer(local_identity.clone()))
-                .service(connect::svc())
+                .into_inner()
                 .make(config.destination_addr.clone())
         };
 
