@@ -8,21 +8,21 @@ use std::fmt;
 use std::net::SocketAddr;
 
 #[derive(Clone, Debug)]
-pub struct Resolve<R, E> {
+pub struct Resolve<E, R> {
     resolve: R,
     recover: E,
 }
 
-pub struct ResolveFuture<T, R: resolve::Resolve<T>, E: Recover> {
-    inner: Option<Inner<T, R, E>>,
+pub struct ResolveFuture<T, E: Recover, R: resolve::Resolve<T>> {
+    inner: Option<Inner<T, E, R>>,
 }
 
-pub struct Resolution<T, R: resolve::Resolve<T>, E: Recover> {
-    inner: Inner<T, R, E>,
+pub struct Resolution<T, E: Recover, R: resolve::Resolve<T>> {
+    inner: Inner<T, E, R>,
     cache: Cache<R::Endpoint>,
 }
 
-struct Inner<T, R: resolve::Resolve<T>, E: Recover> {
+struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
     target: T,
     resolve: R,
     recover: E,
@@ -62,7 +62,7 @@ enum Connection {
 
 // === impl Resolve ===
 
-impl<R, E> Resolve<R, E> {
+impl<E, R> Resolve<E, R> {
     pub fn new<T>(recover: E, resolve: R) -> Self
     where
         Self: resolve::Resolve<T>,
@@ -71,16 +71,16 @@ impl<R, E> Resolve<R, E> {
     }
 }
 
-impl<T, R, E> tower::Service<T> for Resolve<R, E>
+impl<T, E, R> tower::Service<T> for Resolve<E, R>
 where
     T: fmt::Display + Clone,
     R: resolve::Resolve<T> + Clone,
     R::Endpoint: Clone + PartialEq,
     E: Recover + Clone,
 {
-    type Response = Resolution<T, R, E>;
+    type Response = Resolution<T, E, R>;
     type Error = Error;
-    type Future = ResolveFuture<T, R, E>;
+    type Future = ResolveFuture<T, E, R>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.resolve.poll_ready().map_err(Into::into)
@@ -104,14 +104,14 @@ where
 
 // === impl ResolveFuture ===
 
-impl<T, R, E> Future for ResolveFuture<T, R, E>
+impl<T, E, R> Future for ResolveFuture<T, E, R>
 where
     T: fmt::Display + Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
 {
-    type Item = Resolution<T, R, E>;
+    type Item = Resolution<T, E, R>;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -127,7 +127,7 @@ where
 
 // === impl Resolution ===
 
-impl<T, R, E> resolve::Resolution for Resolution<T, R, E>
+impl<T, E, R> resolve::Resolution for Resolution<T, E, R>
 where
     T: fmt::Display + Clone,
     R: resolve::Resolve<T>,
@@ -168,7 +168,7 @@ where
 
 // === impl Inner ===
 
-impl<T, R, E> Inner<T, R, E>
+impl<T, E, R> Inner<T, E, R>
 where
     T: fmt::Display + Clone,
     R: resolve::Resolve<T>,

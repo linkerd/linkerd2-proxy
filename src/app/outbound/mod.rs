@@ -8,9 +8,10 @@ use crate::proxy::http::{
 use crate::proxy::{self, accept, reconnect, Server};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
-use crate::{svc, Addr, Never};
+use crate::{svc, Addr};
+use linkerd2_proxy_api_resolve::Metadata;
 use linkerd2_proxy_discover as discover;
-//use linkerd2_proxy_resolve as resolve;
+use linkerd2_proxy_resolve::{map_endpoint, recover};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -275,5 +276,17 @@ where
         connect,
         server_stack,
         config.h2_settings,
+    )
+}
+
+pub fn resolve<R>(
+    resolve: R,
+) -> recover::Resolve<bool, map_endpoint::Resolve<endpoint::FromMetadata, R>>
+where
+    R: Resolve<DstAddr, Endpoint = Metadata> + Clone,
+{
+    recover::Resolve::new(
+        true,
+        map_endpoint::Resolve::new(endpoint::FromMetadata, resolve),
     )
 }

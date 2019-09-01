@@ -168,19 +168,20 @@ where
             rt::Router::new_fixed(rec, make)
         };
 
-        let stack = self.route_layer.layer(svc::shared(concrete_router.clone()));
+        let concrete_stack = self.route_layer.layer(svc::shared(concrete_router.clone()));
 
         // Initially there are no routes, so build a route router with only
         // the default route.
-        let default_route = target.clone().with_route(self.default_route.clone());
+        let router = {
+            let default_route = target.clone().with_route(self.default_route.clone());
+            let stack = rt::Make::make(&concrete_stack, &default_route);
 
-        let mut make = IndexMap::with_capacity(1);
-        make.insert(default_route.clone(), stack.make(&default_route));
+            let mut make = IndexMap::with_capacity(1);
+            make.insert(default_route.clone(), stack);
 
-        let router = rt::Router::new_fixed(
-            RouteRecognize::new(target.clone(), Vec::new(), self.default_route.clone()),
-            make,
-        );
+            let recognize = RouteRecognize::new(target.clone(), vec![], self.default_route.clone());
+            rt::Router::new_fixed(recognize, make)
+        };
 
         // Initiate a stream to get route and dst_override updates for this
         // destination.

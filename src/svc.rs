@@ -81,10 +81,6 @@ impl<S> Stack<S> {
         self.push_pending().push(buffer::layer(bound, d))
     }
 
-    pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
-        self.push(SpawnReadyLayer::new())
-    }
-
     pub fn push_concurrency_limit(self, max: usize) -> Stack<tower::limit::ConcurrencyLimit<S>> {
         self.push(ConcurrencyLimitLayer::new(max))
     }
@@ -95,6 +91,18 @@ impl<S> Stack<S> {
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(TimeoutLayer::new(timeout))
+    }
+
+    pub fn into_inner(self) -> S {
+        self.0
+    }
+}
+
+// Possibly unused, but useful during development.
+#[allow(dead_code)]
+impl<S> Stack<S> {
+    pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
+        self.push(SpawnReadyLayer::new())
     }
 
     /// Validates that this stack serves T-typed targets.
@@ -111,10 +119,6 @@ impl<S> Stack<S> {
         S: Make<T>,
     {
         self
-    }
-
-    pub fn into_inner(self) -> S {
-        self.0
     }
 }
 
