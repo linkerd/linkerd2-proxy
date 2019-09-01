@@ -50,12 +50,6 @@ where
 
     fn layer(&self, make_endpoint: M) -> Self::Service {
         let make_discover = FromResolve::new(self.resolve.clone(), make_endpoint);
-        fn check<U, S>(_: &S)
-        where
-            S: tower::Service<U> + Clone + Send,
-        {
-        }
-        check(&make_discover);
         Buffer::new(self.capacity, make_discover)
     }
 }

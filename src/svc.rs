@@ -1,4 +1,5 @@
 use crate::proxy::{buffer, pending};
+pub use linkerd2_router::Make;
 pub use linkerd2_stack::{self as stack, layer, map_target, shared, Layer, LayerExt};
 pub use linkerd2_timeout::stack as timeout;
 use std::time::Duration;
@@ -26,13 +27,13 @@ pub fn stack<S>(inner: S) -> Stack<S> {
 }
 
 impl<L> Layers<L> {
-    pub fn layer<T>(self, l: T) -> Layers<Pair<T, L>> {
+    pub fn and_then<T>(self, l: T) -> Layers<Pair<T, L>> {
         Layers(self.0.layer(l))
     }
 
     /// Buffer requests when when the next layer is out of capacity.
     pub fn pending(self) -> Layers<Pair<pending::Layer, L>> {
-        self.layer(pending::layer())
+        self.and_then(pending::layer())
     }
 
     /// Buffer requests when when the next layer is out of capacity.
@@ -45,11 +46,11 @@ impl<L> Layers<L> {
         D: buffer::Deadline<Req>,
         Req: Send + 'static,
     {
-        self.layer(buffer::layer(bound, d)).pending()
+        self.and_then(buffer::layer(bound, d)).pending()
     }
 
     pub fn spawn_ready(self) -> Layers<Pair<SpawnReadyLayer, L>> {
-        self.layer(SpawnReadyLayer::new())
+        self.and_then(SpawnReadyLayer::new())
     }
 
     pub fn into_inner(self) -> L {
@@ -68,14 +69,14 @@ impl<S> Stack<S> {
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn push_buffer_pending<D, Req>(
+    pub fn push_buffer_pending<Req, D>(
         self,
         bound: usize,
         d: D,
     ) -> Stack<buffer::Make<pending::MakePending<S>, D, Req>>
     where
-        D: buffer::Deadline<Req>,
         Req: Send + 'static,
+        D: buffer::Deadline<Req>,
     {
         self.push_pending().push(buffer::layer(bound, d))
     }
@@ -100,6 +101,14 @@ impl<S> Stack<S> {
     pub fn serves<T>(self) -> Self
     where
         S: Service<T>,
+    {
+        self
+    }
+
+    /// Validates that this stack makes T-typed targets.
+    pub fn makes<T>(self) -> Self
+    where
+        S: Make<T>,
     {
         self
     }

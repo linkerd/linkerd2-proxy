@@ -133,3 +133,13 @@ where
         }
     }
 }
+
+impl<K: std::hash::Hash + Eq, S> tower::discover::Discover for Discover<K, S> {
+    type Key = K;
+    type Service = S;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<tower::discover::Change<K, S>, Self::Error> {
+        unimplemented!()
+    }
+}
