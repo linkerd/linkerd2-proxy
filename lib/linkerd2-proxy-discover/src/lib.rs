@@ -5,9 +5,11 @@ use std::fmt;
 
 pub mod buffer;
 pub mod from_resolve;
+pub mod make_endpoint;
 
 use self::buffer::Buffer;
 use self::from_resolve::FromResolve;
+use self::make_endpoint::MakeEndpoint;
 
 #[derive(Clone, Debug)]
 pub struct Layer<T, R> {
@@ -38,7 +40,7 @@ where
     T: fmt::Display + Send + Clone,
     R: Resolve<T> + Send + Clone + 'static,
     R::Error: Into<Error>,
-    R::Endpoint: fmt::Debug + Clone + PartialEq,
+    R::Endpoint: fmt::Debug + Clone + PartialEq + Send,
     R::Resolution: Send + 'static,
     R::Future: Send + 'static,
     M: tower::Service<R::Endpoint> + Clone + Send + 'static,
@@ -46,10 +48,11 @@ where
     M::Response: Send + 'static,
     M::Future: Send + 'static,
 {
-    type Service = Buffer<FromResolve<R, M>>;
+    type Service = Buffer<MakeEndpoint<FromResolve<R>, M>>;
 
     fn layer(&self, make_endpoint: M) -> Self::Service {
-        let make_discover = FromResolve::new(self.resolve.clone(), make_endpoint);
+        let make_discover =
+            MakeEndpoint::new(make_endpoint, FromResolve::new(self.resolve.clone()));
         Buffer::new(self.capacity, make_discover)
     }
 }

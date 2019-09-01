@@ -169,16 +169,16 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        fn outbound_destinations_reset_on_reconnect_followed_by_add_none() {
+        fn outbound_destinations_reset_on_reconnect_followed_by_empty() {
             outbound_destinations_reset_on_reconnect(
-                controller::destination_add_none()
+                controller::destination_exists_with_no_endpoints()
             )
         }
 
         #[test]
-        fn outbound_destinations_reset_on_reconnect_followed_by_remove_none() {
+        fn outbound_destinations_reset_on_reconnect_followed_by_dne() {
             outbound_destinations_reset_on_reconnect(
-                controller::destination_remove_none()
+                controller::destination_does_not_exist()
             )
         }
 

@@ -1,7 +1,8 @@
-use futures::{try_ready, Async, Future, Poll};
+use futures::{try_ready, Async, Future, Poll, Stream};
 use linkerd2_never::Never;
 use linkerd2_proxy_core::Error;
 use linkerd2_task as task;
+use std::fmt;
 use tokio::sync::{mpsc, oneshot};
 use tower::discover;
 use tracing::info_span;
@@ -31,6 +32,9 @@ pub struct Daemon<D: discover::Discover> {
     disconnect_rx: oneshot::Receiver<Never>,
     tx: mpsc::Sender<discover::Change<D::Key, D::Service>>,
 }
+
+#[derive(Clone, Debug)]
+pub struct Lost(());
 
 impl<M> Buffer<M> {
     pub fn new<T, D>(capacity: usize, inner: M) -> Self
@@ -140,6 +144,18 @@ impl<K: std::hash::Hash + Eq, S> tower::discover::Discover for Discover<K, S> {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<tower::discover::Change<K, S>, Self::Error> {
-        unimplemented!()
+        return match self.rx.poll() {
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Ok(Async::Ready(Some(change))) => Ok(Async::Ready(change)),
+            Err(_) | Ok(Async::Ready(None)) => Err(Lost(()).into()),
+        };
     }
 }
+
+impl std::fmt::Display for Lost {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "discovery task failed")
+    }
+}
+
+impl std::error::Error for Lost {}
