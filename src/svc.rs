@@ -3,7 +3,7 @@ pub use linkerd2_stack::{self as stack, layer, map_target, shared, Layer, LayerE
 pub use linkerd2_timeout::stack as timeout;
 use std::time::Duration;
 use tower::builder::ServiceBuilder;
-use tower::layer::util::{Identity, Stack};
+use tower::layer::util::{Identity, Stack as Pair};
 use tower::limit::concurrency::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
 use tower::timeout::TimeoutLayer;
@@ -12,19 +12,26 @@ pub use tower::{service_fn as mk, MakeConnection, MakeService, Service, ServiceE
 use tower_spawn_ready::SpawnReadyLayer;
 
 #[derive(Clone, Debug)]
-pub struct Builder<L>(ServiceBuilder<L>);
+pub struct Layers<L>(ServiceBuilder<L>);
 
-pub fn builder() -> Builder<Identity> {
-    Builder(ServiceBuilder::new())
+#[derive(Clone, Debug)]
+pub struct Stack<S>(S);
+
+pub fn layers() -> Layers<Identity> {
+    Layers(ServiceBuilder::new())
 }
 
-impl<L> Builder<L> {
-    pub fn layer<T>(self, l: T) -> Builder<Stack<T, L>> {
-        Builder(self.0.layer(l))
+pub fn stack<S>(inner: S) -> Stack<S> {
+    Stack(inner)
+}
+
+impl<L> Layers<L> {
+    pub fn layer<T>(self, l: T) -> Layers<Pair<T, L>> {
+        Layers(self.0.layer(l))
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn pending(self) -> Builder<Stack<pending::Layer, L>> {
+    pub fn pending(self) -> Layers<Pair<pending::Layer, L>> {
         self.layer(pending::layer())
     }
 
@@ -33,7 +40,7 @@ impl<L> Builder<L> {
         self,
         bound: usize,
         d: D,
-    ) -> Builder<Stack<pending::Layer, Stack<buffer::Layer<D, Req>, L>>>
+    ) -> Layers<Pair<pending::Layer, Pair<buffer::Layer<D, Req>, L>>>
     where
         D: buffer::Deadline<Req>,
         Req: Send + 'static,
@@ -41,32 +48,80 @@ impl<L> Builder<L> {
         self.layer(buffer::layer(bound, d)).pending()
     }
 
-    /// Buffer requests when when the next layer is out of capacity.
-    pub fn spawn_ready(self) -> Builder<Stack<SpawnReadyLayer, L>> {
+    pub fn spawn_ready(self) -> Layers<Pair<SpawnReadyLayer, L>> {
         self.layer(SpawnReadyLayer::new())
-    }
-
-    pub fn concurrency_limit(self, max: usize) -> Builder<Stack<ConcurrencyLimitLayer, L>> {
-        Builder(self.0.concurrency_limit(max))
-    }
-
-    pub fn load_shed(self) -> Builder<Stack<LoadShedLayer, L>> {
-        Builder(self.0.load_shed())
-    }
-
-    pub fn timeout(self, timeout: Duration) -> Builder<Stack<TimeoutLayer, L>> {
-        Builder(self.0.timeout(timeout))
     }
 
     pub fn into_inner(self) -> L {
         self.0.into_inner()
     }
+}
 
-    /// Wrap the service `S` with the layers.
-    pub fn service<S>(self, service: S) -> L::Service
+impl<S> Stack<S> {
+    pub fn push<L: Layer<S>>(self, layer: L) -> Stack<L::Service> {
+        Stack(layer.layer(self.0))
+    }
+
+    /// Buffer requests when when the next layer is out of capacity.
+    pub fn push_pending(self) -> Stack<pending::MakePending<S>> {
+        self.push(pending::layer())
+    }
+
+    /// Buffer requests when when the next layer is out of capacity.
+    pub fn push_buffer_pending<D, Req>(
+        self,
+        bound: usize,
+        d: D,
+    ) -> Stack<buffer::Make<pending::MakePending<S>, D, Req>>
     where
-        L: Layer<S>,
+        D: buffer::Deadline<Req>,
+        Req: Send + 'static,
     {
-        self.0.service(service)
+        self.push_pending().push(buffer::layer(bound, d))
+    }
+
+    pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
+        self.push(SpawnReadyLayer::new())
+    }
+
+    pub fn push_concurrency_limit(self, max: usize) -> Stack<tower::limit::ConcurrencyLimit<S>> {
+        self.push(ConcurrencyLimitLayer::new(max))
+    }
+
+    pub fn push_load_shed(self) -> Stack<tower::load_shed::LoadShed<S>> {
+        self.push(LoadShedLayer::new())
+    }
+
+    pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
+        self.push(TimeoutLayer::new(timeout))
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn serves<T>(self) -> Self
+    where
+        S: Service<T>,
+    {
+        self
+    }
+
+    pub fn into_inner(self) -> S {
+        self.0
+    }
+}
+
+impl<T, S> Service<T> for Stack<S>
+where
+    S: Service<T>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self) -> futures::Poll<(), Self::Error> {
+        self.0.poll_ready()
+    }
+
+    fn call(&mut self, t: T) -> Self::Future {
+        self.0.call(t)
     }
 }

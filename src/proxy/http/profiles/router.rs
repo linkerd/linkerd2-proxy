@@ -22,7 +22,7 @@ type RouteRouter<Target, RouteTarget, Svc, Body> =
 pub fn layer<G, Inner, RouteLayer, RouteBody, InnerBody>(
     suffixes: Vec<dns::Suffix>,
     get_routes: G,
-    route_layer: svc::Builder<RouteLayer>,
+    route_layer: RouteLayer,
 ) -> Layer<G, Inner, RouteLayer, RouteBody, InnerBody>
 where
     G: GetRoutes + Clone,
@@ -40,7 +40,7 @@ where
 #[derive(Debug)]
 pub struct Layer<G, Inner, RouteLayer, RouteBody, InnerBody> {
     get_routes: G,
-    route_layer: svc::Builder<RouteLayer>,
+    route_layer: RouteLayer,
     suffixes: Vec<dns::Suffix>,
     /// This is saved into a field so that the same `Arc`s are used and
     /// cloned, instead of calling `Route::default()` every time.
@@ -52,7 +52,7 @@ pub struct Layer<G, Inner, RouteLayer, RouteBody, InnerBody> {
 pub struct MakeSvc<G, Inner, RouteLayer, RouteBody, InnerBody> {
     inner: Inner,
     get_routes: G,
-    route_layer: svc::Builder<RouteLayer>,
+    route_layer: RouteLayer,
     suffixes: Vec<dns::Suffix>,
     default_route: Route,
     _p: ::std::marker::PhantomData<fn(RouteBody, InnerBody)>,
@@ -89,7 +89,7 @@ where
 {
     target: Target,
     inner: Inner,
-    route_layer: svc::Builder<RouteLayer>,
+    route_layer: RouteLayer,
     route_stream: Option<RouteStream>,
     concrete_router: Option<ConcreteRouter<Target, Inner::Value, InnerBody>>,
     router: RouteRouter<Target, Target::Output, RouteMake::Value, RouteBody>,
@@ -168,10 +168,7 @@ where
             rt::Router::new_fixed(rec, make)
         };
 
-        let stack = self
-            .route_layer
-            .clone()
-            .service(svc::shared(concrete_router.clone()));
+        let stack = self.route_layer.layer(svc::shared(concrete_router.clone()));
 
         // Initially there are no routes, so build a route router with only
         // the default route.
@@ -287,10 +284,7 @@ where
         // new concrete router.
         self.concrete_router = Some(concrete_router.clone());
 
-        let stack = self
-            .route_layer
-            .clone()
-            .service(svc::shared(concrete_router));
+        let stack = self.route_layer.layer(svc::shared(concrete_router));
 
         let default_route = self.target.clone().with_route(self.default_route.clone());
 

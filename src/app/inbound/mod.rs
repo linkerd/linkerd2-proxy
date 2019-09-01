@@ -46,37 +46,35 @@ where
 
     // Establishes connections to the local application (for both
     // TCP forwarding and HTTP proxying).
-    let connect = svc::builder()
-        .layer(rewrite_loopback_addr::layer())
-        .layer(transport_metrics.connect("inbound"))
-        .timeout(config.inbound_connect_timeout)
-        .layer(keepalive::connect::layer(config.inbound_connect_keepalive))
-        .layer(tls::client::layer(local_identity))
-        .service(connect::svc());
+    let connect = svc::stack(connect::svc())
+        .push(tls::client::layer(local_identity))
+        .push(keepalive::connect::layer(config.inbound_connect_keepalive))
+        .push_timeout(config.inbound_connect_timeout)
+        .push(transport_metrics.connect("inbound"))
+        .push(rewrite_loopback_addr::layer());
 
     // Instantiates an HTTP client for a `client::Config`
-    let client_stack = svc::builder()
-        .layer(normalize_uri::layer())
-        .layer(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
-        .layer(client::layer("in", config.h2_settings))
-        .service(connect.clone());
+    let client_stack = svc::stack(connect.clone())
+        .push(client::layer("in", config.h2_settings))
+        .push(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
+        .push(normalize_uri::layer());
 
     // A stack configured by `router::Config`, responsible for building
     // a router made of route stacks configured by `inbound::Endpoint`.
     //
     // If there is no `SO_ORIGINAL_DST` for an inbound socket,
     // `default_fwd_addr` may be used.
-    let endpoint_router = svc::builder()
-        .layer(router::layer(
+    let endpoint_router = svc::stack(client_stack)
+        .push(tap_layer)
+        .push(http_metrics::layer::<_, classify::Response>(
+            endpoint_http_metrics,
+        ))
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
+        .push(router::layer(
             router::Config::new("in endpoint", capacity, max_idle_age),
             RecognizeEndpoint::new(default_fwd_addr),
         ))
-        .buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .layer(http_metrics::layer::<_, classify::Response>(
-            endpoint_http_metrics,
-        ))
-        .layer(tap_layer)
-        .service(client_stack)
+        .into_inner()
         .make();
 
     // A per-`dst::Route` layer that uses profile data to configure
@@ -85,13 +83,14 @@ where
     // The `classify` module installs a `classify::Response`
     // extension into each request so that all lower metrics
     // implementations can use the route-specific configuration.
-    let dst_route_stack = svc::builder()
+    let dst_route_layer = svc::layers()
         .buffer_pending(max_in_flight, DispatchDeadline::extract)
         .layer(classify::layer())
         .layer(http_metrics::layer::<_, classify::Response>(
             route_http_metrics,
         ))
-        .layer(insert::target::layer());
+        .layer(insert::target::layer())
+        .into_inner();
 
     // A per-`DstAddr` stack that does the following:
     //
@@ -99,16 +98,15 @@ where
     //    per-route policy.
     // 2. Annotates the request with the `DstAddr` so that
     //    `RecognizeEndpoint` can use the value.
-    let dst_stack = svc::builder()
-        .layer(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
-        .layer(profiles::router::layer(
+    let dst_stack = svc::stack(svc::shared(endpoint_router))
+        .push(insert::target::layer())
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
+        .push(profiles::router::layer(
             profile_suffixes,
             profiles_client,
-            dst_route_stack,
+            dst_route_layer,
         ))
-        .buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .layer(insert::target::layer())
-        .service(svc::shared(endpoint_router));
+        .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER));
 
     // Routes requests to a `DstAddr`.
     //
@@ -128,8 +126,9 @@ where
     //
     // 6. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
     // address is used.
-    let dst_router = svc::builder()
-        .layer(router::layer(
+    let dst_router = svc::stack(dst_stack)
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
+        .push(router::layer(
             router::Config::new("in dst", capacity, max_idle_age),
             |req: &http::Request<_>| {
                 let canonical = req
@@ -159,16 +158,14 @@ where
                 })
             },
         ))
-        .buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .service(dst_stack)
+        .into_inner()
         .make();
 
     // Share a single semaphore across all requests to signal when
     // the proxy is overloaded.
-    let admission_control = svc::builder()
-        .load_shed()
-        .concurrency_limit(max_in_flight)
-        .service(dst_router);
+    let admission_control = svc::stack(dst_router)
+        .push_concurrency_limit(max_in_flight)
+        .push_load_shed();
 
     // As HTTP requests are accepted, the `Source` connection
     // metadata is stored on each request's extensions.
@@ -176,21 +173,17 @@ where
     // Furthermore, HTTP/2 requests may be downgraded to HTTP/1.1 per
     // `orig-proto` headers. This happens in the source stack so that
     // the router need not detect whether a request _will be_ downgraded.
-    let source_stack = svc::builder()
-        .layer(handle_time.layer())
-        .layer(super::errors::layer())
-        .layer(insert::layer(move || {
+    let source_stack = svc::stack(svc::shared(admission_control))
+        .push(orig_proto_downgrade::layer())
+        .push(insert::target::layer())
+        .push(strip_header::request::layer(super::L5D_REMOTE_IP))
+        .push(strip_header::request::layer(super::L5D_CLIENT_ID))
+        .push(strip_header::response::layer(super::L5D_SERVER_ID))
+        .push(insert::layer(move || {
             DispatchDeadline::after(dispatch_timeout)
         }))
-        .layer(strip_header::response::layer(super::L5D_SERVER_ID))
-        .layer(strip_header::request::layer(super::L5D_CLIENT_ID))
-        .layer(strip_header::request::layer(super::L5D_REMOTE_IP))
-        .layer(insert::target::layer())
-        .layer(orig_proto_downgrade::layer())
-        // disabled on purpose
-        //.push(set_remote_ip_on_req::layer())
-        //.push(set_client_id_on_req::layer())
-        .service(svc::shared(admission_control));
+        .push(super::errors::layer())
+        .push(handle_time.layer());
 
     // As the inbound proxy accepts connections, we don't do any
     // special transport-level handling.
