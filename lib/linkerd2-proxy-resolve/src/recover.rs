@@ -2,7 +2,7 @@
 
 use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use linkerd2_proxy_core::resolve::{self, Update};
+use linkerd2_proxy_core::resolve::{self, Resolution as _, Update};
 use linkerd2_proxy_core::{Error, Recover};
 use std::fmt;
 use std::net::SocketAddr;
@@ -43,21 +43,19 @@ enum State<F, R: resolve::Resolution, B> {
         future: F,
         backoff: Option<B>,
     },
+    Pending {
+        resolution: Option<R>,
+        backoff: Option<B>,
+    },
     Connected {
         resolution: R,
-        connection: Connection,
+        initial: Option<Update<R::Endpoint>>,
     },
     Failed {
         error: Option<Error>,
         backoff: Option<B>,
     },
     Backoff(Option<B>),
-}
-
-#[derive(Debug)]
-enum Connection {
-    Reconnected,
-    Established,
 }
 
 // === impl Resolve ===
@@ -145,33 +143,32 @@ where
                 return Ok(pending.into());
             }
 
-            // Ensure that there is an active resolution.
-            try_ready!(self.inner.poll_connected());
+            if let State::Connected {
+                ref mut resolution,
+                ref mut initial,
+            } = self.inner.state
+            {
+                if let Some(update) = initial.take() {
+                    let update = self.cache.reconcile(update);
+                    return Ok(update.into());
+                }
 
-            self.inner.state = match self.inner.state {
-                State::Connected {
-                    ref mut resolution,
-                    ref mut connection,
-                } => match resolve::Resolution::poll(resolution) {
+                match resolve::Resolution::poll(resolution) {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(update)) => {
-                        let reconnected = match *connection {
-                            Connection::Established => false,
-                            Connection::Reconnected => {
-                                *connection = Connection::Established;
-                                true
-                            }
-                        };
-                        let update = self.cache.process_update(update, reconnected);
+                        let update = self.cache.process_update(update);
                         return Ok(update.into());
                     }
-                    Err(e) => State::Failed {
-                        error: Some(e.into()),
-                        backoff: None,
-                    },
-                },
-                _ => unreachable!("poll_connected must only return ready when connected"),
-            };
+                    Err(e) => {
+                        self.inner.state = State::Failed {
+                            error: Some(e.into()),
+                            backoff: None,
+                        };
+                    }
+                }
+            }
+
+            try_ready!(self.inner.poll_connected());
         }
     }
 }
@@ -206,19 +203,34 @@ where
                         error: Some(e.into()),
                         backoff: backoff.take(),
                     },
-                    Ok(Async::Ready(resolution)) => State::Connected {
-                        resolution,
-                        connection: backoff
-                            .as_ref()
-                            .map(|_| Connection::Reconnected)
-                            .unwrap_or(Connection::Established),
-                    },
+                    Ok(Async::Ready(resolution)) => {
+                        tracing::trace!(message = "pending", target = %self.target);
+                        State::Pending {
+                            resolution: Some(resolution),
+                            backoff: backoff.take(),
+                        }
+                    }
                 },
 
-                State::Connected { .. } => {
-                    tracing::trace!(message = "connected", target = %self.target);
-                    return Ok(Async::Ready(()));
-                }
+                State::Pending {
+                    ref mut resolution,
+                    ref mut backoff,
+                } => match resolution.as_mut().unwrap().poll() {
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err(e) => State::Failed {
+                        error: Some(e.into()),
+                        backoff: backoff.take(),
+                    },
+                    Ok(Async::Ready(initial)) => {
+                        tracing::trace!(message = "connected", target = %self.target);
+                        State::Connected {
+                            resolution: resolution.take().unwrap(),
+                            initial: Some(initial),
+                        }
+                    }
+                },
+
+                State::Connected { .. } => return Ok(Async::Ready(())),
 
                 State::Failed {
                     ref mut error,
@@ -238,10 +250,11 @@ where
                         .map_err(Into::into)?
                     {
                         Async::NotReady => return Ok(Async::NotReady),
-                        Async::Ready(Some(())) => State::Disconnected {
-                            backoff: backoff.take(),
-                        },
-                        Async::Ready(None) => State::Disconnected { backoff: None },
+                        Async::Ready(unit) => {
+                            tracing::trace!(message = "disconnected", target = %self.target);
+                            let backoff = if unit.is_some() { backoff.take() } else { None };
+                            State::Disconnected { backoff }
+                        }
                     }
                 }
             };
@@ -264,50 +277,58 @@ impl<T> Cache<T>
 where
     T: Clone + PartialEq,
 {
-    fn process_update(&mut self, update: Update<T>, reconnected: bool) -> Update<T> {
-        match update {
+    fn reconcile(&mut self, initial: Update<T>) -> Update<T> {
+        match initial {
             Update::Add(endpoints) => {
-                if !reconnected {
-                    self.active.extend(endpoints.clone());
-                    Update::Add(endpoints)
-                } else {
-                    // Discern which endpoints aren't
-                    // actually new, but are being
-                    // re-advertised. Also discern which
-                    // of the active endpointsshould be
-                    // removed.
-                    let mut new_endpoints = endpoints.into_iter().collect::<IndexMap<_, _>>();
-                    let mut rm_addrs = Vec::with_capacity(self.active.len() - new_endpoints.len());
-                    for i in (0..self.active.len()).rev() {
-                        let should_remove = {
-                            let (addr, endpoint) = self.active.get_index(i).unwrap();
-                            match new_endpoints.get(addr) {
-                                None => true,
-                                Some(ep) => {
-                                    if *ep == *endpoint {
-                                        new_endpoints.remove(addr);
-                                    }
-                                    false
+                // Discern which endpoints aren't
+                // actually new, but are being
+                // re-advertised. Also discern which
+                // of the active endpointsshould be
+                // removed.
+                let mut new_endpoints = endpoints.into_iter().collect::<IndexMap<_, _>>();
+                let mut rm_addrs = Vec::with_capacity(self.active.len());
+                for i in (0..self.active.len()).rev() {
+                    let should_remove = {
+                        let (addr, endpoint) = self.active.get_index(i).unwrap();
+                        match new_endpoints.get(addr) {
+                            None => true,
+                            Some(ep) => {
+                                if *ep == *endpoint {
+                                    new_endpoints.remove(addr);
                                 }
+                                false
                             }
-                        };
-
-                        if should_remove {
-                            let (addr, _) = self.active.swap_remove_index(i).unwrap();
-                            rm_addrs.push(addr);
                         }
+                    };
+
+                    if should_remove {
+                        let (addr, _) = self.active.swap_remove_index(i).unwrap();
+                        rm_addrs.push(addr);
                     }
-                    self.pending_add = new_endpoints;
-                    Update::Remove(rm_addrs)
                 }
+                self.pending_add = new_endpoints;
+                Update::Remove(rm_addrs)
             }
             Update::Remove(addrs) => {
-                if !reconnected {
-                    for addr in addrs.iter() {
-                        self.active.remove(addr);
-                    }
-                } else {
-                    self.active.drain(..);
+                self.active.drain(..);
+                Update::Remove(addrs)
+            }
+            Update::DoesNotExist | Update::Empty => {
+                self.active.drain(..);
+                initial
+            }
+        }
+    }
+
+    fn process_update(&mut self, update: Update<T>) -> Update<T> {
+        match update {
+            Update::Add(endpoints) => {
+                self.active.extend(endpoints.clone());
+                Update::Add(endpoints)
+            }
+            Update::Remove(addrs) => {
+                for addr in addrs.iter() {
+                    self.active.remove(addr);
                 }
                 Update::Remove(addrs)
             }
