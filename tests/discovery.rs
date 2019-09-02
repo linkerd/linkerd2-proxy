@@ -151,19 +151,17 @@ macro_rules! generate_tests {
             let srv = $make_server().route("/", "hello").run();
 
             let ctrl = controller::new()
-                .destination_err(
-                    "disco.test.svc.cluster.local",
-                    grpc::Code::InvalidArgument,
-                )
-                // The test controller will panic if the proxy tries to talk to it again.
-                .no_more_destinations();
+                .destination_fail(
+                    "unresolvable.example.com",
+                    grpc::Status::new(grpc::Code::InvalidArgument, "unresolvabe"),
+                );
 
             let proxy = proxy::new()
                 .controller(ctrl.run())
                 .outbound(srv)
                 .run();
 
-            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+            let client = $make_client(proxy.outbound, "unresolvable.example.com");
 
             assert_eq!(client.get("/"), "hello");
         }

@@ -74,6 +74,7 @@ impl reject_targets::CheckTarget<DstAddr> for PermitNamesInSuffixes {
                 .iter()
                 .any(|suffix| suffix.contains(name.name()))
             {
+                tracing::debug!("suffix matches");
                 return Ok(());
             }
         }
@@ -122,12 +123,16 @@ impl Recover<Error> for BackoffUnlessUnresolvable {
     type Error = timer::Error;
 
     fn recover(&self, err: Error) -> Result<Self::Backoff, Error> {
+        tracing::debug!("attempting recovery: {}", err);
+
         if err.downcast_ref::<Unresolvable>().is_some() {
+            tracing::debug!("cannot recover: unresolvable");
             return Err(err);
         }
 
         if let Some(status) = err.downcast::<grpc::Status>().ok() {
             if status.code() == grpc::Code::InvalidArgument {
+                tracing::debug!("cannot recover: invalid argument");
                 return Err(Unresolvable(()).into());
             }
         }

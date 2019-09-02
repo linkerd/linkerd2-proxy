@@ -148,13 +148,23 @@ where
             // Ensure that there is an active resolution.
             try_ready!(self.inner.poll_connected());
 
-            let cache = &mut self.cache;
             self.inner.state = match self.inner.state {
                 State::Connected {
                     ref mut resolution,
                     ref mut connection,
                 } => match resolve::Resolution::poll(resolution) {
-                    Ok(ready) => return Ok(ready.map(|u| cache.process_update(u, connection))),
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Ok(Async::Ready(update)) => {
+                        let reconnected = match *connection {
+                            Connection::Established => false,
+                            Connection::Reconnected => {
+                                *connection = Connection::Established;
+                                true
+                            }
+                        };
+                        let update = self.cache.process_update(update, reconnected);
+                        return Ok(update.into());
+                    }
                     Err(e) => State::Failed {
                         error: Some(e.into()),
                         backoff: None,
@@ -254,60 +264,50 @@ impl<T> Cache<T>
 where
     T: Clone + PartialEq,
 {
-    fn process_update(&mut self, update: Update<T>, connection: &mut Connection) -> Update<T> {
+    fn process_update(&mut self, update: Update<T>, reconnected: bool) -> Update<T> {
         match update {
             Update::Add(endpoints) => {
-                match connection {
-                    Connection::Established => {
-                        self.active.extend(endpoints.clone());
-                        Update::Add(endpoints)
-                    }
-                    Connection::Reconnected => {
-                        *connection = Connection::Established;
-
-                        // Discern which endpoints aren't
-                        // actually new, but are being
-                        // re-advertised. Also discern which
-                        // of the active endpointsshould be
-                        // removed.
-                        let mut new_endpoints = endpoints.into_iter().collect::<IndexMap<_, _>>();
-                        let mut rm_addrs =
-                            Vec::with_capacity(self.active.len() - new_endpoints.len());
-                        for i in (0..self.active.len()).rev() {
-                            let should_remove = {
-                                let (addr, endpoint) = self.active.get_index(i).unwrap();
-                                match new_endpoints.get(addr) {
-                                    None => true,
-                                    Some(ep) => {
-                                        if *ep == *endpoint {
-                                            new_endpoints.remove(addr);
-                                        }
-                                        false
+                if !reconnected {
+                    self.active.extend(endpoints.clone());
+                    Update::Add(endpoints)
+                } else {
+                    // Discern which endpoints aren't
+                    // actually new, but are being
+                    // re-advertised. Also discern which
+                    // of the active endpointsshould be
+                    // removed.
+                    let mut new_endpoints = endpoints.into_iter().collect::<IndexMap<_, _>>();
+                    let mut rm_addrs = Vec::with_capacity(self.active.len() - new_endpoints.len());
+                    for i in (0..self.active.len()).rev() {
+                        let should_remove = {
+                            let (addr, endpoint) = self.active.get_index(i).unwrap();
+                            match new_endpoints.get(addr) {
+                                None => true,
+                                Some(ep) => {
+                                    if *ep == *endpoint {
+                                        new_endpoints.remove(addr);
                                     }
+                                    false
                                 }
-                            };
-
-                            if should_remove {
-                                let (addr, _) = self.active.swap_remove_index(i).unwrap();
-                                rm_addrs.push(addr);
                             }
+                        };
+
+                        if should_remove {
+                            let (addr, _) = self.active.swap_remove_index(i).unwrap();
+                            rm_addrs.push(addr);
                         }
-                        self.pending_add = new_endpoints;
-                        Update::Remove(rm_addrs)
                     }
+                    self.pending_add = new_endpoints;
+                    Update::Remove(rm_addrs)
                 }
             }
             Update::Remove(addrs) => {
-                match connection {
-                    Connection::Reconnected => {
-                        *connection = Connection::Established;
-                        self.active.drain(..);
+                if !reconnected {
+                    for addr in addrs.iter() {
+                        self.active.remove(addr);
                     }
-                    Connection::Established => {
-                        for addr in addrs.iter() {
-                            self.active.remove(addr);
-                        }
-                    }
+                } else {
+                    self.active.drain(..);
                 }
                 Update::Remove(addrs)
             }
