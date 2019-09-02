@@ -53,8 +53,7 @@ pub struct RouteBuilder {
 
 #[derive(Debug)]
 enum Dst {
-    Call(pb::GetDestination, DstReceiver),
-    Fail(pb::GetDestination, grpc::Status),
+    Call(pb::GetDestination, Result<DstReceiver, grpc::Status>),
     Done,
 }
 
@@ -84,7 +83,7 @@ impl Controller {
         self.expect_dst_calls
             .lock()
             .unwrap()
-            .push_back(Dst::Call(dst, DstReceiver(rx)));
+            .push_back(Dst::Call(dst, Ok(DstReceiver(rx))));
         DstSender(tx)
     }
 
@@ -102,7 +101,7 @@ impl Controller {
         self.expect_dst_calls
             .lock()
             .unwrap()
-            .push_back(Dst::Fail(dst, status));
+            .push_back(Dst::Call(dst, Err(status)));
         self
     }
 
@@ -249,16 +248,9 @@ impl pb::server::Destination for Controller {
                     match call {
                         Dst::Call(dst, updates) => {
                             if &dst == req.get_ref() {
-                                ret = future::ok(grpc::Response::new(updates));
+                                ret = future::result(updates.map(grpc::Response::new));
                             } else {
                                 calls_next.push_back(Dst::Call(dst, updates));
-                            }
-                        }
-                        Dst::Fail(dst, status) => {
-                            if &dst == req.get_ref() {
-                                ret = future::err(status);
-                            } else {
-                                calls_next.push_back(Dst::Fail(dst, status));
                             }
                         }
                         Dst::Done => {}
@@ -268,21 +260,9 @@ impl pb::server::Destination for Controller {
                 return ret;
             } else {
                 match calls.pop_front() {
-                    Some(Dst::Fail(dst, status)) => {
-                        if &dst == req.get_ref() {
-                            return future::err(status);
-                        }
-
-                        let msg = format!(
-                            "expected get call for {:?} but got get call for {:?}",
-                            dst, req
-                        );
-                        calls.push_front(Dst::Fail(dst, status));
-                        return future::err(grpc::Status::new(grpc::Code::Unavailable, msg));
-                    }
                     Some(Dst::Call(dst, updates)) => {
                         if &dst == req.get_ref() {
-                            return future::ok(grpc::Response::new(updates));
+                            return future::result(updates.map(grpc::Response::new));
                         }
 
                         let msg = format!(
