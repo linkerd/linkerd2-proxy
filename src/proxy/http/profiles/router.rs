@@ -169,9 +169,7 @@ where
             rt::Router::new_fixed(rec, make)
         };
 
-        let stack = self
-            .route_layer
-            .layer(svc::shared(concrete_router.clone()));
+        let stack = self.route_layer.layer(svc::shared(concrete_router.clone()));
 
         // Initially there are no routes, so build a route router with only
         // the default route.
@@ -287,9 +285,7 @@ where
         // new concrete router.
         self.concrete_router = Some(concrete_router.clone());
 
-        let stack = self
-            .route_layer
-            .layer(svc::shared(concrete_router));
+        let stack = self.route_layer.layer(svc::shared(concrete_router));
 
         let default_route = self.target.clone().with_route(self.default_route.clone());
 
