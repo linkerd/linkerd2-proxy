@@ -400,7 +400,11 @@ where
             &config,
             local_identity.clone(),
             outbound_listener.local_addr(),
-            outbound::resolve(resolver),
+            outbound::resolve(
+                config.destination_get_suffixes.clone(),
+                outbound::ExponentialBackoff::default(),
+                resolver,
+            ),
             dns_resolver,
             profiles_client.clone(),
             tap_layer.clone(),

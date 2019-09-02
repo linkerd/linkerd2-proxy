@@ -9,9 +9,7 @@ use crate::proxy::{self, accept, reconnect, Server};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr};
-use linkerd2_proxy_api_resolve::Metadata;
 use linkerd2_proxy_discover as discover;
-use linkerd2_proxy_resolve::{map_endpoint, recover};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -24,9 +22,11 @@ mod add_server_id_on_rsp;
 mod endpoint;
 mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
+mod resolve;
 
 pub(super) use self::endpoint::Endpoint;
 pub(super) use self::require_identity_on_endpoint::RequireIdentityError;
+pub(super) use self::resolve::{resolve, ExponentialBackoff};
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -276,17 +276,5 @@ where
         connect,
         server_stack,
         config.h2_settings,
-    )
-}
-
-pub fn resolve<R>(
-    resolve: R,
-) -> recover::Resolve<bool, map_endpoint::Resolve<endpoint::FromMetadata, R>>
-where
-    R: Resolve<DstAddr, Endpoint = Metadata> + Clone,
-{
-    recover::Resolve::new(
-        true,
-        map_endpoint::Resolve::new(endpoint::FromMetadata, resolve),
     )
 }

@@ -10,7 +10,7 @@ pub trait CheckTarget<T> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Resolve<R, C> {
+pub struct Resolve<C, R> {
     check: C,
     resolve: R,
 }
@@ -23,7 +23,7 @@ pub enum ResolveFuture<F> {
 
 // === impl Resolve ===
 
-impl<R, C> Resolve<R, C> {
+impl<C, R> Resolve<C, R> {
     pub fn new<T>(check: C, resolve: R) -> Self
     where
         Self: resolve::Resolve<T>,
@@ -32,7 +32,7 @@ impl<R, C> Resolve<R, C> {
     }
 }
 
-impl<T, R, C> tower::Service<T> for Resolve<R, C>
+impl<T, C, R> tower::Service<T> for Resolve<C, R>
 where
     R: resolve::Resolve<T>,
     R::Error: Into<Error>,
