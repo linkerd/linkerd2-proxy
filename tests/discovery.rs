@@ -150,18 +150,20 @@ macro_rules! generate_tests {
 
             let srv = $make_server().route("/", "hello").run();
 
+            const NAME: &'static str = "unresolvable.svc.cluster.local";
             let ctrl = controller::new()
                 .destination_fail(
-                    "unresolvable.example.com",
-                    grpc::Status::new(grpc::Code::InvalidArgument, "unresolvabe"),
-                );
+                    NAME,
+                    grpc::Status::new(grpc::Code::InvalidArgument, "unresolvable"),
+                )
+                .no_more_destinations();
 
             let proxy = proxy::new()
                 .controller(ctrl.run())
                 .outbound(srv)
                 .run();
 
-            let client = $make_client(proxy.outbound, "unresolvable.example.com");
+            let client = $make_client(proxy.outbound, NAME);
 
             assert_eq!(client.get("/"), "hello");
         }
