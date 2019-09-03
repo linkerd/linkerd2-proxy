@@ -132,7 +132,7 @@ impl Controller {
     {
         run(
             pb::server::DestinationServer::new(self),
-            "dst",
+            "support destination service",
             Some(Box::new(f.then(|_| Ok(())))),
         )
     }
@@ -157,7 +157,11 @@ impl Controller {
     }
 
     pub fn run(self) -> Listening {
-        run(pb::server::DestinationServer::new(self), "dst", None)
+        run(
+            pb::server::DestinationServer::new(self),
+            "support destination service",
+            None,
+        )
     }
 }
 
