@@ -126,7 +126,8 @@ where
         .layer(http_metrics::layer::<_, classify::Response>(
             retry_http_metrics,
         ))
-        .layer(insert::target::layer());
+        .layer(insert::target::layer())
+        .into_inner();
 
     // Routes requests to their original destination endpoints. Used as
     // a fallback when service discovery has no endpoints for a destination.

@@ -104,7 +104,7 @@ where
         .layer(profiles::router::layer(
             profile_suffixes,
             profiles_client,
-            dst_route_stack,
+            dst_route_stack.into_inner(),
         ))
         .buffer_pending(max_in_flight, DispatchDeadline::extract)
         .layer(insert::target::layer())
