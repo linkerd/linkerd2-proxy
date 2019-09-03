@@ -49,6 +49,7 @@ opencensus-proto       = { path = "lib/opencensus-proto" }
 
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 
+base64 = "0.10.1"
 bytes = "0.4"
 futures = "0.1"
 h2 = "0.1.15"

@@ -6,6 +6,7 @@ use std::fmt;
 use tokio::sync::mpsc;
 use tracing::{trace, warn};
 use std::time::SystemTime;
+use bytes::Bytes;
 
 const GRPC_TRACE_HEADER: &str = "grpc-trace-bin";
 const GRPC_TRACE_FIELD_TRACE_ID: u8 = 0;
@@ -224,16 +225,6 @@ impl Id {
         Self(bytes)
     }
 
-    fn read_from_slice(len: usize, buf: &mut &[u8]) -> Result<Self, InsufficientBytes> {
-        if buf.len() >= len {
-            let bytes = Vec::from(&buf[..len]);
-            *buf = &buf[len..];
-            Ok(Self(bytes))
-        } else {
-            Err(InsufficientBytes)
-        }
-    }
-
     pub fn into_vec(self) -> Vec<u8> {
         self.0
     }
@@ -245,6 +236,12 @@ impl fmt::Display for Id {
             write!(f, "{:02x?}", b)?;
         }
         Ok(())
+    }
+}
+
+impl From<Bytes> for Id {
+    fn from(buf: Bytes) -> Self {
+        Id(buf.to_vec())
     }
 }
 
@@ -272,20 +269,28 @@ fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
     request
         .headers()
         .get(GRPC_TRACE_HEADER)
-        .and_then(|trace_context| {
-            let mut bytes = trace_context.as_bytes();
+        .and_then(|hv| hv.to_str()
+            .map_err(|e| warn!("Invalid trace header: {}", e))
+            .ok()
+        )
+        .and_then(|header_str| base64::decode(header_str)
+            .map_err(|e| warn!("Trace header is not base64 encoded: {}", e))
+            .ok()
+        )
+        .and_then(|vec| {
+            let mut bytes = vec.into();
             parse_grpc_trace_context_fields(&mut bytes)
         })
 }
 
-fn parse_grpc_trace_context_fields(buf: &mut &[u8]) -> Option<TraceContext> {
+fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
 
     trace!("reading binary trace context: {:?}", buf);
 
-    let version = Id::read_from_slice(1, buf).ok()?;
+    let version = try_split_to(buf, 1).ok()?;
 
     let mut context = TraceContext {
-        version: version,
+        version: version.into(),
         trace_id: Default::default(),
         parent_id: Default::default(),
         flags: Default::default(),
@@ -305,24 +310,23 @@ fn parse_grpc_trace_context_fields(buf: &mut &[u8]) -> Option<TraceContext> {
     Some(context)
 }
 
-fn parse_grpc_trace_context_field(buf: &mut &[u8], context: &mut TraceContext) -> Result<(), Error> {
-    let field_id = buf[0];
-    *buf = &buf[1..];
+fn parse_grpc_trace_context_field(buf: &mut Bytes, context: &mut TraceContext) -> Result<(), Error> {
+    let field_id = try_split_to(buf, 1)?[0];
     match field_id {
         GRPC_TRACE_FIELD_SPAN_ID => {
-            let id = Id::read_from_slice(8, buf)?;
+            let id = try_split_to(buf, 8)?;
             trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_SPAN_ID, id);
-            context.parent_id = id;
+            context.parent_id = id.into();
         },
         GRPC_TRACE_FIELD_TRACE_ID => {
-            let id = Id::read_from_slice(16, buf)?;
+            let id = try_split_to(buf, 16)?;
             trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_TRACE_ID, id);
-            context.trace_id = id;
+            context.trace_id = id.into();
         },
         GRPC_TRACE_FIELD_TRACE_OPTIONS => {
-            let flags = Id::read_from_slice(1, buf)?;
+            let flags = try_split_to(buf, 1)?;
             trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_TRACE_OPTIONS, flags);
-            context.flags = flags;
+            context.flags = flags.into();
         },
         id => {
             return Err(UnknownFieldId(id).into());
@@ -359,6 +363,16 @@ fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &mut Trace
         warn!("invalid binary header: {:?}", bytes);
     }
     context.span_id = Some(span_id);
+}
+
+/// Attempt to split_to the given index.  If there are not enough bytes then
+/// Err is returned and the given Bytes is not modified.
+fn try_split_to(buf: &mut Bytes, n: usize) -> Result<Bytes, InsufficientBytes> {
+    if buf.len() >= n {
+        Ok(buf.split_to(n))
+    } else {
+        Err(InsufficientBytes)
+    }
 }
 
 fn is_sampled(flags: &Id) -> bool {
