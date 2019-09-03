@@ -202,13 +202,13 @@ mod code {
     #[cfg(target_os = "windows")]
     impl From<i32> for Code {
         fn from(n: i32) -> Self {
-            Errno(codes::Code(n))
+            Code(n)
         }
     }
 
     impl fmt::Display for Code {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            fmt::Display.fmt(self.0, f)
+            fmt::Display::fmt(&self.0, f)
         }
     }
 }
