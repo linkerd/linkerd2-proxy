@@ -70,7 +70,7 @@ where
         .push(transport_metrics.connect("outbound"));
 
     // Instantiates an HTTP client for for a `client::Config`
-    let client_stack = svc::stack(connect.clone())
+    let client_stack = connect.clone()
         .push(client::layer("out", config.h2_settings))
         .push(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
         .push(normalize_uri::layer());
@@ -87,7 +87,7 @@ where
     //    request version and headers).
     // 6. Strips any `l5d-server-id` that may have been received from
     //    the server, before we apply our own.
-    let endpoint_stack = svc::stack(client_stack)
+    let endpoint_stack = client_stack
         .push(strip_header::response::layer(super::L5D_REMOTE_IP))
         .push(strip_header::response::layer(super::L5D_SERVER_ID))
         .push(strip_header::request::layer(super::L5D_REQUIRE_ID))
@@ -149,7 +149,7 @@ where
         .push(resolve::layer(discovery::Resolve::new(resolve)))
         .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));
 
-    let distributor = svc::stack(endpoint_stack)
+    let distributor = endpoint_stack
         .push(
             // Attempt to build a balancer. If the service is
             // unresolvable, fall back to using a router that dispatches
@@ -165,7 +165,7 @@ where
     //    per-route policy.
     // 3. Creates a load balancer , configured by resolving the
     //   `DstAddr` with a resolver.
-    let dst_stack = svc::stack(distributor)
+    let dst_stack = distributor
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(profiles::router::layer(
             profile_suffixes,
@@ -178,7 +178,7 @@ where
     //
     // This is shared across addr-stacks so that multiple addrs that
     // canonicalize to the same DstAddr use the same dst-stack service.
-    let dst_router = svc::stack(dst_stack)
+    let dst_router = dst_stack
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
             router::Config::new("out dst", capacity, max_idle_age),
@@ -215,7 +215,7 @@ where
     //
     // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
     // address is used.
-    let addr_router = svc::stack(addr_stack)
+    let addr_router = addr_stack
         .push(strip_header::request::layer(super::L5D_CLIENT_ID))
         .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
         .push(insert::target::layer())

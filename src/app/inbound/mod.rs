@@ -54,7 +54,7 @@ where
         .push(rewrite_loopback_addr::layer());
 
     // Instantiates an HTTP client for a `client::Config`
-    let client_stack = svc::stack(connect.clone())
+    let client_stack = connect.clone()
         .push(client::layer("in", config.h2_settings))
         .push(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
         .push(normalize_uri::layer());
@@ -64,7 +64,7 @@ where
     //
     // If there is no `SO_ORIGINAL_DST` for an inbound socket,
     // `default_fwd_addr` may be used.
-    let endpoint_router = svc::stack(client_stack)
+    let endpoint_router = client_stack
         .push(tap_layer)
         .push(http_metrics::layer::<_, classify::Response>(
             endpoint_http_metrics,
@@ -125,7 +125,7 @@ where
     //
     // 6. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
     // address is used.
-    let dst_router = svc::stack(dst_stack)
+    let dst_router = dst_stack
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
             router::Config::new("in dst", capacity, max_idle_age),
