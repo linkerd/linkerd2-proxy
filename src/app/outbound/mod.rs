@@ -114,18 +114,17 @@ where
     // 3. Retries are optionally enabled depending on if the route
     //    is retryable.
     let dst_route_layer = svc::layers()
-        .and_then_buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .and_then(classify::layer())
-        .and_then(http_metrics::layer::<_, classify::Response>(
+        .push(insert::target::layer())
+        .push(http_metrics::layer::<_, classify::Response>(
+            retry_http_metrics.clone(),
+        ))
+        .push(retry::layer(retry_http_metrics.clone()))
+        .push(proxy::http::timeout::layer())
+        .push(http_metrics::layer::<_, classify::Response>(
             route_http_metrics,
         ))
-        .and_then(proxy::http::timeout::layer())
-        .and_then(retry::layer(retry_http_metrics.clone()))
-        .and_then(http_metrics::layer::<_, classify::Response>(
-            retry_http_metrics,
-        ))
-        .and_then(insert::target::layer())
-        .into_inner();
+        .push(classify::layer())
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract);
 
     // Routes requests to their original destination endpoints. Used as
     // a fallback when service discovery has no endpoints for a destination.
@@ -133,24 +132,22 @@ where
     // If the `l5d-require-id` header is present, then that identity is
     // used as the server name when connecting to the endpoint.
     let orig_dst_router_layer = svc::layers()
-        .and_then(router::layer(
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
+        .push(router::layer(
             router::Config::new("out ep", capacity, max_idle_age),
             |req: &http::Request<_>| {
                 let ep = Endpoint::from_request(req);
                 debug!("outbound ep={:?}", ep);
                 ep
             },
-        ))
-        .and_then_buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .into_inner();
+        ));
 
     // Resolves the target via the control plane and balances requests
     // over all endpoints returned from the destination service.
     let balancer_layer = svc::layers()
-        .and_then(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-        .and_then(resolve::layer(discovery::Resolve::new(resolve)))
-        .and_then_spawn_ready()
-        .into_inner();
+        .push_spawn_ready()
+        .push(resolve::layer(discovery::Resolve::new(resolve)))
+        .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));
 
     let distributor = svc::stack(endpoint_stack)
         .push(
@@ -264,8 +261,8 @@ where
     // Instantiated for each TCP connection received from the local
     // application (including HTTP connections).
     let accept = accept::builder()
-        .and_then(transport_metrics.accept("outbound"))
-        .and_then(keepalive::accept::layer(config.outbound_accept_keepalive));
+        .push(keepalive::accept::layer(config.outbound_accept_keepalive))
+        .push(transport_metrics.accept("outbound"));
 
     Server::new(
         "out",

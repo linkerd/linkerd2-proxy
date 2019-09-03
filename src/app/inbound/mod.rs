@@ -84,13 +84,12 @@ where
     // extension into each request so that all lower metrics
     // implementations can use the route-specific configuration.
     let dst_route_layer = svc::layers()
-        .and_then_buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .and_then(classify::layer())
-        .and_then(http_metrics::layer::<_, classify::Response>(
+        .push(insert::target::layer())
+        .push(http_metrics::layer::<_, classify::Response>(
             route_http_metrics,
         ))
-        .and_then(insert::target::layer())
-        .into_inner();
+        .push(classify::layer())
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract);
 
     // A per-`DstAddr` stack that does the following:
     //
@@ -188,8 +187,8 @@ where
     // As the inbound proxy accepts connections, we don't do any
     // special transport-level handling.
     let accept = accept::builder()
-        .and_then(transport_metrics.accept("inbound"))
-        .and_then(keepalive::accept::layer(config.inbound_accept_keepalive));
+        .push(keepalive::accept::layer(config.inbound_accept_keepalive))
+        .push(transport_metrics.accept("inbound"));
 
     Server::new(
         "out",

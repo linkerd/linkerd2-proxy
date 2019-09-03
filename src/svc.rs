@@ -2,7 +2,6 @@ use crate::proxy::{buffer, pending};
 pub use linkerd2_stack::{self as stack, layer, shared, Layer, LayerExt};
 pub use linkerd2_timeout::stack as timeout;
 use std::time::Duration;
-use tower::builder::ServiceBuilder;
 use tower::layer::util::{Identity, Stack as Pair};
 use tower::limit::concurrency::ConcurrencyLimitLayer;
 use tower::load_shed::LoadShedLayer;
@@ -12,13 +11,13 @@ pub use tower::{service_fn as mk, MakeConnection, MakeService, Service, ServiceE
 use tower_spawn_ready::SpawnReadyLayer;
 
 #[derive(Clone, Debug)]
-pub struct Layers<L>(ServiceBuilder<L>);
+pub struct Layers<L>(L);
 
 #[derive(Clone, Debug)]
 pub struct Stack<S>(S);
 
 pub fn layers() -> Layers<Identity> {
-    Layers(ServiceBuilder::new())
+    Layers(Identity::new())
 }
 
 pub fn stack<S>(inner: S) -> Stack<S> {
@@ -26,34 +25,38 @@ pub fn stack<S>(inner: S) -> Stack<S> {
 }
 
 impl<L> Layers<L> {
-    pub fn and_then<T>(self, l: T) -> Layers<Pair<T, L>> {
-        Layers(self.0.layer(l))
+    pub fn push<O>(self, outer: O) -> Layers<Pair<L, O>> {
+        Layers(Pair::new(self.0, outer))
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn and_then_pending(self) -> Layers<Pair<pending::Layer, L>> {
-        self.and_then(pending::layer())
+    pub fn push_pending(self) -> Layers<Pair<L, pending::Layer>> {
+        self.push(pending::layer())
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn and_then_buffer_pending<D, Req>(
+    pub fn push_buffer_pending<D, Req>(
         self,
         bound: usize,
         d: D,
-    ) -> Layers<Pair<pending::Layer, Pair<buffer::Layer<D, Req>, L>>>
+    ) -> Layers<Pair<Pair<L, pending::Layer>, buffer::Layer<D, Req>>>
     where
         D: buffer::Deadline<Req>,
         Req: Send + 'static,
     {
-        self.and_then(buffer::layer(bound, d)).and_then_pending()
+        self.push_pending().push(buffer::layer(bound, d))
     }
 
-    pub fn and_then_spawn_ready(self) -> Layers<Pair<SpawnReadyLayer, L>> {
-        self.and_then(SpawnReadyLayer::new())
+    pub fn push_spawn_ready(self) -> Layers<Pair<L, SpawnReadyLayer>> {
+        self.push(SpawnReadyLayer::new())
     }
+}
 
-    pub fn into_inner(self) -> L {
-        self.0.into_inner()
+impl<M, L: Layer<M>> Layer<M> for Layers<L> {
+    type Service = L::Service;
+
+    fn layer(&self, inner: M) -> Self::Service {
+        self.0.layer(inner)
     }
 }
 
