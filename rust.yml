@@ -1,0 +1,15 @@
+name: Rust
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: icepuma/rust-action@1.37.0
+    - name: Format
+      run: cargo fmt --check
+    - name: Build
+      run: cargo build --verbose --all --no-default-features
+    - name: Run tests
+      run: cargo test --verbose --all --no-default-features
