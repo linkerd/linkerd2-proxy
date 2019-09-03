@@ -24,6 +24,8 @@ pub fn stack<S>(inner: S) -> Stack<S> {
     Stack(inner)
 }
 
+// Possibly unused, but useful during development.
+#[allow(dead_code)]
 impl<L> Layers<L> {
     pub fn push<O>(self, outer: O) -> Layers<Pair<L, O>> {
         Layers(Pair::new(self.0, outer))
@@ -60,6 +62,8 @@ impl<M, L: Layer<M>> Layer<M> for Layers<L> {
     }
 }
 
+// Possibly unused, but useful during development.
+#[allow(dead_code)]
 impl<S> Stack<S> {
     pub fn push<L: Layer<S>>(self, layer: L) -> Stack<L::Service> {
         Stack(layer.layer(self.0))
@@ -83,9 +87,9 @@ impl<S> Stack<S> {
         self.push_pending().push(buffer::layer(bound, d))
     }
 
-    // pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
-    //     self.push(SpawnReadyLayer::new())
-    // }
+    pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
+        self.push(SpawnReadyLayer::new())
+    }
 
     pub fn push_concurrency_limit(self, max: usize) -> Stack<tower::limit::ConcurrencyLimit<S>> {
         self.push(ConcurrencyLimitLayer::new(max))
