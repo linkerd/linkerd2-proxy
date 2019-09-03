@@ -103,7 +103,6 @@ impl<S> Stack<S> {
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(TimeoutLayer::new(timeout))
     }
-}
 
     /// Validates that this stack serves T-typed targets.
     pub fn serves<T>(self) -> Self
