@@ -25,11 +25,11 @@ impl<L> Builder<L> {
     ///
     /// This layer will be applied to connections *before* the
     /// previously added layers in this builder.
-    pub fn layer<T>(self, layer: T) -> Builder<Stack<T, L>> {
+    pub fn push<O>(self, outer: O) -> Builder<Stack<L, O>> {
         Builder {
             accept: Stack {
-                inner: layer,
-                outer: self.accept,
+                inner: self.accept,
+                outer,
             },
         }
     }
