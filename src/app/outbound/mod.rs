@@ -91,7 +91,7 @@ where
         .push(strip_header::response::layer(super::L5D_REMOTE_IP))
         .push(strip_header::response::layer(super::L5D_SERVER_ID))
         .push(strip_header::request::layer(super::L5D_REQUIRE_ID))
-        // disabled on purpose
+        // disabled due to information leagkage
         //.push(add_remote_ip_on_rsp::layer())
         //.push(add_server_id_on_rsp::layer())
         .push(orig_proto_upgrade::layer())

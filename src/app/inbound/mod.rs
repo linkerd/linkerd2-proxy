@@ -175,6 +175,9 @@ where
     let source_stack = svc::stack(svc::shared(admission_control))
         .push(orig_proto_downgrade::layer())
         .push(insert::target::layer())
+        // disabled due to information leagkage
+        //.push(set_remote_ip_on_req::layer())
+        //.push(set_client_id_on_req::layer())
         .push(strip_header::request::layer(super::L5D_REMOTE_IP))
         .push(strip_header::request::layer(super::L5D_CLIENT_ID))
         .push(strip_header::response::layer(super::L5D_SERVER_ID))
