@@ -54,7 +54,8 @@ where
         .push(rewrite_loopback_addr::layer());
 
     // Instantiates an HTTP client for a `client::Config`
-    let client_stack = svc::stack(connect.clone())
+    let client_stack = connect
+        .clone()
         .push(client::layer("in", config.h2_settings))
         .push(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
         .push(normalize_uri::layer());
@@ -64,7 +65,7 @@ where
     //
     // If there is no `SO_ORIGINAL_DST` for an inbound socket,
     // `default_fwd_addr` may be used.
-    let endpoint_router = svc::stack(client_stack)
+    let endpoint_router = client_stack
         .push(tap_layer)
         .push(http_metrics::layer::<_, classify::Response>(
             endpoint_http_metrics,
@@ -84,13 +85,12 @@ where
     // extension into each request so that all lower metrics
     // implementations can use the route-specific configuration.
     let dst_route_layer = svc::layers()
-        .buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .and_then(classify::layer())
-        .and_then(http_metrics::layer::<_, classify::Response>(
+        .push(insert::target::layer())
+        .push(http_metrics::layer::<_, classify::Response>(
             route_http_metrics,
         ))
-        .and_then(insert::target::layer())
-        .into_inner();
+        .push(classify::layer())
+        .push_buffer_pending(max_in_flight, DispatchDeadline::extract);
 
     // A per-`DstAddr` stack that does the following:
     //
@@ -126,7 +126,7 @@ where
     //
     // 6. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
     // address is used.
-    let dst_router = svc::stack(dst_stack)
+    let dst_router = dst_stack
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
             router::Config::new("in dst", capacity, max_idle_age),
@@ -176,6 +176,9 @@ where
     let source_stack = svc::stack(svc::shared(admission_control))
         .push(orig_proto_downgrade::layer())
         .push(insert::target::layer())
+        // disabled due to information leagkage
+        //.push(set_remote_ip_on_req::layer())
+        //.push(set_client_id_on_req::layer())
         .push(strip_header::request::layer(super::L5D_REMOTE_IP))
         .push(strip_header::request::layer(super::L5D_CLIENT_ID))
         .push(strip_header::response::layer(super::L5D_SERVER_ID))
@@ -188,8 +191,8 @@ where
     // As the inbound proxy accepts connections, we don't do any
     // special transport-level handling.
     let accept = accept::builder()
-        .and_then(transport_metrics.accept("inbound"))
-        .and_then(keepalive::accept::layer(config.inbound_accept_keepalive));
+        .push(keepalive::accept::layer(config.inbound_accept_keepalive))
+        .push(transport_metrics.accept("inbound"));
 
     Server::new(
         "out",

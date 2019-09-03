@@ -75,6 +75,7 @@ mod imp {
     use super::ShutdownSignal;
     use futures::{Future, Stream};
     use tokio_signal;
+    use tracing::info;
 
     pub(super) fn shutdown() -> ShutdownSignal {
         // On Windows, we don't have all the signals, but Windows also
