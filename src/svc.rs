@@ -105,6 +105,14 @@ impl<S> Stack<S> {
     }
 
     /// Validates that this stack serves T-typed targets.
+    pub fn makes<T>(self) -> Self
+    where
+        S: Make<T>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets.
     pub fn serves<T>(self) -> Self
     where
         S: Service<T>,
