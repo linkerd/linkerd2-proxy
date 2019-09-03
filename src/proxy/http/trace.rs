@@ -338,6 +338,8 @@ fn parse_grpc_trace_context_field(buf: &mut Bytes, context: &mut TraceContext) -
 fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
     let span_id = Id::new(8);
 
+    trace!("incremented span id: {}", span_id);
+
     let mut bytes = Vec::<u8>::new();
 
     // version
@@ -355,12 +357,12 @@ fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &mut Trace
     bytes.push(GRPC_TRACE_FIELD_TRACE_OPTIONS);
     bytes.extend(context.flags.0.iter());
 
-    trace!("incremented span id: {}", span_id);
+    let bytes_b64 = base64::encode(&bytes);
 
-    if let Result::Ok(hv) = HeaderValue::from_bytes(bytes.as_ref()) {
+    if let Result::Ok(hv) = HeaderValue::from_str(&bytes_b64) {
         request.headers_mut().insert(GRPC_TRACE_HEADER, hv);
     } else {
-        warn!("invalid binary header: {:?}", bytes);
+        warn!("invalid header: {:?}", &bytes_b64);
     }
     context.span_id = Some(span_id);
 }
