@@ -54,7 +54,8 @@ where
         .push(rewrite_loopback_addr::layer());
 
     // Instantiates an HTTP client for a `client::Config`
-    let client_stack = connect.clone()
+    let client_stack = connect
+        .clone()
         .push(client::layer("in", config.h2_settings))
         .push(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
         .push(normalize_uri::layer());

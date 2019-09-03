@@ -70,7 +70,8 @@ where
         .push(transport_metrics.connect("outbound"));
 
     // Instantiates an HTTP client for for a `client::Config`
-    let client_stack = connect.clone()
+    let client_stack = connect
+        .clone()
         .push(client::layer("out", config.h2_settings))
         .push(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
         .push(normalize_uri::layer());
