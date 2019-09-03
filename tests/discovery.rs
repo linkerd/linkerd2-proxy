@@ -150,12 +150,12 @@ macro_rules! generate_tests {
 
             let srv = $make_server().route("/", "hello").run();
 
+            const NAME: &'static str = "unresolvable.svc.cluster.local";
             let ctrl = controller::new()
-                .destination_err(
-                    "disco.test.svc.cluster.local",
-                    grpc::Code::InvalidArgument,
+                .destination_fail(
+                    NAME,
+                    grpc::Status::new(grpc::Code::InvalidArgument, "unresolvable"),
                 )
-                // The test controller will panic if the proxy tries to talk to it again.
                 .no_more_destinations();
 
             let proxy = proxy::new()
@@ -163,22 +163,22 @@ macro_rules! generate_tests {
                 .outbound(srv)
                 .run();
 
-            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+            let client = $make_client(proxy.outbound, NAME);
 
             assert_eq!(client.get("/"), "hello");
         }
 
         #[test]
-        fn outbound_destinations_reset_on_reconnect_followed_by_add_none() {
+        fn outbound_destinations_reset_on_reconnect_followed_by_empty() {
             outbound_destinations_reset_on_reconnect(
-                controller::destination_add_none()
+                controller::destination_exists_with_no_endpoints()
             )
         }
 
         #[test]
-        fn outbound_destinations_reset_on_reconnect_followed_by_remove_none() {
+        fn outbound_destinations_reset_on_reconnect_followed_by_dne() {
             outbound_destinations_reset_on_reconnect(
-                controller::destination_remove_none()
+                controller::destination_does_not_exist()
             )
         }
 
