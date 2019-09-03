@@ -26,17 +26,17 @@ pub fn stack<S>(inner: S) -> Stack<S> {
 }
 
 impl<L> Layers<L> {
-    pub fn layer<T>(self, l: T) -> Layers<Pair<T, L>> {
+    pub fn and_then<T>(self, l: T) -> Layers<Pair<T, L>> {
         Layers(self.0.layer(l))
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn pending(self) -> Layers<Pair<pending::Layer, L>> {
-        self.layer(pending::layer())
+    pub fn and_then_pending(self) -> Layers<Pair<pending::Layer, L>> {
+        self.and_then(pending::layer())
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn buffer_pending<D, Req>(
+    pub fn and_then_buffer_pending<D, Req>(
         self,
         bound: usize,
         d: D,
@@ -45,11 +45,11 @@ impl<L> Layers<L> {
         D: buffer::Deadline<Req>,
         Req: Send + 'static,
     {
-        self.layer(buffer::layer(bound, d)).pending()
+        self.and_then(buffer::layer(bound, d)).and_then_pending()
     }
 
-    pub fn spawn_ready(self) -> Layers<Pair<SpawnReadyLayer, L>> {
-        self.layer(SpawnReadyLayer::new())
+    pub fn and_then_spawn_ready(self) -> Layers<Pair<SpawnReadyLayer, L>> {
+        self.and_then(SpawnReadyLayer::new())
     }
 
     pub fn into_inner(self) -> L {

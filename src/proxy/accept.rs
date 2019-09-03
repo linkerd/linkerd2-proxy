@@ -25,7 +25,7 @@ impl<L> Builder<L> {
     ///
     /// This layer will be applied to connections *before* the
     /// previously added layers in this builder.
-    pub fn layer<T>(self, layer: T) -> Builder<Stack<T, L>> {
+    pub fn and_then<T>(self, layer: T) -> Builder<Stack<T, L>> {
         Builder {
             accept: Stack {
                 inner: layer,
