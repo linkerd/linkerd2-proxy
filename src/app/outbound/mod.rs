@@ -12,9 +12,9 @@ use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr, NameAddr};
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
-use tokio::sync::mpsc;
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;

@@ -129,8 +129,8 @@ where
                             rsp,
                             sent_node,
                         });
-                        return Ok(Async::NotReady)
-                    },
+                        return Ok(Async::NotReady);
+                    }
                     Err(_) => State::Idle,
                 },
             };

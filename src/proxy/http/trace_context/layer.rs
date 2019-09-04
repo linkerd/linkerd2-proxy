@@ -1,9 +1,9 @@
+use super::{propagation, Span};
 use crate::svc;
 use futures::{try_ready, Async, Future, Poll};
+use std::time::SystemTime;
 use tokio::sync::mpsc;
 use tracing::{trace, warn};
-use std::time::SystemTime;
-use super::{propagation, Span};
 
 pub struct SpanFuture<F> {
     span: Option<Span>,

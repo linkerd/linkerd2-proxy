@@ -1,10 +1,10 @@
+use bytes::Bytes;
 use rand::Rng;
 use std::fmt;
 use std::time::SystemTime;
-use bytes::Bytes;
 
-mod propagation;
 pub mod layer;
+mod propagation;
 
 pub use layer::layer;
 

@@ -1,9 +1,9 @@
+use super::{Flags, Id};
 use crate::Error;
+use bytes::Bytes;
 use http::header::HeaderValue;
 use std::fmt;
 use tracing::{trace, warn};
-use bytes::Bytes;
-use super::{Flags, Id};
 
 const HTTP_TRACE_ID_HEADER: &str = "x-b3-traceid";
 const HTTP_SPAN_ID_HEADER: &str = "x-b3-spanid";
@@ -78,14 +78,16 @@ fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
     request
         .headers()
         .get(GRPC_TRACE_HEADER)
-        .and_then(|hv| hv.to_str()
-            .map_err(|e| warn!("Invalid trace header: {}", e))
-            .ok()
-        )
-        .and_then(|header_str| base64::decode(header_str)
-            .map_err(|e| warn!("Trace header is not base64 encoded: {}", e))
-            .ok()
-        )
+        .and_then(|hv| {
+            hv.to_str()
+                .map_err(|e| warn!("Invalid trace header: {}", e))
+                .ok()
+        })
+        .and_then(|header_str| {
+            base64::decode(header_str)
+                .map_err(|e| warn!("Trace header is not base64 encoded: {}", e))
+                .ok()
+        })
         .and_then(|vec| {
             let mut bytes = vec.into();
             parse_grpc_trace_context_fields(&mut bytes)
@@ -93,7 +95,6 @@ fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
 }
 
 fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
-
     trace!("reading binary trace context: {:?}", buf);
 
     let version = try_split_to(buf, 1).ok()?;
@@ -109,38 +110,53 @@ fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
 
     while buf.len() > 0 {
         match parse_grpc_trace_context_field(buf, &mut context) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(ref e) if e.is::<UnknownFieldId>() => break,
             Err(e) => {
                 warn!("error parsing {} header: {}", GRPC_TRACE_HEADER, e);
                 return None;
-            },
+            }
         };
     }
     Some(context)
 }
 
-fn parse_grpc_trace_context_field(buf: &mut Bytes, context: &mut TraceContext) -> Result<(), Error> {
+fn parse_grpc_trace_context_field(
+    buf: &mut Bytes,
+    context: &mut TraceContext,
+) -> Result<(), Error> {
     let field_id = try_split_to(buf, 1)?[0];
     match field_id {
         GRPC_TRACE_FIELD_SPAN_ID => {
             let id = try_split_to(buf, 8)?;
-            trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_SPAN_ID, id);
+            trace!(
+                "reading binary trace field {:?}: {:?}",
+                GRPC_TRACE_FIELD_SPAN_ID,
+                id
+            );
             context.parent_id = id.into();
-        },
+        }
         GRPC_TRACE_FIELD_TRACE_ID => {
             let id = try_split_to(buf, 16)?;
-            trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_TRACE_ID, id);
+            trace!(
+                "reading binary trace field {:?}: {:?}",
+                GRPC_TRACE_FIELD_TRACE_ID,
+                id
+            );
             context.trace_id = id.into();
-        },
+        }
         GRPC_TRACE_FIELD_TRACE_OPTIONS => {
             let flags = try_split_to(buf, 1)?;
-            trace!("reading binary trace field {:?}: {:?}", GRPC_TRACE_FIELD_TRACE_OPTIONS, flags);
+            trace!(
+                "reading binary trace field {:?}: {:?}",
+                GRPC_TRACE_FIELD_TRACE_OPTIONS,
+                flags
+            );
             context.flags = flags.into();
-        },
+        }
         id => {
             return Err(UnknownFieldId(id).into());
-        },
+        }
     };
     Ok(())
 }

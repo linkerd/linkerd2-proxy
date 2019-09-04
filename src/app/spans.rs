@@ -1,23 +1,23 @@
 use super::dst::Direction;
 use crate::proxy::http::trace_context;
-use opencensus_proto::gen::trace::{v1 as oc};
-use futures::{Async, Poll, Stream, try_ready};
-use tracing::warn;
+use futures::{try_ready, Async, Poll, Stream};
+use opencensus_proto::gen::trace::v1 as oc;
 use std::{error, fmt};
+use tracing::warn;
 
 const SPAN_KIND_SERVER: i32 = 1;
 const SPAN_KIND_CLIENT: i32 = 2;
 
 pub struct SpanConverter<S> {
     direction: Direction,
-    spans: S
+    spans: S,
 }
 
 #[derive(Debug)]
 pub struct IdLengthError {
     id: Vec<u8>,
     expected_size: usize,
-    actual_size: usize
+    actual_size: usize,
 }
 
 impl error::Error for IdLengthError {
@@ -28,7 +28,11 @@ impl error::Error for IdLengthError {
 
 impl fmt::Display for IdLengthError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Id '{:?}' should have {} bytes but it has {}", self.id, self.expected_size, self.actual_size)
+        write!(
+            f,
+            "Id '{:?}' should have {} bytes but it has {}",
+            self.id, self.expected_size, self.actual_size
+        )
     }
 }
 
@@ -98,7 +102,7 @@ fn into_bytes(id: trace_context::Id, size: usize) -> Result<Vec<u8>, IdLengthErr
         Ok(bytes)
     } else {
         let actual_size = bytes.len();
-        Err(IdLengthError{
+        Err(IdLengthError {
             id: bytes,
             expected_size: size,
             actual_size,

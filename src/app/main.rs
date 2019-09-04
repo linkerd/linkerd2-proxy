@@ -3,14 +3,16 @@ use super::classify::{self, Class};
 use super::control;
 use super::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use super::profiles::Client as ProfilesClient;
+use super::spans::SpanConverter;
 use super::{config::Config, identity};
 use super::{handle_time, inbound, outbound, tap::serve_tap};
-use super::spans::SpanConverter;
 use crate::proxy::{self, http::metrics as http_metrics, reconnect};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
 use futures::{self, future, Future, Stream};
+use opencensus_proto::gen::agent::common::v1 as oc;
+use opencensus_proto::span_exporter::SpanExporter;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::thread;
@@ -18,8 +20,6 @@ use std::time::{Duration, SystemTime};
 use tokio::runtime::current_thread;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
-use opencensus_proto::gen::agent::common::{v1 as oc};
-use opencensus_proto::span_exporter::SpanExporter;
 
 /// Runs a sidecar proxy.
 ///
@@ -305,7 +305,6 @@ where
         };
 
         let dst_svc = config.destination_addr.as_ref().map(|addr| {
-
             // If the dst_svc is on localhost, use the inbound keepalive.
             // If the dst_svc is remote, use the outbound keepalive.
             let keepalive = if addr.addr.is_loopback() {
@@ -401,7 +400,7 @@ where
             config.destination_context.clone(),
         );
 
-        let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| 
+        let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| {
             svc::builder()
                 // Reuse destination client settings for now...
                 .buffer_pending(
@@ -415,14 +414,14 @@ where
                 // the response.
                 .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
                 .layer(control::resolve::layer(dns_resolver.clone()))
-                // TODO: perhaps rename from "control" to "grpc"            
+                // TODO: perhaps rename from "control" to "grpc"
                 .layer(control::client::layer())
                 .timeout(config.control_connect_timeout)
                 .layer(keepalive::connect::layer(config.outbound_connect_keepalive))
                 .layer(tls::client::layer(local_identity.clone()))
                 .service(connect::svc())
                 .make(addr.clone())
-        );
+        });
 
         let (inbound_spans_tx, inbound_spans_rx) = mpsc::channel(100);
         let (outbound_spans_tx, outbound_spans_rx) = mpsc::channel(100);
@@ -434,7 +433,7 @@ where
                     start_timestamp: Some(start_time.into()),
                 }),
                 library_info: None,
-                service_info: Some(oc::ServiceInfo{
+                service_info: Some(oc::ServiceInfo {
                     name: "linkerd-proxy".to_string(),
                 }),
                 attributes: HashMap::new(),
