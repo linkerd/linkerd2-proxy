@@ -1,5 +1,5 @@
 use super::dst::Direction;
-use crate::proxy::http::trace_context;
+use crate::trace_context;
 use futures::{try_ready, Async, Poll, Stream};
 use opencensus_proto::gen::trace::v1 as oc;
 use std::{error, fmt};

@@ -1,11 +1,11 @@
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
-    strip_header, trace_context,
+    strip_header,
 };
 use crate::proxy::{accept, reconnect, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
-use crate::{core::listen::ServeConnection, svc, Addr};
+use crate::{core::listen::ServeConnection, svc, trace_context, Addr};
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};

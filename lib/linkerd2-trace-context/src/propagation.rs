@@ -1,5 +1,4 @@
 use super::{Flags, Id};
-use crate::Error;
 use bytes::Bytes;
 use http::header::HeaderValue;
 use std::fmt;
@@ -13,6 +12,8 @@ const GRPC_TRACE_HEADER: &str = "grpc-trace-bin";
 const GRPC_TRACE_FIELD_TRACE_ID: u8 = 0;
 const GRPC_TRACE_FIELD_SPAN_ID: u8 = 1;
 const GRPC_TRACE_FIELD_TRACE_OPTIONS: u8 = 2;
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub enum Propagation {
@@ -75,17 +76,15 @@ pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &mut TraceC
 }
 
 fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
-    request
-        .headers()
-        .get(GRPC_TRACE_HEADER)
-        .and_then(|hv| {
-            hv.to_str()
-                .map_err(|e| warn!("Invalid trace header: {}", e))
-                .ok()
-        })
+    get_header_str(request, GRPC_TRACE_HEADER)
         .and_then(|header_str| {
             base64::decode(header_str)
-                .map_err(|e| warn!("Trace header is not base64 encoded: {}", e))
+                .map_err(|e| {
+                    warn!(
+                        "trace header {} is not base64 encoded: {}",
+                        GRPC_TRACE_HEADER, e
+                    )
+                })
                 .ok()
         })
         .and_then(|vec| {
@@ -95,7 +94,7 @@ fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
 }
 
 fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
-    trace!("reading binary trace context: {:?}", buf);
+    trace!(message = "reading binary trace context", ?buf);
 
     let version = try_split_to(buf, 1).ok()?;
 
@@ -164,7 +163,7 @@ fn parse_grpc_trace_context_field(
 fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
     let span_id = Id::new(8);
 
-    trace!("incremented span id: {}", span_id);
+    trace!(message = "incremented span id", %span_id);
 
     let mut bytes = Vec::<u8>::new();
 

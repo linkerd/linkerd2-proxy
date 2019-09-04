@@ -3,13 +3,13 @@ use crate::core::listen::ServeConnection;
 use crate::core::resolve::{Resolution, Resolve};
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
-    normalize_uri, profiles, retry, router, settings, strip_header, trace_context,
+    normalize_uri, profiles, retry, router, settings, strip_header,
 };
 use crate::proxy::{self, accept, reconnect, resolve, Server};
 use crate::resolve::{Metadata, Unresolvable};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
-use crate::{svc, Addr, NameAddr};
+use crate::{svc, trace_context, Addr, NameAddr};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;

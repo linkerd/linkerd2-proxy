@@ -1,5 +1,4 @@
 use super::{propagation, Span};
-use crate::svc;
 use futures::{try_ready, Async, Future, Poll};
 use std::time::SystemTime;
 use tokio::sync::mpsc;
@@ -50,7 +49,7 @@ pub fn layer(sender: mpsc::Sender<Span>) -> Layer {
 
 // === impl Layer ===
 
-impl<M> svc::Layer<M> for Layer {
+impl<M> tower::layer::Layer<M> for Layer {
     type Service = Stack<M>;
 
     fn layer(&self, inner: M) -> Self::Service {
@@ -63,9 +62,9 @@ impl<M> svc::Layer<M> for Layer {
 
 // === impl Stack ===
 
-impl<T, M> svc::Service<T> for Stack<M>
+impl<T, M> tower::Service<T> for Stack<M>
 where
-    M: svc::Service<T>,
+    M: tower::Service<T>,
 {
     type Response = Service<M::Response>;
     type Error = M::Error;
@@ -100,9 +99,9 @@ impl<F: Future> Future for MakeFuture<F> {
 
 // === impl Service ===
 
-impl<S, B> svc::Service<http::Request<B>> for Service<S>
+impl<S, B> tower::Service<http::Request<B>> for Service<S>
 where
-    S: svc::Service<http::Request<B>>,
+    S: tower::Service<http::Request<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -114,10 +113,10 @@ where
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
         let mut trace_context = propagation::unpack_trace_context(&request);
-        let mut path: Option<String> = None;
+        let mut path = None;
 
         if let Some(ref mut context) = trace_context {
-            trace!("got trace contex: {:?}", context);
+            trace!(message = "got trace context", ?context);
             propagation::increment_span_id(&mut request, context);
             // If we plan to sample this span, we need to copy the path from
             // the request before dispatching it to inner.
@@ -138,12 +137,12 @@ where
         }) = trace_context
         {
             if flags.is_sampled() {
-                trace!("span {:?} will be sampled", span_id);
+                trace!(message = "span will be sampled", ?span_id);
                 let span = Span {
-                    trace_id: trace_id,
-                    span_id: span_id,
-                    parent_id: parent_id,
-                    span_name: path.unwrap_or(String::new()),
+                    trace_id,
+                    span_id,
+                    parent_id,
+                    span_name: path.unwrap_or_else(String::new),
                     start: SystemTime::now(),
                     // End time will be updated when the span completes.
                     end: SystemTime::now(),
@@ -153,13 +152,10 @@ where
                     inner: f,
                     sender: self.sender.clone(),
                 };
-                futures::future::Either::B(span_fut)
-            } else {
-                futures::future::Either::A(f)
+                return futures::future::Either::B(span_fut);
             }
-        } else {
-            futures::future::Either::A(f)
         }
+        futures::future::Either::A(f)
     }
 }
 
@@ -171,9 +167,9 @@ impl<F: Future> Future for SpanFuture<F> {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        let mut span = self.span.take().expect("span missing");
+        let mut span = self.span.take().expect("polled after ready");
         span.end = SystemTime::now();
-        trace!("emitting span: {:?}", span);
+        trace!(message = "emitting span", ?span);
         self.sender.try_send(span).unwrap_or_else(|_| {
             warn!("span dropped due to backpressure");
         });

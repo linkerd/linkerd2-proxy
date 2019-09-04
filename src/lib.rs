@@ -10,6 +10,7 @@ use linkerd2_proxy_api as api;
 use linkerd2_proxy_core::{self as core, drain, Error};
 use linkerd2_proxy_resolve as resolve;
 use linkerd2_task as task;
+use linkerd2_trace_context as trace_context;
 
 pub mod app;
 mod dns;
