@@ -7,8 +7,8 @@ use linkerd2_identity as identity;
 use linkerd2_metrics as metrics;
 use linkerd2_never::Never;
 use linkerd2_proxy_api as api;
+use linkerd2_proxy_api_resolve as api_resolve;
 use linkerd2_proxy_core::{self as core, drain, Error};
-use linkerd2_proxy_resolve as resolve;
 use linkerd2_task as task;
 
 pub mod app;

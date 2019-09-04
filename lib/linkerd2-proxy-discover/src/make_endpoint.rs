@@ -1,45 +1,40 @@
-use crate::core::resolve::{Resolution, Resolve, Update};
-use crate::{svc, Error};
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use std::{fmt, net::SocketAddr};
+use linkerd2_proxy_core::Error;
+use std::hash::Hash;
 use tokio::sync::oneshot;
-pub use tower_discover::Change;
-use tracing::trace;
+use tower::discover::{self, Change};
 
 #[derive(Clone, Debug)]
-pub struct Layer<R> {
-    resolve: R,
+pub struct MakeEndpoint<D, E> {
+    make_discover: D,
+    make_endpoint: E,
 }
 
-#[derive(Clone, Debug)]
-pub struct MakeSvc<R, M> {
-    resolve: R,
-    inner: M,
+#[derive(Debug)]
+pub struct DiscoverFuture<F, M> {
+    future: F,
+    make_endpoint: Option<M>,
 }
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
-pub struct Discover<R: Resolution, M: svc::Service<R::Endpoint>> {
-    resolution: R,
-    make: M,
-    make_futures: MakeFutures<M::Future>,
+pub struct Discover<D: discover::Discover, E: tower::Service<D::Service>> {
+    discover: D,
+    make_endpoint: E,
+    make_futures: MakeFutures<D::Key, E::Future>,
+    pending_removals: Vec<D::Key>,
 }
 
-pub struct DiscoverFuture<F, M> {
-    future: F,
-    make: M,
+struct MakeFutures<K, F> {
+    futures: FuturesUnordered<MakeFuture<K, F>>,
+    cancelations: IndexMap<K, oneshot::Sender<()>>,
 }
 
-struct MakeFutures<F> {
-    futures: FuturesUnordered<MakeFuture<F>>,
-    cancelations: IndexMap<SocketAddr, oneshot::Sender<()>>,
-}
-
-struct MakeFuture<F> {
+struct MakeFuture<K, F> {
+    key: Option<K>,
     inner: F,
     canceled: oneshot::Receiver<()>,
-    addr: SocketAddr,
 }
 
 enum MakeError<E> {
@@ -47,150 +42,155 @@ enum MakeError<E> {
     Canceled,
 }
 
-// === impl Layer ===
+// === impl MakeEndpoint ===
 
-pub fn layer<T, R>(resolve: R) -> Layer<R>
-where
-    R: Resolve<T> + Clone,
-    R::Endpoint: fmt::Debug,
-{
-    Layer { resolve }
-}
-
-impl<R, M> svc::Layer<M> for Layer<R>
-where
-    R: Clone,
-{
-    type Service = MakeSvc<R, M>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        MakeSvc {
-            resolve: self.resolve.clone(),
-            inner,
+impl<D, E> MakeEndpoint<D, E> {
+    pub fn new<T, InnerDiscover>(make_endpoint: E, make_discover: D) -> Self
+    where
+        D: tower::Service<T, Response = InnerDiscover>,
+        InnerDiscover: discover::Discover,
+        InnerDiscover::Key: Clone,
+        InnerDiscover::Error: Into<Error>,
+        E: tower::Service<InnerDiscover::Service> + Clone,
+        E::Error: Into<Error>,
+    {
+        Self {
+            make_discover,
+            make_endpoint,
         }
     }
 }
 
-// === impl MakeSvc ===
-
-impl<T, R, M> svc::Service<T> for MakeSvc<R, M>
+impl<T, D, E, InnerDiscover> tower::Service<T> for MakeEndpoint<D, E>
 where
-    R: Resolve<T>,
-    R::Endpoint: fmt::Debug,
-    M: svc::Service<R::Endpoint> + Clone,
+    D: tower::Service<T, Response = InnerDiscover>,
+    InnerDiscover: discover::Discover,
+    InnerDiscover::Key: Clone,
+    InnerDiscover::Error: Into<Error>,
+    E: tower::Service<InnerDiscover::Service> + Clone,
+    E::Error: Into<Error>,
 {
-    type Response = Discover<R::Resolution, M>;
-    type Error = <R::Future as Future>::Error;
-    type Future = DiscoverFuture<R::Future, Option<M>>;
+    type Response = Discover<D::Response, E>;
+    type Error = D::Error;
+    type Future = DiscoverFuture<D::Future, E>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into()) // always ready to make a Discover
+        self.make_discover.poll_ready()
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let future = self.resolve.resolve(&target);
+        let future = self.make_discover.call(target);
         DiscoverFuture {
             future,
-            make: Some(self.inner.clone()),
+            make_endpoint: Some(self.make_endpoint.clone()),
         }
     }
 }
 
 // === impl DiscoverFuture ===
 
-impl<F, M> Future for DiscoverFuture<F, Option<M>>
+impl<F, E, D> Future for DiscoverFuture<F, E>
 where
-    F: Future,
-    F::Item: Resolution,
-    M: svc::Service<<F::Item as Resolution>::Endpoint>,
+    F: Future<Item = D>,
+    D: discover::Discover,
+    D::Key: Clone,
+    D::Error: Into<Error>,
+    E: tower::Service<D::Service>,
+    E::Error: Into<Error>,
 {
-    type Item = Discover<F::Item, M>;
+    type Item = Discover<F::Item, E>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let resolution = try_ready!(self.future.poll());
-        let make = self.make.take().expect("polled after ready");
-        Ok(Async::Ready(Discover::new(resolution, make)))
+        let make_endpoint = self.make_endpoint.take().expect("polled after ready");
+        Ok(Async::Ready(Discover::new(resolution, make_endpoint)))
     }
 }
 
 // === impl Discover ===
 
-impl<R, M> Discover<R, M>
+impl<D, E> Discover<D, E>
 where
-    R: Resolution,
-    M: svc::Service<R::Endpoint>,
+    D: discover::Discover,
+    D::Key: Clone,
+    D::Error: Into<Error>,
+    E: tower::Service<D::Service>,
+    E::Error: Into<Error>,
 {
-    fn new(resolution: R, make: M) -> Self {
+    pub fn new(discover: D, make_endpoint: E) -> Self {
         Self {
-            resolution,
-            make,
+            discover,
+            make_endpoint,
             make_futures: MakeFutures::new(),
+            pending_removals: Vec::new(),
         }
     }
 }
 
-impl<R, M> Discover<R, M>
+impl<D, E> discover::Discover for Discover<D, E>
 where
-    R: Resolution,
-    R::Endpoint: fmt::Debug,
-    R::Error: Into<Error>,
-    M: svc::Service<R::Endpoint>,
-    M::Error: Into<Error>,
+    D: discover::Discover,
+    D::Key: Clone,
+    D::Error: Into<Error>,
+    E: tower::Service<D::Service>,
+    E::Error: Into<Error>,
 {
-    fn poll_resolution(&mut self) -> Poll<Change<SocketAddr, M::Response>, Error> {
-        loop {
-            // Before polling the resolution, where we could potentially receive
-            // an `Add`, poll_ready to ensure that `make` is ready to build new
-            // services. Don't process any updates until we can do so.
-            try_ready!(self.make.poll_ready().map_err(Into::into));
-
-            let update = try_ready!(self.resolution.poll().map_err(Into::into));
-            trace!("watch: {:?}", update);
-            match update {
-                Update::Add(addr, target) => {
-                    // Start building the service and continue. If a pending
-                    // service exists for this addr, it will be canceled.
-                    let fut = self.make.call(target);
-                    self.make_futures.push(addr, fut);
-                }
-                Update::Remove(addr) => {
-                    self.make_futures.remove(&addr);
-                    return Ok(Async::Ready(Change::Remove(addr)));
-                }
-            }
-        }
-    }
-}
-
-impl<R, M> tower_discover::Discover for Discover<R, M>
-where
-    R: Resolution,
-    R::Endpoint: fmt::Debug,
-    R::Error: Into<Error>,
-    M: svc::Service<R::Endpoint>,
-    M::Error: Into<Error>,
-{
-    type Key = SocketAddr;
-    type Service = M::Response;
+    type Key = D::Key;
+    type Service = E::Response;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
-        if let Async::Ready(change) = self.poll_resolution()? {
-            return Ok(Async::Ready(change));
+        if let Async::Ready(key) = self.poll_removals()? {
+            return Ok(Async::Ready(Change::Remove(key)));
         }
 
-        if let Async::Ready(Some((addr, svc))) = self.make_futures.poll().map_err(Into::into)? {
-            return Ok(Async::Ready(Change::Insert(addr, svc)));
+        if let Async::Ready(Some((key, svc))) = self.make_futures.poll().map_err(Into::into)? {
+            return Ok(Async::Ready(Change::Insert(key, svc)));
         }
 
         Ok(Async::NotReady)
     }
 }
 
+impl<D, E> Discover<D, E>
+where
+    D: discover::Discover,
+    D::Key: Clone,
+    D::Error: Into<Error>,
+    E: tower::Service<D::Service>,
+    E::Error: Into<Error>,
+{
+    fn poll_removals(&mut self) -> Poll<D::Key, Error> {
+        loop {
+            if let Some(key) = self.pending_removals.pop() {
+                self.make_futures.remove(&key);
+                return Ok(key.into());
+            }
+
+            // Before polling the resolution, where we could potentially receive
+            // an `Add`, poll_ready to ensure that `make` is ready to build new
+            // services. Don't process any updates until we can do so.
+            try_ready!(self.make_endpoint.poll_ready().map_err(Into::into));
+
+            match try_ready!(self.discover.poll().map_err(Into::into)) {
+                Change::Insert(key, target) => {
+                    // Start building the service and continue. If a pending
+                    // service exists for this addr, it will be canceled.
+                    let fut = self.make_endpoint.call(target);
+                    self.make_futures.push(key, fut);
+                }
+                Change::Remove(key) => {
+                    self.pending_removals.push(key);
+                }
+            }
+        }
+    }
+}
+
 // === impl MakeFutures ===
 
-impl<F: Future> MakeFutures<F> {
+impl<K: Clone + Eq + Hash, F: Future> MakeFutures<K, F> {
     fn new() -> Self {
         Self {
             futures: FuturesUnordered::new(),
@@ -198,27 +198,27 @@ impl<F: Future> MakeFutures<F> {
         }
     }
 
-    fn push(&mut self, addr: SocketAddr, inner: F) {
+    fn push(&mut self, key: K, inner: F) {
         let (cancel, canceled) = oneshot::channel();
-        if let Some(prior) = self.cancelations.insert(addr, cancel) {
+        if let Some(prior) = self.cancelations.insert(key.clone(), cancel) {
             let _ = prior.send(());
         }
         self.futures.push(MakeFuture {
-            addr,
+            key: Some(key),
             inner,
             canceled,
         });
     }
 
-    fn remove(&mut self, addr: &SocketAddr) {
-        if let Some(cancel) = self.cancelations.remove(addr) {
+    fn remove(&mut self, key: &K) {
+        if let Some(cancel) = self.cancelations.remove(key) {
             let _ = cancel.send(());
         }
     }
 }
 
-impl<F: Future> Stream for MakeFutures<F> {
-    type Item = (SocketAddr, F::Item);
+impl<K: Eq + Hash, F: Future> Stream for MakeFutures<K, F> {
+    type Item = (K, F::Item);
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -226,10 +226,10 @@ impl<F: Future> Stream for MakeFutures<F> {
             return match self.futures.poll() {
                 Err(MakeError::Canceled) => continue,
                 Err(MakeError::Inner(err)) => Err(err),
-                Ok(Async::Ready(Some((addr, svc)))) => {
-                    let _rm = self.cancelations.remove(&addr);
-                    debug_assert!(_rm.is_some(), "cancelation missing for {}", addr);
-                    Ok(Async::Ready(Some((addr, svc))))
+                Ok(Async::Ready(Some((key, svc)))) => {
+                    let _rm = self.cancelations.remove(&key);
+                    debug_assert!(_rm.is_some(), "cancelation missing");
+                    Ok(Async::Ready(Some((key, svc))))
                 }
                 Ok(r) => Ok(r),
             };
@@ -239,17 +239,17 @@ impl<F: Future> Stream for MakeFutures<F> {
 
 // === impl MakeFuture ===
 
-impl<F: Future> Future for MakeFuture<F> {
-    type Item = (SocketAddr, F::Item);
+impl<K, F: Future> Future for MakeFuture<K, F> {
+    type Item = (K, F::Item);
     type Error = MakeError<F::Error>;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         if let Ok(Async::Ready(())) = self.canceled.poll() {
-            trace!("canceled making service for {:?}", self.addr);
             return Err(MakeError::Canceled);
         }
         let svc = try_ready!(self.inner.poll());
-        Ok((self.addr, svc).into())
+        let key = self.key.take().expect("polled after complete");
+        Ok((key, svc).into())
     }
 }
 
@@ -265,28 +265,18 @@ impl<E> From<E> for MakeError<E> {
 mod tests {
     use super::*;
     use futures::future;
-    use svc::Service;
+    use std::net::SocketAddr;
     use tokio::sync::mpsc;
-    use tower_discover::{Change, Discover as _Discover};
+    use tower::discover::{self, Change, Discover as _};
+    use tower::Service;
     use tower_util::service_fn;
 
-    struct Urx<E>(mpsc::Receiver<Update<E>>);
-    impl<E> Resolution for Urx<E> {
-        type Endpoint = E;
-        type Error = mpsc::error::RecvError;
-
-        fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
-            let ep = try_ready!(self.0.poll()).expect("stream must not terminate");
-            Ok(Async::Ready(ep))
-        }
-    }
-
     #[derive(Debug)]
-    struct Svc<T>(Vec<oneshot::Receiver<T>>);
-    impl<T> Service<()> for Svc<T> {
-        type Response = T;
-        type Error = oneshot::error::RecvError;
-        type Future = oneshot::Receiver<T>;
+    struct Svc<F>(Vec<F>);
+    impl<F: Future> Service<()> for Svc<F> {
+        type Response = F::Item;
+        type Error = F::Error;
+        type Future = F;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             Ok(().into())
@@ -297,22 +287,36 @@ mod tests {
         }
     }
 
+    struct Dx(mpsc::Receiver<Change<SocketAddr, ()>>);
+
+    impl discover::Discover for Dx {
+        type Key = SocketAddr;
+        type Service = ();
+        type Error = Error;
+
+        fn poll(&mut self) -> Poll<Change<SocketAddr, ()>, Self::Error> {
+            let change = try_ready!(self.0.poll()).expect("stream must not end");
+            Ok(change.into())
+        }
+    }
+
     #[test]
     fn inserts_delivered_out_of_order() {
         with_task(move || {
-            let (mut reso_tx, resolution) = mpsc::channel(2);
-            let (make0_tx, make0_rx) = oneshot::channel::<Svc<usize>>();
-            let (make1_tx, make1_rx) = oneshot::channel::<Svc<usize>>();
-            let make = Svc(vec![make1_rx, make0_rx]);
+            let (mut reso_tx, reso_rx) = mpsc::channel(2);
+            let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
+            let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
 
-            let mut discover = Discover::new(Urx(resolution), make);
+            let mut discover = Discover::new(Dx(reso_rx), Svc(vec![make1_rx, make0_rx]));
             assert!(
-                discover.poll().expect("discover can't fail").is_not_ready(),
+                discover::Discover::poll(&mut discover)
+                    .expect("discover can't fail")
+                    .is_not_ready(),
                 "ready without updates"
             );
 
             let addr0 = SocketAddr::from(([127, 0, 0, 1], 80));
-            reso_tx.try_send(Update::Add(addr0, ())).unwrap();
+            reso_tx.try_send(Change::Insert(addr0, ())).ok().unwrap();
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without service being made"
@@ -330,7 +334,8 @@ mod tests {
 
             let addr1 = SocketAddr::from(([127, 0, 0, 2], 80));
             reso_tx
-                .try_send(Update::Add(addr1, ()))
+                .try_send(Change::Insert(addr1, ()))
+                .ok()
                 .expect("update must be sent");
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
@@ -403,19 +408,18 @@ mod tests {
     #[test]
     fn overwriting_insert_cancels_original() {
         with_task(move || {
-            let (mut reso_tx, resolution) = mpsc::channel(2);
-            let (make0_tx, make0_rx) = oneshot::channel::<Svc<usize>>();
-            let (make1_tx, make1_rx) = oneshot::channel::<Svc<usize>>();
-            let make = Svc(vec![make1_rx, make0_rx]);
+            let (mut reso_tx, reso_rx) = mpsc::channel(2);
+            let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
+            let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
 
-            let mut discover = Discover::new(Urx(resolution), make);
+            let mut discover = Discover::new(Dx(reso_rx), Svc(vec![make1_rx, make0_rx]));
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
             );
 
             let addr = SocketAddr::from(([127, 0, 0, 1], 80));
-            reso_tx.try_send(Update::Add(addr, ())).unwrap();
+            reso_tx.try_send(Change::Insert(addr, ())).ok().unwrap();
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without service being made"
@@ -432,7 +436,8 @@ mod tests {
             );
 
             reso_tx
-                .try_send(Update::Add(addr, ()))
+                .try_send(Change::Insert(addr, ()))
+                .ok()
                 .expect("update must be sent");
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
@@ -480,17 +485,19 @@ mod tests {
     #[test]
     fn cancelation_of_pending_service() {
         with_task(move || {
-            let (mut tx, resolution) = mpsc::channel(1);
-            let make = service_fn(|()| future::empty::<Svc<()>, Error>());
+            let (mut tx, reso_rx) = mpsc::channel(1);
 
-            let mut discover = Discover::new(Urx(resolution), make);
+            let mut discover = Discover::new(
+                Dx(reso_rx),
+                service_fn(|()| future::empty::<Svc<()>, Error>()),
+            );
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without updates"
             );
 
             let addr = SocketAddr::from(([127, 0, 0, 1], 80));
-            tx.try_send(Update::Add(addr, ())).unwrap();
+            tx.try_send(Change::Insert(addr, ())).ok().unwrap();
             assert!(
                 discover.poll().expect("discover can't fail").is_not_ready(),
                 "ready without service being made"
@@ -501,7 +508,7 @@ mod tests {
                 "no pending cancelation"
             );
 
-            tx.try_send(Update::Remove(addr)).unwrap();
+            tx.try_send(Change::Remove(addr)).ok().unwrap();
             match discover.poll().expect("discover can't fail") {
                 Async::NotReady => panic!("remove not processed"),
                 Async::Ready(Change::Insert(..)) => panic!("unexpected insert"),

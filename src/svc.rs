@@ -1,5 +1,6 @@
 use crate::proxy::{buffer, pending};
-pub use linkerd2_stack::{self as stack, layer, shared, Layer, LayerExt};
+pub use linkerd2_router::Make;
+pub use linkerd2_stack::{self as stack, layer, map_target, shared, Layer, LayerExt};
 pub use linkerd2_timeout::stack as timeout;
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};
@@ -101,6 +102,14 @@ impl<S> Stack<S> {
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(TimeoutLayer::new(timeout))
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn makes<T>(self) -> Self
+    where
+        S: Make<T>,
+    {
+        self
     }
 
     /// Validates that this stack serves T-typed targets.

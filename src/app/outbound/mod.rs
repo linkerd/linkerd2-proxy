@@ -5,11 +5,11 @@ use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, reconnect, resolve, Server};
-use crate::resolve::{Metadata, Unresolvable};
+use crate::proxy::{self, accept, reconnect, Server};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
-use crate::{svc, Addr, NameAddr};
+use crate::{svc, Addr};
+use linkerd2_proxy_discover as discover;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -19,13 +19,14 @@ use tracing::debug;
 mod add_remote_ip_on_rsp;
 #[allow(dead_code)] // TODO #2597
 mod add_server_id_on_rsp;
-mod discovery;
 mod endpoint;
 mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
+mod resolve;
 
 pub(super) use self::endpoint::Endpoint;
 pub(super) use self::require_identity_on_endpoint::RequireIdentityError;
+pub(super) use self::resolve::{resolve, ExponentialBackoff};
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -45,10 +46,10 @@ pub fn server<R, P>(
     transport_metrics: transport::metrics::Registry,
 ) -> impl ServeConnection<Connection>
 where
-    R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
-    R::Future: futures::Future<Error = Unresolvable> + Send,
-    R::Resolution: Send,
-    <R::Resolution as Resolution>::Error: std::error::Error + Send + Sync + 'static,
+    R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
+    R::Future: futures::Future + Send,
+    R::Resolution: Resolution + Send,
+    //<R::Resolution as Resolution>::Error: std::error::Error + Send + Sync + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
@@ -147,7 +148,7 @@ where
     // over all endpoints returned from the destination service.
     let balancer_layer = svc::layers()
         .push_spawn_ready()
-        .push(resolve::layer(discovery::Resolve::new(resolve)))
+        .push(discover::Layer::new(2, resolve))
         .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));
 
     let distributor = endpoint_stack
@@ -155,7 +156,7 @@ where
             // Attempt to build a balancer. If the service is
             // unresolvable, fall back to using a router that dispatches
             // request to the application-selected original destination.
-            fallback::layer(balancer_layer, orig_dst_router_layer).on_error::<Unresolvable>(),
+            fallback::layer(balancer_layer, orig_dst_router_layer), // TODO .on_error::<Unresolvable>(),
         )
         .serves::<DstAddr>();
 
