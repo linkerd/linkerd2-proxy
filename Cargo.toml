@@ -46,6 +46,7 @@ linkerd2-signal        = { path = "lib/linkerd2-signal" }
 linkerd2-stack         = { path = "lib/linkerd2-stack" }
 linkerd2-task          = { path = "lib/linkerd2-task" }
 linkerd2-timeout       = { path = "lib/linkerd2-timeout" }
+linkerd2-trace-context = { path = "lib/linkerd2-trace-context" }
 
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 

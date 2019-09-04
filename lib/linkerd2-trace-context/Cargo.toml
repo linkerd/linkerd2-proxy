@@ -1,0 +1,19 @@
+[package]
+name = "linkerd2-trace-context"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+base64 = "0.10.1"
+bytes = "0.4"
+futures = "0.1"
+hex = "0.3.2"
+http = "0.1"
+rand = "0.6.3"
+
+tokio = "0.1.14"
+tower = "0.1"
+
+tracing = "0.1.2"
