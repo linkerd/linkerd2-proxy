@@ -3,7 +3,7 @@ use crate::core::listen::ServeConnection;
 use crate::core::resolve::{Resolution, Resolve};
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
-    normalize_uri, profiles, retry, router, settings, strip_header, trace,
+    normalize_uri, profiles, retry, router, settings, strip_header, trace_context,
 };
 use crate::proxy::{self, accept, reconnect, resolve, Server};
 use crate::resolve::{Metadata, Unresolvable};
@@ -44,7 +44,7 @@ pub fn server<R, P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-    span_sink: mpsc::Sender<trace::Span>,
+    span_sink: mpsc::Sender<trace_context::Span>,
 ) -> impl ServeConnection<Connection>
 where
     R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
@@ -75,7 +75,7 @@ where
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = svc::builder()
         .layer(normalize_uri::layer())
-        .layer(trace::layer(span_sink))
+        .layer(trace_context::layer(span_sink))
         .layer(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
         .layer(client::layer("out", config.h2_settings))
         .service(connect.clone());

@@ -1,7 +1,7 @@
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
-    strip_header, trace,
+    strip_header, trace_context,
 };
 use crate::proxy::{accept, reconnect, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
@@ -31,7 +31,7 @@ pub fn server<P>(
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-    span_sink: mpsc::Sender<trace::Span>,
+    span_sink: mpsc::Sender<trace_context::Span>,
 ) -> impl ServeConnection<Connection>
 where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
@@ -59,7 +59,7 @@ where
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = svc::builder()
         .layer(normalize_uri::layer())
-        .layer(trace::layer(span_sink))
+        .layer(trace_context::layer(span_sink))
         .layer(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
         .layer(client::layer("in", config.h2_settings))
         .service(connect.clone());

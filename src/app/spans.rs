@@ -1,5 +1,5 @@
 use super::dst::Direction;
-use crate::proxy::http::trace;
+use crate::proxy::http::trace_context;
 use opencensus_proto::gen::trace::{v1 as oc};
 use futures::{Async, Poll, Stream, try_ready};
 use tracing::warn;
@@ -47,7 +47,7 @@ impl<S> SpanConverter<S> {
         }
     }
 
-    fn mk_span(&self, span: trace::Span) -> Result<oc::Span, IdLengthError> {
+    fn mk_span(&self, span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
         Ok(oc::Span {
             trace_id: into_bytes(span.trace_id, 16)?,
             span_id: into_bytes(span.span_id, 8)?,
@@ -74,7 +74,7 @@ impl<S> SpanConverter<S> {
 
 impl<S> Stream for SpanConverter<S>
 where
-    S: Stream<Item = trace::Span>,
+    S: Stream<Item = trace_context::Span>,
 {
     type Item = oc::Span;
     type Error = S::Error;
@@ -92,7 +92,7 @@ where
     }
 }
 
-fn into_bytes(id: trace::Id, size: usize) -> Result<Vec<u8>, IdLengthError> {
+fn into_bytes(id: trace_context::Id, size: usize) -> Result<Vec<u8>, IdLengthError> {
     let bytes = id.into_vec();
     if bytes.len() == size {
         Ok(bytes)
