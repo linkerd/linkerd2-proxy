@@ -13,6 +13,7 @@ jobs:
   include:
     # Quickly run tests in dev mode.
     - rust: stable
+      if: branch = master && type != pull_request
       install:
         - rustup component add rustfmt
         - export RUSTFLAGS="-C debuginfo=0" RUST_TEST_THREADS=1 RUST_TEST_PATIENCE_MS=200
