@@ -47,8 +47,8 @@ impl From<webpki::DNSName> for Name {
 impl<'a> TryFrom<&'a [u8]> for Name {
     type Error = InvalidName;
     fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
-        webpki::DNSNameRef::try_from_ascii(untrusted::Input::from(s))
-            .map_err(|()| InvalidName)
+        webpki::DNSNameRef::try_from_ascii(s)
+            .map_err(|_invalid| InvalidName)
             .map(|r| r.to_owned().into())
     }
 }

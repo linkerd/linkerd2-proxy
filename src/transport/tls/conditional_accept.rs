@@ -132,7 +132,7 @@ fn extract_sni<'a>(
                                 return Ok(None);
                             }
                             // Return the value of the `HostName`.
-                            read_vector(input, |input| Ok(Some(input.skip_to_end())))
+                            read_vector(input, |input| Ok(Some(input.read_bytes_to_end())))
                         })
                     });
 
@@ -170,7 +170,7 @@ where
     if length > 8192 {
         return Ok(None);
     }
-    let r = input.skip_and_get_input(usize::from(length))?;
+    let r = input.read_bytes(usize::from(length))?;
     r.read_all(untrusted::EndOfInput, f)
 }
 

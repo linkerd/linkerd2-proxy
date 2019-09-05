@@ -13,6 +13,7 @@ jobs:
   include:
     # Quickly run tests in dev mode.
     - rust: stable
+      if: branch = master && type != pull_request
       install:
         - rustup component add rustfmt
         - export RUSTFLAGS="-C debuginfo=0" RUST_TEST_THREADS=1 RUST_TEST_PATIENCE_MS=200
@@ -21,7 +22,9 @@ jobs:
       #   - du -sh . && find . -type f |xargs -n 1000 du -s |sort -rn |head |awk '{print $2}' |xargs du -sh
       script:
         - make check-fmt
-        - travis_wait 40 make test clean
+        - travis_wait 40 make test-lib
+        - travis_wait 60 make test-integration
+        - make clean
 
     # On master, package an artifact and run tests in release mode before
     # publishing the artifact to build.l5d.io/linkerd2-proxy.

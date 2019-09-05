@@ -105,14 +105,7 @@ pub struct Config {
     // Destination Config
     //
     /// Where to talk to the control plane.
-    ///
-    /// When set, DNS is only after the Destination service says that there is
-    /// no service with the given name. When not set, the Destination service
-    /// is completely bypassed for service discovery and DNS is always used.
-    ///
-    /// This is optional to allow the proxy to work without the controller for
-    /// experimental & testing purposes.
-    pub destination_addr: Option<ControlAddr>,
+    pub destination_addr: ControlAddr,
 
     pub trace_collector_addr: Option<ControlAddr>,
 
@@ -174,6 +167,7 @@ pub struct Listener {
 #[derive(Clone, Debug)]
 pub enum Error {
     InvalidEnvVar,
+    NoDestinationAddress,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -456,6 +450,7 @@ impl Config {
             .as_ref()
             .map(|c| c.is_none())
             .unwrap_or(false);
+
         let dst_addr = if id_disabled {
             parse_control_addr_disable_identity(strings, ENV_DESTINATION_SVC_BASE)
         } else {
@@ -563,7 +558,7 @@ impl Config {
             destination_profile_suffixes: dst_profile_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
 
-            destination_addr: dst_addr?,
+            destination_addr: dst_addr?.ok_or(Error::NoDestinationAddress)?,
             trace_collector_addr: trace_collector_addr?,
             destination_context: dst_token?.unwrap_or_default(),
 
@@ -1030,7 +1025,8 @@ pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<Option<identity:
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::InvalidEnvVar => fmt::Display::fmt("invalid environment variable", f),
+            Error::InvalidEnvVar => write!(f, "invalid environment variable"),
+            Error::NoDestinationAddress => write!(f, "no destination service configured"),
         }
     }
 }

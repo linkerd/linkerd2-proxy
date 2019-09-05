@@ -1,6 +1,6 @@
 use crate::support::*;
 use futures::future::Either;
-use rustls::{ServerConfig, ServerSession};
+use rustls::ServerConfig;
 use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -324,14 +324,14 @@ impl Service<()> for NewSvc {
 fn accept_connection(
     io: TcpStream,
     tls: Option<Arc<ServerConfig>>,
-) -> impl Future<Item = RunningIo<ServerSession>, Error = std::io::Error> {
+) -> impl Future<Item = RunningIo, Error = std::io::Error> {
     match tls {
         Some(cfg) => Either::B(
             TlsAcceptor::from(cfg)
                 .accept(io)
-                .map(|io| RunningIo::Tls(io, None)),
+                .map(|io| RunningIo(Box::new(io), None)),
         ),
 
-        None => Either::A(future::ok(RunningIo::Plain(io, None))),
+        None => Either::A(future::ok(RunningIo(Box::new(io), None))),
     }
 }

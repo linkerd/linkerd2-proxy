@@ -42,7 +42,7 @@ pub use self::resolution::{Resolution, ResolveFuture, Unresolvable};
 /// A handle to request resolutions from the destination service.
 #[derive(Clone)]
 pub struct Resolver<T> {
-    client: Option<Client<T>>,
+    client: Client<T>,
     suffixes: Arc<Vec<dns::Suffix>>,
 }
 
@@ -90,11 +90,10 @@ where
     T::Future: Send,
 {
     /// Returns a `Resolver` for requesting destination resolutions.
-    pub fn new(client: Option<T>, suffixes: Vec<dns::Suffix>, proxy_id: String) -> Resolver<T> {
-        let client = client.map(|client| Client::new(client, proxy_id));
-        Resolver {
+    pub fn new(client: T, suffixes: Vec<dns::Suffix>, proxy_id: String) -> Self {
+        Self {
             suffixes: Arc::new(suffixes),
-            client,
+            client: Client::new(client, proxy_id),
         }
     }
 }
@@ -115,11 +114,7 @@ where
         trace!("resolve; authority={:?}", authority);
 
         if self.suffixes.iter().any(|s| s.contains(authority.name())) {
-            if let Some(client) = self.client.as_ref().cloned() {
-                return ResolveFuture::new(authority, client);
-            } else {
-                trace!("-> control plane client disabled");
-            }
+            return ResolveFuture::new(authority, self.client.clone());
         } else {
             trace!("-> authority {} not in search suffixes", authority);
         }

@@ -53,7 +53,7 @@ pub struct RouteBuilder {
 
 #[derive(Debug)]
 enum Dst {
-    Call(pb::GetDestination, DstReceiver),
+    Call(pb::GetDestination, Result<DstReceiver, grpc::Status>),
     Done,
 }
 
@@ -83,8 +83,26 @@ impl Controller {
         self.expect_dst_calls
             .lock()
             .unwrap()
-            .push_back(Dst::Call(dst, DstReceiver(rx)));
+            .push_back(Dst::Call(dst, Ok(DstReceiver(rx))));
         DstSender(tx)
+    }
+
+    pub fn destination_fail(self, dest: &str, status: grpc::Status) -> Self {
+        let path = if dest.contains(":") {
+            dest.to_owned()
+        } else {
+            format!("{}:80", dest)
+        };
+        let dst = pb::GetDestination {
+            scheme: "k8s".into(),
+            path,
+            ..Default::default()
+        };
+        self.expect_dst_calls
+            .lock()
+            .unwrap()
+            .push_back(Dst::Call(dst, Err(status)));
+        self
     }
 
     pub fn destination_err(self, dest: &str, err: grpc::Code) -> Self {
@@ -230,7 +248,7 @@ impl pb::server::Destination for Controller {
                     match call {
                         Dst::Call(dst, updates) => {
                             if &dst == req.get_ref() {
-                                ret = future::ok(grpc::Response::new(updates));
+                                ret = future::result(updates.map(grpc::Response::new));
                             } else {
                                 calls_next.push_back(Dst::Call(dst, updates));
                             }
@@ -244,7 +262,7 @@ impl pb::server::Destination for Controller {
                 match calls.pop_front() {
                     Some(Dst::Call(dst, updates)) => {
                         if &dst == req.get_ref() {
-                            return future::ok(grpc::Response::new(updates));
+                            return future::result(updates.map(grpc::Response::new));
                         }
 
                         let msg = format!(

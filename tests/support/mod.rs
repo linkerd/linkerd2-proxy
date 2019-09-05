@@ -13,7 +13,6 @@ pub use http::{HeaderMap, Request, Response, StatusCode};
 use http_body::Body as HttpBody;
 pub use linkerd2_proxy::*;
 pub use linkerd2_task::LazyExecutor;
-use rustls::Session;
 pub use std::collections::HashMap;
 use std::fmt;
 use std::io;
@@ -22,11 +21,9 @@ pub use std::net::SocketAddr;
 pub use std::sync::Arc;
 pub use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
 use tokio::{net::TcpListener, reactor, runtime};
 use tokio_connect::Connect;
 use tokio_current_thread as current_thread;
-use tokio_rustls::TlsStream;
 pub use tower_grpc as grpc;
 pub use tower_service::Service;
 pub use tracing::*;
@@ -154,44 +151,32 @@ pub mod server;
 pub mod tap;
 pub mod tcp;
 
-enum RunningIo<T> {
-    Plain(TcpStream, Option<oneshot::Sender<()>>),
-    Tls(TlsStream<TcpStream, T>, Option<oneshot::Sender<()>>),
-}
+trait Io: AsyncRead + AsyncWrite {}
+impl<T: AsyncRead + AsyncWrite> Io for T {}
 
-impl<T: Session> Read for RunningIo<T> {
+struct RunningIo(pub Box<dyn Io + Send>, pub Option<oneshot::Sender<()>>);
+
+impl Read for RunningIo {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match *self {
-            RunningIo::Plain(ref mut s, _) => s.read(buf),
-            RunningIo::Tls(ref mut s, _) => s.read(buf),
-        }
+        self.0.read(buf)
     }
 }
 
-impl<T: Session> Write for RunningIo<T> {
+impl Write for RunningIo {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match *self {
-            RunningIo::Plain(ref mut s, _) => s.write(buf),
-            RunningIo::Tls(ref mut s, _) => s.write(buf),
-        }
+        self.0.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        match *self {
-            RunningIo::Plain(ref mut s, _) => s.flush(),
-            RunningIo::Tls(ref mut s, _) => s.flush(),
-        }
+        self.0.flush()
     }
 }
 
-impl<T: Session> AsyncRead for RunningIo<T> {}
+impl AsyncRead for RunningIo {}
 
-impl<T: Session> AsyncWrite for RunningIo<T> {
+impl AsyncWrite for RunningIo {
     fn shutdown(&mut self) -> Poll<(), io::Error> {
-        match *self {
-            RunningIo::Plain(ref mut s, _) => s.shutdown(),
-            RunningIo::Tls(ref mut s, _) => s.shutdown(),
-        }
+        self.0.shutdown()
     }
 }
 

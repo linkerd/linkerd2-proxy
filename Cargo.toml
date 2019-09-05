@@ -8,7 +8,9 @@ members = [
     "lib/linkerd2-drain",
     "lib/linkerd2-identity",
     "lib/linkerd2-metrics",
+    "lib/linkerd2-opencensus",
     "lib/linkerd2-proxy-core",
+    "lib/linkerd2-proxy-fallback",
     "lib/linkerd2-proxy-resolve",
     "lib/linkerd2-router",
     "lib/linkerd2-signal",
@@ -39,6 +41,7 @@ linkerd2-identity      = { path = "lib/linkerd2-identity" }
 linkerd2-metrics       = { path = "lib/linkerd2-metrics" }
 linkerd2-never         = { path = "lib/linkerd2-never" }
 linkerd2-proxy-core    = { path = "lib/linkerd2-proxy-core" }
+linkerd2-proxy-fallback = { path = "lib/linkerd2-proxy-fallback" }
 linkerd2-proxy-resolve = { path = "lib/linkerd2-proxy-resolve" }
 linkerd2-router        = { path = "lib/linkerd2-router" }
 linkerd2-signal        = { path = "lib/linkerd2-signal" }
@@ -93,11 +96,11 @@ tracing-futures = "0.0.1-alpha.1"
 tracing-log     = "0.0.1-alpha.1"
 
 # tls
-ring = "0.14.6"
-webpki = "0.19"
-rustls = "0.15"
-tokio-rustls = "0.9"
-untrusted = "0.6"
+ring = "0.16"
+webpki = "0.21"
+rustls = "0.16"
+tokio-rustls = "0.10"
+untrusted = "0.7"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -123,5 +126,5 @@ debug = false
 debug = false
 
 [patch.crates-io]
-webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names" }
+webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names-0.21" }
 

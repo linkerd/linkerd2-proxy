@@ -1,0 +1,29 @@
+name: Rust PR
+
+on: [pull_request]
+
+jobs:
+  fmt:
+    runs-on: ubuntu-18.04
+    container:
+      image: docker://rust:1.37.0-buster
+    steps:
+    - uses: actions/checkout@v1
+    - run: rustup component add rustfmt
+    - run: make check-fmt
+
+  lib:
+    runs-on: ubuntu-18.04
+    container:
+      image: docker://rust:1.37.0-buster
+    steps:
+    - uses: actions/checkout@v1
+    - run: make test-lib
+
+  integration:
+    runs-on: ubuntu-18.04
+    container:
+      image: docker://rust:1.37.0-buster
+    steps:
+    - uses: actions/checkout@v1
+    - run: make test-integration
