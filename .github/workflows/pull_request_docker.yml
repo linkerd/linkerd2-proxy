@@ -1,0 +1,15 @@
+name: Pull Request (Docker)
+
+on:
+  pull_request:
+    paths:
+    - '/Cargo.lock'
+    - '/Dockerfile'
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - uses: docker://rust:1.37.0-slim-buster
+    - run: make docker
