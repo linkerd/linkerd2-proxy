@@ -7,7 +7,7 @@ on:
     - '*.rs'
 
 jobs:
-  format:
+  fmt:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
@@ -26,8 +26,3 @@ jobs:
     - uses: actions/checkout@v1
     - uses: docker://rust:1.37.0-slim-buster
     - run: make test-integration
-  docker:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v1
-    - run: make docker
