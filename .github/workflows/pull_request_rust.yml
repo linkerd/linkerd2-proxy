@@ -1,0 +1,29 @@
+name: Pull Request (Rust)
+
+on:
+  pull_request:
+    paths:
+    - 'Cargo.*'
+    - '*.rs'
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - uses: docker://rust:1.37.0-slim-buster
+    - run: rustup component add rustfmt
+    - run: make check-fmt
+  lib:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - uses: docker://rust:1.37.0-slim-buster
+    - run: make test-lib
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - uses: docker://rust:1.37.0-slim-buster
+    - name: test-integration
+      run: make test-integration
