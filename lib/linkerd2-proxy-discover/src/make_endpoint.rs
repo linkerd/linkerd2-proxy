@@ -74,10 +74,12 @@ where
     type Error = D::Error;
     type Future = DiscoverFuture<D::Future, E>;
 
+    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.make_discover.poll_ready()
     }
 
+    #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         let future = self.make_discover.call(target);
         DiscoverFuture {

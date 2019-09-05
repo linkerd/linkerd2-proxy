@@ -43,6 +43,7 @@ where
     type Error = Error;
     type Future = ResponseFuture<S::Future>;
 
+    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.service.poll_ready().map_err(Into::into)
     }

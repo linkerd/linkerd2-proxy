@@ -50,10 +50,12 @@ where
     type Error = R::Error;
     type Future = ResolveFuture<T, R::Future, M>;
 
+    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.resolve.poll_ready()
     }
 
+    #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         let future = self.resolve.resolve(target.clone());
         Self::Future {

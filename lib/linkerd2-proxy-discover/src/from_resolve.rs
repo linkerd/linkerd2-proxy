@@ -42,10 +42,12 @@ where
     type Error = R::Error;
     type Future = DiscoverFuture<R::Future>;
 
+    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.resolve.poll_ready()
     }
 
+    #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         Self::Future {
             future: self.resolve.resolve(target),

@@ -53,10 +53,12 @@ where
     type Resolution = S::Response;
     type Future = S::Future;
 
+    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         tower::Service::poll_ready(self)
     }
 
+    #[inline]
     fn resolve(&mut self, target: T) -> Self::Future {
         tower::Service::call(self, target)
     }
@@ -73,10 +75,12 @@ where
     type Response = R::Resolution;
     type Future = R::Future;
 
+    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.0.poll_ready()
     }
 
+    #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         self.0.resolve(target)
     }
