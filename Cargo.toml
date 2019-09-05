@@ -123,4 +123,6 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names-0.21" }
+# this can be un-patched when `tracing-subscriber` 0.1.2 is released.
+tracing-subscriber = { git = "https://github.com/tokio-rs/tracing" }
 

@@ -16,7 +16,7 @@ thread_local! {
 pub mod trace {
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
     use crate::Error;
-    use std::{env, fmt, str, time::Instant, sync::{Arc, Mutex}};
+    use std::{env, fmt, str, time::Instant};
     use tracing_subscriber::{layer, fmt::{format, Builder, Context}};
     pub use tracing::*;
     pub use tracing_subscriber::{Filter, reload, FmtSubscriber};
@@ -26,10 +26,6 @@ pub mod trace {
 
     #[derive(Clone)]
     pub struct LevelHandle {
-        // XXX: this is only necessary because `tracing_subscriber::Filter`
-        // doesn't implement fmt::Display. when that's added upstream, remove
-        // this.
-        current: Arc<Mutex<String>>,
         inner: reload::Handle<Filter, Subscriber>,
     }
 
@@ -55,9 +51,7 @@ pub mod trace {
         // Set up log compatibility.
         tracing_log::LogTracer::init()?;
 
-        let current = Arc::new(Mutex::new(filter.to_owned()));
-
-        Ok(LevelHandle { inner: handle, current })
+        Ok(LevelHandle { inner: handle })
     }
 
     /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
@@ -127,36 +121,37 @@ pub mod trace {
                 .with_filter(Filter::default())
                 .with_filter_reloading();
             let inner = builder.reload_handle();
-            LevelHandle { inner, current: Arc::new(Mutex::new(String::new())) }
+            LevelHandle { inner }
         }
 
         pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
             let level = level.as_ref();
             let filter = level.parse::<Filter>()?;
             self.inner.reload(filter)?;
-            let mut current = self.current.lock().unwrap();
-            *current = level.to_owned();
             info!(message = "set new log level", %level);
             Ok(())
         }
 
         pub fn current(&self) -> Result<String, Error> {
-            Ok(self.current.lock().map(|s| s.clone()).unwrap_or_else(|_| String::from("<poisoned>")))
+            self.inner
+                .with_current(|f| format!("{}", f))
+                .map_err(Into::into)
         }
     }
 
     impl fmt::Debug for LevelHandle {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            if let Ok(current) = self.current.lock() {
-                f.debug_struct("LevelHandle")
-                    .field("current", &current)
-                    .finish()
-            } else {
-                f.debug_struct("LevelHandle")
-                    .field("current", &format_args!("<poisoned>"))
-                    .finish()
-            }
-
+            self.inner
+                .with_current(|c| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", c))
+                        .finish()
+                })
+                .unwrap_or_else(|e| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", e))
+                        .finish()
+                })
         }
     }
 
