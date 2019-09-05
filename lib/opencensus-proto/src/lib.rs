@@ -1,11 +1,6 @@
-extern crate futures;
-extern crate h2;
-extern crate http;
-extern crate prost;
-extern crate prost_types;
-extern crate tokio;
-extern crate tower_grpc;
-extern crate tracing;
+#![deny(warnings, rust_2018_idioms)]
+
+use tokio;
 
 pub mod span_exporter;
 
