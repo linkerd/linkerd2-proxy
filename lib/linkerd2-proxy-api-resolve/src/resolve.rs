@@ -1,5 +1,5 @@
 use crate::api::destination as api;
-use crate::core::resolve::Update;
+use crate::core::resolve::{self, Update};
 use crate::metadata::Metadata;
 use crate::pb;
 use futures::{future, Async, Future, Poll, Stream};
@@ -89,14 +89,14 @@ where
 
 // === impl ResolveFuture ===
 
-impl<S> Stream for Resolution<S>
+impl<S> resolve::Resolution for Resolution<S>
 where
     S: GrpcService<BoxBody>,
 {
-    type Item = Update<Metadata>;
+    type Endpoint = Metadata;
     type Error = grpc::Status;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
         loop {
             match self.inner.poll()? {
                 Async::NotReady => return Ok(Async::NotReady),
@@ -111,7 +111,7 @@ where
                             .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
                             .collect::<Vec<_>>();
                         if !addr_metas.is_empty() {
-                            return Ok(Async::Ready(Some(Update::Add(addr_metas))));
+                            return Ok(Update::Add(addr_metas).into());
                         }
                     }
 
@@ -121,7 +121,7 @@ where
                             .filter_map(pb::to_sock_addr)
                             .collect::<Vec<_>>();
                         if !sock_addrs.is_empty() {
-                            return Ok(Async::Ready(Some(Update::Remove(sock_addrs))));
+                            return Ok(Update::Remove(sock_addrs).into());
                         }
                     }
 
@@ -131,13 +131,15 @@ where
                         } else {
                             Update::DoesNotExist
                         };
-                        return Ok(Async::Ready(Some(update)));
+                        return Ok(update.into());
                     }
 
                     None => {} // continue
                 },
 
-                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::Ready(None) => {
+                    return Err(grpc::Status::new(grpc::Code::Ok, "end of stream"))
+                }
             };
         }
     }
