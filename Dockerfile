@@ -9,7 +9,7 @@
 
 # rather than updating this manually, run update-rust-version.sh
 ARG RUST_IMAGE=rust:1.37.0-buster
-ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.4.3
+ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.8.7
 
 ## Builds the proxy as incrementally as possible.
 FROM $RUST_IMAGE as build
@@ -22,14 +22,6 @@ COPY Cargo.toml Cargo.lock ./
 COPY lib lib
 RUN cargo fetch --locked
 
-# Build libraries, leaving the proxy mocked out.
-ARG PROXY_UNOPTIMIZED
-RUN if [ -n "$PROXY_UNOPTIMIZED" ]; \
-    then cargo build --frozen ; \
-    else cargo build --frozen --release ; \
-    fi
-
-# Build the proxy binary using the already-built dependencies.
 COPY src src
 RUN if [ -n "$PROXY_UNOPTIMIZED" ]; \
     then \
