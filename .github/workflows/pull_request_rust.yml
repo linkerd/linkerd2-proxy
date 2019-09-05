@@ -27,3 +27,7 @@ jobs:
     - uses: docker://rust:1.37.0-slim-buster
     - name: test-integration
       run: make test-integration
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: make docker
