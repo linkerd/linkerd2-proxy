@@ -1,6 +1,7 @@
 use futures::{try_ready, Async, Future, Poll};
 use indexmap::IndexSet;
 use linkerd2_proxy_core::resolve::{Resolution, Resolve, Update};
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use tower::discover::Change;
 
@@ -19,7 +20,7 @@ pub struct DiscoverFuture<F> {
 pub struct Discover<R: Resolution> {
     resolution: R,
     active: IndexSet<SocketAddr>,
-    pending: Vec<Change<SocketAddr, R::Endpoint>>,
+    pending: VecDeque<Change<SocketAddr, R::Endpoint>>,
 }
 
 // === impl FromResolve ===
@@ -75,7 +76,7 @@ impl<R: Resolution> Discover<R> {
         Self {
             resolution,
             active: IndexSet::default(),
-            pending: vec![],
+            pending: VecDeque::new(),
         }
     }
 }
@@ -87,7 +88,7 @@ impl<R: Resolution> tower::discover::Discover for Discover<R> {
 
     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
         loop {
-            if let Some(change) = self.pending.pop() {
+            if let Some(change) = self.pending.pop_front() {
                 return Ok(change.into());
             }
 
@@ -95,13 +96,13 @@ impl<R: Resolution> tower::discover::Discover for Discover<R> {
                 Update::Add(endpoints) => {
                     for (addr, endpoint) in endpoints.into_iter() {
                         self.active.insert(addr);
-                        self.pending.push(Change::Insert(addr, endpoint));
+                        self.pending.push_back(Change::Insert(addr, endpoint));
                     }
                 }
                 Update::Remove(addrs) => {
                     for addr in addrs.into_iter() {
                         if self.active.remove(&addr) {
-                            self.pending.push(Change::Remove(addr));
+                            self.pending.push_back(Change::Remove(addr));
                         }
                     }
                 }
