@@ -16,15 +16,21 @@ thread_local! {
 pub mod trace {
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
     use crate::Error;
-    use std::{env, fmt, str, time::Instant};
+    use std::{env, fmt, str, time::Instant, sync::{Arc, Mutex}};
+    use tracing_subscriber::{layer, fmt::{format, Builder, Context}};
     pub use tracing::*;
-    pub use tracing_fmt::*;
+    pub use tracing_subscriber::{Filter, reload, FmtSubscriber};
 
-    type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::EnvFilter>;
+    type SubscriberBuilder = Builder<format::NewRecorder, Format, layer::Identity>;
+    type Subscriber = FmtSubscriber<format::NewRecorder, Format>;
 
     #[derive(Clone)]
     pub struct LevelHandle {
-        inner: filter::reload::Handle<filter::EnvFilter, format::NewRecorder>,
+        // XXX: this is only necessary because `tracing_subscriber::Filter`
+        // doesn't implement fmt::Display. when that's added upstream, remove
+        // this.
+        current: Arc<Mutex<String>>,
+        inner: reload::Handle<Filter, Subscriber>,
     }
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
@@ -36,16 +42,22 @@ pub mod trace {
 
     /// Initialize tracing and logging with the provided verbosity-level filter.
     pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<LevelHandle, Error> {
+        let filter = filter.as_ref();
+
         // Set up the subscriber
         let builder = subscriber_builder()
-            .with_filter(filter::EnvFilter::from(filter))
+            .with_filter(filter)
             .with_filter_reloading();
         let handle = builder.reload_handle();
         let dispatch = Dispatch::new(builder.finish());
         dispatcher::set_global_default(dispatch)?;
+
+        // Set up log compatibility.
         tracing_log::LogTracer::init()?;
 
-        Ok(LevelHandle { inner: handle })
+        let current = Arc::new(Mutex::new(filter.to_owned()));
+
+        Ok(LevelHandle { inner: handle, current })
     }
 
     /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
@@ -58,9 +70,9 @@ pub mod trace {
         start_time: Instant,
     }
 
-    impl<N> tracing_fmt::FormatEvent<N> for Format
+    impl<N> tracing_subscriber::fmt::FormatEvent<N> for Format
     where
-        N: for<'a> tracing_fmt::NewVisitor<'a>,
+        N: for<'a> tracing_subscriber::fmt::NewVisitor<'a>,
     {
         fn format_event(
             &self,
@@ -112,40 +124,39 @@ pub mod trace {
         /// do not exercise the `proxy-log-level` endpoint.
         pub fn dangling() -> Self {
             let builder = subscriber_builder()
-                .with_filter(filter::EnvFilter::default())
+                .with_filter(Filter::default())
                 .with_filter_reloading();
             let inner = builder.reload_handle();
-            LevelHandle { inner }
+            LevelHandle { inner, current: Arc::new(Mutex::new(String::new())) }
         }
 
         pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
             let level = level.as_ref();
-            let filter = level.parse::<filter::EnvFilter>()?;
+            let filter = level.parse::<Filter>()?;
             self.inner.reload(filter)?;
+            let mut current = self.current.lock().unwrap();
+            *current = level.to_owned();
             info!(message = "set new log level", %level);
             Ok(())
         }
 
         pub fn current(&self) -> Result<String, Error> {
-            self.inner
-                .with_current(|f| format!("{}", f))
-                .map_err(Into::into)
+            Ok(self.current.lock().map(|s| s.clone()).unwrap_or_else(|_| String::from("<poisoned>")))
         }
     }
 
     impl fmt::Debug for LevelHandle {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            self.inner
-                .with_current(|c| {
-                    f.debug_struct("LevelHandle")
-                        .field("current", &format_args!("{}", c))
-                        .finish()
-                })
-                .unwrap_or_else(|e| {
-                    f.debug_struct("LevelHandle")
-                        .field("current", &format_args!("{}", e))
-                        .finish()
-                })
+            if let Ok(current) = self.current.lock() {
+                f.debug_struct("LevelHandle")
+                    .field("current", &current)
+                    .finish()
+            } else {
+                f.debug_struct("LevelHandle")
+                    .field("current", &format_args!("<poisoned>"))
+                    .finish()
+            }
+
         }
     }
 
