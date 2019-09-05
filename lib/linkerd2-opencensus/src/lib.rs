@@ -1,9 +1,9 @@
-use super::gen::agent::common::v1::Node;
-use super::gen::agent::trace::v1::{
+use opencensus_proto::agent::common::v1::Node;
+use opencensus_proto::agent::trace::v1::{
     client::TraceService, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
-use super::gen::trace::v1::Span;
-use crate::tokio::sync::mpsc;
+use opencensus_proto::trace::v1::Span;
+use tokio::sync::mpsc;
 use futures::{try_ready, Async, Future, Poll, Stream};
 use tower_grpc::{
     self as grpc, client::streaming::ResponseFuture, generic::client::GrpcService, BoxBody,

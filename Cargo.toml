@@ -8,6 +8,7 @@ members = [
     "lib/linkerd2-drain",
     "lib/linkerd2-identity",
     "lib/linkerd2-metrics",
+    "lib/linkerd2-opencensus",
     "lib/linkerd2-proxy-core",
     "lib/linkerd2-proxy-resolve",
     "lib/linkerd2-router",
