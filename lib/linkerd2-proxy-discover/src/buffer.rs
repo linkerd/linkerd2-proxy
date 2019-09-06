@@ -8,7 +8,6 @@ use tower::discover;
 use tracing::info_span;
 use tracing_futures::Instrument;
 
-
 #[derive(Clone, Debug)]
 pub struct Buffer<M> {
     capacity: usize,
