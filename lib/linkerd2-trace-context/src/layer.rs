@@ -46,7 +46,7 @@ pub fn layer<Sink>(sink: Sink) -> Layer<Sink> {
 
 // === impl Layer ===
 
-impl<Make, Sink> tower::layer::Layer<Make> for Layer<Sink> 
+impl<Make, Sink> tower::layer::Layer<Make> for Layer<Sink>
 where
     Sink: Clone,
 {
@@ -163,7 +163,7 @@ where
 
 // === impl SpanFuture ===
 
-impl<Fut, Sink> Future for SpanFuture<Fut, Sink> 
+impl<Fut, Sink> Future for SpanFuture<Fut, Sink>
 where
     Fut: Future,
     Sink: SpanSink,
