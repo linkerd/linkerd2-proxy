@@ -8,6 +8,7 @@ use bytes::Buf;
 use futures::sync::mpsc;
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
+use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
@@ -265,13 +266,41 @@ impl iface::Tap for Tap {
 
         let base_event = base_event(req, inspect);
 
+        let authority = inspect.authority(req).unwrap_or_default();
+
+        let headers = if req.version() == http::Version::HTTP_2 {
+            // If the request is HTTP/2, add the pseudo-header fields to the
+            // headers.
+            let pseudos = vec![
+                http_types::headers::Header {
+                    name: ":method".to_owned(),
+                    value: req.method().as_str().as_bytes().into(),
+                },
+                http_types::headers::Header {
+                    name: ":scheme".to_owned(),
+                    value: req.uri().scheme_part().map(|scheme| scheme.as_str().as_bytes().into()).unwrap_or_default(),
+                },
+                http_types::headers::Header {
+                    name: ":authority".to_owned(),
+                    value: authority.as_bytes().into(),
+                },
+                http_types::headers::Header {
+                    name: ":path".to_owned(),
+                    value: req.uri().path().as_bytes().into(),
+                },
+            ];
+            headers_to_pb(pseudos, req.headers())
+        } else {
+            headers_to_pb(iter::empty(), req.headers())
+        };
+
         let init = api::tap_event::http::RequestInit {
             id: Some(id.clone()),
             method: Some(req.method().into()),
             scheme: req.uri().scheme_part().map(http_types::Scheme::from),
-            authority: inspect.authority(req).unwrap_or_default(),
+            authority,
             path: req.uri().path().into(),
-            headers: Some(headers_to_pb(req.headers())),
+            headers: Some(headers),
         };
 
         let event = api::TapEvent {
@@ -306,11 +335,21 @@ impl iface::TapResponse for TapResponse {
 
     fn tap<B: Payload>(mut self, rsp: &http::Response<B>) -> TapResponsePayload {
         let response_init_at = clock::now();
+        let headers = if rsp.version() == http::Version::HTTP_2 {
+            let pseudos = iter::once(http_types::headers::Header {
+                name: ":status".to_owned(),
+                value: rsp.status().as_str().as_bytes().into(),
+            });
+            headers_to_pb(pseudos, rsp.headers())
+        } else {
+            headers_to_pb(iter::empty(), rsp.headers())
+        };
+
         let init = api::tap_event::http::Event::ResponseInit(api::tap_event::http::ResponseInit {
             id: Some(self.tap.id.clone()),
             since_request_init: Some(pb_duration(response_init_at - self.request_init_at)),
             http_status: rsp.status().as_u16().into(),
-            headers: Some(headers_to_pb(rsp.headers())),
+            headers: Some(headers),
         });
 
         let event = api::TapEvent {
@@ -405,7 +444,7 @@ impl TapResponsePayload {
             since_response_init: Some(pb_duration(response_end_at - self.response_init_at)),
             response_bytes: self.response_bytes as u64,
             eos: Some(api::Eos { end }),
-            trailers: trls.map(headers_to_pb),
+            trailers: trls.map(|trls| headers_to_pb(iter::empty(), trls)),
         };
 
         let event = api::TapEvent {
@@ -464,15 +503,16 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
     }
 }
 
-fn headers_to_pb(headers: &http::HeaderMap) -> http_types::Headers {
+fn headers_to_pb(pseudos: impl IntoIterator<Item = http_types::headers::Header>, headers: &http::HeaderMap) -> http_types::Headers {
     http_types::Headers {
-        headers: headers.iter()
-            .map(|(name, value)| {
-                http_types::headers::Header {
-                    name: name.as_str().to_owned(),
-                    value: value.as_bytes().into(),
-                }
-            })
+        headers: pseudos.into_iter().chain(
+                headers.iter()
+                .map(|(name, value)| {
+                    http_types::headers::Header {
+                        name: name.as_str().to_owned(),
+                        value: value.as_bytes().into(),
+                    }
+                }))
             .collect()
     }
 }
