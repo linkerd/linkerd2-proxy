@@ -6,13 +6,14 @@ use super::profiles::Client as ProfilesClient;
 use super::spans::SpanConverter;
 use super::{config::Config, identity};
 use super::{handle_time, inbound, outbound, tap::serve_tap};
+use crate::opencensus::SpanExporter;
 use crate::proxy::{self, http::metrics as http_metrics, reconnect};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
 use futures::{self, future, Future, Stream};
-use opencensus_proto::gen::agent::common::v1 as oc;
-use opencensus_proto::span_exporter::SpanExporter;
+use opencensus_proto::agent::common::v1 as oc;
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::thread;
@@ -402,25 +403,25 @@ where
         );
 
         let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| {
-            svc::builder()
-                // Reuse destination client settings for now...
-                .buffer_pending(
-                    config.destination_buffer_capacity,
-                    config.control_dispatch_timeout,
-                )
-                .layer(control::add_origin::layer())
-                .layer(proxy::grpc::req_body_as_payload::layer().per_make())
+
+            svc::stack(connect::svc())
+                .push(tls::client::layer(local_identity.clone()))
+                .push(keepalive::connect::layer(config.outbound_connect_keepalive))
+                .push_timeout(config.control_connect_timeout)
+                // TODO: perhaps rename from "control" to "grpc"
+                .push(control::client::layer())
+                .push(control::resolve::layer(dns_resolver.clone()))
                 // TODO: we should have metrics of some kind, but the standard
                 // HTTP metrics aren't useful for a client where we never read
                 // the response.
-                .layer(reconnect::layer().with_backoff(config.control_backoff.clone()))
-                .layer(control::resolve::layer(dns_resolver.clone()))
-                // TODO: perhaps rename from "control" to "grpc"
-                .layer(control::client::layer())
-                .timeout(config.control_connect_timeout)
-                .layer(keepalive::connect::layer(config.outbound_connect_keepalive))
-                .layer(tls::client::layer(local_identity.clone()))
-                .service(connect::svc())
+                .push(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                .push(proxy::grpc::req_body_as_payload::layer().per_make())
+                .push(control::add_origin::layer())
+                .push_buffer_pending(
+                    config.destination_buffer_capacity,
+                    config.control_dispatch_timeout,
+                )
+                .into_inner()
                 .make(addr.clone())
         });
 

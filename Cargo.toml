@@ -40,6 +40,7 @@ linkerd2-dns-name      = { path = "lib/linkerd2-dns-name" }
 linkerd2-identity      = { path = "lib/linkerd2-identity" }
 linkerd2-metrics       = { path = "lib/linkerd2-metrics" }
 linkerd2-never         = { path = "lib/linkerd2-never" }
+linkerd2-opencensus    = { path = "lib/linkerd2-opencensus" }
 linkerd2-proxy-core    = { path = "lib/linkerd2-proxy-core" }
 linkerd2-proxy-fallback = { path = "lib/linkerd2-proxy-fallback" }
 linkerd2-proxy-resolve = { path = "lib/linkerd2-proxy-resolve" }

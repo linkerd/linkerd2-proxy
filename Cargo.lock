@@ -574,6 +574,7 @@ dependencies = [
  "linkerd2-identity 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",
+ "linkerd2-opencensus 0.1.0",
  "linkerd2-proxy-api 0.1.8 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=ddbc3a4f7f8b0058801f896d27974d19ee98094c)",
  "linkerd2-proxy-core 0.1.0",
  "linkerd2-proxy-fallback 0.1.0",
