@@ -17,14 +17,16 @@ pub mod trace {
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
     use crate::Error;
     use std::{env, fmt, str, time::Instant};
+    use tracing_subscriber::{layer, fmt::{format, Builder, Context}};
     pub use tracing::*;
-    pub use tracing_fmt::*;
+    pub use tracing_subscriber::{Filter, reload, FmtSubscriber};
 
-    type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::EnvFilter>;
+    type SubscriberBuilder = Builder<format::NewRecorder, Format, layer::Identity>;
+    type Subscriber = FmtSubscriber<format::NewRecorder, Format>;
 
     #[derive(Clone)]
     pub struct LevelHandle {
-        inner: filter::reload::Handle<filter::EnvFilter, format::NewRecorder>,
+        inner: reload::Handle<Filter, Subscriber>,
     }
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
@@ -36,13 +38,17 @@ pub mod trace {
 
     /// Initialize tracing and logging with the provided verbosity-level filter.
     pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<LevelHandle, Error> {
+        let filter = filter.as_ref();
+
         // Set up the subscriber
         let builder = subscriber_builder()
-            .with_filter(filter::EnvFilter::from(filter))
+            .with_filter(filter)
             .with_filter_reloading();
         let handle = builder.reload_handle();
         let dispatch = Dispatch::new(builder.finish());
         dispatcher::set_global_default(dispatch)?;
+
+        // Set up log compatibility.
         tracing_log::LogTracer::init()?;
 
         Ok(LevelHandle { inner: handle })
@@ -58,9 +64,9 @@ pub mod trace {
         start_time: Instant,
     }
 
-    impl<N> tracing_fmt::FormatEvent<N> for Format
+    impl<N> tracing_subscriber::fmt::FormatEvent<N> for Format
     where
-        N: for<'a> tracing_fmt::NewVisitor<'a>,
+        N: for<'a> tracing_subscriber::fmt::NewVisitor<'a>,
     {
         fn format_event(
             &self,
@@ -112,7 +118,7 @@ pub mod trace {
         /// do not exercise the `proxy-log-level` endpoint.
         pub fn dangling() -> Self {
             let builder = subscriber_builder()
-                .with_filter(filter::EnvFilter::default())
+                .with_filter(Filter::default())
                 .with_filter_reloading();
             let inner = builder.reload_handle();
             LevelHandle { inner }
@@ -120,7 +126,7 @@ pub mod trace {
 
         pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
             let level = level.as_ref();
-            let filter = level.parse::<filter::EnvFilter>()?;
+            let filter = level.parse::<Filter>()?;
             self.inner.reload(filter)?;
             info!(message = "set new log level", %level);
             Ok(())
