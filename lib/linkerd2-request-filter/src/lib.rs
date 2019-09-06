@@ -1,4 +1,5 @@
-//! A `Service` middleware that applies arbirary-user provided logic to each target before f
+//! A `Service` middleware that applies arbitrary-user provided logic to each
+//! target before it is issued to an inner service.
 
 use futures::{Future, Poll};
 
