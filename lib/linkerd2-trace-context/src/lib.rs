@@ -2,11 +2,14 @@ use bytes::Bytes;
 use rand::Rng;
 use std::fmt;
 use std::time::SystemTime;
+use tokio::sync::mpsc;
 
 pub mod layer;
 mod propagation;
 
 pub use layer::layer;
+
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug, Default)]
 pub struct Id(Vec<u8>);
@@ -22,6 +25,16 @@ pub struct Span {
     pub span_name: String,
     pub start: SystemTime,
     pub end: SystemTime,
+}
+
+pub trait SpanSink {
+    fn try_send(&mut self, span: Span) -> Result<(), Error>;
+}
+
+impl SpanSink for mpsc::Sender<Span> {
+    fn try_send(&mut self, span: Span) -> Result<(), Error> {
+        self.try_send(span).map_err(Into::into)
+    }
 }
 
 // === impl Id ===

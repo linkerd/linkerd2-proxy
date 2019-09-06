@@ -1,4 +1,4 @@
-use super::{Flags, Id};
+use super::{Error, Flags, Id};
 use bytes::Bytes;
 use http::header::HeaderValue;
 use std::fmt;
@@ -12,8 +12,6 @@ const GRPC_TRACE_HEADER: &str = "grpc-trace-bin";
 const GRPC_TRACE_FIELD_TRACE_ID: u8 = 0;
 const GRPC_TRACE_FIELD_SPAN_ID: u8 = 1;
 const GRPC_TRACE_FIELD_TRACE_OPTIONS: u8 = 2;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub enum Propagation {
