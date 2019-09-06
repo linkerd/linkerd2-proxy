@@ -146,9 +146,10 @@ where
 
     // Resolves the target via the control plane and balances requests
     // over all endpoints returned from the destination service.
+    const DISCOVER_UPDATE_BUFFER_CAPACITY: usize = 2;
     let balancer_layer = svc::layers()
         .push_spawn_ready()
-        .push(discover::Layer::new(2, resolve))
+        .push(discover::Layer::new(DISCOVER_UPDATE_BUFFER_CAPACITY, resolve))
         .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));
 
     // If the balancer fails to be created, i.e., because it is unresolvable,
