@@ -5,6 +5,9 @@ use linkerd2_task as task;
 use std::fmt;
 use tokio::sync::{mpsc, oneshot};
 use tower::discover;
+use tracing::info_span;
+use tracing_futures::Instrument;
+
 
 #[derive(Clone, Debug)]
 pub struct Buffer<M> {
@@ -20,6 +23,7 @@ pub struct Discover<K, S> {
 
 pub struct DiscoverFuture<F, D> {
     future: F,
+    target: String,
     capacity: usize,
     _marker: std::marker::PhantomData<fn() -> D>,
 }
@@ -34,13 +38,9 @@ pub struct Daemon<D: discover::Discover> {
 pub struct Lost(());
 
 impl<M> Buffer<M> {
-    pub fn new<T, D>(capacity: usize, inner: M) -> Self
+    pub fn new<T>(capacity: usize, inner: M) -> Self
     where
-        M: tower::Service<T, Response = D>,
-        D: discover::Discover + Send + 'static,
-        D::Error: Into<Error>,
-        D::Key: Send,
-        D::Service: Send,
+        Self: tower::Service<T>,
     {
         Self { capacity, inner }
     }
@@ -48,6 +48,7 @@ impl<M> Buffer<M> {
 
 impl<T, M, D> tower::Service<T> for Buffer<M>
 where
+    T: fmt::Display,
     M: tower::Service<T, Response = D>,
     D: discover::Discover + Send + 'static,
     D::Error: Into<Error>,
@@ -63,10 +64,12 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, target: T) -> Self::Future {
-        let future = self.inner.call(target);
+    fn call(&mut self, req: T) -> Self::Future {
+        let target = req.to_string().into();
+        let future = self.inner.call(req);
         Self::Future {
             future,
+            target,
             capacity: self.capacity,
             _marker: std::marker::PhantomData,
         }
@@ -89,11 +92,12 @@ where
 
         let (tx, rx) = mpsc::channel(self.capacity);
         let (_disconnect_tx, disconnect_rx) = oneshot::channel();
-        task::spawn(Daemon {
+        let fut = Daemon {
             discover,
             disconnect_rx,
             tx,
-        });
+        };
+        task::spawn(fut.instrument(info_span!("discover", target = %self.target)));
 
         Ok(Discover { rx, _disconnect_tx }.into())
     }

@@ -1,9 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_proxy_core::{Error, Resolve};
-use linkerd2_request_instrument as instrument;
 use std::fmt;
-use tracing::{info_span, Span};
 
 pub mod buffer;
 pub mod from_resolve;
@@ -49,12 +47,11 @@ where
     M::Response: Send + 'static,
     M::Future: Send + 'static,
 {
-    type Service = Buffer<instrument::Service<fn(&T) -> Span, MakeEndpoint<FromResolve<R>, M>>>;
+    type Service = Buffer<MakeEndpoint<FromResolve<R>, M>>;
 
     fn layer(&self, make_endpoint: M) -> Self::Service {
         let make_discover =
             MakeEndpoint::new(make_endpoint, FromResolve::new(self.resolve.clone()));
-        let span = |target: &T| info_span!("discover", %target);
-        Buffer::new(self.capacity, instrument::Service::new(span, make_discover))
+        Buffer::new(self.capacity, make_discover)
     }
 }

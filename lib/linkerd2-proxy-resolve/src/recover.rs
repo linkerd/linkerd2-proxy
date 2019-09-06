@@ -4,7 +4,6 @@ use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
 use linkerd2_proxy_core::resolve::{self, Resolution as _, Update};
 use linkerd2_proxy_core::{Error, Recover};
-use std::fmt;
 use std::net::SocketAddr;
 
 #[derive(Clone, Debug)]
@@ -71,6 +70,7 @@ impl<E, R> Resolve<E, R> {
 
 impl<T, E, R> tower::Service<T> for Resolve<E, R>
 where
+    T: Clone,
     R: resolve::Resolve<T> + Clone,
     R::Endpoint: Clone + PartialEq,
     E: Recover + Clone,
@@ -103,6 +103,7 @@ where
 
 impl<T, E, R> Future for ResolveFuture<T, E, R>
 where
+    T: Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
@@ -125,6 +126,7 @@ where
 
 impl<T, E, R> resolve::Resolution for Resolution<T, E, R>
 where
+    T: Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
@@ -174,6 +176,7 @@ where
 
 impl<T, E, R> Inner<T, E, R>
 where
+    T: Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
