@@ -271,6 +271,16 @@ impl iface::Tap for Tap {
             scheme: req.uri().scheme_part().map(http_types::Scheme::from),
             authority: inspect.authority(req).unwrap_or_default(),
             path: req.uri().path().into(),
+            headers: req
+                .headers()
+                .iter()
+                .filter_map(|(name, value)| {
+                    value
+                        .to_str()
+                        .and_then(|v| Ok((name.as_str().to_owned(), v.to_owned())))
+                        .ok()
+                })
+                .collect(),
         };
 ;
         let event = api::TapEvent {
