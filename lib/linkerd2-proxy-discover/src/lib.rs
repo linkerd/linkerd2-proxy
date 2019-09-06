@@ -25,7 +25,6 @@ pub struct Layer<T, R> {
 impl<T, R> Layer<T, R> {
     pub fn new(capacity: usize, resolve: R) -> Self
     where
-        T: fmt::Display + Clone,
         R: Resolve<T> + Clone,
         R::Endpoint: fmt::Debug + Clone + PartialEq,
     {
@@ -39,7 +38,7 @@ impl<T, R> Layer<T, R> {
 
 impl<T, R, M> tower::layer::Layer<M> for Layer<T, R>
 where
-    T: fmt::Display + Send + Clone,
+    T: fmt::Display,
     R: Resolve<T> + Send + Clone + 'static,
     R::Error: Into<Error>,
     R::Endpoint: fmt::Debug + Clone + PartialEq + Send,

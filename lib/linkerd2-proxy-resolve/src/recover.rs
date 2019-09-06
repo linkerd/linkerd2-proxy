@@ -71,7 +71,6 @@ impl<E, R> Resolve<E, R> {
 
 impl<T, E, R> tower::Service<T> for Resolve<E, R>
 where
-    T: fmt::Display + Clone,
     R: resolve::Resolve<T> + Clone,
     R::Endpoint: Clone + PartialEq,
     E: Recover + Clone,
@@ -104,7 +103,6 @@ where
 
 impl<T, E, R> Future for ResolveFuture<T, E, R>
 where
-    T: fmt::Display + Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
@@ -127,7 +125,6 @@ where
 
 impl<T, E, R> resolve::Resolution for Resolution<T, E, R>
 where
-    T: fmt::Display + Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
@@ -177,7 +174,6 @@ where
 
 impl<T, E, R> Inner<T, E, R>
 where
-    T: fmt::Display + Clone,
     R: resolve::Resolve<T>,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
@@ -186,7 +182,7 @@ where
         loop {
             self.state = match self.state {
                 State::Disconnected { ref mut backoff } => {
-                    tracing::trace!(message = "connecting", target = %self.target);
+                    tracing::trace!("connecting");
                     let future = self.resolve.resolve(self.target.clone());
                     State::Connecting {
                         future,
@@ -204,7 +200,7 @@ where
                         backoff: backoff.take(),
                     },
                     Ok(Async::Ready(resolution)) => {
-                        tracing::trace!(message = "pending", target = %self.target);
+                        tracing::trace!("pending");
                         State::Pending {
                             resolution: Some(resolution),
                             backoff: backoff.take(),
@@ -222,7 +218,7 @@ where
                         backoff: backoff.take(),
                     },
                     Ok(Async::Ready(initial)) => {
-                        tracing::trace!(message = "connected", target = %self.target);
+                        tracing::trace!("connected");
                         State::Connected {
                             resolution: resolution.take().unwrap(),
                             initial: Some(initial),
@@ -237,7 +233,7 @@ where
                     ref mut backoff,
                 } => {
                     let err = error.take().expect("illegal state");
-                    tracing::debug!(message = %err, target = %self.target);
+                    tracing::debug!(message = %err);
                     let new_backoff = self.recover.recover(err)?;
                     State::Backoff(backoff.take().or(Some(new_backoff)))
                 }
@@ -251,7 +247,7 @@ where
                     {
                         Async::NotReady => return Ok(Async::NotReady),
                         Async::Ready(unit) => {
-                            tracing::trace!(message = "disconnected", target = %self.target);
+                            tracing::trace!("disconnected");
                             let backoff = if unit.is_some() { backoff.take() } else { None };
                             State::Disconnected { backoff }
                         }
