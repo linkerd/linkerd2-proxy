@@ -10,6 +10,9 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
+use opencensus_proto::trace::v1 as oc;
+use super::spans::SpanConverter;
+use std::collections::HashMap;
 
 mod endpoint;
 mod orig_proto_downgrade;
@@ -31,7 +34,7 @@ pub fn server<P>(
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-    span_sink: mpsc::Sender<trace_context::Span>,
+    span_sink: mpsc::Sender<oc::Span>,
 ) -> impl ServeConnection<Connection>
 where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
@@ -45,6 +48,9 @@ where
     let profile_suffixes = config.destination_profile_suffixes.clone();
     let default_fwd_addr = config.inbound_forward.map(|a| a.into());
     let dispatch_timeout = config.inbound_dispatch_timeout;
+
+    let mut trace_labels = HashMap::new();
+    trace_labels.insert("direction".to_string(), "inbound".to_string());
 
     // Establishes connections to the local application (for both
     // TCP forwarding and HTTP proxying).
@@ -60,7 +66,7 @@ where
         .clone()
         .push(client::layer("in", config.h2_settings))
         .push(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
-        .push(trace_context::layer(span_sink))
+        .push(trace_context::layer(SpanConverter::client(span_sink.clone(), trace_labels.clone())))
         .push(normalize_uri::layer());
 
     // A stack configured by `router::Config`, responsible for building
@@ -189,6 +195,7 @@ where
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(super::errors::layer())
+        .push(trace_context::layer(SpanConverter::server(span_sink, trace_labels)))
         .push(handle_time.layer());
 
     // As the inbound proxy accepts connections, we don't do any

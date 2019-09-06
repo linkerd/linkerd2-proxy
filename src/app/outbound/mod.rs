@@ -15,6 +15,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
+use opencensus_proto::trace::v1 as oc;
+use super::spans::SpanConverter;
+use std::collections::HashMap;
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;
@@ -44,7 +47,7 @@ pub fn server<R, P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-    span_sink: mpsc::Sender<trace_context::Span>,
+    span_sink: mpsc::Sender<oc::Span>,
 ) -> impl ServeConnection<Connection>
 where
     R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
@@ -63,6 +66,9 @@ where
     let canonicalize_timeout = config.dns_canonicalize_timeout;
     let dispatch_timeout = config.outbound_dispatch_timeout;
 
+    let mut trace_labels = HashMap::new();
+    trace_labels.insert("direction".to_string(), "outbound".to_string());
+
     // Establishes connections to remote peers (for both TCP
     // forwarding and HTTP proxying).
     let connect = svc::stack(connect::svc())
@@ -76,7 +82,7 @@ where
         .clone()
         .push(client::layer("out", config.h2_settings))
         .push(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
-        .push(trace_context::layer(span_sink))
+        .push(trace_context::layer(SpanConverter::client(span_sink.clone(), trace_labels.clone())))
         .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:
@@ -260,6 +266,7 @@ where
         }))
         .push(insert::target::layer())
         .push(super::errors::layer())
+        .push(trace_context::layer(SpanConverter::server(span_sink, trace_labels)))
         .push(handle_time.layer());
 
     // Instantiated for each TCP connection received from the local

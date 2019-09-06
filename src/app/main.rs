@@ -3,7 +3,6 @@ use super::classify::{self, Class};
 use super::control;
 use super::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use super::profiles::Client as ProfilesClient;
-use super::spans::SpanConverter;
 use super::{config::Config, identity};
 use super::{handle_time, inbound, outbound, tap::serve_tap};
 use crate::opencensus::SpanExporter;
@@ -440,8 +439,7 @@ where
                 }),
                 attributes: HashMap::new(),
             };
-            let merged = SpanConverter::inbound(inbound_spans_rx)
-                .select(SpanConverter::outbound(outbound_spans_rx));
+            let merged = inbound_spans_rx.select(outbound_spans_rx);
             let span_exporter = SpanExporter::new(trace_collector, node, merged);
             task::spawn(span_exporter);
         }

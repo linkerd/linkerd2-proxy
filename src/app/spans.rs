@@ -1,16 +1,17 @@
-use super::dst::Direction;
 use crate::trace_context;
-use futures::{try_ready, Async, Poll, Stream};
 use opencensus_proto::trace::v1 as oc;
 use std::{error, fmt};
-use tracing::warn;
+use tokio::sync::mpsc;
+use std::collections::HashMap;
 
 const SPAN_KIND_SERVER: i32 = 1;
 const SPAN_KIND_CLIENT: i32 = 2;
 
-pub struct SpanConverter<S> {
-    direction: Direction,
-    spans: S,
+#[derive(Clone)]
+pub struct SpanConverter {
+    kind: i32,
+    sink: mpsc::Sender<oc::Span>,
+    labels: HashMap<String, String>,
 }
 
 #[derive(Debug)]
@@ -36,63 +37,58 @@ impl fmt::Display for IdLengthError {
     }
 }
 
-impl<S> SpanConverter<S> {
-    pub fn inbound(spans: S) -> Self {
+impl SpanConverter {
+    pub fn server(sink: mpsc::Sender<oc::Span>, labels: HashMap<String, String>) -> Self {
         Self {
-            direction: Direction::In,
-            spans,
+            kind: SPAN_KIND_SERVER,
+            sink,
+            labels,
         }
     }
 
-    pub fn outbound(spans: S) -> Self {
+    pub fn client(sink: mpsc::Sender<oc::Span>, labels: HashMap<String, String>) -> Self {
         Self {
-            direction: Direction::Out,
-            spans,
+            kind: SPAN_KIND_CLIENT,
+            sink,
+            labels,
         }
     }
 
     fn mk_span(&self, span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
+        let mut attributes = HashMap::<String, oc::AttributeValue>::new();
+        for (k, v) in self.labels.iter() {
+            attributes.insert(k.clone(), oc::AttributeValue {
+                value: Some(oc::attribute_value::Value::StringValue(truncatable(v.clone()))),
+            });
+        }
         Ok(oc::Span {
             trace_id: into_bytes(span.trace_id, 16)?,
             span_id: into_bytes(span.span_id, 8)?,
             tracestate: None,
             parent_span_id: into_bytes(span.parent_id, 8)?,
             name: Some(truncatable(span.span_name)),
-            kind: match self.direction {
-                Direction::In => SPAN_KIND_SERVER,
-                Direction::Out => SPAN_KIND_CLIENT,
-            },
+            kind: self.kind,
             start_time: Some(span.start.into()),
             end_time: Some(span.end.into()),
-            attributes: None,
+            attributes: Some(oc::span::Attributes {
+                attribute_map: attributes,
+                dropped_attributes_count: 0,
+            }),
             stack_trace: None,
             time_events: None,
             links: None,
             status: None, // TODO: record this
             resource: None,
-            same_process_as_parent_span: Some(false),
+            same_process_as_parent_span: Some(self.kind == SPAN_KIND_CLIENT),
             child_span_count: None,
         })
     }
 }
 
-impl<S> Stream for SpanConverter<S>
-where
-    S: Stream<Item = trace_context::Span>,
-{
-    type Item = oc::Span;
-    type Error = S::Error;
-
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        loop {
-            match try_ready!(self.spans.poll()) {
-                Some(span) => match self.mk_span(span) {
-                    Ok(s) => return Ok(Async::Ready(Some(s))),
-                    Err(e) => warn!("Invalid span: {}", e),
-                },
-                None => return Ok(Async::Ready(None)),
-            };
-        }
+impl trace_context::SpanSink for SpanConverter {
+    fn try_send(&mut self, span: trace_context::Span) -> Result<(), trace_context::Error> {
+        let span = self.mk_span(span)?;
+        self.sink.try_send(span).map_err(Into::into)
     }
 }
 

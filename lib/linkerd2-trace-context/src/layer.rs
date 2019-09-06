@@ -1,37 +1,34 @@
-use super::{propagation, Span};
+use super::{propagation, Span, SpanSink};
 use futures::{try_ready, Async, Future, Poll};
 use std::time::SystemTime;
-use tokio::sync::mpsc;
 use tracing::{trace, warn};
 
-pub struct SpanFuture<F> {
+pub struct SpanFuture<Fut, Sink> {
     span: Option<Span>,
-    inner: F,
-    sender: mpsc::Sender<Span>,
+    inner: Fut,
+    sink: Sink,
 }
 
 #[derive(Clone, Debug)]
-pub struct Layer {
-    // TODO: Replace mpsc::Sender with a trait so that we can accept other
-    // implementations.
-    sender: mpsc::Sender<Span>,
+pub struct Layer<Sink> {
+    sink: Sink,
 }
 
 #[derive(Clone, Debug)]
-pub struct Stack<M> {
-    inner: M,
-    sender: mpsc::Sender<Span>,
+pub struct Stack<Make, Sink> {
+    inner: Make,
+    sink: Sink,
 }
 
-pub struct MakeFuture<F> {
-    inner: F,
-    sender: Option<mpsc::Sender<Span>>,
+pub struct MakeFuture<Fut, Sink> {
+    inner: Fut,
+    sink: Option<Sink>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<S> {
-    inner: S,
-    sender: mpsc::Sender<Span>,
+pub struct Service<Svc, Sink> {
+    inner: Svc,
+    sink: Sink,
 }
 
 /// A layer that adds distributed tracing instrumentation.
@@ -41,77 +38,82 @@ pub struct Service<S> {
 /// present, a new span will be started in the current trace by creating a new
 /// random span id setting it into the `traceparent` header before forwarding
 /// the request.  If the sampled bit of the header was set, we emit metadata
-/// about the span to the returned channel when the span is complete, i.e. when
+/// about the span to the given SpanSink when the span is complete, i.e. when
 /// we receive the response.
-pub fn layer(sender: mpsc::Sender<Span>) -> Layer {
-    Layer { sender }
+pub fn layer<Sink>(sink: Sink) -> Layer<Sink> {
+    Layer { sink }
 }
 
 // === impl Layer ===
 
-impl<M> tower::layer::Layer<M> for Layer {
-    type Service = Stack<M>;
+impl<Make, Sink> tower::layer::Layer<Make> for Layer<Sink> 
+where
+    Sink: Clone,
+{
+    type Service = Stack<Make, Sink>;
 
-    fn layer(&self, inner: M) -> Self::Service {
+    fn layer(&self, inner: Make) -> Self::Service {
         Stack {
             inner,
-            sender: self.sender.clone(),
+            sink: self.sink.clone(),
         }
     }
 }
 
 // === impl Stack ===
 
-impl<T, M> tower::Service<T> for Stack<M>
+impl<Target, Make, Sink> tower::Service<Target> for Stack<Make, Sink>
 where
-    M: tower::Service<T>,
+    Make: tower::Service<Target>,
+    Sink: Clone,
 {
-    type Response = Service<M::Response>;
-    type Error = M::Error;
-    type Future = MakeFuture<M::Future>;
+    type Response = Service<Make::Response, Sink>;
+    type Error = Make::Error;
+    type Future = MakeFuture<Make::Future, Sink>;
 
-    fn poll_ready(&mut self) -> Poll<(), M::Error> {
+    fn poll_ready(&mut self) -> Poll<(), Make::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, target: T) -> Self::Future {
+    fn call(&mut self, target: Target) -> Self::Future {
         let inner = self.inner.call(target);
 
         MakeFuture {
             inner,
-            sender: Some(self.sender.clone()),
+            sink: Some(self.sink.clone()),
         }
     }
 }
 
 // === impl MakeFuture ===
 
-impl<F: Future> Future for MakeFuture<F> {
-    type Item = Service<F::Item>;
-    type Error = F::Error;
+impl<Fut: Future, Sink> Future for MakeFuture<Fut, Sink> {
+    type Item = Service<Fut::Item, Sink>;
+    type Error = Fut::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        let sender = self.sender.take().expect("poll called after ready");
-        Ok(Async::Ready(Service { inner, sender }))
+        let sink = self.sink.take().expect("poll called after ready");
+        Ok(Async::Ready(Service { inner, sink }))
     }
 }
 
 // === impl Service ===
 
-impl<S, B> tower::Service<http::Request<B>> for Service<S>
+impl<Svc, Body, Sink> tower::Service<http::Request<Body>> for Service<Svc, Sink>
 where
-    S: tower::Service<http::Request<B>>,
+    Svc: tower::Service<http::Request<Body>>,
+    Sink: SpanSink + Clone,
 {
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = futures::future::Either<S::Future, SpanFuture<S::Future>>;
+    type Response = Svc::Response;
+    type Error = Svc::Error;
+    type Future = futures::future::Either<Svc::Future, SpanFuture<Svc::Future, Sink>>;
 
-    fn poll_ready(&mut self) -> Poll<(), S::Error> {
+    fn poll_ready(&mut self) -> Poll<(), Svc::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
+    fn call(&mut self, mut request: http::Request<Body>) -> Self::Future {
         let mut trace_context = propagation::unpack_trace_context(&request);
         let mut path = None;
 
@@ -150,7 +152,7 @@ where
                 let span_fut = SpanFuture {
                     span: Some(span),
                     inner: f,
-                    sender: self.sender.clone(),
+                    sink: self.sink.clone(),
                 };
                 return futures::future::Either::B(span_fut);
             }
@@ -161,16 +163,20 @@ where
 
 // === impl SpanFuture ===
 
-impl<F: Future> Future for SpanFuture<F> {
-    type Item = F::Item;
-    type Error = F::Error;
+impl<Fut, Sink> Future for SpanFuture<Fut, Sink> 
+where
+    Fut: Future,
+    Sink: SpanSink,
+{
+    type Item = Fut::Item;
+    type Error = Fut::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
         let mut span = self.span.take().expect("polled after ready");
         span.end = SystemTime::now();
         trace!(message = "emitting span", ?span);
-        self.sender.try_send(span).unwrap_or_else(|_| {
+        self.sink.try_send(span).unwrap_or_else(|_| {
             warn!("span dropped due to backpressure");
         });
         Ok(Async::Ready(inner))
