@@ -508,6 +508,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-exp-backoff"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quickcheck 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-timer 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "linkerd2-identity"
 version = "0.1.0"
 dependencies = [
@@ -555,12 +565,14 @@ dependencies = [
  "linkerd2-addr 0.1.0",
  "linkerd2-conditional 0.1.0",
  "linkerd2-dns-name 0.1.0",
+ "linkerd2-exp-backoff 0.1.0",
  "linkerd2-identity 0.1.0",
  "linkerd2-metrics 0.1.0",
  "linkerd2-never 0.1.0",
  "linkerd2-proxy-api 0.1.8 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=ddbc3a4f7f8b0058801f896d27974d19ee98094c)",
  "linkerd2-proxy-core 0.1.0",
  "linkerd2-proxy-fallback 0.1.0",
+ "linkerd2-proxy-reconnect 0.1.0",
  "linkerd2-proxy-resolve 0.1.0",
  "linkerd2-router 0.1.0",
  "linkerd2-signal 0.1.0",
@@ -588,7 +600,6 @@ dependencies = [
  "tower-discover 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-grpc 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
  "tower-load 0.1.0 (git+https://github.com/tower-rs/tower)",
- "tower-reconnect 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tower-request-modifier 0.1.0 (git+https://github.com/tower-rs/tower-http)",
  "tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-spawn-ready 0.1.0 (git+https://github.com/tower-rs/tower)",
@@ -626,6 +637,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-drain 0.1.0",
+ "linkerd2-never 0.1.0",
 ]
 
 [[package]]
@@ -638,6 +650,19 @@ dependencies = [
  "hyper 0.12.34 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-proxy-core 0.1.0",
  "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "linkerd2-proxy-reconnect"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-never 0.1.0",
+ "linkerd2-proxy-core 0.1.0",
+ "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-reconnect 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1603,12 +1628,12 @@ dependencies = [
 [[package]]
 name = "tower-balance"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower#b39a4881d8eff6cbbb3a49b95db8492f6f8afb15"
+source = "git+https://github.com/tower-rs/tower#793e2e8e94b5ca6c1d12171b3909d78505ab6667"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slab 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-sync 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-timer 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-discover 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1616,6 +1641,7 @@ dependencies = [
  "tower-load 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-util 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1691,7 +1717,7 @@ dependencies = [
 [[package]]
 name = "tower-load"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower#b39a4881d8eff6cbbb3a49b95db8492f6f8afb15"
+source = "git+https://github.com/tower-rs/tower#793e2e8e94b5ca6c1d12171b3909d78505ab6667"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1713,7 +1739,7 @@ dependencies = [
 [[package]]
 name = "tower-reconnect"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower#b39a4881d8eff6cbbb3a49b95db8492f6f8afb15"
+source = "git+https://github.com/tower-rs/tower#793e2e8e94b5ca6c1d12171b3909d78505ab6667"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1753,7 +1779,7 @@ dependencies = [
 [[package]]
 name = "tower-spawn-ready"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower#b39a4881d8eff6cbbb3a49b95db8492f6f8afb15"
+source = "git+https://github.com/tower-rs/tower#793e2e8e94b5ca6c1d12171b3909d78505ab6667"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-executor 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1791,6 +1817,7 @@ version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "cfg-if 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "spin 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-attributes 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-core 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",

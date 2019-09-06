@@ -1,11 +1,12 @@
-use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
+use super::{classify, config::Config, dst::DstAddr, identity, recover, DispatchDeadline};
 use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{accept, reconnect, Server};
+use crate::proxy::{accept, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
 use crate::{core::listen::ServeConnection, svc, Addr};
+use linkerd2_proxy_reconnect as reconnect;
 use std::net::SocketAddr;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
@@ -57,7 +58,9 @@ where
     let client_stack = connect
         .clone()
         .push(client::layer("in", config.h2_settings))
-        .push(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
+        .push(reconnect::layer(recover::always(
+            config.inbound_connect_backoff.clone(),
+        )))
         .push(normalize_uri::layer());
 
     // A stack configured by `router::Config`, responsible for building

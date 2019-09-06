@@ -6,10 +6,12 @@ members = [
     "lib/linkerd2-conditional",
     "lib/linkerd2-dns-name",
     "lib/linkerd2-drain",
+    "lib/linkerd2-exp-backoff",
     "lib/linkerd2-identity",
     "lib/linkerd2-metrics",
     "lib/linkerd2-proxy-core",
     "lib/linkerd2-proxy-fallback",
+    "lib/linkerd2-proxy-reconnect",
     "lib/linkerd2-proxy-resolve",
     "lib/linkerd2-router",
     "lib/linkerd2-signal",
@@ -39,7 +41,9 @@ linkerd2-identity      = { path = "lib/linkerd2-identity" }
 linkerd2-metrics       = { path = "lib/linkerd2-metrics" }
 linkerd2-never         = { path = "lib/linkerd2-never" }
 linkerd2-proxy-core    = { path = "lib/linkerd2-proxy-core" }
+linkerd2-exp-backoff = { path = "lib/linkerd2-exp-backoff" }
 linkerd2-proxy-fallback = { path = "lib/linkerd2-proxy-fallback" }
+linkerd2-proxy-reconnect = { path = "lib/linkerd2-proxy-reconnect" }
 linkerd2-proxy-resolve = { path = "lib/linkerd2-proxy-resolve" }
 linkerd2-router        = { path = "lib/linkerd2-router" }
 linkerd2-signal        = { path = "lib/linkerd2-signal" }
@@ -77,7 +81,6 @@ tower-util = "0.1"
 tokio-connect          = { git = "https://github.com/carllerche/tokio-connect" }
 tower-balance          = { git = "https://github.com/tower-rs/tower" }
 tower-load             = { git = "https://github.com/tower-rs/tower" }
-tower-reconnect        = { git = "https://github.com/tower-rs/tower" }
 tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
 tower-spawn-ready      = { git = "https://github.com/tower-rs/tower" }
 tower-grpc             = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
