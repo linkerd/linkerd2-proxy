@@ -1,14 +1,16 @@
+use futures::{try_ready, Async, Future, Poll, Stream};
 use opencensus_proto::agent::common::v1::Node;
 use opencensus_proto::agent::trace::v1::{
     client::TraceService, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
 use opencensus_proto::trace::v1::Span;
 use tokio::sync::mpsc;
-use futures::{try_ready, Async, Future, Poll, Stream};
 use tower_grpc::{
     self as grpc, client::streaming::ResponseFuture, generic::client::GrpcService, BoxBody,
 };
 use tracing::{debug, trace};
+
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
 pub struct SpanExporter<T, S>
@@ -17,7 +19,7 @@ where
 {
     client: T,
     node: Node,
-    state: Option<State<T>>,
+    state: State<T>,
     spans: S,
 }
 
@@ -29,7 +31,7 @@ enum State<T: GrpcService<BoxBody>> {
         // request.
         sent_node: bool,
         // We hold the response future, but never poll it.
-        rsp: ResponseFuture<ExportTraceServiceResponse, T::Future>,
+        rsp: Option<ResponseFuture<ExportTraceServiceResponse, T::Future>>,
     },
 }
 
@@ -39,13 +41,14 @@ impl<T, S> SpanExporter<T, S>
 where
     T: GrpcService<BoxBody>,
     S: Stream<Item = Span>,
+    S::Error: Into<Error>,
 {
     pub fn new(client: T, node: Node, spans: S) -> Self {
         Self {
             client,
             node,
             spans,
-            state: Some(State::Idle),
+            state: State::Idle,
         }
     }
 
@@ -59,9 +62,9 @@ where
         &mut self,
         sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
         sent_node: bool,
-    ) -> Poll<(), ()> {
-        try_ready!(sender.poll_ready().map_err(|_| ()));
-        let span = try_ready!(self.spans.poll().map_err(|_| ()))
+    ) -> Poll<(), Error> {
+        try_ready!(sender.poll_ready());
+        let span = try_ready!(self.spans.poll().map_err(Into::into))
             .expect("span stream should never terminate");
         let node = if sent_node {
             None
@@ -77,7 +80,10 @@ where
         sender
             .try_send(msg)
             .map(|()| Async::Ready(()))
-            .map_err(|e| debug!("failed to transmit span: {}", e))
+            .map_err(|e| {
+                debug!("failed to transmit span: {}", e);
+                e.into()
+            })
     }
 }
 
@@ -85,13 +91,14 @@ impl<T, S> Future for SpanExporter<T, S>
 where
     T: GrpcService<BoxBody>,
     S: Stream<Item = Span>,
+    S::Error: Into<Error>,
 {
     type Item = ();
-    type Error = ();
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            let state = match self.state.take().expect("corrupt state") {
+            self.state = match self.state {
                 State::Idle => {
                     // If the request stream fails, all spans in this buffer
                     // will be lost.  Therefore, we keep this buffer small to
@@ -101,6 +108,7 @@ where
                     // TODO: Does this make sense?
                     let (tx, rx) = mpsc::channel(1);
                     let mut svc = TraceService::new(self.client.as_service());
+                    try_ready!(svc.poll_ready());
                     let req = grpc::Request::new(
                         rx.map_err(|_| grpc::Status::new(grpc::Code::Cancelled, "cancelled")),
                     );
@@ -108,33 +116,30 @@ where
                     let rsp = svc.export(req);
                     State::Sending {
                         sender: tx,
-                        rsp,
+                        rsp: Some(rsp),
                         sent_node: false,
                     }
                 }
                 State::Sending {
-                    mut sender,
-                    rsp,
+                    ref sender,
+                    ref mut rsp,
                     sent_node,
-                } => match self.poll_send_span(&mut sender, sent_node) {
-                    Ok(Async::Ready(())) => State::Sending {
-                        sender,
-                        rsp,
-                        sent_node: true,
-                    },
-                    Ok(Async::NotReady) => {
-                        // Repair state before returning.
-                        self.state = Some(State::Sending {
-                            sender,
+                } => {
+                    let mut sender = sender.clone();
+                    let rsp = rsp.take();
+                    match self.poll_send_span(&mut sender, sent_node) {
+                        Ok(Async::Ready(())) => State::Sending {
+                            sender: sender,
                             rsp,
-                            sent_node,
-                        });
-                        return Ok(Async::NotReady);
+                            sent_node: true,
+                        },
+                        Ok(Async::NotReady) => {
+                            return Ok(Async::NotReady);
+                        }
+                        Err(_) => State::Idle,
                     }
-                    Err(_) => State::Idle,
-                },
+                }
             };
-            self.state = Some(state);
         }
     }
 }
