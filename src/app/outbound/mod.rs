@@ -151,13 +151,11 @@ where
         .push(discover::Layer::new(2, resolve))
         .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));
 
+    // If the balancer fails to be created, i.e., because it is unresolvable,
+    // fall back to using a router that dispatches request to the
+    // application-selected original destination.
     let distributor = endpoint_stack
-        .push(
-            // Attempt to build a balancer. If the service is
-            // unresolvable, fall back to using a router that dispatches
-            // request to the application-selected original destination.
-            fallback::layer(balancer_layer, orig_dst_router_layer), // TODO .on_error::<Unresolvable>(),
-        )
+        .push(fallback::layer(balancer_layer, orig_dst_router_layer))
         .serves::<DstAddr>();
 
     // A per-`DstAddr` stack that does the following:
