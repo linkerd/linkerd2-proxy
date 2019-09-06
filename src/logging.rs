@@ -17,9 +17,12 @@ pub mod trace {
     use super::{clock, Context as LegacyContext, CONTEXT as LEGACY_CONTEXT};
     use crate::Error;
     use std::{env, fmt, str, time::Instant};
-    use tracing_subscriber::{layer, fmt::{format, Builder, Context}};
     pub use tracing::*;
-    pub use tracing_subscriber::{Filter, reload, FmtSubscriber};
+    use tracing_subscriber::{
+        fmt::{format, Builder, Context},
+        layer,
+    };
+    pub use tracing_subscriber::{reload, Filter, FmtSubscriber};
 
     type SubscriberBuilder = Builder<format::NewRecorder, Format, layer::Identity>;
     type Subscriber = FmtSubscriber<format::NewRecorder, Format>;
