@@ -278,7 +278,11 @@ impl iface::Tap for Tap {
                 },
                 http_types::headers::Header {
                     name: ":scheme".to_owned(),
-                    value: req.uri().scheme_part().map(|scheme| scheme.as_str().as_bytes().into()).unwrap_or_default(),
+                    value: req
+                        .uri()
+                        .scheme_part()
+                        .map(|scheme| scheme.as_str().as_bytes().into())
+                        .unwrap_or_default(),
                 },
                 http_types::headers::Header {
                     name: ":authority".to_owned(),
@@ -503,16 +507,21 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
     }
 }
 
-fn headers_to_pb(pseudos: impl IntoIterator<Item = http_types::headers::Header>, headers: &http::HeaderMap) -> http_types::Headers {
+fn headers_to_pb(
+    pseudos: impl IntoIterator<Item = http_types::headers::Header>,
+    headers: &http::HeaderMap,
+) -> http_types::Headers {
     http_types::Headers {
-        headers: pseudos.into_iter().chain(
-                headers.iter()
-                .map(|(name, value)| {
-                    http_types::headers::Header {
+        headers: pseudos
+            .into_iter()
+            .chain(
+                headers
+                    .iter()
+                    .map(|(name, value)| http_types::headers::Header {
                         name: name.as_str().to_owned(),
                         value: value.as_bytes().into(),
-                    }
-                }))
-            .collect()
+                    }),
+            )
+            .collect(),
     }
 }
