@@ -271,18 +271,9 @@ impl iface::Tap for Tap {
             scheme: req.uri().scheme_part().map(http_types::Scheme::from),
             authority: inspect.authority(req).unwrap_or_default(),
             path: req.uri().path().into(),
-            headers: req
-                .headers()
-                .iter()
-                .filter_map(|(name, value)| {
-                    value
-                        .to_str()
-                        .and_then(|v| Ok((name.as_str().to_owned(), v.to_owned())))
-                        .ok()
-                })
-                .collect(),
+            headers: Some(headers_to_pb(req.headers())),
         };
-;
+
         let event = api::TapEvent {
             event: Some(api::tap_event::Event::Http(api::tap_event::Http {
                 event: Some(api::tap_event::http::Event::RequestInit(init)),
@@ -319,6 +310,7 @@ impl iface::TapResponse for TapResponse {
             id: Some(self.tap.id.clone()),
             since_request_init: Some(pb_duration(response_init_at - self.request_init_at)),
             http_status: rsp.status().as_u16().into(),
+            headers: Some(headers_to_pb(rsp.headers())),
         });
 
         let event = api::TapEvent {
@@ -354,6 +346,7 @@ impl iface::TapResponse for TapResponse {
             eos: Some(api::Eos {
                 end: reason.map(|r| api::eos::End::ResetErrorCode(r.into())),
             }),
+            trailers: None,
         });
 
         let event = api::TapEvent {
@@ -392,19 +385,19 @@ impl iface::TapPayload for TapResponsePayload {
                 .and_then(|s| s.parse::<u32>().ok()),
         };
 
-        self.send(status.map(api::eos::End::GrpcStatusCode));
+        self.send(status.map(api::eos::End::GrpcStatusCode), trls);
     }
 
     fn fail<E: HasH2Reason>(self, e: &E) {
         let end = e
             .h2_reason()
             .map(|r| api::eos::End::ResetErrorCode(r.into()));
-        self.send(end);
+        self.send(end, None);
     }
 }
 
 impl TapResponsePayload {
-    fn send(mut self, end: Option<api::eos::End>) {
+    fn send(mut self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
         let response_end_at = clock::now();
         let end = api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id),
@@ -412,6 +405,7 @@ impl TapResponsePayload {
             since_response_init: Some(pb_duration(response_end_at - self.response_init_at)),
             response_bytes: self.response_bytes as u64,
             eos: Some(api::Eos { end }),
+            trailers: trls.map(headers_to_pb),
         };
 
         let event = api::TapEvent {
@@ -467,5 +461,18 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
             m
         }),
         event: None,
+    }
+}
+
+fn headers_to_pb(headers: &http::HeaderMap) -> http_types::Headers {
+    http_types::Headers {
+        headers: headers.iter()
+            .map(|(name, value)| {
+                http_types::headers::Header {
+                    name: name.as_str().to_owned(),
+                    value: value.as_bytes().into(),
+                }
+            })
+            .collect()
     }
 }

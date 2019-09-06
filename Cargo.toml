@@ -64,7 +64,7 @@ linkerd2-trace-context = { path = "lib/linkerd2-trace-context" }
 opencensus-proto       = { path = "lib/opencensus-proto" }
 
 # linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "kleimkuhler/tap-headers" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "1419992e32165e1b760d657205db4573890345b2" }
 
 bytes = "0.4"
 futures = "0.1"
@@ -129,7 +129,7 @@ quickcheck = { version = "0.8", default-features = false }
 linkerd2-metrics = { path = "./lib/linkerd2-metrics", features = ["test_util"] }
 linkerd2-task    = { path = "lib/linkerd2-task", features = ["test_util"] }
 # linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], branch = "kleimkuhler/tap-headers" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], rev = "1419992e32165e1b760d657205db4573890345b2" }
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
 # the `read` function.
