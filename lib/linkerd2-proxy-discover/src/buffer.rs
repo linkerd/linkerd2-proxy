@@ -5,8 +5,6 @@ use linkerd2_task as task;
 use std::fmt;
 use tokio::sync::{mpsc, oneshot};
 use tower::discover;
-use tracing::info_span;
-use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Buffer<M> {
@@ -20,8 +18,7 @@ pub struct Discover<K, S> {
     _disconnect_tx: oneshot::Sender<Never>,
 }
 
-pub struct DiscoverFuture<T, F, D> {
-    target: T,
+pub struct DiscoverFuture<F, D> {
     future: F,
     capacity: usize,
     _marker: std::marker::PhantomData<fn() -> D>,
@@ -39,7 +36,6 @@ pub struct Lost(());
 impl<M> Buffer<M> {
     pub fn new<T, D>(capacity: usize, inner: M) -> Self
     where
-        T: Clone + std::fmt::Display,
         M: tower::Service<T, Response = D>,
         D: discover::Discover + Send + 'static,
         D::Error: Into<Error>,
@@ -52,7 +48,6 @@ impl<M> Buffer<M> {
 
 impl<T, M, D> tower::Service<T> for Buffer<M>
 where
-    T: Clone + std::fmt::Display,
     M: tower::Service<T, Response = D>,
     D: discover::Discover + Send + 'static,
     D::Error: Into<Error>,
@@ -61,7 +56,7 @@ where
 {
     type Response = Discover<D::Key, D::Service>;
     type Error = M::Error;
-    type Future = DiscoverFuture<T, M::Future, M::Response>;
+    type Future = DiscoverFuture<M::Future, M::Response>;
 
     #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
@@ -69,19 +64,17 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let future = self.inner.call(target.clone());
+        let future = self.inner.call(target);
         Self::Future {
             future,
-            target,
             capacity: self.capacity,
             _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<T, F, D> Future for DiscoverFuture<T, F, D>
+impl<F, D> Future for DiscoverFuture<F, D>
 where
-    T: std::fmt::Display,
     F: Future<Item = D>,
     D: discover::Discover + Send + 'static,
     D::Error: Into<Error>,
@@ -96,13 +89,11 @@ where
 
         let (tx, rx) = mpsc::channel(self.capacity);
         let (_disconnect_tx, disconnect_rx) = oneshot::channel();
-        let daemon = Daemon {
+        task::spawn(Daemon {
             discover,
             disconnect_rx,
             tx,
-        }
-        .instrument(info_span!("discover", target = %self.target));
-        task::spawn(daemon);
+        });
 
         Ok(Discover { rx, _disconnect_tx }.into())
     }

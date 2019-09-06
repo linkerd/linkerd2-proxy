@@ -51,10 +51,14 @@ where
     fn call(&mut self, request: T) -> Self::Future {
         match self.filter.filter(request) {
             Ok(req) => {
+                tracing::trace!("accepted");
                 let f = self.service.call(req);
                 ResponseFuture::Future(f)
             }
-            Err(e) => ResponseFuture::Rejected(Some(e.into())),
+            Err(e) => {
+                tracing::trace!("rejected");
+                ResponseFuture::Rejected(Some(e.into()))
+            }
         }
     }
 }

@@ -14,6 +14,7 @@ members = [
     "lib/linkerd2-proxy-fallback",
     "lib/linkerd2-proxy-resolve",
     "lib/linkerd2-request-filter",
+    "lib/linkerd2-request-instrument",
     "lib/linkerd2-router",
     "lib/linkerd2-signal",
     "lib/linkerd2-stack",
