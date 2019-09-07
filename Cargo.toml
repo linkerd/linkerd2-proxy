@@ -89,10 +89,10 @@ tower-grpc             = { git = "https://github.com/tower-rs/tower-grpc", defau
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060", default-features = false }
 
 # tracing
-tracing         = "0.1.3"
-tracing-fmt     = "0.0.1-alpha.3"
-tracing-futures = "0.0.1-alpha.1"
-tracing-log     = "0.0.1-alpha.1"
+tracing            = "0.1.8"
+tracing-futures    = "0.0.1-alpha.1"
+tracing-log        = "0.1"
+tracing-subscriber = "0.1.1"
 
 # tls
 ring = "0.16"
@@ -126,4 +126,6 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names-0.21" }
+# this can be un-patched when `tracing-subscriber` 0.1.2 is released.
+tracing-subscriber = { git = "https://github.com/tokio-rs/tracing" }
 
