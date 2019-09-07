@@ -663,7 +663,7 @@ dependencies = [
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-reconnect 0.1.0 (git+https://github.com/tower-rs/tower)",
- "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1641,7 +1641,7 @@ dependencies = [
  "tower-load 0.1.0 (git+https://github.com/tower-rs/tower)",
  "tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-util 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
