@@ -11,5 +11,4 @@ linkerd2-never = { path = "../linkerd2-never" }
 futures = "0.1"
 tokio = "0.1"
 tower = "0.1"
-tower-reconnect = { git = "https://github.com/tower-rs/tower" }
 tracing = "0.1"
