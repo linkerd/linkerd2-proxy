@@ -2,6 +2,7 @@ use bytes::Bytes;
 use futures::Sink;
 use linkerd2_error::Error;
 use rand::Rng;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
@@ -30,6 +31,7 @@ pub struct Span {
     pub span_name: String,
     pub start: SystemTime,
     pub end: SystemTime,
+    pub labels: HashMap<String, String>,
 }
 
 pub trait SpanSink {
