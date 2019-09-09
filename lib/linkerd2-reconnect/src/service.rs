@@ -98,7 +98,7 @@ where
                     Err(e) => {
                         // If the service fails, try to recover.
                         let error: Error = e.into();
-                        tracing::warn!(message="Lost connected service", %error);
+                        tracing::warn!(message="Service failed", %error);
                         State::Recover {
                             error: Some(error),
                             backoff: None,
@@ -113,7 +113,6 @@ where
                     // Apply the recovery strategy. If the error isn't fatal,
                     // prefer the existing backoff to the new one.
                     let error = error.take().expect("error must be set");
-                    tracing::debug!(message="Service failed", %error);
                     let new_backoff = self.recover.recover(error)?;
                     tracing::debug!("Recovering");
                     State::Backoff(Some(backoff.take().unwrap_or(new_backoff)))
@@ -129,7 +128,7 @@ where
                         Err(e) => {
                             // If the backoff fails, try to recover, dropping the exisitng backoff.
                             let error: Error = e.into();
-                            tracing::warn!(message="Lost connected service", %error);
+                            tracing::warn!(message="Backoff", %error);
                             State::Recover {
                                 error: Some(error),
                                 backoff: None,
