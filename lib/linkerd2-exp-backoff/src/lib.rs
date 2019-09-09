@@ -11,8 +11,15 @@ use tokio_timer as timer;
 // The raw fields are exposed so this type can be constructed statically.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct ExponentialBackoff {
+    /// The minimum amount of time to wait before resuming an operation.
     pub min: Duration,
+
+    /// The maximum amount of time to wait before resuming an operation.
     pub max: Duration,
+
+    /// The ratio of the base timeout that may be randomly added to a backoff.
+    ///
+    /// Must be greater than or equal to 0.0.
     pub jitter: f64,
 }
 
@@ -68,7 +75,8 @@ impl ExponentialBackoff {
             .min(self.max)
     }
 
-    /// Returns a duration on [0, max-base].
+    /// Returns a random, uniform duration on `[0, base*self.jitter]` no greater
+    /// than `self.max`.
     fn jitter<R: rand::Rng>(&self, base: Duration, rng: &mut R) -> Duration {
         if self.jitter == 0.0 {
             Duration::default()
