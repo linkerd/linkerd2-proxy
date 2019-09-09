@@ -1,6 +1,5 @@
-use super::Error;
+use super::{Error, Never};
 use futures::{stream, Stream};
-use linkerd2_never::Never;
 
 /// An error recovery strategy.
 pub trait Recover<E: Into<Error> = Error> {

@@ -1,7 +1,7 @@
 //! Conditionally reconnects with a pluggable recovery/backoff strategy.
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_proxy_core::Recover;
+use linkerd2_error::Recover;
 
 mod layer;
 mod service;

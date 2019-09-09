@@ -504,7 +504,14 @@ name = "linkerd2-drain"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "linkerd2-never 0.1.0",
+ "linkerd2-error 0.1.0",
+]
+
+[[package]]
+name = "linkerd2-error"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -515,6 +522,19 @@ dependencies = [
  "quickcheck 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-timer 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "linkerd2-fallback"
+version = "0.1.0"
+dependencies = [
+ "bytes 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "http 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hyper 0.12.34 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-error 0.1.0",
+ "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -543,10 +563,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-never"
-version = "0.1.0"
-
-[[package]]
 name = "linkerd2-proxy"
 version = "0.1.0"
 dependencies = [
@@ -565,15 +581,15 @@ dependencies = [
  "linkerd2-addr 0.1.0",
  "linkerd2-conditional 0.1.0",
  "linkerd2-dns-name 0.1.0",
+ "linkerd2-error 0.1.0",
  "linkerd2-exp-backoff 0.1.0",
+ "linkerd2-fallback 0.1.0",
  "linkerd2-identity 0.1.0",
  "linkerd2-metrics 0.1.0",
- "linkerd2-never 0.1.0",
  "linkerd2-proxy-api 0.1.8 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=ddbc3a4f7f8b0058801f896d27974d19ee98094c)",
  "linkerd2-proxy-core 0.1.0",
- "linkerd2-proxy-fallback 0.1.0",
- "linkerd2-proxy-reconnect 0.1.0",
  "linkerd2-proxy-resolve 0.1.0",
+ "linkerd2-reconnect 0.1.0",
  "linkerd2-router 0.1.0",
  "linkerd2-signal 0.1.0",
  "linkerd2-stack 0.1.0",
@@ -637,32 +653,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-drain 0.1.0",
- "linkerd2-never 0.1.0",
-]
-
-[[package]]
-name = "linkerd2-proxy-fallback"
-version = "0.1.0"
-dependencies = [
- "bytes 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "http 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
- "hyper 0.12.34 (registry+https://github.com/rust-lang/crates.io-index)",
- "linkerd2-proxy-core 0.1.0",
- "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "linkerd2-proxy-reconnect"
-version = "0.1.0"
-dependencies = [
- "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "linkerd2-never 0.1.0",
- "linkerd2-proxy-core 0.1.0",
- "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-error 0.1.0",
 ]
 
 [[package]]
@@ -673,8 +664,8 @@ dependencies = [
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-addr 0.1.0",
  "linkerd2-dns-name 0.1.0",
+ "linkerd2-error 0.1.0",
  "linkerd2-identity 0.1.0",
- "linkerd2-never 0.1.0",
  "linkerd2-proxy-api 0.1.8 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=ddbc3a4f7f8b0058801f896d27974d19ee98094c)",
  "linkerd2-proxy-core 0.1.0",
  "linkerd2-task 0.1.0",
@@ -682,6 +673,17 @@ dependencies = [
  "tower-grpc 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
  "tracing 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "linkerd2-reconnect"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-error 0.1.0",
+ "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -714,7 +716,7 @@ name = "linkerd2-stack"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "linkerd2-never 0.1.0",
+ "linkerd2-error 0.1.0",
  "linkerd2-task 0.1.0",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",

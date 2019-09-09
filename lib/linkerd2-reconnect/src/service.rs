@@ -1,5 +1,5 @@
 use futures::{future, try_ready, Async, Future, Poll, Stream};
-use linkerd2_proxy_core::{Error, Recover};
+use linkerd2_error::{Error, Recover};
 use tracing;
 
 pub struct Service<T, R, M>

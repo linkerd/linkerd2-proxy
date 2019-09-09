@@ -1,7 +1,7 @@
 use futures::Stream;
+use linkerd2_error::Error;
+pub use linkerd2_error::Recover;
 pub use linkerd2_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
-pub use linkerd2_proxy_core::recover::Recover;
-use linkerd2_proxy_core::Error;
 
 pub fn always(backoff: ExponentialBackoff) -> Always {
     Always(backoff)

@@ -1,7 +1,6 @@
 use super::Service;
 use futures::{future, Poll};
-use linkerd2_never::Never;
-use linkerd2_proxy_core::{Error, Recover};
+use linkerd2_error::{Error, Never, Recover};
 
 #[derive(Clone, Debug)]
 pub struct Layer<R: Recover> {

@@ -6,13 +6,14 @@ members = [
     "lib/linkerd2-conditional",
     "lib/linkerd2-dns-name",
     "lib/linkerd2-drain",
+    "lib/linkerd2-error",
     "lib/linkerd2-exp-backoff",
+    "lib/linkerd2-fallback",
     "lib/linkerd2-identity",
     "lib/linkerd2-metrics",
     "lib/linkerd2-proxy-core",
-    "lib/linkerd2-proxy-fallback",
-    "lib/linkerd2-proxy-reconnect",
     "lib/linkerd2-proxy-resolve",
+    "lib/linkerd2-reconnect",
     "lib/linkerd2-router",
     "lib/linkerd2-signal",
     "lib/linkerd2-stack",
@@ -37,14 +38,14 @@ hyper-balance = { path = "lib/hyper-balance" }
 linkerd2-addr          = { path = "lib/linkerd2-addr" }
 linkerd2-conditional   = { path = "lib/linkerd2-conditional" }
 linkerd2-dns-name      = { path = "lib/linkerd2-dns-name" }
+linkerd2-error         = { path = "lib/linkerd2-error" }
+linkerd2-fallback      = { path = "lib/linkerd2-fallback" }
 linkerd2-identity      = { path = "lib/linkerd2-identity" }
 linkerd2-metrics       = { path = "lib/linkerd2-metrics" }
-linkerd2-never         = { path = "lib/linkerd2-never" }
 linkerd2-proxy-core    = { path = "lib/linkerd2-proxy-core" }
-linkerd2-exp-backoff = { path = "lib/linkerd2-exp-backoff" }
-linkerd2-proxy-fallback = { path = "lib/linkerd2-proxy-fallback" }
-linkerd2-proxy-reconnect = { path = "lib/linkerd2-proxy-reconnect" }
+linkerd2-exp-backoff   = { path = "lib/linkerd2-exp-backoff" }
 linkerd2-proxy-resolve = { path = "lib/linkerd2-proxy-resolve" }
+linkerd2-reconnect     = { path = "lib/linkerd2-reconnect" }
 linkerd2-router        = { path = "lib/linkerd2-router" }
 linkerd2-signal        = { path = "lib/linkerd2-signal" }
 linkerd2-stack         = { path = "lib/linkerd2-stack" }
