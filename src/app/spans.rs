@@ -54,11 +54,16 @@ impl SpanConverter {
         }
     }
 
-    fn mk_span(&self, span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
+    fn mk_span(&self, mut span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
         let mut attributes = HashMap::<String, oc::AttributeValue>::new();
         for (k, v) in self.labels.iter() {
             attributes.insert(k.clone(), oc::AttributeValue {
                 value: Some(oc::attribute_value::Value::StringValue(truncatable(v.clone()))),
+            });
+        }
+        for (k, v) in span.labels.drain() {
+            attributes.insert(k, oc::AttributeValue {
+                value: Some(oc::attribute_value::Value::StringValue(truncatable(v))),
             });
         }
         Ok(oc::Span {

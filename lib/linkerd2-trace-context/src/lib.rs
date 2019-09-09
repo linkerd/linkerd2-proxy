@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use rand::Rng;
+use std::collections::HashMap;
 use std::fmt;
 use std::time::SystemTime;
 use tokio::sync::mpsc;
@@ -25,6 +26,7 @@ pub struct Span {
     pub span_name: String,
     pub start: SystemTime,
     pub end: SystemTime,
+    pub labels: HashMap<String, String>,
 }
 
 pub trait SpanSink {

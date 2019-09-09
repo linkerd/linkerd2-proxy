@@ -429,7 +429,7 @@ where
         if let Some(trace_collector) = trace_collector_svc {
             let node = oc::Node {
                 identifier: Some(oc::ProcessIdentifier {
-                    host_name: "TODO: hostname".to_string(),
+                    host_name: hostname::get_hostname().unwrap_or_default(),
                     pid: 0,
                     start_timestamp: Some(start_time.into()),
                 }),
