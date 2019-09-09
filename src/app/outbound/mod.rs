@@ -10,7 +10,7 @@ use crate::resolve::{Metadata, Unresolvable};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr, NameAddr};
-use linkerd2_proxy_reconnect as reconnect;
+use linkerd2_reconnect as reconnect;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};

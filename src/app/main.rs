@@ -9,7 +9,7 @@ use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
 use futures::{self, future, Future};
-use linkerd2_proxy_reconnect as reconnect;
+use linkerd2_reconnect as reconnect;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
