@@ -1,4 +1,4 @@
-use futures::{try_ready, Async, Future, Poll, Stream};
+use futures::{task, try_ready, Async, Future, Poll, Stream};
 use opencensus_proto::agent::common::v1::Node;
 use opencensus_proto::agent::trace::v1::{
     client::TraceService, ExportTraceServiceRequest, ExportTraceServiceResponse,
@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tower_grpc::{
     self as grpc, client::streaming::ResponseFuture, generic::client::GrpcService, BoxBody,
 };
-use tracing::{debug, trace};
+use tracing::{trace, warn};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -21,6 +21,7 @@ where
     node: Node,
     state: State<T>,
     spans: S,
+    max_batch_size: usize,
 }
 
 enum State<T: GrpcService<BoxBody>> {
@@ -29,9 +30,9 @@ enum State<T: GrpcService<BoxBody>> {
         sender: mpsc::Sender<ExportTraceServiceRequest>,
         // Node data should only be sent on the first message of a streaming
         // request.
-        sent_node: bool,
+        node: Option<Node>,
         // We hold the response future, but never poll it.
-        rsp: Option<ResponseFuture<ExportTraceServiceResponse, T::Future>>,
+        _rsp: ResponseFuture<ExportTraceServiceResponse, T::Future>,
     },
 }
 
@@ -43,47 +44,87 @@ where
     S: Stream<Item = Span>,
     S::Error: Into<Error>,
 {
+    const DEFAULT_MAX_BATCH_SIZE: usize = 100;
+
     pub fn new(client: T, node: Node, spans: S) -> Self {
         Self {
             client,
             node,
             spans,
             state: State::Idle,
+            max_batch_size: Self::DEFAULT_MAX_BATCH_SIZE,
         }
     }
 
-    /// Attempt to read a single span from the spans stream and write it to
-    /// the export streaming request.  Returns NotReady there isn't room in
-    /// the streaming request or if there isn't a span available in the spans
-    /// stream.  Returns Ready if a span was transfered successfully.  Returns
-    /// Err if any operation fails, which indicates a new streaming request
-    /// must be established.
-    fn poll_send_span(
-        &mut self,
+    fn do_send(
+        spans: Vec<Span>,
         sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
-        sent_node: bool,
-    ) -> Poll<(), Error> {
-        try_ready!(sender.poll_ready());
-        let span = try_ready!(self.spans.poll().map_err(Into::into))
-            .expect("span stream should never terminate");
-        let node = if sent_node {
-            None
-        } else {
-            Some(self.node.clone())
-        };
-        let msg = ExportTraceServiceRequest {
-            node,
-            spans: vec![span],
+        node: &mut Option<Node>,
+    ) -> Result<(), ()> {
+        if spans.is_empty() {
+            return Ok(());
+        }
+
+        let req = ExportTraceServiceRequest {
+            spans,
+            node: node.take(),
             resource: None,
         };
-        trace!("transmitting span: {:?}", msg);
-        sender
-            .try_send(msg)
-            .map(|()| Async::Ready(()))
-            .map_err(|e| {
-                debug!("failed to transmit span: {}", e);
-                e.into()
-            })
+        trace!(message = "Transmitting", ?req);
+        sender.try_send(req).map_err(|_| ())
+    }
+
+    /// Attempt to read spans from the spans stream and write it to
+    /// the export streaming request.  Returns NotReady there isn't room in
+    /// the streaming request or if there isn't a span available in the spans
+    /// stream.
+    ///
+    /// Returns Ready if the receiver is fully consumed and may no longer be
+    /// used.
+    ///
+    /// An error is returned if the sender fails and must be discarded.
+    ///
+    /// Otherwise NotReady is returned.
+    fn poll_send_spans(
+        receiver: &mut S,
+        sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
+        node: &mut Option<Node>,
+        max_batch_size: usize,
+    ) -> Poll<(), ()> {
+        try_ready!(sender.poll_ready().map_err(|_| ()));
+
+        let mut spans = Vec::new();
+        loop {
+            match receiver.poll() {
+                Ok(Async::NotReady) => {
+                    // If any spans have been collected send them, potentially consuming `node.
+                    Self::do_send(spans, sender, node)?;
+                    return Ok(Async::NotReady);
+                }
+                Ok(Async::Ready(Some(span))) => {
+                    spans.push(span);
+                    if spans.len() == max_batch_size {
+                        Self::do_send(spans, sender, node)?;
+                        // Because we've voluntarily stopped work due to a batch
+                        // size limitation, notify the task to be polled again
+                        // immediately.
+                        task::current().notify();
+                        return Ok(Async::NotReady);
+                    }
+                }
+                Ok(Async::Ready(None)) => {
+                    let _ = Self::do_send(spans, sender, node);
+                    // The span receiver stream completed, so signal completion.
+                    return Ok(Async::Ready(()));
+                }
+                Err(e) => {
+                    let error: Error = e.into();
+                    warn!(message="Span stream lost", %error);
+                    let _ = Self::do_send(spans, sender, node);
+                    return Ok(Async::Ready(()));
+                }
+            }
+        }
     }
 }
 
@@ -112,31 +153,28 @@ where
                     let req = grpc::Request::new(
                         rx.map_err(|_| grpc::Status::new(grpc::Code::Cancelled, "cancelled")),
                     );
-                    trace!("establishing new TraceService::export request");
-                    let rsp = svc.export(req);
+                    trace!("Establishing new TraceService::export request");
+                    let _rsp = svc.export(req);
                     State::Sending {
                         sender: tx,
-                        rsp: Some(rsp),
-                        sent_node: false,
+                        node: Some(self.node.clone()),
+                        _rsp,
                     }
                 }
                 State::Sending {
-                    ref sender,
-                    ref mut rsp,
-                    sent_node,
+                    ref mut sender,
+                    ref mut node,
+                    ..
                 } => {
                     let mut sender = sender.clone();
-                    let rsp = rsp.take();
-                    match self.poll_send_span(&mut sender, sent_node) {
-                        Ok(Async::Ready(())) => State::Sending {
-                            sender: sender,
-                            rsp,
-                            sent_node: true,
-                        },
-                        Ok(Async::NotReady) => {
-                            return Ok(Async::NotReady);
-                        }
-                        Err(_) => State::Idle,
+                    match Self::poll_send_spans(
+                        &mut self.spans,
+                        &mut sender,
+                        node,
+                        self.max_batch_size,
+                    ) {
+                        Ok(ready) => return Ok(ready),
+                        Err(()) => State::Idle,
                     }
                 }
             };
