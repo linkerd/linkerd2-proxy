@@ -63,9 +63,12 @@ impl ExponentialBackoff {
             self.max > Duration::from_millis(0),
             "Maximum backoff must be non-zero"
         );
-        self.min.mul(2_u32.saturating_pow(failures)).min(self.max)
+        self.min
+            .mul(2_u32.saturating_pow(failures - 1))
+            .min(self.max)
     }
 
+    /// Returns a duration on [0, max-base].
     fn jitter<R: rand::Rng>(&self, base: Duration, rng: &mut R) -> Duration {
         if self.jitter == 0.0 {
             Duration::default()
@@ -123,6 +126,17 @@ mod tests {
     use quickcheck::*;
 
     quickcheck! {
+        fn backoff_base_first(min_ms: u64, max_ms: u64) -> TestResult {
+            let min = Duration::from_millis(min_ms);
+            let max = Duration::from_millis(max_ms);
+            let backoff = match ExponentialBackoff::new(min, max, 0.0) {
+                Err(_) => return TestResult::discard(),
+                Ok(backoff) => backoff,
+            };
+            let delay = backoff.base(1);
+            TestResult::from_bool(min == delay)
+        }
+
         fn backoff_base(min_ms: u64, max_ms: u64, iterations: u32) -> TestResult {
             let min = Duration::from_millis(min_ms);
             let max = Duration::from_millis(max_ms);
