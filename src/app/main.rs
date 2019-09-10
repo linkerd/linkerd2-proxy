@@ -3,7 +3,7 @@ use super::classify::{self, Class};
 use super::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use super::profiles::Client as ProfilesClient;
 use super::{config::Config, identity};
-use super::{handle_time, inbound, outbound, recover, tap::serve_tap};
+use super::{handle_time, inbound, outbound, tap::serve_tap};
 use crate::proxy::{self, http::metrics as http_metrics};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
@@ -268,9 +268,10 @@ where
                     .push_timeout(config.control_connect_timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns_resolver.clone()))
-                    .push(reconnect::layer(recover::always(
-                        config.control_backoff.clone(),
-                    )))
+                    .push(reconnect::layer({
+                        let backoff = config.control_backoff.clone();
+                        move |_| Ok(backoff.stream())
+                    }))
                     .push(http_metrics::layer::<_, classify::Response>(
                         ctl_http_metrics.clone(),
                     ))
@@ -320,9 +321,10 @@ where
                 .push_timeout(config.control_connect_timeout)
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
-                .push(reconnect::layer(recover::always(
-                    config.control_backoff.clone(),
-                )))
+                .push(reconnect::layer({
+                    let backoff = config.control_backoff.clone();
+                    move |_| Ok(backoff.stream())
+                }))
                 .push(http_metrics::layer::<_, classify::Response>(
                     ctl_http_metrics.clone(),
                 ))
