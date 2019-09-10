@@ -407,7 +407,7 @@ where
             outbound_listener.local_addr(),
             outbound::resolve(
                 config.destination_get_suffixes.clone(),
-                outbound::ExponentialBackoff::default(),
+                config.control_backoff.clone(),
                 resolver,
             ),
             dns_resolver,

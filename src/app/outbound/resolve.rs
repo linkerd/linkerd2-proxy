@@ -2,14 +2,12 @@ use super::endpoint;
 use crate::api_resolve::Metadata;
 use crate::app::dst::DstAddr;
 use crate::dns::Suffix;
-use futures::{try_ready, Future, Poll, Stream};
 use linkerd2_error::{Error, Recover};
+use linkerd2_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 use linkerd2_proxy_core::{resolve, Resolve};
 use linkerd2_proxy_resolve::{map_endpoint, recover};
 use linkerd2_request_filter as request_filter;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::timer::{self, Delay};
 use tower_grpc as grpc;
 
 pub fn resolve<R>(
@@ -40,21 +38,8 @@ pub struct PermitNamesInSuffixes {
     permitted: Arc<Vec<Suffix>>,
 }
 
-#[derive(Clone, Debug)]
-pub struct ExponentialBackoff {
-    min: Duration,
-    max: Duration,
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct BackoffUnlessInvalidArgument(ExponentialBackoff);
-
-#[derive(Debug)]
-pub struct BackoffStream {
-    backoff: ExponentialBackoff,
-    iterations: u32,
-    delay: Option<Delay>,
-}
 
 #[derive(Debug)]
 pub struct Unresolvable(());
@@ -98,23 +83,6 @@ impl std::fmt::Display for Unresolvable {
 
 impl std::error::Error for Unresolvable {}
 
-// === impl ExponentialBackoff ===
-
-impl ExponentialBackoff {
-    const DEFAULT_MIN: Duration = Duration::from_millis(100);
-    const DEFAULT_MAX: Duration = Duration::from_secs(10);
-
-    pub fn new(min: Duration, max: Duration) -> Self {
-        Self { min, max }
-    }
-}
-
-impl Default for ExponentialBackoff {
-    fn default() -> Self {
-        Self::new(Self::DEFAULT_MIN, Self::DEFAULT_MAX)
-    }
-}
-
 // === impl BackoffUnlessInvalidArgument ===
 
 impl From<ExponentialBackoff> for BackoffUnlessInvalidArgument {
@@ -124,8 +92,8 @@ impl From<ExponentialBackoff> for BackoffUnlessInvalidArgument {
 }
 
 impl Recover<Error> for BackoffUnlessInvalidArgument {
-    type Backoff = BackoffStream;
-    type Error = timer::Error;
+    type Backoff = ExponentialBackoffStream;
+    type Error = <ExponentialBackoffStream as futures::Stream>::Error;
 
     fn recover(&self, err: Error) -> Result<Self::Backoff, Error> {
         match err.downcast::<grpc::Status>() {
@@ -137,40 +105,6 @@ impl Recover<Error> for BackoffUnlessInvalidArgument {
             Err(error) => tracing::debug!(message = "recovering", %error),
         }
 
-        Ok(Self::Backoff {
-            backoff: self.0.clone(),
-            iterations: 0,
-            delay: None,
-        })
-    }
-}
-
-// === impl BackoffStream ===
-
-impl Stream for BackoffStream {
-    type Item = ();
-    type Error = timer::Error;
-
-    fn poll(&mut self) -> Poll<Option<()>, Self::Error> {
-        use std::ops::Mul;
-
-        loop {
-            if let Some(delay) = self.delay.as_mut() {
-                try_ready!(delay.poll());
-
-                self.delay = None;
-                self.iterations += 1;
-                return Ok(Some(()).into());
-            }
-
-            let factor = 2u32.saturating_pow(self.iterations + 1);
-            let backoff = self
-                .backoff
-                .min
-                .clone()
-                .mul(factor)
-                .min(self.backoff.max.clone());
-            self.delay = Some(Delay::new(Instant::now() + backoff));
-        }
+        Ok(self.0.stream())
     }
 }

@@ -27,7 +27,7 @@ mod resolve;
 
 pub(super) use self::endpoint::Endpoint;
 pub(super) use self::require_identity_on_endpoint::RequireIdentityError;
-pub(super) use self::resolve::{resolve, ExponentialBackoff};
+pub(super) use self::resolve::resolve;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
