@@ -1,5 +1,3 @@
-#![deny(warnings, rust_2018_idioms)]
-
 use std::{error::Error, fmt};
 
 /// A type representing a value that can never materialize.

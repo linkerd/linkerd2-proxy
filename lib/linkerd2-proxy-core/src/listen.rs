@@ -1,5 +1,6 @@
-use crate::{drain, Error};
+use crate::drain;
 use futures::Future;
+use linkerd2_error::Error;
 
 pub trait ListenAndSpawn {
     type Connection;

@@ -1,7 +1,7 @@
 use futures::future::Shared;
 use futures::sync::{mpsc, oneshot};
 use futures::{try_ready, Async, Future, Poll, Stream};
-use linkerd2_never::Never;
+use linkerd2_error::Never;
 use std::mem;
 
 /// Creates a drain channel.
