@@ -2,7 +2,7 @@ use crate::api::destination as api;
 use crate::core::resolve::{self, Update};
 use crate::metadata::Metadata;
 use crate::pb;
-use futures::{future, Async, Future, Poll, Stream};
+use futures::{future, try_ready, Future, Poll, Stream};
 use tower::Service;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::{debug, trace};
@@ -98,10 +98,8 @@ where
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
         loop {
-            match self.inner.poll()? {
-                Async::NotReady => return Ok(Async::NotReady),
-
-                Async::Ready(Some(api::Update { update })) => match update {
+            match try_ready!(self.inner.poll()) {
+                Some(api::Update { update }) => match update {
                     Some(api::update::Update::Add(api::WeightedAddrSet {
                         addrs,
                         metric_labels,
@@ -137,9 +135,7 @@ where
                     None => {} // continue
                 },
 
-                Async::Ready(None) => {
-                    return Err(grpc::Status::new(grpc::Code::Ok, "end of stream"))
-                }
+                None => return Err(grpc::Status::new(grpc::Code::Ok, "end of stream")),
             };
         }
     }
