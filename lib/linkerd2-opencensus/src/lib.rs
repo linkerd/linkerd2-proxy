@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tower_grpc::{
     self as grpc, client::streaming::ResponseFuture, generic::client::GrpcService, BoxBody,
 };
-use tracing::{trace, warn};
+use tracing::trace;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -36,13 +36,17 @@ enum State<T: GrpcService<BoxBody>> {
     },
 }
 
+enum StreamError<E> {
+    Receiver(E),
+    SenderLost,
+}
+
 // ===== impl SpanExporter =====
 
 impl<T, S> SpanExporter<T, S>
 where
     T: GrpcService<BoxBody>,
     S: Stream<Item = Span>,
-    S::Error: Into<Error>,
 {
     const DEFAULT_MAX_BATCH_SIZE: usize = 100;
 
@@ -60,7 +64,7 @@ where
         spans: Vec<Span>,
         sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
         node: &mut Option<Node>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), StreamError<S::Error>> {
         if spans.is_empty() {
             return Ok(());
         }
@@ -71,7 +75,7 @@ where
             resource: None,
         };
         trace!(message = "Transmitting", ?req);
-        sender.try_send(req).map_err(|_| ())
+        sender.try_send(req).map_err(|_| StreamError::SenderLost)
     }
 
     /// Attempt to read spans from the spans stream and write it to
@@ -90,8 +94,8 @@ where
         sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
         node: &mut Option<Node>,
         max_batch_size: usize,
-    ) -> Poll<(), ()> {
-        try_ready!(sender.poll_ready().map_err(|_| ()));
+    ) -> Poll<(), StreamError<S::Error>> {
+        try_ready!(sender.poll_ready().map_err(|_| StreamError::SenderLost));
 
         let mut spans = Vec::new();
         loop {
@@ -118,10 +122,8 @@ where
                     return Ok(Async::Ready(()));
                 }
                 Err(e) => {
-                    let error: Error = e.into();
-                    warn!(message="Span stream lost", %error);
                     let _ = Self::do_send(spans, sender, node);
-                    return Ok(Async::Ready(()));
+                    return Err(StreamError::Receiver(e));
                 }
             }
         }
@@ -174,7 +176,8 @@ where
                         self.max_batch_size,
                     ) {
                         Ok(ready) => return Ok(ready),
-                        Err(()) => State::Idle,
+                        Err(StreamError::Receiver(e)) => return Err(e.into()),
+                        Err(StreamError::SenderLost) => State::Idle,
                     }
                 }
             };
