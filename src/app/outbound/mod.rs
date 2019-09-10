@@ -1,6 +1,6 @@
 use super::{classify, config::Config, dst::DstAddr, identity, recover, DispatchDeadline};
 use crate::core::listen::ServeConnection;
-use crate::core::resolve::{Resolution, Resolve};
+use crate::core::resolve::Resolve;
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
@@ -48,9 +48,8 @@ pub fn server<R, P>(
 ) -> impl ServeConnection<Connection>
 where
     R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
-    R::Future: futures::Future + Send,
-    R::Resolution: Resolution + Send,
-    //<R::Resolution as Resolution>::Error: std::error::Error + Send + Sync + 'static,
+    R::Future: Send,
+    R::Resolution: Send,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
