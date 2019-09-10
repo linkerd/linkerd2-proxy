@@ -1,6 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_proxy_core::{Error, Resolve};
+use linkerd2_error::Error;
+use linkerd2_proxy_core::Resolve;
 use std::fmt;
 
 pub mod buffer;

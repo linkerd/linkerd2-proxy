@@ -1,6 +1,6 @@
 use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
-use linkerd2_proxy_core::Error;
+use linkerd2_error::Error;
 use std::hash::Hash;
 use tokio::sync::oneshot;
 use tower::discover::{self, Change};

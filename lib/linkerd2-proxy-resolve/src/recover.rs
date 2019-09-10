@@ -2,8 +2,8 @@
 
 use futures::{try_ready, Async, Future, Poll, Stream};
 use indexmap::IndexMap;
+use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_core::resolve::{self, Resolution as _, Update};
-use linkerd2_proxy_core::{Error, Recover};
 use std::net::SocketAddr;
 
 #[derive(Clone, Debug)]

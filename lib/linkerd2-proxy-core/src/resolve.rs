@@ -1,5 +1,5 @@
-use crate::Error;
 use futures::{Future, Poll};
+use linkerd2_error::Error;
 use std::net::SocketAddr;
 
 /// Resolves `T`-typed names/addresses as a `Resolution`.

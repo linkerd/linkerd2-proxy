@@ -3,12 +3,13 @@ use super::classify::{self, Class};
 use super::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use super::profiles::Client as ProfilesClient;
 use super::{config::Config, identity};
-use super::{handle_time, inbound, outbound, tap::serve_tap};
-use crate::proxy::{self, http::metrics as http_metrics, reconnect};
+use super::{handle_time, inbound, outbound, recover, tap::serve_tap};
+use crate::proxy::{self, http::metrics as http_metrics};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
 use futures::{self, future, Future};
+use linkerd2_reconnect as reconnect;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -267,7 +268,9 @@ where
                     .push_timeout(config.control_connect_timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns_resolver.clone()))
-                    .push(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                    .push(reconnect::layer(recover::always(
+                        config.control_backoff.clone(),
+                    )))
                     .push(http_metrics::layer::<_, classify::Response>(
                         ctl_http_metrics.clone(),
                     ))
@@ -317,7 +320,9 @@ where
                 .push_timeout(config.control_connect_timeout)
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
-                .push(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                .push(reconnect::layer(recover::always(
+                    config.control_backoff.clone(),
+                )))
                 .push(http_metrics::layer::<_, classify::Response>(
                     ctl_http_metrics.clone(),
                 ))

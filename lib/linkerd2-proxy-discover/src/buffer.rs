@@ -1,6 +1,5 @@
 use futures::{try_ready, Async, Future, Poll, Stream};
-use linkerd2_never::Never;
-use linkerd2_proxy_core::Error;
+use linkerd2_error::{Error, Never};
 use linkerd2_task as task;
 use std::fmt;
 use tokio::sync::{mpsc, oneshot};
