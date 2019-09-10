@@ -280,8 +280,8 @@ impl iface::Tap for Tap {
                     name: ":scheme".to_owned(),
                     value: req
                         .uri()
-                        .scheme_part()
-                        .map(|scheme| scheme.as_str().as_bytes().into())
+                        .scheme_str()
+                        .map(|s| s.as_bytes().into())
                         .unwrap_or_default(),
                 },
                 http_types::headers::Header {
@@ -290,7 +290,11 @@ impl iface::Tap for Tap {
                 },
                 http_types::headers::Header {
                     name: ":path".to_owned(),
-                    value: req.uri().path().as_bytes().into(),
+                    value: req
+                        .uri()
+                        .path_and_query()
+                        .map(|p| p.as_str().as_bytes().into())
+                        .unwrap_or_default(),
                 },
             ];
             headers_to_pb(pseudos, req.headers())
