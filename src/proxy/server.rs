@@ -19,7 +19,9 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, trace};
+use tracing::{debug, info_span, trace};
+use tracing_futures::Instrument;
+use tracing_tower::{request_span, InstrumentMake};
 
 /// A protocol-transparent Server!
 ///
@@ -64,8 +66,13 @@ where
     listen_addr: SocketAddr,
     accept: A,
     connect: ForwardConnect<T, C>,
-    make_http: H,
+    make_http: request_span::MakeService<
+        H,
+        http::Request<HttpBody>,
+        fn(&http::Request<HttpBody>) -> tracing::Span,
+    >,
     log: logging::Server,
+    name: &'static str,
 }
 
 /// Describes an accepted connection.
@@ -211,6 +218,16 @@ where
     ) -> Self {
         let connect = ForwardConnect(connect, PhantomData);
         let log = logging::Server::proxy(proxy_name, listen_addr);
+        let mk_span: fn(&http::Request<_>) -> tracing::Span = |req| {
+            debug_span!(
+                "request",
+                method = %req.method(),
+                path = ?req.uri().path(),
+                authority = ?req.uri().authority_part(),
+                version = ?req.version(),
+            )
+        };
+        let make_http = make_http.with_traced_requests(mk_span);
         Self {
             http: hyper::server::conn::Http::new(),
             h2_settings,
@@ -219,6 +236,7 @@ where
             connect,
             make_http,
             log,
+            name: proxy_name,
         }
     }
 }
@@ -264,6 +282,7 @@ where
             tls_peer: connection.peer_identity(),
             _p: (),
         };
+        let span = info_span!("proxy", server = %self.name, local = %source.local, remote = %source.remote);
 
         let should_detect = connection.should_detect_protocol();
         let io = self.accept.accept(&source, connection);
@@ -290,52 +309,54 @@ where
         let log_clone = log.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
-        let serve_fut = accept_fut.and_then(move |(proto, io)| match proto {
-            None => {
-                trace!("did not detect protocol; forwarding TCP");
-                let fwd = tcp::forward(io, connect, source);
-                Either::A(drain.watch(fwd, |_| {}))
-            }
+        let serve_fut = accept_fut
+            .and_then(move |(proto, io)| match proto {
+                None => {
+                    trace!("did not detect protocol; forwarding TCP");
+                    let fwd = tcp::forward(io, connect, source);
+                    Either::A(drain.watch(fwd, |_| {}))
+                }
 
-            Some(proto) => Either::B({
-                make_http
-                    .make_service(source)
-                    .map_err(|never| match never {})
-                    .and_then(move |http_svc| match proto {
-                        Protocol::Http1 => Either::A({
-                            trace!("detected HTTP/1");
-                            // Enable support for HTTP upgrades (CONNECT and websockets).
-                            let svc = upgrade::Service::new(
-                                http_svc,
-                                drain.clone(),
-                                log_clone.executor(),
-                            );
-                            let conn = http
-                                .http1_only(true)
-                                .serve_connection(io, HyperServerSvc::new(svc))
-                                .with_upgrades();
-                            drain
-                                .watch(conn, |conn| conn.graceful_shutdown())
-                                .map(|_| ())
-                                .map_err(|e| debug!("http1 server error: {:?}", e))
-                        }),
+                Some(proto) => Either::B({
+                    make_http
+                        .make_service(source)
+                        .map_err(|never| match never {})
+                        .and_then(move |http_svc| match proto {
+                            Protocol::Http1 => Either::A({
+                                trace!("detected HTTP/1");
+                                // Enable support for HTTP upgrades (CONNECT and websockets).
+                                let svc = upgrade::Service::new(
+                                    http_svc,
+                                    drain.clone(),
+                                    log_clone.executor(),
+                                );
+                                let conn = http
+                                    .http1_only(true)
+                                    .serve_connection(io, HyperServerSvc::new(svc))
+                                    .with_upgrades();
+                                drain
+                                    .watch(conn, |conn| conn.graceful_shutdown())
+                                    .map(|_| ())
+                                    .map_err(|e| debug!("http1 server error: {:?}", e))
+                            }),
 
-                        Protocol::Http2 => Either::B({
-                            trace!("detected HTTP/2");
-                            let conn = http
-                                .with_executor(log_clone.executor())
-                                .http2_only(true)
-                                .http2_initial_stream_window_size(initial_stream_window_size)
-                                .http2_initial_connection_window_size(initial_conn_window_size)
-                                .serve_connection(io, HyperServerSvc::new(http_svc));
-                            drain
-                                .watch(conn, |conn| conn.graceful_shutdown())
-                                .map(|_| ())
-                                .map_err(|e| debug!("http2 server error: {:?}", e))
-                        }),
-                    })
-            }),
-        });
+                            Protocol::Http2 => Either::B({
+                                trace!("detected HTTP/2");
+                                let conn = http
+                                    .with_executor(log_clone.executor())
+                                    .http2_only(true)
+                                    .http2_initial_stream_window_size(initial_stream_window_size)
+                                    .http2_initial_connection_window_size(initial_conn_window_size)
+                                    .serve_connection(io, HyperServerSvc::new(http_svc));
+                                drain
+                                    .watch(conn, |conn| conn.graceful_shutdown())
+                                    .map(|_| ())
+                                    .map_err(|e| debug!("http2 server error: {:?}", e))
+                            }),
+                        })
+                }),
+            })
+            .instrument(span);
 
         Box::new(serve_fut)
     }
