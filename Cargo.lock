@@ -544,7 +544,7 @@ dependencies = [
  "opencensus-proto 0.1.0",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-grpc 0.1.0 (git+https://github.com/tower-rs/tower-grpc)",
- "tracing 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
