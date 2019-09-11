@@ -1,8 +1,8 @@
 use bytes::Bytes;
+use futures::Sink;
 use rand::Rng;
 use std::fmt;
 use std::time::SystemTime;
-use futures::Sink;
 
 pub mod layer;
 mod propagation;
@@ -33,13 +33,11 @@ pub trait SpanSink {
 
 impl<S> SpanSink for S
 where
-    S: Sink<SinkItem=Span>,
+    S: Sink<SinkItem = Span>,
     S::SinkError: Into<Error>,
 {
     fn try_send(&mut self, span: Span) -> Result<(), Error> {
-        self.start_send(span)
-            .map(|_|())
-            .map_err(Into::into)
+        self.start_send(span).map(|_| ()).map_err(Into::into)
     }
 }
 
