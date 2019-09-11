@@ -1,5 +1,5 @@
 use super::{propagation, Span, SpanSink};
-use futures::{try_ready, Async, Future, Poll};
+use futures::{future::Either, try_ready, Async, Future, Poll};
 use std::time::SystemTime;
 use tracing::{trace, warn};
 
@@ -153,10 +153,10 @@ where
                     inner: f,
                     sink: self.sink.clone(),
                 };
-                return futures::future::Either::B(span_fut);
+                return Either::B(span_fut);
             }
         }
-        futures::future::Either::A(f)
+        Either::A(f)
     }
 }
 
