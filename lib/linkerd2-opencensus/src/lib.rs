@@ -142,16 +142,16 @@ where
         loop {
             self.state = match self.state {
                 State::Idle => {
-                    let (tx, rx) = mpsc::channel(self.max_batch_size);
+                    let (request_tx, request_rx) = mpsc::channel(1);
                     let mut svc = TraceService::new(self.client.as_service());
                     try_ready!(svc.poll_ready());
                     let req = grpc::Request::new(
-                        rx.map_err(|_| grpc::Status::new(grpc::Code::Cancelled, "cancelled")),
+                        request_rx.map_err(|_| grpc::Status::new(grpc::Code::Cancelled, "cancelled")),
                     );
                     trace!("Establishing new TraceService::export request");
                     let _rsp = svc.export(req);
                     State::Sending {
-                        sender: tx,
+                        sender: request_tx,
                         node: Some(self.node.clone()),
                         _rsp,
                     }
