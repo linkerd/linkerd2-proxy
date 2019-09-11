@@ -123,7 +123,10 @@ where
             // If we plan to sample this span, we need to copy the path from
             // the request before dispatching it to inner.
             if context.is_sampled() {
-                path = Some(request.uri().path().to_string());
+                path = request
+                    .uri()
+                    .path_and_query()
+                    .map(|pq| pq.as_str().to_owned())
             }
         }
 

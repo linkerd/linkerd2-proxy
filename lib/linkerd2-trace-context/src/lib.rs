@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use futures::Sink;
+use linkerd2_error::Error;
 use rand::Rng;
 use std::fmt;
 use std::time::SystemTime;
@@ -8,8 +9,6 @@ pub mod layer;
 mod propagation;
 
 pub use layer::layer;
-
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug, Default)]
 pub struct Id(Vec<u8>);
@@ -50,8 +49,10 @@ impl Id {
         rng.fill(bytes.as_mut_slice());
         Self(bytes)
     }
+}
 
-    pub fn into_vec(self) -> Vec<u8> {
+impl Into<Vec<u8>> for Id {
+    fn into(self) -> Vec<u8> {
         self.0
     }
 }

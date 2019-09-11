@@ -11,6 +11,7 @@ bytes = "0.4"
 futures = "0.1"
 hex = "0.3.2"
 http = "0.1"
+linkerd2-error = { path = "../linkerd2-error" }
 rand = "0.6.3"
 
 tokio = "0.1.14"
