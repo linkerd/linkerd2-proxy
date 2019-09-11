@@ -5,11 +5,12 @@ use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, reconnect, resolve, Server};
+use crate::proxy::{self, accept, resolve, Server};
 use crate::resolve::{Metadata, Unresolvable};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr, NameAddr};
+use linkerd2_reconnect as reconnect;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -73,7 +74,10 @@ where
     let client_stack = connect
         .clone()
         .push(client::layer("out", config.h2_settings))
-        .push(reconnect::layer().with_backoff(config.outbound_connect_backoff.clone()))
+        .push(reconnect::layer({
+            let backoff = config.outbound_connect_backoff.clone();
+            move |_| Ok(backoff.stream())
+        }))
         .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:
