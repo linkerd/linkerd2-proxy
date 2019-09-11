@@ -2,7 +2,7 @@ use bytes::Bytes;
 use rand::Rng;
 use std::fmt;
 use std::time::SystemTime;
-use tokio::sync::mpsc;
+use futures::Sink;
 
 pub mod layer;
 mod propagation;
@@ -31,9 +31,15 @@ pub trait SpanSink {
     fn try_send(&mut self, span: Span) -> Result<(), Error>;
 }
 
-impl SpanSink for mpsc::Sender<Span> {
+impl<S> SpanSink for S
+where
+    S: Sink<SinkItem=Span>,
+    S::SinkError: Into<Error>,
+{
     fn try_send(&mut self, span: Span) -> Result<(), Error> {
-        self.try_send(span).map_err(Into::into)
+        self.start_send(span)
+            .map(|_|())
+            .map_err(Into::into)
     }
 }
 
