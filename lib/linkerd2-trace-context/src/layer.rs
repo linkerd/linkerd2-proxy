@@ -130,12 +130,11 @@ where
         let f = self.inner.call(request);
 
         if let Some(propagation::TraceContext {
-            propagation: _,
-            version: _,
             trace_id,
             parent_id,
             flags,
             span_id: Some(span_id),
+            ..
         }) = trace_context
         {
             if flags.is_sampled() {
@@ -176,9 +175,9 @@ where
         let mut span = self.span.take().expect("polled after ready");
         span.end = SystemTime::now();
         trace!(message = "emitting span", ?span);
-        self.sink.try_send(span).unwrap_or_else(|_| {
+        if self.sink.try_send(span).is_err() {
             warn!("span dropped due to backpressure");
-        });
+        }
         Ok(Async::Ready(inner))
     }
 }
