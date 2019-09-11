@@ -1,5 +1,5 @@
 use futures::Poll;
-use linkerd2_never::Never;
+use linkerd2_error::Never;
 use tower_service as svc;
 
 pub fn shared<V: Clone>(v: V) -> Shared<V> {

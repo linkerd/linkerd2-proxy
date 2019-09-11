@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 log = "0.4.1"
 futures = "0.1"
-linkerd2-never = { path = "../linkerd2-never" }
+linkerd2-error = { path = "../linkerd2-error" }
 tower-layer = "0.1"
 tower-service = "0.2"
 

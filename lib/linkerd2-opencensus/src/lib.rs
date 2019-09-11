@@ -1,4 +1,5 @@
 use futures::{task, try_ready, Async, Future, Poll, Stream};
+use linkerd2_error::Error;
 use opencensus_proto::agent::common::v1::Node;
 use opencensus_proto::agent::trace::v1::{
     client::TraceService, ExportTraceServiceRequest, ExportTraceServiceResponse,
@@ -9,8 +10,6 @@ use tower_grpc::{
     self as grpc, client::streaming::ResponseFuture, generic::client::GrpcService, BoxBody,
 };
 use tracing::trace;
-
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
 pub struct SpanExporter<T, S>
@@ -143,13 +142,7 @@ where
         loop {
             self.state = match self.state {
                 State::Idle => {
-                    // If the request stream fails, all spans in this buffer
-                    // will be lost.  Therefore, we keep this buffer small to
-                    // minimize span loss.  Keeping this buffer small is okay
-                    // because we will exert backpressure and can buffer spans
-                    // elsewhere upstream.
-                    // TODO: Does this make sense?
-                    let (tx, rx) = mpsc::channel(1);
+                    let (tx, rx) = mpsc::channel(self.max_batch_size);
                     let mut svc = TraceService::new(self.client.as_service());
                     try_ready!(svc.poll_ready());
                     let req = grpc::Request::new(

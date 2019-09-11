@@ -6,5 +6,3 @@ pub mod listen;
 pub mod resolve;
 
 pub use self::resolve::{Resolution, Resolve};
-
-pub type Error = Box<dyn std::error::Error + Send + Sync>;

@@ -4,7 +4,7 @@ use bytes::Buf;
 use futures::{try_ready, Future, Poll};
 use http;
 use hyper::body::Payload;
-use linkerd2_proxy_core::Error;
+use linkerd2_error::Error;
 use tracing::trace;
 
 /// A fallback layer composing two service builders.

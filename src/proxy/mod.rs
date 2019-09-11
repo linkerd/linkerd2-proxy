@@ -6,7 +6,6 @@ pub mod grpc;
 pub mod http;
 pub mod pending;
 mod protocol;
-pub mod reconnect;
 pub mod resolve;
 pub mod server;
 mod tcp;

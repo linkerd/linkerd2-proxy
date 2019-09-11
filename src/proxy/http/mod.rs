@@ -26,7 +26,7 @@ pub mod upgrade;
 pub use self::client::Client;
 pub use self::glue::{ClientUsedTls, HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
-pub use linkerd2_proxy_fallback as fallback;
+pub use linkerd2_fallback as fallback;
 
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
