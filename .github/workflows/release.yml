@@ -1,4 +1,4 @@
-name: Release
+name: release
 
 on:
   push:
@@ -11,14 +11,14 @@ jobs:
     container:
       image: docker://rust:1.37-buster
     steps:
-    - uses: actions/checkout@v1
+    - name: git co
+      uses: actions/checkout@v1
+
     - name: make package
-      uses: docker://rust:1.37-buster
       env:
         CARGO_RELEASE: 1
-      with:
-        entrypoint: sh
-        args: -c "PACKAGE_VERSION=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,') make package"
+      run: PACKAGE_VERSION=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,') make package
+
     - uses: actions/upload-artifact@v1
       with:
         name: package
@@ -29,8 +29,8 @@ jobs:
     container:
       image: docker://rust:1.37-buster
     steps:
-    - name: Test
-      env:
+    - uses: actions/checkout@v1
+    - env:
         CARGO_RELEASE: 1
         RUSTFLAGS: "-C debuginfo=0"
         RUST_TEST_THREADS: 1
@@ -43,19 +43,19 @@ jobs:
     container:
       image: docker://github/ghx:master
     steps:
-    - name: Fetch
+    - name: fetch
       uses: actions/download-artifact@v1
       with:
         name: package
         path: package
-    - name: Release
+    - name: release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         export TAG=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,')
-        export NAME=$(echo $GITHUB_REF | sed -E 's,^refs/tags/,,');
+        export NAME=$(echo $GITHUB_REF | sed -E 's,^refs/tags/,,')
         # ghx reads GITHUB_REF and then barfs on it, no matter its command-line
         # args. so just hide that env from it..
-        unset GITHUB_REF;
+        unset GITHUB_REF
         (cd package && ghx release create --verbose --tag=$TAG --name=$NAME --ref=$GITHUB_SHA *")
 
