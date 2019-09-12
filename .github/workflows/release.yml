@@ -35,9 +35,7 @@ jobs:
         RUSTFLAGS: "-C debuginfo=0"
         RUST_TEST_THREADS: 1
         RUST_TEST_PATIENCE_MS: 200
-      with:
-        entrypoint: make
-        args: test-integration
+      run: make test-integration
 
   publish:
     needs: [package, test]
