@@ -53,7 +53,7 @@ jobs:
     - name: Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - run: |
+      run: |
         export TAG=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,')
         export NAME=$(echo $GITHUB_REF | sed -E 's,^refs/tags/,,');
         # ghx reads GITHUB_REF and then barfs on it, no matter its command-line
