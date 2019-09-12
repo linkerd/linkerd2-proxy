@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+    - 'release/*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Get tag
+      run: |
+        echo "${{ github.ref }}" | sed -E 's,^refs/tags/,,' >release.tag
+        cat release.tag
+        echo "${{ github.ref }}" | sed -E 's,^refs/tags/release/,,' >release.name
+        cat release.name
+
+    - name: Build
+      uses: docker://rust:1.37-buster
+      env:
+        CARGO_RELEASE: 1
+      with:
+        entrypoint: sh
+        args: -c "PACKAGE_VERSION=$(cat release.name) make package"
+
+    - name: Test
+      uses: docker://rust:1.37-buster
+      env:
+        CARGO_RELEASE: 1
+        RUSTFLAGS: "-C debuginfo=0"
+        RUST_TEST_THREADS: 1
+        RUST_TEST_PATIENCE_MS: 200
+      with:
+        entrypoint: make
+        args: test-integration
+
+    - name: Upload
+      uses: docker://github/ghx:master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        entrypoint: sh
+        # bastard blackbox ghx reads GITHUB_REF and then barfs on it, no matter
+        # its command-line args. so just hide that env from it..
+        args: -c "unset GITHUB_REF ; cd target/release/package && ghx release create --verbose --tag=$(cat ../release.tag) --name=$(cat ../release.name) --ref ${{ github.sha }} *"
