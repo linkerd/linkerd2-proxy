@@ -29,11 +29,12 @@ jobs:
     container:
       image: docker://rust:1.37-buster
     steps:
-    - uses: actions/checkout@v1
+    - name: git co
+      uses: actions/checkout@v1
     - env:
         CARGO_RELEASE: 1
         RUSTFLAGS: "-C debuginfo=0"
-        RUST_TEST_THREADS: 1
+        #RUST_TEST_THREADS: 1
         RUST_TEST_PATIENCE_MS: 200
       run: make test-integration
 
