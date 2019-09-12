@@ -4,6 +4,9 @@ on:
   push:
     branches:
     - master
+    paths:
+    - 'Cargo.lock'
+    - 'Dockerfile'
   pull_request:
     paths:
     - 'Cargo.lock'

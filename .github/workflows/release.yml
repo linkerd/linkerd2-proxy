@@ -6,28 +6,30 @@ on:
     - 'release/*'
 
 jobs:
-  publish:
+  package:
     runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.37-buster
     steps:
     - uses: actions/checkout@v1
-
-    - name: Get tag
-      run: |
-        echo "${{ github.ref }}" | sed -E 's,^refs/tags/,,' >release.tag
-        cat release.tag
-        echo "${{ github.ref }}" | sed -E 's,^refs/tags/release/,,' >release.name
-        cat release.name
-
-    - name: Build
+    - name: make package
       uses: docker://rust:1.37-buster
       env:
         CARGO_RELEASE: 1
       with:
         entrypoint: sh
-        args: -c "PACKAGE_VERSION=$(cat release.name) make package"
+        args: -c "PACKAGE_VERSION=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,') make package"
+    - uses: actions/upload-artifact@v1
+      with:
+        name: package
+        path: target/release/package
 
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.37-buster
+    steps:
     - name: Test
-      uses: docker://rust:1.37-buster
       env:
         CARGO_RELEASE: 1
         RUSTFLAGS: "-C debuginfo=0"
@@ -37,12 +39,25 @@ jobs:
         entrypoint: make
         args: test-integration
 
-    - name: Upload
-      uses: docker://github/ghx:master
+  publish:
+    needs: [package, test]
+    runs-on: ubuntu-latest
+    container:
+      image: docker://github/ghx:master
+    steps:
+    - name: Fetch
+      uses: actions/download-artifact@v1
+      with:
+        name: package
+        path: package
+    - name: Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        entrypoint: sh
-        # bastard blackbox ghx reads GITHUB_REF and then barfs on it, no matter
-        # its command-line args. so just hide that env from it..
-        args: -c "unset GITHUB_REF ; cd target/release/package && ghx release create --verbose --tag=$(cat ../release.tag) --name=$(cat ../release.name) --ref ${{ github.sha }} *"
+    - run: |
+        export TAG=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,')
+        export NAME=$(echo $GITHUB_REF | sed -E 's,^refs/tags/,,');
+        # ghx reads GITHUB_REF and then barfs on it, no matter its command-line
+        # args. so just hide that env from it..
+        unset GITHUB_REF;
+        (cd package && ghx release create --verbose --tag=$TAG --name=$NAME --ref=$GITHUB_SHA *")
+
