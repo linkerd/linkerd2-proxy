@@ -94,7 +94,7 @@ specific language governing permissions and limitations under the License.
 <!-- refs -->
 [cargo]: https://github.com/rust-lang/cargo/
 [ci]: https://travis-ci.org/linkerd/linkerd2-proxy
-<!-- TODO [ci-badge]: https://travis-ci.org/linkerd/linkerd2-proxy.svg?branch=master -->c
+<!-- TODO [ci-badge]: https://travis-ci.org/linkerd/linkerd2-proxy.svg?branch=master -->
 [cncf]: https://cncf.io/
 [coc]: https://github.com/linkerd/linkerd/wiki/Linkerd-code-of-conduct
 [k8s]: https://kubernetes.io/
