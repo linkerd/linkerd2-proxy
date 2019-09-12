@@ -36,8 +36,6 @@ jobs:
   publish:
     needs: [package, test]
     runs-on: ubuntu-latest
-    container:
-      image: docker://github/ghx:master
     steps:
     - name: fetch
       uses: actions/download-artifact@v1
@@ -45,6 +43,7 @@ jobs:
         name: package
         path: package
     - name: release
+      uses: docker://github/ghx:master
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # ghx reads GITHUB_REF and then barfs on it, no matter its command-line
