@@ -47,11 +47,13 @@ jobs:
     - name: release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ghx reads GITHUB_REF and then barfs on it, no matter its command-line
+      # args. so just hide that env from it..
       run: |
+        set -e
+        cd package
         export TAG=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,')
         export NAME=$(echo $GITHUB_REF | sed -E 's,^refs/tags/,,')
-        # ghx reads GITHUB_REF and then barfs on it, no matter its command-line
-        # args. so just hide that env from it..
         unset GITHUB_REF
-        (cd package && ghx release create --verbose --tag=$TAG --name=$NAME --ref=$GITHUB_SHA *")
+        ghx release create --verbose --tag=$TAG --name=$NAME --ref=$GITHUB_SHA *
 
