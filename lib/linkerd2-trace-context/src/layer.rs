@@ -3,32 +3,32 @@ use futures::{future::Either, try_ready, Async, Future, Poll};
 use std::time::SystemTime;
 use tracing::{trace, warn};
 
-pub struct SpanFuture<Fut, Sink> {
+pub struct SpanFuture<F, S> {
     span: Option<Span>,
-    inner: Fut,
-    sink: Sink,
+    inner: F,
+    sink: S,
 }
 
 #[derive(Clone, Debug)]
-pub struct Layer<Sink> {
-    sink: Sink,
+pub struct Layer<S> {
+    sink: S,
 }
 
 #[derive(Clone, Debug)]
-pub struct Stack<Make, Sink> {
-    inner: Make,
-    sink: Sink,
+pub struct Stack<M, S> {
+    inner: M,
+    sink: S,
 }
 
-pub struct MakeFuture<Fut, Sink> {
-    inner: Fut,
-    sink: Option<Sink>,
+pub struct MakeFuture<F, S> {
+    inner: F,
+    sink: Option<S>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<Svc, Sink> {
+pub struct Service<Svc, S> {
     inner: Svc,
-    sink: Sink,
+    sink: S,
 }
 
 /// A layer that adds distributed tracing instrumentation.
@@ -40,19 +40,19 @@ pub struct Service<Svc, Sink> {
 /// the request.  If the sampled bit of the header was set, we emit metadata
 /// about the span to the given SpanSink when the span is complete, i.e. when
 /// we receive the response.
-pub fn layer<Sink>(sink: Sink) -> Layer<Sink> {
+pub fn layer<S>(sink: S) -> Layer<S> {
     Layer { sink }
 }
 
 // === impl Layer ===
 
-impl<Make, Sink> tower::layer::Layer<Make> for Layer<Sink>
+impl<M, S> tower::layer::Layer<M> for Layer<S>
 where
-    Sink: Clone,
+    S: Clone,
 {
-    type Service = Stack<Make, Sink>;
+    type Service = Stack<M, S>;
 
-    fn layer(&self, inner: Make) -> Self::Service {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack {
             inner,
             sink: self.sink.clone(),
@@ -62,20 +62,20 @@ where
 
 // === impl Stack ===
 
-impl<Target, Make, Sink> tower::Service<Target> for Stack<Make, Sink>
+impl<T, M, S> tower::Service<T> for Stack<M, S>
 where
-    Make: tower::Service<Target>,
-    Sink: Clone,
+    M: tower::Service<T>,
+    S: Clone,
 {
-    type Response = Service<Make::Response, Sink>;
-    type Error = Make::Error;
-    type Future = MakeFuture<Make::Future, Sink>;
+    type Response = Service<M::Response, S>;
+    type Error = M::Error;
+    type Future = MakeFuture<M::Future, S>;
 
-    fn poll_ready(&mut self) -> Poll<(), Make::Error> {
+    fn poll_ready(&mut self) -> Poll<(), M::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, target: Target) -> Self::Future {
+    fn call(&mut self, target: T) -> Self::Future {
         let inner = self.inner.call(target);
 
         MakeFuture {
@@ -87,9 +87,9 @@ where
 
 // === impl MakeFuture ===
 
-impl<Fut: Future, Sink> Future for MakeFuture<Fut, Sink> {
-    type Item = Service<Fut::Item, Sink>;
-    type Error = Fut::Error;
+impl<F: Future, S> Future for MakeFuture<F, S> {
+    type Item = Service<F::Item, S>;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
@@ -100,20 +100,20 @@ impl<Fut: Future, Sink> Future for MakeFuture<Fut, Sink> {
 
 // === impl Service ===
 
-impl<Svc, Body, Sink> tower::Service<http::Request<Body>> for Service<Svc, Sink>
+impl<Svc, B, S> tower::Service<http::Request<B>> for Service<Svc, S>
 where
-    Svc: tower::Service<http::Request<Body>>,
-    Sink: SpanSink + Clone,
+    Svc: tower::Service<http::Request<B>>,
+    S: SpanSink + Clone,
 {
     type Response = Svc::Response;
     type Error = Svc::Error;
-    type Future = futures::future::Either<Svc::Future, SpanFuture<Svc::Future, Sink>>;
+    type Future = Either<Svc::Future, SpanFuture<Svc::Future, S>>;
 
     fn poll_ready(&mut self) -> Poll<(), Svc::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut request: http::Request<Body>) -> Self::Future {
+    fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
         let mut trace_context = propagation::unpack_trace_context(&request);
         let mut path = None;
 
@@ -165,13 +165,13 @@ where
 
 // === impl SpanFuture ===
 
-impl<Fut, Sink> Future for SpanFuture<Fut, Sink>
+impl<F, S> Future for SpanFuture<F, S>
 where
-    Fut: Future,
-    Sink: SpanSink,
+    F: Future,
+    S: SpanSink,
 {
-    type Item = Fut::Item;
-    type Error = Fut::Error;
+    type Item = F::Item;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
