@@ -40,11 +40,6 @@ jobs:
     needs: [package, test]
     runs-on: ubuntu-latest
     steps:
-    - name: fetch
-      uses: actions/download-artifact@v1
-      with:
-        name: package
-        path: package
     - name: git co
       uses: actions/checkout@v1
     - name: Get Tag Info
@@ -52,10 +47,16 @@ jobs:
       uses: ./.github/actions/release-tag-meta
       with:
         git-ref: ${{ github.ref }}
+    - name: fetch
+      uses: actions/download-artifact@v1
+      with:
+        name: package
+        path: package
+    - runs: echo ${{ toJSON(steps) }}
     - name: release
       uses: softprops/action-gh-release@b21b43d
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        files: package/*.tar.gz
-        name: ${{steps.release-tag-meta.name}}
+        name: ${{ steps.release-tag-meta.name }}
+        files: package/*
