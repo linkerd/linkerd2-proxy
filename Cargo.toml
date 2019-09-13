@@ -96,18 +96,18 @@ tracing            = "0.1.9"
 tracing-futures    = "0.0.1-alpha.1"
 tracing-log        = "0.1"
 
-[dependencies.tracing-subscriber]
-version = "0.1.2"
-# we don't need ANSI colors or `chrono` time formatting
-default-features = false
-features = ["filter", "fmt", "smallvec", "tracing-log"]
-
 # tls
 ring = "0.16"
 webpki = "0.21"
 rustls = "0.16"
 tokio-rustls = "0.10"
 untrusted = "0.7"
+
+[dependencies.tracing-subscriber]
+version = "0.1.2"
+# we don't need ANSI colors or `chrono` time formatting
+default-features = false
+features = ["filter", "fmt", "smallvec", "tracing-log"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
