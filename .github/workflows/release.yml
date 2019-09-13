@@ -51,7 +51,7 @@ jobs:
       with:
         git-ref: ${{ github.ref }}
     - name: release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@b21b43d
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
