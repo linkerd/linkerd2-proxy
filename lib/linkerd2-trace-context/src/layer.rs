@@ -1,12 +1,12 @@
 use super::{propagation, Span, SpanSink};
-use futures::{future::Either, try_ready, Async, Future, Poll};
+use futures::{try_ready, Async, Future, Poll};
 use std::time::SystemTime;
 use tracing::{trace, warn};
 
-pub struct SpanFuture<F, S> {
+pub struct ResponseFuture<F, S> {
     span: Option<Span>,
     inner: F,
-    sink: S,
+    sink: Option<S>,
 }
 
 #[derive(Clone, Debug)]
@@ -107,7 +107,7 @@ where
 {
     type Response = Svc::Response;
     type Error = Svc::Error;
-    type Future = Either<Svc::Future, SpanFuture<Svc::Future, S>>;
+    type Future = ResponseFuture<Svc::Future, S>;
 
     fn poll_ready(&mut self) -> Poll<(), Svc::Error> {
         self.inner.poll_ready()
@@ -143,21 +143,24 @@ where
         let f = self.inner.call(request);
 
         if let Some(span) = span {
-            let span_fut = SpanFuture {
+            ResponseFuture {
                 span: Some(span),
                 inner: f,
-                sink: self.sink.clone(),
-            };
-            Either::B(span_fut)
+                sink: Some(self.sink.clone()),
+            }
         } else {
-            Either::A(f)
+            ResponseFuture {
+                span: None,
+                inner: f,
+                sink: None,
+            }
         }
     }
 }
 
 // === impl SpanFuture ===
 
-impl<F, S> Future for SpanFuture<F, S>
+impl<F, S> Future for ResponseFuture<F, S>
 where
     F: Future,
     S: SpanSink,
@@ -167,11 +170,13 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        let mut span = self.span.take().expect("polled after ready");
-        span.end = SystemTime::now();
-        trace!(message = "emitting span", ?span);
-        if self.sink.try_send(span).is_err() {
-            warn!("span dropped due to backpressure");
+        if let Some(mut sink) = self.sink.take() {
+            let mut span = self.span.take().expect("polled after ready");
+            span.end = SystemTime::now();
+            trace!(message = "emitting span", ?span);
+            if sink.try_send(span).is_err() {
+                warn!("span dropped due to backpressure");
+            }
         }
         Ok(Async::Ready(inner))
     }
