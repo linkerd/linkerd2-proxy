@@ -10,6 +10,8 @@ mod propagation;
 
 pub use layer::layer;
 
+const SPAN_ID_LEN: usize = 8;
+
 #[derive(Debug, Default)]
 pub struct Id(Vec<u8>);
 
@@ -43,9 +45,8 @@ where
 // === impl Id ===
 
 impl Id {
-    fn new(len: usize) -> Self {
-        let mut rng = rand::thread_rng();
-        let mut bytes = vec![0; len];
+    fn new_span_id<R: Rng>(rng: &mut R) -> Self {
+        let mut bytes = vec![0; SPAN_ID_LEN];
         rng.fill(bytes.as_mut_slice());
         Self(bytes)
     }

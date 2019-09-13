@@ -114,52 +114,44 @@ where
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
-        let mut trace_context = propagation::unpack_trace_context(&request);
-        let mut path = None;
+        let trace_context = propagation::unpack_trace_context(&request);
+        let mut span = None;
 
-        if let Some(ref mut context) = trace_context {
+        if let Some(context) = trace_context {
             trace!(message = "got trace context", ?context);
-            propagation::increment_span_id(&mut request, context);
-            // If we plan to sample this span, we need to copy the path from
-            // the request before dispatching it to inner.
+            let span_id = propagation::increment_span_id(&mut request, &context);
+            // If we plan to sample this span, we need to record span metadata
+            // from the request before dispatching it to inner.
             if context.is_sampled() {
-                path = request
+                trace!(message = "span will be sampled", ?span_id);
+                let path = request
                     .uri()
                     .path_and_query()
-                    .map(|pq| pq.as_str().to_owned())
+                    .map(|pq| pq.as_str().to_owned());
+                span = Some(Span {
+                    trace_id: context.trace_id,
+                    span_id,
+                    parent_id: context.parent_id,
+                    span_name: path.unwrap_or_default(),
+                    start: SystemTime::now(),
+                    // End time will be updated when the span completes.
+                    end: SystemTime::now(),
+                });
             }
         }
 
         let f = self.inner.call(request);
 
-        if let Some(propagation::TraceContext {
-            trace_id,
-            parent_id,
-            flags,
-            span_id: Some(span_id),
-            ..
-        }) = trace_context
-        {
-            if flags.is_sampled() {
-                trace!(message = "span will be sampled", ?span_id);
-                let span = Span {
-                    trace_id,
-                    span_id,
-                    parent_id,
-                    span_name: path.unwrap_or_else(String::new),
-                    start: SystemTime::now(),
-                    // End time will be updated when the span completes.
-                    end: SystemTime::now(),
-                };
-                let span_fut = SpanFuture {
-                    span: Some(span),
-                    inner: f,
-                    sink: self.sink.clone(),
-                };
-                return Either::B(span_fut);
-            }
+        if let Some(span) = span {
+            let span_fut = SpanFuture {
+                span: Some(span),
+                inner: f,
+                sink: self.sink.clone(),
+            };
+            Either::B(span_fut)
+        } else {
+            Either::A(f)
         }
-        Either::A(f)
     }
 }
 
