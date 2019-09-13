@@ -45,6 +45,8 @@ jobs:
       with:
         name: package
         path: package
+    - name: git co
+      uses: actions/checkout@v1
     - name: Get Tag Info
       id: release-tag-meta
       uses: ./.github/actions/release-tag-meta
