@@ -1,0 +1,55 @@
+name: release
+
+on:
+  push:
+    tags:
+    - 'release/*'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.37-buster
+    steps:
+    - name: git co
+      uses: actions/checkout@v1
+
+    - name: make package
+      env:
+        CARGO_RELEASE: 1
+      run: PACKAGE_VERSION=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,') make package
+
+    - uses: actions/upload-artifact@v1
+      with:
+        name: package
+        path: target/release/package
+
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.37-buster
+    steps:
+    - name: git co
+      uses: actions/checkout@v1
+    - run: make test-integration
+
+  publish:
+    needs: [package, test]
+    runs-on: ubuntu-latest
+    steps:
+    - name: fetch
+      uses: actions/download-artifact@v1
+      with:
+        name: package
+        path: package
+    - name: release
+      uses: docker://github/ghx:master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ghx reads GITHUB_REF and then barfs on it, no matter its command-line
+      # args. so, we override it to the SHA so it all works out.
+      with:
+        entrypoint: sh
+        args: -c "export TAG=$(echo $GITHUB_REF | sed -E 's,^refs/tags/,,') NAME=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,') ; export GITHUB_REF=$GITHUB_SHA ; cd package && ghx release create --verbose --tag=$TAG --name=$NAME *.tar.gz"
+
+
