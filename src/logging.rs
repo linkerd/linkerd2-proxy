@@ -19,8 +19,8 @@ pub mod trace {
     use std::{env, fmt, str, time::Instant};
     pub use tracing::*;
     use tracing_subscriber::{
-        fmt::{format, Builder, Context, Formatter},
         filter,
+        fmt::{format, Builder, Context, Formatter},
     };
     pub use tracing_subscriber::{reload, EnvFilter, FmtSubscriber};
 
