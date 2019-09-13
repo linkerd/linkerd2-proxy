@@ -4,9 +4,8 @@ use std::time::SystemTime;
 use tracing::{trace, warn};
 
 pub struct ResponseFuture<F, S> {
-    span: Option<Span>,
+    trace: Option<(Span, S)>,
     inner: F,
-    sink: Option<S>,
 }
 
 #[derive(Clone, Debug)]
@@ -142,18 +141,9 @@ where
 
         let f = self.inner.call(request);
 
-        if let Some(span) = span {
-            ResponseFuture {
-                span: Some(span),
-                inner: f,
-                sink: Some(self.sink.clone()),
-            }
-        } else {
-            ResponseFuture {
-                span: None,
-                inner: f,
-                sink: None,
-            }
+        ResponseFuture {
+            trace: span.map(|span| (span, self.sink.clone())),
+            inner: f,
         }
     }
 }
@@ -170,8 +160,7 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        if let Some(mut sink) = self.sink.take() {
-            let mut span = self.span.take().expect("polled after ready");
+        if let Some((mut span, mut sink)) = self.trace.take() {
             span.end = SystemTime::now();
             trace!(message = "emitting span", ?span);
             if sink.try_send(span).is_err() {
