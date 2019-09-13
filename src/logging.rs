@@ -19,13 +19,13 @@ pub mod trace {
     use std::{env, fmt, str, time::Instant};
     pub use tracing::*;
     use tracing_subscriber::{
-        fmt::{format, Builder, Context},
+        fmt::{format, Builder, Context, Formatter},
         filter,
     };
     pub use tracing_subscriber::{reload, EnvFilter, FmtSubscriber};
 
     type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::LevelFilter>;
-    type Subscriber = FmtSubscriber<format::NewRecorder, Format>;
+    type Subscriber = Formatter<format::NewRecorder, Format>;
 
     #[derive(Clone)]
     pub struct LevelHandle {
@@ -129,7 +129,7 @@ pub mod trace {
 
         pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
             let level = level.as_ref();
-            let filter = level.parse()?;
+            let filter = level.parse::<EnvFilter>()?;
             self.inner.reload(filter)?;
             info!(message = "set new log level", %level);
             Ok(())
