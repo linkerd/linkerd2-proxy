@@ -359,6 +359,7 @@ const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24)
 // https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt
 const DEFAULT_PORTS_DISABLE_PROTOCOL_DETECTION: &[u16] = &[
     25,   // SMTP
+    587,  // SMTP
     3306, // MySQL
 ];
 
