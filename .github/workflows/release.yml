@@ -18,7 +18,7 @@ jobs:
       uses: ./.github/actions/release-tag-meta
       with:
         git-ref: ${{ github.ref }}
-    - runs: echo ${{ toJSON(steps) }}
+    - run: echo ${{ toJSON(steps) }}
     - name: make package
       env:
         CARGO_RELEASE: "1"
