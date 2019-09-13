@@ -10,7 +10,7 @@ use crate::transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
-use crate::{app::config::H2Settings, drain, logging, Error, Never};
+use crate::{app::config::H2Settings, drain, logging, Error, Never, task};
 use futures::future::{self, Either};
 use futures::{Future, Poll};
 use http;
@@ -19,7 +19,7 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, info_span, trace};
+use tracing::{debug, debug_span, info_span, trace, Span};
 use tracing_futures::Instrument;
 use tracing_tower::{request_span, InstrumentMake};
 
@@ -302,11 +302,9 @@ where
         };
 
         let connect = self.connect.clone();
-        let log = self.log.clone().with_remote(source.remote);
 
         let mut http = self.http.clone();
         let mut make_http = self.make_http.clone();
-        let log_clone = log.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
         let serve_fut = accept_fut
@@ -328,7 +326,7 @@ where
                                 let svc = upgrade::Service::new(
                                     http_svc,
                                     drain.clone(),
-                                    log_clone.executor(),
+                                    task::LazyExecutor.instrument(Span::current())
                                 );
                                 let conn = http
                                     .http1_only(true)
@@ -343,7 +341,7 @@ where
                             Protocol::Http2 => Either::B({
                                 trace!("detected HTTP/2");
                                 let conn = http
-                                    .with_executor(log_clone.executor())
+                                    .with_executor(task::LazyExecutor.instrument(Span::current()))
                                     .http2_only(true)
                                     .http2_initial_stream_window_size(initial_stream_window_size)
                                     .http2_initial_connection_window_size(initial_conn_window_size)
