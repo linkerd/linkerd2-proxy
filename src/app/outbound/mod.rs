@@ -1,4 +1,4 @@
-use super::{classify, config::Config, dst::DstAddr, identity, recover, DispatchDeadline};
+use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::core::listen::ServeConnection;
 use crate::core::resolve::Resolve;
 use crate::proxy::http::{
@@ -74,9 +74,10 @@ where
     let client_stack = connect
         .clone()
         .push(client::layer("out", config.h2_settings))
-        .push(reconnect::layer(recover::always(
-            config.outbound_connect_backoff.clone(),
-        )))
+        .push(reconnect::layer({
+            let backoff = config.outbound_connect_backoff.clone();
+            move |_| Ok(backoff.stream())
+        }))
         .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:

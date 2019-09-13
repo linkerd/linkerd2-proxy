@@ -119,21 +119,15 @@ where
                 }
 
                 State::Backoff(ref mut backoff) => {
-                    match backoff.as_mut().expect("backoff must be set").poll() {
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Ok(Async::Ready(more)) => State::Disconnected {
-                            // Only reuse the backoff if the backoff stream did not complete.
-                            backoff: more.and_then(move |()| backoff.take()),
-                        },
-                        Err(e) => {
-                            // If the backoff fails, try to recover, dropping the exisitng backoff.
-                            let error: Error = e.into();
-                            tracing::warn!(message="Backoff", %error);
-                            State::Recover {
-                                error: Some(error),
-                                backoff: None,
-                            }
-                        }
+                    // Do not try to recover if the backoff stream fails.
+                    let more = try_ready!(backoff
+                        .as_mut()
+                        .expect("backoff must be set")
+                        .poll()
+                        .map_err(Into::into));
+                    State::Disconnected {
+                        // Only reuse the backoff if the backoff stream did not complete.
+                        backoff: more.and_then(move |()| backoff.take()),
                     }
                 }
             }

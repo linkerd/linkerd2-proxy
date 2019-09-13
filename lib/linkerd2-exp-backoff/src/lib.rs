@@ -60,8 +60,7 @@ impl ExponentialBackoff {
         Ok(ExponentialBackoff { min, max, jitter })
     }
 
-    fn base(&self, failures: u32) -> Duration {
-        debug_assert!(failures >= 1, "failiures must be non-zero");
+    fn base(&self, iterations: u32) -> Duration {
         debug_assert!(
             self.min <= self.max,
             "maximum backoff must not be less than minimum backoff"
@@ -70,9 +69,7 @@ impl ExponentialBackoff {
             self.max > Duration::from_millis(0),
             "Maximum backoff must be non-zero"
         );
-        self.min
-            .mul(2_u32.saturating_pow(failures - 1))
-            .min(self.max)
+        self.min.mul(2_u32.saturating_pow(iterations)).min(self.max)
     }
 
     /// Returns a random, uniform duration on `[0, base*self.jitter]` no greater
@@ -110,9 +107,12 @@ impl Stream for ExponentialBackoffStream {
                 self.iterations += 1;
                 return Ok(Some(()).into());
             }
+            if self.iterations == std::u32::MAX {
+                return Ok(None.into());
+            }
 
             let backoff = {
-                let base = self.backoff.base(self.iterations + 1);
+                let base = self.backoff.base(self.iterations);
                 base + self.backoff.jitter(base, &mut self.rng)
             };
             self.delay = Some(timer::Delay::new(timer::clock::now() + backoff));
@@ -141,7 +141,7 @@ mod tests {
                 Err(_) => return TestResult::discard(),
                 Ok(backoff) => backoff,
             };
-            let delay = backoff.base(1);
+            let delay = backoff.base(0);
             TestResult::from_bool(min == delay)
         }
 
@@ -152,7 +152,7 @@ mod tests {
                 Err(_) => return TestResult::discard(),
                 Ok(backoff) => backoff,
             };
-            let delay = backoff.base(iterations + 1);
+            let delay = backoff.base(iterations);
             TestResult::from_bool(min <= delay && delay <= max)
         }
 
