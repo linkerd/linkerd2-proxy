@@ -2,6 +2,7 @@ use bytes::Bytes;
 use futures::Sink;
 use linkerd2_error::Error;
 use rand::Rng;
+use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
 
@@ -17,6 +18,9 @@ pub struct Id(Vec<u8>);
 
 #[derive(Debug, Default)]
 pub struct Flags(u8);
+
+#[derive(Debug)]
+pub struct InsufficientBytes;
 
 #[derive(Debug)]
 pub struct Span {
@@ -93,8 +97,20 @@ impl fmt::Display for Flags {
     }
 }
 
-impl From<Bytes> for Flags {
-    fn from(buf: Bytes) -> Self {
-        Flags(buf[0])
+impl TryFrom<Bytes> for Flags {
+    type Error = InsufficientBytes;
+
+    fn try_from(buf: Bytes) -> Result<Self, Self::Error> {
+        buf.first().map(|b| Flags(*b)).ok_or(InsufficientBytes)
+    }
+}
+
+// === impl InsufficientBytes ===
+
+impl std::error::Error for InsufficientBytes {}
+
+impl fmt::Display for InsufficientBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Insufficient bytes when decoding binary header")
     }
 }

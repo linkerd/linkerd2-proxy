@@ -1,7 +1,8 @@
-use super::{Error, Flags, Id};
+use super::{Error, Flags, Id, InsufficientBytes};
 use bytes::Bytes;
 use http::header::HeaderValue;
 use rand::{rngs::SmallRng, FromEntropy};
+use std::convert::TryInto;
 use std::fmt;
 use tracing::{trace, warn};
 
@@ -30,19 +31,7 @@ pub struct TraceContext {
 }
 
 #[derive(Debug)]
-struct InsufficientBytes;
-#[derive(Debug)]
 struct UnknownFieldId(u8);
-
-// === impl InsufficientBytes ===
-
-impl std::error::Error for InsufficientBytes {}
-
-impl fmt::Display for InsufficientBytes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Insufficient bytes when decoding binary header")
-    }
-}
 
 // === impl UnknownFieldId ===
 
@@ -150,7 +139,7 @@ fn parse_grpc_trace_context_field(
                 GRPC_TRACE_FIELD_TRACE_OPTIONS,
                 flags
             );
-            context.flags = flags.into();
+            context.flags = flags.try_into()?;
         }
         id => {
             return Err(UnknownFieldId(id).into());
