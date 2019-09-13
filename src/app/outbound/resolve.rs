@@ -2,6 +2,7 @@ use super::endpoint;
 use crate::api_resolve::Metadata;
 use crate::app::dst::DstAddr;
 use crate::dns::Suffix;
+use indexmap::IndexSet;
 use linkerd2_error::{Error, Recover};
 use linkerd2_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 use linkerd2_proxy_core::{resolve, Resolve};
@@ -10,8 +11,8 @@ use linkerd2_request_filter as request_filter;
 use std::sync::Arc;
 use tower_grpc as grpc;
 
-pub fn resolve<R>(
-    suffixes: Vec<Suffix>,
+pub fn resolve<R, S>(
+    suffixes: S,
     backoff: ExponentialBackoff,
     resolve: R,
 ) -> map_endpoint::Resolve<
@@ -23,6 +24,7 @@ pub fn resolve<R>(
 >
 where
     R: Resolve<DstAddr, Endpoint = Metadata> + Clone,
+    S: IntoIterator<Item = Suffix>,
 {
     map_endpoint::Resolve::new(
         endpoint::FromMetadata,
@@ -35,7 +37,7 @@ where
 
 #[derive(Clone, Debug)]
 pub struct PermitNamesInSuffixes {
-    permitted: Arc<Vec<Suffix>>,
+    permitted: Arc<IndexSet<Suffix>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -46,10 +48,10 @@ pub struct Unresolvable(());
 
 // === impl PermitNamesInSuffixes ===
 
-impl From<Vec<Suffix>> for PermitNamesInSuffixes {
-    fn from(permitted: Vec<Suffix>) -> Self {
+impl<I: IntoIterator<Item = Suffix>> From<I> for PermitNamesInSuffixes {
+    fn from(permitted: I) -> Self {
         Self {
-            permitted: Arc::new(permitted),
+            permitted: Arc::new(permitted.into_iter().collect()),
         }
     }
 }
