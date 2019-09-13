@@ -24,7 +24,6 @@ pub enum Propagation {
 #[derive(Debug)]
 pub struct TraceContext {
     pub propagation: Propagation,
-    pub version: Id,
     pub trace_id: Id,
     pub parent_id: Id,
     pub flags: Flags,
@@ -85,11 +84,10 @@ fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
 fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
     trace!(message = "reading binary trace context", ?buf);
 
-    let version = try_split_to(buf, 1).ok()?;
+    let _version = try_split_to(buf, 1).ok()?;
 
     let mut context = TraceContext {
         propagation: Propagation::Grpc,
-        version: version.into(),
         trace_id: Default::default(),
         parent_id: Default::default(),
         flags: Default::default(),
@@ -189,7 +187,6 @@ fn unpack_http_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
     };
     Some(TraceContext {
         propagation: Propagation::Http,
-        version: Id(vec![0]),
         trace_id,
         parent_id,
         flags,
