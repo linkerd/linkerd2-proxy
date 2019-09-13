@@ -20,16 +20,16 @@ pub mod trace {
     pub use tracing::*;
     use tracing_subscriber::{
         fmt::{format, Builder, Context},
-        layer,
+        filter,
     };
-    pub use tracing_subscriber::{reload, Filter, FmtSubscriber};
+    pub use tracing_subscriber::{reload, EnvFilter, FmtSubscriber};
 
-    type SubscriberBuilder = Builder<format::NewRecorder, Format, layer::Identity>;
+    type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::LevelFilter>;
     type Subscriber = FmtSubscriber<format::NewRecorder, Format>;
 
     #[derive(Clone)]
     pub struct LevelHandle {
-        inner: reload::Handle<Filter, Subscriber>,
+        inner: reload::Handle<EnvFilter, Subscriber>,
     }
 
     /// Initialize tracing and logging with the value of the `ENV_LOG`
@@ -45,7 +45,7 @@ pub mod trace {
 
         // Set up the subscriber
         let builder = subscriber_builder()
-            .with_filter(filter)
+            .with_env_filter(filter)
             .with_filter_reloading();
         let handle = builder.reload_handle();
         let dispatch = Dispatch::new(builder.finish());
@@ -121,7 +121,7 @@ pub mod trace {
         /// do not exercise the `proxy-log-level` endpoint.
         pub fn dangling() -> Self {
             let builder = subscriber_builder()
-                .with_filter(Filter::default())
+                .with_env_filter(EnvFilter::default())
                 .with_filter_reloading();
             let inner = builder.reload_handle();
             LevelHandle { inner }
@@ -129,7 +129,7 @@ pub mod trace {
 
         pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
             let level = level.as_ref();
-            let filter = level.parse::<Filter>()?;
+            let filter = level.parse()?;
             self.inner.reload(filter)?;
             info!(message = "set new log level", %level);
             Ok(())
