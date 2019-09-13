@@ -135,7 +135,7 @@ where
                     span_name: path.unwrap_or_default(),
                     start: SystemTime::now(),
                     // End time will be updated when the span completes.
-                    end: SystemTime::now(),
+                    end: SystemTime::UNIX_EPOCH,
                 });
             }
         }

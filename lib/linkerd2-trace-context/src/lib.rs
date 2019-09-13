@@ -62,9 +62,9 @@ impl Into<Vec<u8>> for Id {
     }
 }
 
-impl AsRef<Vec<u8>> for Id {
-    fn as_ref(&self) -> &Vec<u8> {
-        &self.0
+impl AsRef<[u8]> for Id {
+    fn as_ref(&self) -> &[u8] {
+        &self.0.as_ref()
     }
 }
 
