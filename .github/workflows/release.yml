@@ -13,7 +13,7 @@ jobs:
     steps:
     - name: git co
       uses: actions/checkout@v1
-    - name: Get Tag Info
+    - name: meta
       id: release-tag-meta
       uses: ./.github/actions/release-tag-meta
       with:
