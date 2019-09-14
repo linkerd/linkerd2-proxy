@@ -42,6 +42,9 @@ enum State<F, R: resolve::Resolution, B> {
         future: F,
         backoff: Option<B>,
     },
+    // XXX This state shouldn't be necessary, but we need it to pass tests(!)
+    // that don't properly mimic the go server's behavior. See
+    // linkerd/linkerd2#3362.
     Pending {
         resolution: Option<R>,
         backoff: Option<B>,
