@@ -3,15 +3,16 @@ name = "linkerd2-proxy-resolve"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
+publish = false
 
 [dependencies]
 futures = "0.1"
 linkerd2-addr = { path = "../linkerd2-addr" }
 linkerd2-dns-name = { path = "../linkerd2-dns-name" }
+linkerd2-error = { path = "../linkerd2-error" }
 linkerd2-identity = { path = "../linkerd2-identity" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
 linkerd2-proxy-core = { path = "../linkerd2-proxy-core" }
-linkerd2-never = { path = "../linkerd2-never" }
 linkerd2-task = { path = "../linkerd2-task" }
 prost = "0.5.0"
 tower-grpc = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }

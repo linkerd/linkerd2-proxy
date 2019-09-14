@@ -1,22 +1,26 @@
 use bytes::Bytes;
+use futures::Sink;
+use linkerd2_error::Error;
 use rand::Rng;
-use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
-use tokio::sync::mpsc;
 
 pub mod layer;
 mod propagation;
 
 pub use layer::layer;
 
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
+const SPAN_ID_LEN: usize = 8;
 
 #[derive(Debug, Default)]
 pub struct Id(Vec<u8>);
 
 #[derive(Debug, Default)]
 pub struct Flags(u8);
+
+#[derive(Debug)]
+pub struct InsufficientBytes;
 
 #[derive(Debug)]
 pub struct Span {
@@ -26,37 +30,41 @@ pub struct Span {
     pub span_name: String,
     pub start: SystemTime,
     pub end: SystemTime,
-    pub labels: HashMap<String, String>,
 }
 
 pub trait SpanSink {
     fn try_send(&mut self, span: Span) -> Result<(), Error>;
 }
 
-impl SpanSink for mpsc::Sender<Span> {
+impl<S> SpanSink for S
+where
+    S: Sink<SinkItem = Span>,
+    S::SinkError: Into<Error>,
+{
     fn try_send(&mut self, span: Span) -> Result<(), Error> {
-        self.try_send(span).map_err(Into::into)
+        self.start_send(span).map(|_| ()).map_err(Into::into)
     }
 }
 
 // === impl Id ===
 
 impl Id {
-    fn new(len: usize) -> Self {
-        let mut rng = rand::thread_rng();
-        let mut bytes = vec![0; len];
+    fn new_span_id<R: Rng>(rng: &mut R) -> Self {
+        let mut bytes = vec![0; SPAN_ID_LEN];
         rng.fill(bytes.as_mut_slice());
         Self(bytes)
     }
+}
 
-    pub fn into_vec(self) -> Vec<u8> {
+impl Into<Vec<u8>> for Id {
+    fn into(self) -> Vec<u8> {
         self.0
     }
 }
 
-impl AsRef<Vec<u8>> for Id {
-    fn as_ref(&self) -> &Vec<u8> {
-        &self.0
+impl AsRef<[u8]> for Id {
+    fn as_ref(&self) -> &[u8] {
+        &self.0.as_ref()
     }
 }
 
@@ -89,8 +97,20 @@ impl fmt::Display for Flags {
     }
 }
 
-impl From<Bytes> for Flags {
-    fn from(buf: Bytes) -> Self {
-        Flags(buf[0])
+impl TryFrom<Bytes> for Flags {
+    type Error = InsufficientBytes;
+
+    fn try_from(buf: Bytes) -> Result<Self, Self::Error> {
+        buf.first().map(|b| Flags(*b)).ok_or(InsufficientBytes)
+    }
+}
+
+// === impl InsufficientBytes ===
+
+impl std::error::Error for InsufficientBytes {}
+
+impl fmt::Display for InsufficientBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Insufficient bytes when decoding binary header")
     }
 }

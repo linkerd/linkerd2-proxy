@@ -1,35 +1,33 @@
 use super::{propagation, Span, SpanSink};
 use futures::{try_ready, Async, Future, Poll};
-use std::collections::HashMap;
 use std::time::SystemTime;
 use tracing::{trace, warn};
 
-pub struct SpanFuture<Fut, Sink> {
-    span: Option<Span>,
-    inner: Fut,
-    sink: Sink,
+pub struct ResponseFuture<F, S> {
+    trace: Option<(Span, S)>,
+    inner: F,
 }
 
 #[derive(Clone, Debug)]
-pub struct Layer<Sink> {
-    sink: Sink,
+pub struct Layer<S> {
+    sink: S,
 }
 
 #[derive(Clone, Debug)]
-pub struct Stack<Make, Sink> {
-    inner: Make,
-    sink: Sink,
+pub struct Stack<M, S> {
+    inner: M,
+    sink: S,
 }
 
-pub struct MakeFuture<Fut, Sink> {
-    inner: Fut,
-    sink: Option<Sink>,
+pub struct MakeFuture<F, S> {
+    inner: F,
+    sink: Option<S>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<Svc, Sink> {
+pub struct Service<Svc, S> {
     inner: Svc,
-    sink: Sink,
+    sink: S,
 }
 
 /// A layer that adds distributed tracing instrumentation.
@@ -41,19 +39,19 @@ pub struct Service<Svc, Sink> {
 /// the request.  If the sampled bit of the header was set, we emit metadata
 /// about the span to the given SpanSink when the span is complete, i.e. when
 /// we receive the response.
-pub fn layer<Sink>(sink: Sink) -> Layer<Sink> {
+pub fn layer<S>(sink: S) -> Layer<S> {
     Layer { sink }
 }
 
 // === impl Layer ===
 
-impl<Make, Sink> tower::layer::Layer<Make> for Layer<Sink> 
+impl<M, S> tower::layer::Layer<M> for Layer<S>
 where
-    Sink: Clone,
+    S: Clone,
 {
-    type Service = Stack<Make, Sink>;
+    type Service = Stack<M, S>;
 
-    fn layer(&self, inner: Make) -> Self::Service {
+    fn layer(&self, inner: M) -> Self::Service {
         Stack {
             inner,
             sink: self.sink.clone(),
@@ -63,20 +61,20 @@ where
 
 // === impl Stack ===
 
-impl<Target, Make, Sink> tower::Service<Target> for Stack<Make, Sink>
+impl<T, M, S> tower::Service<T> for Stack<M, S>
 where
-    Make: tower::Service<Target>,
-    Sink: Clone,
+    M: tower::Service<T>,
+    S: Clone,
 {
-    type Response = Service<Make::Response, Sink>;
-    type Error = Make::Error;
-    type Future = MakeFuture<Make::Future, Sink>;
+    type Response = Service<M::Response, S>;
+    type Error = M::Error;
+    type Future = MakeFuture<M::Future, S>;
 
-    fn poll_ready(&mut self) -> Poll<(), Make::Error> {
+    fn poll_ready(&mut self) -> Poll<(), M::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, target: Target) -> Self::Future {
+    fn call(&mut self, target: T) -> Self::Future {
         let inner = self.inner.call(target);
 
         MakeFuture {
@@ -88,9 +86,9 @@ where
 
 // === impl MakeFuture ===
 
-impl<Fut: Future, Sink> Future for MakeFuture<Fut, Sink> {
-    type Item = Service<Fut::Item, Sink>;
-    type Error = Fut::Error;
+impl<F: Future, S> Future for MakeFuture<F, S> {
+    type Item = Service<F::Item, S>;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
@@ -101,106 +99,74 @@ impl<Fut: Future, Sink> Future for MakeFuture<Fut, Sink> {
 
 // === impl Service ===
 
-impl<Svc, Body, ResponseBody, Sink> tower::Service<http::Request<Body>> for Service<Svc, Sink>
+impl<Svc, B, S> tower::Service<http::Request<B>> for Service<Svc, S>
 where
-    Svc: tower::Service<http::Request<Body>, Response = http::Response<ResponseBody>>,
-    Sink: SpanSink + Clone,
+    Svc: tower::Service<http::Request<B>>,
+    S: SpanSink + Clone,
 {
     type Response = Svc::Response;
     type Error = Svc::Error;
-    type Future = futures::future::Either<Svc::Future, SpanFuture<Svc::Future, Sink>>;
+    type Future = ResponseFuture<Svc::Future, S>;
 
     fn poll_ready(&mut self) -> Poll<(), Svc::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut request: http::Request<Body>) -> Self::Future {
-        let mut trace_context = propagation::unpack_trace_context(&request);
-        let mut path = None;
-        let mut labels = HashMap::new();
+    fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
+        let trace_context = propagation::unpack_trace_context(&request);
+        let mut span = None;
 
-        if let Some(ref mut context) = trace_context {
+        if let Some(context) = trace_context {
             trace!(message = "got trace context", ?context);
-            propagation::increment_span_id(&mut request, context);
-            // If we plan to sample this span, we need to copy the metadata from
-            // the request before dispatching it to inner.
+            let span_id = propagation::increment_span_id(&mut request, &context);
+            // If we plan to sample this span, we need to record span metadata
+            // from the request before dispatching it to inner.
             if context.is_sampled() {
-                path = Some(request.uri().path().to_string());
-                request_labels(&mut labels, &request);
+                trace!(message = "span will be sampled", ?span_id);
+                let path = request
+                    .uri()
+                    .path_and_query()
+                    .map(|pq| pq.as_str().to_owned());
+                span = Some(Span {
+                    trace_id: context.trace_id,
+                    span_id,
+                    parent_id: context.parent_id,
+                    span_name: path.unwrap_or_default(),
+                    start: SystemTime::now(),
+                    // End time will be updated when the span completes.
+                    end: SystemTime::UNIX_EPOCH,
+                });
             }
         }
 
         let f = self.inner.call(request);
 
-        if let Some(propagation::TraceContext {
-            propagation: _,
-            version: _,
-            trace_id,
-            parent_id,
-            flags,
-            span_id: Some(span_id),
-        }) = trace_context
-        {
-            if flags.is_sampled() {
-                trace!(message = "span will be sampled", ?span_id);
-                let span = Span {
-                    trace_id,
-                    span_id,
-                    parent_id,
-                    span_name: path.unwrap_or_else(String::new),
-                    start: SystemTime::now(),
-                    // End time will be updated when the span completes.
-                    end: SystemTime::now(),
-                    labels,
-                };
-                let span_fut = SpanFuture {
-                    span: Some(span),
-                    inner: f,
-                    sink: self.sink.clone(),
-                };
-                return futures::future::Either::B(span_fut);
-            }
+        ResponseFuture {
+            trace: span.map(|span| (span, self.sink.clone())),
+            inner: f,
         }
-        futures::future::Either::A(f)
     }
 }
 
 // === impl SpanFuture ===
 
-impl<Fut, Sink, ResponseBody> Future for SpanFuture<Fut, Sink> 
+impl<F, S> Future for ResponseFuture<F, S>
 where
-    Fut: Future<Item = http::Response<ResponseBody>>,
-    Sink: SpanSink,
+    F: Future,
+    S: SpanSink,
 {
-    type Item = Fut::Item;
-    type Error = Fut::Error;
+    type Item = F::Item;
+    type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        let mut span = self.span.take().expect("polled after ready");
-        span.end = SystemTime::now();
-        response_labels(&mut span.labels, &inner);
-        trace!(message = "emitting span", ?span);
-        self.sink.try_send(span).unwrap_or_else(|_| {
-            warn!("span dropped due to backpressure");
-        });
+        if let Some((mut span, mut sink)) = self.trace.take() {
+            span.end = SystemTime::now();
+            trace!(message = "emitting span", ?span);
+            if sink.try_send(span).is_err() {
+                warn!("span dropped due to backpressure");
+            }
+        }
         Ok(Async::Ready(inner))
     }
-}
-
-fn request_labels<Body>(labels: &mut HashMap<String, String>, req: &http::Request<Body>) {
-    labels.insert("http.method".to_string(), format!("{}", req.method()));
-    labels.insert("http.path".to_string(),  req.uri().path().to_string());
-    if let Some(authority) = req.uri().authority_part() {
-        labels.insert("http.authority".to_string(), authority.as_str().to_string());
-    }
-    if let Some(host) = req.headers().get("host") {
-        if let Ok(host) = host.to_str() {
-            labels.insert("http.host".to_string(), host.to_string());
-        }
-    }
-}
-
-fn response_labels<Body>(labels: &mut HashMap<String, String>, rsp: &http::Response<Body>) {
-    labels.insert("http.status_code".to_string(), rsp.status().as_str().to_string());
 }

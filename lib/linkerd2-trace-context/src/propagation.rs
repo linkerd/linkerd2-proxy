@@ -1,6 +1,8 @@
-use super::{Error, Flags, Id};
+use super::{Error, Flags, Id, InsufficientBytes};
 use bytes::Bytes;
 use http::header::HeaderValue;
+use rand::{rngs::SmallRng, FromEntropy};
+use std::convert::TryInto;
 use std::fmt;
 use tracing::{trace, warn};
 
@@ -22,27 +24,13 @@ pub enum Propagation {
 #[derive(Debug)]
 pub struct TraceContext {
     pub propagation: Propagation,
-    pub version: Id,
     pub trace_id: Id,
     pub parent_id: Id,
     pub flags: Flags,
-    pub span_id: Option<Id>,
 }
 
-#[derive(Debug)]
-struct InsufficientBytes;
 #[derive(Debug)]
 struct UnknownFieldId(u8);
-
-// === impl InsufficientBytes ===
-
-impl std::error::Error for InsufficientBytes {}
-
-impl fmt::Display for InsufficientBytes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Insufficient bytes when decoding binary header")
-    }
-}
 
 // === impl UnknownFieldId ===
 
@@ -66,11 +54,13 @@ pub fn unpack_trace_context<B>(request: &http::Request<B>) -> Option<TraceContex
     unpack_grpc_trace_context(request).or_else(|| unpack_http_trace_context(request))
 }
 
-pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
+// Generates a new span id, writes it to the request in the appropriate
+// propagation format and returns the generated span id.
+pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
     match context.propagation {
         Propagation::Grpc => increment_grpc_span_id(request, context),
-        Propagation::Http => increment_http_span_id(request, context),
-    };
+        Propagation::Http => increment_http_span_id(request),
+    }
 }
 
 fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
@@ -94,15 +84,13 @@ fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
 fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
     trace!(message = "reading binary trace context", ?buf);
 
-    let version = try_split_to(buf, 1).ok()?;
+    let _version = try_split_to(buf, 1).ok()?;
 
     let mut context = TraceContext {
         propagation: Propagation::Grpc,
-        version: version.into(),
         trace_id: Default::default(),
         parent_id: Default::default(),
         flags: Default::default(),
-        span_id: None,
     };
 
     while buf.len() > 0 {
@@ -149,7 +137,7 @@ fn parse_grpc_trace_context_field(
                 GRPC_TRACE_FIELD_TRACE_OPTIONS,
                 flags
             );
-            context.flags = flags.into();
+            context.flags = flags.try_into()?;
         }
         id => {
             return Err(UnknownFieldId(id).into());
@@ -158,8 +146,8 @@ fn parse_grpc_trace_context_field(
     Ok(())
 }
 
-fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
-    let span_id = Id::new(8);
+fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
+    let span_id = Id::new_span_id(&mut SmallRng::from_entropy());
 
     trace!(message = "incremented span id", %span_id);
 
@@ -187,7 +175,7 @@ fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &mut Trace
     } else {
         warn!("invalid header: {:?}", &bytes_b64);
     }
-    context.span_id = Some(span_id);
+    span_id
 }
 
 fn unpack_http_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
@@ -199,16 +187,14 @@ fn unpack_http_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
     };
     Some(TraceContext {
         propagation: Propagation::Http,
-        version: Id(vec![0]),
         trace_id,
         parent_id,
         flags,
-        span_id: None,
     })
 }
 
-fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &mut TraceContext) {
-    let span_id = Id::new(8);
+fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
+    let span_id = Id::new_span_id(&mut SmallRng::from_entropy());
 
     trace!("incremented span id: {}", span_id);
 
@@ -219,7 +205,7 @@ fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &mut Trace
     } else {
         warn!("invalid {} header: {:?}", HTTP_SPAN_ID_HEADER, span_str);
     }
-    context.span_id = Some(span_id);
+    span_id
 }
 
 fn get_header_str<'a, B>(request: &'a http::Request<B>, header: &str) -> Option<&'a str> {
