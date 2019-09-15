@@ -101,7 +101,7 @@ trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7
 tracing            = "0.1.9"
 tracing-futures    = "0.0.1-alpha.1"
 tracing-log        = "0.1"
-tracing-tower      = { git = "https://github.com/tokio-rs/tracing" }
+tracing-tower      = { git = "https://github.com/tokio-rs/tracing", branch = "eliza/tower-tweaks-two" }
 
 # tls
 ring = "0.16"

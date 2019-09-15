@@ -54,6 +54,16 @@ where
         .push(transport_metrics.connect("inbound"))
         .push(rewrite_loopback_addr::layer());
 
+    let req_span: fn(&http::Request<_>) -> tracing::Span = |req| {
+            tracing::debug_span!(
+            "request",
+            method = %req.method(),
+            path = ?req.uri().path(),
+            authority = ?req.uri().authority_part(),
+            version = ?req.version(),
+        )
+    };
+
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = connect
         .clone()
@@ -62,6 +72,8 @@ where
             let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
+        .push(tracing_tower::request_span::make::layer(req_span))
+        .push(tracing_tower::request_span::layer(client::make_span("in")))
         .push(normalize_uri::layer());
 
     // A stack configured by `router::Config`, responsible for building

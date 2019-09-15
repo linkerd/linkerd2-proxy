@@ -14,6 +14,8 @@ use hyper;
 use std::fmt;
 use std::marker::PhantomData;
 use tracing::{debug, trace};
+use tracing_tower::GetSpan;
+use tracing_futures::Instrument;
 
 /// Configurs an HTTP client that uses a `C`-typed connector
 ///
@@ -109,6 +111,26 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ClientSpan {
+    name: &'static str,
+}
+
+impl<T> GetSpan<T> for ClientSpan
+where
+    T: connect::HasPeerAddr + HasSettings,
+{
+    fn span_for(&self, target: &T) -> tracing::Span {
+        let dst = target.peer_addr();
+        let proto = target.http_settings();
+        tracing::info_span!(parent: None, "proxy", client = %self.name, %dst, ?proto)
+    }
+}
+
+pub fn make_span(name: &'static str) -> ClientSpan {
+    ClientSpan { name }
+}
+
 // === impl Client ===
 
 /// MakeService
@@ -133,9 +155,16 @@ where
         debug!("building client={:?}", config);
 
         let connect = self.connect.clone();
-        let executor = crate::logging::Client::proxy(self.proxy_name, config.peer_addr())
-            .with_settings(config.http_settings().clone())
-            .executor();
+        // let executor = crate::logging::Client::proxy(self.proxy_name, config.peer_addr())
+        //     .with_settings(config.http_settings().clone())
+        //     .executor();
+
+        let dst = config.peer_addr();
+        let proto = config.http_settings();
+
+        let executor = crate::task::LazyExecutor.instrument(
+            tracing::info_span!(parent: None, "proxy", client = %self.proxy_name, %dst, ?proto)
+        );
 
         match *config.http_settings() {
             Settings::Http1 {

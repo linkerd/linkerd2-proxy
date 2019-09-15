@@ -70,6 +70,16 @@ where
         .push_timeout(config.outbound_connect_timeout)
         .push(transport_metrics.connect("outbound"));
 
+    let req_span: fn(&http::Request<_>) -> tracing::Span = |req| {
+            tracing::debug_span!(
+            "request",
+            method = %req.method(),
+            path = ?req.uri().path(),
+            authority = ?req.uri().authority_part(),
+            version = ?req.version(),
+        )
+    };
+
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = connect
         .clone()
@@ -78,6 +88,8 @@ where
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
+        .push(tracing_tower::request_span::make::layer(req_span))
+        .push(tracing_tower::request_span::layer(client::make_span("out")))
         .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:

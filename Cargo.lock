@@ -620,7 +620,7 @@ dependencies = [
  "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-log 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-subscriber 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-tower 0.1.0 (git+https://github.com/tokio-rs/tracing)",
+ "tracing-tower 0.1.0 (git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two)",
  "trust-dns-resolver 0.10.2 (git+https://github.com/bluejekyll/trust-dns?rev=7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060)",
  "try-lock 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "untrusted 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1841,7 +1841,7 @@ dependencies = [
 [[package]]
 name = "tracing-futures"
 version = "0.0.1-alpha.1"
-source = "git+https://github.com/tokio-rs/tracing#198e62a613e1fcf623e8f2c66e1192504f5e9b2f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1850,8 +1850,8 @@ dependencies = [
 
 [[package]]
 name = "tracing-futures"
-version = "0.0.1-alpha.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+version = "0.0.1-alpha.2"
+source = "git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two#4be73a67e89bd77ad2a230eb8fb3c5019432d4da"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1885,7 +1885,7 @@ dependencies = [
 [[package]]
 name = "tracing-tower"
 version = "0.1.0"
-source = "git+https://github.com/tokio-rs/tracing#198e62a613e1fcf623e8f2c66e1192504f5e9b2f"
+source = "git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two#4be73a67e89bd77ad2a230eb8fb3c5019432d4da"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "http 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1893,7 +1893,7 @@ dependencies = [
  "tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-util 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-futures 0.0.1-alpha.1 (git+https://github.com/tokio-rs/tracing)",
+ "tracing-futures 0.0.1-alpha.2 (git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two)",
 ]
 
 [[package]]
@@ -2344,11 +2344,11 @@ dependencies = [
 "checksum tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)" = "c21ff9457accc293386c20e8f754d0b059e67e325edf2284f04230d125d7e5ff"
 "checksum tracing-attributes 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)" = "5e27d1065a1de5d8ad2637e41fe14d3cd14363d4a20cb99090b9012004955637"
 "checksum tracing-core 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "528c8ebaaa16cdac34795180b046c031775b0d56402704d98c096788f33d646a"
-"checksum tracing-futures 0.0.1-alpha.1 (git+https://github.com/tokio-rs/tracing)" = "<none>"
 "checksum tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)" = "08c7446f4fb35df7ba2c537b7e2f812f91b20a58aa2b846f028342c4d2429be0"
+"checksum tracing-futures 0.0.1-alpha.2 (git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two)" = "<none>"
 "checksum tracing-log 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "652bc99e1286541d6ccc42d5fb37213d1cdde544f88b19fac3d94e3117b55163"
 "checksum tracing-subscriber 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "90f01ec88a73a6da1127f03dc93e9745aacbeba16e5f33cfb91c7639f75932df"
-"checksum tracing-tower 0.1.0 (git+https://github.com/tokio-rs/tracing)" = "<none>"
+"checksum tracing-tower 0.1.0 (git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two)" = "<none>"
 "checksum trust-dns-proto 0.6.0 (git+https://github.com/bluejekyll/trust-dns?rev=7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060)" = "<none>"
 "checksum trust-dns-resolver 0.10.2 (git+https://github.com/bluejekyll/trust-dns?rev=7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060)" = "<none>"
 "checksum try-lock 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "119b532a17fbe772d360be65617310164549a07c25a1deab04c84168ce0d4545"

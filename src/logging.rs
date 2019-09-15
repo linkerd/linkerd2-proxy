@@ -23,6 +23,7 @@ pub mod trace {
         fmt::{format, Builder, Context, Formatter},
     };
     pub use tracing_subscriber::{reload, EnvFilter, FmtSubscriber};
+    pub use tracing_futures::{Instrument, Instrumented};
 
     type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::LevelFilter>;
     type Subscriber = Formatter<format::NewRecorder, Format>;
@@ -61,6 +62,10 @@ pub mod trace {
     fn subscriber_builder() -> SubscriberBuilder {
         let start_time = clock::now();
         FmtSubscriber::builder().on_event(Format { start_time })
+    }
+
+    pub fn executor() -> Instrumented<crate::task::LazyExecutor> {
+        crate::task::LazyExecutor.instrument(Span::current())
     }
 
     struct Format {

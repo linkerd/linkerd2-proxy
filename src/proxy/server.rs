@@ -10,7 +10,7 @@ use crate::transport::{
     tls::{self, HasPeerIdentity},
     Connection, Peek,
 };
-use crate::{app::config::H2Settings, drain, logging, Error, Never, task};
+use crate::{app::config::H2Settings, drain, Error, Never, trace};
 use futures::future::{self, Either};
 use futures::{Future, Poll};
 use http;
@@ -19,7 +19,7 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, debug_span, info_span, trace, Span};
+use tracing::{debug, debug_span, info_span, trace};
 use tracing_futures::Instrument;
 use tracing_tower::{request_span, InstrumentMake};
 
@@ -71,7 +71,6 @@ where
         http::Request<HttpBody>,
         fn(&http::Request<HttpBody>) -> tracing::Span,
     >,
-    log: logging::Server,
     name: &'static str,
 }
 
@@ -217,7 +216,6 @@ where
         h2_settings: H2Settings,
     ) -> Self {
         let connect = ForwardConnect(connect, PhantomData);
-        let log = logging::Server::proxy(proxy_name, listen_addr);
         let mk_span: fn(&http::Request<_>) -> tracing::Span = |req| {
             debug_span!(
                 "request",
@@ -235,7 +233,6 @@ where
             accept,
             connect,
             make_http,
-            log,
             name: proxy_name,
         }
     }
@@ -326,7 +323,7 @@ where
                                 let svc = upgrade::Service::new(
                                     http_svc,
                                     drain.clone(),
-                                    task::LazyExecutor.instrument(Span::current())
+                                    trace::executor(),
                                 );
                                 let conn = http
                                     .http1_only(true)
@@ -341,7 +338,7 @@ where
                             Protocol::Http2 => Either::B({
                                 trace!("detected HTTP/2");
                                 let conn = http
-                                    .with_executor(task::LazyExecutor.instrument(Span::current()))
+                                    .with_executor(trace::executor())
                                     .http2_only(true)
                                     .http2_initial_stream_window_size(initial_stream_window_size)
                                     .http2_initial_connection_window_size(initial_conn_window_size)
