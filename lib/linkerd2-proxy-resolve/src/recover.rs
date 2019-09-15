@@ -19,6 +19,7 @@ pub struct ResolveFuture<T, E: Recover, R: resolve::Resolve<T>> {
 pub struct Resolution<T, E: Recover, R: resolve::Resolve<T>> {
     inner: Inner<T, E, R>,
     cache: Cache<R::Endpoint>,
+    buffer: Option<Update<R::Endpoint>>,
 }
 
 struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
@@ -30,7 +31,6 @@ struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
 
 #[derive(Debug)]
 struct Cache<T> {
-    pending_add: IndexMap<SocketAddr, T>,
     active: IndexMap<SocketAddr, T>,
 }
 
@@ -53,7 +53,7 @@ enum State<F, R: resolve::Resolution, B> {
         resolution: R,
         initial: Option<Update<R::Endpoint>>,
     },
-    Failed {
+    Recover {
         error: Option<Error>,
         backoff: Option<B>,
     },
@@ -82,23 +82,26 @@ where
     type Error = Error;
     type Future = ResolveFuture<T, E, R>;
 
+    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.resolve.poll_ready().map_err(Into::into)
     }
 
+    #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         let future = self.resolve.resolve(target.clone());
-        let inner = Inner {
-            target: target.clone(),
-            recover: self.recover.clone(),
-            resolve: self.resolve.clone(),
-            state: State::Connecting {
-                future,
-                backoff: None,
-            },
-        };
 
-        Self::Future { inner: Some(inner) }
+        Self::Future {
+            inner: Some(Inner {
+                state: State::Connecting {
+                    future,
+                    backoff: None,
+                },
+                target: target.clone(),
+                recover: self.recover.clone(),
+                resolve: self.resolve.clone(),
+            }),
+        }
     }
 }
 
@@ -115,12 +118,17 @@ where
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = self.inner.as_mut().expect("polled after complete");
-        try_ready!(inner.poll_connected());
+        // Wait until the resolution is connected.
+        try_ready!(self
+            .inner
+            .as_mut()
+            .expect("polled after complete")
+            .poll_connected());
 
         Ok(Async::Ready(Resolution {
             inner: self.inner.take().expect("polled after complete"),
             cache: Cache::default(),
+            buffer: None,
         }))
     }
 }
@@ -139,10 +147,11 @@ where
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
         loop {
-            // If a previous reconnect left endpoints to be added, add them
-            // immediately.
-            if let Some(pending) = self.cache.take_pending() {
-                return Ok(pending.into());
+            // If an update is buffered (i.e. after reconcile_initial), process
+            // it immediately.
+            if let Some(update) = self.buffer.take() {
+                self.cache.update_active(&update);
+                return Ok(update.into());
             }
 
             if let State::Connected {
@@ -150,19 +159,29 @@ where
                 ref mut initial,
             } = self.inner.state
             {
-                if let Some(update) = initial.take() {
-                    let update = self.cache.reconcile(update);
-                    return Ok(update.into());
+                // XXX Due to linkerd/linkerd2#3362, errors can't be discovered
+                // eagerly, so we must potentially read the first update to be
+                // sure it didn't fail. If that's the case, then reconcile the
+                // cache against the initial update.
+                if let Some(initial) = initial.take() {
+                    let (initial, buffer) = self.cache.reconcile_initial(initial);
+                    self.buffer = buffer;
+
+                    self.cache.update_active(&initial);
+                    return Ok(initial.into());
                 }
 
+                // Process the resolution stream, updating the cache.
+                //
+                // Attempt recovery/backoff if the resolution fails.
                 match resolve::Resolution::poll(resolution) {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(update)) => {
-                        let update = self.cache.process_update(update);
+                        self.cache.update_active(&update);
                         return Ok(update.into());
                     }
                     Err(e) => {
-                        self.inner.state = State::Failed {
+                        self.inner.state = State::Recover {
                             error: Some(e.into()),
                             backoff: None,
                         };
@@ -184,9 +203,14 @@ where
     R::Endpoint: Clone + PartialEq,
     E: Recover,
 {
+    /// Drives the state forward until its connected.
     fn poll_connected(&mut self) -> Poll<(), Error> {
         loop {
             self.state = match self.state {
+                // When disconnected, start connecting.
+                //
+                // If we're recovering from a previous failure, we retain the
+                // backoff in case this connection attempt fails.
                 State::Disconnected { ref mut backoff } => {
                     tracing::trace!("connecting");
                     let future = self.resolve.resolve(self.target.clone());
@@ -201,10 +225,6 @@ where
                     ref mut backoff,
                 } => match future.poll() {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(e) => State::Failed {
-                        error: Some(e.into()),
-                        backoff: backoff.take(),
-                    },
                     Ok(Async::Ready(resolution)) => {
                         tracing::trace!("pending");
                         State::Pending {
@@ -212,14 +232,21 @@ where
                             backoff: backoff.take(),
                         }
                     }
+                    Err(e) => State::Recover {
+                        error: Some(e.into()),
+                        backoff: backoff.take(),
+                    },
                 },
 
+                // We've already connected, but haven't yet received an update
+                // (or an error). This state shouldn't exist. See
+                // linkerd/linkerd2#3362.
                 State::Pending {
                     ref mut resolution,
                     ref mut backoff,
                 } => match resolution.as_mut().unwrap().poll() {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(e) => State::Failed {
+                    Err(e) => State::Recover {
                         error: Some(e.into()),
                         backoff: backoff.take(),
                     },
@@ -234,7 +261,9 @@ where
 
                 State::Connected { .. } => return Ok(Async::Ready(())),
 
-                State::Failed {
+                // If any stage failed, try to recover. If the error is
+                // recoverable, start (or continue) backing off...
+                State::Recover {
                     ref mut error,
                     ref mut backoff,
                 } => {
@@ -245,6 +274,7 @@ where
                 }
 
                 State::Backoff(ref mut backoff) => {
+                    // If the backoff fails, it's not recoverable.
                     match backoff
                         .as_mut()
                         .expect("illegal state")
@@ -269,7 +299,6 @@ where
 impl<T> Default for Cache<T> {
     fn default() -> Self {
         Cache {
-            pending_add: IndexMap::default(),
             active: IndexMap::default(),
         }
     }
@@ -279,73 +308,63 @@ impl<T> Cache<T>
 where
     T: Clone + PartialEq,
 {
-    fn reconcile(&mut self, initial: Update<T>) -> Update<T> {
+    fn reconcile_initial(&self, initial: Update<T>) -> (Update<T>, Option<Update<T>>) {
         match initial {
+            // When the first update after a disconnect is an Add, it should
+            // contain the new state of the replica set.
             Update::Add(endpoints) => {
-                // Discern which endpoints aren't actually new, but are being
-                // re-advertised. Also discern which of the active endpoints
-                // should be removed.
-                let mut new_endpoints = endpoints.into_iter().collect::<IndexMap<_, _>>();
+                let mut new_eps = endpoints.into_iter().collect::<IndexMap<_, _>>();
                 let mut rm_addrs = Vec::with_capacity(self.active.len());
-                for i in (0..self.active.len()).rev() {
-                    let should_remove = {
-                        let (addr, endpoint) = self.active.get_index(i).unwrap();
-                        match new_endpoints.get(addr) {
-                            None => true,
-                            Some(ep) => {
-                                if *ep == *endpoint {
-                                    new_endpoints.remove(addr);
-                                }
-                                false
+                for (addr, endpoint) in self.active.iter() {
+                    match new_eps.get(addr) {
+                        None => {
+                            // If the endpoint is in the active set and not in
+                            // the new set, it needs to be removed.
+                            rm_addrs.push(*addr);
+                        }
+                        Some(ep) => {
+                            // If the endpoint is already in the active set,
+                            // remove it from the new set (to avoid rebuilding
+                            // services unnecessarily).
+                            //
+                            // The endpoints must be identitical, though.
+                            if *ep == *endpoint {
+                                new_eps.remove(addr);
                             }
                         }
-                    };
-
-                    if should_remove {
-                        let (addr, _) = self.active.swap_remove_index(i).unwrap();
-                        rm_addrs.push(addr);
                     }
                 }
-                self.pending_add = new_endpoints;
-                Update::Remove(rm_addrs)
+                let add = Update::Add(new_eps.into_iter().collect());
+                let rm = Update::Remove(rm_addrs);
+                (add, Some(rm))
             }
-            Update::Remove(addrs) => {
-                self.active.drain(..);
-                Update::Remove(addrs)
-            }
-            Update::DoesNotExist | Update::Empty => {
-                self.active.drain(..);
-                initial
-            }
+            // It would be exceptionally odd to get a remove, specifically,
+            // immediately after a reconnect, but it seems appropriate to
+            // handle it as Empty.
+            Update::Remove(..) | Update::Empty => (Update::Empty, None),
+            Update::DoesNotExist => (Update::DoesNotExist, None),
         }
     }
 
-    fn process_update(&mut self, update: Update<T>) -> Update<T> {
+    fn update_active(&mut self, update: &Update<T>) {
         match update {
-            Update::Add(endpoints) => {
+            Update::Add(ref endpoints) => {
                 self.active.extend(endpoints.clone());
-                Update::Add(endpoints)
             }
-            Update::Remove(addrs) => {
+            Update::Remove(ref addrs) => {
                 for addr in addrs.iter() {
                     self.active.remove(addr);
                 }
-                Update::Remove(addrs)
             }
             Update::DoesNotExist | Update::Empty => {
                 self.active.drain(..);
-                update
             }
         }
     }
+}
 
-    fn take_pending(&mut self) -> Option<Update<T>> {
-        if self.pending_add.is_empty() {
-            return None;
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        let endpoints = self.pending_add.drain(..).collect::<Vec<_>>();
-        self.active.extend(endpoints.clone());
-        Some(Update::Add(endpoints))
-    }
 }
