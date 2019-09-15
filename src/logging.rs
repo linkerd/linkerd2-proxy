@@ -25,6 +25,29 @@ pub mod trace {
     pub use tracing_subscriber::{reload, EnvFilter, FmtSubscriber};
     pub use tracing_futures::{Instrument, Instrumented};
 
+    use http;
+    pub mod request {
+        use super::*;
+
+        pub type Layer<B, T> = tracing_tower::request_span::make::MakeLayer<
+            http::Request<B>,
+            T,
+            fn(&http::Request<B>) -> tracing::Span,
+        >;
+
+        pub fn layer<B, T>() -> Layer<B, T> {
+            tracing_tower::request_span::make::layer(|req: &http::Request<B>| {
+                tracing::debug_span!(
+                    "req",
+                    method = %req.method(),
+                    path = ?req.uri().path(),
+                    authority = ?req.uri().authority_part(),
+                    version = ?req.version(),
+                )
+            })
+        }
+    }
+
     type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::LevelFilter>;
     type Subscriber = Formatter<format::NewRecorder, Format>;
 

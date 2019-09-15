@@ -6,6 +6,7 @@ use crate::proxy::http::{
 use crate::proxy::{accept, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
 use crate::{core::listen::ServeConnection, svc, Addr};
+use crate::trace;
 use linkerd2_reconnect as reconnect;
 use std::net::SocketAddr;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -54,16 +55,6 @@ where
         .push(transport_metrics.connect("inbound"))
         .push(rewrite_loopback_addr::layer());
 
-    let req_span: fn(&http::Request<_>) -> tracing::Span = |req| {
-            tracing::debug_span!(
-            "request",
-            method = %req.method(),
-            path = ?req.uri().path(),
-            authority = ?req.uri().authority_part(),
-            version = ?req.version(),
-        )
-    };
-
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = connect
         .clone()
@@ -72,7 +63,7 @@ where
             let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
-        .push(tracing_tower::request_span::make::layer(req_span))
+        .push(trace::request::layer())
         .push(tracing_tower::request_span::layer(client::make_span("in")))
         .push(normalize_uri::layer());
 
@@ -202,6 +193,7 @@ where
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(super::errors::layer())
+        .push(trace::request::layer())
         .push(handle_time.layer());
 
     // As the inbound proxy accepts connections, we don't do any
@@ -211,7 +203,7 @@ where
         .push(transport_metrics.accept("inbound"));
 
     Server::new(
-        "out",
+        "in",
         local_addr,
         accept,
         connect,

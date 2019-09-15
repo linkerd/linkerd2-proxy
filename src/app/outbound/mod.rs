@@ -9,6 +9,7 @@ use crate::proxy::{self, accept, Server};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, Addr};
+use crate::trace;
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
 use std::net::SocketAddr;
@@ -69,17 +70,6 @@ where
         .push(keepalive::connect::layer(config.outbound_connect_keepalive))
         .push_timeout(config.outbound_connect_timeout)
         .push(transport_metrics.connect("outbound"));
-
-    let req_span: fn(&http::Request<_>) -> tracing::Span = |req| {
-            tracing::debug_span!(
-            "request",
-            method = %req.method(),
-            path = ?req.uri().path(),
-            authority = ?req.uri().authority_part(),
-            version = ?req.version(),
-        )
-    };
-
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = connect
         .clone()
@@ -88,7 +78,7 @@ where
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
-        .push(tracing_tower::request_span::make::layer(req_span))
+        .push(trace::request::layer())
         .push(tracing_tower::request_span::layer(client::make_span("out")))
         .push(normalize_uri::layer());
 
@@ -275,6 +265,7 @@ where
         }))
         .push(insert::target::layer())
         .push(super::errors::layer())
+        .push(trace::request::layer())
         .push(handle_time.layer());
 
     // Instantiated for each TCP connection received from the local

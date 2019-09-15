@@ -155,16 +155,7 @@ where
         debug!("building client={:?}", config);
 
         let connect = self.connect.clone();
-        // let executor = crate::logging::Client::proxy(self.proxy_name, config.peer_addr())
-        //     .with_settings(config.http_settings().clone())
-        //     .executor();
-
-        let dst = config.peer_addr();
-        let proto = config.http_settings();
-
-        let executor = crate::task::LazyExecutor.instrument(
-            tracing::info_span!(parent: None, "proxy", client = %self.proxy_name, %dst, ?proto)
-        );
+        let executor = crate::trace::executor();
 
         match *config.http_settings() {
             Settings::Http1 {

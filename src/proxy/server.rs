@@ -21,7 +21,6 @@ use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, debug_span, info_span, trace};
 use tracing_futures::Instrument;
-use tracing_tower::{request_span, InstrumentMake};
 
 /// A protocol-transparent Server!
 ///
@@ -66,11 +65,7 @@ where
     listen_addr: SocketAddr,
     accept: A,
     connect: ForwardConnect<T, C>,
-    make_http: request_span::MakeService<
-        H,
-        http::Request<HttpBody>,
-        fn(&http::Request<HttpBody>) -> tracing::Span,
-    >,
+    make_http: H,
     name: &'static str,
 }
 
@@ -216,16 +211,6 @@ where
         h2_settings: H2Settings,
     ) -> Self {
         let connect = ForwardConnect(connect, PhantomData);
-        let mk_span: fn(&http::Request<_>) -> tracing::Span = |req| {
-            debug_span!(
-                "request",
-                method = %req.method(),
-                path = ?req.uri().path(),
-                authority = ?req.uri().authority_part(),
-                version = ?req.version(),
-            )
-        };
-        let make_http = make_http.with_traced_requests(mk_span);
         Self {
             http: hyper::server::conn::Http::new(),
             h2_settings,
