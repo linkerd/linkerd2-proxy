@@ -165,6 +165,9 @@ where
                 // sure it didn't fail. If that's the case, then reconcile the
                 // cache against the initial update.
                 if let Some(initial) = initial.take() {
+                    // The initial state afer a reconnect may be identitical to
+                    // the prior state, and so there may be no updates to
+                    // advertise.
                     if let Some((update, reconcile)) = reconcile_after_connect(&self.cache, initial)
                     {
                         self.reconcile = reconcile;
