@@ -18,7 +18,7 @@ pub struct ResolveFuture<T, E: Recover, R: resolve::Resolve<T>> {
 
 pub struct Resolution<T, E: Recover, R: resolve::Resolve<T>> {
     inner: Inner<T, E, R>,
-    cache: Cache<R::Endpoint>,
+    cache: IndexMap<SocketAddr, R::Endpoint>,
     buffer: Option<Update<R::Endpoint>>,
 }
 
@@ -29,10 +29,10 @@ struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
     state: State<R::Future, R::Resolution, E::Backoff>,
 }
 
-#[derive(Debug)]
-struct Cache<T> {
-    active: IndexMap<SocketAddr, T>,
-}
+// #[derive(Debug)]
+// struct Cache<T> {
+//     active: IndexMap<SocketAddr, T>,
+// }
 
 enum State<F, R: resolve::Resolution, B> {
     Disconnected {
@@ -127,7 +127,8 @@ where
 
         Ok(Async::Ready(Resolution {
             inner: self.inner.take().expect("polled after complete"),
-            cache: Cache::default(),
+            cache: IndexMap::default(),
+            //cache: Cache::default(),
             buffer: None,
         }))
     }
@@ -147,10 +148,10 @@ where
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
         loop {
-            // If an update is buffered (i.e. after reconcile_initial), process
+            // If an update is buffered (i.e. after reconcile_after_reconnect), process
             // it immediately.
             if let Some(update) = self.buffer.take() {
-                self.cache.update_active(&update);
+                self.update_active(&update);
                 return Ok(update.into());
             }
 
@@ -164,10 +165,10 @@ where
                 // sure it didn't fail. If that's the case, then reconcile the
                 // cache against the initial update.
                 if let Some(initial) = initial.take() {
-                    let (initial, buffer) = self.cache.reconcile_initial(initial);
+                    let (initial, buffer) = reconcile_after_connect(&self.cache, initial);
                     self.buffer = buffer;
 
-                    self.cache.update_active(&initial);
+                    self.update_active(&initial);
                     return Ok(initial.into());
                 }
 
@@ -177,7 +178,7 @@ where
                 match resolve::Resolution::poll(resolution) {
                     Ok(Async::NotReady) => return Ok(Async::NotReady),
                     Ok(Async::Ready(update)) => {
-                        self.cache.update_active(&update);
+                        self.update_active(&update);
                         return Ok(update.into());
                     }
                     Err(e) => {
@@ -191,6 +192,72 @@ where
 
             try_ready!(self.inner.poll_connected());
         }
+    }
+}
+
+impl<T, E, R> Resolution<T, E, R>
+where
+    T: Clone,
+    R: resolve::Resolve<T>,
+    R::Endpoint: Clone + PartialEq,
+    E: Recover,
+{
+    fn update_active(&mut self, update: &Update<R::Endpoint>) {
+        match update {
+            Update::Add(ref endpoints) => {
+                self.cache.extend(endpoints.clone());
+            }
+            Update::Remove(ref addrs) => {
+                for addr in addrs.iter() {
+                    self.cache.remove(addr);
+                }
+            }
+            Update::DoesNotExist | Update::Empty => {
+                self.cache.drain(..);
+            }
+        }
+    }
+}
+
+/// Computes the updates needed after a connection is (re-)established.
+// Raw fn for easier testing.
+fn reconcile_after_connect<E: PartialEq>(
+    cache: &IndexMap<SocketAddr, E>,
+    initial: Update<E>,
+) -> (Update<E>, Option<Update<E>>) {
+    match initial {
+        // When the first update after a disconnect is an Add, it should
+        // contain the new state of the replica set.
+        Update::Add(endpoints) => {
+            let mut new_eps = endpoints.into_iter().collect::<IndexMap<_, _>>();
+            let mut rm_addrs = Vec::with_capacity(cache.len());
+            for (addr, endpoint) in cache.iter() {
+                match new_eps.get(addr) {
+                    // If the endpoint is in the active set and not in
+                    // the new set, it needs to be removed.
+                    None => {
+                        rm_addrs.push(*addr);
+                    }
+                    // If the endpoint is already in the active set,
+                    // remove it from the new set (to avoid rebuilding
+                    // services unnecessarily).
+                    Some(ep) => {
+                        // The endpoints must be identitical, though.
+                        if *ep == *endpoint {
+                            new_eps.remove(addr);
+                        }
+                    }
+                }
+            }
+            let add = Update::Add(new_eps.into_iter().collect());
+            let rm = Update::Remove(rm_addrs);
+            (add, Some(rm))
+        }
+        // It would be exceptionally odd to get a remove, specifically,
+        // immediately after a reconnect, but it seems appropriate to
+        // handle it as Empty.
+        Update::Remove(..) | Update::Empty => (Update::Empty, None),
+        Update::DoesNotExist => (Update::DoesNotExist, None),
     }
 }
 
@@ -294,77 +361,7 @@ where
     }
 }
 
-// === impl Cache ===
-
-impl<T> Default for Cache<T> {
-    fn default() -> Self {
-        Cache {
-            active: IndexMap::default(),
-        }
-    }
-}
-
-impl<T> Cache<T>
-where
-    T: Clone + PartialEq,
-{
-    fn reconcile_initial(&self, initial: Update<T>) -> (Update<T>, Option<Update<T>>) {
-        match initial {
-            // When the first update after a disconnect is an Add, it should
-            // contain the new state of the replica set.
-            Update::Add(endpoints) => {
-                let mut new_eps = endpoints.into_iter().collect::<IndexMap<_, _>>();
-                let mut rm_addrs = Vec::with_capacity(self.active.len());
-                for (addr, endpoint) in self.active.iter() {
-                    match new_eps.get(addr) {
-                        None => {
-                            // If the endpoint is in the active set and not in
-                            // the new set, it needs to be removed.
-                            rm_addrs.push(*addr);
-                        }
-                        Some(ep) => {
-                            // If the endpoint is already in the active set,
-                            // remove it from the new set (to avoid rebuilding
-                            // services unnecessarily).
-                            //
-                            // The endpoints must be identitical, though.
-                            if *ep == *endpoint {
-                                new_eps.remove(addr);
-                            }
-                        }
-                    }
-                }
-                let add = Update::Add(new_eps.into_iter().collect());
-                let rm = Update::Remove(rm_addrs);
-                (add, Some(rm))
-            }
-            // It would be exceptionally odd to get a remove, specifically,
-            // immediately after a reconnect, but it seems appropriate to
-            // handle it as Empty.
-            Update::Remove(..) | Update::Empty => (Update::Empty, None),
-            Update::DoesNotExist => (Update::DoesNotExist, None),
-        }
-    }
-
-    fn update_active(&mut self, update: &Update<T>) {
-        match update {
-            Update::Add(ref endpoints) => {
-                self.active.extend(endpoints.clone());
-            }
-            Update::Remove(ref addrs) => {
-                for addr in addrs.iter() {
-                    self.active.remove(addr);
-                }
-            }
-            Update::DoesNotExist | Update::Empty => {
-                self.active.drain(..);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
 }
