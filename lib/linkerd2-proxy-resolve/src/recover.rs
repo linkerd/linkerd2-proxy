@@ -282,11 +282,9 @@ where
     fn reconcile(&mut self, initial: Update<T>) -> Update<T> {
         match initial {
             Update::Add(endpoints) => {
-                // Discern which endpoints aren't
-                // actually new, but are being
-                // re-advertised. Also discern which
-                // of the active endpointsshould be
-                // removed.
+                // Discern which endpoints aren't actually new, but are being
+                // re-advertised. Also discern which of the active endpoints
+                // should be removed.
                 let mut new_endpoints = endpoints.into_iter().collect::<IndexMap<_, _>>();
                 let mut rm_addrs = Vec::with_capacity(self.active.len());
                 for i in (0..self.active.len()).rev() {
