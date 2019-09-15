@@ -165,12 +165,11 @@ where
                 // sure it didn't fail. If that's the case, then reconcile the
                 // cache against the initial update.
                 if let Some(initial) = initial.take() {
-                    if let Some((initial, reconcile)) =
-                        reconcile_after_connect(&self.cache, initial)
+                    if let Some((update, reconcile)) = reconcile_after_connect(&self.cache, initial)
                     {
                         self.reconcile = reconcile;
-                        self.update_active(&initial);
-                        return Ok(initial.into());
+                        self.update_active(&update);
+                        return Ok(update.into());
                     }
                 }
 
@@ -469,7 +468,7 @@ mod tests {
         cache.insert(addr0(), 0);
 
         assert_eq!(
-            reconcile_after_connect(&cache, Update::Remove(vec![addr0(), addr1()])),
+            reconcile_after_connect(&cache, Update::Remove(vec![addr1()])),
             Some((Update::Empty, None)),
             "Removes should be treated as empty"
         );
