@@ -78,8 +78,6 @@ where
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
-        .push(trace::request::layer())
-        .push(tracing_tower::request_span::layer(client::make_span("out")))
         .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:
@@ -164,6 +162,8 @@ where
     // fall back to using a router that dispatches request to the
     // application-selected original destination.
     let distributor = endpoint_stack
+        .push(trace::request::layer())
+        .push(tracing_tower::request_span::layer(client::make_span("out")))
         .push(fallback::layer(balancer_layer, orig_dst_router_layer))
         .serves::<DstAddr>();
 

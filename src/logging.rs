@@ -29,13 +29,9 @@ pub mod trace {
     pub mod request {
         use super::*;
 
-        pub type Layer<B, T> = tracing_tower::request_span::make::MakeLayer<
-            http::Request<B>,
-            T,
-            fn(&http::Request<B>) -> tracing::Span,
-        >;
+        pub type Layer<B> = tracing_tower::request_span::make::MakeLayer<http::Request<B>>;
 
-        pub fn layer<B, T>() -> Layer<B, T> {
+        pub fn layer<B>() -> Layer<B> {
             tracing_tower::request_span::make::layer(|req: &http::Request<B>| {
                 tracing::debug_span!(
                     "req",
