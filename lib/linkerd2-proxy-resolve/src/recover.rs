@@ -19,7 +19,7 @@ pub struct ResolveFuture<T, E: Recover, R: resolve::Resolve<T>> {
 pub struct Resolution<T, E: Recover, R: resolve::Resolve<T>> {
     inner: Inner<T, E, R>,
     cache: IndexMap<SocketAddr, R::Endpoint>,
-    buffer: Option<Update<R::Endpoint>>,
+    reconcile: Option<Update<R::Endpoint>>,
 }
 
 struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
@@ -129,7 +129,7 @@ where
             inner: self.inner.take().expect("polled after complete"),
             cache: IndexMap::default(),
             //cache: Cache::default(),
-            buffer: None,
+            reconcile: None,
         }))
     }
 }
@@ -148,9 +148,9 @@ where
 
     fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
         loop {
-            // If an update is buffered (i.e. after reconcile_after_reconnect), process
-            // it immediately.
-            if let Some(update) = self.buffer.take() {
+            // If a reconciliation update is buffered (i.e. after
+            // reconcile_after_reconnect), process it immediately.
+            if let Some(update) = self.reconcile.take() {
                 self.update_active(&update);
                 return Ok(update.into());
             }
@@ -165,11 +165,13 @@ where
                 // sure it didn't fail. If that's the case, then reconcile the
                 // cache against the initial update.
                 if let Some(initial) = initial.take() {
-                    let (initial, buffer) = reconcile_after_connect(&self.cache, initial);
-                    self.buffer = buffer;
-
-                    self.update_active(&initial);
-                    return Ok(initial.into());
+                    if let Some((initial, reconcile)) =
+                        reconcile_after_connect(&self.cache, initial)
+                    {
+                        self.reconcile = reconcile;
+                        self.update_active(&initial);
+                        return Ok(initial.into());
+                    }
                 }
 
                 // Process the resolution stream, updating the cache.
@@ -216,48 +218,6 @@ where
                 self.cache.drain(..);
             }
         }
-    }
-}
-
-/// Computes the updates needed after a connection is (re-)established.
-// Raw fn for easier testing.
-fn reconcile_after_connect<E: PartialEq>(
-    cache: &IndexMap<SocketAddr, E>,
-    initial: Update<E>,
-) -> (Update<E>, Option<Update<E>>) {
-    match initial {
-        // When the first update after a disconnect is an Add, it should
-        // contain the new state of the replica set.
-        Update::Add(endpoints) => {
-            let mut new_eps = endpoints.into_iter().collect::<IndexMap<_, _>>();
-            let mut rm_addrs = Vec::with_capacity(cache.len());
-            for (addr, endpoint) in cache.iter() {
-                match new_eps.get(addr) {
-                    // If the endpoint is in the active set and not in
-                    // the new set, it needs to be removed.
-                    None => {
-                        rm_addrs.push(*addr);
-                    }
-                    // If the endpoint is already in the active set,
-                    // remove it from the new set (to avoid rebuilding
-                    // services unnecessarily).
-                    Some(ep) => {
-                        // The endpoints must be identitical, though.
-                        if *ep == *endpoint {
-                            new_eps.remove(addr);
-                        }
-                    }
-                }
-            }
-            let add = Update::Add(new_eps.into_iter().collect());
-            let rm = Update::Remove(rm_addrs);
-            (add, Some(rm))
-        }
-        // It would be exceptionally odd to get a remove, specifically,
-        // immediately after a reconnect, but it seems appropriate to
-        // handle it as Empty.
-        Update::Remove(..) | Update::Empty => (Update::Empty, None),
-        Update::DoesNotExist => (Update::DoesNotExist, None),
     }
 }
 
@@ -361,7 +321,167 @@ where
     }
 }
 
+/// Computes the updates needed after a connection is (re-)established.
+// Raw fn for easier testing.
+fn reconcile_after_connect<E: PartialEq>(
+    cache: &IndexMap<SocketAddr, E>,
+    initial: Update<E>,
+) -> Option<(Update<E>, Option<Update<E>>)> {
+    match initial {
+        // When the first update after a disconnect is an Add, it should
+        // contain the new state of the replica set.
+        Update::Add(endpoints) => {
+            let mut new_eps = endpoints.into_iter().collect::<IndexMap<_, _>>();
+            let mut rm_addrs = Vec::with_capacity(cache.len());
+            for (addr, endpoint) in cache.iter() {
+                match new_eps.get(addr) {
+                    // If the endpoint is in the active set and not in
+                    // the new set, it needs to be removed.
+                    None => {
+                        rm_addrs.push(*addr);
+                    }
+                    // If the endpoint is already in the active set,
+                    // remove it from the new set (to avoid rebuilding
+                    // services unnecessarily).
+                    Some(ep) => {
+                        // The endpoints must be identitical, though.
+                        if *ep == *endpoint {
+                            new_eps.remove(addr);
+                        }
+                    }
+                }
+            }
+            let add = if new_eps.is_empty() {
+                None
+            } else {
+                Some(Update::Add(new_eps.into_iter().collect()))
+            };
+            let rm = if rm_addrs.is_empty() {
+                None
+            } else {
+                Some(Update::Remove(rm_addrs))
+            };
+            // Advertise adds before removes so that we don't unnecessarily
+            // empty out a consumer.
+            match add {
+                Some(add) => Some((add, rm)),
+                None => rm.map(|rm| (rm, None)),
+            }
+        }
+        // It would be exceptionally odd to get a remove, specifically,
+        // immediately after a reconnect, but it seems appropriate to
+        // handle it as Empty.
+        Update::Remove(..) | Update::Empty => Some((Update::Empty, None)),
+        Update::DoesNotExist => Some((Update::DoesNotExist, None)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    pub fn addr0() -> SocketAddr {
+        ([198, 51, 100, 1], 8080).into()
+    }
+
+    pub fn addr1() -> SocketAddr {
+        ([198, 51, 100, 2], 8080).into()
+    }
+
+    #[test]
+    fn reconcile_after_initial_connect() {
+        let cache = IndexMap::default();
+        let add = Update::Add(vec![(addr0(), 0), (addr1(), 0)]);
+        assert_eq!(
+            reconcile_after_connect(&cache, add.clone()),
+            Some((add, None)),
+            "Adds should be passed through initially"
+        );
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::Remove(vec![addr0(), addr1()])),
+            Some((Update::Empty, None)),
+            "Removes should be treated as empty"
+        );
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::Empty),
+            Some((Update::Empty, None)),
+            "Empties should be passed through"
+        );
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::DoesNotExist),
+            Some((Update::DoesNotExist, None)),
+            "DNEs should be passed through"
+        );
+    }
+
+    #[test]
+    fn reconcile_after_reconnect_dedupes() {
+        let mut cache = IndexMap::new();
+        cache.insert(addr0(), 0);
+
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::Add(vec![(addr0(), 0), (addr1(), 0)])),
+            Some((Update::Add(vec![(addr1(), 0)]), None)),
+        );
+    }
+
+    #[test]
+    fn reconcile_after_reconnect_updates() {
+        let mut cache = IndexMap::new();
+        cache.insert(addr0(), 0);
+
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::Add(vec![(addr0(), 1), (addr1(), 0)])),
+            Some((Update::Add(vec![(addr0(), 1), (addr1(), 0)]), None)),
+        );
+    }
+
+    #[test]
+    fn reconcile_after_reconnect_removes() {
+        let mut cache = IndexMap::new();
+        cache.insert(addr0(), 0);
+        cache.insert(addr1(), 0);
+
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::Add(vec![(addr0(), 0)])),
+            Some((Update::Remove(vec![addr1()]), None))
+        );
+    }
+
+    #[test]
+    fn reconcile_after_reconnect_adds_and_removes() {
+        let mut cache = IndexMap::new();
+        cache.insert(addr0(), 0);
+        cache.insert(addr1(), 0);
+
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::Add(vec![(addr0(), 1)])),
+            Some((
+                Update::Add(vec![(addr0(), 1)]),
+                Some(Update::Remove(vec![addr1()]))
+            ))
+        );
+    }
+
+    #[test]
+    fn reconcile_after_reconnect_passthru() {
+        let mut cache = IndexMap::default();
+        cache.insert(addr0(), 0);
+
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::Remove(vec![addr0(), addr1()])),
+            Some((Update::Empty, None)),
+            "Removes should be treated as empty"
+        );
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::Empty),
+            Some((Update::Empty, None)),
+            "Empties should be passed through"
+        );
+        assert_eq!(
+            reconcile_after_connect(&cache, Update::DoesNotExist),
+            Some((Update::DoesNotExist, None)),
+            "DNEs should be passed through"
+        );
+    }
 }

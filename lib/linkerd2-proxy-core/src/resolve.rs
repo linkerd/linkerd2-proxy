@@ -32,7 +32,7 @@ pub trait Resolution {
 #[derive(Clone, Debug)]
 pub struct Service<S>(S);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Update<T> {
     Add(Vec<(SocketAddr, T)>),
     Remove(Vec<SocketAddr>),
