@@ -74,6 +74,8 @@ where
     let client_stack = connect
         .clone()
         .push(client::layer("out", config.h2_settings))
+        .push(trace::request::layer())
+        .push(tracing_tower::request_span::layer(client::make_span("out")))
         .push(reconnect::layer({
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())

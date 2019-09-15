@@ -59,6 +59,8 @@ where
     let client_stack = connect
         .clone()
         .push(client::layer("in", config.h2_settings))
+        .push(trace::request::layer())
+        .push(tracing_tower::request_span::layer(client::make_span("in")))
         .push(reconnect::layer({
             let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
@@ -75,8 +77,6 @@ where
         .push(http_metrics::layer::<_, classify::Response>(
             endpoint_http_metrics,
         ))
-        .push(trace::request::layer())
-        .push(tracing_tower::request_span::layer(client::make_span("in")))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
             router::Config::new("in endpoint", capacity, max_idle_age),
