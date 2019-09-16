@@ -619,7 +619,7 @@ dependencies = [
  "tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-log 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-subscriber 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing-subscriber 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-tower 0.1.0 (git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two)",
  "trust-dns-resolver 0.10.2 (git+https://github.com/bluejekyll/trust-dns?rev=7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060)",
  "try-lock 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1870,7 +1870,7 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2347,7 +2347,7 @@ dependencies = [
 "checksum tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)" = "08c7446f4fb35df7ba2c537b7e2f812f91b20a58aa2b846f028342c4d2429be0"
 "checksum tracing-futures 0.0.1-alpha.2 (git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two)" = "<none>"
 "checksum tracing-log 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "652bc99e1286541d6ccc42d5fb37213d1cdde544f88b19fac3d94e3117b55163"
-"checksum tracing-subscriber 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "90f01ec88a73a6da1127f03dc93e9745aacbeba16e5f33cfb91c7639f75932df"
+"checksum tracing-subscriber 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)" = "f0f1cc7909cf997aa348c0ef751cfcc9aca27ee8664c177527a2e477d4235154"
 "checksum tracing-tower 0.1.0 (git+https://github.com/tokio-rs/tracing?branch=eliza/tower-tweaks-two)" = "<none>"
 "checksum trust-dns-proto 0.6.0 (git+https://github.com/bluejekyll/trust-dns?rev=7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060)" = "<none>"
 "checksum trust-dns-resolver 0.10.2 (git+https://github.com/bluejekyll/trust-dns?rev=7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060)" = "<none>"

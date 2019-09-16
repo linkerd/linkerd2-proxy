@@ -15,7 +15,6 @@ use std::fmt;
 use std::marker::PhantomData;
 use tracing::{debug, trace};
 use tracing_tower::GetSpan;
-use tracing_futures::Instrument;
 
 /// Configurs an HTTP client that uses a `C`-typed connector
 ///

@@ -111,7 +111,7 @@ tokio-rustls = "0.10"
 untrusted = "0.7"
 
 [dependencies.tracing-subscriber]
-version = "0.1.2"
+version = "0.1.3"
 # we don't need ANSI colors or `chrono` time formatting
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log"]
