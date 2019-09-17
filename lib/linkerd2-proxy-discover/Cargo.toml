@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-proxy-resolve"
+name = "linkerd2-proxy-discover"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
@@ -14,3 +14,7 @@ indexmap = "1.0"
 tokio = "0.1"
 tower = "0.1"
 tracing = "0.1"
+tracing-futures = "0.0.1-alpha.1"
+
+[dev-dependencies]
+tower-util = "0.1"

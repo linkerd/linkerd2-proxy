@@ -13,43 +13,21 @@ jobs:
     steps:
     - name: git co
       uses: actions/checkout@v1
-
+    - name: meta
+      id: release-tag-meta
+      uses: ./.github/actions/release-tag-meta
+      with:
+        git-ref: ${{ github.ref }}
+    #- run: echo "${{ toJSON(steps.release-tag-meta) }}"
     - name: make package
       env:
-        CARGO_RELEASE: 1
-      run: PACKAGE_VERSION=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,') make package
-
-    - uses: actions/upload-artifact@v1
-      with:
-        name: package
-        path: target/release/package
-
-  test:
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.37-buster
-    steps:
-    - name: git co
-      uses: actions/checkout@v1
-    - run: make test-integration
-
-  publish:
-    needs: [package, test]
-    runs-on: ubuntu-latest
-    steps:
-    - name: fetch
-      uses: actions/download-artifact@v1
-      with:
-        name: package
-        path: package
+        CARGO_RELEASE: "1"
+        PACKAGE_VERSION: ${{ steps.release-tag-meta.outputs.name }}
+      run: make package
     - name: release
-      uses: docker://github/ghx:master
+      uses: softprops/action-gh-release@b21b43d
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # ghx reads GITHUB_REF and then barfs on it, no matter its command-line
-      # args. so, we override it to the SHA so it all works out.
       with:
-        entrypoint: sh
-        args: -c "export TAG=$(echo $GITHUB_REF | sed -E 's,^refs/tags/,,') NAME=$(echo $GITHUB_REF | sed -E 's,^refs/tags/release/,,') ; export GITHUB_REF=$GITHUB_SHA ; cd package && ghx release create --verbose --tag=$TAG --name=$NAME *.tar.gz"
-
-
+        name: ${{ steps.release-tag-meta.outputs.name }}
+        files: target/release/package/*

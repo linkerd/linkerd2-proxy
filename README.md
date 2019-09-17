@@ -52,22 +52,6 @@ Usually, [Cargo][cargo], Rust's package manager, is used to build and test this
 project. If you don't have Cargo installed, we suggest getting it via
 https://rustup.rs/.
 
-## Artifacts
-
-Each version of the _master_ branch is published to
-`build.l5d.io/linkerd2-proxy/linkerd2-proxy-$PACKAGE_VERSION.tar.gz`. The most recent
-version (and the package's SHA256 sum) can be discovered via:
-
-```sh
-:; curl https://build.l5d.io/linkerd2-proxy/latest.txt
-```
-
-The SHA256 sum of each package version is found at:
-
-```sh
-:; curl https://build.l5d.io/linkerd2-proxy/linkerd2-proxy-$PACKAGE_VERSION.txt
-```
-
 
 ## Code of conduct
 
