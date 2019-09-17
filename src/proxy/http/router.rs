@@ -1,4 +1,3 @@
-use crate::logging;
 use crate::svc;
 use crate::trace;
 use crate::{Error, Never};
