@@ -9,7 +9,8 @@ pub use linkerd2_router::{error, Recognize, Router};
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
-use tracing::{debug_span, trace};
+use tracing::{debug_span, info_span, trace};
+use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -126,9 +127,9 @@ where
             self.config.capacity,
             self.config.max_idle_age,
         );
-        let span = debug_span!("router", name = self.config.proxy_name);
-        let ctx = logging::Section::Proxy.bg(self.config.proxy_name);
-        let cache_daemon = ctx.future(cache_bg);
+        let span = info_span!("proxy", router = %self.config.proxy_name);
+        let cache_daemon = cache_bg
+            .instrument(debug_span!(parent: span, "bg"));
         tokio::spawn(cache_daemon);
 
         Service { inner, span }
