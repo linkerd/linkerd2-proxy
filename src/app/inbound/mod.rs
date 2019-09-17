@@ -60,7 +60,7 @@ where
         .clone()
         .push(client::layer("in", config.h2_settings))
         .push(trace::request::layer())
-        .push(tracing_tower::request_span::make::layer(client::make_span("in")))
+        .push(tracing_tower::request_span::layer(client::make_span("in")))
         .push(reconnect::layer({
             let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
