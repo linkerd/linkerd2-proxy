@@ -1,4 +1,4 @@
-use crate::{logging, svc, Error};
+use crate::{logging, trace, svc, Error};
 use futures::{try_ready, Async, Future, Poll};
 use linkerd2_router as rt;
 use std::marker::PhantomData;
@@ -61,9 +61,9 @@ pub struct Aborted;
 pub struct MakeFuture<F, T, D, Req> {
     capacity: usize,
     deadline: D,
-    executor: logging::ContextualExecutor<T>,
+    executor: trace::Executor,
     inner: F,
-    _marker: PhantomData<fn(Req)>,
+    _marker: PhantomData<fn(Req, T)>,
 }
 
 // === impl Layer ===
@@ -139,13 +139,12 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let executor = logging::context_executor(target.clone());
         let inner = self.inner.call(target);
 
         Self::Future {
             capacity: self.capacity,
             deadline: self.deadline.clone(),
-            executor,
+            executor: trace::executor(),
             inner,
             _marker: PhantomData,
         }
@@ -169,7 +168,7 @@ where
             self.inner.make(target),
             self.deadline.clone(),
             self.capacity,
-            &mut logging::context_executor(target.clone()),
+            &mut trace::executor(),
         )
     }
 }
@@ -190,7 +189,7 @@ impl<M, D, Req> Make<M, D, Req> {
             self.inner.make(&target),
             self.deadline.clone(),
             self.capacity,
-            &mut logging::context_executor(target),
+            &mut trace::executor(),
         )
     }
 }
@@ -456,7 +455,7 @@ mod tests {
                 Idle(Arc::new(())),
                 Duration::from_millis(100),
                 1,
-                &mut logging::context_executor("test"),
+                &mut trace::executor(),
             );
 
             assert!(svc.poll_ready().ok().map(|r| r.is_ready()).unwrap_or(false));
@@ -481,7 +480,7 @@ mod tests {
                 inner,
                 Duration::from_secs(0),
                 1,
-                &mut logging::context_executor("test"),
+                &mut trace::executor(),
             );
 
             assert!(svc.poll_ready().ok().map(|r| r.is_ready()).unwrap_or(false));
@@ -509,7 +508,7 @@ mod tests {
                 Active(Some(tx)),
                 Duration::from_millis(100),
                 1,
-                &mut logging::context_executor("test"),
+                &mut trace::executor(),
             );
 
             svc.poll_ready().expect("service must be ready");

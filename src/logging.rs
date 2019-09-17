@@ -46,6 +46,7 @@ pub mod trace {
 
     type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::LevelFilter>;
     type Subscriber = Formatter<format::NewRecorder, Format>;
+    pub type Executor = Instrumented<tokio::executor::DefaultExecutor>;
 
     #[derive(Clone)]
     pub struct LevelHandle {
@@ -83,8 +84,8 @@ pub mod trace {
         FmtSubscriber::builder().on_event(Format { start_time })
     }
 
-    pub fn executor() -> Instrumented<crate::task::LazyExecutor> {
-        crate::task::LazyExecutor.instrument(Span::current())
+    pub fn executor() -> Executor {
+        tokio::executor::DefaultExecutor::current().instrument(Span::current())
     }
 
     struct Format {
