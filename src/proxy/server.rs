@@ -19,7 +19,7 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, debug_span, info_span, trace};
+use tracing::{debug, info_span, trace};
 use tracing_futures::Instrument;
 
 /// A protocol-transparent Server!
