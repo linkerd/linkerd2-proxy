@@ -213,9 +213,9 @@ where
                     };
 
                     let req = api::GetDestination {
-                        scheme: "k8s".to_owned(),
                         path: self.dst.clone(),
                         context_token: self.context_token.clone(),
+                        ..Default::default()
                     };
                     debug!("getting profile: {:?}", req);
                     let rspf = self.service.get_profile(grpc::Request::new(req));

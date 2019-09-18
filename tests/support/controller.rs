@@ -76,7 +76,6 @@ impl Controller {
             format!("{}:80", dest)
         };
         let dst = pb::GetDestination {
-            scheme: "k8s".into(),
             path,
             ..Default::default()
         };
@@ -94,7 +93,6 @@ impl Controller {
             format!("{}:80", dest)
         };
         let dst = pb::GetDestination {
-            scheme: "k8s".into(),
             path,
             ..Default::default()
         };
@@ -145,7 +143,6 @@ impl Controller {
             format!("{}:80", dest)
         };
         let dst = pb::GetDestination {
-            scheme: "k8s".into(),
             path,
             ..Default::default()
         };
