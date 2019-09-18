@@ -6,13 +6,12 @@ use super::profiles::Client as ProfilesClient;
 use super::{config::Config, identity};
 use super::{handle_time, inbound, outbound, tap::serve_tap};
 use crate::opencensus::SpanExporter;
-use crate::proxy::{self, http::metrics as http_metrics, reconnect};
+use crate::proxy::{self, http::metrics as http_metrics};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
 use futures::{self, future, Future, Stream};
-use opencensus_proto::agent::common::v1 as oc;
-
+use linkerd2_reconnect as reconnect;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::thread;
@@ -20,6 +19,7 @@ use std::time::{Duration, SystemTime};
 use tokio::runtime::current_thread;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
+use opencensus_proto::agent::common::v1 as oc;
 
 /// Runs a sidecar proxy.
 ///
@@ -271,7 +271,10 @@ where
                     .push_timeout(config.control_connect_timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns_resolver.clone()))
-                    .push(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                    .push(reconnect::layer({
+                        let backoff = config.control_backoff.clone();
+                        move |_| Ok(backoff.stream())
+                    }))
                     .push(http_metrics::layer::<_, classify::Response>(
                         ctl_http_metrics.clone(),
                     ))
@@ -320,7 +323,10 @@ where
                 .push_timeout(config.control_connect_timeout)
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
-                .push(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                .push(reconnect::layer({
+                    let backoff = config.control_backoff.clone();
+                    move |_| Ok(backoff.stream())
+                }))
                 .push(http_metrics::layer::<_, classify::Response>(
                     ctl_http_metrics.clone(),
                 ))
@@ -402,8 +408,7 @@ where
         );
 
         let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| {
-
-            svc::stack(connect::svc())
+                svc::stack(connect::svc())
                 .push(tls::client::layer(local_identity.clone()))
                 .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                 .push_timeout(config.control_connect_timeout)
@@ -413,7 +418,10 @@ where
                 // TODO: we should have metrics of some kind, but the standard
                 // HTTP metrics aren't useful for a client where we never read
                 // the response.
-                .push(reconnect::layer().with_backoff(config.control_backoff.clone()))
+                 .push(reconnect::layer({
+                    let backoff = config.control_backoff.clone();
+                    move |_| Ok(backoff.stream())
+                }))
                 .push(proxy::grpc::req_body_as_payload::layer().per_make())
                 .push(control::add_origin::layer())
                 .push_buffer_pending(
@@ -441,7 +449,9 @@ where
             };
             let merged = inbound_spans_rx.select(outbound_spans_rx);
             let span_exporter = SpanExporter::new(trace_collector, node, merged);
-            task::spawn(span_exporter);
+            task::spawn(span_exporter.map_err(|e| {
+                error!("span exporter failed: {}", e);
+            }));
         }
 
         let outbound_server = outbound::server(

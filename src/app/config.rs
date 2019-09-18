@@ -1,10 +1,10 @@
 use super::control::ControlAddr;
 use super::identity;
 use crate::addr::{self, Addr};
-use crate::proxy::reconnect::Backoff;
 use crate::transport::tls;
 use crate::{dns, Conditional};
 use indexmap::IndexSet;
+use linkerd2_exp_backoff::ExponentialBackoff;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
@@ -54,11 +54,11 @@ pub struct Config {
 
     /// Settings for the back-off used to determine the amount of time to wait
     /// between inbound connection attempts.
-    pub inbound_connect_backoff: Backoff,
+    pub inbound_connect_backoff: ExponentialBackoff,
 
     /// Settings for the back-off used to determine the amount of time to wait
     /// between outbound connection attempts.
-    pub outbound_connect_backoff: Backoff,
+    pub outbound_connect_backoff: ExponentialBackoff,
 
     // TCP Keepalive set on accepted inbound connections.
     pub inbound_accept_keepalive: Option<Duration>,
@@ -94,7 +94,7 @@ pub struct Config {
     /// Settings for the back-off used to determine the amount of time to wait
     /// between when encountering errors talking to control plane before
     /// a new connection is attempted.
-    pub control_backoff: Backoff,
+    pub control_backoff: ExponentialBackoff,
 
     /// The maximum amount of time to wait for a connection to the controller.
     pub control_connect_timeout: Duration,
@@ -317,23 +317,23 @@ const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
-const DEFAULT_INBOUND_CONNECT_BACKOFF: Backoff = Backoff::Exponential {
+const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
     min: Duration::from_millis(100),
     max: Duration::from_millis(500),
     jitter: 0.1,
 };
 const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
-const DEFAULT_OUTBOUND_CONNECT_BACKOFF: Backoff = Backoff::Exponential {
+const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
     min: Duration::from_millis(100),
     max: Duration::from_millis(500),
     jitter: 0.1,
 };
 const DEFAULT_CONTROL_DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_CONTROL_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
-const DEFAULT_CONTROL_BACKOFF: Backoff = Backoff::Exponential {
-    min: Duration::from_secs(1),
-    max: Duration::from_secs(5),
+const DEFAULT_CONTROL_BACKOFF: ExponentialBackoff = ExponentialBackoff {
+    min: Duration::from_millis(100),
+    max: Duration::from_millis(500),
     jitter: 0.1,
 };
 const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
@@ -821,38 +821,26 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
 pub fn parse_backoff<S: Strings>(
     strings: &S,
     base: &str,
-    default: Backoff,
-) -> Result<Backoff, Error> {
-    let env_disabled = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_DISABLED", base);
-    let disabled = strings
-        .get(&env_disabled)?
-        .map(|d| !d.is_empty())
-        .unwrap_or(false);
+    default: ExponentialBackoff,
+) -> Result<ExponentialBackoff, Error> {
+    let min_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_MIN", base);
+    let min = parse(strings, &min_env, parse_duration);
+    let max_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_MAX", base);
+    let max = parse(strings, &max_env, parse_duration);
+    let jitter_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_JITTER", base);
+    let jitter = parse(strings, &jitter_env, parse_number::<f64>);
 
-    if disabled {
-        Ok(Backoff::None)
-    } else {
-        let min_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_MIN", base);
-        let min = parse(strings, &min_env, parse_duration);
-        let max_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_MAX", base);
-        let max = parse(strings, &max_env, parse_duration);
-        let jitter_env = format!("LINKERD2_PROXY_{}_EXP_BACKOFF_JITTER", base);
-        let jitter = parse(strings, &jitter_env, parse_number::<f64>);
-
-        match (min?, max?, jitter?) {
-            (None, None, None) => Ok(default),
-            (Some(min), Some(max), Some(jitter)) => {
-                if jitter < 0.0 {
-                    error!("{} needs to be positive", jitter_env);
-                    Err(Error::InvalidEnvVar)
-                } else {
-                    Ok(Backoff::Exponential { min, max, jitter })
-                }
-            }
-            _ => {
-                error!("You need to specify either all of {} {} {} or none of them to use the default backoff", min_env, max_env,jitter_env );
-                Err(Error::InvalidEnvVar)
-            }
+    match (min?, max?, jitter?) {
+        (None, None, None) => Ok(default),
+        (Some(min), Some(max), jitter) => {
+            ExponentialBackoff::new(min, max, jitter.unwrap_or_default()).map_err(|error| {
+                error!(message="Invalid backoff", %error, %min_env, ?min, %max_env, ?max, %jitter_env, ?jitter);
+                Error::InvalidEnvVar
+            })
+        }
+        _ => {
+            error!("You need to specify either all of {} {} {} or none of them to use the default backoff", min_env, max_env,jitter_env );
+            Err(Error::InvalidEnvVar)
         }
     }
 }

@@ -3,6 +3,7 @@ use opencensus_proto::trace::v1 as oc;
 use std::{error, fmt};
 use tokio::sync::mpsc;
 use std::collections::HashMap;
+use linkerd2_error::Error;
 
 const SPAN_KIND_SERVER: i32 = 1;
 const SPAN_KIND_CLIENT: i32 = 2;
@@ -54,18 +55,7 @@ impl SpanConverter {
         }
     }
 
-    fn mk_span(&self, mut span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
-        let mut attributes = HashMap::<String, oc::AttributeValue>::new();
-        for (k, v) in self.labels.iter() {
-            attributes.insert(k.clone(), oc::AttributeValue {
-                value: Some(oc::attribute_value::Value::StringValue(truncatable(v.clone()))),
-            });
-        }
-        for (k, v) in span.labels.drain() {
-            attributes.insert(k, oc::AttributeValue {
-                value: Some(oc::attribute_value::Value::StringValue(truncatable(v))),
-            });
-        }
+    fn mk_span(&self, span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
         Ok(oc::Span {
             trace_id: into_bytes(span.trace_id, 16)?,
             span_id: into_bytes(span.span_id, 8)?,
@@ -75,10 +65,7 @@ impl SpanConverter {
             kind: self.kind,
             start_time: Some(span.start.into()),
             end_time: Some(span.end.into()),
-            attributes: Some(oc::span::Attributes {
-                attribute_map: attributes,
-                dropped_attributes_count: 0,
-            }),
+            attributes:  None, // TODO: attributes
             stack_trace: None,
             time_events: None,
             links: None,
@@ -91,14 +78,14 @@ impl SpanConverter {
 }
 
 impl trace_context::SpanSink for SpanConverter {
-    fn try_send(&mut self, span: trace_context::Span) -> Result<(), trace_context::Error> {
+    fn try_send(&mut self, span: trace_context::Span) -> Result<(), Error> {
         let span = self.mk_span(span)?;
         self.sink.try_send(span).map_err(Into::into)
     }
 }
 
 fn into_bytes(id: trace_context::Id, size: usize) -> Result<Vec<u8>, IdLengthError> {
-    let bytes = id.into_vec();
+    let bytes: Vec<u8> = id.into();
     if bytes.len() == size {
         Ok(bytes)
     } else {

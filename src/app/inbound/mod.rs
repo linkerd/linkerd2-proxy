@@ -3,9 +3,10 @@ use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{accept, reconnect, Server};
+use crate::proxy::{accept, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
 use crate::{core::listen::ServeConnection, svc, trace_context, Addr};
+use linkerd2_reconnect as reconnect;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -65,7 +66,10 @@ where
     let client_stack = connect
         .clone()
         .push(client::layer("in", config.h2_settings))
-        .push(reconnect::layer().with_backoff(config.inbound_connect_backoff.clone()))
+        .push(reconnect::layer({
+            let backoff = config.inbound_connect_backoff.clone();
+            move |_| Ok(backoff.stream())
+        }))
         .push(trace_context::layer(SpanConverter::client(span_sink.clone(), trace_labels.clone())))
         .push(normalize_uri::layer());
 
