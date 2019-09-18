@@ -1,4 +1,4 @@
-use super::{conditional_accept, Acceptor, Connection, ReasonForNoPeerName, Tls};
+use super::{detect_sni, Acceptor, Connection, ReasonForNoPeerName, Tls};
 use crate::core::listen::{ListenAndSpawn, ServeConnection};
 use crate::transport::prefixed::Prefixed;
 use crate::transport::{set_nodelay_or_warn, AddrInfo, GetOriginalDst};
@@ -331,7 +331,7 @@ impl Future for Handshake {
                         .expect("polled after ready")
                         .poll_detect_sni())
                     {
-                        conditional_accept::Detect::Complete(sni) => match sni {
+                        detect_sni::Detect::Complete(sni) => match sni {
                             Conditional::Some(sni) => {
                                 debug!(message="detected TLS", sni=%sni.as_ref());
                                 let inner = inner.take().unwrap();
@@ -351,7 +351,7 @@ impl Future for Handshake {
                                 return Ok(Async::Ready(conn));
                             }
                         },
-                        conditional_accept::Detect::Incomplete => {
+                        detect_sni::Detect::Incomplete => {
                             trace!("needs more input to detect sni");
                             continue;
                         }
@@ -381,20 +381,20 @@ impl Inner {
     /// The buffer is matched for a TLS client hello message.
     ///
     /// `NoSNI` is returned if the underlying socket has closed.
-    fn poll_detect_sni(&mut self) -> Poll<conditional_accept::Detect, io::Error> {
+    fn poll_detect_sni(&mut self) -> Poll<detect_sni::Detect, io::Error> {
         let sz = try_ready!(self.socket.read_buf(&mut self.peek_buf));
         if sz == 0 {
             // XXX: It is ambiguous whether this is the start of a TLS handshake or not.
             // For now, resolve the ambiguity in favor of plaintext. TODO: revisit this
             // when we add support for TLS policy.
-            let detect = conditional_accept::Detect::Complete(Conditional::None(
+            let detect = detect_sni::Detect::Complete(Conditional::None(
                 ReasonForNoPeerName::NotProvidedByRemote.into(),
             ));
             return Ok(detect.into());
         }
 
         let buf = self.peek_buf.as_ref();
-        Ok(conditional_accept::detect_sni(buf).into())
+        Ok(detect_sni::detect_sni(buf).into())
     }
 
     fn into_tls_upgrade(self) -> Handshake {
