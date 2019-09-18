@@ -1,9 +1,9 @@
 use crate::trace_context;
+use linkerd2_error::Error;
 use opencensus_proto::trace::v1 as oc;
+use std::collections::HashMap;
 use std::{error, fmt};
 use tokio::sync::mpsc;
-use std::collections::HashMap;
-use linkerd2_error::Error;
 
 const SPAN_KIND_SERVER: i32 = 1;
 const SPAN_KIND_CLIENT: i32 = 2;
@@ -65,7 +65,7 @@ impl SpanConverter {
             kind: self.kind,
             start_time: Some(span.start.into()),
             end_time: Some(span.end.into()),
-            attributes:  None, // TODO: attributes
+            attributes: None, // TODO: attributes
             stack_trace: None,
             time_events: None,
             links: None,

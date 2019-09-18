@@ -1,3 +1,4 @@
+use super::spans::SpanConverter;
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
@@ -7,13 +8,12 @@ use crate::proxy::{accept, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
 use crate::{core::listen::ServeConnection, svc, trace_context, Addr};
 use linkerd2_reconnect as reconnect;
+use opencensus_proto::trace::v1 as oc;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
-use opencensus_proto::trace::v1 as oc;
-use super::spans::SpanConverter;
-use std::collections::HashMap;
 
 mod endpoint;
 mod orig_proto_downgrade;
@@ -70,7 +70,10 @@ where
             let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
-        .push(trace_context::layer(SpanConverter::client(span_sink.clone(), trace_labels.clone())))
+        .push(trace_context::layer(SpanConverter::client(
+            span_sink.clone(),
+            trace_labels.clone(),
+        )))
         .push(normalize_uri::layer());
 
     // A stack configured by `router::Config`, responsible for building
@@ -199,7 +202,10 @@ where
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(super::errors::layer())
-        .push(trace_context::layer(SpanConverter::server(span_sink, trace_labels)))
+        .push(trace_context::layer(SpanConverter::server(
+            span_sink,
+            trace_labels,
+        )))
         .push(handle_time.layer());
 
     // As the inbound proxy accepts connections, we don't do any

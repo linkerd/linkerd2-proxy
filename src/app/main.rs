@@ -12,6 +12,7 @@ use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
 use futures::{self, future, Future, Stream};
 use linkerd2_reconnect as reconnect;
+use opencensus_proto::agent::common::v1 as oc;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::thread;
@@ -19,7 +20,6 @@ use std::time::{Duration, SystemTime};
 use tokio::runtime::current_thread;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
-use opencensus_proto::agent::common::v1 as oc;
 
 /// Runs a sidecar proxy.
 ///
@@ -308,7 +308,6 @@ where
         };
 
         let dst_svc = {
-
             // If the dst_svc is on localhost, use the inbound keepalive.
             // If the dst_svc is remote, use the outbound keepalive.
             let keepalive = if config.destination_addr.addr.is_loopback() {
@@ -406,7 +405,7 @@ where
         );
 
         let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| {
-                svc::stack(connect::svc())
+            svc::stack(connect::svc())
                 .push(tls::client::layer(local_identity.clone()))
                 .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                 .push_timeout(config.control_connect_timeout)
@@ -416,7 +415,7 @@ where
                 // TODO: we should have metrics of some kind, but the standard
                 // HTTP metrics aren't useful for a client where we never read
                 // the response.
-                 .push(reconnect::layer({
+                .push(reconnect::layer({
                     let backoff = config.control_backoff.clone();
                     move |_| Ok(backoff.stream())
                 }))

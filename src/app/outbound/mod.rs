@@ -1,3 +1,4 @@
+use super::spans::SpanConverter;
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::core::listen::ServeConnection;
 use crate::core::resolve::Resolve;
@@ -11,14 +12,13 @@ use crate::transport::{self, connect, keepalive, tls};
 use crate::{svc, trace_context, Addr};
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
+use opencensus_proto::trace::v1 as oc;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
-use opencensus_proto::trace::v1 as oc;
-use super::spans::SpanConverter;
-use std::collections::HashMap;
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;
@@ -86,7 +86,10 @@ where
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
-        .push(trace_context::layer(SpanConverter::client(span_sink.clone(), trace_labels.clone())))
+        .push(trace_context::layer(SpanConverter::client(
+            span_sink.clone(),
+            trace_labels.clone(),
+        )))
         .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:
@@ -272,7 +275,10 @@ where
         }))
         .push(insert::target::layer())
         .push(super::errors::layer())
-        .push(trace_context::layer(SpanConverter::server(span_sink, trace_labels)))
+        .push(trace_context::layer(SpanConverter::server(
+            span_sink,
+            trace_labels,
+        )))
         .push(handle_time.layer());
 
     // Instantiated for each TCP connection received from the local
