@@ -49,7 +49,7 @@ pub fn server<R, P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-    span_sink: mpsc::Sender<oc::Span>,
+    span_sink: Option<mpsc::Sender<oc::Span>>,
 ) -> impl ServeConnection<Connection>
 where
     R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
@@ -78,6 +78,11 @@ where
         .push_timeout(config.outbound_connect_timeout)
         .push(transport_metrics.connect("outbound"));
 
+    let trace_context_layer = trace_context::layer(
+        span_sink
+            .as_ref()
+            .map(|span_sink| SpanConverter::client(span_sink.clone(), trace_labels.clone())),
+    );
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = connect
         .clone()
@@ -86,10 +91,7 @@ where
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
-        .push(trace_context::layer(SpanConverter::client(
-            span_sink.clone(),
-            trace_labels.clone(),
-        )))
+        .push(trace_context_layer)
         .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:
@@ -266,6 +268,11 @@ where
         .push_concurrency_limit(max_in_flight)
         .push_load_shed();
 
+    let trace_context_layer = trace_context::layer(
+        span_sink
+            .as_ref()
+            .map(|span_sink| SpanConverter::server(span_sink.clone(), trace_labels.clone())),
+    );
     // Instantiates an HTTP service for each `Source` using the
     // shared `addr_router`. The `Source` is stored in the request's
     // extensions so that it can be used by the `addr_router`.
@@ -275,10 +282,7 @@ where
         }))
         .push(insert::target::layer())
         .push(super::errors::layer())
-        .push(trace_context::layer(SpanConverter::server(
-            span_sink,
-            trace_labels,
-        )))
+        .push(trace_context_layer)
         .push(handle_time.layer());
 
     // Instantiated for each TCP connection received from the local

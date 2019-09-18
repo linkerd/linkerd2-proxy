@@ -35,7 +35,7 @@ pub fn server<P>(
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
-    span_sink: mpsc::Sender<oc::Span>,
+    span_sink: Option<mpsc::Sender<oc::Span>>,
 ) -> impl ServeConnection<Connection>
 where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
@@ -62,6 +62,11 @@ where
         .push(transport_metrics.connect("inbound"))
         .push(rewrite_loopback_addr::layer());
 
+    let trace_context_layer = trace_context::layer(
+        span_sink
+            .as_ref()
+            .map(|span_sink| SpanConverter::client(span_sink.clone(), trace_labels.clone())),
+    );
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = connect
         .clone()
@@ -70,10 +75,7 @@ where
             let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
-        .push(trace_context::layer(SpanConverter::client(
-            span_sink.clone(),
-            trace_labels.clone(),
-        )))
+        .push(trace_context_layer)
         .push(normalize_uri::layer());
 
     // A stack configured by `router::Config`, responsible for building
@@ -183,6 +185,11 @@ where
         .push_concurrency_limit(max_in_flight)
         .push_load_shed();
 
+    let trace_context_layer = trace_context::layer(
+        span_sink
+            .as_ref()
+            .map(|span_sink| SpanConverter::server(span_sink.clone(), trace_labels.clone())),
+    );
     // As HTTP requests are accepted, the `Source` connection
     // metadata is stored on each request's extensions.
     //
@@ -202,10 +209,7 @@ where
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(super::errors::layer())
-        .push(trace_context::layer(SpanConverter::server(
-            span_sink,
-            trace_labels,
-        )))
+        .push(trace_context_layer)
         .push(handle_time.layer());
 
     // As the inbound proxy accepts connections, we don't do any

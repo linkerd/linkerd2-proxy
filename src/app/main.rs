@@ -429,27 +429,32 @@ where
                 .make(addr.clone())
         });
 
-        let (inbound_spans_tx, inbound_spans_rx) = mpsc::channel(100);
-        let (outbound_spans_tx, outbound_spans_rx) = mpsc::channel(100);
-        if let Some(trace_collector) = trace_collector_svc {
-            let node = oc::Node {
-                identifier: Some(oc::ProcessIdentifier {
-                    host_name: hostname::get_hostname().unwrap_or_default(),
-                    pid: 0,
-                    start_timestamp: Some(start_time.into()),
-                }),
-                library_info: None,
-                service_info: Some(oc::ServiceInfo {
-                    name: "linkerd-proxy".to_string(),
-                }),
-                attributes: HashMap::new(),
-            };
-            let merged = inbound_spans_rx.select(outbound_spans_rx);
-            let span_exporter = SpanExporter::new(trace_collector, node, merged);
-            task::spawn(span_exporter.map_err(|e| {
-                error!("span exporter failed: {}", e);
-            }));
-        }
+        let (outbound_spans_tx, inbound_spans_tx) = match trace_collector_svc {
+            Some(trace_collector) => {
+                let (outbound_spans_tx, outbound_spans_rx) = mpsc::channel(100);
+                let (inbound_spans_tx, inbound_spans_rx) = mpsc::channel(100);
+
+                let node = oc::Node {
+                    identifier: Some(oc::ProcessIdentifier {
+                        host_name: hostname::get_hostname().unwrap_or_default(),
+                        pid: 0,
+                        start_timestamp: Some(start_time.into()),
+                    }),
+                    library_info: None,
+                    service_info: Some(oc::ServiceInfo {
+                        name: "linkerd-proxy".to_string(),
+                    }),
+                    attributes: HashMap::new(),
+                };
+                let merged = inbound_spans_rx.select(outbound_spans_rx);
+                let span_exporter = SpanExporter::new(trace_collector, node, merged);
+                task::spawn(span_exporter.map_err(|e| {
+                    error!("span exporter failed: {}", e);
+                }));
+                (Some(outbound_spans_tx), Some(inbound_spans_tx))
+            }
+            None => (None, None),
+        };
 
         let outbound_server = outbound::server(
             &config,
