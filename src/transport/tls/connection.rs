@@ -1,8 +1,7 @@
+use super::{Conditional, HasPeerIdentity, PeerIdentity, ReasonForNoIdentity, ReasonForNoPeerName};
 use crate::identity;
 use crate::transport::io::internal::Io;
-use crate::transport::tls::{ReasonForNoIdentity, ReasonForNoPeerName};
 use crate::transport::{AddrInfo, BoxedIo, Peek, SetKeepalive};
-use crate::Conditional;
 use bytes::{Buf, BytesMut};
 use futures::try_ready;
 use std::net::SocketAddr;
@@ -28,8 +27,7 @@ pub struct Connection {
     /// before calling `io.read`.
     peek_buf: BytesMut,
 
-    /// Whether or not the connection is secured with TLS.
-    tls_peer_identity: super::PeerIdentity,
+    tls: Conditional<Tls>,
 
     /// If true, the proxy should attempt to detect the protocol for this
     /// connection. If false, protocol detection should be skipped.
@@ -41,62 +39,64 @@ pub struct Connection {
     remote_addr: SocketAddr,
 }
 
+#[derive(Debug)]
+pub enum Tls {
+    /// Indicates that a connection is participating in TLS such that we have a
+    /// cleartext stream internally.
+    Established { peer: PeerIdentity },
+    /// Indicates that a connection is TLS'd but its contents are opaque
+    /// internally.
+    Opaque { sni: identity::Name },
+}
+
 // === impl Connection ===
 
 impl Connection {
-    pub(super) fn plain<I: Io + 'static>(
+    pub(super) fn new<I: Io + 'static>(
         io: I,
         remote_addr: SocketAddr,
-        why_no_tls: ReasonForNoIdentity,
+        peek_buf: BytesMut,
+        tls: Conditional<Tls>,
     ) -> Self {
-        Self::plain_with_peek_buf(io, remote_addr, BytesMut::new(), why_no_tls)
+        Self {
+            io: BoxedIo::new(io),
+            peek_buf,
+            tls,
+            detect_protocol: true,
+            orig_dst: None,
+            remote_addr,
+        }
+    }
+
+    pub(super) fn plain<I: Io + 'static, R: Into<ReasonForNoIdentity>>(
+        io: I,
+        remote_addr: SocketAddr,
+        why_no_tls: R,
+    ) -> Self {
+        Self::new(
+            io,
+            remote_addr,
+            BytesMut::new(),
+            Conditional::None(why_no_tls.into()),
+        )
+    }
+
+    pub(super) fn tls<I: Io + 'static>(io: I, remote_addr: SocketAddr, peer: PeerIdentity) -> Self {
+        Self::new(
+            io,
+            remote_addr,
+            BytesMut::new(),
+            Conditional::Some(Tls::Established { peer }),
+        )
     }
 
     pub(super) fn without_protocol_detection<I: Io + 'static>(
         io: I,
         remote_addr: SocketAddr,
     ) -> Self {
-        Self {
-            io: BoxedIo::new(io),
-            peek_buf: BytesMut::new(),
-            tls_peer_identity: Conditional::None(ReasonForNoIdentity::NoPeerName(
-                ReasonForNoPeerName::NotHttp,
-            )),
-            detect_protocol: false,
-            orig_dst: None,
-            remote_addr,
-        }
-    }
-
-    pub(super) fn plain_with_peek_buf<I: Io + 'static>(
-        io: I,
-        remote_addr: SocketAddr,
-        peek_buf: BytesMut,
-        why_no_tls: ReasonForNoIdentity,
-    ) -> Self {
-        Self {
-            io: BoxedIo::new(io),
-            peek_buf,
-            tls_peer_identity: Conditional::None(why_no_tls),
-            detect_protocol: true,
-            orig_dst: None,
-            remote_addr,
-        }
-    }
-
-    pub(super) fn tls(
-        io: BoxedIo,
-        remote_addr: SocketAddr,
-        tls_peer_identity: Conditional<identity::Name, super::ReasonForNoPeerName>,
-    ) -> Self {
-        Self {
-            io: io,
-            peek_buf: BytesMut::new(),
-            tls_peer_identity: tls_peer_identity.map_reason(|r| r.into()),
-            detect_protocol: true,
-            orig_dst: None,
-            remote_addr,
-        }
+        let mut c = Self::plain(io, remote_addr, ReasonForNoIdentity::Disabled);
+        c.detect_protocol = false;
+        c
     }
 
     pub(super) fn with_original_dst(self, orig_dst: Option<SocketAddr>) -> Self {
@@ -120,9 +120,14 @@ impl Connection {
     }
 }
 
-impl super::HasPeerIdentity for Connection {
-    fn peer_identity(&self) -> super::PeerIdentity {
-        self.tls_peer_identity.clone()
+impl HasPeerIdentity for Connection {
+    fn peer_identity(&self) -> PeerIdentity {
+        self.tls.as_ref().and_then(|tls| match tls {
+            Tls::Established { peer } => peer.clone(),
+            Tls::Opaque { .. } => {
+                Conditional::None(ReasonForNoPeerName::NotProvidedByRemote.into())
+            }
+        })
     }
 }
 

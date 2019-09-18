@@ -1,4 +1,4 @@
-use super::super::{io::internal::Io, tls, AddrInfo, BoxedIo, Connection};
+use super::super::{io::internal::Io, tls, AddrInfo, Connection};
 use crate::{identity, svc, Conditional};
 use futures::{try_ready, Async, Future, Poll};
 pub use rustls::ClientConfig as Config;
@@ -125,7 +125,6 @@ where
                     server_name,
                 } => {
                     let io = try_ready!(future.poll());
-                    let io = BoxedIo::new(io);
                     trace!("established TLS to {}", server_name.as_ref());
                     let tls = Conditional::Some(server_name.clone());
                     return Ok(Async::Ready(Connection::tls(io, *remote_addr, tls)));

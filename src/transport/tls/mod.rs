@@ -4,7 +4,7 @@ mod connection;
 mod io;
 pub mod listen;
 
-pub use self::connection::Connection;
+pub use self::connection::{Connection, Tls};
 pub use self::listen::Listen;
 use crate::identity;
 pub use rustls::TLSError as Error;

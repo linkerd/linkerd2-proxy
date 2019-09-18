@@ -1,7 +1,7 @@
+use super::{conditional_accept, Acceptor, Connection, ReasonForNoPeerName, Tls};
 use crate::core::listen::{ListenAndSpawn, ServeConnection};
 use crate::transport::prefixed::Prefixed;
-use crate::transport::tls::{self, conditional_accept, Acceptor, Connection, ReasonForNoPeerName};
-use crate::transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst};
+use crate::transport::{set_nodelay_or_warn, AddrInfo, GetOriginalDst};
 use crate::{drain, identity, Conditional, Error};
 use bytes::BytesMut;
 use futures::{
@@ -34,7 +34,7 @@ pub fn empty_config() -> Arc<Config> {
 pub struct Listen<L, G = ()> {
     inner: Option<StdListener>,
     local_addr: SocketAddr,
-    tls: tls::Conditional<L>,
+    tls: super::Conditional<L>,
     disable_protocol_detection_ports: IndexSet<u16>,
     get_original_dst: G,
 }
@@ -49,14 +49,14 @@ struct Inner {
     socket: TcpStream,
     remote_addr: SocketAddr,
     config: Arc<Config>,
-    server_name: identity::Name,
+    local_identity: identity::Name,
     peek_buf: BytesMut,
 }
 
 // === impl Listen ===
 
 impl<L: HasConfig> Listen<L> {
-    pub fn bind(addr: SocketAddr, tls: tls::Conditional<L>) -> Result<Self, io::Error> {
+    pub fn bind(addr: SocketAddr, tls: super::Conditional<L>) -> Result<Self, io::Error> {
         let inner = StdListener::bind(addr)?;
         let local_addr = inner.local_addr()?;
         Ok(Self {
@@ -289,7 +289,7 @@ impl Handshake {
         Handshake::Init(Some(Inner {
             socket,
             remote_addr,
-            server_name: tls.tls_server_name(),
+            local_identity: tls.tls_server_name(),
             config: tls.tls_server_config(),
             peek_buf: BytesMut::with_capacity(8192),
         }))
@@ -326,22 +326,33 @@ impl Future for Handshake {
         loop {
             *self = match self {
                 Handshake::Init(ref mut inner) => {
-                    let poll_match = inner
+                    match try_ready!(inner
                         .as_mut()
                         .expect("polled after ready")
-                        .poll_match_client_hello();
+                        .poll_detect_sni())
+                    {
+                        conditional_accept::Detect::Complete(sni) => match sni {
+                            Conditional::Some(sni) => {
+                                debug!(message="detected TLS", sni=%sni.as_ref());
+                                let inner = inner.take().unwrap();
 
-                    match try_ready!(poll_match) {
-                        conditional_accept::Match::Matched => {
-                            trace!("upgrading accepted connection to TLS");
-                            inner.take().unwrap().into_tls_upgrade()
-                        }
-                        conditional_accept::Match::NotMatched => {
-                            trace!("passing through accepted connection without TLS");
-                            let conn = inner.take().unwrap().into_plaintext();
-                            return Ok(Async::Ready(conn));
-                        }
-                        conditional_accept::Match::Incomplete => {
+                                if sni != inner.local_identity {
+                                    trace!("passing through opaque TLS connection");
+                                    let conn = inner.into_opaque_tls(sni);
+                                    return Ok(Async::Ready(conn));
+                                }
+
+                                debug!("terminating TLS");
+                                inner.into_tls_upgrade()
+                            }
+                            Conditional::None(reason) => {
+                                trace!("passing through accepted connection without TLS");
+                                let conn = inner.take().unwrap().into_plaintext(reason);
+                                return Ok(Async::Ready(conn));
+                            }
+                        },
+                        conditional_accept::Detect::Incomplete => {
+                            trace!("needs more input to detect sni");
                             continue;
                         }
                     }
@@ -351,11 +362,12 @@ impl Future for Handshake {
                     let client_id = Self::client_identity(&io)
                         .map(Conditional::Some)
                         .unwrap_or_else(|| {
-                            Conditional::None(super::ReasonForNoPeerName::NotProvidedByRemote)
+                            Conditional::None(
+                                super::ReasonForNoPeerName::NotProvidedByRemote.into(),
+                            )
                         });
-                    trace!("accepted TLS connection; client={:?}", client_id);
+                    trace!(message="accepted TLS connection", %remote_addr, ?client_id);
 
-                    let io = BoxedIo::new(io);
                     return Ok(Async::Ready(Connection::tls(io, *remote_addr, client_id)));
                 }
             }
@@ -368,18 +380,21 @@ impl Inner {
     ///
     /// The buffer is matched for a TLS client hello message.
     ///
-    /// `NotMatched` is returned if the underlying socket has closed.
-    fn poll_match_client_hello(&mut self) -> Poll<conditional_accept::Match, io::Error> {
+    /// `NoSNI` is returned if the underlying socket has closed.
+    fn poll_detect_sni(&mut self) -> Poll<conditional_accept::Detect, io::Error> {
         let sz = try_ready!(self.socket.read_buf(&mut self.peek_buf));
         if sz == 0 {
             // XXX: It is ambiguous whether this is the start of a TLS handshake or not.
             // For now, resolve the ambiguity in favor of plaintext. TODO: revisit this
             // when we add support for TLS policy.
-            return Ok(conditional_accept::Match::NotMatched.into());
+            let detect = conditional_accept::Detect::Complete(Conditional::None(
+                ReasonForNoPeerName::NotProvidedByRemote.into(),
+            ));
+            return Ok(detect.into());
         }
 
         let buf = self.peek_buf.as_ref();
-        Ok(conditional_accept::match_client_hello(buf, &self.server_name).into())
+        Ok(conditional_accept::detect_sni(buf).into())
     }
 
     fn into_tls_upgrade(self) -> Handshake {
@@ -388,12 +403,21 @@ impl Inner {
         Handshake::Upgrade(future, self.remote_addr)
     }
 
-    fn into_plaintext(self) -> Connection {
-        Connection::plain_with_peek_buf(
+    fn into_opaque_tls(self, sni: identity::Name) -> Connection {
+        Connection::new(
             self.socket,
             self.remote_addr,
             self.peek_buf,
-            ReasonForNoPeerName::NotProvidedByRemote.into(),
+            Conditional::Some(Tls::Opaque { sni }),
+        )
+    }
+
+    fn into_plaintext(self, reason: super::ReasonForNoIdentity) -> Connection {
+        Connection::new(
+            self.socket,
+            self.remote_addr,
+            self.peek_buf,
+            Conditional::None(reason),
         )
     }
 }

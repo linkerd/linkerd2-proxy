@@ -1,20 +1,17 @@
-use crate::identity;
-use tracing::trace;
+use super::{Conditional, PeerIdentity};
+use crate::identity::Name;
 use untrusted;
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum Match {
+pub enum Detect {
+    Complete(PeerIdentity),
     Incomplete,
-    Matched,
-    NotMatched,
 }
 
 /// Determintes whether the given `input` looks like the start of a TLS
-/// connection that the proxy should terminate.
+/// connection.
 ///
 /// The determination is made based on whether the input looks like (the start
-/// of) a valid ClientHello that a reasonable TLS client might send, and the
-/// SNI matches the given identity.
+/// of) a valid ClientHello that a reasonable TLS client might send.
 ///
 /// XXX: Once the TLS record header is matched, the determination won't be
 /// made until the entire TLS record including the entire ClientHello handshake
@@ -23,38 +20,23 @@ pub enum Match {
 /// This assumes that the ClientHello is small and is sent in a single TLS
 /// record, which is what all reasonable implementations do. (If they were not
 /// to, they wouldn't interoperate with picky servers.)
-pub fn match_client_hello(input: &[u8], identity: &identity::Name) -> Match {
-    let r = untrusted::Input::from(input).read_all(untrusted::EndOfInput, |input| {
-        let r = extract_sni(input);
-        input.skip_to_end(); // Ignore anything after what we parsed.
-        r
-    });
-    match r {
-        Ok(Some(sni)) => {
-            let m = identity::Name::from_hostname(sni.as_slice_less_safe())
-                .map(|sni| {
-                    if sni == *identity {
-                        Match::Matched
-                    } else {
-                        Match::NotMatched
-                    }
-                })
-                .unwrap_or(Match::NotMatched);
-            trace!(
-                "match_client_hello: parsed correctly up to SNI; matches: {:?}",
-                m
-            );
-            m
-        }
-        Ok(None) => {
-            trace!("match_client_hello: failed to parse up to SNI");
-            Match::NotMatched
-        }
-        Err(untrusted::EndOfInput) => {
-            trace!("match_client_hello: needs more input");
-            Match::Incomplete
-        }
-    }
+pub fn detect_sni(input: &[u8]) -> Detect {
+    untrusted::Input::from(input)
+        .read_all(untrusted::EndOfInput, |input| {
+            let r = extract_sni(input);
+            input.skip_to_end(); // Ignore anything after what we parsed.
+            r
+        })
+        .map(|sni| {
+            Detect::Complete(
+                sni.and_then(|sni| Name::from_hostname(sni.as_slice_less_safe()).ok())
+                    .map(Conditional::Some)
+                    .unwrap_or_else(|| {
+                        Conditional::None(super::ReasonForNoPeerName::NotProvidedByRemote.into())
+                    }),
+            )
+        })
+        .unwrap_or_else(|untrusted::EndOfInput| Detect::Incomplete)
 }
 
 /// The result is `Ok(Some(hostname))` if the SNI extension was found, `Ok(None)`
@@ -204,51 +186,23 @@ mod tests {
     static VALID_EXAMPLE_COM: &[u8] = include_bytes!("testdata/example-com-client-hello.bin");
 
     #[test]
-    fn matches() {
-        check_all_prefixes(Match::Matched, "example.com", VALID_EXAMPLE_COM);
+    fn parses() {
+        let identity = identity::Name::from_hostname("example.com".as_bytes()).unwrap();
+        check_all_prefixes(Detect::SNI(identity), VALID_EXAMPLE_COM);
     }
 
     #[test]
-    fn mismatch_different_sni() {
-        check_all_prefixes(Match::NotMatched, "example.org", VALID_EXAMPLE_COM);
+    fn misparse_http_1_0_request() {
+        check_all_prefixes(Detect::NoSNI, b"GET /TheProject.html HTTP/1.0\r\n\r\n");
     }
 
-    #[test]
-    fn mismatch_truncated_sni() {
-        check_all_prefixes(Match::NotMatched, "example.coma", VALID_EXAMPLE_COM);
-    }
-
-    #[test]
-    fn mismatch_appended_sni() {
-        check_all_prefixes(Match::NotMatched, "example.co", VALID_EXAMPLE_COM);
-    }
-
-    #[test]
-    fn mismatch_prepended_sni() {
-        check_all_prefixes(Match::NotMatched, "aexample.com", VALID_EXAMPLE_COM);
-    }
-
-    #[test]
-    fn mismatch_http_1_0_request() {
-        check_all_prefixes(
-            Match::NotMatched,
-            "example.com",
-            b"GET /TheProject.html HTTP/1.0\r\n\r\n",
-        );
-    }
-
-    fn check_all_prefixes(expected_match: Match, identity: &str, input: &[u8]) {
-        assert!(expected_match == Match::Matched || expected_match == Match::NotMatched);
-
-        let identity = identity::Name::from_hostname(identity.as_bytes()).unwrap();
-
+    fn check_all_prefixes(expected: Tls, input: &[u8]) {
         let mut i = 0;
 
         // `Async::NotReady` will be returned for some number of prefixes.
         loop {
-            let m = match_client_hello(&input[..i], &identity);
-            if m != Match::Incomplete {
-                assert_eq!(m, expected_match);
+            if let Detect::Complete(d) = detect_sni(&input[..i]) {
+                assert_eq!(d, expected);
                 break;
             }
             i += 1;
@@ -256,7 +210,7 @@ mod tests {
 
         // The same result will be returned for all longer prefixes.
         for i in (i + 1)..input.len() {
-            assert_eq!(expected_match, match_client_hello(&input[..i], &identity))
+            assert_eq!(Detect::Complete(expected), detect_sni(&input[..i]))
         }
     }
 }
