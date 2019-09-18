@@ -32,12 +32,12 @@ impl<L> Layers<L> {
         Layers(Pair::new(self.0, outer))
     }
 
-    /// Buffer requests when when the next layer is out of capacity.
+    /// Buffer requests when the next layer is out of capacity.
     pub fn push_pending(self) -> Layers<Pair<L, pending::Layer>> {
         self.push(pending::layer())
     }
 
-    /// Buffer requests when when the next layer is out of capacity.
+    /// Buffer requests  when the next layer is out of capacity.
     pub fn push_buffer_pending<D, Req>(
         self,
         bound: usize,
