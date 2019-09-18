@@ -46,7 +46,10 @@ ifdef CARGO_DEBUG
 		chmod 644 $(PKG_BASE)/linkerd2-proxy.obj ; \
 	fi
 endif
-	cd $(PKG_ROOT) && tar -czvf $(PKG) $(PKG_NAME) && rm -rf $(PKG_BASE)
+	cd $(PKG_ROOT) && \
+		tar -czvf $(PKG) $(PKG_NAME) && \
+		($(SHASUM) $(PKG) >$(PKG_NAME).txt) && \
+		rm -rf $(PKG_BASE)
 
 
 .PHONY: fetch

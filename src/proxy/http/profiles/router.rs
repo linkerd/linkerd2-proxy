@@ -133,24 +133,23 @@ where
     }
 }
 
-impl<G, Inner, RouteLayer, RouteBody, InnerBody, Target, InnerSvc, RouteMake, RouteSvc>
-    svc::Service<Target> for MakeSvc<G, Inner, RouteLayer, RouteBody, InnerBody>
+impl<G, Inner, RouteLayer, RouteBody, InnerBody, Target, RouteSvc> svc::Service<Target>
+    for MakeSvc<G, Inner, RouteLayer, RouteBody, InnerBody>
 where
+    G: GetRoutes,
     Target: CanGetDestination + WithRoute + WithAddr + Eq + Hash + Clone,
     <Target as WithRoute>::Output: Eq + Hash + Clone,
-    Inner: rt::Make<Target, Value = InnerSvc> + Clone,
-    InnerSvc: svc::Service<http::Request<InnerBody>> + Clone,
-    InnerSvc::Error: Into<Error>,
-    G: GetRoutes,
-    RouteLayer: svc::Layer<
-            svc::shared::Shared<ConcreteRouter<Target, Inner::Value, InnerBody>>,
-            Service = RouteMake,
-        > + Clone,
-    RouteMake: rt::Make<<Target as WithRoute>::Output, Value = RouteSvc> + Clone,
+    Inner: rt::Make<Target> + Clone,
+    Inner::Value: svc::Service<http::Request<InnerBody>> + Clone,
+    <Inner::Value as svc::Service<http::Request<InnerBody>>>::Error: Into<Error>,
+    RouteLayer:
+        svc::Layer<svc::shared::Shared<ConcreteRouter<Target, Inner::Value, InnerBody>>> + Clone,
+    RouteLayer::Service: rt::Make<<Target as WithRoute>::Output, Value = RouteSvc> + Clone,
     RouteSvc: svc::Service<http::Request<RouteBody>> + Clone,
     RouteSvc::Error: Into<Error>,
 {
-    type Response = Service<G::Stream, Target, RouteLayer, RouteMake, Inner, RouteBody, InnerBody>;
+    type Response =
+        Service<G::Stream, Target, RouteLayer, RouteLayer::Service, Inner, RouteBody, InnerBody>;
     type Error = Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
@@ -169,19 +168,20 @@ where
             rt::Router::new_fixed(rec, make)
         };
 
-        let stack = self.route_layer.layer(svc::shared(concrete_router.clone()));
+        let concrete_stack = self.route_layer.layer(svc::shared(concrete_router.clone()));
 
         // Initially there are no routes, so build a route router with only
         // the default route.
-        let default_route = target.clone().with_route(self.default_route.clone());
+        let router = {
+            let default_route = target.clone().with_route(self.default_route.clone());
+            let stack = rt::Make::make(&concrete_stack, &default_route);
 
-        let mut make = IndexMap::with_capacity(1);
-        make.insert(default_route.clone(), stack.make(&default_route));
+            let mut make = IndexMap::with_capacity(1);
+            make.insert(default_route.clone(), stack);
 
-        let router = rt::Router::new_fixed(
-            RouteRecognize::new(target.clone(), Vec::new(), self.default_route.clone()),
-            make,
-        );
+            let recognize = RouteRecognize::new(target.clone(), vec![], self.default_route.clone());
+            rt::Router::new_fixed(recognize, make)
+        };
 
         // Initiate a stream to get route and dst_override updates for this
         // destination.

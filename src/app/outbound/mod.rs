@@ -1,15 +1,15 @@
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::core::listen::ServeConnection;
-use crate::core::resolve::{Resolution, Resolve};
+use crate::core::resolve::Resolve;
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, resolve, Server};
-use crate::resolve::{Metadata, Unresolvable};
+use crate::proxy::{self, accept, Server};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
-use crate::{svc, trace_context, Addr, NameAddr};
+use crate::{svc, trace_context, Addr};
+use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -24,13 +24,14 @@ use std::collections::HashMap;
 mod add_remote_ip_on_rsp;
 #[allow(dead_code)] // TODO #2597
 mod add_server_id_on_rsp;
-mod discovery;
 mod endpoint;
 mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
+mod resolve;
 
 pub(super) use self::endpoint::Endpoint;
 pub(super) use self::require_identity_on_endpoint::RequireIdentityError;
+pub(super) use self::resolve::resolve;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -51,10 +52,9 @@ pub fn server<R, P>(
     span_sink: mpsc::Sender<oc::Span>,
 ) -> impl ServeConnection<Connection>
 where
-    R: Resolve<NameAddr, Endpoint = Metadata> + Clone + Send + Sync + 'static,
-    R::Future: futures::Future<Error = Unresolvable> + Send,
+    R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
+    R::Future: Send,
     R::Resolution: Send,
-    <R::Resolution as Resolution>::Error: std::error::Error + Send + Sync + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
@@ -158,18 +158,20 @@ where
 
     // Resolves the target via the control plane and balances requests
     // over all endpoints returned from the destination service.
+    const DISCOVER_UPDATE_BUFFER_CAPACITY: usize = 2;
     let balancer_layer = svc::layers()
         .push_spawn_ready()
-        .push(resolve::layer(discovery::Resolve::new(resolve)))
+        .push(discover::Layer::new(
+            DISCOVER_UPDATE_BUFFER_CAPACITY,
+            resolve,
+        ))
         .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));
 
+    // If the balancer fails to be created, i.e., because it is unresolvable,
+    // fall back to using a router that dispatches request to the
+    // application-selected original destination.
     let distributor = endpoint_stack
-        .push(
-            // Attempt to build a balancer. If the service is
-            // unresolvable, fall back to using a router that dispatches
-            // request to the application-selected original destination.
-            fallback::layer(balancer_layer, orig_dst_router_layer).on_error::<Unresolvable>(),
-        )
+        .push(fallback::layer(balancer_layer, orig_dst_router_layer))
         .serves::<DstAddr>();
 
     // A per-`DstAddr` stack that does the following:

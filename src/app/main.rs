@@ -340,11 +340,9 @@ where
                 .make(config.destination_addr.clone())
         };
 
-        let resolver = crate::resolve::Resolver::new(
-            dst_svc.clone(),
-            config.destination_get_suffixes.clone(),
-            config.destination_context.clone(),
-        );
+        let resolver = crate::api_resolve::Resolve::new(dst_svc.clone())
+            .with_scheme("k8s")
+            .with_context_token(&config.destination_context);
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
@@ -458,7 +456,11 @@ where
             &config,
             local_identity.clone(),
             outbound_listener.local_addr(),
-            resolver,
+            outbound::resolve(
+                config.destination_get_suffixes.clone(),
+                config.control_backoff.clone(),
+                resolver,
+            ),
             dns_resolver,
             profiles_client.clone(),
             tap_layer.clone(),
