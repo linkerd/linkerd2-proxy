@@ -2,13 +2,15 @@
 
 use std::hash::Hash;
 use std::time::Duration;
+use std::fmt;
 
 use futures::{Async, Future, Poll};
 use indexmap::IndexMap;
 use tokio::sync::lock::Lock;
 use tower_load_shed::LoadShed;
 use tower_service as svc;
-use tracing::debug;
+use tracing::{debug, debug_span};
+use tracing_futures::{Instrumented, Instrument};
 
 mod cache;
 pub mod error;
@@ -16,13 +18,14 @@ pub mod error;
 use self::cache::{Cache, PurgeCache};
 
 /// Routes requests based on a configurable `Key`.
-pub struct Router<Req, Rec, Mk>
+pub struct Router<Req, Rec, Mk, T = ()>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
 {
     inner: Inner<Req, Rec, Mk>,
+    _trace: T,
 }
 
 /// Provides a strategy for routing a Request to a Service.
@@ -59,6 +62,12 @@ where
 /// A map of known routes and services used when creating a fixed router.
 #[derive(Clone, Debug)]
 pub struct FixedMake<T: Clone + Eq + Hash, Svc>(IndexMap<T, Svc>);
+
+#[derive(Clone, Debug)]
+pub struct Trace {
+    // name: &'static str,
+    _p: (),
+}
 
 pub struct ResponseFuture<Req, Rec, Mk>
 where
@@ -152,9 +161,22 @@ where
                 make,
                 cache,
             },
+            _trace: (),
         };
 
         (router, cache_bg)
+    }
+
+    pub fn trace(self) -> Router<Req, Rec, Mk, Trace>
+    where
+        Rec::Target: fmt::Display,
+    {
+        Router {
+            inner: self.inner,
+            _trace: Trace {
+                _p: (),
+            }
+        }
     }
 }
 
@@ -191,7 +213,7 @@ where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target> + Clone,
     Mk::Value: svc::Service<Req> + Clone,
-    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>
 {
     type Response = <Mk::Value as svc::Service<Req>>::Response;
     type Error = error::Error;
@@ -224,18 +246,77 @@ where
     }
 }
 
-impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk>
+impl<Req, Rec, Mk> svc::Service<Req> for Router<Req, Rec, Mk, Trace>
+where
+    Rec: Recognize<Req>,
+    Mk: Make<Rec::Target> + Clone,
+    Mk::Value: svc::Service<Req> + Clone,
+    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+    Rec::Target: std::fmt::Display,
+{
+    type Response = <Mk::Value as svc::Service<Req>>::Response;
+    type Error = error::Error;
+    type Future = Instrumented<ResponseFuture<Req, Rec, Mk>>;
+
+    /// Always ready to serve.
+    ///
+    /// Graceful backpressure is **not** supported at this level, since each request may
+    /// be routed to different resources. Instead, requests should be issued and each
+    /// route should support a queue of requests.
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        Ok(().into())
+    }
+
+    /// Routes the request through an underlying service.
+    ///
+    /// The response fails when the request cannot be routed.
+    fn call(&mut self, request: Req) -> Self::Future {
+        let target = match self.inner.recognize.recognize(&request) {
+            Some(target) => target,
+            None => return ResponseFuture::not_recognized()
+                .instrument(debug_span!("route", route = %"not_recognized")),
+        };
+
+        let span = debug_span!("route", route =  %target);
+        ResponseFuture::new(
+            request,
+            target,
+            self.inner.make.clone(),
+            self.inner.cache.clone(),
+        ).instrument(span)
+    }
+}
+
+impl<Req, Rec, Mk, T> Clone for Router<Req, Rec, Mk, T>
 where
     Rec: Recognize<Req> + Clone,
     Mk: Make<Rec::Target> + Clone,
     Mk::Value: svc::Service<Req>,
+    T: Clone,
 {
     fn clone(&self) -> Self {
         Router {
             inner: self.inner.clone(),
+            _trace: self._trace.clone(),
         }
     }
 }
+
+// impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk, Trace>
+// where
+//     Rec: Recognize<Req> + Clone,
+//     Mk: Make<Rec::Target> + Clone,
+//     Mk::Value: svc::Service<Req>,
+// {
+//     fn clone(&self) -> Self {
+//         Router {
+//             inner: self.inner.clone(),
+//             _trace: Trace {
+//                 _p: (),
+//             }
+//         }
+//     }
+// }
 
 // ===== impl ResponseFuture =====
 

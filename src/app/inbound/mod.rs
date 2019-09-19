@@ -80,6 +80,7 @@ where
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
             router::Config::new("in endpoint", capacity, max_idle_age),
+
             RecognizeEndpoint::new(default_fwd_addr),
         ))
         .into_inner()

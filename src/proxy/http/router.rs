@@ -44,7 +44,7 @@ where
     Mk: rt::Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
 {
-    inner: Router<Req, Rec, Mk>,
+    inner: Router<Req, Rec, Mk, rt::Trace>,
     span: trace::Span,
 }
 
@@ -113,7 +113,7 @@ where
 impl<Req, Rec, Mk, B> Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    <Rec as Recognize<Req>>::Target: Send + 'static,
+    <Rec as Recognize<Req>>::Target: fmt::Display + Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
     Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
@@ -126,9 +126,10 @@ where
             self.config.capacity,
             self.config.max_idle_age,
         );
+        let inner = inner.trace();
         let span = info_span!("proxy", router = %self.config.proxy_name);
         let cache_daemon = cache_bg
-            .instrument(debug_span!(parent: span, "bg"));
+            .instrument(debug_span!(parent: &span, "bg"));
         tokio::spawn(cache_daemon);
 
         Service { inner, span }
@@ -138,7 +139,7 @@ where
 impl<Req, Rec, Mk, B, T> svc::Service<T> for Stack<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    <Rec as Recognize<Req>>::Target: Send + 'static,
+    <Rec as Recognize<Req>>::Target: fmt::Display + Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
     Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
@@ -176,14 +177,15 @@ where
 impl<Req, Rec, Mk, B> svc::Service<Req> for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Send + Sync + 'static,
+    <Rec as Recognize<Req>>::Target: fmt::Display + Send + 'static,
     Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
     Mk::Value: svc::Service<Req, Response = http::Response<B>> + Clone,
     <Mk::Value as svc::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
-    type Response = <Router<Req, Rec, Mk> as svc::Service<Req>>::Response;
-    type Error = <Router<Req, Rec, Mk> as svc::Service<Req>>::Error;
-    type Future = <Router<Req, Rec, Mk> as svc::Service<Req>>::Future;
+    type Response = <Router<Req, Rec, Mk, rt::Trace> as svc::Service<Req>>::Response;
+    type Error = <Router<Req, Rec, Mk, rt::Trace> as svc::Service<Req>>::Error;
+    type Future = <Router<Req, Rec, Mk, rt::Trace> as svc::Service<Req>>::Future;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
@@ -201,7 +203,7 @@ where
     Rec: Recognize<Req>,
     Mk: rt::Make<Rec::Target>,
     Mk::Value: svc::Service<Req>,
-    Router<Req, Rec, Mk>: Clone,
+    Router<Req, Rec, Mk, rt::Trace>: Clone,
 {
     fn clone(&self) -> Self {
         Self {
