@@ -10,13 +10,13 @@ pub struct ResponseFuture<F, S> {
 
 #[derive(Clone, Debug)]
 pub struct Layer<S> {
-    sink: S,
+    sink: Option<S>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Stack<M, S> {
     inner: M,
-    sink: S,
+    sink: Option<S>,
 }
 
 pub struct MakeFuture<F, S> {
@@ -27,7 +27,7 @@ pub struct MakeFuture<F, S> {
 #[derive(Clone, Debug)]
 pub struct Service<Svc, S> {
     inner: Svc,
-    sink: S,
+    sink: Option<S>,
 }
 
 /// A layer that adds distributed tracing instrumentation.
@@ -39,7 +39,7 @@ pub struct Service<Svc, S> {
 /// the request.  If the sampled bit of the header was set, we emit metadata
 /// about the span to the given SpanSink when the span is complete, i.e. when
 /// we receive the response.
-pub fn layer<S>(sink: S) -> Layer<S> {
+pub fn layer<S>(sink: Option<S>) -> Layer<S> {
     Layer { sink }
 }
 
@@ -79,7 +79,7 @@ where
 
         MakeFuture {
             inner,
-            sink: Some(self.sink.clone()),
+            sink: self.sink.clone(),
         }
     }
 }
@@ -92,7 +92,7 @@ impl<F: Future, S> Future for MakeFuture<F, S> {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        let sink = self.sink.take().expect("poll called after ready");
+        let sink = self.sink.take();
         Ok(Async::Ready(Service { inner, sink }))
     }
 }
@@ -113,6 +113,16 @@ where
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
+        let sink = match &self.sink {
+            Some(sink) => sink.clone(),
+            None => {
+                return ResponseFuture {
+                    trace: None,
+                    inner: self.inner.call(request),
+                }
+            }
+        };
+
         let trace_context = propagation::unpack_trace_context(&request);
         let mut span = None;
 
@@ -142,7 +152,7 @@ where
         let f = self.inner.call(request);
 
         ResponseFuture {
-            trace: span.map(|span| (span, self.sink.clone())),
+            trace: span.map(|span| (span, sink)),
             inner: f,
         }
     }

@@ -14,6 +14,7 @@ mod metric_labels;
 mod outbound;
 mod profiles;
 mod proxy;
+mod spans;
 mod tap;
 
 pub use self::main::Main;

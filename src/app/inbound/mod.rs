@@ -1,3 +1,4 @@
+use super::spans::SpanConverter;
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
@@ -5,9 +6,12 @@ use crate::proxy::http::{
 };
 use crate::proxy::{accept, Server};
 use crate::transport::{self, connect, keepalive, tls, Connection};
-use crate::{core::listen::ServeConnection, svc, Addr};
+use crate::{core::listen::ServeConnection, svc, trace_context, Addr};
 use linkerd2_reconnect as reconnect;
+use opencensus_proto::trace::v1 as oc;
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
 
@@ -31,6 +35,7 @@ pub fn server<P>(
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
+    span_sink: Option<mpsc::Sender<oc::Span>>,
 ) -> impl ServeConnection<Connection>
 where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
@@ -45,6 +50,9 @@ where
     let default_fwd_addr = config.inbound_forward.map(|a| a.into());
     let dispatch_timeout = config.inbound_dispatch_timeout;
 
+    let mut trace_labels = HashMap::new();
+    trace_labels.insert("direction".to_string(), "inbound".to_string());
+
     // Establishes connections to the local application (for both
     // TCP forwarding and HTTP proxying).
     let connect = svc::stack(connect::svc())
@@ -54,6 +62,11 @@ where
         .push(transport_metrics.connect("inbound"))
         .push(rewrite_loopback_addr::layer());
 
+    let trace_context_layer = trace_context::layer(
+        span_sink
+            .clone()
+            .map(|span_sink| SpanConverter::client(span_sink, trace_labels.clone())),
+    );
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = connect
         .clone()
@@ -62,6 +75,7 @@ where
             let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
+        .push(trace_context_layer)
         .push(normalize_uri::layer());
 
     // A stack configured by `router::Config`, responsible for building
@@ -171,6 +185,9 @@ where
         .push_concurrency_limit(max_in_flight)
         .push_load_shed();
 
+    let trace_context_layer = trace_context::layer(
+        span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels)),
+    );
     // As HTTP requests are accepted, the `Source` connection
     // metadata is stored on each request's extensions.
     //
@@ -190,6 +207,7 @@ where
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(super::errors::layer())
+        .push(trace_context_layer)
         .push(handle_time.layer());
 
     // As the inbound proxy accepts connections, we don't do any

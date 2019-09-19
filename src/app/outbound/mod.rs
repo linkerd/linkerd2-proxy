@@ -1,3 +1,4 @@
+use super::spans::SpanConverter;
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
 use crate::core::listen::ServeConnection;
 use crate::core::resolve::Resolve;
@@ -8,11 +9,14 @@ use crate::proxy::http::{
 use crate::proxy::{self, accept, Server};
 use crate::transport::Connection;
 use crate::transport::{self, connect, keepalive, tls};
-use crate::{svc, Addr};
+use crate::{svc, trace_context, Addr};
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
+use opencensus_proto::trace::v1 as oc;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
 
@@ -45,6 +49,7 @@ pub fn server<R, P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
+    span_sink: Option<mpsc::Sender<oc::Span>>,
 ) -> impl ServeConnection<Connection>
 where
     R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
@@ -62,6 +67,9 @@ where
     let canonicalize_timeout = config.dns_canonicalize_timeout;
     let dispatch_timeout = config.outbound_dispatch_timeout;
 
+    let mut trace_labels = HashMap::new();
+    trace_labels.insert("direction".to_string(), "outbound".to_string());
+
     // Establishes connections to remote peers (for both TCP
     // forwarding and HTTP proxying).
     let connect = svc::stack(connect::svc())
@@ -70,6 +78,11 @@ where
         .push_timeout(config.outbound_connect_timeout)
         .push(transport_metrics.connect("outbound"));
 
+    let trace_context_layer = trace_context::layer(
+        span_sink
+            .clone()
+            .map(|span_sink| SpanConverter::client(span_sink, trace_labels.clone())),
+    );
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = connect
         .clone()
@@ -78,6 +91,7 @@ where
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
+        .push(trace_context_layer)
         .push(normalize_uri::layer());
 
     // A per-`outbound::Endpoint` stack that:
@@ -254,6 +268,9 @@ where
         .push_concurrency_limit(max_in_flight)
         .push_load_shed();
 
+    let trace_context_layer = trace_context::layer(
+        span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels)),
+    );
     // Instantiates an HTTP service for each `Source` using the
     // shared `addr_router`. The `Source` is stored in the request's
     // extensions so that it can be used by the `addr_router`.
@@ -263,6 +280,7 @@ where
         }))
         .push(insert::target::layer())
         .push(super::errors::layer())
+        .push(trace_context_layer)
         .push(handle_time.layer());
 
     // Instantiated for each TCP connection received from the local
