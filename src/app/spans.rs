@@ -8,6 +8,11 @@ use tokio::sync::mpsc;
 const SPAN_KIND_SERVER: i32 = 1;
 const SPAN_KIND_CLIENT: i32 = 2;
 
+/// SpanConverter converts trace_context::Span objects into OpenCensus agent
+/// protobuf span objects.  SpanConverter receives trace_context::Span objects
+/// by implmenting the SpanSink trait.  For each span that it receives, it
+/// converts it to an OpenCensus span and then sends it on the provided
+/// mpsc::Sender.
 #[derive(Clone)]
 pub struct SpanConverter {
     kind: i32,
@@ -22,11 +27,7 @@ pub struct IdLengthError {
     actual_size: usize,
 }
 
-impl error::Error for IdLengthError {
-    fn description(&self) -> &str {
-        "trace or span id is wrong number of bytes"
-    }
-}
+impl error::Error for IdLengthError {}
 
 impl fmt::Display for IdLengthError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

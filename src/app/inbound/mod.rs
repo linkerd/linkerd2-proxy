@@ -64,8 +64,8 @@ where
 
     let trace_context_layer = trace_context::layer(
         span_sink
-            .as_ref()
-            .map(|span_sink| SpanConverter::client(span_sink.clone(), trace_labels.clone())),
+            .clone()
+            .map(|span_sink| SpanConverter::client(span_sink, trace_labels.clone())),
     );
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = connect
@@ -187,8 +187,8 @@ where
 
     let trace_context_layer = trace_context::layer(
         span_sink
-            .as_ref()
-            .map(|span_sink| SpanConverter::server(span_sink.clone(), trace_labels.clone())),
+            .clone()
+            .map(|span_sink| SpanConverter::server(span_sink, trace_labels.clone())),
     );
     // As HTTP requests are accepted, the `Source` connection
     // metadata is stored on each request's extensions.

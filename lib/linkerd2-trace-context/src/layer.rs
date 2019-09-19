@@ -152,7 +152,7 @@ where
         let f = self.inner.call(request);
 
         ResponseFuture {
-            trace: span.map(|span| (span, sink.clone())),
+            trace: span.map(|span| (span, sink)),
             inner: f,
         }
     }

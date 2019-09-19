@@ -80,8 +80,8 @@ where
 
     let trace_context_layer = trace_context::layer(
         span_sink
-            .as_ref()
-            .map(|span_sink| SpanConverter::client(span_sink.clone(), trace_labels.clone())),
+            .clone()
+            .map(|span_sink| SpanConverter::client(span_sink, trace_labels.clone())),
     );
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = connect
@@ -270,8 +270,8 @@ where
 
     let trace_context_layer = trace_context::layer(
         span_sink
-            .as_ref()
-            .map(|span_sink| SpanConverter::server(span_sink.clone(), trace_labels.clone())),
+            .clone()
+            .map(|span_sink| SpanConverter::server(span_sink, trace_labels.clone())),
     );
     // Instantiates an HTTP service for each `Source` using the
     // shared `addr_router`. The `Source` is stored in the request's
