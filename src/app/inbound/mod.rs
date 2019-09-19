@@ -187,8 +187,7 @@ where
 
     let trace_context_layer = trace_context::layer(
         span_sink
-            .clone()
-            .map(|span_sink| SpanConverter::server(span_sink, trace_labels.clone())),
+            .map(|span_sink| SpanConverter::server(span_sink, trace_labels)),
     );
     // As HTTP requests are accepted, the `Source` connection
     // metadata is stored on each request's extensions.
