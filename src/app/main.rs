@@ -10,10 +10,9 @@ use crate::proxy::{self, http::metrics as http_metrics};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
-use futures::{self, future, Future, Stream};
+use futures::{self, future, Future};
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::agent::common::v1 as oc;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -428,32 +427,26 @@ where
                 .make(addr.clone())
         });
 
-        let (outbound_spans_tx, inbound_spans_tx) = match trace_collector_svc {
-            Some(trace_collector) => {
-                let (outbound_spans_tx, outbound_spans_rx) = mpsc::channel(100);
-                let (inbound_spans_tx, inbound_spans_rx) = mpsc::channel(100);
+        let spans_tx = trace_collector_svc.map(|trace_collector| {
+            let (spans_tx, spans_rx) = mpsc::channel(100);
 
-                let node = oc::Node {
-                    identifier: Some(oc::ProcessIdentifier {
-                        host_name: hostname::get_hostname().unwrap_or_default(),
-                        pid: 0,
-                        start_timestamp: Some(start_time.into()),
-                    }),
-                    library_info: None,
-                    service_info: Some(oc::ServiceInfo {
-                        name: "linkerd-proxy".to_string(),
-                    }),
-                    attributes: HashMap::new(),
-                };
-                let merged = inbound_spans_rx.select(outbound_spans_rx);
-                let span_exporter = SpanExporter::new(trace_collector, node, merged);
-                task::spawn(span_exporter.map_err(|e| {
-                    error!("span exporter failed: {}", e);
-                }));
-                (Some(outbound_spans_tx), Some(inbound_spans_tx))
-            }
-            None => (None, None),
-        };
+            let node = oc::Node {
+                identifier: Some(oc::ProcessIdentifier {
+                    host_name: config.hostname.clone().unwrap_or_default(),
+                    pid: 0,
+                    start_timestamp: Some(start_time.into()),
+                }),
+                service_info: Some(oc::ServiceInfo {
+                    name: "linkerd-proxy".to_string(),
+                }),
+                ..oc::Node::default()
+            };
+            let span_exporter = SpanExporter::new(trace_collector, node, spans_rx);
+            task::spawn(span_exporter.map_err(|e| {
+                error!("span exporter failed: {}", e);
+            }));
+            spans_tx
+        });
 
         let outbound_server = outbound::server(
             &config,
@@ -472,7 +465,7 @@ where
             route_http_metrics.clone(),
             retry_http_metrics,
             transport_metrics.clone(),
-            outbound_spans_tx,
+            spans_tx.clone(),
         );
 
         let inbound_server = inbound::server(
@@ -485,7 +478,7 @@ where
             endpoint_http_metrics,
             route_http_metrics,
             transport_metrics,
-            inbound_spans_tx,
+            spans_tx,
         );
 
         super::proxy::spawn(outbound_listener, outbound_server, drain_rx.clone());

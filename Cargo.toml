@@ -68,7 +68,6 @@ linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", re
 bytes = "0.4"
 futures = "0.1"
 h2 = "0.1.15"
-hostname = "0.1.5"
 http = "0.1"
 http-body = "0.1"
 httparse = "1.2"
