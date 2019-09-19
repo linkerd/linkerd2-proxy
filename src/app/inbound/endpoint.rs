@@ -43,9 +43,9 @@ impl connect::HasPeerAddr for Endpoint {
     }
 }
 
-impl tls::HasPeerIdentity for Endpoint {
-    fn peer_identity(&self) -> tls::PeerIdentity {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+impl tls::HasStatus for Endpoint {
+    fn tls_status(&self) -> tls::Status {
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into()
     }
 }
 
@@ -74,7 +74,7 @@ impl tap::Inspect for Endpoint {
     ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
         req.extensions()
             .get::<Source>()
-            .map(|s| s.tls_peer.as_ref())
+            .map(|s| s.tls_peer())
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled))
     }
 
@@ -127,7 +127,7 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
             .or(self.default_addr)?;
 
         let tls_client_id = src
-            .map(|s| s.tls_peer.clone())
+            .map(|s| s.tls_peer().cloned())
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled));
 
         let dst_addr = req

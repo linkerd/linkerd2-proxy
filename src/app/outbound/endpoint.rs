@@ -98,9 +98,14 @@ impl std::hash::Hash for Endpoint {
     }
 }
 
-impl tls::HasPeerIdentity for Endpoint {
-    fn peer_identity(&self) -> tls::PeerIdentity {
-        self.identity.clone()
+impl tls::HasStatus for Endpoint {
+    fn tls_status(&self) -> tls::Status {
+        self.identity
+            .clone()
+            .map(|id| tls::Tls::Established {
+                peer: Conditional::Some(id),
+            })
+            .into()
     }
 }
 

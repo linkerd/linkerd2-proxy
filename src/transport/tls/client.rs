@@ -115,7 +115,11 @@ where
                         }
                         Conditional::None(why) => {
                             trace!("skipping TLS ({:?})", why);
-                            return Ok(Async::Ready(tls::Connection::plain(io, remote_addr, *why)));
+                            return Ok(Async::Ready(tls::Connection::new_plain(
+                                io,
+                                remote_addr,
+                                *why,
+                            )));
                         }
                     }
                 }
@@ -127,7 +131,7 @@ where
                     let io = try_ready!(future.poll());
                     trace!("established TLS to {}", server_name.as_ref());
                     let tls = Conditional::Some(server_name.clone());
-                    return Ok(Async::Ready(Connection::tls(io, *remote_addr, tls)));
+                    return Ok(Async::Ready(Connection::new_tls(io, *remote_addr, tls)));
                 }
             };
         }

@@ -2,6 +2,7 @@ use super::{Conditional, PeerIdentity};
 use crate::identity::Name;
 use untrusted;
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Detect {
     Complete(PeerIdentity),
     Incomplete,
@@ -180,7 +181,9 @@ fn read_u16(input: &mut untrusted::Reader<'_>) -> Result<u16, untrusted::EndOfIn
 
 #[cfg(test)]
 mod tests {
+    use super::super::ReasonForNoPeerName;
     use super::*;
+    use crate::identity;
 
     /// From `cargo run --example tlsclient -- --http example.com`
     static VALID_EXAMPLE_COM: &[u8] = include_bytes!("testdata/example-com-client-hello.bin");
@@ -188,29 +191,37 @@ mod tests {
     #[test]
     fn parses() {
         let identity = identity::Name::from_hostname("example.com".as_bytes()).unwrap();
-        check_all_prefixes(Detect::SNI(identity), VALID_EXAMPLE_COM);
+        check_all_prefixes(Conditional::Some(identity), VALID_EXAMPLE_COM);
     }
 
     #[test]
     fn misparse_http_1_0_request() {
-        check_all_prefixes(Detect::NoSNI, b"GET /TheProject.html HTTP/1.0\r\n\r\n");
+        check_all_prefixes(
+            Conditional::None(ReasonForNoPeerName::NotProvidedByRemote.into()),
+            b"GET /TheProject.html HTTP/1.0\r\n\r\n",
+        );
     }
 
-    fn check_all_prefixes(expected: Tls, input: &[u8]) {
+    fn check_all_prefixes(expected: PeerIdentity, input: &[u8]) {
         let mut i = 0;
 
         // `Async::NotReady` will be returned for some number of prefixes.
         loop {
-            if let Detect::Complete(d) = detect_sni(&input[..i]) {
-                assert_eq!(d, expected);
-                break;
-            }
-            i += 1;
+            match detect_sni(&input[..i]) {
+                Detect::Incomplete => {
+                    i += 1;
+                }
+                Detect::Complete(found) => {
+                    assert_eq!(found, expected);
+                    break;
+                }
+            };
         }
 
         // The same result will be returned for all longer prefixes.
+        let complete = Detect::Complete(expected);
         for i in (i + 1)..input.len() {
-            assert_eq!(Detect::Complete(expected), detect_sni(&input[..i]))
+            assert_eq!(complete, detect_sni(&input[..i]))
         }
     }
 }

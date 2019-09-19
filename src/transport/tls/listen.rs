@@ -239,7 +239,7 @@ impl<L: HasConfig, G> Listen<L, G> {
                     remote_addr, dst, why_no_tls,
                 );
                 let conn =
-                    Connection::plain(socket, remote_addr, *why_no_tls).with_original_dst(dst);
+                    Connection::new_plain(socket, remote_addr, *why_no_tls).with_original_dst(dst);
                 Either::B(Either::B(future::ok(conn)))
             }
         }
@@ -331,26 +331,25 @@ impl Future for Handshake {
                         .expect("polled after ready")
                         .poll_detect_sni())
                     {
-                        detect_sni::Detect::Complete(sni) => match sni {
-                            Conditional::Some(sni) => {
-                                debug!(message="detected TLS", sni=%sni.as_ref());
-                                let inner = inner.take().unwrap();
+                        detect_sni::Detect::Complete(sni) => {
+                            let inner = inner.take().unwrap();
+                            match sni {
+                                Conditional::Some(sni) => {
+                                    debug!(message="detected TLS", sni=%sni.as_ref());
+                                    if sni != inner.local_identity {
+                                        trace!("passing through opaque TLS connection");
+                                        return Ok(inner.into_opaque_tls(sni).into());
+                                    }
 
-                                if sni != inner.local_identity {
-                                    trace!("passing through opaque TLS connection");
-                                    let conn = inner.into_opaque_tls(sni);
-                                    return Ok(Async::Ready(conn));
+                                    trace!("terminating TLS");
+                                    inner.into_tls_upgrade()
                                 }
-
-                                debug!("terminating TLS");
-                                inner.into_tls_upgrade()
+                                Conditional::None(reason) => {
+                                    trace!("passing through accepted connection without TLS");
+                                    return Ok(inner.into_plaintext(reason).into());
+                                }
                             }
-                            Conditional::None(reason) => {
-                                trace!("passing through accepted connection without TLS");
-                                let conn = inner.take().unwrap().into_plaintext(reason);
-                                return Ok(Async::Ready(conn));
-                            }
-                        },
+                        }
                         detect_sni::Detect::Incomplete => {
                             trace!("needs more input to detect sni");
                             continue;
@@ -367,8 +366,7 @@ impl Future for Handshake {
                             )
                         });
                     trace!(message="accepted TLS connection", %remote_addr, ?client_id);
-
-                    return Ok(Async::Ready(Connection::tls(io, *remote_addr, client_id)));
+                    return Ok(Connection::new_tls(io, *remote_addr, client_id).into());
                 }
             }
         }

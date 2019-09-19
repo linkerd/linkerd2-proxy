@@ -67,11 +67,11 @@ pub struct Connecting<F> {
 /// A `Metrics` type exists for each unique `Key`.
 ///
 /// Implements `FmtLabels`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct Key {
     direction: Direction,
     peer: Peer,
-    tls_status: tls::Status,
+    tls: tls::Status,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -200,7 +200,7 @@ impl Registry {
 
     pub fn connect<T, M>(&self, direction: &'static str) -> LayerConnect<T, M>
     where
-        T: tls::HasPeerIdentity,
+        T: tls::HasStatus,
         M: svc::MakeConnection<T>,
     {
         LayerConnect::new(direction, self.0.clone())
@@ -214,8 +214,7 @@ where
     type Io = Io<I>;
 
     fn accept(&self, source: &crate::proxy::Source, io: I) -> Self::Io {
-        let tls_status = source.tls_peer.as_ref().map(|_| {}).into();
-        let key = Key::accept(self.direction, tls_status);
+        let key = Key::accept(self.direction, source.tls.clone().into());
         let metrics = match self.registry.lock() {
             Ok(mut inner) => Some(inner.get_or_default(key).clone()),
             Err(_) => {
@@ -248,7 +247,7 @@ where
 
 impl<T, M> svc::Layer<M> for LayerConnect<T, M>
 where
-    T: tls::HasPeerIdentity,
+    T: tls::HasStatus,
     M: svc::MakeConnection<T>,
 {
     type Service = Connect<T, M>;
@@ -280,7 +279,7 @@ where
 /// impl MakeConnection
 impl<T, M> svc::Service<T> for Connect<T, M>
 where
-    T: tls::HasPeerIdentity + Clone,
+    T: tls::HasStatus + Clone,
     M: svc::MakeConnection<T>,
 {
     type Response = Io<M::Connection>;
@@ -293,8 +292,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         // TODO use target metadata in `key`
-        let tls_status = target.peer_identity().as_ref().map(|_| ()).into();
-        let key = Key::connect(self.direction, tls_status);
+        let key = Key::connect(self.direction, target.tls_status());
         let metrics = match self.registry.lock() {
             Ok(mut inner) => Some(inner.get_or_default(key).clone()),
             Err(_) => {
@@ -436,26 +434,26 @@ impl NewSensor {
 // ===== impl Key =====
 
 impl Key {
-    pub fn accept(direction: Direction, tls_status: tls::Status) -> Self {
+    pub fn accept(direction: Direction, tls: tls::Status) -> Self {
         Self {
             peer: Peer::Src,
             direction,
-            tls_status,
+            tls,
         }
     }
 
-    pub fn connect(direction: Direction, tls_status: tls::Status) -> Self {
+    pub fn connect(direction: Direction, tls: tls::Status) -> Self {
         Self {
             direction,
             peer: Peer::Dst,
-            tls_status,
+            tls,
         }
     }
 }
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        ((self.direction, self.peer), self.tls_status).fmt_labels(f)
+        ((self.direction, self.peer), &self.tls).fmt_labels(f)
     }
 }
 

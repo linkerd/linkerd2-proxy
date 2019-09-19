@@ -44,8 +44,13 @@ struct Authority<'a>(&'a NameAddr);
 impl From<control::ControlAddr> for ControlLabels {
     fn from(c: control::ControlAddr) -> Self {
         ControlLabels {
-            addr: c.addr.clone(),
-            tls_status: c.identity.as_ref().into(),
+            addr: c.addr,
+            tls_status: c
+                .identity
+                .map(|id| tls::Tls::Established {
+                    peer: Conditional::Some(id),
+                })
+                .into(),
         }
     }
 }
@@ -130,12 +135,17 @@ impl FmtLabels for EndpointLabels {
             write!(f, ",{}", labels)?;
         }
 
-        write!(f, ",")?;
-        tls::Status::from(self.tls_id.as_ref()).fmt_labels(f)?;
-
-        if let Conditional::Some(ref id) = self.tls_id {
-            write!(f, ",")?;
-            id.fmt_labels(f)?;
+        match self.tls_id {
+            Conditional::Some(ref id) => {
+                write!(f, ",tls=\"true\",")?;
+                id.fmt_labels(f)?;
+            }
+            Conditional::None(tls::ReasonForNoIdentity::Disabled) => {
+                write!(f, ",tls=\"disabled\"")?;
+            }
+            Conditional::None(tls::ReasonForNoIdentity::NoPeerName(why)) => {
+                write!(f, ",tls=\"no_identity\",no_tls_reason=\"{}\"", why)?;
+            }
         }
 
         Ok(())
@@ -200,11 +210,16 @@ impl fmt::Display for classify::SuccessOrFailure {
 
 impl FmtLabels for tls::Status {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(tls::ReasonForNoIdentity::NoPeerName(why)) = self.no_tls_reason() {
-            return write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why);
+        match self.as_ref() {
+            Conditional::None(tls::ReasonForNoIdentity::NoPeerName(why)) => {
+                write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
+            }
+            Conditional::None(tls::ReasonForNoIdentity::Disabled) => write!(f, "tls=\"disabled\""),
+            Conditional::Some(tls::Tls::Established { .. }) => write!(f, "tls=\"true\""),
+            Conditional::Some(tls::Tls::Opaque { sni }) => {
+                write!(f, "tls=\"opaque\",tls_sni_name=\"{}\"", sni.as_ref())
+            }
         }
-
-        write!(f, "tls=\"{}\"", self)
     }
 }
 

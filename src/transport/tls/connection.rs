@@ -1,4 +1,4 @@
-use super::{Conditional, HasPeerIdentity, PeerIdentity, ReasonForNoIdentity, ReasonForNoPeerName};
+use super::{Conditional, HasStatus, PeerIdentity, ReasonForNoIdentity, Status};
 use crate::identity;
 use crate::transport::io::internal::Io;
 use crate::transport::{AddrInfo, BoxedIo, Peek, SetKeepalive};
@@ -39,7 +39,7 @@ pub struct Connection {
     remote_addr: SocketAddr,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Tls {
     /// Indicates that a connection is participating in TLS such that we have a
     /// cleartext stream internally.
@@ -68,7 +68,7 @@ impl Connection {
         }
     }
 
-    pub(super) fn plain<I: Io + 'static, R: Into<ReasonForNoIdentity>>(
+    pub(super) fn new_plain<I: Io + 'static, R: Into<ReasonForNoIdentity>>(
         io: I,
         remote_addr: SocketAddr,
         why_no_tls: R,
@@ -81,7 +81,11 @@ impl Connection {
         )
     }
 
-    pub(super) fn tls<I: Io + 'static>(io: I, remote_addr: SocketAddr, peer: PeerIdentity) -> Self {
+    pub(super) fn new_tls<I: Io + 'static>(
+        io: I,
+        remote_addr: SocketAddr,
+        peer: PeerIdentity,
+    ) -> Self {
         Self::new(
             io,
             remote_addr,
@@ -94,7 +98,7 @@ impl Connection {
         io: I,
         remote_addr: SocketAddr,
     ) -> Self {
-        let mut c = Self::plain(io, remote_addr, ReasonForNoIdentity::Disabled);
+        let mut c = Self::new_plain(io, remote_addr, ReasonForNoIdentity::Disabled);
         c.detect_protocol = false;
         c
     }
@@ -118,16 +122,15 @@ impl Connection {
     pub fn should_detect_protocol(&self) -> bool {
         self.detect_protocol
     }
+
+    pub fn tls(&self) -> Conditional<&Tls> {
+        self.tls.as_ref()
+    }
 }
 
-impl HasPeerIdentity for Connection {
-    fn peer_identity(&self) -> PeerIdentity {
-        self.tls.as_ref().and_then(|tls| match tls {
-            Tls::Established { peer } => peer.clone(),
-            Tls::Opaque { .. } => {
-                Conditional::None(ReasonForNoPeerName::NotProvidedByRemote.into())
-            }
-        })
+impl HasStatus for Connection {
+    fn tls_status(&self) -> Status {
+        self.tls().cloned().into()
     }
 }
 

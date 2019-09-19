@@ -17,8 +17,8 @@ pub type Conditional<T> = crate::Conditional<T, ReasonForNoIdentity>;
 
 pub type PeerIdentity = Conditional<identity::Name>;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Status(Conditional<()>);
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Status(Conditional<Tls>);
 
 pub trait HasPeerIdentity {
     fn peer_identity(&self) -> PeerIdentity;
@@ -26,12 +26,6 @@ pub trait HasPeerIdentity {
 
 pub trait HasStatus {
     fn tls_status(&self) -> Status;
-}
-
-impl<T: HasPeerIdentity> HasStatus for T {
-    fn tls_status(&self) -> Status {
-        self.peer_identity().map(|_| ()).into()
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -65,20 +59,31 @@ pub enum ReasonForNoPeerName {
     NotProvidedByRemote,
 }
 
-impl<T> From<Conditional<T>> for Status {
-    fn from(inner: Conditional<T>) -> Self {
-        Status(inner.map(|_| ()))
+impl From<Conditional<Tls>> for Status {
+    fn from(inner: Conditional<Tls>) -> Self {
+        Status(inner)
     }
 }
 
-impl Into<Conditional<()>> for Status {
-    fn into(self) -> Conditional<()> {
+impl Into<Conditional<Tls>> for Status {
+    fn into(self) -> Conditional<Tls> {
         self.0
     }
 }
 
+impl<T: HasStatus> HasPeerIdentity for T {
+    fn peer_identity(&self) -> PeerIdentity {
+        self.tls_status().0.and_then(|status| match status {
+            Tls::Established { peer } => peer.clone(),
+            Tls::Opaque { .. } => {
+                Conditional::None(ReasonForNoPeerName::NotProvidedByRemote.into())
+            }
+        })
+    }
+}
+
 impl Status {
-    pub fn as_ref(&self) -> Conditional<&()> {
+    pub fn as_ref(&self) -> Conditional<&Tls> {
         self.0.as_ref()
     }
 
@@ -88,15 +93,6 @@ impl Status {
 
     pub fn no_tls_reason(&self) -> Option<ReasonForNoIdentity> {
         self.0.reason()
-    }
-}
-
-impl fmt::Display for Status {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            crate::Conditional::Some(()) => write!(f, "true"),
-            crate::Conditional::None(r) => fmt::Display::fmt(&r, f),
-        }
     }
 }
 
@@ -110,7 +106,7 @@ impl fmt::Display for ReasonForNoIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ReasonForNoIdentity::Disabled => write!(f, "disabled"),
-            ReasonForNoIdentity::NoPeerName(n) => write!(f, "{}", n),
+            ReasonForNoIdentity::NoPeerName(n) => n.fmt(f),
         }
     }
 }

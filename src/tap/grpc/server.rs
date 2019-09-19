@@ -2,7 +2,6 @@ use super::match_::Match;
 use crate::api::{http_types, pb_duration, tap as api};
 use crate::proxy::http::HasH2Reason;
 use crate::tap::{iface, Inspect};
-use crate::transport::tls;
 use crate::Conditional;
 use bytes::Buf;
 use futures::sync::mpsc;
@@ -427,12 +426,15 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
         source: inspect.src_addr(req).as_ref().map(|a| a.into()),
         source_meta: {
             let mut m = api::tap_event::EndpointMeta::default();
-            let tls = inspect.src_tls(req);
-            let tls_status = tls::Status::from(tls.as_ref());
-            m.labels.insert("tls".to_owned(), tls_status.to_string());
-            if let Conditional::Some(id) = tls {
-                m.labels
-                    .insert("client_id".to_owned(), id.as_ref().to_owned());
+            match inspect.src_tls(req) {
+                Conditional::None(reason) => {
+                    m.labels.insert("tls".to_owned(), reason.to_string());
+                }
+                Conditional::Some(id) => {
+                    m.labels.insert("tls".to_owned(), "true".into());
+                    m.labels
+                        .insert("client_id".to_owned(), id.as_ref().to_owned());
+                }
             }
             Some(m)
         },
@@ -441,12 +443,15 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
             let mut m = api::tap_event::EndpointMeta::default();
             m.labels
                 .extend(labels.iter().map(|(k, v)| (k.clone(), v.clone())));
-            let tls = inspect.dst_tls(req);
-            let tls_status = tls::Status::from(tls.as_ref());
-            m.labels.insert("tls".to_owned(), tls_status.to_string());
-            if let Conditional::Some(id) = tls {
-                m.labels
-                    .insert("server_id".to_owned(), id.as_ref().to_owned());
+            match inspect.dst_tls(req) {
+                Conditional::None(reason) => {
+                    m.labels.insert("tls".to_owned(), reason.to_string());
+                }
+                Conditional::Some(id) => {
+                    m.labels.insert("tls".to_owned(), "true".to_owned());
+                    m.labels
+                        .insert("server_id".to_owned(), id.as_ref().to_owned());
+                }
             }
             m
         }),

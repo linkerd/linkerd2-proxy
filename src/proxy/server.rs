@@ -1,15 +1,13 @@
-use super::Accept;
-use crate::core::listen::ServeConnection;
-use crate::proxy::http::{
+use super::http::{
     glue::{HttpBody, HyperServerSvc},
     upgrade,
 };
-use crate::proxy::{protocol::Protocol, tcp};
+use super::{protocol::Protocol, tcp, Accept};
+use crate::core::listen::ServeConnection;
+use crate::identity;
 use crate::svc::{MakeService, Service};
-use crate::transport::{
-    tls::{self, HasPeerIdentity},
-    Connection, Peek,
-};
+use crate::transport::tls::{self, Connection, Tls};
+use crate::transport::Peek;
 use crate::{app::config::H2Settings, drain, logging, Error, Never};
 use futures::future::{self, Either};
 use futures::{Future, Poll};
@@ -74,7 +72,7 @@ pub struct Source {
     pub remote: SocketAddr,
     pub local: SocketAddr,
     pub orig_dst: Option<SocketAddr>,
-    pub tls_peer: tls::PeerIdentity,
+    pub tls: tls::Conditional<Tls>,
     _p: (),
 }
 
@@ -90,6 +88,15 @@ struct ForwardConnect<T, C>(C, PhantomData<T>);
 pub struct NoOriginalDst;
 
 impl Source {
+    pub fn tls_peer(&self) -> tls::Conditional<&identity::Name> {
+        self.tls.as_ref().and_then(|tls| match tls {
+            Tls::Established { peer } => peer.as_ref(),
+            Tls::Opaque { .. } => {
+                tls::Conditional::None(tls::ReasonForNoPeerName::NotProvidedByRemote.into())
+            }
+        })
+    }
+
     pub fn orig_dst_if_not_local(&self) -> Option<SocketAddr> {
         match self.orig_dst {
             None => {
@@ -134,7 +141,9 @@ impl Source {
             remote,
             local,
             orig_dst,
-            tls_peer,
+            tls: tls_peer.map(|id| Tls::Established {
+                peer: tls::Conditional::Some(id),
+            }),
             _p: (),
         }
     }
@@ -261,7 +270,7 @@ where
             remote: connection.remote_addr(),
             local: connection.local_addr().unwrap_or(self.listen_addr),
             orig_dst: connection.original_dst_addr(),
-            tls_peer: connection.peer_identity(),
+            tls: connection.tls().cloned(),
             _p: (),
         };
 
