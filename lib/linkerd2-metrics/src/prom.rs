@@ -90,7 +90,7 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
     }
 
     /// Formats a single metric without labels.
-    pub fn fmt_metric(&self, f: &mut fmt::Formatter<'_>, metric: M) -> fmt::Result {
+    pub fn fmt_metric(&self, f: &mut fmt::Formatter<'_>, metric: &M) -> fmt::Result {
         metric.fmt_metric(f, self.name)
     }
 

@@ -40,7 +40,7 @@ impl Report {
 impl FmtMetrics for Report {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         process_start_time_seconds.fmt_help(f)?;
-        process_start_time_seconds.fmt_metric(f, self.start_time)?;
+        process_start_time_seconds.fmt_metric(f, &self.start_time)?;
 
         if let Some(ref sys) = self.system {
             sys.fmt_metrics(f)?;
