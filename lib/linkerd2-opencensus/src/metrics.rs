@@ -6,7 +6,7 @@ use tracing::error;
 metrics! {
     span_export_streams: Counter { "Total count of opened span export streams" },
     span_export_requests: Counter { "Total count of span export request messages" },
-    span_exports: Counter { "Total count of spans exported" },
+    span_exports: Counter { "Total count of spans exported" }
 }
 
 struct Metrics {

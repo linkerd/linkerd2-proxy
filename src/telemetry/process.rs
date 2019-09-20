@@ -131,12 +131,12 @@ mod system {
             let clock_ticks = stat.utime as u64 + stat.stime as u64;
             process_cpu_seconds_total.fmt_help(f)?;
             process_cpu_seconds_total
-                .fmt_metric(f, Counter::from(clock_ticks / self.clock_ticks_per_sec))?;
+                .fmt_metric(f, &Counter::from(clock_ticks / self.clock_ticks_per_sec))?;
 
             match Self::open_fds(stat.pid) {
                 Ok(open_fds) => {
                     process_open_fds.fmt_help(f)?;
-                    process_open_fds.fmt_metric(f, open_fds)?;
+                    process_open_fds.fmt_metric(f, &open_fds)?;
                 }
                 Err(err) => {
                     warn!("could not determine process_open_fds: {}", err);
@@ -148,7 +148,7 @@ mod system {
                 Ok(None) => {}
                 Ok(Some(ref max_fds)) => {
                     process_max_fds.fmt_help(f)?;
-                    process_max_fds.fmt_metric(f, *max_fds)?;
+                    process_max_fds.fmt_metric(f, max_fds)?;
                 }
                 Err(err) => {
                     warn!("could not determine process_max_fds: {}", err);
@@ -157,11 +157,11 @@ mod system {
             }
 
             process_virtual_memory_bytes.fmt_help(f)?;
-            process_virtual_memory_bytes.fmt_metric(f, Gauge::from(stat.vsize as u64))?;
+            process_virtual_memory_bytes.fmt_metric(f, &Gauge::from(stat.vsize as u64))?;
 
             process_resident_memory_bytes.fmt_help(f)?;
             process_resident_memory_bytes
-                .fmt_metric(f, Gauge::from(stat.rss as u64 * self.page_size))
+                .fmt_metric(f, &Gauge::from(stat.rss as u64 * self.page_size))
         }
     }
 }
