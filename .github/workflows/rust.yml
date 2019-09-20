@@ -37,6 +37,8 @@ jobs:
     # Create a build image on a Linkerd build host.
     - name: Setup (Origin)
       if: '!github.event.pull_request.head.repo.fork'
+      env:
+        DOCKER_HOST: "ssh://linkerd-docker"
       run: |
         mkdir -p ~/.ssh
         # Create an identity file and protect before writing contents to it.
@@ -46,30 +48,32 @@ jobs:
         echo "${{ secrets.DOCKER_KNOWN_HOSTS }}" >~/.ssh/known_hosts
         # Configure host with BatchMode to prevent idlelocking.
         (
-          echo "Host ${{ secrets.DOCKER_ADDRESS }}"
+          echo "Host linkerd-docker"
           echo "    User github"
+          echo "    Hostname ${{ secrets.DOCKER_ADDRESS }}"
           echo "    IdentityFile ~/.ssh/id"
           echo "    BatchMode yes"
           echo "    ServerAliveInterval 60"
         ) >~/.ssh/config
         # Build once with output, then build again to get the img ref (should
         # be a noop).
-        export DOCKER_HOST="ssh://${{ secrets.DOCKER_ADDRESS }}"
         docker build -f .github/actions/remote/Dockerfile .
         docker build -qf .github/actions/remote/Dockerfile . >image.ref
 
     # Use the previously built image to run tests.
     - name: Test (Origin)
       if: '!github.event.pull_request.head.repo.fork'
-      run: |
-        export DOCKER_HOST="ssh://${{ secrets.DOCKER_ADDRESS }}"
-        docker run --rm $(cat image.ref) test-integration
+      env:
+        DOCKER_HOST: "ssh://linkerd-docker"
+      run: docker run --rm $(cat image.ref) test-integration
+
 
     # Try to delete the build image.
     - name: Cleanup (Origin)
       if: always() && !github.event.pull_request.head.repo.fork
+      env:
+        DOCKER_HOST: "ssh://linkerd-docker"
       run: |
-        export DOCKER_HOST="ssh://${{ secrets.DOCKER_ADDRESS }}"
         if [ -f image.ref ]; then docker rmi -f $(cat image.ref)
         else echo "skipped" >&2
         fi
