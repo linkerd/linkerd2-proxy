@@ -46,7 +46,10 @@ jobs:
         echo "${{ secrets.DOCKER_PRIVATE_KEY }}" >~/.ssh/id
         # Use well-known public keys for the host to prevent middlemen.
         echo "${{ secrets.DOCKER_KNOWN_HOSTS }}" >~/.ssh/known_hosts
-        # Configure host with BatchMode to prevent idlelocking.
+        # Configure host with ServerAliveInterval to ensure that the client
+        # stays alive even when the server is busy emitting nothing.
+        # ServerAliveMaxCount ensures that server responds to these pings
+        # within ~5 minutes.
         (
           echo "Host linkerd-docker"
           echo "    User github"
@@ -54,6 +57,7 @@ jobs:
           echo "    IdentityFile ~/.ssh/id"
           echo "    BatchMode yes"
           echo "    ServerAliveInterval 60"
+          echo "    ServerAliveMaxCount 5"
         ) >~/.ssh/config
         # Build once with output, then build again to get the img ref (should
         # be a noop).
@@ -66,7 +70,6 @@ jobs:
       env:
         DOCKER_HOST: "ssh://linkerd-docker"
       run: docker run --rm $(cat image.ref) test-integration
-
 
     # Try to delete the build image.
     - name: Cleanup (Origin)
