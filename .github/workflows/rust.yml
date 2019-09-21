@@ -59,6 +59,8 @@ jobs:
           echo "    ServerAliveInterval 60"
           echo "    ServerAliveMaxCount 5"
         ) >~/.ssh/config
+        # Confirm that the SSH configuration works.
+        ssh linkerd-docker docker version
         # Build once with output, then build again to get the img ref (should
         # be a noop).
         docker build -f .github/actions/remote/Dockerfile .
