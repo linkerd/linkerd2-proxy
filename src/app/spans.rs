@@ -56,7 +56,26 @@ impl SpanConverter {
         }
     }
 
-    fn mk_span(&self, span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
+    fn mk_span(&self, mut span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
+        let mut attributes = HashMap::<String, oc::AttributeValue>::new();
+        for (k, v) in self.labels.iter() {
+            attributes.insert(
+                k.clone(),
+                oc::AttributeValue {
+                    value: Some(oc::attribute_value::Value::StringValue(truncatable(
+                        v.clone(),
+                    ))),
+                },
+            );
+        }
+        for (k, v) in span.labels.drain() {
+            attributes.insert(
+                k,
+                oc::AttributeValue {
+                    value: Some(oc::attribute_value::Value::StringValue(truncatable(v))),
+                },
+            );
+        }
         Ok(oc::Span {
             trace_id: into_bytes(span.trace_id, 16)?,
             span_id: into_bytes(span.span_id, 8)?,
@@ -66,11 +85,14 @@ impl SpanConverter {
             kind: self.kind,
             start_time: Some(span.start.into()),
             end_time: Some(span.end.into()),
-            attributes: None, // TODO: attributes
+            attributes: Some(oc::span::Attributes {
+                attribute_map: attributes,
+                dropped_attributes_count: 0,
+            }),
             stack_trace: None,
             time_events: None,
             links: None,
-            status: None, // TODO: record this
+            status: None, // TODO: this is gRPC status; we must read response trailers to populate this
             resource: None,
             same_process_as_parent_span: Some(self.kind == SPAN_KIND_CLIENT),
             child_span_count: None,
