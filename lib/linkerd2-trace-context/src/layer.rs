@@ -1,5 +1,6 @@
 use super::{propagation, Span, SpanSink};
 use futures::{try_ready, Async, Future, Poll};
+use std::collections::HashMap;
 use std::time::SystemTime;
 use tracing::{trace, warn};
 
@@ -99,9 +100,9 @@ impl<F: Future, S> Future for MakeFuture<F, S> {
 
 // === impl Service ===
 
-impl<Svc, B, S> tower::Service<http::Request<B>> for Service<Svc, S>
+impl<Svc, B1, B2, S> tower::Service<http::Request<B1>> for Service<Svc, S>
 where
-    Svc: tower::Service<http::Request<B>>,
+    Svc: tower::Service<http::Request<B1>, Response = http::Response<B2>>,
     S: SpanSink + Clone,
 {
     type Response = Svc::Response;
@@ -112,7 +113,7 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
+    fn call(&mut self, mut request: http::Request<B1>) -> Self::Future {
         let sink = match &self.sink {
             Some(sink) => sink.clone(),
             None => {
@@ -137,6 +138,8 @@ where
                     .uri()
                     .path_and_query()
                     .map(|pq| pq.as_str().to_owned());
+                let mut labels = HashMap::new();
+                request_labels(&mut labels, &request);
                 span = Some(Span {
                     trace_id: context.trace_id,
                     span_id,
@@ -145,6 +148,7 @@ where
                     start: SystemTime::now(),
                     // End time will be updated when the span completes.
                     end: SystemTime::UNIX_EPOCH,
+                    labels,
                 });
             }
         }
@@ -160,9 +164,9 @@ where
 
 // === impl SpanFuture ===
 
-impl<F, S> Future for ResponseFuture<F, S>
+impl<F, S, B2> Future for ResponseFuture<F, S>
 where
-    F: Future,
+    F: Future<Item = http::Response<B2>>,
     S: SpanSink,
 {
     type Item = F::Item;
@@ -172,6 +176,7 @@ where
         let inner = try_ready!(self.inner.poll());
         if let Some((mut span, mut sink)) = self.trace.take() {
             span.end = SystemTime::now();
+            response_labels(&mut span.labels, &inner);
             trace!(message = "emitting span", ?span);
             if sink.try_send(span).is_err() {
                 warn!("span dropped due to backpressure");
@@ -179,4 +184,29 @@ where
         }
         Ok(Async::Ready(inner))
     }
+}
+
+fn request_labels<Body>(labels: &mut HashMap<String, String>, req: &http::Request<Body>) {
+    labels.insert("http.method".to_string(), format!("{}", req.method()));
+    let path = req
+        .uri()
+        .path_and_query()
+        .map(|pq| pq.as_str().to_owned())
+        .unwrap_or_default();
+    labels.insert("http.path".to_string(), path);
+    if let Some(authority) = req.uri().authority_part() {
+        labels.insert("http.authority".to_string(), authority.as_str().to_string());
+    }
+    if let Some(host) = req.headers().get("host") {
+        if let Ok(host) = host.to_str() {
+            labels.insert("http.host".to_string(), host.to_string());
+        }
+    }
+}
+
+fn response_labels<Body>(labels: &mut HashMap<String, String>, rsp: &http::Response<Body>) {
+    labels.insert(
+        "http.status_code".to_string(),
+        rsp.status().as_str().to_string(),
+    );
 }
