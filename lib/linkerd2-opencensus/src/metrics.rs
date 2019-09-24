@@ -58,13 +58,13 @@ impl FmtMetrics for Report {
         };
 
         span_export_streams.fmt_help(f)?;
-        span_export_streams.fmt_metric(f, &metrics.streams)?;
+        span_export_streams.fmt_metric(f, metrics.streams)?;
 
         span_export_requests.fmt_help(f)?;
-        span_export_requests.fmt_metric(f, &metrics.requests)?;
+        span_export_requests.fmt_metric(f, metrics.requests)?;
 
         span_exports.fmt_help(f)?;
-        span_exports.fmt_metric(f, &metrics.spans)?;
+        span_exports.fmt_metric(f, metrics.spans)?;
 
         Ok(())
     }
