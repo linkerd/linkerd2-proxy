@@ -188,7 +188,12 @@ where
 
 fn request_labels<Body>(labels: &mut HashMap<String, String>, req: &http::Request<Body>) {
     labels.insert("http.method".to_string(), format!("{}", req.method()));
-    labels.insert("http.path".to_string(), req.uri().path().to_string());
+    let path = req
+        .uri()
+        .path_and_query()
+        .map(|pq| pq.as_str().to_owned())
+        .unwrap_or_default();
+    labels.insert("http.path".to_string(), path);
     if let Some(authority) = req.uri().authority_part() {
         labels.insert("http.authority".to_string(), authority.as_str().to_string());
     }
