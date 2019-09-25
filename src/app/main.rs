@@ -232,6 +232,8 @@ where
 
         let (transport_metrics, transport_report) = transport::metrics::new();
 
+        let (span_metrics, span_report) = linkerd2_opencensus::metrics::new();
+
         let report = endpoint_http_report
             .and_then(route_http_report)
             .and_then(retry_http_report)
@@ -239,7 +241,8 @@ where
             //.and_then(tls_config_report)
             .and_then(ctl_http_report)
             .and_then(handle_time_report)
-            .and_then(telemetry::process::Report::new(start_time));
+            .and_then(telemetry::process::Report::new(start_time))
+            .and_then(span_report);
 
         let mut identity_daemon = None;
         let (readiness, ready_latch) = Readiness::new();
@@ -441,7 +444,7 @@ where
                 }),
                 ..oc::Node::default()
             };
-            let span_exporter = SpanExporter::new(trace_collector, node, spans_rx);
+            let span_exporter = SpanExporter::new(trace_collector, node, spans_rx, span_metrics);
             task::spawn(span_exporter.map_err(|e| {
                 error!("span exporter failed: {}", e);
             }));
