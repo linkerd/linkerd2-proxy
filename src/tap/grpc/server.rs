@@ -42,7 +42,7 @@ struct Shared {
     count: AtomicUsize,
     limit: usize,
     match_: Match,
-    extract: Extract,
+    extract: ExtractKind,
     events_tx: mpsc::Sender<api::TapEvent>,
 }
 
@@ -85,8 +85,13 @@ pub struct TapResponsePayload {
     grpc_status: Option<u32>,
 }
 
+/// Indicates what tap data should be extracted from traffic.
+///
+/// This is constructed from the protobuf `Extract` message, and represents the
+/// same information about the tap, but has a simpler structure as it does not
+/// need to represent nullability the way the protobuf message does.
 #[derive(Debug)]
-enum Extract {
+enum ExtractKind {
     Http { headers: bool },
 }
 
@@ -137,7 +142,7 @@ where
             }
         };
 
-        let extract = match req.extract.and_then(|ex| Extract::try_from(ex).ok()) {
+        let extract = match req.extract.and_then(|ex| ExtractKind::try_from(ex).ok()) {
             Some(ex) => ex,
             None => {
                 // If there's no extract field, the request may have been sent
@@ -145,7 +150,7 @@ where
                 // the case, rather than failing the tap, just do the only
                 // behavior that older control planes know about --- extract
                 // HTTP data without headers.
-                let default = Extract::Http { headers: false };
+                let default = ExtractKind::Http { headers: false };
                 warn!(?default, "tap request with no extract field; using default");
                 default
             }
@@ -285,7 +290,7 @@ impl iface::Tap for Tap {
                 // Is HTTP data being extracted from the request, and should
                 // headers be included?
                 match shared.extract {
-                    Extract::Http { headers } => {
+                    ExtractKind::Http { headers } => {
                         return Some((id, shared.events_tx.clone(), headers))
                     }
                 }
@@ -514,7 +519,7 @@ impl TapResponsePayload {
     }
 }
 
-impl TryFrom<api::observe_request::Extract> for Extract {
+impl TryFrom<api::observe_request::Extract> for ExtractKind {
     type Error = ();
     fn try_from(req: api::observe_request::Extract) -> Result<Self, Self::Error> {
         match req.extract {
@@ -523,7 +528,7 @@ impl TryFrom<api::observe_request::Extract> for Extract {
                     Some(api::observe_request::extract::http::Extract::Headers(_)) => true,
                     _ => false,
                 };
-                Ok(Extract::Http { headers })
+                Ok(ExtractKind::Http { headers })
             }
             _ => Err(()),
         }
