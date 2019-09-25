@@ -12,6 +12,7 @@ use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
+use std::convert::TryFrom;
 use tokio_timer::clock;
 use tower_grpc::{self as grpc, Response};
 use tracing::{debug, trace, warn};
@@ -41,6 +42,7 @@ struct Shared {
     count: AtomicUsize,
     limit: usize,
     match_: Match,
+    extract: Extract,
     events_tx: mpsc::Sender<api::TapEvent>,
 }
 
@@ -59,6 +61,8 @@ pub struct Tap {
 pub struct TapResponse {
     base_event: api::TapEvent,
     request_init_at: Instant,
+    /// Should headers be extracted?
+    extract_headers: bool,
     tap: TapTx,
 }
 
@@ -75,9 +79,18 @@ pub struct TapResponsePayload {
     response_init_at: Instant,
     response_bytes: usize,
     tap: TapTx,
+    /// Should headers be extracted?
+    extract_headers: bool,
     // Response-headers may include grpc-status when there is no response body.
     grpc_status: Option<u32>,
 }
+
+
+#[derive(Debug)]
+enum Extract {
+    Http { headers: bool },
+}
+
 
 // === impl Server ===
 
@@ -126,10 +139,24 @@ where
             }
         };
 
+        let extract = match req.extract.and_then(|ex| Extract::try_from(ex).ok()) {
+            Some(ex) => ex,
+            None => {
+                // If there's no extract field, the request may have been sent
+                // by an older version of the Linkerd control plane. If this is
+                // the case, rather than failing the tap, just do the only
+                // behavior that older control planes know about --- extract
+                // HTTP data without headers.
+                let default = Extract::Http { headers: false };
+                warn!(?default, "tap request with no extract field; using default");
+                default
+            },
+        };
+
         // Wrapping is okay. This is realy just to disambiguate events within a
         // single tap session (i.e. that may consist of several tap requests).
         let base_id = self.base_id.fetch_add(1, Ordering::Relaxed) as u32;
-        debug!("tap; id={}; match={:?}", base_id, match_);
+        debug!(id = ?base_id, r#match = ?match_, ?extract, "tap;");
 
         // The events channel is used to emit tap events to the response stream.
         //
@@ -145,6 +172,7 @@ where
             count: AtomicUsize::new(0),
             limit,
             match_,
+            extract,
             events_tx,
         });
 
@@ -246,7 +274,7 @@ impl iface::Tap for Tap {
         B: Payload,
         I: Inspect,
     {
-        let (id, mut events_tx) = self.shared.upgrade().and_then(|shared| {
+        let (id, mut events_tx, extract_headers) = self.shared.upgrade().and_then(|shared| {
             if !shared.match_.matches(req, inspect) {
                 return None;
             }
@@ -256,10 +284,14 @@ impl iface::Tap for Tap {
                     base: shared.base_id,
                     stream: next_id as u64,
                 };
-                Some((id, shared.events_tx.clone()))
-            } else {
-                None
+                // Is HTTP data being extracted from the request, and should
+                // headers be included?
+                match shared.extract {
+                    Extract::Http { headers } => return Some((id, shared.events_tx.clone(), headers)),
+                    // _ => {}
+                }
             }
+            None
         })?;
 
         let request_init_at = clock::now();
@@ -268,38 +300,43 @@ impl iface::Tap for Tap {
 
         let authority = inspect.authority(req).unwrap_or_default();
 
-        let headers = if req.version() == http::Version::HTTP_2 {
-            // If the request is HTTP/2, add the pseudo-header fields to the
-            // headers.
-            let pseudos = vec![
-                http_types::headers::Header {
-                    name: ":method".to_owned(),
-                    value: req.method().as_str().as_bytes().into(),
-                },
-                http_types::headers::Header {
-                    name: ":scheme".to_owned(),
-                    value: req
-                        .uri()
-                        .scheme_str()
-                        .map(|s| s.as_bytes().into())
-                        .unwrap_or_default(),
-                },
-                http_types::headers::Header {
-                    name: ":authority".to_owned(),
-                    value: authority.as_bytes().into(),
-                },
-                http_types::headers::Header {
-                    name: ":path".to_owned(),
-                    value: req
-                        .uri()
-                        .path_and_query()
-                        .map(|p| p.as_str().as_bytes().into())
-                        .unwrap_or_default(),
-                },
-            ];
-            headers_to_pb(pseudos, req.headers())
+        let headers = if extract_headers {
+            let headers = if req.version() == http::Version::HTTP_2 {
+                // If the request is HTTP/2, add the pseudo-header fields to the
+                // headers.
+                let pseudos = vec![
+                    http_types::headers::Header {
+                        name: ":method".to_owned(),
+                        value: req.method().as_str().as_bytes().into(),
+                    },
+                    http_types::headers::Header {
+                        name: ":scheme".to_owned(),
+                        value: req
+                            .uri()
+                            .scheme_str()
+                            .map(|s| s.as_bytes().into())
+                            .unwrap_or_default(),
+                    },
+                    http_types::headers::Header {
+                        name: ":authority".to_owned(),
+                        value: authority.as_bytes().into(),
+                    },
+                    http_types::headers::Header {
+                        name: ":path".to_owned(),
+                        value: req
+                            .uri()
+                            .path_and_query()
+                            .map(|p| p.as_str().as_bytes().into())
+                            .unwrap_or_default(),
+                    },
+                ];
+                headers_to_pb(pseudos, req.headers())
+            } else {
+                headers_to_pb(iter::empty(), req.headers())
+            };
+            Some(headers)
         } else {
-            headers_to_pb(iter::empty(), req.headers())
+            None
         };
 
         let init = api::tap_event::http::RequestInit {
@@ -308,7 +345,7 @@ impl iface::Tap for Tap {
             scheme: req.uri().scheme_part().map(http_types::Scheme::from),
             authority,
             path: req.uri().path().into(),
-            headers: Some(headers),
+            headers,
         };
 
         let event = api::TapEvent {
@@ -331,6 +368,7 @@ impl iface::Tap for Tap {
             tap,
             base_event,
             request_init_at,
+            extract_headers,
         };
         Some((req, rsp))
     }
@@ -343,21 +381,27 @@ impl iface::TapResponse for TapResponse {
 
     fn tap<B: Payload>(mut self, rsp: &http::Response<B>) -> TapResponsePayload {
         let response_init_at = clock::now();
-        let headers = if rsp.version() == http::Version::HTTP_2 {
-            let pseudos = iter::once(http_types::headers::Header {
-                name: ":status".to_owned(),
-                value: rsp.status().as_str().as_bytes().into(),
-            });
-            headers_to_pb(pseudos, rsp.headers())
+
+        let headers = if self.extract_headers {
+            let headers = if rsp.version() == http::Version::HTTP_2 {
+                let pseudos = iter::once(http_types::headers::Header {
+                    name: ":status".to_owned(),
+                    value: rsp.status().as_str().as_bytes().into(),
+                });
+                headers_to_pb(pseudos, rsp.headers())
+            } else {
+                headers_to_pb(iter::empty(), rsp.headers())
+            };
+            Some(headers)
         } else {
-            headers_to_pb(iter::empty(), rsp.headers())
+            None
         };
 
         let init = api::tap_event::http::Event::ResponseInit(api::tap_event::http::ResponseInit {
             id: Some(self.tap.id.clone()),
             since_request_init: Some(pb_duration(response_init_at - self.request_init_at)),
             http_status: rsp.status().as_u16().into(),
-            headers: Some(headers),
+            headers,
         });
 
         let event = api::TapEvent {
@@ -374,6 +418,7 @@ impl iface::TapResponse for TapResponse {
             response_init_at,
             response_bytes: 0,
             tap: self.tap,
+            extract_headers: self.extract_headers,
             grpc_status: rsp
                 .headers()
                 .get("grpc-status")
@@ -446,13 +491,18 @@ impl iface::TapPayload for TapResponsePayload {
 impl TapResponsePayload {
     fn send(mut self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
         let response_end_at = clock::now();
+        let trailers = if self.extract_headers {
+            trls.map(|trls| headers_to_pb(iter::empty(), trls))
+        } else {
+            None
+        };
         let end = api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id),
             since_request_init: Some(pb_duration(response_end_at - self.request_init_at)),
             since_response_init: Some(pb_duration(response_end_at - self.response_init_at)),
             response_bytes: self.response_bytes as u64,
             eos: Some(api::Eos { end }),
-            trailers: trls.map(|trls| headers_to_pb(iter::empty(), trls)),
+            trailers,
         };
 
         let event = api::TapEvent {
@@ -462,6 +512,22 @@ impl TapResponsePayload {
             ..self.base_event
         };
         let _ = self.tap.tx.try_send(event);
+    }
+}
+
+impl TryFrom<api::observe_request::Extract> for Extract {
+    type Error = ();
+    fn try_from(req: api::observe_request::Extract) -> Result<Self, Self::Error> {
+        match req.extract {
+            Some(api::observe_request::extract::Extract::Http(inner)) => {
+                let headers = match inner.extract {
+                    Some(api::observe_request::extract::http::Extract::Headers(_)) => true,
+                    _ => false,
+                };
+                Ok(Extract::Http { headers })
+            },
+            _ => Err(())
+        }
     }
 }
 
