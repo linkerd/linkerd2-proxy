@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 use tracing::error;
 
 metrics! {
-    span_export_streams: Counter { "Total count of opened span export streams" },
-    span_export_requests: Counter { "Total count of span export request messages" },
-    span_exports: Counter { "Total count of spans exported" }
+    opencensus_span_export_streams: Counter { "Total count of opened span export streams" },
+    opencensus_span_export_requests: Counter { "Total count of span export request messages" },
+    opencensus_span_exports: Counter { "Total count of spans exported" }
 }
 
 struct Metrics {
@@ -57,14 +57,14 @@ impl FmtMetrics for Report {
             Ok(lock) => lock,
         };
 
-        span_export_streams.fmt_help(f)?;
-        span_export_streams.fmt_metric(f, metrics.streams)?;
+        opencensus_span_export_streams.fmt_help(f)?;
+        opencensus_span_export_streams.fmt_metric(f, metrics.streams)?;
 
-        span_export_requests.fmt_help(f)?;
-        span_export_requests.fmt_metric(f, metrics.requests)?;
+        opencensus_span_export_requests.fmt_help(f)?;
+        opencensus_span_export_requests.fmt_metric(f, metrics.requests)?;
 
-        span_exports.fmt_help(f)?;
-        span_exports.fmt_metric(f, metrics.spans)?;
+        opencensus_span_exports.fmt_help(f)?;
+        opencensus_span_exports.fmt_metric(f, metrics.spans)?;
 
         Ok(())
     }
