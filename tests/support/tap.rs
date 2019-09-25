@@ -69,9 +69,9 @@ pub fn observe_request() -> ObserveBuilder {
         extract: Some(pb::observe_request::Extract {
             extract: Some(pb::observe_request::extract::Extract::Http(
                 pb::observe_request::extract::Http {
-                    extract: None // no headers
-                }
-            ))
+                    extract: None, // no headers
+                },
+            )),
         }),
     })
 }

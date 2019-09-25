@@ -8,11 +8,11 @@ use bytes::Buf;
 use futures::sync::mpsc;
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
+use std::convert::TryFrom;
 use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
-use std::convert::TryFrom;
 use tokio_timer::clock;
 use tower_grpc::{self as grpc, Response};
 use tracing::{debug, trace, warn};
@@ -85,12 +85,10 @@ pub struct TapResponsePayload {
     grpc_status: Option<u32>,
 }
 
-
 #[derive(Debug)]
 enum Extract {
     Http { headers: bool },
 }
-
 
 // === impl Server ===
 
@@ -150,7 +148,7 @@ where
                 let default = Extract::Http { headers: false };
                 warn!(?default, "tap request with no extract field; using default");
                 default
-            },
+            }
         };
 
         // Wrapping is okay. This is realy just to disambiguate events within a
@@ -287,7 +285,9 @@ impl iface::Tap for Tap {
                 // Is HTTP data being extracted from the request, and should
                 // headers be included?
                 match shared.extract {
-                    Extract::Http { headers } => return Some((id, shared.events_tx.clone(), headers)),
+                    Extract::Http { headers } => {
+                        return Some((id, shared.events_tx.clone(), headers))
+                    }
                     // _ => {}
                 }
             }
@@ -525,8 +525,8 @@ impl TryFrom<api::observe_request::Extract> for Extract {
                     _ => false,
                 };
                 Ok(Extract::Http { headers })
-            },
-            _ => Err(())
+            }
+            _ => Err(()),
         }
     }
 }
