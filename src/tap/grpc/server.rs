@@ -288,7 +288,6 @@ impl iface::Tap for Tap {
                     Extract::Http { headers } => {
                         return Some((id, shared.events_tx.clone(), headers))
                     }
-                    // _ => {}
                 }
             }
             None
