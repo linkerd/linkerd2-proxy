@@ -142,19 +142,15 @@ where
             }
         };
 
-        let extract = match req.extract.and_then(|ex| ExtractKind::try_from(ex).ok()) {
-            Some(ex) => ex,
-            None => {
-                // If there's no extract field, the request may have been sent
-                // by an older version of the Linkerd control plane. If this is
-                // the case, rather than failing the tap, just do the only
-                // behavior that older control planes know about --- extract
-                // HTTP data without headers.
-                let default = ExtractKind::Http { headers: false };
-                warn!(?default, "tap request with no extract field; using default");
-                default
-            }
-        };
+        let extract = req
+            .extract
+            .and_then(|ex| ExtractKind::try_from(ex).ok())
+            // If there's no extract field, the request may have been sent
+            // by an older version of the Linkerd control plane. If this is
+            // the case, rather than failing the tap, just do the only
+            // behavior that older control planes know about --- extract
+            // HTTP data without headers.
+            .unwrap_or_default();
 
         // Wrapping is okay. This is realy just to disambiguate events within a
         // single tap session (i.e. that may consist of several tap requests).
@@ -277,26 +273,30 @@ impl iface::Tap for Tap {
         B: Payload,
         I: Inspect,
     {
-        let (id, mut events_tx, extract_headers) = self.shared.upgrade().and_then(|shared| {
-            if !shared.match_.matches(req, inspect) {
-                return None;
-            }
+        let shared = self.shared.upgrade()?;
+        if !shared.match_.matches(req, inspect) {
+            return None;
+        }
+
+        // Note: if we add other `ExtractKind`s in the future, this method
+        // should return `None` here if we're not extracting HTTP data --- it's
+        // HTTP-specific.
+        let ExtractKind::Http {
+            headers: extract_headers,
+        } = shared.extract;
+
+        let id = {
             let next_id = shared.count.fetch_add(1, Ordering::Relaxed);
             if next_id < shared.limit {
-                let id = api::tap_event::http::StreamId {
+                api::tap_event::http::StreamId {
                     base: shared.base_id,
                     stream: next_id as u64,
-                };
-                // Is HTTP data being extracted from the request, and should
-                // headers be included?
-                match shared.extract {
-                    ExtractKind::Http { headers } => {
-                        return Some((id, shared.events_tx.clone(), headers))
-                    }
                 }
+            } else {
+                return None;
             }
-            None
-        })?;
+        };
+        let mut events_tx = shared.events_tx.clone();
 
         let request_init_at = clock::now();
 
@@ -519,6 +519,8 @@ impl TapResponsePayload {
     }
 }
 
+// === impl ExtractKind ===
+
 impl TryFrom<api::observe_request::Extract> for ExtractKind {
     type Error = ();
     fn try_from(req: api::observe_request::Extract) -> Result<Self, Self::Error> {
@@ -532,6 +534,12 @@ impl TryFrom<api::observe_request::Extract> for ExtractKind {
             }
             _ => Err(()),
         }
+    }
+}
+
+impl Default for ExtractKind {
+    fn default() -> Self {
+        ExtractKind::Http { headers: false }
     }
 }
 
