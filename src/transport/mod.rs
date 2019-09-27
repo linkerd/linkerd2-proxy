@@ -4,7 +4,6 @@ use tokio::net::TcpStream;
 mod addr_info;
 pub mod connect;
 mod io;
-pub mod keepalive;
 pub mod metrics;
 mod peek;
 mod prefixed;
