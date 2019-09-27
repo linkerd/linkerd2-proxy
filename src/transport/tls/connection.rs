@@ -1,7 +1,7 @@
 use crate::identity;
 use crate::transport::io::internal::Io;
 use crate::transport::tls::{ReasonForNoIdentity, ReasonForNoPeerName};
-use crate::transport::{AddrInfo, BoxedIo, Peek, SetKeepalive};
+use crate::transport::{AddrInfo, BoxedIo, Peek};
 use crate::Conditional;
 use bytes::{Buf, BytesMut};
 use futures::try_ready;
@@ -183,16 +183,6 @@ impl AsyncWrite for Connection {
 
     fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
         self.io.write_buf(buf)
-    }
-}
-
-impl SetKeepalive for Connection {
-    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
-        self.io.keepalive()
-    }
-
-    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
-        self.io.set_keepalive(ka)
     }
 }
 

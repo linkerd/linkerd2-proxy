@@ -1,7 +1,7 @@
 //! Implement our traits {AddrInfo, SetKeepalive, Io} for tokio_rustls types.
 
 use crate::transport::io::internal::Io;
-use crate::transport::{AddrInfo, SetKeepalive};
+use crate::transport::AddrInfo;
 use bytes::Buf;
 use futures::Poll;
 use std::fmt::Debug;
@@ -25,19 +25,6 @@ where
 
     fn get_original_dst(&self) -> Option<SocketAddr> {
         self.get_ref().0.get_original_dst()
-    }
-}
-
-impl<S> SetKeepalive for tokio_rustls::server::TlsStream<S>
-where
-    S: SetKeepalive + Debug,
-{
-    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
-        self.get_ref().0.keepalive()
-    }
-
-    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
-        self.get_mut().0.set_keepalive(ka)
     }
 }
 
@@ -70,19 +57,6 @@ where
 
     fn get_original_dst(&self) -> Option<SocketAddr> {
         self.get_ref().0.get_original_dst()
-    }
-}
-
-impl<S> SetKeepalive for tokio_rustls::client::TlsStream<S>
-where
-    S: SetKeepalive + Debug,
-{
-    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
-        self.get_ref().0.keepalive()
-    }
-
-    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
-        self.get_mut().0.set_keepalive(ka)
     }
 }
 

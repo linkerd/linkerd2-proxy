@@ -1,5 +1,5 @@
 use super::io::internal::Io;
-use crate::transport::{AddrInfo, SetKeepalive};
+use crate::transport::AddrInfo;
 use bytes::{Buf, Bytes};
 use std::{cmp, fmt::Debug, io, net::SocketAddr};
 use tokio::prelude::*;
@@ -95,19 +95,6 @@ where
 
     fn get_original_dst(&self) -> Option<SocketAddr> {
         self.io.get_original_dst()
-    }
-}
-
-impl<S> SetKeepalive for Prefixed<S>
-where
-    S: SetKeepalive,
-{
-    fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
-        self.io.keepalive()
-    }
-
-    fn set_keepalive(&mut self, ka: Option<::std::time::Duration>) -> io::Result<()> {
-        self.io.set_keepalive(ka)
     }
 }
 

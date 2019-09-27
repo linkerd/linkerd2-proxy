@@ -1,6 +1,6 @@
 use crate::svc::{mk, Service};
 use futures::{try_ready, Future, Poll};
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, time::Duration};
 use tokio::net::{tcp, TcpStream};
 use tracing::debug;
 
@@ -9,15 +9,17 @@ pub trait HasPeerAddr {
 }
 
 pub fn svc<T>(
+    keepalive: Option<Duration>,
 ) -> impl Service<T, Response = TcpStream, Error = io::Error, Future = ConnectFuture> + Clone
 where
     T: HasPeerAddr,
 {
-    mk(|target: T| {
+    mk(move |target: T| {
         let addr = target.peer_addr();
         debug!("connecting to {}", addr);
         ConnectFuture {
             addr,
+            keepalive,
             future: TcpStream::connect(&addr),
         }
     })
@@ -26,6 +28,7 @@ where
 #[derive(Debug)]
 pub struct ConnectFuture {
     addr: SocketAddr,
+    keepalive: Option<Duration>,
     future: tcp::ConnectFuture,
 }
 
@@ -42,12 +45,13 @@ impl Future for ConnectFuture {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let io = try_ready!(self.future.poll().map_err(|e| {
+        let mut io = try_ready!(self.future.poll().map_err(|e| {
             let details = format!("{} (address: {})", e, self.addr);
             io::Error::new(e.kind(), details)
         }));
         debug!("connection established to {}", self.addr);
         super::set_nodelay_or_warn(&io);
+        super::set_keepalive_or_warn(&mut io, self.keepalive);
         Ok(io.into())
     }
 }
