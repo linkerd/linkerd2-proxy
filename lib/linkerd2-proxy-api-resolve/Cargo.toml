@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 futures = "0.1"
 linkerd2-identity = { path = "../linkerd2-identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "4b788dd3d82564f0600a5904367e6d37827bb930" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.10" }
 linkerd2-proxy-core = { path = "../linkerd2-proxy-core" }
 prost = "0.5.0"
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
