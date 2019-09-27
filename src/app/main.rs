@@ -8,7 +8,7 @@ use super::{handle_time, inbound, outbound, tap::serve_tap};
 use crate::opencensus::SpanExporter;
 use crate::proxy::{self, http::metrics as http_metrics};
 use crate::svc::{self, LayerExt};
-use crate::transport::{self, connect, keepalive, tls, GetOriginalDst, Listen};
+use crate::transport::{self, connect, tls, GetOriginalDst, Listen};
 use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
 use futures::{self, future, Future};
 use linkerd2_reconnect as reconnect;
@@ -70,29 +70,40 @@ where
         let local_identity = identity.as_ref().map(|(l, _)| l.clone());
 
         let control_listener = config.control_listener.as_ref().map(|cl| {
-            let listener = Listen::bind(cl.listener.addr, local_identity.clone())
-                .expect("dst_svc listener bind");
+            let listener = Listen::bind(
+                cl.listener.addr,
+                local_identity.clone(),
+                config.inbound_accept_keepalive,
+            )
+            .expect("tap listener bind");
 
             (listener, cl.tap_svc_name.clone())
         });
 
-        let admin_listener = Listen::bind(config.admin_listener.addr, local_identity.clone())
-            .expect("metrics listener bind");
+        let admin_listener = Listen::bind(
+            config.admin_listener.addr,
+            local_identity.clone(),
+            config.inbound_accept_keepalive,
+        )
+        .expect("tap listener bind");
 
         let outbound_listener = Listen::bind(
             config.outbound_listener.addr,
             Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
+            config.outbound_accept_keepalive,
         )
         .expect("outbound listener bind")
         .with_original_dst(get_original_dst.clone())
         .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection.clone());
 
-        let inbound_listener = Listen::bind(config.inbound_listener.addr, local_identity)
-            .expect("inbound listener bind")
-            .with_original_dst(get_original_dst.clone())
-            .without_protocol_detection_for(
-                config.inbound_ports_disable_protocol_detection.clone(),
-            );
+        let inbound_listener = Listen::bind(
+            config.inbound_listener.addr,
+            local_identity,
+            config.inbound_accept_keepalive,
+        )
+        .expect("inbound listener bind")
+        .with_original_dst(get_original_dst.clone())
+        .without_protocol_detection_for(config.inbound_ports_disable_protocol_detection.clone());
 
         let runtime = runtime.into();
 
@@ -265,11 +276,10 @@ where
                     config.outbound_connect_keepalive
                 };
 
-                let svc = svc::stack(connect::svc())
+                let svc = svc::stack(connect::svc(keepalive))
                     .push(tls::client::layer(Conditional::Some(
                         id_config.trust_anchors.clone(),
                     )))
-                    .push(keepalive::connect::layer(keepalive))
                     .push_timeout(config.control_connect_timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns_resolver.clone()))
@@ -318,9 +328,8 @@ where
                 config.outbound_connect_keepalive
             };
 
-            svc::stack(connect::svc())
+            svc::stack(connect::svc(keepalive))
                 .push(tls::client::layer(local_identity.clone()))
-                .push(keepalive::connect::layer(keepalive))
                 .push_timeout(config.control_connect_timeout)
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
@@ -406,9 +415,13 @@ where
         );
 
         let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| {
-            svc::stack(connect::svc())
+            let keepalive = if addr.addr.is_loopback() {
+                config.inbound_connect_keepalive
+            } else {
+                config.outbound_connect_keepalive
+            };
+            svc::stack(connect::svc(keepalive))
                 .push(tls::client::layer(local_identity.clone()))
-                .push(keepalive::connect::layer(config.outbound_connect_keepalive))
                 .push_timeout(config.control_connect_timeout)
                 // TODO: perhaps rename from "control" to "grpc"
                 .push(control::client::layer())

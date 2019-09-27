@@ -5,7 +5,7 @@ use crate::proxy::http::{
     strip_header,
 };
 use crate::proxy::{accept, Server};
-use crate::transport::{self, connect, keepalive, tls, Connection};
+use crate::transport::{self, connect, tls, Connection};
 use crate::{core::listen::ServeConnection, svc, trace_context, Addr};
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
@@ -55,9 +55,8 @@ where
 
     // Establishes connections to the local application (for both
     // TCP forwarding and HTTP proxying).
-    let connect = svc::stack(connect::svc())
+    let connect = svc::stack(connect::svc(config.inbound_connect_keepalive))
         .push(tls::client::layer(local_identity))
-        .push(keepalive::connect::layer(config.inbound_connect_keepalive))
         .push_timeout(config.inbound_connect_timeout)
         .push(transport_metrics.connect("inbound"))
         .push(rewrite_loopback_addr::layer());
@@ -212,9 +211,7 @@ where
 
     // As the inbound proxy accepts connections, we don't do any
     // special transport-level handling.
-    let accept = accept::builder()
-        .push(keepalive::accept::layer(config.inbound_accept_keepalive))
-        .push(transport_metrics.accept("inbound"));
+    let accept = accept::builder().push(transport_metrics.accept("inbound"));
 
     Server::new(
         "out",

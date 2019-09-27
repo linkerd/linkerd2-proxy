@@ -1,7 +1,9 @@
 use crate::core::listen::{ListenAndSpawn, ServeConnection};
 use crate::transport::prefixed::Prefixed;
 use crate::transport::tls::{self, conditional_accept, Acceptor, Connection, ReasonForNoPeerName};
-use crate::transport::{set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst};
+use crate::transport::{
+    set_keepalive_or_warn, set_nodelay_or_warn, AddrInfo, BoxedIo, GetOriginalDst,
+};
 use crate::{drain, identity, Conditional, Error};
 use bytes::BytesMut;
 use futures::{
@@ -13,6 +15,7 @@ pub use rustls::ServerConfig as Config;
 use std::io;
 use std::net::{SocketAddr, TcpListener as StdListener};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::{
     io::AsyncRead,
     net::{TcpListener, TcpStream},
@@ -34,6 +37,7 @@ pub fn empty_config() -> Arc<Config> {
 pub struct Listen<L, G = ()> {
     inner: Option<StdListener>,
     local_addr: SocketAddr,
+    keepalive: Option<Duration>,
     tls: tls::Conditional<L>,
     disable_protocol_detection_ports: IndexSet<u16>,
     get_original_dst: G,
@@ -56,12 +60,17 @@ struct Inner {
 // === impl Listen ===
 
 impl<L: HasConfig> Listen<L> {
-    pub fn bind(addr: SocketAddr, tls: tls::Conditional<L>) -> Result<Self, io::Error> {
+    pub fn bind(
+        addr: SocketAddr,
+        tls: tls::Conditional<L>,
+        keepalive: Option<Duration>,
+    ) -> Result<Self, io::Error> {
         let inner = StdListener::bind(addr)?;
         let local_addr = inner.local_addr()?;
         Ok(Self {
             inner: Some(inner),
             local_addr,
+            keepalive,
             tls,
             disable_protocol_detection_ports: IndexSet::new(),
             get_original_dst: (),
@@ -75,6 +84,7 @@ impl<L: HasConfig> Listen<L> {
         Listen {
             inner: self.inner,
             local_addr: self.local_addr,
+            keepalive: self.keepalive,
             tls: self.tls,
             disable_protocol_detection_ports: self.disable_protocol_detection_ports,
             get_original_dst,
@@ -180,6 +190,7 @@ impl<L: HasConfig, G> Listen<L, G> {
                     // libraries don't have the necessary API for that, so just
                     // do it here.
                     set_nodelay_or_warn(&socket);
+                    set_keepalive_or_warn(&socket, self.keepalive);
 
                     self.new_conn(socket, remote_addr).then(move |r| {
                         future::ok(match r {

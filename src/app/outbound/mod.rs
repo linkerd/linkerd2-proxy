@@ -8,7 +8,7 @@ use crate::proxy::http::{
 };
 use crate::proxy::{self, accept, Server};
 use crate::transport::Connection;
-use crate::transport::{self, connect, keepalive, tls};
+use crate::transport::{self, connect, tls};
 use crate::{svc, trace_context, Addr};
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
@@ -72,9 +72,8 @@ where
 
     // Establishes connections to remote peers (for both TCP
     // forwarding and HTTP proxying).
-    let connect = svc::stack(connect::svc())
+    let connect = svc::stack(connect::svc(config.outbound_connect_keepalive))
         .push(tls::client::layer(local_identity))
-        .push(keepalive::connect::layer(config.outbound_connect_keepalive))
         .push_timeout(config.outbound_connect_timeout)
         .push(transport_metrics.connect("outbound"));
 
@@ -285,9 +284,7 @@ where
 
     // Instantiated for each TCP connection received from the local
     // application (including HTTP connections).
-    let accept = accept::builder()
-        .push(keepalive::accept::layer(config.outbound_accept_keepalive))
-        .push(transport_metrics.accept("outbound"));
+    let accept = accept::builder().push(transport_metrics.accept("outbound"));
 
     Server::new(
         "out",
