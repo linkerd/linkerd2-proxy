@@ -45,13 +45,13 @@ impl Future for ConnectFuture {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut io = try_ready!(self.future.poll().map_err(|e| {
+        let io = try_ready!(self.future.poll().map_err(|e| {
             let details = format!("{} (address: {})", e, self.addr);
             io::Error::new(e.kind(), details)
         }));
         debug!("connection established to {}", self.addr);
         super::set_nodelay_or_warn(&io);
-        super::set_keepalive_or_warn(&mut io, self.keepalive);
+        super::set_keepalive_or_warn(&io, self.keepalive);
         Ok(io.into())
     }
 }

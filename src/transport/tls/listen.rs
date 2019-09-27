@@ -182,7 +182,7 @@ impl<L: HasConfig, G> Listen<L, G> {
             });
 
             incoming
-                .map(move |(mut socket, remote_addr)| {
+                .map(move |(socket, remote_addr)| {
                     // TODO: On Linux and most other platforms it would be better
                     // to set the `TCP_NODELAY` option on the bound socket and
                     // then have the listening sockets inherit it. However, that
@@ -190,7 +190,7 @@ impl<L: HasConfig, G> Listen<L, G> {
                     // libraries don't have the necessary API for that, so just
                     // do it here.
                     set_nodelay_or_warn(&socket);
-                    set_keepalive_or_warn(&mut socket, self.keepalive);
+                    set_keepalive_or_warn(&socket, self.keepalive);
 
                     self.new_conn(socket, remote_addr).then(move |r| {
                         future::ok(match r {

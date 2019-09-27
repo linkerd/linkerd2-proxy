@@ -153,16 +153,6 @@ mod tests {
         }
     }
 
-    impl SetKeepalive for WriteBufDetector {
-        fn keepalive(&self) -> io::Result<Option<::std::time::Duration>> {
-            unreachable!("not called in test")
-        }
-
-        fn set_keepalive(&mut self, _: Option<::std::time::Duration>) -> io::Result<()> {
-            unreachable!("not called in test")
-        }
-    }
-
     impl Io for WriteBufDetector {
         fn shutdown_write(&mut self) -> Result<(), io::Error> {
             unreachable!("not called in test")
