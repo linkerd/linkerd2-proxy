@@ -8,6 +8,8 @@ use bytes::Buf;
 use futures::sync::mpsc;
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
+use std::convert::TryFrom;
+use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
@@ -40,6 +42,7 @@ struct Shared {
     count: AtomicUsize,
     limit: usize,
     match_: Match,
+    extract: ExtractKind,
     events_tx: mpsc::Sender<api::TapEvent>,
 }
 
@@ -58,6 +61,8 @@ pub struct Tap {
 pub struct TapResponse {
     base_event: api::TapEvent,
     request_init_at: Instant,
+    /// Should headers be extracted?
+    extract_headers: bool,
     tap: TapTx,
 }
 
@@ -74,8 +79,20 @@ pub struct TapResponsePayload {
     response_init_at: Instant,
     response_bytes: usize,
     tap: TapTx,
+    /// Should headers be extracted?
+    extract_headers: bool,
     // Response-headers may include grpc-status when there is no response body.
     grpc_status: Option<u32>,
+}
+
+/// Indicates what tap data should be extracted from traffic.
+///
+/// This is constructed from the protobuf `Extract` message, and represents the
+/// same information about the tap, but has a simpler structure as it does not
+/// need to represent nullability the way the protobuf message does.
+#[derive(Debug)]
+enum ExtractKind {
+    Http { headers: bool },
 }
 
 // === impl Server ===
@@ -125,10 +142,20 @@ where
             }
         };
 
+        let extract = req
+            .extract
+            .and_then(|ex| ExtractKind::try_from(ex).ok())
+            // If there's no extract field, the request may have been sent
+            // by an older version of the Linkerd control plane. If this is
+            // the case, rather than failing the tap, just do the only
+            // behavior that older control planes know about --- extract
+            // HTTP data without headers.
+            .unwrap_or_default();
+
         // Wrapping is okay. This is realy just to disambiguate events within a
         // single tap session (i.e. that may consist of several tap requests).
         let base_id = self.base_id.fetch_add(1, Ordering::Relaxed) as u32;
-        debug!("tap; id={}; match={:?}", base_id, match_);
+        debug!(id = ?base_id, r#match = ?match_, ?extract, "tap;");
 
         // The events channel is used to emit tap events to the response stream.
         //
@@ -144,6 +171,7 @@ where
             count: AtomicUsize::new(0),
             limit,
             match_,
+            extract,
             events_tx,
         });
 
@@ -245,34 +273,85 @@ impl iface::Tap for Tap {
         B: Payload,
         I: Inspect,
     {
-        let (id, mut events_tx) = self.shared.upgrade().and_then(|shared| {
-            if !shared.match_.matches(req, inspect) {
-                return None;
-            }
+        let shared = self.shared.upgrade()?;
+        if !shared.match_.matches(req, inspect) {
+            return None;
+        }
+
+        // Note: if we add other `ExtractKind`s in the future, this method
+        // should return `None` here if we're not extracting HTTP data --- it's
+        // HTTP-specific.
+        let ExtractKind::Http {
+            headers: extract_headers,
+        } = shared.extract;
+
+        let id = {
             let next_id = shared.count.fetch_add(1, Ordering::Relaxed);
             if next_id < shared.limit {
-                let id = api::tap_event::http::StreamId {
+                api::tap_event::http::StreamId {
                     base: shared.base_id,
                     stream: next_id as u64,
-                };
-                Some((id, shared.events_tx.clone()))
+                }
             } else {
-                None
+                return None;
             }
-        })?;
+        };
+        let mut events_tx = shared.events_tx.clone();
 
         let request_init_at = clock::now();
 
         let base_event = base_event(req, inspect);
 
+        let authority = inspect.authority(req).unwrap_or_default();
+
+        let headers = if extract_headers {
+            let headers = if req.version() == http::Version::HTTP_2 {
+                // If the request is HTTP/2, add the pseudo-header fields to the
+                // headers.
+                let pseudos = vec![
+                    http_types::headers::Header {
+                        name: ":method".to_owned(),
+                        value: req.method().as_str().as_bytes().into(),
+                    },
+                    http_types::headers::Header {
+                        name: ":scheme".to_owned(),
+                        value: req
+                            .uri()
+                            .scheme_str()
+                            .map(|s| s.as_bytes().into())
+                            .unwrap_or_default(),
+                    },
+                    http_types::headers::Header {
+                        name: ":authority".to_owned(),
+                        value: authority.as_bytes().into(),
+                    },
+                    http_types::headers::Header {
+                        name: ":path".to_owned(),
+                        value: req
+                            .uri()
+                            .path_and_query()
+                            .map(|p| p.as_str().as_bytes().into())
+                            .unwrap_or_default(),
+                    },
+                ];
+                headers_to_pb(pseudos, req.headers())
+            } else {
+                headers_to_pb(iter::empty(), req.headers())
+            };
+            Some(headers)
+        } else {
+            None
+        };
+
         let init = api::tap_event::http::RequestInit {
             id: Some(id.clone()),
             method: Some(req.method().into()),
             scheme: req.uri().scheme_part().map(http_types::Scheme::from),
-            authority: inspect.authority(req).unwrap_or_default(),
+            authority,
             path: req.uri().path().into(),
+            headers,
         };
-;
+
         let event = api::TapEvent {
             event: Some(api::tap_event::Event::Http(api::tap_event::Http {
                 event: Some(api::tap_event::http::Event::RequestInit(init)),
@@ -293,6 +372,7 @@ impl iface::Tap for Tap {
             tap,
             base_event,
             request_init_at,
+            extract_headers,
         };
         Some((req, rsp))
     }
@@ -305,10 +385,27 @@ impl iface::TapResponse for TapResponse {
 
     fn tap<B: Payload>(mut self, rsp: &http::Response<B>) -> TapResponsePayload {
         let response_init_at = clock::now();
+
+        let headers = if self.extract_headers {
+            let headers = if rsp.version() == http::Version::HTTP_2 {
+                let pseudos = iter::once(http_types::headers::Header {
+                    name: ":status".to_owned(),
+                    value: rsp.status().as_str().as_bytes().into(),
+                });
+                headers_to_pb(pseudos, rsp.headers())
+            } else {
+                headers_to_pb(iter::empty(), rsp.headers())
+            };
+            Some(headers)
+        } else {
+            None
+        };
+
         let init = api::tap_event::http::Event::ResponseInit(api::tap_event::http::ResponseInit {
             id: Some(self.tap.id.clone()),
             since_request_init: Some(pb_duration(response_init_at - self.request_init_at)),
             http_status: rsp.status().as_u16().into(),
+            headers,
         });
 
         let event = api::TapEvent {
@@ -325,6 +422,7 @@ impl iface::TapResponse for TapResponse {
             response_init_at,
             response_bytes: 0,
             tap: self.tap,
+            extract_headers: self.extract_headers,
             grpc_status: rsp
                 .headers()
                 .get("grpc-status")
@@ -344,6 +442,7 @@ impl iface::TapResponse for TapResponse {
             eos: Some(api::Eos {
                 end: reason.map(|r| api::eos::End::ResetErrorCode(r.into())),
             }),
+            trailers: None,
         });
 
         let event = api::TapEvent {
@@ -382,26 +481,32 @@ impl iface::TapPayload for TapResponsePayload {
                 .and_then(|s| s.parse::<u32>().ok()),
         };
 
-        self.send(status.map(api::eos::End::GrpcStatusCode));
+        self.send(status.map(api::eos::End::GrpcStatusCode), trls);
     }
 
     fn fail<E: HasH2Reason>(self, e: &E) {
         let end = e
             .h2_reason()
             .map(|r| api::eos::End::ResetErrorCode(r.into()));
-        self.send(end);
+        self.send(end, None);
     }
 }
 
 impl TapResponsePayload {
-    fn send(mut self, end: Option<api::eos::End>) {
+    fn send(mut self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
         let response_end_at = clock::now();
+        let trailers = if self.extract_headers {
+            trls.map(|trls| headers_to_pb(iter::empty(), trls))
+        } else {
+            None
+        };
         let end = api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id),
             since_request_init: Some(pb_duration(response_end_at - self.request_init_at)),
             since_response_init: Some(pb_duration(response_end_at - self.response_init_at)),
             response_bytes: self.response_bytes as u64,
             eos: Some(api::Eos { end }),
+            trailers,
         };
 
         let event = api::TapEvent {
@@ -411,6 +516,30 @@ impl TapResponsePayload {
             ..self.base_event
         };
         let _ = self.tap.tx.try_send(event);
+    }
+}
+
+// === impl ExtractKind ===
+
+impl TryFrom<api::observe_request::Extract> for ExtractKind {
+    type Error = ();
+    fn try_from(req: api::observe_request::Extract) -> Result<Self, Self::Error> {
+        match req.extract {
+            Some(api::observe_request::extract::Extract::Http(inner)) => {
+                let headers = match inner.extract {
+                    Some(api::observe_request::extract::http::Extract::Headers(_)) => true,
+                    _ => false,
+                };
+                Ok(ExtractKind::Http { headers })
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+impl Default for ExtractKind {
+    fn default() -> Self {
+        ExtractKind::Http { headers: false }
     }
 }
 
@@ -457,5 +586,24 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
             m
         }),
         event: None,
+    }
+}
+
+fn headers_to_pb(
+    pseudos: impl IntoIterator<Item = http_types::headers::Header>,
+    headers: &http::HeaderMap,
+) -> http_types::Headers {
+    http_types::Headers {
+        headers: pseudos
+            .into_iter()
+            .chain(
+                headers
+                    .iter()
+                    .map(|(name, value)| http_types::headers::Header {
+                        name: name.as_str().to_owned(),
+                        value: value.as_bytes().into(),
+                    }),
+            )
+            .collect(),
     }
 }

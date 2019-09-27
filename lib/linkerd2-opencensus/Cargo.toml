@@ -11,5 +11,5 @@ linkerd2-error = { path = "../linkerd2-error" }
 linkerd2-metrics = { path = "../linkerd2-metrics" }
 opencensus-proto = { path = "../opencensus-proto" }
 tokio = "0.1"
-tower-grpc = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
+tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 tracing = "0.1"

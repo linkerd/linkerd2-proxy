@@ -8,10 +8,10 @@ publish = false
 [dependencies]
 futures = "0.1"
 linkerd2-identity = { path = "../linkerd2-identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "ddbc3a4f7f8b0058801f896d27974d19ee98094c" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.10" }
 linkerd2-proxy-core = { path = "../linkerd2-proxy-core" }
 prost = "0.5.0"
-tower-grpc = { git = "https://github.com/tower-rs/tower-grpc", default-features = false, features = ["protobuf"] }
+tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 indexmap = "1.0"
 tokio-sync = "0.1"
 tower = "0.1"
