@@ -178,9 +178,8 @@ where
             span.end = SystemTime::now();
             response_labels(&mut span.labels, &inner);
             trace!(message = "emitting span", ?span);
-            match sink.try_send(span) {
-                Ok(()) => {}
-                Err(e) => warn!(message = "span dropped", error = %e),
+            if let Err(error) = sink.try_send(span) {
+                warn!(message = "span dropped", %error);
             }
         }
         Ok(Async::Ready(inner))
