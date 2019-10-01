@@ -2,7 +2,6 @@ use crate::trace_context;
 use linkerd2_error::Error;
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
-use std::{error, fmt};
 use tokio::sync::mpsc;
 
 const SPAN_KIND_SERVER: i32 = 1;
@@ -18,25 +17,6 @@ pub struct SpanConverter {
     kind: i32,
     sink: mpsc::Sender<oc::Span>,
     labels: HashMap<String, String>,
-}
-
-#[derive(Debug)]
-pub struct IdLengthError {
-    id: Vec<u8>,
-    expected_size: usize,
-    actual_size: usize,
-}
-
-impl error::Error for IdLengthError {}
-
-impl fmt::Display for IdLengthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Id '{:?}' should have {} bytes but it has {}",
-            self.id, self.expected_size, self.actual_size
-        )
-    }
 }
 
 impl SpanConverter {
@@ -56,7 +36,7 @@ impl SpanConverter {
         }
     }
 
-    fn mk_span(&self, mut span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
+    fn mk_span(&self, mut span: trace_context::Span) -> oc::Span {
         let mut attributes = HashMap::<String, oc::AttributeValue>::new();
         for (k, v) in self.labels.iter() {
             attributes.insert(
@@ -76,11 +56,11 @@ impl SpanConverter {
                 },
             );
         }
-        Ok(oc::Span {
-            trace_id: into_bytes(span.trace_id, 16)?,
-            span_id: into_bytes(span.span_id, 8)?,
+        oc::Span {
+            trace_id: span.trace_id.into(),
+            span_id: span.span_id.into(),
             tracestate: None,
-            parent_span_id: into_bytes(span.parent_id, 8)?,
+            parent_span_id: span.parent_id.into(),
             name: Some(truncatable(span.span_name)),
             kind: self.kind,
             start_time: Some(span.start.into()),
@@ -96,28 +76,14 @@ impl SpanConverter {
             resource: None,
             same_process_as_parent_span: Some(self.kind == SPAN_KIND_CLIENT),
             child_span_count: None,
-        })
+        }
     }
 }
 
 impl trace_context::SpanSink for SpanConverter {
     fn try_send(&mut self, span: trace_context::Span) -> Result<(), Error> {
-        let span = self.mk_span(span)?;
+        let span = self.mk_span(span);
         self.sink.try_send(span).map_err(Into::into)
-    }
-}
-
-fn into_bytes(id: trace_context::Id, size: usize) -> Result<Vec<u8>, IdLengthError> {
-    let bytes: Vec<u8> = id.into();
-    if bytes.len() == size {
-        Ok(bytes)
-    } else {
-        let actual_size = bytes.len();
-        Err(IdLengthError {
-            id: bytes,
-            expected_size: size,
-            actual_size,
-        })
     }
 }
 
