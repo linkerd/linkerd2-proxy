@@ -1,9 +1,9 @@
 The Linkerd2 Proxy maintainers are:
 
 * Oliver Gould <ver@buoyant.io> @olix0r (super-maintainer)
-* Brian Smith <brian@buoyant.io> @briansmith (super-maintainer)
 * Eliza Weisman <eliza@buoyant.io> @hawkw
 * Sean McArthur <sean@buoaynt.io> @seanmonstar
+* Alex Leong <alex@buoyant.io> @adleong
 
 <!--
 # Adding a new maintainer
