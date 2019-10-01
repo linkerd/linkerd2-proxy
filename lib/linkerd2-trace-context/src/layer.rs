@@ -180,7 +180,7 @@ where
             trace!(message = "emitting span", ?span);
             match sink.try_send(span) {
                 Ok(()) => {}
-                Err(e) => warn!(message = "span dropped", %e),
+                Err(e) => warn!(message = "span dropped", error = %e),
             }
         }
         Ok(Async::Ready(inner))
