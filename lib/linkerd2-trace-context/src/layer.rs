@@ -178,8 +178,8 @@ where
             span.end = SystemTime::now();
             response_labels(&mut span.labels, &inner);
             trace!(message = "emitting span", ?span);
-            if sink.try_send(span).is_err() {
-                warn!("span dropped due to backpressure");
+            if let Err(error) = sink.try_send(span) {
+                warn!(message = "span dropped", %error);
             }
         }
         Ok(Async::Ready(inner))

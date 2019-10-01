@@ -179,8 +179,8 @@ fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &TraceCont
 }
 
 fn unpack_http_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
-    let parent_id = parse_header_id(request, HTTP_SPAN_ID_HEADER)?;
-    let trace_id = parse_header_id(request, HTTP_TRACE_ID_HEADER)?;
+    let parent_id = parse_header_id(request, HTTP_SPAN_ID_HEADER, 8)?;
+    let trace_id = parse_header_id(request, HTTP_TRACE_ID_HEADER, 16)?;
     let flags = match get_header_str(request, HTTP_SAMPLED_HEADER) {
         Some("1") => Flags(1),
         _ => Flags(0),
@@ -215,10 +215,20 @@ fn get_header_str<'a, B>(request: &'a http::Request<B>, header: &str) -> Option<
         .ok()
 }
 
-fn parse_header_id<B>(request: &http::Request<B>, header: &str) -> Option<Id> {
+fn parse_header_id<B>(request: &http::Request<B>, header: &str, pad_to: usize) -> Option<Id> {
     let header_value = get_header_str(request, header)?;
     hex::decode(header_value)
-        .map(|data| Id(data))
+        .map(|mut data| {
+            if data.len() < pad_to {
+                let padding = pad_to - data.len();
+                let mut padded = Vec::with_capacity(padding);
+                padded.resize(padding, 0u8);
+                padded.append(&mut data);
+                Id(padded)
+            } else {
+                Id(data)
+            }
+        })
         .map_err(|e| warn!("Header {} does not contain a hex value: {}", header, e))
         .ok()
 }
