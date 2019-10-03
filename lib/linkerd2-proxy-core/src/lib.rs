@@ -1,7 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 
-pub use linkerd2_drain as drain;
-
 pub mod listen;
 pub mod resolve;
 

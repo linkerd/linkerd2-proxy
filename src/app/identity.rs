@@ -122,17 +122,17 @@ impl tls::client::HasConfig for Local {
     }
 }
 
-impl tls::listen::HasConfig for Local {
+impl tls::accept::HasConfig for Local {
     fn tls_server_name(&self) -> Name {
         self.name.clone()
     }
 
-    fn tls_server_config(&self) -> Arc<tls::listen::Config> {
+    fn tls_server_config(&self) -> Arc<tls::accept::Config> {
         if let Some(ref c) = *self.crt_key.get_ref() {
             return c.tls_server_config();
         }
 
-        tls::listen::empty_config()
+        tls::accept::empty_config()
     }
 }
 

@@ -1,9 +1,10 @@
 use crate::svc::{self, ServiceExt};
+use crate::Error;
 use bytes::{Buf, BufMut};
 use futures::{try_ready, Async, Future, Poll};
 use std::{fmt, io};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, info, trace};
+use tracing::trace;
 
 /// Attempt to proxy the `server_io` stream to a `T`-typed target.
 ///
@@ -13,21 +14,19 @@ pub(super) fn forward<I, C, T>(
     server_io: I,
     connect: C,
     target: T,
-) -> impl Future<Item = (), Error = ()> + Send + 'static
+) -> impl Future<Item = (), Error = Error> + Send + 'static
 where
     T: Send + 'static,
     I: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
     C: svc::Service<T> + Send + 'static,
-    C::Error: fmt::Debug,
+    C::Error: Into<Error>,
     C::Future: Send + 'static,
     C::Response: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
 {
     connect
         .oneshot(target)
-        .map_err(|e| info!("forward connect failure: {:?}", e))
-        .and_then(move |io| {
-            Duplex::new(server_io, io).map_err(|e| debug!("forward duplex complete: {}", e))
-        })
+        .map_err(Into::into)
+        .and_then(move |io| Duplex::new(server_io, io).map_err(Into::into))
 }
 
 /// A future piping data bi-directionally to In and Out.

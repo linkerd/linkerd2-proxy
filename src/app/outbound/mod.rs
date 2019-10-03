@@ -1,15 +1,14 @@
 use super::spans::SpanConverter;
 use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
-use crate::core::listen::ServeConnection;
+use crate::core::listen::Accept;
 use crate::core::resolve::Resolve;
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, Server};
-use crate::transport::Connection;
+use crate::proxy::{self, wrap_server_transport, Server};
 use crate::transport::{self, connect, tls};
-use crate::{svc, trace_context, Addr};
+use crate::{drain, svc, trace_context, Addr};
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
@@ -50,7 +49,8 @@ pub fn server<R, P>(
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
-) -> impl ServeConnection<Connection>
+    drain: drain::Watch,
+) -> impl Accept<tls::Connection, Future = impl Send + 'static> + Clone
 where
     R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
     R::Future: Send,
@@ -284,14 +284,16 @@ where
 
     // Instantiated for each TCP connection received from the local
     // application (including HTTP connections).
-    let accept = accept::builder().push(transport_metrics.accept("outbound"));
+    let wrap_server_transport =
+        wrap_server_transport::builder().push(transport_metrics.wrap_server_transport("outbound"));
 
     Server::new(
         "out",
         local_addr,
-        accept,
+        wrap_server_transport,
         connect,
         server_stack,
         config.h2_settings,
+        drain,
     )
 }

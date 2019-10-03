@@ -13,9 +13,8 @@ mod main;
 mod metric_labels;
 mod outbound;
 mod profiles;
-mod proxy;
+mod serve;
 mod spans;
-mod tap;
 
 pub use self::main::Main;
 use crate::addr::{self, Addr};

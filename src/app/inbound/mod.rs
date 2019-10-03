@@ -4,9 +4,9 @@ use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{accept, Server};
-use crate::transport::{self, connect, tls, Connection};
-use crate::{core::listen::ServeConnection, svc, trace_context, Addr};
+use crate::proxy::{wrap_server_transport, Server};
+use crate::transport::{self, connect, tls};
+use crate::{core::listen::Accept, drain, svc, trace_context, Addr};
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
@@ -36,7 +36,8 @@ pub fn server<P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
-) -> impl ServeConnection<Connection>
+    drain: drain::Watch,
+) -> impl Accept<tls::Connection, Future = impl Send + 'static> + Clone
 where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
@@ -187,7 +188,7 @@ where
     let trace_context_layer = trace_context::layer(
         span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels)),
     );
-    // As HTTP requests are accepted, the `Source` connection
+    // As HTTP requests are wrap_server_transported, the `Source` connection
     // metadata is stored on each request's extensions.
     //
     // Furthermore, HTTP/2 requests may be downgraded to HTTP/1.1 per
@@ -209,16 +210,18 @@ where
         .push(trace_context_layer)
         .push(handle_time.layer());
 
-    // As the inbound proxy accepts connections, we don't do any
+    // As the inbound proxy wrap_server_transports connections, we don't do any
     // special transport-level handling.
-    let accept = accept::builder().push(transport_metrics.accept("inbound"));
+    let wrap_server_transport =
+        wrap_server_transport::builder().push(transport_metrics.wrap_server_transport("inbound"));
 
     Server::new(
         "out",
         local_addr,
-        accept,
+        wrap_server_transport,
         connect,
         source_stack,
         config.h2_settings,
+        drain,
     )
 }

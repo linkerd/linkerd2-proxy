@@ -6,7 +6,7 @@ use futures::{
 };
 use http::{Method, StatusCode};
 use hyper::{service::Service, Body, Request, Response};
-use std::{io, net::SocketAddr, str};
+use std::{io, str};
 use tracing::{error, trace, warn};
 
 impl Service for TraceLevel {
@@ -18,7 +18,7 @@ impl Service for TraceLevel {
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         // `/proxy-log-level` endpoint can only be called from loopback IPs
         if let Some(addr) = req.extensions().get::<ClientAddr>() {
-            let addr: SocketAddr = addr.into();
+            let addr = addr.addr();
             if !addr.ip().is_loopback() {
                 warn!(message = "denying request from non-loopback IP", %addr);
                 return Box::new(future::ok(rsp(

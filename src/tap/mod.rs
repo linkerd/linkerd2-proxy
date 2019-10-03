@@ -6,9 +6,12 @@ use indexmap::IndexMap;
 use std::net;
 use std::sync::Arc;
 
+mod accept;
 mod daemon;
 mod grpc;
 mod service;
+
+pub use self::accept::AcceptPermittedClients;
 
 /// Instruments service stacks so that requests may be tapped.
 pub type Layer = service::Layer<daemon::Register<grpc::Tap>>;

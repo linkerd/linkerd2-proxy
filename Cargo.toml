@@ -43,6 +43,7 @@ hyper-balance = { path = "lib/hyper-balance" }
 linkerd2-addr        = { path = "lib/linkerd2-addr" }
 linkerd2-conditional = { path = "lib/linkerd2-conditional" }
 linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
+linkerd2-drain       = { path = "lib/linkerd2-drain" }
 linkerd2-error       = { path = "lib/linkerd2-error" }
 linkerd2-fallback    = { path = "lib/linkerd2-fallback" }
 linkerd2-identity    = { path = "lib/linkerd2-identity" }
