@@ -52,7 +52,7 @@ struct ProxyParts<G> {
 
 impl<G> Main<G>
 where
-    G: GetOriginalDst + Copy + Send + 'static,
+    G: GetOriginalDst + Clone + Send + 'static,
 {
     pub fn new<R>(
         config: Config,
@@ -153,7 +153,7 @@ where
 
 impl<G> ProxyParts<G>
 where
-    G: GetOriginalDst + Copy + Send + 'static,
+    G: GetOriginalDst + Clone + Send + 'static,
 {
     /// This is run inside a `futures::lazy`, so the default Executor is
     /// setup for use in here.
@@ -345,6 +345,7 @@ where
             let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
             let local_identity = local_identity.clone();
             let drain_rx = drain_rx.clone();
+            let get_original_dst = get_original_dst.clone();
             thread::Builder::new()
                 .name("admin".into())
                 .spawn(move || {
@@ -354,7 +355,7 @@ where
                     serve::spawn(
                         admin_listener,
                         tls::AcceptTLS::new(
-                            get_original_dst,
+                            get_original_dst.clone(),
                             local_identity.clone(),
                             Admin::new(report, readiness, trace_level).into_accept(),
                         ),
@@ -366,7 +367,7 @@ where
                         serve::spawn(
                             listener,
                             tls::AcceptTLS::new(
-                                get_original_dst,
+                                get_original_dst.clone(),
                                 local_identity,
                                 tap::AcceptPermittedClients::new(
                                     std::iter::once(tap_svc_name),
@@ -467,7 +468,7 @@ where
         });
 
         let outbound_server = tls::AcceptTLS::new(
-            get_original_dst,
+            get_original_dst.clone(),
             tls::Conditional::<identity::Local>::None(tls::ReasonForNoPeerName::Loopback.into()),
             outbound::server(
                 &config,
