@@ -193,11 +193,6 @@ where
             config.outbound_ports_disable_protocol_detection,
         );
 
-        let identity: Conditional<
-            (identity::Local, identity::CrtKeySender),
-            tls::ReasonForNoIdentity,
-        > = config.identity_config.as_ref().map(identity::Local::new);
-
         let (dns_resolver, dns_bg) = dns::Resolver::from_system_config_with(&config)
             .unwrap_or_else(|e| {
                 // FIXME: DNS configuration should be infallible.
@@ -242,16 +237,13 @@ where
 
         let mut identity_daemon = None;
         let (readiness, ready_latch) = Readiness::new();
-        let local_identity = match identity {
+        let local_identity = match config.identity_config.clone() {
             Conditional::None(r) => {
                 ready_latch.release();
                 Conditional::None(r)
             }
-            Conditional::Some((local_identity, crt_store)) => {
-                let id_config = match config.identity_config.as_ref() {
-                    Conditional::Some(c) => c.clone(),
-                    Conditional::None(_) => unreachable!(),
-                };
+            Conditional::Some(id_config) => {
+                let (local_identity, crt_store) = identity::Local::new(&id_config);
 
                 // If the service is on localhost, use the inbound keepalive.
                 // If the service. is remote, use the outbound keepalive.
