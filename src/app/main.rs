@@ -349,49 +349,54 @@ where
             thread::Builder::new()
                 .name("admin".into())
                 .spawn(move || {
-                    let mut rt =
-                        current_thread::Runtime::new().expect("initialize admin thread runtime");
-
-                    serve::spawn(
-                        admin_listener,
-                        tls::AcceptTLS::new(
-                            get_original_dst.clone(),
-                            local_identity.clone(),
-                            Admin::new(report, readiness, trace_level).into_accept(),
-                        ),
-                        drain_rx.clone(),
-                    );
-
-                    if let Some((listener, tap_svc_name)) = control_listener {
-                        rt.spawn(tap_daemon.map_err(|_| ()));
-                        serve::spawn(
-                            listener,
-                            tls::AcceptTLS::new(
-                                get_original_dst.clone(),
-                                local_identity,
-                                tap::AcceptPermittedClients::new(
-                                    std::iter::once(tap_svc_name),
-                                    tap_grpc,
+                    current_thread::Runtime::new()
+                        .expect("initialize admin thread runtime")
+                        .block_on(future::lazy(move || {
+                            trace!("spawning admin server");
+                            serve::spawn(
+                                admin_listener,
+                                tls::AcceptTLS::new(
+                                    get_original_dst.clone(),
+                                    local_identity.clone(),
+                                    Admin::new(report, readiness, trace_level).into_accept(),
                                 ),
-                            ),
-                            drain_rx.clone(),
-                        );
-                    } else {
-                        drop((tap_daemon, tap_grpc));
-                    }
+                                drain_rx.clone(),
+                            );
 
-                    rt.spawn(logging::admin().bg("dns-resolver").future(dns_bg));
+                            if let Some((listener, tap_svc_name)) = control_listener {
+                                trace!("spawning tap server");
+                                task::spawn(tap_daemon.map_err(|_| ()));
+                                serve::spawn(
+                                    listener,
+                                    tls::AcceptTLS::new(
+                                        get_original_dst.clone(),
+                                        local_identity,
+                                        tap::AcceptPermittedClients::new(
+                                            std::iter::once(tap_svc_name),
+                                            tap_grpc,
+                                        ),
+                                    ),
+                                    drain_rx.clone(),
+                                );
+                            } else {
+                                drop((tap_daemon, tap_grpc));
+                            }
 
-                    if let Some(d) = identity_daemon {
-                        rt.spawn(
-                            logging::admin()
-                                .bg("identity")
-                                .future(d.map_err(|_| error!("identity task failed"))),
-                        );
-                    }
+                            trace!("spawning dns resolver");
+                            task::spawn(logging::admin().bg("dns-resolver").future(dns_bg));
 
-                    let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
-                    rt.block_on(shutdown).expect("admin");
+                            if let Some(d) = identity_daemon {
+                                task::spawn(
+                                    logging::admin()
+                                        .bg("identity")
+                                        .future(d.map_err(|_| error!("identity task failed"))),
+                                );
+                            }
+
+                            admin_shutdown_signal.map(|_| ()).map_err(|_| ())
+                        }))
+                        .expect("admin");
+
                     trace!("admin shutdown finished");
                 })
                 .expect("initialize dst_svc api thread");

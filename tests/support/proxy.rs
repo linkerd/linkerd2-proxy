@@ -299,7 +299,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
                     let _ = tx.send(addrs);
                 }
 
-                rx.poll()
+                try_ready!(rx.poll());
+                Ok(().into())
             });
 
             main.run_until(on_shutdown);
@@ -311,22 +312,22 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
 
     // printlns will show if the test fails...
     println!(
-        "proxy running; destination={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
+        "proxy running; control={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
         control_addr
             .as_ref()
             .map(SocketAddr::to_string)
-            .unwrap_or_else(String::new),
+            .unwrap_or_default(),
         identity_addr,
         inbound_addr,
         inbound
             .as_ref()
             .map(|i| format!(" (SO_ORIGINAL_DST={})", i))
-            .unwrap_or_else(String::new),
+            .unwrap_or_default(),
         outbound_addr,
         outbound
             .as_ref()
             .map(|o| format!(" (SO_ORIGINAL_DST={})", o))
-            .unwrap_or_else(String::new),
+            .unwrap_or_default(),
         metrics_addr,
     );
 

@@ -43,6 +43,7 @@ impl crate::core::listen::Listen for Listen {
                     // `Handle::current()` creating a new thread for the global
                     // background reactor if `polled before the runtime is
                     // initialized.
+                    tracing::trace!("listening on {}", self.local_addr);
                     let listener = tokio::net::TcpListener::from_std(
                         std.take().expect("illegal state"),
                         &reactor::Handle::current(),
@@ -50,6 +51,7 @@ impl crate::core::listen::Listen for Listen {
                     State::Bound(listener)
                 }
                 State::Bound(ref mut listener) => {
+                    tracing::trace!("accepting on {}", self.local_addr);
                     let (mut tcp, remote_addr) = try_ready!(listener.poll_accept());
                     // TODO: On Linux and most other platforms it would be better
                     // to set the `TCP_NODELAY` option on the bound socket and

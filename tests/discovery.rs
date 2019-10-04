@@ -495,8 +495,11 @@ macro_rules! generate_tests {
                 let bar_client = $make_client(addr, BAR);
                 // ensure profiles are loaded
                 loop {
+                    println!("get foo");
                     assert_eq!(foo_client.get("/load-profile"), "");
+                    println!("get bar");
                     assert_eq!(bar_client.get("/load-profile"), "");
+                    println!("get metrics");
                     let m = metrics.get("/metrics");
                     let has_foo = m.contains("rt_load_profile=\"foo\"");
                     let has_bar = m.contains("rt_load_profile=\"bar\"");
@@ -544,6 +547,7 @@ macro_rules! generate_tests {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy().run();
 
+                println!("make client: {}", FOO);
                 let client = $make_client(proxy.outbound, FOO);
                 let metrics = client::http1(proxy.metrics, "localhost");
                 load_both_profiles(proxy.outbound, &metrics);
