@@ -353,7 +353,8 @@ where
                         .expect("initialize admin thread runtime")
                         .block_on(future::lazy(move || {
                             trace!("spawning admin server");
-                            serve::spawn(
+                            task::spawn(serve::serve(
+                                "admin",
                                 admin_listener,
                                 tls::AcceptTLS::new(
                                     get_original_dst.clone(),
@@ -361,12 +362,13 @@ where
                                     Admin::new(report, readiness, trace_level).into_accept(),
                                 ),
                                 drain_rx.clone(),
-                            );
+                            ));
 
                             if let Some((listener, tap_svc_name)) = control_listener {
                                 trace!("spawning tap server");
                                 task::spawn(tap_daemon.map_err(|_| ()));
-                                serve::spawn(
+                                task::spawn(serve::serve(
+                                    "tap",
                                     listener,
                                     tls::AcceptTLS::new(
                                         get_original_dst.clone(),
@@ -377,7 +379,7 @@ where
                                         ),
                                     ),
                                     drain_rx.clone(),
-                                );
+                                ));
                             } else {
                                 drop((tap_daemon, tap_grpc));
                             }
@@ -515,8 +517,17 @@ where
             ),
         );
 
-        super::serve::spawn(outbound_listener, outbound_server, drain_rx.clone());
-
-        super::serve::spawn(inbound_listener, inbound_server, drain_rx);
+        task::spawn(serve::serve(
+            "outbound",
+            outbound_listener,
+            outbound_server,
+            drain_rx.clone(),
+        ));
+        task::spawn(serve::serve(
+            "inbound",
+            inbound_listener,
+            inbound_server,
+            drain_rx,
+        ));
     }
 }

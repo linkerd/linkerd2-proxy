@@ -58,6 +58,8 @@ pub struct AcceptMeta<A: Accept<Connection>> {
 // === impl Listen ===
 
 impl<A: Accept<Connection>, T: HasConfig, G: GetOriginalDst> AcceptTLS<A, T, G> {
+    const PEEK_CAPACITY: usize = 8192;
+
     pub fn new(get_original_dst: G, tls: tls::Conditional<T>, accept: A) -> Self {
         Self {
             accept,
@@ -135,7 +137,7 @@ where
                         orig_dst_addr,
                     },
                     socket,
-                    peek_buf: BytesMut::new(),
+                    peek_buf: BytesMut::with_capacity(Self::PEEK_CAPACITY),
                     config: tls.tls_server_config(),
                     server_name: tls.tls_server_name(),
                 }))
@@ -236,6 +238,7 @@ impl<A: Accept<Connection>> TryTLS<A> {
             .socket
             .read_buf(&mut self.peek_buf)
             .map_err(Error::from));
+        trace!(%sz, "read");
         if sz == 0 {
             // XXX: It is ambiguous whether this is the start of a TLS handshake or not.
             // For now, resolve the ambiguity in favor of plaintext. TODO: revisit this
@@ -243,7 +246,9 @@ impl<A: Accept<Connection>> TryTLS<A> {
             return Ok(conditional_accept::Match::NotMatched.into());
         }
 
-        let m = conditional_accept::match_client_hello(self.peek_buf.as_ref(), &self.server_name);
+        let buf = self.peek_buf.as_ref();
+        let m = conditional_accept::match_client_hello(buf, &self.server_name);
+        trace!(sni = %self.server_name, r#match = ?m, "conditional_accept");
         Ok(m.into())
     }
 }

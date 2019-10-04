@@ -1,14 +1,22 @@
 use crate::core::listen::{Accept, Listen};
-use crate::{drain, Error};
+use crate::{drain, task, Error};
 use futures::{try_ready, Future, Poll};
-use tracing::{debug, trace};
+use std::net::SocketAddr;
+use tokio::net::TcpStream;
+use tracing::{debug, info_span};
+use tracing_futures::Instrument;
 
 /// Spawns a task that binds an `S`-typed server with an `L`-typed listener until
 /// a drain is signaled.
-pub fn serve<L, A>(listen: L, accept: A, drain: drain::Watch) -> impl Future<Item = (), Error = ()>
+pub fn serve<L, A>(
+    server: &'static str,
+    listen: L,
+    accept: A,
+    drain: drain::Watch,
+) -> impl Future<Item = (), Error = ()>
 where
-    L: Listen + Send + 'static,
-    A: Accept<L::Connection> + Send + 'static,
+    L: Listen<Connection = (TcpStream, SocketAddr)> + Send + 'static,
+    A: Accept<(TcpStream, SocketAddr)> + Send + 'static,
     A::Future: Send + 'static,
 {
     // As soon as we get a shutdown signal, the listener task completes and
@@ -18,20 +26,17 @@ where
             s.cancel()
         })
         .map_err(|e| panic!("Server failed: {}", e))
-}
-
-pub fn spawn<L, A>(listen: L, accept: A, drain: drain::Watch)
-where
-    L: Listen + Send + 'static,
-    A: Accept<L::Connection> + Send + 'static,
-    A::Future: Send + 'static,
-{
-    linkerd2_task::spawn(serve(listen, accept, drain));
+        .instrument(info_span!("serve", %server))
 }
 
 struct ServeAndSpawnUntilCancel<L, A>(Option<(L, A)>);
 
-impl<L: Listen, A: Accept<L::Connection>> ServeAndSpawnUntilCancel<L, A> {
+impl<L, A> ServeAndSpawnUntilCancel<L, A>
+where
+    L: Listen<Connection = (TcpStream, SocketAddr)>,
+    A: Accept<(TcpStream, SocketAddr)> + Send + 'static,
+    A::Future: Send + 'static,
+{
     fn new(listen: L, accept: A) -> Self {
         ServeAndSpawnUntilCancel(Some((listen, accept)))
     }
@@ -43,8 +48,8 @@ impl<L: Listen, A: Accept<L::Connection>> ServeAndSpawnUntilCancel<L, A> {
 
 impl<L, A> Future for ServeAndSpawnUntilCancel<L, A>
 where
-    L: Listen,
-    A: Accept<L::Connection>,
+    L: Listen<Connection = (TcpStream, SocketAddr)>,
+    A: Accept<(TcpStream, SocketAddr)> + Send + 'static,
     A::Future: Send + 'static,
 {
     type Item = ();
@@ -59,15 +64,17 @@ where
             Some((ref mut listen, ref mut accept)) => loop {
                 // Note: the acceptor may exert backpressure, e.g. to enforce
                 // concurrency constraints.
-                trace!("ensuring server is ready to accept connections..");
                 try_ready!(accept.poll_ready().map_err(Into::into));
-                trace!("polling for a new connection...");
-                let conn = try_ready!(listen.poll_accept().map_err(Into::into));
-                trace!("spawning connection task");
-                linkerd2_task::spawn(accept.accept(conn).map_err(|e| {
-                    let error: Error = e.into();
-                    debug!(%error, "Accept failed");
-                }));
+                let (conn, peer) = try_ready!(listen.poll_accept().map_err(Into::into));
+                task::spawn(
+                    accept
+                        .accept((conn, peer))
+                        .map_err(|e| {
+                            let error: Error = e.into();
+                            debug!(%error, "connection failed");
+                        })
+                        .instrument(info_span!("accept", %peer)),
+                );
             },
         }
     }

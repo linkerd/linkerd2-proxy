@@ -188,7 +188,7 @@ where
     let trace_context_layer = trace_context::layer(
         span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels)),
     );
-    // As HTTP requests are wrap_server_transported, the `Source` connection
+    // As HTTP requests are accepted, the `Source` connection
     // metadata is stored on each request's extensions.
     //
     // Furthermore, HTTP/2 requests may be downgraded to HTTP/1.1 per
@@ -210,7 +210,7 @@ where
         .push(trace_context_layer)
         .push(handle_time.layer());
 
-    // As the inbound proxy wrap_server_transports connections, we don't do any
+    // As the inbound proxy accepts connections, we don't do any
     // special transport-level handling.
     let wrap_server_transport =
         wrap_server_transport::builder().push(transport_metrics.wrap_server_transport("inbound"));
