@@ -26,12 +26,12 @@ pub enum AcceptError {
 }
 
 impl AcceptPermittedClients {
-    pub fn new<I: Iterator<Item = identity::Name>>(
-        permitted_ids: I,
+    pub fn new(
+        permitted_ids: impl IntoIterator<Item = identity::Name>,
         server: super::Server,
     ) -> Self {
         Self {
-            permitted_client_ids: permitted_ids.collect(),
+            permitted_client_ids: permitted_ids.into_iter().collect(),
             server: TapServer::new(server),
         }
     }
@@ -39,8 +39,8 @@ impl AcceptPermittedClients {
     fn serve(&mut self, conn: tls::Connection) -> ServeFuture {
         let svc =
             res_body_as_payload::Service::new(req_box_body::Service::new(self.server.clone()));
+        // TODO do we need to set a contextual tracing executor on Hyper?
         let fut = hyper::server::conn::Http::new()
-            //.with_executor(log2.executor())
             .http2_only(true)
             .serve_connection(conn, HyperServerSvc::new(svc))
             .map_err(Into::into);

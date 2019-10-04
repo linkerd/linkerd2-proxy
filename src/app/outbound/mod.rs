@@ -33,11 +33,11 @@ pub(super) use self::resolve::resolve;
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-pub fn spawn<G, R, P>(
+pub fn spawn<R, P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
     listen: transport::Listen,
-    get_original_dst: G,
+    get_original_dst: impl transport::GetOriginalDst + Send + 'static,
     resolve: R,
     dns_resolver: crate::dns::Resolver,
     profiles_client: super::profiles::Client<P>,
@@ -50,7 +50,6 @@ pub fn spawn<G, R, P>(
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
-    G: transport::GetOriginalDst + Send + 'static,
     R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
     R::Future: Send,
     R::Resolution: Send,
@@ -302,7 +301,7 @@ pub fn spawn<G, R, P>(
         .outbound_ports_disable_protocol_detection
         .iter()
         .map(|p| *p);
-    let accept = tls::AcceptTLS::new(get_original_dst, no_tls, proxy)
+    let accept = tls::AcceptTls::new(get_original_dst, no_tls, proxy)
         .without_protocol_detection_for(skip_ports);
 
     task::spawn(serve::serve("out", listen, accept, drain));

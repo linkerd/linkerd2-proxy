@@ -4,7 +4,7 @@ mod conditional_accept;
 mod connection;
 mod io;
 
-pub use self::accept::AcceptTLS;
+pub use self::accept::AcceptTls;
 pub use self::connection::Connection;
 use crate::identity;
 pub use rustls::TLSError as Error;

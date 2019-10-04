@@ -348,7 +348,7 @@ where
                             task::spawn(serve::serve(
                                 "admin",
                                 admin_listener,
-                                tls::AcceptTLS::new(
+                                tls::AcceptTls::new(
                                     get_original_dst.clone(),
                                     local_identity.clone(),
                                     Admin::new(report, readiness, trace_level).into_accept(),
@@ -362,7 +362,7 @@ where
                                 task::spawn(serve::serve(
                                     "tap",
                                     listener,
-                                    tls::AcceptTLS::new(
+                                    tls::AcceptTls::new(
                                         get_original_dst.clone(),
                                         local_identity,
                                         tap::AcceptPermittedClients::new(

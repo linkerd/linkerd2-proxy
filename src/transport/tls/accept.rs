@@ -24,7 +24,7 @@ pub fn empty_config() -> Arc<Config> {
     Arc::new(Config::new(verifier))
 }
 
-pub struct AcceptTLS<A: Accept<Connection>, T, G> {
+pub struct AcceptTls<A: Accept<Connection>, T, G> {
     accept: A,
     tls: tls::Conditional<T>,
     disable_protocol_detection_ports: IndexSet<u16>,
@@ -57,7 +57,7 @@ pub struct AcceptMeta<A: Accept<Connection>> {
 
 // === impl Listen ===
 
-impl<A: Accept<Connection>, T: HasConfig, G: GetOriginalDst> AcceptTLS<A, T, G> {
+impl<A: Accept<Connection>, T: HasConfig, G: GetOriginalDst> AcceptTls<A, T, G> {
     const PEEK_CAPACITY: usize = 8192;
 
     pub fn new(get_original_dst: G, tls: tls::Conditional<T>, accept: A) -> Self {
@@ -77,7 +77,7 @@ impl<A: Accept<Connection>, T: HasConfig, G: GetOriginalDst> AcceptTLS<A, T, G> 
     }
 }
 
-impl<A, T, G> crate::svc::Service<(TcpStream, SocketAddr)> for AcceptTLS<A, T, G>
+impl<A, T, G> crate::svc::Service<(TcpStream, SocketAddr)> for AcceptTls<A, T, G>
 where
     A: Accept<Connection> + Clone,
     T: HasConfig + Send + 'static,

@@ -24,11 +24,11 @@ mod set_remote_ip_on_req;
 
 pub use self::endpoint::{Endpoint, RecognizeEndpoint};
 
-pub fn spawn<G, P>(
+pub fn spawn<P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
     listen: transport::Listen,
-    get_original_dst: G,
+    get_original_dst: impl transport::GetOriginalDst + Send + 'static,
     profiles_client: super::profiles::Client<P>,
     tap_layer: crate::tap::Layer,
     handle_time: http_metrics::handle_time::Scope,
@@ -38,7 +38,6 @@ pub fn spawn<G, P>(
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
-    G: transport::GetOriginalDst + Send + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
@@ -229,7 +228,7 @@ pub fn spawn<G, P>(
         .inbound_ports_disable_protocol_detection
         .iter()
         .map(|p| *p);
-    let accept = tls::AcceptTLS::new(get_original_dst, local_identity, proxy)
+    let accept = tls::AcceptTls::new(get_original_dst, local_identity, proxy)
         .without_protocol_detection_for(skip_ports);
 
     task::spawn(serve::serve("in", listen, accept, drain));
