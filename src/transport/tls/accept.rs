@@ -69,12 +69,9 @@ impl<A: Accept<Connection>, T: HasConfig, G: GetOriginalDst> AcceptTLS<A, T, G> 
         }
     }
 
-    pub fn without_protocol_detection_for(
-        self,
-        disable_protocol_detection_ports: IndexSet<u16>,
-    ) -> Self {
+    pub fn without_protocol_detection_for<I: IntoIterator<Item = u16>>(self, ports: I) -> Self {
         Self {
-            disable_protocol_detection_ports,
+            disable_protocol_detection_ports: ports.into_iter().collect(),
             ..self
         }
     }

@@ -474,59 +474,59 @@ where
             spans_tx
         });
 
-        let outbound_server = tls::AcceptTLS::new(
-            get_original_dst.clone(),
-            tls::Conditional::<identity::Local>::None(tls::ReasonForNoPeerName::Loopback.into()),
-            outbound::server(
-                &config,
-                local_identity.clone(),
-                outbound_listener.local_addr(),
-                outbound::resolve(
-                    config.destination_get_suffixes.clone(),
-                    config.control_backoff.clone(),
-                    resolver,
-                ),
-                dns_resolver,
-                profiles_client.clone(),
-                tap_layer.clone(),
-                outbound_handle_time,
-                endpoint_http_metrics.clone(),
-                route_http_metrics.clone(),
-                retry_http_metrics,
-                transport_metrics.clone(),
-                spans_tx.clone(),
-                drain_rx.clone(),
-            ),
-        );
-
-        let inbound_server = tls::AcceptTLS::new(
-            get_original_dst,
+        let outbound_server = outbound::server(
+            &config,
             local_identity.clone(),
-            inbound::server(
-                &config,
-                local_identity.clone(),
-                inbound_listener.local_addr(),
-                profiles_client,
-                tap_layer,
-                inbound_handle_time,
-                endpoint_http_metrics,
-                route_http_metrics,
-                transport_metrics,
-                spans_tx,
-                drain_rx.clone(),
+            outbound_listener.local_addr(),
+            outbound::resolve(
+                config.destination_get_suffixes.clone(),
+                config.control_backoff.clone(),
+                resolver,
             ),
+            dns_resolver,
+            profiles_client.clone(),
+            tap_layer.clone(),
+            outbound_handle_time,
+            endpoint_http_metrics.clone(),
+            route_http_metrics.clone(),
+            retry_http_metrics,
+            transport_metrics.clone(),
+            spans_tx.clone(),
+            drain_rx.clone(),
         );
 
+        let inbound_server = inbound::server(
+            &config,
+            local_identity.clone(),
+            inbound_listener.local_addr(),
+            profiles_client,
+            tap_layer,
+            inbound_handle_time,
+            endpoint_http_metrics,
+            route_http_metrics,
+            transport_metrics,
+            spans_tx,
+            drain_rx.clone(),
+        );
+
+        let outbound_server_tls: tls::Conditional<identity::Local> =
+            Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
         task::spawn(serve::serve(
             "outbound",
             outbound_listener,
-            outbound_server,
+            tls::AcceptTLS::new(
+                get_original_dst.clone(),
+                outbound_server_tls,
+                outbound_server,
+            )
+            .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection),
             drain_rx.clone(),
         ));
         task::spawn(serve::serve(
             "inbound",
             inbound_listener,
-            inbound_server,
+            tls::AcceptTLS::new(get_original_dst, local_identity.clone(), inbound_server)
+                .without_protocol_detection_for(config.inbound_ports_disable_protocol_detection),
             drain_rx,
         ));
     }
