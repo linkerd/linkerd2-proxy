@@ -10,8 +10,6 @@ pub trait Listen {
 }
 
 /// Handles an accepted connection.
-///
-/// The connection may be notified for graceful shutdown via `drain`.
 pub trait Accept<C> {
     type Error: Into<Error>;
     type Future: Future<Item = (), Error = Self::Error>;
