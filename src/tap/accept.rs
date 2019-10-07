@@ -1,4 +1,4 @@
-use crate::api::tap::server::TapServer;
+use crate::api::tap::server::{Tap, TapServer};
 use crate::identity;
 use crate::proxy::grpc::{req_box_body, res_body_as_payload};
 use crate::proxy::http::HyperServerSvc;
@@ -11,19 +11,10 @@ use indexmap::IndexSet;
 #[derive(Clone, Debug)]
 pub struct AcceptPermittedClients {
     permitted_client_ids: IndexSet<identity::Name>,
-    server: TapServer<super::Server>,
+    server: super::Server,
 }
 
-pub enum ServeFuture {
-    Failed(Option<Error>),
-    Serve(Box<dyn Future<Item = (), Error = Error> + Send + 'static>),
-}
-
-#[derive(Debug)]
-pub enum AcceptError {
-    Unauthorized(identity::Name),
-    NoPeerIdentity(tls::ReasonForNoIdentity),
-}
+pub struct ServeFuture(Box<dyn Future<Item = (), Error = Error> + Send + 'static>);
 
 impl AcceptPermittedClients {
     pub fn new(
@@ -32,19 +23,34 @@ impl AcceptPermittedClients {
     ) -> Self {
         Self {
             permitted_client_ids: permitted_ids.into_iter().collect(),
-            server: TapServer::new(server),
+            server,
         }
     }
 
-    fn serve(&mut self, conn: tls::Connection) -> ServeFuture {
+    fn serve<T>(&self, conn: tls::Connection, tap: T) -> ServeFuture
+    where
+        T: Tap + Send + 'static,
+        T::ObserveFuture: Send + 'static,
+        T::ObserveStream: Send + 'static,
+    {
         let svc =
-            res_body_as_payload::Service::new(req_box_body::Service::new(self.server.clone()));
+            res_body_as_payload::Service::new(req_box_body::Service::new(TapServer::new(tap)));
+
         // TODO do we need to set a contextual tracing executor on Hyper?
-        let fut = hyper::server::conn::Http::new()
-            .http2_only(true)
-            .serve_connection(conn, HyperServerSvc::new(svc))
-            .map_err(Into::into);
-        ServeFuture::Serve(Box::new(fut))
+        ServeFuture(Box::new(
+            hyper::server::conn::Http::new()
+                .http2_only(true)
+                .serve_connection(conn, HyperServerSvc::new(svc))
+                .map_err(Into::into),
+        ))
+    }
+
+    fn serve_authenticated(&self, conn: tls::Connection) -> ServeFuture {
+        self.serve(conn, self.server.clone())
+    }
+
+    fn serve_unauthenticated(&self, conn: tls::Connection, msg: impl Into<String>) -> ServeFuture {
+        self.serve(conn, unauthenticated::new(msg))
     }
 }
 
@@ -59,18 +65,17 @@ impl Service<tls::Connection> for AcceptPermittedClients {
 
     fn call(&mut self, conn: tls::Connection) -> Self::Future {
         match conn.peer_identity() {
-            tls::Conditional::Some(ref peer) if self.permitted_client_ids.contains(peer) => {
-                self.serve(conn)
+            tls::Conditional::Some(ref peer) => {
+                if self.permitted_client_ids.contains(peer) {
+                    self.serve_authenticated(conn)
+                } else {
+                    self.serve_unauthenticated(conn, format!("Unauthorized peer: {}", peer))
+                }
             }
             tls::Conditional::None(tls::ReasonForNoIdentity::NoPeerName(
                 tls::ReasonForNoPeerName::Loopback,
-            )) => self.serve(conn),
-            tls::Conditional::Some(peer) => {
-                ServeFuture::Failed(Some(AcceptError::Unauthorized(peer).into()))
-            }
-            tls::Conditional::None(reason) => {
-                ServeFuture::Failed(Some(AcceptError::NoPeerIdentity(reason).into()))
-            }
+            )) => self.serve_authenticated(conn),
+            tls::Conditional::None(reason) => self.serve_unauthenticated(conn, reason.to_string()),
         }
     }
 }
@@ -80,20 +85,28 @@ impl Future for ServeFuture {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<(), Self::Error> {
-        return match self {
-            ServeFuture::Serve(ref mut f) => f.poll(),
-            ServeFuture::Failed(ref mut e) => Err(e.take().unwrap().into()),
-        };
+        self.0.poll()
     }
 }
 
-impl std::fmt::Display for AcceptError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AcceptError::Unauthorized(peer) => write!(f, "unauthorized peer: {}", peer),
-            AcceptError::NoPeerIdentity(reason) => write!(f, "no peer identity: {}", reason),
+pub mod unauthenticated {
+    use crate::api::tap as api;
+    use futures::{future, stream};
+    use tower_grpc::{Code, Request, Response, Status};
+
+    #[derive(Clone, Debug, Default)]
+    pub struct Unauthenticated(String);
+
+    pub fn new(message: impl Into<String>) -> Unauthenticated {
+        Unauthenticated(message.into())
+    }
+
+    impl api::server::Tap for Unauthenticated {
+        type ObserveStream = stream::Empty<api::TapEvent, Status>;
+        type ObserveFuture = future::FutureResult<Response<Self::ObserveStream>, Status>;
+
+        fn observe(&mut self, _req: Request<api::ObserveRequest>) -> Self::ObserveFuture {
+            future::err(Status::new(Code::Unauthenticated, &self.0))
         }
     }
 }
-
-impl std::error::Error for AcceptError {}
