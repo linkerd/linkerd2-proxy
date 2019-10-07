@@ -16,6 +16,7 @@ members = [
     "lib/linkerd2-proxy-core",
     "lib/linkerd2-proxy-discover",
     "lib/linkerd2-proxy-resolve",
+    "lib/linkerd2-proxy-transport",
     "lib/linkerd2-request-filter",
     "lib/linkerd2-reconnect",
     "lib/linkerd2-router",
@@ -45,15 +46,16 @@ linkerd2-conditional = { path = "lib/linkerd2-conditional" }
 linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
 linkerd2-drain       = { path = "lib/linkerd2-drain" }
 linkerd2-error       = { path = "lib/linkerd2-error" }
+linkerd2-exp-backoff = { path = "lib/linkerd2-exp-backoff" }
 linkerd2-fallback    = { path = "lib/linkerd2-fallback" }
 linkerd2-identity    = { path = "lib/linkerd2-identity" }
 linkerd2-metrics     = { path = "lib/linkerd2-metrics" }
-linkerd2-opencensus   = { path = "lib/linkerd2-opencensus" }
-linkerd2-exp-backoff = { path = "lib/linkerd2-exp-backoff" }
+linkerd2-opencensus  = { path = "lib/linkerd2-opencensus" }
 linkerd2-proxy-core  = { path = "lib/linkerd2-proxy-core" }
 linkerd2-proxy-api-resolve = { path = "lib/linkerd2-proxy-api-resolve" }
 linkerd2-proxy-discover    = { path = "lib/linkerd2-proxy-discover" }
 linkerd2-proxy-resolve     = { path = "lib/linkerd2-proxy-resolve" }
+linkerd2-proxy-transport   = { path = "lib/linkerd2-proxy-transport" }
 linkerd2-reconnect         = { path = "lib/linkerd2-reconnect" }
 linkerd2-request-filter    = { path = "lib/linkerd2-request-filter" }
 linkerd2-router  = { path = "lib/linkerd2-router" }

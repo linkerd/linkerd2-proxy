@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
 
-use linkerd2_proxy::{app, transport::SoOriginalDst};
+use linkerd2_proxy::app;
 use linkerd2_signal as signal;
 use tokio::runtime::current_thread;
 
@@ -15,7 +15,7 @@ fn main() {
         }
     };
     let runtime = current_thread::Runtime::new().expect("initialize main runtime");
-    let main = app::Main::new(config, trace_admin, SoOriginalDst, runtime);
+    let main = app::Main::new(config, trace_admin, runtime);
     let shutdown_signal = signal::shutdown();
     main.run_until(shutdown_signal);
 }

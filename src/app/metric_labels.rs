@@ -1,4 +1,5 @@
-use crate::{identity, metrics::FmtLabels, transport::tls, Addr, Conditional, NameAddr};
+use crate::transport::{labels::TlsStatus, tls};
+use crate::{identity, metrics::FmtLabels, Addr, Conditional, NameAddr};
 use std::fmt::{self, Write};
 
 use super::{classify, control, dst, inbound, outbound};
@@ -6,7 +7,7 @@ use super::{classify, control, dst, inbound, outbound};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ControlLabels {
     addr: Addr,
-    tls_status: tls::Status,
+    tls_status: TlsStatus,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -131,7 +132,7 @@ impl FmtLabels for EndpointLabels {
         }
 
         write!(f, ",")?;
-        tls::Status::from(self.tls_id.as_ref()).fmt_labels(f)?;
+        TlsStatus::from(self.tls_id.as_ref()).fmt_labels(f)?;
 
         if let Conditional::Some(ref id) = self.tls_id {
             write!(f, ",")?;
@@ -195,16 +196,6 @@ impl fmt::Display for classify::SuccessOrFailure {
             classify::SuccessOrFailure::Success => write!(f, "success"),
             classify::SuccessOrFailure::Failure => write!(f, "failure"),
         }
-    }
-}
-
-impl FmtLabels for tls::Status {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(tls::ReasonForNoIdentity::NoPeerName(why)) = self.no_tls_reason() {
-            return write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why);
-        }
-
-        write!(f, "tls=\"{}\"", self)
     }
 }
 

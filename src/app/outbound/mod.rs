@@ -5,7 +5,7 @@ use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, wrap_server_transport, Server};
+use crate::proxy::{self, Server, Source};
 use crate::transport::{self, connect, tls};
 use crate::{drain, svc, task, trace_context, Addr, Conditional};
 use linkerd2_proxy_discover as discover;
@@ -46,7 +46,7 @@ pub fn spawn<R, P>(
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
     retry_http_metrics: super::HttpRouteMetricsRegistry,
-    transport_metrics: transport::metrics::Registry,
+    transport_metrics: transport::MetricsRegistry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
@@ -73,7 +73,7 @@ pub fn spawn<R, P>(
     let connect = svc::stack(connect::svc(config.outbound_connect_keepalive))
         .push(tls::client::layer(local_identity))
         .push_timeout(config.outbound_connect_timeout)
-        .push(transport_metrics.connect("outbound"));
+        .push(transport_metrics.layer_connect(TransportLabels));
 
     let trace_context_layer = trace_context::layer(
         span_sink
@@ -280,15 +280,11 @@ pub fn spawn<R, P>(
         .push(trace_context_layer)
         .push(handle_time.layer());
 
-    // Instantiated for each TCP connection received from the local
-    // application (including HTTP connections).
-    let wrap_server_transport =
-        wrap_server_transport::builder().push(transport_metrics.wrap_server_transport("outbound"));
-
     let proxy = Server::new(
         "out",
         listen.local_addr(),
-        wrap_server_transport,
+        TransportLabels,
+        transport_metrics,
         connect,
         server_stack,
         config.h2_settings,
@@ -305,4 +301,23 @@ pub fn spawn<R, P>(
         .without_protocol_detection_for(skip_ports);
 
     task::spawn(serve::serve("out", listen, accept, drain));
+}
+
+#[derive(Copy, Clone, Debug)]
+struct TransportLabels;
+
+impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
+    type Labels = transport::labels::Key;
+
+    fn transport_labels(&self, endpoint: &Endpoint) -> Self::Labels {
+        transport::labels::Key::connect("outbound", endpoint.identity.as_ref())
+    }
+}
+
+impl transport::metrics::TransportLabels<Source> for TransportLabels {
+    type Labels = transport::labels::Key;
+
+    fn transport_labels(&self, source: &Source) -> Self::Labels {
+        transport::labels::Key::accept("outbound", source.tls_peer.as_ref())
+    }
 }

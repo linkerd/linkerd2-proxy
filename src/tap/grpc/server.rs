@@ -2,7 +2,7 @@ use super::match_::Match;
 use crate::api::{http_types, pb_duration, tap as api};
 use crate::proxy::http::HasH2Reason;
 use crate::tap::{iface, Inspect};
-use crate::transport::tls;
+use crate::transport::labels::TlsStatus;
 use crate::Conditional;
 use bytes::Buf;
 use futures::sync::mpsc;
@@ -557,7 +557,7 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
         source_meta: {
             let mut m = api::tap_event::EndpointMeta::default();
             let tls = inspect.src_tls(req);
-            let tls_status = tls::Status::from(tls.as_ref());
+            let tls_status = TlsStatus::from(tls.as_ref());
             m.labels.insert("tls".to_owned(), tls_status.to_string());
             if let Conditional::Some(id) = tls {
                 m.labels
@@ -571,7 +571,7 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
             m.labels
                 .extend(labels.iter().map(|(k, v)| (k.clone(), v.clone())));
             let tls = inspect.dst_tls(req);
-            let tls_status = tls::Status::from(tls.as_ref());
+            let tls_status = TlsStatus::from(tls.as_ref());
             m.labels.insert("tls".to_owned(), tls_status.to_string());
             if let Conditional::Some(id) = tls {
                 m.labels

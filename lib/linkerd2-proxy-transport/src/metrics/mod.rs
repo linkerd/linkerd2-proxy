@@ -1,19 +1,21 @@
-use crate::metrics::{
-    latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
-};
-use crate::{proxy::WrapServerTransport, svc, telemetry::Errno, transport::tls};
+use super::tls;
 use futures::{try_ready, Future, Poll};
 use indexmap::IndexMap;
+use linkerd2_metrics::{
+    latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
+};
 use std::fmt;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, error};
+use tracing::debug;
 
+mod errno;
 mod io;
 
-pub use self::io::Io;
+pub use self::{errno::Errno, io::Io};
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
@@ -25,65 +27,42 @@ metrics! {
     tcp_connection_duration_ms: Histogram<latency::Ms> { "Connection lifetimes" }
 }
 
-pub fn new() -> (Registry, Report) {
+pub fn new<K: Eq + Hash + FmtLabels>() -> (Registry<K>, Report<K>) {
     let inner = Arc::new(Mutex::new(Inner::default()));
     (Registry(inner.clone()), Report(inner))
 }
 
-/// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
-#[derive(Clone, Debug, Default)]
-pub struct Report(Arc<Mutex<Inner>>);
+pub trait TransportLabels<T> {
+    type Labels: Hash + Eq + FmtLabels;
 
-#[derive(Clone, Debug, Default)]
-pub struct Registry(Arc<Mutex<Inner>>);
-
-#[derive(Clone, Debug)]
-pub struct Accept {
-    direction: Direction,
-    registry: Arc<Mutex<Inner>>,
+    fn transport_labels(&self, transport: &T) -> Self::Labels;
 }
 
+/// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
+#[derive(Clone, Debug, Default)]
+pub struct Report<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
+
+#[derive(Clone, Debug, Default)]
+pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
+
 #[derive(Debug)]
-pub struct LayerConnect<T, M> {
-    direction: Direction,
-    registry: Arc<Mutex<Inner>>,
+pub struct LayerConnect<L: TransportLabels<T>, T, M> {
+    label: L,
+    registry: Arc<Mutex<Inner<L::Labels>>>,
     _p: PhantomData<fn() -> (T, M)>,
 }
 
 #[derive(Debug)]
-pub struct Connect<T, M> {
+pub struct Connect<L: TransportLabels<T>, T, M> {
+    label: L,
     inner: M,
-    direction: Direction,
-    registry: Arc<Mutex<Inner>>,
-    _p: PhantomData<fn() -> (T)>,
+    registry: Arc<Mutex<Inner<L::Labels>>>,
+    _p: PhantomData<fn(T) -> ()>,
 }
 
 pub struct Connecting<F> {
     underlying: F,
     new_sensor: Option<NewSensor>,
-}
-
-/// Describes a class of transport.
-///
-/// A `Metrics` type exists for each unique `Key`.
-///
-/// Implements `FmtLabels`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-struct Key {
-    direction: Direction,
-    peer: Peer,
-    tls_status: tls::Status,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-struct Direction(&'static str);
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-enum Peer {
-    /// Represents the side of the proxy that accepts connections.
-    Src,
-    /// Represents the side of the proxy that opens connections.
-    Dst,
 }
 
 /// Stores a class of transport's metrics.
@@ -106,10 +85,7 @@ struct Metrics {
 ///
 /// Implements `FmtLabels`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Eos {
-    Clean,
-    Error(Errno),
-}
+struct Eos(Option<Errno>);
 
 /// Holds metrics for a class of end-of-stream.
 #[derive(Debug, Default)]
@@ -127,20 +103,26 @@ struct Sensor {
 
 /// Lazily builds instances of `Sensor`.
 #[derive(Clone, Debug)]
-struct NewSensor(Option<Arc<Mutex<Metrics>>>);
+struct NewSensor(Arc<Mutex<Metrics>>);
 
 /// Shares state between `Report` and `Registry`.
-#[derive(Debug, Default)]
-struct Inner(IndexMap<Key, Arc<Mutex<Metrics>>>);
+#[derive(Debug)]
+struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Mutex<Metrics>>>);
 
 // ===== impl Inner =====
 
-impl Inner {
+impl<K: Eq + Hash + FmtLabels> Default for Inner<K> {
+    fn default() -> Self {
+        Inner(IndexMap::default())
+    }
+}
+
+impl<K: Eq + Hash + FmtLabels> Inner<K> {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&Key, MutexGuard<'_, Metrics>)> {
+    fn iter(&self) -> impl Iterator<Item = (&K, MutexGuard<'_, Metrics>)> {
         self.0
             .iter()
             .filter_map(|(k, l)| l.lock().ok().map(move |m| (k, m)))
@@ -184,105 +166,92 @@ impl Inner {
         Ok(())
     }
 
-    fn get_or_default(&mut self, k: Key) -> &Arc<Mutex<Metrics>> {
+    fn get_or_default(&mut self, k: K) -> &Arc<Mutex<Metrics>> {
         self.0.entry(k).or_insert_with(|| Default::default())
     }
 }
 
 // ===== impl Registry =====
 
-impl Registry {
-    pub fn wrap_server_transport(&self, direction: &'static str) -> Accept {
-        Accept {
-            direction: Direction(direction),
-            registry: self.0.clone(),
-        }
-    }
-
-    pub fn connect<T, M>(&self, direction: &'static str) -> LayerConnect<T, M>
+impl<K: Eq + Hash + FmtLabels> Registry<K> {
+    pub fn layer_connect<T, L, M>(&self, label: L) -> LayerConnect<L, T, M>
     where
-        T: tls::HasPeerIdentity,
-        M: svc::MakeConnection<T>,
+        L: TransportLabels<T, Labels = K>,
+        M: tower::MakeConnection<T>,
     {
-        LayerConnect::new(direction, self.0.clone())
+        LayerConnect::new(label, self.0.clone())
     }
-}
 
-impl<I> WrapServerTransport<I> for Accept
-where
-    I: AsyncRead + AsyncWrite,
-{
-    type Io = Io<I>;
-
-    fn wrap_server_transport(&self, source: &crate::proxy::Source, io: I) -> Self::Io {
-        let tls_status = source.tls_peer.as_ref().map(|_| {}).into();
-        let key = Key::accept(self.direction, tls_status);
-        let metrics = match self.registry.lock() {
-            Ok(mut inner) => Some(inner.get_or_default(key).clone()),
-            Err(_) => {
-                error!("unable to lock metrics registry");
-                None
-            }
-        };
+    pub fn wrap_server_transport<T: AsyncRead + AsyncWrite>(&self, labels: K, io: T) -> Io<T> {
+        let metrics = self
+            .0
+            .lock()
+            .expect("metrics registry poisoned")
+            .get_or_default(labels)
+            .clone();
         Io::new(io, Sensor::open(metrics))
     }
 }
 
-impl<T, M> LayerConnect<T, M> {
-    fn new(d: &'static str, registry: Arc<Mutex<Inner>>) -> Self {
+impl<L: TransportLabels<T>, T, M> LayerConnect<L, T, M> {
+    fn new(label: L, registry: Arc<Mutex<Inner<L::Labels>>>) -> Self {
         Self {
-            direction: Direction(d),
+            label,
             registry,
             _p: PhantomData,
         }
     }
 }
 
-impl<T, M> Clone for LayerConnect<T, M>
+impl<L, T, M> Clone for LayerConnect<L, T, M>
 where
+    L: TransportLabels<T> + Clone,
     T: Clone,
 {
     fn clone(&self) -> Self {
-        Self::new(self.direction.0, self.registry.clone())
+        Self::new(self.label.clone(), self.registry.clone())
     }
 }
 
-impl<T, M> svc::Layer<M> for LayerConnect<T, M>
+impl<L, T, M> tower::layer::Layer<M> for LayerConnect<L, T, M>
 where
+    L: TransportLabels<T> + Clone,
     T: tls::HasPeerIdentity,
-    M: svc::MakeConnection<T>,
+    M: tower::MakeConnection<T>,
 {
-    type Service = Connect<T, M>;
+    type Service = Connect<L, T, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
         Connect {
             inner,
-            direction: self.direction,
+            label: self.label.clone(),
             registry: self.registry.clone(),
             _p: PhantomData,
         }
     }
 }
 
-impl<T, M> Clone for Connect<T, M>
+impl<L, T, M> Clone for Connect<L, T, M>
 where
+    L: TransportLabels<T> + Clone,
     M: Clone,
 {
     fn clone(&self) -> Self {
         Connect {
             inner: self.inner.clone(),
-            direction: self.direction,
+            label: self.label.clone(),
             registry: self.registry.clone(),
             _p: PhantomData,
         }
     }
 }
 
-/// impl MakeConnection
-impl<T, M> svc::Service<T> for Connect<T, M>
+// === impl MakeConnection ===
+
+impl<L, T, M> tower::Service<T> for Connect<L, T, M>
 where
-    T: tls::HasPeerIdentity + Clone,
-    M: svc::MakeConnection<T>,
+    L: TransportLabels<T>,
+    M: tower::MakeConnection<T>,
 {
     type Response = Io<M::Connection>;
     type Error = M::Error;
@@ -293,21 +262,17 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        // TODO use target metadata in `key`
-        let tls_status = target.peer_identity().as_ref().map(|_| ()).into();
-        let key = Key::connect(self.direction, tls_status);
-        let metrics = match self.registry.lock() {
-            Ok(mut inner) => Some(inner.get_or_default(key).clone()),
-            Err(_) => {
-                error!("unable to lock metrics registry");
-                None
-            }
-        };
-        let underlying = self.inner.make_connection(target);
+        let labels = self.label.transport_labels(&target);
+        let metrics = self
+            .registry
+            .lock()
+            .expect("metrics registr poisoned")
+            .get_or_default(labels)
+            .clone();
 
         Connecting {
             new_sensor: Some(NewSensor(metrics)),
-            underlying,
+            underlying: self.inner.make_connection(target),
         }
     }
 }
@@ -338,13 +303,9 @@ where
 
 // ===== impl Report =====
 
-impl FmtMetrics for Report {
+impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let metrics = match self.0.lock() {
-            Err(_) => return Ok(()),
-            Ok(lock) => lock,
-        };
-
+        let metrics = self.0.lock().expect("metrics registry poisoned");
         if metrics.is_empty() {
             return Ok(());
         }
@@ -374,108 +335,59 @@ impl FmtMetrics for Report {
 // ===== impl Sensor =====
 
 impl Sensor {
-    pub fn open(metrics: Option<Arc<Mutex<Metrics>>>) -> Self {
-        if let Some(ref m) = metrics {
-            if let Ok(mut m) = m.lock() {
-                m.open_total.incr();
-                m.open_connections.incr();
-            }
+    pub fn open(metrics: Arc<Mutex<Metrics>>) -> Self {
+        {
+            let mut m = metrics.lock().expect("metrics registry poisoned");
+            m.open_total.incr();
+            m.open_connections.incr();
         }
         Self {
-            metrics,
+            metrics: Some(metrics),
             opened_at: Instant::now(),
         }
     }
 
     pub fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
-            if let Ok(mut m) = m.lock() {
-                m.read_bytes_total += sz as u64;
-            }
+            let mut m = m.lock().expect("metrics registry poisoned");
+            m.read_bytes_total += sz as u64;
         }
     }
 
     pub fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
-            if let Ok(mut m) = m.lock() {
-                m.write_bytes_total += sz as u64;
-            }
+            let mut m = m.lock().expect("metrics registry poisoned");
+            m.write_bytes_total += sz as u64;
         }
     }
 
-    pub fn record_close(&mut self, eos: Eos) {
+    pub fn record_close(&mut self, eos: Option<Errno>) {
+        let duration = self.opened_at.elapsed();
         // When closed, the metrics structure is dropped so that no further
         // updates can occur (i.e. so that an additional close won't be recorded
         // on Drop).
         if let Some(m) = self.metrics.take() {
-            let duration = self.opened_at.elapsed();
-            if let Ok(mut m) = m.lock() {
-                m.open_connections.decr();
+            let mut m = m.lock().expect("metrics registry poisoned");
+            m.open_connections.decr();
 
-                let class = m.by_eos.entry(eos).or_insert_with(|| EosMetrics::default());
-                class.close_total.incr();
-                class.connection_duration.add(duration);
-            }
+            let class = m.by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
+            class.close_total.incr();
+            class.connection_duration.add(duration);
         }
     }
 }
 
 impl Drop for Sensor {
     fn drop(&mut self) {
-        self.record_close(Eos::Clean)
+        self.record_close(None)
     }
 }
 
 // ===== impl NewSensor =====
 
 impl NewSensor {
-    fn new_sensor(mut self) -> Sensor {
-        Sensor::open(self.0.take())
-    }
-}
-
-// ===== impl Key =====
-
-impl Key {
-    pub fn accept(direction: Direction, tls_status: tls::Status) -> Self {
-        Self {
-            peer: Peer::Src,
-            direction,
-            tls_status,
-        }
-    }
-
-    pub fn connect(direction: Direction, tls_status: tls::Status) -> Self {
-        Self {
-            direction,
-            peer: Peer::Dst,
-            tls_status,
-        }
-    }
-}
-
-impl FmtLabels for Key {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        ((self.direction, self.peer), self.tls_status).fmt_labels(f)
-    }
-}
-
-// ===== impl Peer =====
-
-impl FmtLabels for Direction {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "direction=\"{}\"", self.0)
-    }
-}
-
-// ===== impl Peer =====
-
-impl FmtLabels for Peer {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Peer::Src => f.pad("peer=\"src\""),
-            Peer::Dst => f.pad("peer=\"dst\""),
-        }
+    fn new_sensor(self) -> Sensor {
+        Sensor::open(self.0)
     }
 }
 
@@ -483,9 +395,9 @@ impl FmtLabels for Peer {
 
 impl FmtLabels for Eos {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Eos::Clean => f.pad("errno=\"\""),
-            Eos::Error(errno) => write!(f, "errno=\"{}\"", errno),
+        match self.0 {
+            None => f.pad("errno=\"\""),
+            Some(errno) => write!(f, "errno=\"{}\"", errno),
         }
     }
 }

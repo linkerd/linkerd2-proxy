@@ -1,36 +1,23 @@
+use linkerd2_identity as identity;
+pub use rustls::TLSError as Error;
+use std::fmt;
+
 pub mod accept;
 pub mod client;
 mod conditional_accept;
 mod connection;
 mod io;
 
-pub use self::accept::AcceptTls;
-pub use self::connection::Connection;
-use crate::identity;
-pub use rustls::TLSError as Error;
-use std::fmt;
+pub use self::{accept::AcceptTls, connection::Connection};
 
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.
-pub type Conditional<T> = crate::Conditional<T, ReasonForNoIdentity>;
+pub type Conditional<T> = linkerd2_conditional::Conditional<T, ReasonForNoIdentity>;
 
 pub type PeerIdentity = Conditional<identity::Name>;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Status(Conditional<()>);
-
 pub trait HasPeerIdentity {
     fn peer_identity(&self) -> PeerIdentity;
-}
-
-pub trait HasStatus {
-    fn tls_status(&self) -> Status;
-}
-
-impl<T: HasPeerIdentity> HasStatus for T {
-    fn tls_status(&self) -> Status {
-        self.peer_identity().map(|_| ()).into()
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -62,41 +49,6 @@ pub enum ReasonForNoPeerName {
 
     // Identity was not provided by the remote peer.
     NotProvidedByRemote,
-}
-
-impl<T> From<Conditional<T>> for Status {
-    fn from(inner: Conditional<T>) -> Self {
-        Status(inner.map(|_| ()))
-    }
-}
-
-impl Into<Conditional<()>> for Status {
-    fn into(self) -> Conditional<()> {
-        self.0
-    }
-}
-
-impl Status {
-    pub fn as_ref(&self) -> Conditional<&()> {
-        self.0.as_ref()
-    }
-
-    pub fn is_tls(&self) -> bool {
-        self.0.is_some()
-    }
-
-    pub fn no_tls_reason(&self) -> Option<ReasonForNoIdentity> {
-        self.0.reason()
-    }
-}
-
-impl fmt::Display for Status {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            crate::Conditional::Some(()) => write!(f, "true"),
-            crate::Conditional::None(r) => fmt::Display::fmt(&r, f),
-        }
-    }
 }
 
 impl From<ReasonForNoPeerName> for ReasonForNoIdentity {

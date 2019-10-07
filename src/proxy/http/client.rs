@@ -6,7 +6,7 @@ use super::{
 };
 use crate::app::config::H2Settings;
 use crate::svc::{self, ServiceExt};
-use crate::transport::{connect, tls};
+use crate::transport::connect;
 use crate::Error;
 use futures::{try_ready, Async, Future, Poll};
 use http;
@@ -40,7 +40,7 @@ pub enum ClientNewServiceFuture<C, T, B>
 where
     B: hyper::body::Payload + 'static,
     C: svc::MakeConnection<T> + 'static,
-    C::Connection: tls::HasStatus + Send + 'static,
+    C::Connection: Send + 'static,
     C::Error: Into<Error>,
 {
     Http1(Option<HyperClient<C, T, B>>),
@@ -117,7 +117,7 @@ where
     C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: Into<Error>,
-    C::Connection: tls::HasStatus + Send + 'static,
+    C::Connection: Send + 'static,
     T: connect::HasPeerAddr + HasSettings + fmt::Debug + Clone + Send + Sync,
     B: hyper::body::Payload + 'static,
 {
@@ -183,7 +183,7 @@ where
 impl<C, T, B> Future for ClientNewServiceFuture<C, T, B>
 where
     C: svc::MakeConnection<T> + Send + Sync + 'static,
-    C::Connection: tls::HasStatus + Send + 'static,
+    C::Connection: Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
     B: hyper::body::Payload + 'static,
@@ -210,7 +210,7 @@ where
 impl<C, T, B> svc::Service<http::Request<B>> for ClientService<C, T, B>
 where
     C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
-    C::Connection: tls::HasStatus + Send,
+    C::Connection: Send,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: Into<Error>,
     T: Clone + Send + Sync + 'static,

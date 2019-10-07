@@ -1,4 +1,3 @@
-use super::WrapServerTransport;
 use crate::core::listen::Accept;
 use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
@@ -6,9 +5,9 @@ use crate::proxy::http::{
 };
 use crate::proxy::{protocol::Protocol, tcp};
 use crate::svc::{MakeService, Service};
+use crate::transport::tls::{self, HasPeerIdentity};
 use crate::transport::{
-    tls::{self, HasPeerIdentity},
-    Connection, Peek,
+    self, labels::Key as TransportKey, metrics::TransportLabels, Connection, Peek,
 };
 use crate::{app::config::H2Settings, drain, logging, Error, Never};
 use futures::future::{self, Either};
@@ -19,38 +18,31 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
 use tracing::{debug, trace};
 
 /// A protocol-transparent Server!
 ///
 /// As TCP streams are passed to `Server::serve`, the following occurs:
 ///
-/// 1. A `G`-typed `GetOriginalDst` is used to determine the socket's original
-///    destination address (i.e. before iptables redirected the connection to the
-///    proxy).
+/// *   A `Source` is created to describe the accepted connection.
 ///
-/// 2.  A `Source` is created to describe the accepted connection.
-///
-/// 3. An `A`-typed `Accept` is used to decorate the transport (i.e., for
-///    telemetry).
-///
-/// 4. If the original destination address's port is not specified in
+/// *  If the original destination address's port is not specified in
 ///    `disable_protocol_detection_ports`, then data received on the connection is
 ///    buffered until the server can determine whether the streams begins with a
 ///    HTTP/1 or HTTP/2 preamble.
 ///
-/// 5. If the stream is not determined to be HTTP, then the original destination
+/// *  If the stream is not determined to be HTTP, then the original destination
 ///    address is used to transparently forward the TCP stream. A `C`-typed
 ///    `Connect` `Stack` is used to build a connection to the destination (i.e.,
 ///    instrumented with telemetry, etc).
 ///
-/// 6. Otherwise, an `R`-typed `Service` `Stack` is used to build a service that
+/// *  Otherwise, an `H`-typed `Service` is used to build a service that
 ///    can route HTTP  requests for the `Source`.
-pub struct Server<W, T, C, H, B>
+pub struct Server<L, T, C, H, B>
 where
     // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
     T: From<SocketAddr>,
+    L: TransportLabels<Source, Labels = TransportKey>,
     // Prepares a route for each accepted HTTP connection.
     H: MakeService<
             Source,
@@ -63,7 +55,8 @@ where
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
     listen_addr: SocketAddr,
-    wrap: W,
+    transport_labels: L,
+    transport_metrics: transport::MetricsRegistry,
     connect: ForwardConnect<T, C>,
     make_http: H,
     log: logging::Server,
@@ -190,9 +183,10 @@ impl fmt::Display for NoOriginalDst {
     }
 }
 
-impl<W, T, C, H, B> Server<W, T, C, H, B>
+impl<L, T, C, H, B> Server<L, T, C, H, B>
 where
     T: From<SocketAddr>,
+    L: TransportLabels<Source, Labels = TransportKey>,
     H: MakeService<
             Source,
             http::Request<HttpBody>,
@@ -200,14 +194,14 @@ where
             MakeError = Never,
         > + Clone,
     B: hyper::body::Payload,
-    W: WrapServerTransport<TcpStream>,
     Self: Accept<Connection>,
 {
     /// Creates a new `Server`.
     pub fn new(
         proxy_name: &'static str,
         listen_addr: SocketAddr,
-        wrap: W,
+        transport_labels: L,
+        transport_metrics: transport::MetricsRegistry,
         connect: C,
         make_http: H,
         h2_settings: H2Settings,
@@ -219,7 +213,8 @@ where
             http: hyper::server::conn::Http::new(),
             h2_settings,
             listen_addr,
-            wrap,
+            transport_labels,
+            transport_metrics,
             connect,
             make_http,
             log,
@@ -228,10 +223,9 @@ where
     }
 }
 
-impl<W, T, C, H, B> Service<Connection> for Server<W, T, C, H, B>
+impl<L, T, C, H, B> Service<Connection> for Server<L, T, C, H, B>
 where
-    W: WrapServerTransport<Connection> + Send + 'static,
-    W::Io: fmt::Debug + Send + Peek + 'static,
+    L: TransportLabels<Source, Labels = TransportKey>,
     T: From<SocketAddr> + Send + 'static,
     C: Service<T> + Clone + Send + 'static,
     C::Response: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
@@ -274,8 +268,16 @@ where
             _p: (),
         };
 
+        // TODO just match ports here instead of encoding this all into
+        // `Connection`.
         let should_detect = connection.should_detect_protocol();
-        let io = self.wrap.wrap_server_transport(&source, connection);
+
+        // TODO move this into a distinct Accept...
+        let io = {
+            let labels = self.transport_labels.transport_labels(&source);
+            self.transport_metrics
+                .wrap_server_transport(labels, connection)
+        };
 
         let accept_fut = if should_detect {
             Either::A(io.peek().map_err(Into::into).map(|io| {
@@ -347,9 +349,9 @@ where
     }
 }
 
-impl<W, T, C, H, B> Clone for Server<W, T, C, H, B>
+impl<L, T, C, H, B> Clone for Server<L, T, C, H, B>
 where
-    W: Clone,
+    L: TransportLabels<Source, Labels = TransportKey> + Clone,
     T: From<SocketAddr>,
     C: Clone,
     H: MakeService<
@@ -365,7 +367,8 @@ where
             http: self.http.clone(),
             h2_settings: self.h2_settings.clone(),
             listen_addr: self.listen_addr,
-            wrap: self.wrap.clone(),
+            transport_labels: self.transport_labels.clone(),
+            transport_metrics: self.transport_metrics.clone(),
             connect: self.connect.clone(),
             make_http: self.make_http.clone(),
             drain: self.drain.clone(),

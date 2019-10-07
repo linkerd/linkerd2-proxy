@@ -1,5 +1,5 @@
-use super::{Eos, Sensor};
-use crate::transport::{tls, Peek};
+use super::Sensor;
+use crate::Peek;
 use bytes::Buf;
 use futures::{try_ready, Async, Poll};
 use std::io;
@@ -14,7 +14,7 @@ pub struct Io<T> {
 
 // === impl Io ===
 
-impl<T: AsyncRead + AsyncWrite> Io<T> {
+impl<T> Io<T> {
     pub(super) fn new(io: T, sensor: Sensor) -> Self {
         Self { io, sensor }
     }
@@ -31,10 +31,7 @@ impl<T: AsyncRead + AsyncWrite> Io<T> {
             Ok(v) => Ok(v),
             Err(e) => {
                 if e.kind() != io::ErrorKind::WouldBlock {
-                    let eos = e
-                        .raw_os_error()
-                        .map(|e| Eos::Error(e.into()))
-                        .unwrap_or(Eos::Clean);
+                    let eos = e.raw_os_error().map(|e| e.into());
                     self.sensor.record_close(eos);
                 }
 
@@ -92,11 +89,5 @@ impl<T: AsyncRead + AsyncWrite + Peek> Peek for Io<T> {
 
     fn peeked(&self) -> &[u8] {
         self.io.peeked()
-    }
-}
-
-impl<T: tls::HasStatus> tls::HasStatus for Io<T> {
-    fn tls_status(&self) -> tls::Status {
-        self.io.tls_status()
     }
 }

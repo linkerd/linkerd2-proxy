@@ -1,6 +1,7 @@
 use super::super::{io::internal::Io, tls, AddrInfo, BoxedIo, Connection};
-use crate::{identity, svc, Conditional};
 use futures::{try_ready, Async, Future, Poll};
+use linkerd2_conditional::Conditional;
+use linkerd2_identity as identity;
 pub use rustls::ClientConfig as Config;
 use std::sync::Arc;
 use std::{fmt, io};
@@ -38,7 +39,7 @@ pub fn layer<L: HasConfig + Clone>(l: tls::Conditional<L>) -> Layer<L> {
     Layer(l)
 }
 
-impl<L, C> svc::Layer<C> for Layer<L>
+impl<L, C> tower::layer::Layer<C> for Layer<L>
 where
     L: HasConfig + fmt::Debug + Clone,
 {
@@ -55,11 +56,11 @@ where
 // === impl Connect ===
 
 /// impl MakeConnection
-impl<L, C, Target> svc::Service<Target> for Connect<L, C>
+impl<L, C, Target> tower::Service<Target> for Connect<L, C>
 where
     Target: tls::HasPeerIdentity,
     L: HasConfig + fmt::Debug + Clone,
-    C: svc::MakeConnection<Target>,
+    C: tower::MakeConnection<Target>,
     C::Connection: Io + Send + 'static,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,

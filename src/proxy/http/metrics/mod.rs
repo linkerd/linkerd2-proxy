@@ -11,8 +11,7 @@ pub mod handle_time;
 mod report;
 mod service;
 
-pub use self::report::Report;
-pub use self::service::layer;
+pub use self::{report::Report, service::layer};
 
 pub type SharedRegistry<T, C> = Arc<Mutex<Registry<T, C>>>;
 

@@ -148,8 +148,11 @@ struct DstInner {
     outbound_local_addr: Option<SocketAddr>,
 }
 
-impl linkerd2_proxy::transport::GetOriginalDst for MockOriginalDst {
-    fn get_original_dst(&self, sock: &dyn transport::AddrInfo) -> Option<SocketAddr> {
+impl linkerd2_proxy_transport::GetOriginalDst for MockOriginalDst {
+    fn get_original_dst(
+        &self,
+        sock: &dyn linkerd2_proxy_transport::AddrInfo,
+    ) -> Option<SocketAddr> {
         sock.local_addr().ok().and_then(|local| {
             let inner = self.0.lock().unwrap();
             if inner.inbound_local_addr == Some(local) {
@@ -264,12 +267,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             // TODO: it would be nice for this to not be stubbed out, so that it
             // can be tested.
             let trace_handle = super::trace::LevelHandle::dangling();
-            let main = linkerd2_proxy::app::Main::new(
-                config,
-                trace_handle,
-                mock_orig_dst.clone(),
-                runtime,
-            );
+            let main = linkerd2_proxy::app::Main::new(config, trace_handle, runtime)
+                .with_original_dst_from(mock_orig_dst.clone());
 
             let control_addr = main.control_addr();
             let identity_addr = identity_addr;
