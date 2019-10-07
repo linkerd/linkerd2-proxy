@@ -1,5 +1,4 @@
 use crate::proxy::http::{upgrade::Http11Upgrade, HasH2Reason};
-use crate::transport::tls::HasStatus as HasTlsStatus;
 use crate::{svc, Error};
 use futures::{try_ready, Async, Future, Poll};
 use http;
@@ -35,10 +34,6 @@ pub struct HyperConnectFuture<F> {
     inner: F,
     absolute_form: bool,
 }
-
-/// Marker in `Response` extensions if the connection used TLS.
-#[derive(Clone, Debug)]
-pub struct ClientUsedTls(pub(super) ());
 
 // ===== impl HttpBody =====
 
@@ -170,7 +165,7 @@ where
     C: svc::MakeConnection<T> + Clone + Send + Sync,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: Into<Error>,
-    C::Connection: HasTlsStatus + Send + 'static,
+    C::Connection: Send + 'static,
     T: Clone + Send + Sync,
 {
     type Transport = C::Connection;
@@ -188,7 +183,6 @@ where
 impl<F> Future for HyperConnectFuture<F>
 where
     F: Future + 'static,
-    F::Item: HasTlsStatus,
     F::Error: Into<Error>,
 {
     type Item = (F::Item, hyper_connect::Connected);
@@ -197,11 +191,6 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let transport = try_ready!(self.inner.poll());
         let connected = hyper_connect::Connected::new().proxy(self.absolute_form);
-        let connected = if transport.tls_status().is_tls() {
-            connected.extra(ClientUsedTls(()))
-        } else {
-            connected
-        };
         Ok(Async::Ready((transport, connected)))
     }
 }
