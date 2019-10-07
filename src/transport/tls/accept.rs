@@ -32,8 +32,8 @@ pub struct AcceptTls<A: Accept<Connection>, T, G> {
 }
 
 pub enum AcceptFuture<A: Accept<Connection>> {
-    TryTLS(Option<TryTLS<A>>),
-    TerminateTLS(
+    TryTls(Option<TryTls<A>>),
+    TerminateTls(
         tokio_rustls::Accept<Prefixed<TcpStream>>,
         Option<AcceptMeta<A>>,
     ),
@@ -41,7 +41,7 @@ pub enum AcceptFuture<A: Accept<Connection>> {
     Accept(A::Future),
 }
 
-pub struct TryTLS<A: Accept<Connection>> {
+pub struct TryTls<A: Accept<Connection>> {
     meta: AcceptMeta<A>,
     server_name: identity::Name,
     config: Arc<Config>,
@@ -109,10 +109,10 @@ where
         }
 
         match &self.tls {
-            // TLS is disabled. Return a new plaintext connection.
+            // Tls is disabled. Return a new plaintext connection.
             Conditional::None(why_no_tls) => {
                 debug!(
-                    "accepted connection from {} to {:?}; skipping TLS ({})",
+                    "accepted connection from {} to {:?}; skipping Tls ({})",
                     remote_addr, orig_dst_addr, why_no_tls,
                 );
                 let conn = Connection::plain(socket, remote_addr, *why_no_tls)
@@ -121,13 +121,13 @@ where
                 AcceptFuture::Accept(self.accept.accept(conn))
             }
 
-            // TLS is enabled. Try to accept a TLS handshake.
+            // Tls is enabled. Try to accept a Tls handshake.
             Conditional::Some(tls) => {
                 debug!(
-                    "accepted connection from {} to {:?}; attempting TLS handshake",
+                    "accepted connection from {} to {:?}; attempting Tls handshake",
                     remote_addr, orig_dst_addr,
                 );
-                AcceptFuture::TryTLS(Some(TryTLS {
+                AcceptFuture::TryTls(Some(TryTls {
                     meta: AcceptMeta {
                         accept: self.accept.clone(),
                         remote_addr,
@@ -155,15 +155,15 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                     try_ready!(accept.poll_ready().map_err(Into::into));
                     AcceptFuture::Accept(accept.accept(conn.take().expect("polled after complete")))
                 }
-                AcceptFuture::TryTLS(ref mut try_tls) => {
+                AcceptFuture::TryTls(ref mut try_tls) => {
                     let match_ = try_ready!(try_tls
                         .as_mut()
                         .expect("polled after complete")
                         .poll_match_client_hello());
                     match match_ {
                         conditional_accept::Match::Matched => {
-                            trace!("upgrading accepted connection to TLS");
-                            let TryTLS {
+                            trace!("upgrading accepted connection to Tls");
+                            let TryTls {
                                 meta,
                                 socket,
                                 peek_buf,
@@ -171,15 +171,15 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                                 ..
                             } = try_tls.take().expect("polled after complete");
                             let io = Prefixed::new(peek_buf.freeze(), socket);
-                            AcceptFuture::TerminateTLS(
+                            AcceptFuture::TerminateTls(
                                 tokio_rustls::TlsAcceptor::from(config).accept(io),
                                 Some(meta),
                             )
                         }
 
                         conditional_accept::Match::NotMatched => {
-                            trace!("passing through accepted connection without TLS");
-                            let TryTLS {
+                            trace!("passing through accepted connection without Tls");
+                            let TryTls {
                                 peek_buf,
                                 socket,
                                 meta,
@@ -200,7 +200,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                         }
                     }
                 }
-                AcceptFuture::TerminateTLS(ref mut future, ref mut meta) => {
+                AcceptFuture::TerminateTls(ref mut future, ref mut meta) => {
                     let io = try_ready!(future.poll());
                     let client_id =
                         client_identity(&io)
@@ -208,7 +208,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                             .unwrap_or_else(|| {
                                 Conditional::None(super::ReasonForNoPeerName::NotProvidedByRemote)
                             });
-                    trace!("accepted TLS connection; client={:?}", client_id);
+                    trace!("accepted Tls connection; client={:?}", client_id);
 
                     let AcceptMeta {
                         accept,
@@ -224,10 +224,10 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
     }
 }
 
-impl<A: Accept<Connection>> TryTLS<A> {
+impl<A: Accept<Connection>> TryTls<A> {
     /// Polls the underlying socket for more data and buffers it.
     ///
-    /// The buffer is matched for a TLS client hello message.
+    /// The buffer is matched for a Tls client hello message.
     ///
     /// `NotMatched` is returned if the underlying socket has closed.
     fn poll_match_client_hello(&mut self) -> Poll<conditional_accept::Match, Error> {
@@ -237,9 +237,9 @@ impl<A: Accept<Connection>> TryTLS<A> {
             .map_err(Error::from));
         trace!(%sz, "read");
         if sz == 0 {
-            // XXX: It is ambiguous whether this is the start of a TLS handshake or not.
+            // XXX: It is ambiguous whether this is the start of a Tls handshake or not.
             // For now, resolve the ambiguity in favor of plaintext. TODO: revisit this
-            // when we add support for TLS policy.
+            // when we add support for Tls policy.
             return Ok(conditional_accept::Match::NotMatched.into());
         }
 
