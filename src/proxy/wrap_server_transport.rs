@@ -3,10 +3,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use super::Source;
 
 /// Wraps serverside transports with additional functionality.
-pub trait Accept<T: AsyncRead + AsyncWrite> {
+pub trait WrapServerTransport<T: AsyncRead + AsyncWrite> {
     type Io: AsyncRead + AsyncWrite;
 
-    fn accept(&self, source: &Source, inner: T) -> Self::Io;
+    fn wrap_server_transport(&self, source: &Source, inner: T) -> Self::Io;
 }
 
 /// Create a new builder with only an "identity" layer.
@@ -35,26 +35,26 @@ impl<L> Builder<L> {
     }
 }
 
-impl<L, T> Accept<T> for Builder<L>
+impl<L, T> WrapServerTransport<T> for Builder<L>
 where
-    L: Accept<T>,
+    L: WrapServerTransport<T>,
     T: AsyncRead + AsyncWrite,
 {
     type Io = L::Io;
 
-    fn accept(&self, source: &Source, io: T) -> Self::Io {
-        self.accept.accept(source, io)
+    fn wrap_server_transport(&self, source: &Source, io: T) -> Self::Io {
+        self.accept.wrap_server_transport(source, io)
     }
 }
 
 /// The identity `Accept`.
-impl<T> Accept<T> for ()
+impl<T> WrapServerTransport<T> for ()
 where
     T: AsyncRead + AsyncWrite,
 {
     type Io = T;
 
-    fn accept(&self, _: &Source, inner: T) -> T {
+    fn wrap_server_transport(&self, _: &Source, inner: T) -> T {
         inner
     }
 }
@@ -66,16 +66,16 @@ pub struct Stack<Inner, Outer> {
     outer: Outer,
 }
 
-impl<Inner, Outer, T> Accept<T> for Stack<Inner, Outer>
+impl<Inner, Outer, T> WrapServerTransport<T> for Stack<Inner, Outer>
 where
-    Inner: Accept<T>,
-    Outer: Accept<Inner::Io>,
+    Inner: WrapServerTransport<T>,
+    Outer: WrapServerTransport<Inner::Io>,
     T: AsyncRead + AsyncWrite,
 {
     type Io = Outer::Io;
 
-    fn accept(&self, source: &Source, io: T) -> Self::Io {
-        let io = self.inner.accept(source, io);
-        self.outer.accept(source, io)
+    fn wrap_server_transport(&self, source: &Source, io: T) -> Self::Io {
+        let io = self.inner.wrap_server_transport(source, io);
+        self.outer.wrap_server_transport(source, io)
     }
 }

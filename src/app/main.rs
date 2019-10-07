@@ -1,10 +1,9 @@
-use super::admin::{self, Admin, Readiness};
+use super::admin::{Admin, Readiness};
 use super::classify::{self, Class};
-use super::control;
+use super::config::Config;
 use super::metric_labels::{ControlLabels, EndpointLabels, RouteLabels};
 use super::profiles::Client as ProfilesClient;
-use super::{config::Config, identity};
-use super::{handle_time, inbound, outbound, tap::serve_tap};
+use super::{control, handle_time, identity, inbound, outbound, serve};
 use crate::opencensus::SpanExporter;
 use crate::proxy::{self, http::metrics as http_metrics};
 use crate::svc::{self, LayerExt};
@@ -39,16 +38,16 @@ pub struct Main<G> {
 
 struct ProxyParts<G> {
     config: Config,
-    identity: tls::Conditional<(identity::Local, identity::CrtKeySender)>,
+    get_original_dst: G,
 
     start_time: SystemTime,
     trace_level: trace::LevelHandle,
 
-    admin_listener: Listen<identity::Local, ()>,
-    control_listener: Option<(Listen<identity::Local, ()>, identity::Name)>,
+    admin_listener: Listen,
+    control_listener: Option<(Listen, identity::Name)>,
 
-    inbound_listener: Listen<identity::Local, G>,
-    outbound_listener: Listen<identity::Local, G>,
+    inbound_listener: Listen,
+    outbound_listener: Listen,
 }
 
 impl<G> Main<G>
@@ -66,61 +65,41 @@ where
     {
         let start_time = SystemTime::now();
 
-        let identity = config.identity_config.as_ref().map(identity::Local::new);
-        let local_identity = identity.as_ref().map(|(l, _)| l.clone());
-
         let control_listener = config.control_listener.as_ref().map(|cl| {
-            let listener = Listen::bind(
-                cl.listener.addr,
-                local_identity.clone(),
-                config.inbound_accept_keepalive,
-            )
-            .expect("tap listener bind");
+            let listener = Listen::bind(cl.listener.addr, config.inbound_accept_keepalive)
+                .expect("tap listener bind");
 
             (listener, cl.tap_svc_name.clone())
         });
 
-        let admin_listener = Listen::bind(
-            config.admin_listener.addr,
-            local_identity.clone(),
-            config.inbound_accept_keepalive,
-        )
-        .expect("tap listener bind");
-
-        let outbound_listener = Listen::bind(
-            config.outbound_listener.addr,
-            Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
-            config.outbound_accept_keepalive,
-        )
-        .expect("outbound listener bind")
-        .with_original_dst(get_original_dst.clone())
-        .without_protocol_detection_for(config.outbound_ports_disable_protocol_detection.clone());
+        let admin_listener =
+            Listen::bind(config.admin_listener.addr, config.inbound_accept_keepalive)
+                .expect("tap listener bind");
 
         let inbound_listener = Listen::bind(
             config.inbound_listener.addr,
-            local_identity,
             config.inbound_accept_keepalive,
         )
-        .expect("inbound listener bind")
-        .with_original_dst(get_original_dst.clone())
-        .without_protocol_detection_for(config.inbound_ports_disable_protocol_detection.clone());
+        .expect("inbound listener bind");
 
-        let runtime = runtime.into();
+        let outbound_listener = Listen::bind(
+            config.outbound_listener.addr,
+            config.outbound_accept_keepalive,
+        )
+        .expect("outbound listener bind");
 
-        let proxy_parts = ProxyParts {
-            config,
-            identity,
-            start_time,
-            trace_level,
-            inbound_listener,
-            outbound_listener,
-            control_listener,
-            admin_listener,
-        };
-
-        Main {
-            proxy_parts,
-            runtime,
+        Self {
+            runtime: runtime.into(),
+            proxy_parts: ProxyParts {
+                config,
+                get_original_dst,
+                start_time,
+                trace_level,
+                inbound_listener,
+                outbound_listener,
+                control_listener,
+                admin_listener,
+            },
         }
     }
 
@@ -154,8 +133,9 @@ where
 
         let (drain_tx, drain_rx) = drain::channel();
 
+        let d = drain_rx.clone();
         runtime.spawn(futures::lazy(move || {
-            proxy_parts.build_proxy_task(drain_rx);
+            proxy_parts.build_proxy_task(d);
             trace!("main task spawned");
             Ok(())
         }));
@@ -180,7 +160,7 @@ where
     fn build_proxy_task(self, drain_rx: drain::Watch) {
         let ProxyParts {
             config,
-            identity,
+            get_original_dst,
             start_time,
             trace_level,
             control_listener,
@@ -257,16 +237,13 @@ where
 
         let mut identity_daemon = None;
         let (readiness, ready_latch) = Readiness::new();
-        let local_identity = match identity {
+        let local_identity = match config.identity_config.clone() {
             Conditional::None(r) => {
                 ready_latch.release();
                 Conditional::None(r)
             }
-            Conditional::Some((local_identity, crt_store)) => {
-                let id_config = match config.identity_config.as_ref() {
-                    Conditional::Some(c) => c.clone(),
-                    Conditional::None(_) => unreachable!(),
-                };
+            Conditional::Some(id_config) => {
+                let (local_identity, crt_store) = identity::Local::new(&id_config);
 
                 // If the service is on localhost, use the inbound keepalive.
                 // If the service. is remote, use the outbound keepalive.
@@ -358,37 +335,62 @@ where
         // Spawn a separate thread to handle the admin stuff.
         {
             let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
+            let local_identity = local_identity.clone();
+            let drain_rx = drain_rx.clone();
+            let get_original_dst = get_original_dst.clone();
             thread::Builder::new()
                 .name("admin".into())
                 .spawn(move || {
-                    use crate::api::tap::server::TapServer;
+                    current_thread::Runtime::new()
+                        .expect("initialize admin thread runtime")
+                        .block_on(future::lazy(move || {
+                            trace!("spawning admin server");
+                            task::spawn(serve::serve(
+                                "admin",
+                                admin_listener,
+                                tls::AcceptTls::new(
+                                    get_original_dst.clone(),
+                                    local_identity.clone(),
+                                    Admin::new(report, readiness, trace_level).into_accept(),
+                                ),
+                                drain_rx.clone(),
+                            ));
 
-                    let mut rt =
-                        current_thread::Runtime::new().expect("initialize admin thread runtime");
+                            if let Some((listener, tap_svc_name)) = control_listener {
+                                trace!("spawning tap server");
+                                task::spawn(tap_daemon.map_err(|_| ()));
+                                task::spawn(serve::serve(
+                                    "tap",
+                                    listener,
+                                    tls::AcceptTls::new(
+                                        get_original_dst.clone(),
+                                        local_identity,
+                                        tap::AcceptPermittedClients::new(
+                                            std::iter::once(tap_svc_name),
+                                            tap_grpc,
+                                        ),
+                                    ),
+                                    drain_rx.clone(),
+                                ));
+                            } else {
+                                drop((tap_daemon, tap_grpc));
+                            }
 
-                    rt.spawn(admin::serve_http(
-                        "admin",
-                        admin_listener,
-                        Admin::new(report, readiness, trace_level),
-                    ));
+                            trace!("spawning dns resolver");
+                            task::spawn(logging::admin().bg("dns-resolver").future(dns_bg));
 
-                    if let Some((listener, tap_svc_name)) = control_listener {
-                        rt.spawn(tap_daemon.map_err(|_| ()));
-                        rt.spawn(serve_tap(listener, tap_svc_name, TapServer::new(tap_grpc)));
-                    }
+                            if let Some(d) = identity_daemon {
+                                task::spawn(
+                                    logging::admin()
+                                        .bg("identity")
+                                        .future(d.map_err(|_| error!("identity task failed"))),
+                                );
+                            }
 
-                    rt.spawn(logging::admin().bg("dns-resolver").future(dns_bg));
+                            admin_shutdown_signal.map(|_| ()).map_err(|_| ())
+                        }))
+                        .expect("admin");
 
-                    if let Some(d) = identity_daemon {
-                        rt.spawn(
-                            logging::admin()
-                                .bg("identity")
-                                .future(d.map_err(|_| error!("identity task failed"))),
-                        );
-                    }
-
-                    let shutdown = admin_shutdown_signal.then(|_| Ok::<(), ()>(()));
-                    rt.block_on(shutdown).expect("admin");
                     trace!("admin shutdown finished");
                 })
                 .expect("initialize dst_svc api thread");
@@ -464,10 +466,11 @@ where
             spans_tx
         });
 
-        let outbound_server = outbound::server(
+        outbound::spawn(
             &config,
             local_identity.clone(),
-            outbound_listener.local_addr(),
+            outbound_listener,
+            get_original_dst.clone(),
             outbound::resolve(
                 config.destination_get_suffixes.clone(),
                 config.control_backoff.clone(),
@@ -482,12 +485,14 @@ where
             retry_http_metrics,
             transport_metrics.clone(),
             spans_tx.clone(),
+            drain_rx.clone(),
         );
 
-        let inbound_server = inbound::server(
+        inbound::spawn(
             &config,
-            local_identity.clone(),
-            inbound_listener.local_addr(),
+            local_identity,
+            inbound_listener,
+            get_original_dst,
             profiles_client,
             tap_layer,
             inbound_handle_time,
@@ -495,9 +500,7 @@ where
             route_http_metrics,
             transport_metrics,
             spans_tx,
+            drain_rx,
         );
-
-        super::proxy::spawn(outbound_listener, outbound_server, drain_rx.clone());
-        super::proxy::spawn(inbound_listener, inbound_server, drain_rx);
     }
 }

@@ -7,6 +7,5 @@ publish = false
 
 [dependencies]
 futures = "0.1"
-linkerd2-drain = { path = "../linkerd2-drain" }
 linkerd2-error = { path = "../linkerd2-error" }
 tower = "0.1"

@@ -1,27 +1,39 @@
-use crate::drain;
-use futures::Future;
+use futures::{Future, Poll};
 use linkerd2_error::Error;
+use tower::Service;
 
-pub trait ListenAndSpawn {
+pub trait Listen {
     type Connection;
+    type Error: Into<Error>;
 
-    /// Accept connections, spawning a task for each.
-    fn listen_and_spawn<S>(
-        self,
-        serve: S,
-        drain: drain::Watch,
-    ) -> Box<dyn Future<Item = (), Error = Error> + Send + 'static>
-    where
-        S: ServeConnection<Self::Connection> + Send + 'static;
+    fn poll_accept(&mut self) -> Poll<Self::Connection, Self::Error>;
 }
 
-pub trait ServeConnection<C> {
-    /// Handles an accepted connection.
-    ///
-    /// The connection may be notified for graceful shutdown via `drain`.
-    fn serve_connection(
-        &mut self,
-        connection: C,
-        drain: drain::Watch,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
+/// Handles an accepted connection.
+pub trait Accept<C> {
+    type Error: Into<Error>;
+    type Future: Future<Item = (), Error = Self::Error>;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error>;
+
+    fn accept(&mut self, connection: C) -> Self::Future;
+}
+
+impl<C, S> Accept<C> for S
+where
+    S: Service<C, Response = ()>,
+    S::Error: Into<Error>,
+{
+    type Error = S::Error;
+    type Future = S::Future;
+
+    #[inline]
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        Service::poll_ready(self)
+    }
+
+    #[inline]
+    fn accept(&mut self, connection: C) -> Self::Future {
+        Service::call(self, connection)
+    }
 }

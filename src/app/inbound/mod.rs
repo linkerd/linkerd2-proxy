@@ -1,16 +1,15 @@
 use super::spans::SpanConverter;
-use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
+use super::{classify, config::Config, dst::DstAddr, identity, serve, DispatchDeadline};
 use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{accept, Server};
-use crate::transport::{self, connect, tls, Connection};
-use crate::{core::listen::ServeConnection, svc, trace_context, Addr};
+use crate::proxy::{wrap_server_transport, Server};
+use crate::transport::{self, connect, tls};
+use crate::{drain, svc, task, trace_context, Addr};
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::debug;
@@ -25,10 +24,11 @@ mod set_remote_ip_on_req;
 
 pub use self::endpoint::{Endpoint, RecognizeEndpoint};
 
-pub fn server<P>(
+pub fn spawn<P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
-    local_addr: SocketAddr,
+    listen: transport::Listen,
+    get_original_dst: impl transport::GetOriginalDst + Send + 'static,
     profiles_client: super::profiles::Client<P>,
     tap_layer: crate::tap::Layer,
     handle_time: http_metrics::handle_time::Scope,
@@ -36,8 +36,8 @@ pub fn server<P>(
     route_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
-) -> impl ServeConnection<Connection>
-where
+    drain: drain::Watch,
+) where
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
@@ -56,7 +56,7 @@ where
     // Establishes connections to the local application (for both
     // TCP forwarding and HTTP proxying).
     let connect = svc::stack(connect::svc(config.inbound_connect_keepalive))
-        .push(tls::client::layer(local_identity))
+        .push(tls::client::layer(local_identity.clone()))
         .push_timeout(config.inbound_connect_timeout)
         .push(transport_metrics.connect("inbound"))
         .push(rewrite_loopback_addr::layer());
@@ -211,14 +211,25 @@ where
 
     // As the inbound proxy accepts connections, we don't do any
     // special transport-level handling.
-    let accept = accept::builder().push(transport_metrics.accept("inbound"));
+    let wrap_server_transport =
+        wrap_server_transport::builder().push(transport_metrics.wrap_server_transport("inbound"));
 
-    Server::new(
+    let proxy = Server::new(
         "out",
-        local_addr,
-        accept,
+        listen.local_addr(),
+        wrap_server_transport,
         connect,
         source_stack,
         config.h2_settings,
-    )
+        drain.clone(),
+    );
+
+    let skip_ports = config
+        .inbound_ports_disable_protocol_detection
+        .iter()
+        .map(|p| *p);
+    let accept = tls::AcceptTls::new(get_original_dst, local_identity, proxy)
+        .without_protocol_detection_for(skip_ports);
+
+    task::spawn(serve::serve("in", listen, accept, drain));
 }

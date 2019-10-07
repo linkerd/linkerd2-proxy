@@ -160,6 +160,12 @@ impl fmt::Debug for Name {
     }
 }
 
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
 // === impl TokenSource ===
 
 impl TokenSource {

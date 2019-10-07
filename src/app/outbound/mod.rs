@@ -1,20 +1,17 @@
 use super::spans::SpanConverter;
-use super::{classify, config::Config, dst::DstAddr, identity, DispatchDeadline};
-use crate::core::listen::ServeConnection;
+use super::{classify, config::Config, dst::DstAddr, identity, serve, DispatchDeadline};
 use crate::core::resolve::Resolve;
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, accept, Server};
-use crate::transport::Connection;
+use crate::proxy::{self, wrap_server_transport, Server};
 use crate::transport::{self, connect, tls};
-use crate::{svc, trace_context, Addr};
+use crate::{drain, svc, task, trace_context, Addr, Conditional};
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
@@ -36,10 +33,11 @@ pub(super) use self::resolve::resolve;
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-pub fn server<R, P>(
+pub fn spawn<R, P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
-    local_addr: SocketAddr,
+    listen: transport::Listen,
+    get_original_dst: impl transport::GetOriginalDst + Send + 'static,
     resolve: R,
     dns_resolver: crate::dns::Resolver,
     profiles_client: super::profiles::Client<P>,
@@ -50,8 +48,8 @@ pub fn server<R, P>(
     retry_http_metrics: super::HttpRouteMetricsRegistry,
     transport_metrics: transport::metrics::Registry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
-) -> impl ServeConnection<Connection>
-where
+    drain: drain::Watch,
+) where
     R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
     R::Future: Send,
     R::Resolution: Send,
@@ -284,14 +282,27 @@ where
 
     // Instantiated for each TCP connection received from the local
     // application (including HTTP connections).
-    let accept = accept::builder().push(transport_metrics.accept("outbound"));
+    let wrap_server_transport =
+        wrap_server_transport::builder().push(transport_metrics.wrap_server_transport("outbound"));
 
-    Server::new(
+    let proxy = Server::new(
         "out",
-        local_addr,
-        accept,
+        listen.local_addr(),
+        wrap_server_transport,
         connect,
         server_stack,
         config.h2_settings,
-    )
+        drain.clone(),
+    );
+
+    let no_tls: tls::Conditional<identity::Local> =
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
+    let skip_ports = config
+        .outbound_ports_disable_protocol_detection
+        .iter()
+        .map(|p| *p);
+    let accept = tls::AcceptTls::new(get_original_dst, no_tls, proxy)
+        .without_protocol_detection_for(skip_ports);
+
+    task::spawn(serve::serve("out", listen, accept, drain));
 }

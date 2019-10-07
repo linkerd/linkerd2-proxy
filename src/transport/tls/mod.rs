@@ -1,15 +1,14 @@
+pub mod accept;
 pub mod client;
 mod conditional_accept;
 mod connection;
 mod io;
-pub mod listen;
 
+pub use self::accept::AcceptTls;
 pub use self::connection::Connection;
-pub use self::listen::Listen;
 use crate::identity;
 pub use rustls::TLSError as Error;
 use std::fmt;
-use tokio_rustls::{Accept, TlsAcceptor as Acceptor, TlsConnector as Connector};
 
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.

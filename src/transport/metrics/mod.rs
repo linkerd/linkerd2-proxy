@@ -1,10 +1,7 @@
-mod io;
-
-pub use self::io::Io;
 use crate::metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
 };
-use crate::{svc, telemetry::Errno, transport::tls};
+use crate::{proxy::WrapServerTransport, svc, telemetry::Errno, transport::tls};
 use futures::{try_ready, Future, Poll};
 use indexmap::IndexMap;
 use std::fmt;
@@ -13,6 +10,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, error};
+
+mod io;
+
+pub use self::io::Io;
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
@@ -36,7 +37,7 @@ pub struct Report(Arc<Mutex<Inner>>);
 #[derive(Clone, Debug, Default)]
 pub struct Registry(Arc<Mutex<Inner>>);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Accept {
     direction: Direction,
     registry: Arc<Mutex<Inner>>,
@@ -191,7 +192,7 @@ impl Inner {
 // ===== impl Registry =====
 
 impl Registry {
-    pub fn accept(&self, direction: &'static str) -> Accept {
+    pub fn wrap_server_transport(&self, direction: &'static str) -> Accept {
         Accept {
             direction: Direction(direction),
             registry: self.0.clone(),
@@ -207,13 +208,13 @@ impl Registry {
     }
 }
 
-impl<I> crate::proxy::Accept<I> for Accept
+impl<I> WrapServerTransport<I> for Accept
 where
     I: AsyncRead + AsyncWrite,
 {
     type Io = Io<I>;
 
-    fn accept(&self, source: &crate::proxy::Source, io: I) -> Self::Io {
+    fn wrap_server_transport(&self, source: &crate::proxy::Source, io: I) -> Self::Io {
         let tls_status = source.tls_peer.as_ref().map(|_| {}).into();
         let key = Key::accept(self.direction, tls_status);
         let metrics = match self.registry.lock() {

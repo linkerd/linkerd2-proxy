@@ -580,6 +580,7 @@ dependencies = [
  "linkerd2-addr 0.1.0",
  "linkerd2-conditional 0.1.0",
  "linkerd2-dns-name 0.1.0",
+ "linkerd2-drain 0.1.0",
  "linkerd2-error 0.1.0",
  "linkerd2-exp-backoff 0.1.0",
  "linkerd2-fallback 0.1.0",
@@ -673,7 +674,6 @@ name = "linkerd2-proxy-core"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
- "linkerd2-drain 0.1.0",
  "linkerd2-error 0.1.0",
  "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

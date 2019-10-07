@@ -58,6 +58,7 @@ macro_rules! generate_tls_accept_test {
             .identity(id_svc.service().run())
             .run_with_test_env(id_svc.env);
 
+        println!("non-tls request to {}", proxy.metrics);
         let non_tls_client = $make_client_non_tls(proxy.metrics, "localhost");
         assert_eventually!(
             non_tls_client
@@ -66,6 +67,7 @@ macro_rules! generate_tls_accept_test {
                 == http::StatusCode::OK
         );
 
+        println!("tls request to {}", proxy.metrics);
         let tls_client = $make_client_tls(
             proxy.metrics,
             "localhost",

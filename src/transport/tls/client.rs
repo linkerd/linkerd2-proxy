@@ -105,8 +105,9 @@ where
                     match tls {
                         Conditional::Some((server_name, local_tls)) => {
                             trace!("initiating TLS to {}", server_name.as_ref());
-                            let future = tls::Connector::from(local_tls.tls_client_config())
-                                .connect(server_name.as_dns_name_ref(), io);
+                            let future =
+                                tokio_rustls::TlsConnector::from(local_tls.tls_client_config())
+                                    .connect(server_name.as_dns_name_ref(), io);
                             ConnectFuture::Handshake {
                                 future,
                                 remote_addr,

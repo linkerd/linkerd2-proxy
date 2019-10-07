@@ -4,6 +4,7 @@ use tokio::net::TcpStream;
 mod addr_info;
 pub mod connect;
 mod io;
+mod listen;
 pub mod metrics;
 mod peek;
 mod prefixed;
@@ -12,8 +13,9 @@ pub mod tls;
 pub use self::{
     addr_info::{AddrInfo, GetOriginalDst, SoOriginalDst},
     io::BoxedIo,
+    listen::Listen,
     peek::Peek,
-    tls::{Connection, Listen},
+    tls::Connection,
 };
 
 // Misc.
