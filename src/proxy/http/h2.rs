@@ -1,6 +1,5 @@
-use super::{Body, ClientUsedTls};
+use super::Body;
 use crate::task::{ArcExecutor, BoxSendFuture, Executor};
-use crate::transport::tls::HasStatus as HasTlsStatus;
 use crate::{app::config::H2Settings, svc, Error};
 use futures::{try_ready, Future, Poll};
 use http;
@@ -22,7 +21,6 @@ pub struct Connect<C, B> {
 
 #[derive(Debug)]
 pub struct Connection<B> {
-    client_used_tls: bool,
     tx: SendRequest<B>,
 }
 
@@ -34,14 +32,10 @@ pub struct ConnectFuture<F: Future, B> {
 
 enum ConnectState<F: Future, B> {
     Connect(F),
-    Handshake {
-        client_used_tls: bool,
-        hs: Handshake<F::Item, B>,
-    },
+    Handshake(Handshake<F::Item, B>),
 }
 
 pub struct ResponseFuture {
-    client_used_tls: bool,
     inner: conn::ResponseFuture,
 }
 
@@ -82,7 +76,7 @@ impl<C: Clone, B> Clone for Connect<C, B> {
 impl<C, B, Target> svc::Service<Target> for Connect<C, B>
 where
     C: svc::MakeConnection<Target>,
-    C::Connection: HasTlsStatus + Send + 'static,
+    C::Connection: Send + 'static,
     C::Error: Into<Error>,
     B: Payload,
 {
@@ -108,7 +102,7 @@ where
 impl<F, B> Future for ConnectFuture<F, B>
 where
     F: Future,
-    F::Item: HasTlsStatus + AsyncRead + AsyncWrite + Send + 'static,
+    F::Item: AsyncRead + AsyncWrite + Send + 'static,
     F::Error: Into<Error>,
     B: Payload,
 {
@@ -119,24 +113,15 @@ where
         loop {
             let io = match self.state {
                 ConnectState::Connect(ref mut fut) => try_ready!(fut.poll().map_err(Into::into)),
-                ConnectState::Handshake {
-                    ref mut hs,
-                    client_used_tls,
-                } => {
+                ConnectState::Handshake(ref mut hs) => {
                     let (tx, conn) = try_ready!(hs.poll());
                     let _ = self
                         .executor
                         .execute(conn.map_err(|err| debug!("http2 conn error: {}", err)));
 
-                    return Ok(Connection {
-                        client_used_tls,
-                        tx,
-                    }
-                    .into());
+                    return Ok(Connection { tx }.into());
                 }
             };
-
-            let client_used_tls = io.tls_status().is_tls();
 
             let hs = conn::Builder::new()
                 .executor(self.executor.clone())
@@ -146,10 +131,7 @@ where
                     self.h2_settings.initial_connection_window_size,
                 )
                 .handshake(io);
-            self.state = ConnectState::Handshake {
-                client_used_tls,
-                hs,
-            }
+            self.state = ConnectState::Handshake(hs);
         }
     }
 }
@@ -184,7 +166,6 @@ where
         }
 
         ResponseFuture {
-            client_used_tls: self.client_used_tls,
             inner: self.tx.send_request(req),
         }
     }
@@ -198,13 +179,10 @@ impl Future for ResponseFuture {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let res = try_ready!(self.inner.poll());
-        let mut res = res.map(|body| Body {
+        let res = res.map(|body| Body {
             body: Some(body),
             upgrade: None,
         });
-        if self.client_used_tls {
-            res.extensions_mut().insert(ClientUsedTls(()));
-        }
         Ok(res.into())
     }
 }

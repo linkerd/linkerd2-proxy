@@ -24,7 +24,7 @@ pub mod timeout;
 pub mod upgrade;
 
 pub use self::client::Client;
-pub use self::glue::{ClientUsedTls, HttpBody as Body, HyperServerSvc};
+pub use self::glue::{HttpBody as Body, HyperServerSvc};
 pub use self::settings::Settings;
 pub use linkerd2_fallback as fallback;
 
