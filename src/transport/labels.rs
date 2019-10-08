@@ -29,10 +29,6 @@ enum Peer {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsStatus(tls::Conditional<()>);
 
-pub trait HasTlsStatus {
-    fn tls_status(&self) -> TlsStatus;
-}
-
 // ===== impl Key =====
 
 impl Key {
