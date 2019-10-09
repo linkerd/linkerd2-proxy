@@ -3,8 +3,8 @@ use futures::{try_ready, Async, Future, Poll};
 use linkerd2_conditional::Conditional;
 use linkerd2_identity as identity;
 pub use rustls::ClientConfig as Config;
+use std::io;
 use std::sync::Arc;
-use std::{fmt, io};
 use tracing::trace;
 
 pub trait HasConfig {
@@ -41,7 +41,7 @@ pub fn layer<L: HasConfig + Clone>(l: tls::Conditional<L>) -> Layer<L> {
 
 impl<L, C> tower::layer::Layer<C> for Layer<L>
 where
-    L: HasConfig + fmt::Debug + Clone,
+    L: HasConfig + Clone,
 {
     type Service = Connect<L, C>;
 
@@ -59,7 +59,7 @@ where
 impl<L, C, Target> tower::Service<Target> for Connect<L, C>
 where
     Target: tls::HasPeerIdentity,
-    L: HasConfig + fmt::Debug + Clone,
+    L: HasConfig + Clone,
     C: tower::MakeConnection<Target>,
     C::Connection: Io + Send + 'static,
     C::Future: Send + 'static,
@@ -88,7 +88,7 @@ where
 
 impl<L, F> Future for ConnectFuture<L, F>
 where
-    L: HasConfig + fmt::Debug,
+    L: HasConfig,
     F: Future,
     F::Item: Io + 'static,
     F::Error: From<io::Error>,

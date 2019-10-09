@@ -9,7 +9,7 @@ use std::time::SystemTime;
 use std::{fmt, fs, io};
 use tracing::{debug, warn};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
 
 pub use linkerd2_dns_name::InvalidName;
@@ -191,7 +191,7 @@ impl TokenSource {
 // === impl TrustAnchors ===
 
 impl TrustAnchors {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     fn empty() -> Self {
         TrustAnchors(Arc::new(rustls::ClientConfig::new()))
     }
@@ -305,6 +305,10 @@ impl Crt {
             chain,
             expiry,
         }
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
     }
 }
 

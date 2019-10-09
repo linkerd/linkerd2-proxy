@@ -7,7 +7,7 @@ use crate::proxy::http::{
 };
 use crate::proxy::{self, Server, Source};
 use crate::transport::{self, connect, tls};
-use crate::{drain, svc, task, trace_context, Addr, Conditional};
+use crate::{drain, svc, trace_context, Addr, Conditional};
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
@@ -300,7 +300,7 @@ pub fn spawn<R, P>(
     let accept = tls::AcceptTls::new(get_original_dst, no_tls, proxy)
         .without_protocol_detection_for(skip_ports);
 
-    task::spawn(serve::serve("out", listen, accept, drain));
+    serve::spawn("out", listen, accept, drain);
 }
 
 #[derive(Copy, Clone, Debug)]

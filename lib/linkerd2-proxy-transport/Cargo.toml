@@ -28,3 +28,7 @@ untrusted = "0.7"
 libc = "0.2"
 procinfo = "0.4.2"
 
+[dev-dependencies]
+linkerd2-identity = { path = "../linkerd2-identity", features = ["test-util"] }
+tower-util = "0.1"
+tracing-subscriber = "0.1"

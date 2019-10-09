@@ -361,7 +361,7 @@ where
                         .expect("initialize admin thread runtime")
                         .block_on(future::lazy(move || {
                             trace!("spawning admin server");
-                            task::spawn(serve::serve(
+                            serve::spawn(
                                 "admin",
                                 admin_listener,
                                 tls::AcceptTls::new(
@@ -370,12 +370,12 @@ where
                                     Admin::new(report, readiness, trace_level).into_accept(),
                                 ),
                                 drain_rx.clone(),
-                            ));
+                            );
 
                             if let Some((listener, tap_svc_name)) = control_listener {
                                 trace!("spawning tap server");
                                 task::spawn(tap_daemon.map_err(|_| ()));
-                                task::spawn(serve::serve(
+                                serve::spawn(
                                     "tap",
                                     listener,
                                     tls::AcceptTls::new(
@@ -387,7 +387,7 @@ where
                                         ),
                                     ),
                                     drain_rx.clone(),
-                                ));
+                                );
                             } else {
                                 drop((tap_daemon, tap_grpc));
                             }
