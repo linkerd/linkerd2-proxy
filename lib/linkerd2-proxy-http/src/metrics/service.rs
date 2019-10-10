@@ -161,8 +161,8 @@ where
 
 impl<T, M, K, C> tower::Service<T> for MakeSvc<M, K, C>
 where
-    T: Clone + Debug,
-    K: Hash + Eq + From<T>,
+    T: Clone + Debug + Into<K>,
+    K: Hash + Eq,
     M: tower::Service<T>,
     C: ClassifyResponse + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
