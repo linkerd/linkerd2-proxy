@@ -3,6 +3,9 @@ members = [
     ".",
     "lib/hyper-balance",
     "lib/linkerd2-addr",
+    "lib/linkerd2-app-core",
+    "lib/linkerd2-app-inbound",
+    "lib/linkerd2-app-outbound",
     "lib/linkerd2-conditional",
     "lib/linkerd2-dns-name",
     "lib/linkerd2-drain",
@@ -43,6 +46,9 @@ default = ["flaky_tests"]
 flaky_tests = []
 
 [dependencies]
+linkerd2-app-core = { path = "lib/linkerd2-app-core" }
+linkerd2-app-inbound = { path = "lib/linkerd2-app-inbound" }
+linkerd2-app-outbound = { path = "lib/linkerd2-app-outbound" }
 linkerd2-addr        = { path = "lib/linkerd2-addr" }
 linkerd2-conditional = { path = "lib/linkerd2-conditional" }
 linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
@@ -83,7 +89,6 @@ ipnet = "1.0"
 log = { version = "0.4.1", features = ["std"] }
 indexmap = "1.0"
 prost = "0.5.0"
-prost-types = "0.5.0"
 rand = "0.6.3"
 
 # for config parsing

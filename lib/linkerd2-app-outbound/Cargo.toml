@@ -1,0 +1,8 @@
+[package]
+name = "linkerd2-app-outbound"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
