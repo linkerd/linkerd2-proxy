@@ -5,11 +5,11 @@
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
 
-use super::{AcceptTls, Conditional, Connection, HasPeerIdentity};
-use crate::SoOriginalDst;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
-use linkerd2_proxy_core::listen::{Accept, Listen};
+use linkerd2_proxy_core::listen::{Accept, Listen as CoreListen};
+use linkerd2_proxy_transport::tls::{self, AcceptTls, Conditional, Connection, HasPeerIdentity};
+use linkerd2_proxy_transport::{connect, Listen, SoOriginalDst};
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::{self, io, prelude::*};
 use tower::{layer::Layer, Service, ServiceExt};
@@ -19,9 +19,9 @@ use tracing::trace;
 #[test]
 fn plaintext() {
     let (client_result, server_result) = run_test(
-        Conditional::None(super::ReasonForNoIdentity::Disabled),
+        Conditional::None(tls::ReasonForNoIdentity::Disabled),
         |conn| write_then_read(conn, PING),
-        Conditional::None(super::ReasonForNoIdentity::Disabled),
+        Conditional::None(tls::ReasonForNoIdentity::Disabled),
         |conn| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), false);
@@ -74,7 +74,7 @@ struct Transported<R> {
     /// The value of `Connection::peer_identity()` for the established connection.
     ///
     /// This will be `None` if we never even get a `Connection`.
-    peer_identity: Option<super::PeerIdentity>,
+    peer_identity: Option<tls::PeerIdentity>,
 
     /// The connection's result.
     result: Result<R, io::Error>,
@@ -93,9 +93,9 @@ impl<R> Transported<R> {
 /// on the client side and `server` processes the connection on the server
 /// side.
 fn run_test<C, CF, CR, S, SF, SR>(
-    client_tls: super::Conditional<(CrtKey, Name)>,
+    client_tls: tls::Conditional<(CrtKey, Name)>,
     client: C,
-    server_tls: super::Conditional<CrtKey>,
+    server_tls: tls::Conditional<CrtKey>,
     server: S,
 ) -> (Transported<CR>, Transported<SR>)
 where
@@ -136,7 +136,7 @@ where
         // tests to run at once, which wouldn't work if they all were bound on
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-        let listen = crate::Listen::bind(addr, None).expect("must bind");
+        let listen = Listen::bind(addr, None).expect("must bind");
         let listen_addr = listen.local_addr();
 
         let accept = AcceptTls::new(
@@ -171,8 +171,8 @@ where
         let (sender, receiver) = mpsc::channel::<Transported<CR>>();
         let sender_clone = sender.clone();
 
-        let client = super::client::layer(client_tls)
-            .layer(crate::connect::svc(None))
+        let client = tls::client::layer(client_tls)
+            .layer(connect::svc(None))
             .ready()
             .and_then(move |mut svc| svc.call(Target(server_addr, client_target_name)))
             .map_err(move |e| {
@@ -252,15 +252,15 @@ const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 
 enum Server<A: Accept<Connection>>
 where
-    AcceptTls<A, CrtKey, SoOriginalDst>: Accept<<crate::Listen as Listen>::Connection>,
+    AcceptTls<A, CrtKey, SoOriginalDst>: Accept<<Listen as CoreListen>::Connection>,
 {
     Init {
-        listen: crate::Listen,
+        listen: Listen,
         accept: AcceptTls<A, CrtKey, SoOriginalDst>,
     },
     Serving(
         <AcceptTls<A, CrtKey, SoOriginalDst> as Accept<
-                <crate::Listen as Listen>::Connection,
+                <Listen as CoreListen>::Connection,
             >>::Future,
     ),
 }
@@ -303,20 +303,20 @@ impl<A: Accept<Connection> + Clone> Future for Server<A> {
     }
 }
 
-impl crate::connect::HasPeerAddr for Target {
+impl connect::HasPeerAddr for Target {
     fn peer_addr(&self) -> SocketAddr {
         self.0
     }
 }
 
-impl super::HasPeerIdentity for Target {
+impl tls::HasPeerIdentity for Target {
     fn peer_identity(&self) -> Conditional<Name> {
         self.1.clone()
     }
 }
 
-impl super::client::HasConfig for ClientTls {
-    fn tls_client_config(&self) -> std::sync::Arc<super::client::Config> {
+impl tls::client::HasConfig for ClientTls {
+    fn tls_client_config(&self) -> std::sync::Arc<tls::client::Config> {
         self.0.tls_client_config()
     }
 }

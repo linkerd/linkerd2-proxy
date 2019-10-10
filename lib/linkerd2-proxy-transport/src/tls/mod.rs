@@ -3,7 +3,6 @@ pub use rustls::TLSError as Error;
 use std::fmt;
 
 pub mod accept;
-mod accept_tests;
 pub mod client;
 mod conditional_accept;
 mod connection;
