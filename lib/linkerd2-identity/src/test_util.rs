@@ -3,10 +3,9 @@ use std::time::{Duration, SystemTime};
 
 pub struct Strings {
     pub name: &'static str,
-    pub trust_anchors: &'static [u8; 542],
-    pub crt: &'static [u8; 476],
-    pub key: &'static [u8; 138],
-    //pub csr: &'static str,
+    pub trust_anchors: &'static [u8],
+    pub crt: &'static [u8],
+    pub key: &'static [u8],
 }
 
 pub static FOO_NS1: Strings = Strings {

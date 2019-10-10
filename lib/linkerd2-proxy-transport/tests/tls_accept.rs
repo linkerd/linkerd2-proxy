@@ -259,9 +259,7 @@ where
         accept: AcceptTls<A, CrtKey, SoOriginalDst>,
     },
     Serving(
-        <AcceptTls<A, CrtKey, SoOriginalDst> as Accept<
-                <Listen as CoreListen>::Connection,
-            >>::Future,
+        <AcceptTls<A, CrtKey, SoOriginalDst> as Accept<<Listen as CoreListen>::Connection>>::Future,
     ),
 }
 

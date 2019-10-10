@@ -430,7 +430,7 @@ mod tests {
     #[test]
     fn recognize_ca_did_not_issue_cert() {
         let s = Strings {
-            trust_anchors: "ca2.pem",
+            trust_anchors: include_bytes!("testdata/ca2.pem"),
             ..FOO_NS1
         };
         assert!(s.validate().is_err(), "ca2 should not validate foo.ns1");
