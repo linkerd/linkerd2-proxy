@@ -46,102 +46,37 @@ default = ["flaky_tests"]
 flaky_tests = []
 
 [dependencies]
+futures = "0.1"
 linkerd2-app-core = { path = "lib/linkerd2-app-core" }
 linkerd2-app-inbound = { path = "lib/linkerd2-app-inbound" }
 linkerd2-app-outbound = { path = "lib/linkerd2-app-outbound" }
-linkerd2-addr        = { path = "lib/linkerd2-addr" }
-linkerd2-conditional = { path = "lib/linkerd2-conditional" }
-linkerd2-dns-name    = { path = "lib/linkerd2-dns-name" }
-linkerd2-drain       = { path = "lib/linkerd2-drain" }
-linkerd2-duplex      = { path = "lib/linkerd2-duplex" }
-linkerd2-error       = { path = "lib/linkerd2-error" }
-linkerd2-exp-backoff = { path = "lib/linkerd2-exp-backoff" }
-linkerd2-fallback    = { path = "lib/linkerd2-fallback" }
-linkerd2-identity    = { path = "lib/linkerd2-identity" }
-linkerd2-metrics     = { path = "lib/linkerd2-metrics" }
-linkerd2-opencensus  = { path = "lib/linkerd2-opencensus" }
-linkerd2-proxy-core  = { path = "lib/linkerd2-proxy-core" }
-linkerd2-proxy-api-resolve = { path = "lib/linkerd2-proxy-api-resolve" }
-linkerd2-proxy-discover    = { path = "lib/linkerd2-proxy-discover" }
-linkerd2-proxy-dns         = { path = "lib/linkerd2-proxy-dns" }
-linkerd2-proxy-http        = { path = "lib/linkerd2-proxy-http" }
-linkerd2-proxy-resolve     = { path = "lib/linkerd2-proxy-resolve" }
-linkerd2-proxy-transport   = { path = "lib/linkerd2-proxy-transport" }
-linkerd2-reconnect         = { path = "lib/linkerd2-reconnect" }
-linkerd2-request-filter    = { path = "lib/linkerd2-request-filter" }
-linkerd2-router  = { path = "lib/linkerd2-router" }
-linkerd2-signal  = { path = "lib/linkerd2-signal" }
-linkerd2-stack   = { path = "lib/linkerd2-stack" }
-linkerd2-task    = { path = "lib/linkerd2-task" }
-linkerd2-timeout = { path = "lib/linkerd2-timeout" }
-linkerd2-trace-context = { path = "lib/linkerd2-trace-context" }
+linkerd2-signal = { path = "lib/linkerd2-signal" }
 opencensus-proto       = { path = "lib/opencensus-proto" }
-
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.10" }
-
-bytes = "0.4"
-futures = "0.1"
-h2 = "0.1"
-http = "0.1"
-httparse = "1.2"
-hyper = "0.12.3"
-ipnet = "1.0"
-log = { version = "0.4.1", features = ["std"] }
-indexmap = "1.0"
-prost = "0.5.0"
-rand = "0.6.3"
-
-# for config parsing
-regex = "1.0.0"
-
-# networking
 tokio = "0.1.14"
-tokio-timer = "0.2.6"   # for tokio_timer::clock
-tower = "0.1"
-tower-discover = "0.1"
-tower-service = "0.2"
-tower-util = "0.1"
-tokio-connect          = { git = "https://github.com/carllerche/tokio-connect" }
-tower-balance          = { git = "https://github.com/tower-rs/tower" }
-tower-load             = { git = "https://github.com/tower-rs/tower" }
-tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
-tower-spawn-ready      = { git = "https://github.com/tower-rs/tower" }
-tower-grpc             = { version = "0.1", default-features = false, features = ["protobuf"] }
-
-# tracing
 tracing            = "0.1.9"
-tracing-futures    = "0.0.1-alpha.1"
-tracing-log        = "0.1"
-
-# tls
-ring = "0.16"
-webpki = "0.21"
-rustls = "0.16"
-tokio-rustls = "0.10"
-untrusted = "0.7"
-
-[dependencies.tracing-subscriber]
-version = "0.1.4"
-# we don't need ANSI colors or `chrono` time formatting
-default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log"]
-
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
-procinfo = "0.4.2"
 
 [dev-dependencies]
+bytes = "0.4"
+flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
+h2 = "0.1"
+http = "0.1"
 http-body = "0.1"
-net2 = "0.2"
-quickcheck = { version = "0.8", default-features = false }
+hyper = "0.12"
 linkerd2-metrics = { path = "./lib/linkerd2-metrics", features = ["test_util"] }
 linkerd2-task    = { path = "lib/linkerd2-task", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.10" }
-flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
-# `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
-# the `read` function.
+regex = "0.1"
+net2 = "0.2"
+quickcheck = { version = "0.8", default-features = false }
+ring = "0.16"
+rustls = "0.16"
+tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-io = "0.1.6"
 tokio-current-thread = "0.1.4"
+tokio-rustls = "0.10"
+tower = "0.1"
+tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
+webpki = "0.21"
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.

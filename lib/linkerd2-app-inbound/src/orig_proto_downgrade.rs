@@ -1,8 +1,6 @@
 use futures::{Future, Poll};
 use http;
-use linkerd2_app_core::svc;
-use linkerd2_proxy_http::orig_proto;
-use linkerd2_proxy_transport::Source;
+use linkerd2_app_core::{proxy::http::orig_proto, svc, transport::Source};
 use std::marker::PhantomData;
 use tracing::trace;
 

@@ -2,10 +2,11 @@
 //! TlsIdentity of a `Source`.
 
 use http::header::HeaderValue;
-use linkerd2_app_core::L5D_CLIENT_ID;
-use linkerd2_conditional::Conditional;
-use linkerd2_proxy_http::add_header::{self, request::ReqHeader, Layer};
-use linkerd2_proxy_transport::Source;
+use linkerd2_app_core::{
+    proxy::http::add_header::{self, request::ReqHeader, Layer},
+    transport::Source,
+    Conditional, L5D_CLIENT_ID,
+};
 use tracing::{debug, warn};
 
 pub fn layer() -> Layer<&'static str, Source, ReqHeader> {

@@ -2,7 +2,7 @@
 //! with the same port still set.
 
 use super::Endpoint;
-use linkerd2_stack::map_target;
+use linkerd2_app_core::svc::map_target;
 use std::net::SocketAddr;
 use tracing::debug;
 

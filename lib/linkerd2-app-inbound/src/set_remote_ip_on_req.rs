@@ -3,9 +3,11 @@
 
 use bytes::Bytes;
 use http::header::HeaderValue;
-use linkerd2_app_core::L5D_REMOTE_IP;
-use linkerd2_proxy_http::add_header::{self, request::ReqHeader, Layer};
-use linkerd2_proxy_transport::Source;
+use linkerd2_app_core::{
+    proxy::http::add_header::{self, request::ReqHeader, Layer},
+    transport::Source,
+    L5D_REMOTE_IP,
+};
 
 pub fn layer() -> Layer<&'static str, Source, ReqHeader> {
     add_header::request::layer(L5D_REMOTE_IP, |source: &Source| {

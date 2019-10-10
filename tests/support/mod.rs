@@ -11,8 +11,8 @@ pub use futures::sync::oneshot;
 pub use futures::{future::Executor, *};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 use http_body::Body as HttpBody;
-pub use linkerd2_proxy::*;
-pub use linkerd2_task::LazyExecutor;
+pub use linkerd2_proxy::Main;
+pub use linkerd2_app_core::{self as app, task::LazyExecutor};
 pub use std::collections::HashMap;
 use std::fmt;
 use std::io;
@@ -24,8 +24,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{net::TcpListener, reactor, runtime};
 use tokio_connect::Connect;
 use tokio_current_thread as current_thread;
+pub use tower::Service;
 pub use tower_grpc as grpc;
-pub use tower_service::Service;
 pub use tracing::*;
 
 /// Environment variable for overriding the test patience.
@@ -53,7 +53,7 @@ pub fn trace_init() -> Result<(), Error> {
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    trace::init_with_filter(&log).map(|_| ())
+    app::trace::init_with_filter(&log).map(|_| ())
 }
 
 /// Retry an assertion up to a specified number of times, waiting

@@ -1,11 +1,13 @@
 //! Adds `l5d-remote-ip` headers to http::Responses derived from the
 //! `remote` of a `Source`.
 
-use super::super::L5D_REMOTE_IP;
 use super::Endpoint;
-use crate::proxy::http::add_header::{self, response::ResHeader, Layer};
 use bytes::Bytes;
 use http::header::HeaderValue;
+use linkerd2_app_core::{
+    proxy::http::add_header::{self, response::ResHeader, Layer},
+    L5D_REMOTE_IP,
+};
 
 pub fn layer() -> Layer<&'static str, Endpoint, ResHeader> {
     add_header::response::layer(L5D_REMOTE_IP, |endpoint: &Endpoint| {

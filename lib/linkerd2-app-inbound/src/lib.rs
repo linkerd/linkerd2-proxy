@@ -1,27 +1,24 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_addr::Addr;
 use linkerd2_app_core::{
     classify,
     config::Config,
+    drain,
     dst::DstAddr,
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, identity,
+    proxy::http::{
+        client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
+        strip_header,
+    },
     proxy::Server,
-    serve,
+    reconnect, serve,
     spans::SpanConverter,
-    svc,
+    svc, trace_context,
     transport::{self as transport, connect, tls, Source},
-    DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
-    L5D_SERVER_ID,
+    Addr, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
+    L5D_REMOTE_IP, L5D_SERVER_ID,
 };
-use linkerd2_drain as drain;
-use linkerd2_proxy_http::{
-    client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
-    strip_header,
-};
-use linkerd2_reconnect as reconnect;
-use linkerd2_trace_context as trace_context;
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use tokio::sync::mpsc;

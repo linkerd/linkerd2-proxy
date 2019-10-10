@@ -1,13 +1,15 @@
 use super::endpoint;
-use crate::api_resolve::Metadata;
-use crate::app::dst::DstAddr;
-use crate::dns::Suffix;
 use indexmap::IndexSet;
-use linkerd2_error::{Error, Recover};
-use linkerd2_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
-use linkerd2_proxy_core::{resolve, Resolve};
-use linkerd2_proxy_resolve::{map_endpoint, recover};
-use linkerd2_request_filter as request_filter;
+use linkerd2_app_core::{
+    api_resolve::Metadata,
+    core::{resolve, Resolve},
+    dns::Suffix,
+    dst::DstAddr,
+    exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
+    request_filter,
+    resolve::{map_endpoint, recover},
+    Error, Recover,
+};
 use std::sync::Arc;
 use tower_grpc as grpc;
 

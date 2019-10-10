@@ -1,12 +1,15 @@
 use http;
 use indexmap::IndexMap;
-use linkerd2_addr::NameAddr;
-use linkerd2_app_core::dst::{DstAddr, Route};
-use linkerd2_app_core::metric_labels::EndpointLabels;
-use linkerd2_app_core::{classify, identity, tap};
-use linkerd2_conditional::Conditional;
-use linkerd2_proxy_http::{router, settings};
-use linkerd2_proxy_transport::{connect, tls, Source};
+use linkerd2_app_core::{
+    classify,
+    dst::{DstAddr, Route},
+    identity,
+    metric_labels::EndpointLabels,
+    proxy::http::{router, settings},
+    tap,
+    transport::{connect, tls, Source},
+    Conditional, NameAddr,
+};
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -157,9 +160,11 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
 mod tests {
     use super::{Endpoint, RecognizeEndpoint};
     use http;
-    use linkerd2_conditional::Conditional;
-    use linkerd2_proxy_http::{router::Recognize, Settings};
-    use linkerd2_proxy_transport::{tls, Source};
+    use linkerd2_app_core::{
+        proxy::http::{router::Recognize, Settings},
+        transport::{tls, Source},
+        Conditional,
+    };
     use quickcheck::quickcheck;
     use std::net;
 
@@ -174,8 +179,7 @@ mod tests {
     }
 
     fn dst_addr(req: &mut http::Request<()>) {
-        use linkerd2_addr::Addr;
-        use linkerd2_app_core::dst::DstAddr;
+        use linkerd2_app_core::{dst::DstAddr, Addr};
         req.extensions_mut().insert(DstAddr::inbound(
             Addr::Socket(([0, 0, 0, 0], 0).into()),
             Settings::Http2,

@@ -1,17 +1,25 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use super::spans::SpanConverter;
-use super::{classify, config::Config, dst::DstAddr, identity, serve, DispatchDeadline};
-use crate::core::resolve::Resolve;
-use crate::proxy::http::{
-    balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
-    normalize_uri, profiles, retry, router, settings, strip_header,
+use linkerd2_app_core::{
+    classify,
+    config::Config,
+    core::resolve::Resolve,
+    discover, dns, drain,
+    dst::DstAddr,
+    errors, http_request_authority_addr, http_request_host_addr,
+    http_request_l5d_override_dst_addr, http_request_orig_dst_addr, identity,
+    proxy::http::{
+        balance, canonicalize, client, fallback, header_from_target, insert,
+        metrics as http_metrics, normalize_uri, profiles, retry, router, settings, strip_header,
+    },
+    proxy::{self, Server},
+    reconnect, serve,
+    spans::SpanConverter,
+    svc, trace_context,
+    transport::{self as transport, connect, tls, Source},
+    Addr, Conditional, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
+    L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
-use crate::proxy::{self, Server};
-use crate::transport::{self, connect, tls, Source};
-use crate::{drain, svc, trace_context, Addr, Conditional};
-use linkerd2_proxy_discover as discover;
-use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -29,7 +37,6 @@ mod require_identity_on_endpoint;
 mod resolve;
 
 pub use self::endpoint::Endpoint;
-pub use self::require_identity_on_endpoint::RequireIdentityError;
 pub use self::resolve::resolve;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
@@ -41,14 +48,14 @@ pub fn spawn<R, P>(
     listen: transport::Listen,
     get_original_dst: impl transport::GetOriginalDst + Send + 'static,
     resolve: R,
-    dns_resolver: crate::dns::Resolver,
-    profiles_client: super::profiles::Client<P>,
-    tap_layer: crate::tap::Layer,
+    dns_resolver: dns::Resolver,
+    profiles_client: linkerd2_app_core::profiles::Client<P>,
+    tap_layer: linkerd2_app_core::tap::Layer,
     handle_time: http_metrics::handle_time::Scope,
-    endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
-    route_http_metrics: super::HttpRouteMetricsRegistry,
-    retry_http_metrics: super::HttpRouteMetricsRegistry,
-    transport_metrics: transport::MetricsRegistry,
+    endpoint_http_metrics: linkerd2_app_core::HttpEndpointMetricsRegistry,
+    route_http_metrics: linkerd2_app_core::HttpRouteMetricsRegistry,
+    retry_http_metrics: linkerd2_app_core::HttpRouteMetricsRegistry,
+    transport_metrics: linkerd2_app_core::transport::MetricsRegistry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
@@ -106,9 +113,9 @@ pub fn spawn<R, P>(
     // 6. Strips any `l5d-server-id` that may have been received from
     //    the server, before we apply our own.
     let endpoint_stack = client_stack
-        .push(strip_header::response::layer(super::L5D_REMOTE_IP))
-        .push(strip_header::response::layer(super::L5D_SERVER_ID))
-        .push(strip_header::request::layer(super::L5D_REQUIRE_ID))
+        .push(strip_header::response::layer(L5D_REMOTE_IP))
+        .push(strip_header::response::layer(L5D_SERVER_ID))
+        .push(strip_header::request::layer(L5D_REQUIRE_ID))
         // disabled due to information leagkage
         //.push(add_remote_ip_on_rsp::layer())
         //.push(add_server_id_on_rsp::layer())
@@ -192,7 +199,7 @@ pub fn spawn<R, P>(
             profiles_client,
             dst_route_layer,
         ))
-        .push(header_from_target::layer(super::CANONICAL_DST_HEADER));
+        .push(header_from_target::layer(CANONICAL_DST_HEADER));
 
     // Routes request using the `DstAddr` extension.
     //
@@ -236,22 +243,22 @@ pub fn spawn<R, P>(
     // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
     // address is used.
     let addr_router = addr_stack
-        .push(strip_header::request::layer(super::L5D_CLIENT_ID))
-        .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
+        .push(strip_header::request::layer(L5D_CLIENT_ID))
+        .push(strip_header::request::layer(DST_OVERRIDE_HEADER))
         .push(insert::target::layer())
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
             router::Config::new("out addr", capacity, max_idle_age),
             |req: &http::Request<_>| {
-                super::http_request_l5d_override_dst_addr(req)
+                http_request_l5d_override_dst_addr(req)
                     .map(|override_addr| {
                         debug!("outbound addr={:?}; dst-override", override_addr);
                         override_addr
                     })
                     .or_else(|_| {
-                        let addr = super::http_request_authority_addr(req)
-                            .or_else(|_| super::http_request_host_addr(req))
-                            .or_else(|_| super::http_request_orig_dst_addr(req));
+                        let addr = http_request_authority_addr(req)
+                            .or_else(|_| http_request_host_addr(req))
+                            .or_else(|_| http_request_orig_dst_addr(req));
                         debug!("outbound addr={:?}", addr);
                         addr
                     })
@@ -278,7 +285,7 @@ pub fn spawn<R, P>(
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(insert::target::layer())
-        .push(super::errors::layer())
+        .push(errors::layer())
         .push(trace_context_layer)
         .push(handle_time.layer());
 
