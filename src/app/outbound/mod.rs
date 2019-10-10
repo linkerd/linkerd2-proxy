@@ -5,8 +5,8 @@ use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, Server, Source};
-use crate::transport::{self, connect, tls};
+use crate::proxy::{self, Server};
+use crate::transport::{self, connect, tls, Source};
 use crate::{drain, svc, trace_context, Addr, Conditional};
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
@@ -215,7 +215,7 @@ pub fn spawn<R, P>(
     // Canonicalizes the request-specified `Addr` via DNS, and
     // annotates each request with a refined `Addr` so that it may be
     // routed by the dst_router.
-    let addr_stack = svc::stack(svc::shared(dst_router))
+    let addr_stack = svc::stack(svc::Shared::new(dst_router))
         .push(canonicalize::layer(dns_resolver, canonicalize_timeout));
 
     // Routes requests to an `Addr`:
@@ -271,7 +271,7 @@ pub fn spawn<R, P>(
     // Instantiates an HTTP service for each `Source` using the
     // shared `addr_router`. The `Source` is stored in the request's
     // extensions so that it can be used by the `addr_router`.
-    let server_stack = svc::stack(svc::shared(admission_control))
+    let server_stack = svc::stack(svc::Shared::new(admission_control))
         .push(insert::layer(move || {
             DispatchDeadline::after(dispatch_timeout)
         }))

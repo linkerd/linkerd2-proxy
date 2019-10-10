@@ -3,7 +3,7 @@
 pub mod layer;
 pub mod map_target;
 pub mod per_make;
-pub mod shared;
+mod shared;
 
 pub use self::layer::{Layer, LayerExt};
-pub use self::shared::shared;
+pub use self::shared::Shared;

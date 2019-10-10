@@ -63,7 +63,7 @@ fn http_request_host_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error
 }
 
 fn http_request_orig_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
-    use crate::proxy::Source;
+    use crate::transport::Source;
 
     req.extensions()
         .get::<Source>()

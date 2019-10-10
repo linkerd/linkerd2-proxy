@@ -1,0 +1,15 @@
+[package]
+name = "linkerd2-proxy-dns"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.1"
+linkerd2-addr = { path = "../linkerd2-addr" }
+linkerd2-dns-name = { path = "../linkerd2-dns-name" }
+# FIXME update to a release when available (>0.11)
+trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060", default-features = false }
+tracing = "0.1"
+tracing-futures = "0.0.1-alpha.1"

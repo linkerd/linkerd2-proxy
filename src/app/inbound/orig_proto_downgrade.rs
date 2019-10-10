@@ -1,6 +1,6 @@
 use crate::proxy::http::orig_proto;
-use crate::proxy::server::Source;
 use crate::svc;
+use crate::transport::Source;
 use futures::{Future, Poll};
 use http;
 use std::marker::PhantomData;
