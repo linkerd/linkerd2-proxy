@@ -1,5 +1,22 @@
 #![deny(warnings, rust_2018_idioms)]
 
+pub use linkerd2_addr::{self as addr, Addr, NameAddr};
+pub use linkerd2_conditional::Conditional;
+pub use linkerd2_drain as drain;
+pub use linkerd2_error::{Error, Never, Recover};
+pub use linkerd2_exp_backoff as exp_backoff;
+pub use linkerd2_metrics as metrics;
+pub use linkerd2_opencensus as opencensus;
+pub use linkerd2_proxy_api_resolve as api_resolve;
+pub use linkerd2_proxy_core as core;
+pub use linkerd2_proxy_discover as discover;
+pub use linkerd2_proxy_dns as dns;
+pub use linkerd2_proxy_resolve as resolve;
+pub use linkerd2_reconnect as reconnect;
+pub use linkerd2_request_filter as request_filter;
+pub use linkerd2_task as task;
+pub use linkerd2_trace_context as trace_context;
+
 pub mod accept_error;
 pub mod admin;
 pub mod classify;
@@ -20,9 +37,7 @@ pub mod tap;
 pub mod telemetry;
 pub mod transport;
 
-use crate::logging::trace;
-use http;
-use linkerd2_addr::{self as addr, Addr};
+pub use self::logging::trace;
 
 pub const CANONICAL_DST_HEADER: &'static str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";

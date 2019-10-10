@@ -189,7 +189,7 @@ impl TapEventExt for pb::TapEvent {
 
 struct SyncSvc(client::Client);
 
-impl<B> tower_service::Service<http::Request<B>> for SyncSvc
+impl<B> tower::Service<http::Request<B>> for SyncSvc
 where
     B: grpc::Body,
 {

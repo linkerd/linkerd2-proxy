@@ -148,10 +148,10 @@ struct DstInner {
     outbound_local_addr: Option<SocketAddr>,
 }
 
-impl linkerd2_proxy_transport::GetOriginalDst for MockOriginalDst {
+impl app::transport::GetOriginalDst for MockOriginalDst {
     fn get_original_dst(
         &self,
-        sock: &dyn linkerd2_proxy_transport::AddrInfo,
+        sock: &dyn app::transport::AddrInfo,
     ) -> Option<SocketAddr> {
         sock.local_addr().ok().and_then(|local| {
             let inner = self.0.lock().unwrap();
@@ -266,8 +266,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
                 tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
             // TODO: it would be nice for this to not be stubbed out, so that it
             // can be tested.
-            let trace_handle = super::trace::LevelHandle::dangling();
-            let main = linkerd2_proxy::app::Main::new(config, trace_handle, runtime)
+            let trace_handle = app::trace::LevelHandle::dangling();
+            let main = linkerd2_proxy::Main::new(config, trace_handle, runtime)
                 .with_original_dst_from(mock_orig_dst.clone());
 
             let control_addr = main.control_addr();

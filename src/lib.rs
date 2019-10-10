@@ -4,18 +4,23 @@
 use futures::{self, future, Future};
 use linkerd2_app_core::{
     admin::{Admin, Readiness},
+    api_resolve,
     classify::{self, Class},
     config::Config,
+    control, dns, drain, handle_time, identity, logging,
     metric_labels::{ControlLabels, EndpointLabels, RouteLabels},
-    opencensus::SpanExporter,
+    metrics::FmtMetrics,
+    opencensus::{self, SpanExporter},
     profiles::Client as ProfilesClient,
     proxy::{self, http::metrics as http_metrics},
+    reconnect, serve,
     svc::{self, LayerExt},
+    tap, task, telemetry, trace,
     transport::{self, connect, tls, GetOriginalDst, Listen},
-    {control, handle_time, identity, inbound, outbound, serve},
-    {dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional},
+    Conditional,
 };
-use linkerd2_reconnect as reconnect;
+use linkerd2_app_inbound as inbound;
+use linkerd2_app_outbound as outbound;
 use opencensus_proto::agent::common::v1 as oc;
 use std::net::SocketAddr;
 use std::thread;
@@ -244,7 +249,7 @@ where
 
         let (transport_metrics, transport_report) = transport::metrics::new();
 
-        let (span_metrics, span_report) = linkerd2_opencensus::metrics::new();
+        let (span_metrics, span_report) = opencensus::metrics::new();
 
         let report = endpoint_http_report
             .and_then(route_http_report)
@@ -348,7 +353,7 @@ where
                 .make(config.destination_addr.clone())
         };
 
-        let resolver = crate::api_resolve::Resolve::new(dst_svc.clone())
+        let resolver = api_resolve::Resolve::new(dst_svc.clone())
             .with_context_token(&config.destination_context);
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();

@@ -35,7 +35,6 @@ linkerd2-proxy-transport = { path = "../linkerd2-proxy-transport" }
 linkerd2-reconnect = { path = "../linkerd2-reconnect" }
 linkerd2-request-filter = { path = "../linkerd2-request-filter" }
 linkerd2-router = { path = "../linkerd2-router" }
-linkerd2-signal = { path = "../linkerd2-signal" }
 linkerd2-stack = { path = "../linkerd2-stack" }
 linkerd2-task = { path = "../linkerd2-task" }
 linkerd2-timeout = { path = "../linkerd2-timeout" }

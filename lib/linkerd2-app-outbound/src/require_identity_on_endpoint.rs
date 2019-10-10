@@ -1,14 +1,17 @@
-use super::super::L5D_REQUIRE_ID;
 use super::Endpoint;
-use crate::proxy::http::{identity_from_header, HasH2Reason};
-use crate::transport::tls::{self, HasPeerIdentity};
-use crate::{identity, svc, Conditional, Error};
 use futures::{
     future::{self, Either, FutureResult},
     try_ready, Async, Future, Poll,
 };
+use linkerd2_app_core::{
+    errors,
+    proxy::http::identity_from_header,
+    svc,
+    transport::tls::{self, HasPeerIdentity},
+    Conditional, Error, L5D_REQUIRE_ID,
+};
 use std::marker::PhantomData;
-use tracing::{debug, warn};
+use tracing::debug;
 
 pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
 
@@ -149,27 +152,25 @@ where
             match self.peer_identity {
                 Conditional::Some(ref peer_identity) => {
                     if require_identity != *peer_identity {
-                        warn!(
-                            "require identity check failed; found peer_identity={:?}",
-                            peer_identity
-                        );
                         let message = format!(
                             "require identity check failed; require={:?} found={:?}",
                             require_identity, peer_identity
                         );
-
-                        return Either::A(future::err(linkerd2_app_core::errors::StatusError {
+                        let e = errors::StatusError {
                             message,
                             status: http::StatusCode::FORBIDDEN,
-                        }));
+                        };
+                        return Either::A(future::err(e.into()));
                     }
                 }
                 Conditional::None(_) => {
-                    warn!("require identity check failed; no peer_identity found");
-                    return Either::A(future::err(RequireIdentityError::new(
-                        require_identity,
-                        None,
-                    )));
+                    let message =
+                        "require identity check failed; no peer_identity found".to_string();
+                    let e = errors::StatusError {
+                        message,
+                        status: http::StatusCode::FORBIDDEN,
+                    };
+                    return Either::A(future::err(e.into()));
                 }
             }
         }

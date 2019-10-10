@@ -1,13 +1,15 @@
-use crate::api_resolve::{Metadata, ProtocolHint};
-use crate::app::dst::{DstAddr, Route};
-use crate::app::L5D_REQUIRE_ID;
-use crate::proxy::http::{identity_from_header, settings};
-use crate::transport::{connect, tls, Source};
-use crate::{identity, tap};
-use crate::{Conditional, NameAddr};
 use indexmap::IndexMap;
-use linkerd2_app_core::metric_labels::{prefix_labels, EndpointLabels};
-use linkerd2_proxy_resolve::map_endpoint::MapEndpoint;
+use linkerd2_app_core::{
+    api_resolve::{Metadata, ProtocolHint},
+    dst::{DstAddr, Route},
+    identity,
+    metric_labels::{prefix_labels, EndpointLabels},
+    proxy::http::{identity_from_header, settings},
+    resolve::map_endpoint::MapEndpoint,
+    tap,
+    transport::{connect, tls, Source},
+    Conditional, NameAddr, L5D_REQUIRE_ID,
+};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -175,13 +177,14 @@ impl MapEndpoint<DstAddr, Metadata> for FromMetadata {
 }
 
 impl Into<EndpointLabels> for Endpoint {
-    fn into(ep: Endpoint) -> EndpointLabels {
+    fn into(self) -> EndpointLabels {
+        use linkerd2_app_core::metric_labels::{Direction, TlsId};
         EndpointLabels {
-            dst_logical: ep.dst_logical,
-            dst_concrete: ep.dst_concrete,
+            dst_logical: self.dst_logical,
+            dst_concrete: self.dst_concrete,
             direction: Direction::Out,
-            tls_id: ep.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
-            labels: prefix_labels("dst", ep.metadata.labels().into_iter()),
+            tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
+            labels: prefix_labels("dst", self.metadata.labels().into_iter()),
         }
     }
 }
