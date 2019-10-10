@@ -4,8 +4,8 @@ use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{Server, Source};
-use crate::transport::{self, connect, tls};
+use crate::proxy::Server;
+use crate::transport::{self, connect, tls, Source};
 use crate::{drain, svc, trace_context, Addr};
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
@@ -115,7 +115,7 @@ pub fn spawn<P>(
     //    per-route policy.
     // 2. Annotates the request with the `DstAddr` so that
     //    `RecognizeEndpoint` can use the value.
-    let dst_stack = svc::stack(svc::shared(endpoint_router))
+    let dst_stack = svc::stack(svc::Shared::new(endpoint_router))
         .push(insert::target::layer())
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(profiles::router::layer(
@@ -193,7 +193,7 @@ pub fn spawn<P>(
     // Furthermore, HTTP/2 requests may be downgraded to HTTP/1.1 per
     // `orig-proto` headers. This happens in the source stack so that
     // the router need not detect whether a request _will be_ downgraded.
-    let source_stack = svc::stack(svc::shared(admission_control))
+    let source_stack = svc::stack(svc::Shared::new(admission_control))
         .push(orig_proto_downgrade::layer())
         .push(insert::target::layer())
         // disabled due to information leagkage

@@ -2,13 +2,15 @@ use futures::Poll;
 use linkerd2_error::Never;
 use tower_service as svc;
 
-pub fn shared<V: Clone>(v: V) -> Shared<V> {
-    Shared(v)
-}
-
 /// Implements `Service<T>` for any `T` by cloning a `V`-typed value.
 #[derive(Clone, Debug)]
 pub struct Shared<V>(V);
+
+impl<V: Clone> Shared<V> {
+    pub fn new(v: V) -> Self {
+        Shared(v)
+    }
+}
 
 impl<T, V: Clone> svc::Service<T> for Shared<V> {
     type Response = V;

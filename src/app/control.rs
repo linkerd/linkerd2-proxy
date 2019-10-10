@@ -287,10 +287,10 @@ pub mod resolve {
 
 /// Creates a client suitable for gRPC.
 pub mod client {
-    use super::super::config::H2Settings;
     use crate::transport::{connect, tls};
-    use crate::{logging, proxy::http, svc, task, Addr};
+    use crate::{logging, proxy::http, svc, Addr};
     use futures::Poll;
+    use linkerd2_proxy_http::h2::Settings as H2Settings;
     use std::net::SocketAddr;
 
     #[derive(Clone, Debug)]
@@ -326,7 +326,7 @@ pub mod client {
         http::h2::Connect<C, B>: svc::Service<Target>,
     {
         svc::layer::mk(|mk_conn| {
-            let inner = http::h2::Connect::new(mk_conn, task::LazyExecutor, H2Settings::default());
+            let inner = http::h2::Connect::new(mk_conn, H2Settings::default());
             Client { inner }
         })
     }
@@ -341,13 +341,13 @@ pub mod client {
         type Error = <http::h2::Connect<C, B> as svc::Service<Target>>::Error;
         type Future = <http::h2::Connect<C, B> as svc::Service<Target>>::Future;
 
+        #[inline]
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             self.inner.poll_ready()
         }
 
+        #[inline]
         fn call(&mut self, target: Target) -> Self::Future {
-            let exe = target.log_ctx.clone().with_remote(target.addr).executor();
-            self.inner.set_executor(exe);
             self.inner.call(target)
         }
     }

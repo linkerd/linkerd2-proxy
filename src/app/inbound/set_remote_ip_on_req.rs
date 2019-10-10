@@ -2,10 +2,8 @@
 //! `remote` of a `Source`.
 
 use super::super::L5D_REMOTE_IP;
-use crate::proxy::{
-    http::add_header::{self, request::ReqHeader, Layer},
-    server::Source,
-};
+use crate::proxy::http::add_header::{self, request::ReqHeader, Layer};
+use crate::transport::Source;
 use bytes::Bytes;
 use http::header::HeaderValue;
 

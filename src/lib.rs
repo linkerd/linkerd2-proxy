@@ -11,11 +11,11 @@ use linkerd2_opencensus as opencensus;
 use linkerd2_proxy_api as api;
 use linkerd2_proxy_api_resolve as api_resolve;
 use linkerd2_proxy_core as core;
+use linkerd2_proxy_dns as dns;
 use linkerd2_task as task;
 use linkerd2_trace_context as trace_context;
 
 pub mod app;
-mod dns;
 pub mod logging;
 mod proxy;
 mod svc;
