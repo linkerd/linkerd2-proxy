@@ -16,13 +16,8 @@ FROM $RUST_IMAGE as build
 
 WORKDIR /usr/src/linkerd2-proxy
 
-# Fetch external dependencies.
-RUN mkdir -p src && touch src/lib.rs
-COPY Cargo.toml Cargo.lock ./
-COPY lib lib
+COPY . .
 RUN cargo fetch --locked
-
-COPY src src
 RUN if [ -n "$PROXY_UNOPTIMIZED" ]; \
     then \
     cargo build -p linkerd2-proxy --bin linkerd2-proxy --frozen && \
