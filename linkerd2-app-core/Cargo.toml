@@ -68,12 +68,3 @@ procinfo = "0.4.2"
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.10" }
 prost-types = "0.5.0"
 quickcheck = { version = "0.8", default-features = false }
-#net2 = "0.2"
-# linkerd2-metrics = { path = "./lib/linkerd2-metrics", features = ["test_util"] }
-# linkerd2-task    = { path = "lib/linkerd2-task", features = ["test_util"] }
-# flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
-# # `tokio-io` is needed for TCP tests, because `tokio::io` doesn't re-export
-# # the `read` function.
-# tokio-io = "0.1.6"
-# tokio-current-thread = "0.1.4"
-

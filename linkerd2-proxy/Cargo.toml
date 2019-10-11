@@ -1,0 +1,16 @@
+[package]
+name = "linkerd2-proxy"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[features]
+default = ["flaky_tests"]
+# Disable to skip certain tests that should not be run on CI.
+flaky_tests = []
+
+[dependencies]
+linkerd2-app-main = { path = "../linkerd2-app-main" }
+linkerd2-signal = { path = "../linkerd2-signal" }
+tokio = "0.1.14"

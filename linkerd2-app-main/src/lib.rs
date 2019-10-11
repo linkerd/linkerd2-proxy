@@ -2,6 +2,7 @@
 #![recursion_limit = "128"]
 
 use futures::{self, future, Future};
+pub use linkerd2_app_core::init;
 use linkerd2_app_core::{
     admin::{Admin, Readiness},
     api_resolve,

@@ -1,82 +1,38 @@
 [workspace]
 members = [
-    ".",
-    "lib/hyper-balance",
-    "lib/linkerd2-addr",
-    "lib/linkerd2-app-core",
-    "lib/linkerd2-app-inbound",
-    "lib/linkerd2-app-outbound",
-    "lib/linkerd2-conditional",
-    "lib/linkerd2-dns-name",
-    "lib/linkerd2-drain",
-    "lib/linkerd2-duplex",
-    "lib/linkerd2-error",
-    "lib/linkerd2-exp-backoff",
-    "lib/linkerd2-fallback",
-    "lib/linkerd2-identity",
-    "lib/linkerd2-metrics",
-    "lib/linkerd2-opencensus",
-    "lib/linkerd2-proxy-api-resolve",
-    "lib/linkerd2-proxy-core",
-    "lib/linkerd2-proxy-discover",
-    "lib/linkerd2-proxy-dns",
-    "lib/linkerd2-proxy-http",
-    "lib/linkerd2-proxy-resolve",
-    "lib/linkerd2-proxy-transport",
-    "lib/linkerd2-request-filter",
-    "lib/linkerd2-reconnect",
-    "lib/linkerd2-router",
-    "lib/linkerd2-signal",
-    "lib/linkerd2-stack",
-    "lib/linkerd2-task",
-    "lib/linkerd2-timeout",
-    "lib/opencensus-proto",
+    "hyper-balance",
+    "linkerd2-addr",
+    "linkerd2-app-core",
+    "linkerd2-app-inbound",
+    "linkerd2-app-main",
+    "linkerd2-app-outbound",
+    "linkerd2-conditional",
+    "linkerd2-dns-name",
+    "linkerd2-drain",
+    "linkerd2-duplex",
+    "linkerd2-error",
+    "linkerd2-exp-backoff",
+    "linkerd2-fallback",
+    "linkerd2-identity",
+    "linkerd2-metrics",
+    "linkerd2-opencensus",
+    "linkerd2-proxy",
+    "linkerd2-proxy-api-resolve",
+    "linkerd2-proxy-core",
+    "linkerd2-proxy-discover",
+    "linkerd2-proxy-dns",
+    "linkerd2-proxy-http",
+    "linkerd2-proxy-resolve",
+    "linkerd2-proxy-transport",
+    "linkerd2-request-filter",
+    "linkerd2-reconnect",
+    "linkerd2-router",
+    "linkerd2-signal",
+    "linkerd2-stack",
+    "linkerd2-task",
+    "linkerd2-timeout",
+    "opencensus-proto",
 ]
-
-[package]
-name = "linkerd2-proxy"
-version = "0.1.0"
-authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
-edition = "2018"
-publish = false
-
-[features]
-default = ["flaky_tests"]
-# Disable to skip certain tests that should not be run on CI.
-flaky_tests = []
-
-[dependencies]
-futures = "0.1"
-linkerd2-app-core = { path = "lib/linkerd2-app-core" }
-linkerd2-app-inbound = { path = "lib/linkerd2-app-inbound" }
-linkerd2-app-outbound = { path = "lib/linkerd2-app-outbound" }
-linkerd2-signal = { path = "lib/linkerd2-signal" }
-opencensus-proto       = { path = "lib/opencensus-proto" }
-tokio = "0.1.14"
-tracing            = "0.1.9"
-
-[dev-dependencies]
-bytes = "0.4"
-flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
-h2 = "0.1"
-http = "0.1"
-http-body = "0.1"
-hyper = "0.12"
-linkerd2-metrics = { path = "./lib/linkerd2-metrics", features = ["test_util"] }
-linkerd2-task    = { path = "lib/linkerd2-task", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.10" }
-regex = "0.1"
-net2 = "0.2"
-quickcheck = { version = "0.8", default-features = false }
-ring = "0.16"
-rustls = "0.16"
-tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
-tokio-io = "0.1.6"
-tokio-current-thread = "0.1.4"
-tokio-rustls = "0.10"
-tower = "0.1"
-tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
-webpki = "0.21"
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.
@@ -87,4 +43,3 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names-0.21" }
-
