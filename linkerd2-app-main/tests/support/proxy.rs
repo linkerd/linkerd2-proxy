@@ -149,10 +149,7 @@ struct DstInner {
 }
 
 impl app::transport::GetOriginalDst for MockOriginalDst {
-    fn get_original_dst(
-        &self,
-        sock: &dyn app::transport::AddrInfo,
-    ) -> Option<SocketAddr> {
+    fn get_original_dst(&self, sock: &dyn app::transport::AddrInfo) -> Option<SocketAddr> {
         sock.local_addr().ok().and_then(|local| {
             let inner = self.0.lock().unwrap();
             if inner.inbound_local_addr == Some(local) {
