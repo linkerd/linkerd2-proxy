@@ -1,13 +1,13 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
 
-use linkerd2_proxy::Main;
+use linkerd2_app_main::Main;
 use linkerd2_signal as signal;
 use tokio::runtime::current_thread;
 
 /// Loads configuration from the environment
 fn main() {
-    let (config, trace_admin) = match linkerd2_app_core::init() {
+    let (config, trace_admin) = match linkerd2_app_main::init() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("configuration error: {:#?}", e);

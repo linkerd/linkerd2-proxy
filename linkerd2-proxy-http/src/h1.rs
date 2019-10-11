@@ -36,8 +36,6 @@ pub fn normalize_our_view_of_uri<B>(req: &mut http::Request<B>) {
             Authority::from_shared(bytes.freeze()).expect("socket address is valid authority");
         set_authority(req.uri_mut(), auth);
     }
-
-    unimplemented!("fixme")
 }
 
 /// Convert any URI into its origin-form (relative path part only).

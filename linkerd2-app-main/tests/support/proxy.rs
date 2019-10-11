@@ -267,7 +267,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             // TODO: it would be nice for this to not be stubbed out, so that it
             // can be tested.
             let trace_handle = app::trace::LevelHandle::dangling();
-            let main = linkerd2_proxy::Main::new(config, trace_handle, runtime)
+            let main = linkerd2_app_main::Main::new(config, trace_handle, runtime)
                 .with_original_dst_from(mock_orig_dst.clone());
 
             let control_addr = main.control_addr();

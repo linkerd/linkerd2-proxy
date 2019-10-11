@@ -11,7 +11,7 @@ pub use futures::sync::oneshot;
 pub use futures::{future::Executor, *};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 use http_body::Body as HttpBody;
-pub use linkerd2_proxy::Main;
+pub use linkerd2_app_main::Main;
 pub use linkerd2_app_core::{self as app, task::LazyExecutor};
 pub use std::collections::HashMap;
 use std::fmt;
