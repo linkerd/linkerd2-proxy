@@ -23,7 +23,7 @@ use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::debug;
+use tracing::{debug, info_span};
 
 mod endpoint;
 mod orig_proto_downgrade;
@@ -80,7 +80,7 @@ pub fn spawn<P>(
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = connect
         .clone()
-        .push(client::layer("in", config.h2_settings))
+        .push(client::layer(config.h2_settings))
         .push(reconnect::layer({
             let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
@@ -223,8 +223,6 @@ pub fn spawn<P>(
         .push(handle_time.layer());
 
     let server = Server::new(
-        "out",
-        listen.local_addr(),
         TransportLabels,
         transport_metrics,
         connect,
@@ -240,7 +238,8 @@ pub fn spawn<P>(
     let accept = tls::AcceptTls::new(get_original_dst, local_identity, server)
         .without_protocol_detection_for(skip_ports);
 
-    serve::spawn("in", listen, accept, drain);
+    let span = info_span!("in", local_addr=%listen.local_addr());
+    serve::spawn(listen, accept, drain, span);
 }
 
 #[derive(Copy, Clone, Debug)]

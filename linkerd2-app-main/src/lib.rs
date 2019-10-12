@@ -373,7 +373,6 @@ where
                         .block_on(future::lazy(move || {
                             trace!("spawning admin server");
                             serve::spawn(
-                                "admin",
                                 admin_listener,
                                 tls::AcceptTls::new(
                                     get_original_dst.clone(),
@@ -381,13 +380,13 @@ where
                                     Admin::new(report, readiness, trace_level).into_accept(),
                                 ),
                                 drain_rx.clone(),
+                                tracing::info_span!("admin"),
                             );
 
                             if let Some((listener, tap_svc_name)) = control_listener {
                                 trace!("spawning tap server");
                                 task::spawn(tap_daemon.map_err(|_| ()));
                                 serve::spawn(
-                                    "tap",
                                     listener,
                                     tls::AcceptTls::new(
                                         get_original_dst.clone(),
@@ -398,6 +397,7 @@ where
                                         ),
                                     ),
                                     drain_rx.clone(),
+                                    tracing::info_span!("tap"),
                                 );
                             } else {
                                 drop((tap_daemon, tap_grpc));

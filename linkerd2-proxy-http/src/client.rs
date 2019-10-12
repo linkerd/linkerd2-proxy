@@ -16,10 +16,9 @@ use tracing::{debug, trace};
 
 /// Configurs an HTTP client that uses a `C`-typed connector
 ///
-/// The `proxy_name` is used for diagnostics (logging, mostly).
+/// The `span` is used for diagnostics (logging, mostly).
 #[derive(Debug)]
 pub struct Layer<T, B> {
-    proxy_name: &'static str,
     h2_settings: crate::h2::Settings,
     _p: PhantomData<fn(T) -> B>,
 }
@@ -29,7 +28,6 @@ type HyperClient<C, T, B> = hyper::Client<HyperConnect<C, T>, B>;
 /// A `MakeService` that can speak either HTTP/1 or HTTP/2.
 pub struct Client<C, T, B> {
     connect: C,
-    proxy_name: &'static str,
     h2_settings: crate::h2::Settings,
     _p: PhantomData<fn(T) -> B>,
 }
@@ -67,12 +65,11 @@ pub enum ClientServiceFuture {
 
 // === impl Layer ===
 
-pub fn layer<T, B>(proxy_name: &'static str, h2_settings: crate::h2::Settings) -> Layer<T, B>
+pub fn layer<T, B>(h2_settings: crate::h2::Settings) -> Layer<T, B>
 where
     B: hyper::body::Payload + Send + 'static,
 {
     Layer {
-        proxy_name,
         h2_settings,
         _p: PhantomData,
     }
@@ -84,7 +81,6 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            proxy_name: self.proxy_name,
             h2_settings: self.h2_settings,
             _p: PhantomData,
         }
@@ -101,7 +97,6 @@ where
     fn layer(&self, connect: C) -> Self::Service {
         Client {
             connect,
-            proxy_name: self.proxy_name,
             h2_settings: self.h2_settings,
             _p: PhantomData,
         }
@@ -165,7 +160,6 @@ where
     fn clone(&self) -> Self {
         Client {
             connect: self.connect.clone(),
-            proxy_name: self.proxy_name,
             h2_settings: self.h2_settings,
             _p: PhantomData,
         }

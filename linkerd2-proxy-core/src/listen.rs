@@ -9,14 +9,18 @@ pub trait Listen {
 
     fn poll_accept(&mut self) -> Poll<Self::Connection, Self::Error>;
 
-    fn serve<A: Accept<Self::Connection>>(self, accept: A) -> Serve<Self, A>
+    fn serve<A: Accept<Self::Connection>>(
+        self,
+        accept: A,
+    ) -> Serve<Self, A, tokio::executor::DefaultExecutor>
     where
         Self: Sized,
-        Serve<Self, A>: Future,
+        Serve<Self, A, tokio::executor::DefaultExecutor>: Future,
     {
         Serve {
             listen: self,
             accept,
+            executor: tokio::executor::DefaultExecutor::current(),
         }
     }
 }
@@ -50,26 +54,43 @@ where
     }
 }
 
-pub struct Serve<L, A> {
+pub struct Serve<L, A, E> {
     listen: L,
     accept: A,
+    executor: E,
 }
 
-impl<L, A> Future for Serve<L, A>
+impl<L, A> Serve<L, A, tokio::executor::DefaultExecutor>
 where
     L: Listen,
     A: Accept<L::Connection, Error = Never>,
     A::Future: Send + 'static,
 {
+    pub fn with_executor<E: tokio::executor::Executor>(self, executor: E) -> Serve<L, A, E> {
+        Serve {
+            listen: self.listen,
+            accept: self.accept,
+            executor,
+        }
+    }
+}
+
+impl<L, A, E> Future for Serve<L, A, E>
+where
+    L: Listen,
+    A: Accept<L::Connection, Error = Never>,
+    A::Future: Send + 'static,
+    E: tokio::executor::Executor,
+{
     type Item = Never;
-    type Error = L::Error;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            try_ready!(self.accept.poll_ready().map_err(|e| match e {}));
-            let conn = try_ready!(self.listen.poll_accept());
-
-            tokio::spawn(self.accept.accept(conn).map_err(|e| match e {}));
+            try_ready!(self.accept.poll_ready());
+            let conn = try_ready!(self.listen.poll_accept().map_err(Into::into));
+            let accept = self.accept.accept(conn).map_err(|e| match e {});
+            self.executor.spawn(Box::new(accept)).map_err(Error::from)?;
         }
     }
 }

@@ -6,7 +6,7 @@ edition = "2018"
 publish = false
 
 [features]
-default = ["flaky_tests"]
+#default = ["flaky_tests"]
 # Disable to skip certain tests that should not be run on CI.
 flaky_tests = []
 

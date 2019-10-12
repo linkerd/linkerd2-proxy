@@ -104,6 +104,18 @@ impl<S> Stack<S> {
         self.push(TimeoutLayer::new(timeout))
     }
 
+    pub fn push_instrument<R>(
+        self,
+        span: tracing::Span,
+    ) -> Stack<tracing_tower::service_span::Service<S>>
+    where
+        S: Service<R>,
+    {
+        self.push(tracing_tower::service_span::layer(move |_: &S| {
+            span.clone()
+        }))
+    }
+
     /// Validates that this stack serves T-typed targets.
     pub fn makes<T>(self) -> Self
     where
