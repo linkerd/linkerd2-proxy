@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::debug;
+use tracing::{debug, info_span};
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;
@@ -92,7 +92,7 @@ pub fn spawn<R, P>(
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = connect
         .clone()
-        .push(client::layer("out", config.h2_settings))
+        .push(client::layer(config.h2_settings))
         .push(reconnect::layer({
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
@@ -290,8 +290,6 @@ pub fn spawn<R, P>(
         .push(handle_time.layer());
 
     let proxy = Server::new(
-        "out",
-        listen.local_addr(),
         TransportLabels,
         transport_metrics,
         connect,
@@ -309,7 +307,8 @@ pub fn spawn<R, P>(
     let accept = tls::AcceptTls::new(get_original_dst, no_tls, proxy)
         .without_protocol_detection_for(skip_ports);
 
-    serve::spawn("out", listen, accept, drain);
+    let span = info_span!("out", local_addr=%listen.local_addr());
+    serve::spawn(listen, accept, drain, span);
 }
 
 #[derive(Copy, Clone, Debug)]

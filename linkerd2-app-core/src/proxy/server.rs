@@ -20,7 +20,8 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, trace};
+use tracing::{debug, info_span, trace};
+use tracing_futures::Instrument;
 
 /// A protocol-transparent Server!
 ///
@@ -56,8 +57,6 @@ where
 {
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
-    proxy_name: &'static str,
-    listen_addr: SocketAddr,
     transport_labels: L,
     transport_metrics: transport::MetricsRegistry,
     connect: ForwardConnect<T, C>,
@@ -132,8 +131,6 @@ where
 {
     /// Creates a new `Server`.
     pub fn new(
-        proxy_name: &'static str,
-        listen_addr: SocketAddr,
         transport_labels: L,
         transport_metrics: transport::MetricsRegistry,
         connect: C,
@@ -145,12 +142,10 @@ where
         Self {
             http: hyper::server::conn::Http::new(),
             h2_settings,
-            listen_addr,
             transport_labels,
             transport_metrics,
             connect,
             make_http,
-            proxy_name,
             drain,
         }
     }
@@ -195,7 +190,9 @@ where
     fn call(&mut self, connection: Connection) -> Self::Future {
         let source = Source {
             remote: connection.remote_addr(),
-            local: connection.local_addr().unwrap_or(self.listen_addr),
+            local: connection
+                .local_addr()
+                .expect("socket must have a local address"),
             orig_dst: connection.original_dst_addr(),
             tls_peer: connection.peer_identity(),
         };
@@ -223,7 +220,7 @@ where
 
         let connect = self.connect.clone();
 
-        let mut http = self.http.clone();
+        let http = self.http.clone();
         let mut make_http = self.make_http.clone();
         let drain = self.drain.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
@@ -244,7 +241,10 @@ where
                             trace!("detected HTTP/1");
                             // Enable support for HTTP upgrades (CONNECT and websockets).
                             let svc = upgrade::Service::new(http_svc, drain.clone());
+                            let exec = tokio::executor::DefaultExecutor::current()
+                                .instrument(info_span!("http1"));
                             let conn = http
+                                .with_executor(exec)
                                 .http1_only(true)
                                 .serve_connection(io, HyperServerSvc::new(svc))
                                 .with_upgrades();
@@ -256,7 +256,10 @@ where
 
                         Protocol::Http2 => Either::B({
                             trace!("detected HTTP/2");
+                            let exec = tokio::executor::DefaultExecutor::current()
+                                .instrument(info_span!("h2"));
                             let conn = http
+                                .with_executor(exec)
                                 .http2_only(true)
                                 .http2_initial_stream_window_size(initial_stream_window_size)
                                 .http2_initial_connection_window_size(initial_conn_window_size)
@@ -291,13 +294,11 @@ where
         Self {
             http: self.http.clone(),
             h2_settings: self.h2_settings.clone(),
-            listen_addr: self.listen_addr,
             transport_labels: self.transport_labels.clone(),
             transport_metrics: self.transport_metrics.clone(),
             connect: self.connect.clone(),
             make_http: self.make_http.clone(),
             drain: self.drain.clone(),
-            proxy_name: self.proxy_name,
         }
     }
 }
