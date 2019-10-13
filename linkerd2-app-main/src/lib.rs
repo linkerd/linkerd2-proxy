@@ -8,7 +8,7 @@ use linkerd2_app_core::{
     api_resolve,
     classify::{self, Class},
     config::Config,
-    control, dns, drain, handle_time, identity, logging,
+    control, dns, drain, handle_time, identity,
     metric_labels::{ControlLabels, EndpointLabels, RouteLabels},
     metrics::FmtMetrics,
     opencensus::{self, SpanExporter},
@@ -28,7 +28,8 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 use tokio::runtime::current_thread;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, info_span, trace};
+use tracing_futures::Instrument;
 
 /// Runs a sidecar proxy.
 ///
@@ -371,46 +372,54 @@ where
                     current_thread::Runtime::new()
                         .expect("initialize admin thread runtime")
                         .block_on(future::lazy(move || {
-                            trace!("spawning admin server");
-                            serve::spawn(
-                                admin_listener,
-                                tls::AcceptTls::new(
-                                    get_original_dst.clone(),
-                                    local_identity.clone(),
-                                    Admin::new(report, readiness, trace_level).into_accept(),
-                                ),
-                                drain_rx.clone(),
-                                tracing::info_span!("admin"),
+                            info_span!("admin", local_addr=%admin_listener.local_addr()).in_scope(
+                                || {
+                                    trace!("spawning");
+                                    serve::spawn(
+                                        admin_listener,
+                                        tls::AcceptTls::new(
+                                            get_original_dst.clone(),
+                                            local_identity.clone(),
+                                            Admin::new(report, readiness, trace_level)
+                                                .into_accept(),
+                                        ),
+                                        drain_rx.clone(),
+                                    );
+                                },
                             );
 
                             if let Some((listener, tap_svc_name)) = control_listener {
-                                trace!("spawning tap server");
-                                task::spawn(tap_daemon.map_err(|_| ()));
-                                serve::spawn(
-                                    listener,
-                                    tls::AcceptTls::new(
-                                        get_original_dst.clone(),
-                                        local_identity,
-                                        tap::AcceptPermittedClients::new(
-                                            std::iter::once(tap_svc_name),
-                                            tap_grpc,
-                                        ),
-                                    ),
-                                    drain_rx.clone(),
-                                    tracing::info_span!("tap"),
+                                info_span!("admin", local_addr=%listener.local_addr()).in_scope(
+                                    || {
+                                        trace!("spawning");
+                                        task::spawn(tap_daemon.map_err(|_| ()));
+                                        serve::spawn(
+                                            listener,
+                                            tls::AcceptTls::new(
+                                                get_original_dst.clone(),
+                                                local_identity,
+                                                tap::AcceptPermittedClients::new(
+                                                    std::iter::once(tap_svc_name),
+                                                    tap_grpc,
+                                                ),
+                                            ),
+                                            drain_rx.clone(),
+                                        );
+                                    },
                                 );
                             } else {
                                 drop((tap_daemon, tap_grpc));
                             }
 
-                            trace!("spawning dns resolver");
-                            task::spawn(logging::admin().bg("dns-resolver").future(dns_bg));
+                            info_span!("dns").in_scope(|| {
+                                trace!("spawning");
+                                task::spawn(dns_bg);
+                            });
 
                             if let Some(d) = identity_daemon {
                                 task::spawn(
-                                    logging::admin()
-                                        .bg("identity")
-                                        .future(d.map_err(|_| error!("identity task failed"))),
+                                    d.map_err(|e| panic!("failed {}", e))
+                                        .instrument(info_span!("identity")),
                                 );
                             }
 
@@ -493,41 +502,45 @@ where
             spans_tx
         });
 
-        outbound::spawn(
-            &config,
-            local_identity.clone(),
-            outbound_listener,
-            get_original_dst.clone(),
-            outbound::resolve(
-                config.destination_get_suffixes.clone(),
-                config.control_backoff.clone(),
-                resolver,
-            ),
-            dns_resolver,
-            profiles_client.clone(),
-            tap_layer.clone(),
-            outbound_handle_time,
-            endpoint_http_metrics.clone(),
-            route_http_metrics.clone(),
-            retry_http_metrics,
-            transport_metrics.clone(),
-            spans_tx.clone(),
-            drain_rx.clone(),
-        );
+        info_span!("out", local_addr=%outbound_listener.local_addr()).in_scope(|| {
+            outbound::spawn(
+                &config,
+                local_identity.clone(),
+                outbound_listener,
+                get_original_dst.clone(),
+                outbound::resolve(
+                    config.destination_get_suffixes.clone(),
+                    config.control_backoff.clone(),
+                    resolver,
+                ),
+                dns_resolver,
+                profiles_client.clone(),
+                tap_layer.clone(),
+                outbound_handle_time,
+                endpoint_http_metrics.clone(),
+                route_http_metrics.clone(),
+                retry_http_metrics,
+                transport_metrics.clone(),
+                spans_tx.clone(),
+                drain_rx.clone(),
+            )
+        });
 
-        inbound::spawn(
-            &config,
-            local_identity,
-            inbound_listener,
-            get_original_dst,
-            profiles_client,
-            tap_layer,
-            inbound_handle_time,
-            endpoint_http_metrics,
-            route_http_metrics,
-            transport_metrics,
-            spans_tx,
-            drain_rx,
-        );
+        info_span!("in", local_addr=%inbound_listener.local_addr()).in_scope(move || {
+            inbound::spawn(
+                &config,
+                local_identity,
+                inbound_listener,
+                get_original_dst,
+                profiles_client,
+                tap_layer,
+                inbound_handle_time,
+                endpoint_http_metrics,
+                route_http_metrics,
+                transport_metrics,
+                spans_tx,
+                drain_rx,
+            )
+        });
     }
 }

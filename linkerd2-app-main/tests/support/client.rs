@@ -5,7 +5,10 @@ use rustls::ClientConfig;
 use std::io;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio::executor::DefaultExecutor;
 use tokio::net::TcpStream;
+use tracing::{info_span, Span};
+use tracing_futures::Instrument;
 use webpki::{DNSName, DNSNameRef};
 
 type ClientError = hyper::Error;
@@ -223,7 +226,9 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                 Run::Http2 => true,
             };
 
+            let span = info_span!("test client", peer_addr = %addr);
             let client = hyper::Client::builder()
+                .executor(DefaultExecutor::current().instrument(span.clone()))
                 .http2_only(http2_only)
                 .build::<Conn, hyper::Body>(conn);
 
@@ -235,12 +240,12 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                         let _ = cb.send(result);
                         Ok(())
                     });
-                    tokio::spawn(fut);
+                    tokio::spawn(fut.instrument(Span::current()));
                     Ok(())
                 })
                 .map_err(|e| println!("client error: {:?}", e));
 
-            runtime.block_on(work).expect("support client runtime");
+            runtime.block_on(work.instrument(span)).expect("support client runtime");
         })
         .expect("thread spawn");
     (tx, running_rx)

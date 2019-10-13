@@ -9,7 +9,7 @@ use tracing_futures::{Instrument, Instrumented};
 
 /// Spawns a task that binds an `S`-typed server with an `L`-typed listener until
 /// a drain is signaled.
-pub fn spawn<L, A>(listen: L, accept: A, drain: drain::Watch, span: Span)
+pub fn spawn<L, A>(listen: L, accept: A, drain: drain::Watch)
 where
     L: Listen + Send + 'static,
     L::Error: std::error::Error + Send + 'static,
@@ -21,12 +21,11 @@ where
     // stops accepting new connections.
     task::spawn(
         drain
-            .watch(
-                ServeAndSpawnUntilCancel::new(listen, accept, span.clone()),
-                |s| s.cancel(),
-            )
+            .watch(ServeAndSpawnUntilCancel::new(listen, accept), |s| {
+                s.cancel()
+            })
             .map_err(|e| panic!("Server failed: {}", e))
-            .instrument(span),
+            .instrument(Span::current()),
     );
 }
 
@@ -41,11 +40,11 @@ where
     A::Error: 'static,
     A::Future: Send + 'static,
 {
-    fn new(listen: L, accept: A, span: Span) -> Self {
-        let exec = tokio::executor::DefaultExecutor::current().instrument(span.clone());
+    fn new(listen: L, accept: A) -> Self {
+        let exec = tokio::executor::DefaultExecutor::current().instrument(Span::current());
         let accept = TraceAccept {
             accept: AcceptError::new(accept),
-            span,
+            span: Span::current(),
         };
         let serve = listen.serve(accept).with_executor(exec);
         ServeAndSpawnUntilCancel(Some(serve))
