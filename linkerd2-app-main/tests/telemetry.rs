@@ -1,12 +1,14 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
+#![type_length_limit = "1110183"]
+
+use bytes::IntoBuf;
+use std::io::Read;
 
 #[macro_use]
 mod support;
 
 use self::support::*;
-use bytes::IntoBuf;
-use std::io::Read;
 
 struct Fixture {
     client: client::Client,

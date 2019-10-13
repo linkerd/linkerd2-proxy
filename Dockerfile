@@ -21,7 +21,7 @@ RUN cargo fetch --locked
 RUN if [ -n "$PROXY_UNOPTIMIZED" ]; \
     then \
     cargo build -p linkerd2-proxy --bin linkerd2-proxy --frozen && \
-    mv target/debug/linkerd1-proxy target/linkerd2-proxy ; \
+    mv target/debug/linkerd2-proxy target/linkerd2-proxy ; \
     else \
     cargo build -p linkerd2-proxy --bin linkerd2-proxy --frozen --release && \
     mv target/release/linkerd2-proxy target/linkerd2-proxy ; \

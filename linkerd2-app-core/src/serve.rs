@@ -3,7 +3,6 @@ use futures::{try_ready, Future, Poll};
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::listen::{Accept, Listen, Serve};
-use linkerd2_task as task;
 use tracing::Span;
 use tracing_futures::{Instrument, Instrumented};
 
@@ -19,7 +18,7 @@ where
 {
     // As soon as we get a shutdown signal, the listener task completes and
     // stops accepting new connections.
-    task::spawn(
+    tokio::spawn(
         drain
             .watch(ServeAndSpawnUntilCancel::new(listen, accept), |s| {
                 s.cancel()

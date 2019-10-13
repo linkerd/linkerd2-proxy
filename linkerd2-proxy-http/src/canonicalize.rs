@@ -18,7 +18,8 @@ use std::time::Duration;
 use tokio;
 use tokio::sync::{mpsc, oneshot};
 use tokio_timer::{clock, Delay, Timeout};
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace, warn, Span};
+use tracing_futures::Instrument;
 
 /// Duration to wait before polling DNS again after an error (or a NXDOMAIN
 /// response with no TTL).
@@ -143,7 +144,7 @@ where
             let (tx, rx) = mpsc::channel(1);
             let (_tx_stop, rx_stop) = oneshot::channel();
 
-            tokio::spawn(Task::new(na, resolver, timeout, tx, rx_stop));
+            tokio::spawn(Task::new(na, resolver, timeout, tx, rx_stop).instrument(Span::current()));
 
             tower::util::Either::A(Service {
                 canonicalized: None,

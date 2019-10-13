@@ -1,9 +1,12 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
-mod support;
-use self::support::*;
+#![type_length_limit = "1110183"]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+mod support;
+
+use self::support::*;
 
 macro_rules! profile_test {
     (routes: [$($route:expr),+], budget: $budget:expr, with_client: $with_client:expr) => {
