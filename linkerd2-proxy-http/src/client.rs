@@ -12,7 +12,8 @@ use linkerd2_proxy_transport::connect;
 use std::fmt;
 use std::marker::PhantomData;
 use tower::ServiceExt;
-use tracing::{debug, trace};
+use tracing::{debug, info_span, trace};
+use tracing_futures::Instrument;
 
 /// Configurs an HTTP client that uses a `C`-typed connector
 ///
@@ -35,6 +36,7 @@ pub struct Client<C, T, B> {
 /// A `Future` returned from `Client::new_service()`.
 pub enum ClientNewServiceFuture<C, T, B>
 where
+    T: connect::HasPeerAddr,
     B: hyper::body::Payload + 'static,
     C: tower::MakeConnection<T> + 'static,
     C::Connection: Send + 'static,
@@ -125,6 +127,7 @@ where
 
     fn call(&mut self, config: T) -> Self::Future {
         debug!("building client={:?}", config);
+        let peer_addr = config.peer_addr();
 
         let connect = self.connect.clone();
         match *config.http_settings() {
@@ -133,8 +136,10 @@ where
                 wants_h1_upgrade: _,
                 was_absolute_form,
             } => {
-                // TODO configure a logging executor
+                let exec = tokio::executor::DefaultExecutor::current()
+                    .instrument(info_span!("http1", %peer_addr));
                 let h1 = hyper::Client::builder()
+                    .executor(exec)
                     .keep_alive(keep_alive)
                     // hyper should never try to automatically set the Host
                     // header, instead always just passing whatever we received.
@@ -170,6 +175,7 @@ where
 
 impl<C, T, B> Future for ClientNewServiceFuture<C, T, B>
 where
+    T: connect::HasPeerAddr,
     C: tower::MakeConnection<T> + Send + Sync + 'static,
     C::Connection: Send + 'static,
     C::Future: Send + 'static,

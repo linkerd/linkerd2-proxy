@@ -17,9 +17,10 @@ linkerd2-app-core = { path = "../linkerd2-app-core" }
 linkerd2-app-inbound = { path = "../linkerd2-app-inbound" }
 linkerd2-app-outbound = { path = "../linkerd2-app-outbound" }
 linkerd2-signal = { path = "../linkerd2-signal" }
-opencensus-proto       = { path = "../opencensus-proto" }
+opencensus-proto = { path = "../opencensus-proto" }
 tokio = "0.1.14"
-tracing            = "0.1.9"
+tracing = "0.1.9"
+tracing-futures = "0.0.1-alpha.1"
 
 [dev-dependencies]
 bytes = "0.4"

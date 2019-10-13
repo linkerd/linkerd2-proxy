@@ -23,7 +23,7 @@ use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::{debug, info_span};
+use tracing::debug;
 
 mod endpoint;
 mod orig_proto_downgrade;
@@ -238,8 +238,7 @@ pub fn spawn<P>(
     let accept = tls::AcceptTls::new(get_original_dst, local_identity, server)
         .without_protocol_detection_for(skip_ports);
 
-    let span = info_span!("in", local_addr=%listen.local_addr());
-    serve::spawn(listen, accept, drain, span);
+    serve::spawn(listen, accept, drain);
 }
 
 #[derive(Copy, Clone, Debug)]
