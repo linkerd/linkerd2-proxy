@@ -10,7 +10,8 @@ use linkerd2_duplex::Duplex;
 use std::fmt;
 use std::mem;
 use std::sync::Arc;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, Span};
+use tracing_futures::Instrument;
 use try_lock::TryLock;
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
@@ -151,7 +152,8 @@ impl Drop for Inner {
                 self.upgrade_drain_signal
                     .take()
                     .expect("only taken in drop")
-                    .watch(both_upgrades, |_| ()),
+                    .watch(both_upgrades, |_| ())
+                    .instrument(Span::current()),
             );
         } else {
             trace!("HTTP/1.1 upgrade half missing");

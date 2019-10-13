@@ -14,7 +14,7 @@ use linkerd2_app_core::{
     proxy::Server,
     reconnect, serve,
     spans::SpanConverter,
-    svc, trace_context,
+    svc, trace, trace_context,
     transport::{self as transport, connect, tls, Source},
     Addr, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
     L5D_REMOTE_IP, L5D_SERVER_ID,
@@ -23,7 +23,7 @@ use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::debug;
+use tracing::{debug, info_span};
 
 mod endpoint;
 mod orig_proto_downgrade;
@@ -99,10 +99,13 @@ pub fn spawn<P>(
             endpoint_http_metrics,
         ))
         .serves::<Endpoint>()
+        .push(trace::layer(|endpoint: &Endpoint| {
+            info_span!("endpoint", ?endpoint)
+        }))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .makes::<Endpoint>()
         .push(router::layer(
-            router::Config::new("in endpoint", capacity, max_idle_age),
+            router::Config::new(capacity, max_idle_age),
             RecognizeEndpoint::new(default_fwd_addr),
         ))
         .into_inner()
@@ -136,7 +139,10 @@ pub fn spawn<P>(
             profiles_client,
             dst_route_layer,
         ))
-        .push(strip_header::request::layer(DST_OVERRIDE_HEADER));
+        .push(strip_header::request::layer(DST_OVERRIDE_HEADER))
+        .push(trace::layer(
+            |dst: &DstAddr| info_span!("logical", dst=%dst.dst_logical()),
+        ));
 
     // Routes requests to a `DstAddr`.
     //
@@ -159,33 +165,30 @@ pub fn spawn<P>(
     let dst_router = dst_stack
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
-            router::Config::new("in dst", capacity, max_idle_age),
+            router::Config::new(capacity, max_idle_age),
             |req: &http::Request<_>| {
-                let canonical = req
-                    .headers()
+                req.headers()
                     .get(CANONICAL_DST_HEADER)
-                    .and_then(|dst| dst.to_str().ok())
-                    .and_then(|d| Addr::from_str(d).ok());
-                debug!("inbound canonical={:?}", canonical);
-
-                let dst = canonical
+                    .and_then(|dst| {
+                        dst.to_str().ok().and_then(|d| {
+                            Addr::from_str(d).ok().map(|a| {
+                                debug!("using {}", CANONICAL_DST_HEADER);
+                                a
+                            })
+                        })
+                    })
                     .or_else(|| {
                         http_request_l5d_override_dst_addr(req)
+                            .ok()
                             .map(|override_addr| {
-                                debug!("inbound dst={:?}; dst-override", override_addr);
+                                debug!("using l5d-dst-override");
                                 override_addr
                             })
-                            .ok()
                     })
                     .or_else(|| http_request_authority_addr(req).ok())
                     .or_else(|| http_request_host_addr(req).ok())
-                    .or_else(|| http_request_orig_dst_addr(req).ok());
-                debug!("inbound dst={:?}", dst);
-
-                dst.map(|addr| {
-                    let settings = settings::Settings::from_request(req);
-                    DstAddr::inbound(addr, settings)
-                })
+                    .or_else(|| http_request_orig_dst_addr(req).ok())
+                    .map(|addr| DstAddr::inbound(addr, settings::Settings::from_request(req)))
             },
         ))
         .into_inner()
@@ -207,6 +210,7 @@ pub fn spawn<P>(
     // `orig-proto` headers. This happens in the source stack so that
     // the router need not detect whether a request _will be_ downgraded.
     let source_stack = svc::stack(svc::Shared::new(admission_control))
+        .serves::<Source>()
         .push(orig_proto_downgrade::layer())
         .push(insert::target::layer())
         // disabled due to information leagkage
@@ -219,8 +223,12 @@ pub fn spawn<P>(
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(errors::layer())
+        .push(trace::layer(
+            |src: &Source| info_span!("source", peer_ip = %src.remote.ip(), peer_id=?src.tls_peer),
+        ))
         .push(trace_context_layer)
-        .push(handle_time.layer());
+        .push(handle_time.layer())
+        .serves::<Source>();
 
     let server = Server::new(
         TransportLabels,

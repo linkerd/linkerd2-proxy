@@ -146,12 +146,14 @@ pub mod add_origin {
 /// Resolves the controller's `addr` once before building a client.
 pub mod resolve {
     use super::{client, ControlAddr};
-    use crate::{logging, svc};
+    use crate::svc;
     use futures::{try_ready, Future, Poll};
     use linkerd2_addr::Addr;
     use linkerd2_proxy_dns as dns;
     use std::net::SocketAddr;
     use std::{error, fmt};
+    use tracing::{info_span, Span};
+    use tracing_futures::{Instrument, Instrumented};
 
     #[derive(Clone, Debug)]
     pub struct Layer {
@@ -180,7 +182,7 @@ pub mod resolve {
             config: ControlAddr,
             stack: M,
         },
-        Inner(M::Future),
+        Inner(Instrumented<M::Future>),
     }
 
     #[derive(Debug)]
@@ -266,10 +268,10 @@ pub mod resolve {
             let target = client::Target {
                 addr,
                 server_name: dst.identity.clone(),
-                log_ctx: logging::admin().client("control", dst.addr.clone()),
             };
 
-            State::Inner(mk_svc.call(target))
+            info_span!("control", peer_addr=%addr, peer_identity=?dst.identity.clone())
+                .in_scope(move || State::Inner(mk_svc.call(target).instrument(Span::current())))
         }
     }
 
@@ -291,9 +293,8 @@ pub mod resolve {
 /// Creates a client suitable for gRPC.
 pub mod client {
     use crate::transport::{connect, tls};
-    use crate::{logging, proxy::http, svc};
+    use crate::{proxy::http, svc};
     use futures::Poll;
-    use linkerd2_addr::Addr;
     use linkerd2_proxy_http::h2::Settings as H2Settings;
     use std::net::SocketAddr;
 
@@ -301,7 +302,6 @@ pub mod client {
     pub struct Target {
         pub(super) addr: SocketAddr,
         pub(super) server_name: tls::PeerIdentity,
-        pub(super) log_ctx: logging::Client<&'static str, Addr>,
     }
 
     #[derive(Debug)]

@@ -10,7 +10,6 @@ use futures::future::{ExecuteError, ExecuteErrorKind, Future};
 
 pub use tokio::executor::{DefaultExecutor, Executor as TokioExecutor, SpawnError};
 use tokio::runtime::{self as thread_pool, current_thread};
-pub use tokio::spawn;
 pub use tokio_executor::TypedExecutor;
 
 pub type BoxSendFuture = Box<dyn Future<Item = (), Error = ()> + Send>;

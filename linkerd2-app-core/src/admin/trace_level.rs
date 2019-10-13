@@ -1,5 +1,5 @@
 use super::{rsp, ClientAddr};
-pub use crate::logging::trace::LevelHandle as TraceLevel;
+pub use crate::trace::LevelHandle as TraceLevel;
 use futures::{
     future::{self, Future},
     Stream,

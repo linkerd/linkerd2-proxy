@@ -245,7 +245,9 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                 })
                 .map_err(|e| println!("client error: {:?}", e));
 
-            runtime.block_on(work.instrument(span)).expect("support client runtime");
+            runtime
+                .block_on(work.instrument(span))
+                .expect("support client runtime");
         })
         .expect("thread spawn");
     (tx, running_rx)

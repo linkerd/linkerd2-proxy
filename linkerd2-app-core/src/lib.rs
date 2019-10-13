@@ -26,7 +26,6 @@ pub mod dst;
 pub mod errors;
 pub mod handle_time;
 pub mod identity;
-pub mod logging;
 pub mod metric_labels;
 pub mod profiles;
 pub mod proxy;
@@ -35,9 +34,8 @@ pub mod spans;
 pub mod svc;
 pub mod tap;
 pub mod telemetry;
+pub mod trace;
 pub mod transport;
-
-pub use self::logging::trace;
 
 pub const CANONICAL_DST_HEADER: &'static str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";

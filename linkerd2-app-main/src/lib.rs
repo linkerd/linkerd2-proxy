@@ -1,5 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "128"]
+//#![recursion_limit = "128"]
 
 use futures::{self, future, Future};
 pub use linkerd2_app_core::init;
@@ -306,7 +306,7 @@ where
 
                 identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
 
-                task::spawn(
+                tokio::spawn(
                     local_identity
                         .clone()
                         .await_crt()
@@ -317,7 +317,8 @@ where
                         .map_err(|_| {
                             // The daemon task was lost?!
                             panic!("Failed to certify identity!");
-                        }),
+                        })
+                        .instrument(info_span!("await identity")),
                 );
 
                 Conditional::Some(local_identity)
@@ -389,10 +390,10 @@ where
                             );
 
                             if let Some((listener, tap_svc_name)) = control_listener {
-                                info_span!("admin", local_addr=%listener.local_addr()).in_scope(
+                                info_span!("tap", local_addr=%listener.local_addr()).in_scope(
                                     || {
                                         trace!("spawning");
-                                        task::spawn(tap_daemon.map_err(|_| ()));
+                                        tokio::spawn(tap_daemon.map_err(|_| ()));
                                         serve::spawn(
                                             listener,
                                             tls::AcceptTls::new(
@@ -413,17 +414,20 @@ where
 
                             info_span!("dns").in_scope(|| {
                                 trace!("spawning");
-                                task::spawn(dns_bg);
+                                tokio::spawn(dns_bg);
                             });
 
                             if let Some(d) = identity_daemon {
-                                task::spawn(
+                                tokio::spawn(
                                     d.map_err(|e| panic!("failed {}", e))
                                         .instrument(info_span!("identity")),
                                 );
                             }
 
-                            admin_shutdown_signal.map(|_| ()).map_err(|_| ())
+                            admin_shutdown_signal
+                                .map(|_| ())
+                                .map_err(|_| ())
+                                .instrument(info_span!("shutdown"))
                         }))
                         .expect("admin");
 
@@ -441,7 +445,7 @@ where
                 Ok(futures::Async::NotReady)
             })
             .map(|()| drop(tx));
-            task::spawn(admin_shutdown);
+            tokio::spawn(admin_shutdown);
         }
 
         // Build the outbound and inbound proxies using the dst_svc client.
@@ -496,9 +500,13 @@ where
                 ..oc::Node::default()
             };
             let span_exporter = SpanExporter::new(trace_collector, node, spans_rx, span_metrics);
-            task::spawn(span_exporter.map_err(|e| {
-                error!("span exporter failed: {}", e);
-            }));
+            tokio::spawn(
+                span_exporter
+                    .map_err(|e| {
+                        error!("span exporter failed: {}", e);
+                    })
+                    .instrument(info_span!("opencensus-exporter")),
+            );
             spans_tx
         });
 

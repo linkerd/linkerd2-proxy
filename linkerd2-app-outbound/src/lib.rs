@@ -15,7 +15,7 @@ use linkerd2_app_core::{
     proxy::{self, Server},
     reconnect, serve,
     spans::SpanConverter,
-    svc, trace_context,
+    svc, trace, trace_context,
     transport::{self as transport, connect, tls, Source},
     Addr, Conditional, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
     L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::debug;
+use tracing::{debug, info_span};
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;
@@ -113,6 +113,7 @@ pub fn spawn<R, P>(
     // 6. Strips any `l5d-server-id` that may have been received from
     //    the server, before we apply our own.
     let endpoint_stack = client_stack
+        .serves::<Endpoint>()
         .push(strip_header::response::layer(L5D_REMOTE_IP))
         .push(strip_header::response::layer(L5D_SERVER_ID))
         .push(strip_header::request::layer(L5D_REQUIRE_ID))
@@ -125,7 +126,9 @@ pub fn spawn<R, P>(
             endpoint_http_metrics,
         ))
         .push(require_identity_on_endpoint::layer())
-        .serves::<Endpoint>();
+        .push(trace::layer(|endpoint: &Endpoint| {
+            info_span!("endpoint", ?endpoint)
+        }));
 
     // A per-`dst::Route` layer that uses profile data to configure
     // a per-route layer.
@@ -159,12 +162,8 @@ pub fn spawn<R, P>(
     let orig_dst_router_layer = svc::layers()
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
-            router::Config::new("out ep", capacity, max_idle_age),
-            |req: &http::Request<_>| {
-                let ep = Endpoint::from_request(req);
-                debug!("outbound ep={:?}", ep);
-                ep
-            },
+            router::Config::new(capacity, max_idle_age),
+            Endpoint::from_request,
         ));
 
     // Resolves the target via the control plane and balances requests
@@ -183,7 +182,10 @@ pub fn spawn<R, P>(
     // application-selected original destination.
     let distributor = endpoint_stack
         .push(fallback::layer(balancer_layer, orig_dst_router_layer))
-        .serves::<DstAddr>();
+        .serves::<DstAddr>()
+        .push(trace::layer(
+            |dst: &DstAddr| info_span!("concrete", dst=%dst.dst_concrete()),
+        ));
 
     // A per-`DstAddr` stack that does the following:
     //
@@ -206,16 +208,17 @@ pub fn spawn<R, P>(
     // This is shared across addr-stacks so that multiple addrs that
     // canonicalize to the same DstAddr use the same dst-stack service.
     let dst_router = dst_stack
+        .push(trace::layer(
+            |dst: &DstAddr| info_span!("logical", dst=%dst.dst_logical()),
+        ))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
-            router::Config::new("out dst", capacity, max_idle_age),
+            router::Config::new(capacity, max_idle_age),
             |req: &http::Request<_>| {
-                let addr = req.extensions().get::<Addr>().cloned().map(|addr| {
-                    let settings = settings::Settings::from_request(req);
-                    DstAddr::outbound(addr, settings)
-                });
-                debug!("outbound dst={:?}", addr);
-                addr
+                req.extensions()
+                    .get::<Addr>()
+                    .cloned()
+                    .map(|addr| DstAddr::outbound(addr, settings::Settings::from_request(req)))
             },
         ))
         .into_inner()
@@ -246,22 +249,19 @@ pub fn spawn<R, P>(
         .push(strip_header::request::layer(L5D_CLIENT_ID))
         .push(strip_header::request::layer(DST_OVERRIDE_HEADER))
         .push(insert::target::layer())
+        .push(trace::layer(|addr: &Addr| info_span!("addr", %addr)))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
-            router::Config::new("out addr", capacity, max_idle_age),
+            router::Config::new(capacity, max_idle_age),
             |req: &http::Request<_>| {
                 http_request_l5d_override_dst_addr(req)
                     .map(|override_addr| {
-                        debug!("outbound addr={:?}; dst-override", override_addr);
+                        debug!("using dst-override");
                         override_addr
                     })
-                    .or_else(|_| {
-                        let addr = http_request_authority_addr(req)
-                            .or_else(|_| http_request_host_addr(req))
-                            .or_else(|_| http_request_orig_dst_addr(req));
-                        debug!("outbound addr={:?}", addr);
-                        addr
-                    })
+                    .or_else(|_| http_request_authority_addr(req))
+                    .or_else(|_| http_request_host_addr(req))
+                    .or_else(|_| http_request_orig_dst_addr(req))
                     .ok()
             },
         ))
@@ -286,6 +286,12 @@ pub fn spawn<R, P>(
         }))
         .push(insert::target::layer())
         .push(errors::layer())
+        .push(trace::layer(|src: &Source| {
+            src.orig_dst
+                .as_ref()
+                .map(|orig_dst_addr| info_span!("source", %orig_dst_addr))
+                .unwrap_or_else(|| info_span!("source"))
+        }))
         .push(trace_context_layer)
         .push(handle_time.layer());
 
