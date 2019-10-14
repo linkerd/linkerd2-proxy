@@ -74,11 +74,11 @@ fmt:
 
 .PHONY: test-lib
 test-lib:: fetch
-	$(CARGO_TEST) --lib --no-default-features
+	$(CARGO_TEST) --lib
 
 .PHONY: test-integration
 test-integration: fetch
-	$(CARGO_TEST) --tests --no-default-features
+	$(CARGO_TEST) --tests
 
 .PHONY: test
 test: test-lib test-integration

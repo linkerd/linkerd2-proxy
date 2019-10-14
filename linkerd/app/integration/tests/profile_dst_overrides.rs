@@ -2,9 +2,7 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-mod support;
-
-use self::support::*;
+use linkerd2_app_integration::*;
 use linkerd2_proxy_api::destination as pb;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

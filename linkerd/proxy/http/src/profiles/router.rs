@@ -3,8 +3,8 @@ use super::{CanGetDestination, GetRoutes, Route, Routes, WeightedAddr, WithAddr,
 use futures::{Async, Poll, Stream};
 use http;
 use indexmap::IndexMap;
-use linkerd2_error::{Error, Never};
 use linkerd2_dns as dns;
+use linkerd2_error::{Error, Never};
 use linkerd2_router as rt;
 use linkerd2_stack::Shared;
 use std::hash::Hash;

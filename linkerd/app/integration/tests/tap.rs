@@ -2,10 +2,8 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-mod support;
-
-use self::support::*;
-use crate::support::tap::TapEventExt;
+use linkerd2_app_integration::tap::TapEventExt;
+use linkerd2_app_integration::*;
 use std::time::SystemTime;
 
 #[test]

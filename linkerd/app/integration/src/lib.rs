@@ -1,18 +1,14 @@
-// The support mod is compiled for all the integration tests, which are each
-// compiled as separate crates. Each only uses a subset of this module, which
-// means some of it is unused.
-//
-// Note, lints like `unused_variable` should not be ignored.
+//! Shared infrastructure for integration tests
 #![deny(warnings, rust_2018_idioms)]
-#![allow(dead_code)]
+#![type_length_limit="1070525"]
 
 pub use bytes::Bytes;
 pub use futures::sync::oneshot;
 pub use futures::{future::Executor, *};
 pub use http::{HeaderMap, Request, Response, StatusCode};
-use http_body::Body as HttpBody;
-pub use linkerd2_app_core::{self as app, task::LazyExecutor};
+pub use http_body::Body as HttpBody;
 pub use linkerd2_app::Main;
+pub use linkerd2_app_core::{self as app, task::LazyExecutor};
 pub use std::collections::HashMap;
 use std::fmt;
 use std::io;
@@ -81,7 +77,7 @@ macro_rules! assert_eventually {
             use std::time::{Instant, Duration};
             use std::str::FromStr;
             // TODO: don't do this *every* time eventually is called (lazy_static?)
-            let patience = env::var($crate::support::ENV_TEST_PATIENCE_MS).ok()
+            let patience = env::var($crate::ENV_TEST_PATIENCE_MS).ok()
                 .map(|s| {
                     let millis = u64::from_str(&s)
                         .expect(
@@ -90,7 +86,7 @@ macro_rules! assert_eventually {
                         );
                     Duration::from_millis(millis)
                 })
-                .unwrap_or($crate::support::DEFAULT_TEST_PATIENCE);
+                .unwrap_or($crate::DEFAULT_TEST_PATIENCE);
             let start_t = Instant::now();
             for i in 0..($retries + 1) {
                 if $cond {
@@ -98,7 +94,7 @@ macro_rules! assert_eventually {
                 } else if i == $retries {
                     panic!(
                         "assertion failed after {} (retried {} times): {}",
-                        crate::support::HumanDuration(start_t.elapsed()),
+                        crate::HumanDuration(start_t.elapsed()),
                         i,
                         format_args!($($arg)+)
                     )
@@ -181,12 +177,12 @@ impl AsyncWrite for RunningIo {
 }
 
 pub fn shutdown_signal() -> (Shutdown, ShutdownRx) {
-    let (tx, rx) = oneshot::channel();
-    (Shutdown { tx }, Box::new(rx.then(|_| Ok(()))))
+    let (_tx, rx) = oneshot::channel();
+    (Shutdown { _tx }, Box::new(rx.then(|_| Ok(()))))
 }
 
 pub struct Shutdown {
-    tx: oneshot::Sender<()>,
+    _tx: oneshot::Sender<()>,
 }
 
 impl Shutdown {

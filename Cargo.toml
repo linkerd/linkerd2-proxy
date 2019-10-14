@@ -4,6 +4,7 @@ members = [
     "linkerd/addr",
     "linkerd/app/core",
     "linkerd/app/inbound",
+    "linkerd/app/integration",
     "linkerd/app/outbound",
     "linkerd/app",
     "linkerd/conditional",
