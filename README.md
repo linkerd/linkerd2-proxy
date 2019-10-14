@@ -52,6 +52,21 @@ Usually, [Cargo][cargo], Rust's package manager, is used to build and test this
 project. If you don't have Cargo installed, we suggest getting it via
 https://rustup.rs/.
 
+### Repository Structure
+
+This project is broken into many small libraries, or _crates_, so that
+components may be compiled & tested independently. The following crate
+targets are especially important:
+
+* [`linkerd2-proxy`] contains the proxy executable;
+* [`linkerd2-app-integration`] contains the proxy's integration tests;
+* [`linkerd2-app`] bundles the [`linkerd2-app-inbound`] and [`linkerd2-app-outbound`] crates so that they may be run by the executable or integration tests.
+
+[`linkerd2-proxy`]: linkerd2-proxy
+[`linkerd2-app`]: linkerd/app
+[`linkerd2-app-integration`]: linkerd/app/integration
+[`linkerd2-app-inbound`]: linkerd/app/inbound
+[`linkerd2-app-outbound`]: linkerd/app/outbound
 
 ## Code of conduct
 
