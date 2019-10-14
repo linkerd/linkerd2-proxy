@@ -1,5 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-//#![recursion_limit = "128"]
 
 use futures::{self, future, Future};
 pub use linkerd2_app_core::init;

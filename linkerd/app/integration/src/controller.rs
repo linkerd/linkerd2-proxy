@@ -363,7 +363,10 @@ where
     listening_rx.wait().expect("listening_rx");
     println!("{} listening; addr={:?}", name, addr);
 
-    Listening { addr, _shutdown: tx }
+    Listening {
+        addr,
+        _shutdown: tx,
+    }
 }
 
 pub enum Hint {

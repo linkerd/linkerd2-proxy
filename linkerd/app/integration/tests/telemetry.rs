@@ -140,8 +140,8 @@ fn metrics_endpoint_outbound_request_count() {
 }
 
 mod response_classification {
-    use linkerd2_app_integration::*;
     use super::Fixture;
+    use linkerd2_app_integration::*;
     use tracing::info;
 
     const REQ_STATUS_HEADER: &'static str = "x-test-status-requested";
@@ -428,9 +428,9 @@ fn metrics_endpoint_outbound_response_latency() {
 
 // Tests for destination labels provided by control plane service discovery.
 mod outbound_dst_labels {
-    use linkerd2_app_integration::*;
     use super::Fixture;
     use controller::DstSender;
+    use linkerd2_app_integration::*;
 
     fn fixture(dest: &str) -> (Fixture, SocketAddr, DstSender) {
         info!("running test server");
@@ -725,8 +725,8 @@ fn metrics_has_start_time() {
 }
 
 mod transport {
-    use linkerd2_app_integration::*;
     use super::*;
+    use linkerd2_app_integration::*;
 
     #[test]
     fn inbound_http_accept() {

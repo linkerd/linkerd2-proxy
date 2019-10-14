@@ -1,6 +1,6 @@
 //! Shared infrastructure for integration tests
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit="1070525"]
+#![type_length_limit = "1070525"]
 
 pub use bytes::Bytes;
 pub use futures::sync::oneshot;
