@@ -37,19 +37,20 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy::proxy::tcp=off";
 
 pub fn init_env() -> app::config::TestEnv {
-    let _ = trace_init();
     app::config::TestEnv::new()
 }
 
-pub fn trace_init() -> Result<(), Error> {
+pub fn trace_init() -> (Dispatch, app::trace::LevelHandle) {
     use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
         .unwrap_or_else(|_| DEFAULT_LOG.to_owned());
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
-
-    app::trace::init_with_filter(&log).map(|_| ())
+    // This may fail, since the global log compat layer may have been
+    // initialized by another test.
+    let _ = app::trace::init_log_compat();
+    app::trace::with_filter(&log)
 }
 
 /// Retry an assertion up to a specified number of times, waiting

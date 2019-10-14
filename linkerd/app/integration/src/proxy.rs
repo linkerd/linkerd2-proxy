@@ -241,6 +241,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     }
 
     let config = app::config::Config::parse(&env).unwrap();
+    let (trace, trace_handle) = super::trace_init();
 
     let (running_tx, running_rx) = oneshot::channel();
     let (tx, mut rx) = shutdown_signal();
@@ -253,52 +254,51 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     ::std::thread::Builder::new()
         .name(tname)
         .spawn(move || {
-            let _c = controller;
-            let _i = identity;
+            tracing::dispatcher::with_default(&trace, || {
+                let _c = controller;
+                let _i = identity;
 
-            let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
-            // TODO: a mock timer could be injected here?
-            let runtime =
-                tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
-            // TODO: it would be nice for this to not be stubbed out, so that it
-            // can be tested.
-            let trace_handle = app::trace::LevelHandle::dangling();
-            let main = linkerd2_app::Main::new(config, trace_handle, runtime)
-                .with_original_dst_from(mock_orig_dst.clone());
+                let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
+                // TODO: a mock timer could be injected here?
+                let runtime =
+                    tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
+                let main = linkerd2_app::Main::new(config, trace_handle, runtime)
+                    .with_original_dst_from(mock_orig_dst.clone());
 
-            let control_addr = main.control_addr();
-            let identity_addr = identity_addr;
-            let inbound_addr = main.inbound_addr();
-            let outbound_addr = main.outbound_addr();
-            let metrics_addr = main.metrics_addr();
+                let control_addr = main.control_addr();
+                let identity_addr = identity_addr;
+                let inbound_addr = main.inbound_addr();
+                let outbound_addr = main.outbound_addr();
+                let metrics_addr = main.metrics_addr();
 
-            {
-                let mut inner = mock_orig_dst.0.lock().unwrap();
-                inner.inbound_local_addr = Some(inbound_addr);
-                inner.outbound_local_addr = Some(outbound_addr);
-            }
-
-            // slip the running tx into the shutdown future, since the first time
-            // the shutdown future is polled, that means all of the proxy is now
-            // running.
-            let addrs = (
-                control_addr,
-                identity_addr,
-                inbound_addr,
-                outbound_addr,
-                metrics_addr,
-            );
-            let mut running = Some((running_tx, addrs));
-            let on_shutdown = future::poll_fn(move || {
-                if let Some((tx, addrs)) = running.take() {
-                    let _ = tx.send(addrs);
+                {
+                    let mut inner = mock_orig_dst.0.lock().unwrap();
+                    inner.inbound_local_addr = Some(inbound_addr);
+                    inner.outbound_local_addr = Some(outbound_addr);
                 }
 
-                try_ready!(rx.poll());
-                Ok(().into())
-            });
+                // slip the running tx into the shutdown future, since the first time
+                // the shutdown future is polled, that means all of the proxy is now
+                // running.
+                let addrs = (
+                    control_addr,
+                    identity_addr,
+                    inbound_addr,
+                    outbound_addr,
+                    metrics_addr,
+                );
+                let mut running = Some((running_tx, addrs));
+                let on_shutdown = future::poll_fn(move || {
+                    if let Some((tx, addrs)) = running.take() {
+                        let _ = tx.send(addrs);
+                    }
 
-            main.run_until(on_shutdown);
+                    try_ready!(rx.poll());
+                    Ok(().into())
+                });
+
+                main.run_until(on_shutdown);
+            })
         })
         .unwrap();
 

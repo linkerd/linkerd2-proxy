@@ -1,6 +1,10 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
+// The compiler cannot figure out that the `use linkerd2_app_integration::*`
+// import is actually used, and putting the allow attribute on that import in
+// particular appears to do nothing... T_T
+#![allow(unused_imports)]
 
 use bytes::IntoBuf;
 use linkerd2_app_integration::*;

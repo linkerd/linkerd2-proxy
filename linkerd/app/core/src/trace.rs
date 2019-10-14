@@ -3,7 +3,7 @@ const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
-use tracing::{dispatcher, info, Dispatch, Event, Level};
+use tracing::{info, Dispatch, Event, Level};
 use tracing_subscriber::{
     filter,
     fmt::{format, Builder, Context, Formatter},
@@ -22,25 +22,32 @@ pub struct LevelHandle {
 /// environment variable as the verbosity-level filter.
 pub fn init() -> Result<LevelHandle, Error> {
     let env = env::var(ENV_LOG).unwrap_or_default();
-    init_with_filter(env)
+    let (dispatch, handle) = with_filter(env);
+
+    // Set up log compatibility.
+    init_log_compat()?;
+    // Set the default subscriber.
+    tracing::dispatcher::set_global_default(dispatch)?;
+    Ok(handle)
 }
 
-/// Initialize tracing and logging with the provided verbosity-level filter.
-pub fn init_with_filter<F: AsRef<str>>(filter: F) -> Result<LevelHandle, Error> {
-    let filter = filter.as_ref();
+pub fn init_log_compat() -> Result<(), Error> {
+    tracing_log::LogTracer::init().map_err(Error::from)
+}
+
+pub fn with_filter(filter: impl AsRef<str>) -> (Dispatch, LevelHandle) {
+     let filter = filter.as_ref();
 
     // Set up the subscriber
     let builder = subscriber_builder()
         .with_env_filter(filter)
         .with_filter_reloading();
-    let handle = builder.reload_handle();
+    let handle = LevelHandle {
+        inner: builder.reload_handle(),
+    };
     let dispatch = Dispatch::new(builder.finish());
-    dispatcher::set_global_default(dispatch)?;
 
-    // Set up log compatibility.
-    tracing_log::LogTracer::init()?;
-
-    Ok(LevelHandle { inner: handle })
+    (dispatch, handle)
 }
 
 /// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
