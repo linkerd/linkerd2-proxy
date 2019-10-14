@@ -1,5 +1,5 @@
 [package]
-name = "hyper-balance"
+name = "linkerd2-proxy-core"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
@@ -7,8 +7,6 @@ publish = false
 
 [dependencies]
 futures = "0.1"
-http = "0.1"
-hyper = "0.12"
-
-tower-load = { git = "https://github.com/tower-rs/tower" }
-tower-service = "0.2"
+linkerd2-error = { path = "../../error" }
+tokio = "0.1"
+tower = "0.1"

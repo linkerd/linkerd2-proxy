@@ -1,0 +1,21 @@
+[package]
+name = "linkerd2-app-outbound"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+bytes = "0.4"
+http = "0.1"
+futures = "0.1"
+indexmap = "1.0"
+linkerd2-app-core = { path = "../core" }
+opencensus-proto = { path = "../../../opencensus-proto" }
+tokio = "0.1.14"
+tower = "0.1"
+tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
+tracing = "0.1.9"
+
+[dev-dependencies]
+quickcheck = { version = "0.8", default-features = false }
