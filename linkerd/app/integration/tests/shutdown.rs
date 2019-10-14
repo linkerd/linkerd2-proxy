@@ -2,8 +2,7 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-mod support;
-use self::support::*;
+use linkerd2_app_integration::*;
 
 #[test]
 fn h2_goaways_connections() {

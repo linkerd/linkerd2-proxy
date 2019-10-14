@@ -1,4 +1,4 @@
-use crate::support::*;
+use super::*;
 use futures::sync::{mpsc, oneshot};
 use std::collections::VecDeque;
 use std::io;
@@ -272,7 +272,7 @@ fn run_server(tcp: TcpServer) -> server::Listening {
 
     server::Listening {
         addr,
-        shutdown: tx,
+        _shutdown: tx,
         conn_count,
     }
 }

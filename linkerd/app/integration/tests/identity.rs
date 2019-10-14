@@ -2,10 +2,7 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-#[macro_use]
-mod support;
-
-use self::support::*;
+use linkerd2_app_integration::*;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},

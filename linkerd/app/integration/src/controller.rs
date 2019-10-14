@@ -1,4 +1,4 @@
-use crate::support::*;
+use super::*;
 use bytes::IntoBuf;
 use hyper::body::Payload;
 use linkerd2_proxy_api::destination as pb;
@@ -43,7 +43,7 @@ pub struct Controller {
 
 pub struct Listening {
     pub addr: SocketAddr,
-    shutdown: Shutdown,
+    _shutdown: Shutdown,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -300,7 +300,7 @@ impl pb::server::Destination for Controller {
     }
 }
 
-pub(in crate::support) fn run<T, B>(
+pub(in crate) fn run<T, B>(
     svc: T,
     name: &'static str,
     delay: Option<Box<dyn Future<Item = (), Error = ()> + Send>>,
@@ -363,7 +363,7 @@ where
     listening_rx.wait().expect("listening_rx");
     println!("{} listening; addr={:?}", name, addr);
 
-    Listening { addr, shutdown: tx }
+    Listening { addr, _shutdown: tx }
 }
 
 pub enum Hint {

@@ -2,10 +2,7 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-#[macro_use]
-mod support;
-
-use self::support::*;
+use linkerd2_app_integration::*;
 use std::error::Error as _;
 use std::sync::mpsc;
 
@@ -891,13 +888,13 @@ macro_rules! http1_tests {
 }
 
 mod one_proxy {
-    use super::support::*;
+    use linkerd2_app_integration::*;
 
     http1_tests! { proxy: |srv| proxy::new().inbound(srv).run() }
 }
 
 mod proxy_to_proxy {
-    use super::support::*;
+    use linkerd2_app_integration::*;
 
     struct ProxyToProxy {
         // Held to prevent closing, to reduce controller request noise during

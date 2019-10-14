@@ -1,4 +1,4 @@
-use crate::support::*;
+use super::*;
 use futures::future::Either;
 use rustls::ServerConfig;
 use std::collections::HashMap;
@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::thread;
 use tokio::net::TcpStream;
 use tokio_rustls::TlsAcceptor;
-use RunningIo;
 
 pub fn new() -> Server {
     http2()
@@ -42,7 +41,7 @@ pub struct Server {
 
 pub struct Listening {
     pub addr: SocketAddr,
-    pub(super) shutdown: Shutdown,
+    pub(super) _shutdown: Shutdown,
     pub(super) conn_count: Arc<AtomicUsize>,
 }
 
@@ -222,7 +221,7 @@ impl Server {
 
         Listening {
             addr,
-            shutdown: tx,
+            _shutdown: tx,
             conn_count,
         }
     }

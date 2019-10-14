@@ -3,12 +3,8 @@
 #![type_length_limit = "1110183"]
 
 use bytes::IntoBuf;
+use linkerd2_app_integration::*;
 use std::io::Read;
-
-#[macro_use]
-mod support;
-
-use self::support::*;
 
 struct Fixture {
     client: client::Client,
@@ -144,7 +140,7 @@ fn metrics_endpoint_outbound_request_count() {
 }
 
 mod response_classification {
-    use super::support::*;
+    use linkerd2_app_integration::*;
     use super::Fixture;
     use tracing::info;
 
@@ -432,7 +428,7 @@ fn metrics_endpoint_outbound_response_latency() {
 
 // Tests for destination labels provided by control plane service discovery.
 mod outbound_dst_labels {
-    use super::support::*;
+    use linkerd2_app_integration::*;
     use super::Fixture;
     use controller::DstSender;
 
@@ -729,7 +725,7 @@ fn metrics_has_start_time() {
 }
 
 mod transport {
-    use super::support::*;
+    use linkerd2_app_integration::*;
     use super::*;
 
     #[test]

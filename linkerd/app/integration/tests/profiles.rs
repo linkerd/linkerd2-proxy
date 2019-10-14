@@ -2,11 +2,8 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
+use linkerd2_app_integration::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-mod support;
-
-use self::support::*;
 
 macro_rules! profile_test {
     (routes: [$($route:expr),+], budget: $budget:expr, with_client: $with_client:expr) => {

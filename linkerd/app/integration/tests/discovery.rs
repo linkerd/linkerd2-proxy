@@ -2,10 +2,7 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-#[macro_use]
-mod support;
-
-use self::support::*;
+use linkerd2_app_integration::*;
 
 macro_rules! generate_tests {
     (server: $make_server:path, client: $make_client:path) => {
@@ -653,7 +650,7 @@ macro_rules! generate_tests {
 }
 
 mod http2 {
-    use super::support::*;
+    use linkerd2_app_integration::*;
 
     generate_tests! { server: server::new, client: client::new }
 
@@ -710,14 +707,14 @@ mod http2 {
 }
 
 mod http1 {
-    use super::support::*;
+    use linkerd2_app_integration::*;
 
     generate_tests! {
         server: server::http1, client: client::http1
     }
 
     mod absolute_uris {
-        use super::super::support::*;
+        use linkerd2_app_integration::*;
 
         generate_tests! {
             server: server::http1,

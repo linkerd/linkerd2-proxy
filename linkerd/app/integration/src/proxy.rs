@@ -1,5 +1,4 @@
-use crate::support::*;
-
+use super::*;
 use std::sync::{Arc, Mutex};
 
 pub fn new() -> Proxy {
@@ -35,7 +34,7 @@ pub struct Listening {
     pub outbound_server: Option<server::Listening>,
     pub inbound_server: Option<server::Listening>,
 
-    shutdown: Shutdown,
+    _shutdown: Shutdown,
 }
 
 impl Proxy {
@@ -336,6 +335,6 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         outbound_server: proxy.outbound_server,
         inbound_server: proxy.inbound_server,
 
-        shutdown: tx,
+        _shutdown: tx,
     }
 }

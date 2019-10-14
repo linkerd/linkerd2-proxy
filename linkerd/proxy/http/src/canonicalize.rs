@@ -12,8 +12,8 @@
 use futures::{try_ready, Async, Future, Poll, Stream};
 use http;
 use linkerd2_addr::{Addr, NameAddr};
-use linkerd2_error::Never;
 use linkerd2_dns as dns;
+use linkerd2_error::Never;
 use std::time::Duration;
 use tokio;
 use tokio::sync::{mpsc, oneshot};
