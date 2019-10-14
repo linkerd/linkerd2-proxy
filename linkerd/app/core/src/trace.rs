@@ -36,7 +36,7 @@ pub fn init_log_compat() -> Result<(), Error> {
 }
 
 pub fn with_filter(filter: impl AsRef<str>) -> (Dispatch, LevelHandle) {
-     let filter = filter.as_ref();
+    let filter = filter.as_ref();
 
     // Set up the subscriber
     let builder = subscriber_builder()

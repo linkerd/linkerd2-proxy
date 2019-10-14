@@ -260,8 +260,8 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
 
                 let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
                 // TODO: a mock timer could be injected here?
-                let runtime =
-                    tokio::runtime::current_thread::Runtime::new().expect("initialize main runtime");
+                let runtime = tokio::runtime::current_thread::Runtime::new()
+                    .expect("initialize main runtime");
                 let main = linkerd2_app::Main::new(config, trace_handle, runtime)
                     .with_original_dst_from(mock_orig_dst.clone());
 
