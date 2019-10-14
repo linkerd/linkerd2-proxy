@@ -113,9 +113,7 @@ where
         let sub = fmt::Subscriber::builder()
             .with_env_filter(EnvFilter::from_default_env())
             .finish();
-        if tracing::subscriber::set_global_default(sub).is_err() {
-            eprintln!("logging disabled");
-        }
+        let _  tracing::subscriber::set_global_default(sub);
     }
 
     let (client_tls, client_target_name) = match client_tls {
