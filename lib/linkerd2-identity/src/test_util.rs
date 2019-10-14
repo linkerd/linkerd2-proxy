@@ -1,60 +1,42 @@
 use super::*;
-use std::fs;
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-pub struct Strings {
+pub struct Identity {
     pub name: &'static str,
-    pub trust_anchors: &'static str,
-    pub crt: &'static str,
-    pub key: &'static str,
-    //pub csr: &'static str,
+    pub trust_anchors: &'static [u8],
+    pub crt: &'static [u8],
+    pub key: &'static [u8],
 }
 
-pub static FOO_NS1: Strings = Strings {
+pub static FOO_NS1: Identity = Identity {
     name: "foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    trust_anchors: "ca1.pem",
-    crt: "foo-ns1-ca1/crt.der",
-    key: "foo-ns1-ca1/key.p8",
-    //csr: "foo-ns1-ca1/csr.der",
+    trust_anchors: include_bytes!("testdata/ca1.pem"),
+    crt: include_bytes!("testdata/foo-ns1-ca1/crt.der"),
+    key: include_bytes!("testdata/foo-ns1-ca1/key.p8"),
 };
 
-pub static BAR_NS1: Strings = Strings {
+pub static BAR_NS1: Identity = Identity {
     name: "bar.ns1.serviceaccount.identity.linkerd.cluster.local",
-    trust_anchors: "ca1.pem",
-    crt: "bar-ns1-ca1/crt.der",
-    key: "bar-ns1-ca1/key.p8",
-    //csr: "bar-ns1-ca1/csr.der",
+    trust_anchors: include_bytes!("testdata/ca1.pem"),
+    crt: include_bytes!("testdata/bar-ns1-ca1/crt.der"),
+    key: include_bytes!("testdata/bar-ns1-ca1/key.p8"),
 };
 
-impl Strings {
-    fn read(n: &str) -> Vec<u8> {
-        let dir = PathBuf::from("src/testdata");
-        let p = dir.join(n);
-        match fs::read(&p) {
-            Ok(b) => b,
-            Err(e) => {
-                panic!("Failed to read {}: {}", p.to_str().unwrap(), e);
-            }
-        }
-    }
-
+impl Identity {
     pub fn trust_anchors(&self) -> TrustAnchors {
-        let b = Self::read(&self.trust_anchors);
-        let pem = ::std::str::from_utf8(&b).expect("utf-8");
+        let pem = ::std::str::from_utf8(self.trust_anchors).expect("utf-8");
         TrustAnchors::from_pem(pem).unwrap_or_else(|| TrustAnchors::empty())
     }
 
     pub fn key(&self) -> Key {
-        let p8 = Self::read(&self.key);
-        Key::from_pkcs8(&p8).expect("key must be valid")
+        Key::from_pkcs8(self.key).expect("key must be valid")
     }
 
     pub fn crt(&self) -> Crt {
         const HOUR: Duration = Duration::from_secs(60 * 60);
 
         let n = Name::from_hostname(self.name.as_bytes()).expect("name must be valid");
-        let der = Self::read(&self.crt);
+        let der = self.crt.iter().map(|b| *b).collect();
         Crt::new(n, der, vec![], SystemTime::now() + HOUR)
     }
 

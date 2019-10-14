@@ -1,4 +1,4 @@
-use crate::identity;
+use linkerd2_identity as identity;
 use tracing::trace;
 use untrusted;
 

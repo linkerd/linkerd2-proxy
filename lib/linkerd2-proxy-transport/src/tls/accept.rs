@@ -1,12 +1,14 @@
-use crate::core::listen::Accept;
-use crate::transport::prefixed::Prefixed;
-use crate::transport::tls::{self, conditional_accept, Connection, ReasonForNoPeerName};
-use crate::transport::{BoxedIo, GetOriginalDst};
-use crate::{identity, Conditional, Error};
+use crate::prefixed::Prefixed;
+use crate::tls::{self, conditional_accept, Connection, ReasonForNoPeerName};
+use crate::{BoxedIo, GetOriginalDst};
 use bytes::BytesMut;
 use futures::{try_ready, Future, Poll};
 use indexmap::IndexSet;
+use linkerd2_conditional::Conditional;
 use linkerd2_dns_name as dns;
+use linkerd2_error::Error;
+use linkerd2_identity as identity;
+use linkerd2_proxy_core::listen::Accept;
 pub use rustls::ServerConfig as Config;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -77,7 +79,7 @@ impl<A: Accept<Connection>, T: HasConfig, G: GetOriginalDst> AcceptTls<A, T, G> 
     }
 }
 
-impl<A, T, G> crate::svc::Service<(TcpStream, SocketAddr)> for AcceptTls<A, T, G>
+impl<A, T, G> tower::Service<(TcpStream, SocketAddr)> for AcceptTls<A, T, G>
 where
     A: Accept<Connection> + Clone,
     T: HasConfig + Send + 'static,

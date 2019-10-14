@@ -30,7 +30,7 @@ impl Listen {
     }
 }
 
-impl crate::core::listen::Listen for Listen {
+impl linkerd2_proxy_core::listen::Listen for Listen {
     type Connection = (tokio::net::TcpStream, SocketAddr);
     type Error = std::io::Error;
 

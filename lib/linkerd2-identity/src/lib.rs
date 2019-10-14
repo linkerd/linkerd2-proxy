@@ -9,7 +9,7 @@ use std::time::SystemTime;
 use std::{fmt, fs, io};
 use tracing::{debug, warn};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
 
 pub use linkerd2_dns_name::InvalidName;
@@ -191,7 +191,7 @@ impl TokenSource {
 // === impl TrustAnchors ===
 
 impl TrustAnchors {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     fn empty() -> Self {
         TrustAnchors(Arc::new(rustls::ClientConfig::new()))
     }
@@ -305,6 +305,10 @@ impl Crt {
             chain,
             expiry,
         }
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
     }
 }
 
@@ -425,8 +429,8 @@ mod tests {
 
     #[test]
     fn recognize_ca_did_not_issue_cert() {
-        let s = Strings {
-            trust_anchors: "ca2.pem",
+        let s = Identity {
+            trust_anchors: include_bytes!("testdata/ca2.pem"),
             ..FOO_NS1
         };
         assert!(s.validate().is_err(), "ca2 should not validate foo.ns1");
@@ -434,7 +438,7 @@ mod tests {
 
     #[test]
     fn recognize_cert_is_not_valid_for_identity() {
-        let s = Strings {
+        let s = Identity {
             crt: BAR_NS1.crt,
             key: BAR_NS1.key,
             ..FOO_NS1
@@ -445,7 +449,7 @@ mod tests {
     #[test]
     #[ignore] // XXX this doesn't fail because we don't actually check the key against the cert...
     fn recognize_private_key_is_not_valid_for_cert() {
-        let s = Strings {
+        let s = Identity {
             key: BAR_NS1.key,
             ..FOO_NS1
         };

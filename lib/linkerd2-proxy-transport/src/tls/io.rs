@@ -1,7 +1,7 @@
 //! Implement our traits {AddrInfo, SetKeepalive, Io} for tokio_rustls types.
 
-use crate::transport::io::internal::Io;
-use crate::transport::AddrInfo;
+use crate::io::internal::Io;
+use crate::AddrInfo;
 use bytes::Buf;
 use futures::Poll;
 use std::fmt::Debug;

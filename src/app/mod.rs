@@ -1,5 +1,6 @@
 //! Configures and runs the linkerd2 service sidecar proxy
 
+mod accept_error;
 mod admin;
 mod classify;
 pub mod config;

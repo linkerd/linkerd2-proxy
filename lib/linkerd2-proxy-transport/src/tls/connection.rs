@@ -1,10 +1,10 @@
-use crate::identity;
-use crate::transport::io::internal::Io;
-use crate::transport::tls::{ReasonForNoIdentity, ReasonForNoPeerName};
-use crate::transport::{AddrInfo, BoxedIo, Peek};
-use crate::Conditional;
+use crate::io::internal::Io;
+use crate::tls::{ReasonForNoIdentity, ReasonForNoPeerName};
+use crate::{AddrInfo, BoxedIo, Peek};
 use bytes::{Buf, BytesMut};
 use futures::try_ready;
+use linkerd2_conditional::Conditional;
+use linkerd2_identity as identity;
 use std::net::SocketAddr;
 use std::{cmp, io};
 use tokio::prelude::*;

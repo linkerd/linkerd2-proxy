@@ -4,9 +4,9 @@ use crate::proxy::http::{
     client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
     strip_header,
 };
-use crate::proxy::{wrap_server_transport, Server};
+use crate::proxy::{Server, Source};
 use crate::transport::{self, connect, tls};
-use crate::{drain, svc, task, trace_context, Addr};
+use crate::{drain, svc, trace_context, Addr};
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
@@ -34,7 +34,7 @@ pub fn spawn<P>(
     handle_time: http_metrics::handle_time::Scope,
     endpoint_http_metrics: super::HttpEndpointMetricsRegistry,
     route_http_metrics: super::HttpRouteMetricsRegistry,
-    transport_metrics: transport::metrics::Registry,
+    transport_metrics: transport::MetricsRegistry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
@@ -58,7 +58,7 @@ pub fn spawn<P>(
     let connect = svc::stack(connect::svc(config.inbound_connect_keepalive))
         .push(tls::client::layer(local_identity.clone()))
         .push_timeout(config.inbound_connect_timeout)
-        .push(transport_metrics.connect("inbound"))
+        .push(transport_metrics.layer_connect(TransportLabels))
         .push(rewrite_loopback_addr::layer());
 
     let trace_context_layer = trace_context::layer(
@@ -209,15 +209,11 @@ pub fn spawn<P>(
         .push(trace_context_layer)
         .push(handle_time.layer());
 
-    // As the inbound proxy accepts connections, we don't do any
-    // special transport-level handling.
-    let wrap_server_transport =
-        wrap_server_transport::builder().push(transport_metrics.wrap_server_transport("inbound"));
-
-    let proxy = Server::new(
+    let server = Server::new(
         "out",
         listen.local_addr(),
-        wrap_server_transport,
+        TransportLabels,
+        transport_metrics,
         connect,
         source_stack,
         config.h2_settings,
@@ -228,8 +224,30 @@ pub fn spawn<P>(
         .inbound_ports_disable_protocol_detection
         .iter()
         .map(|p| *p);
-    let accept = tls::AcceptTls::new(get_original_dst, local_identity, proxy)
+    let accept = tls::AcceptTls::new(get_original_dst, local_identity, server)
         .without_protocol_detection_for(skip_ports);
 
-    task::spawn(serve::serve("in", listen, accept, drain));
+    serve::spawn("in", listen, accept, drain);
+}
+
+#[derive(Copy, Clone, Debug)]
+struct TransportLabels;
+
+impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
+    type Labels = transport::labels::Key;
+
+    fn transport_labels(&self, _: &Endpoint) -> Self::Labels {
+        transport::labels::Key::connect::<()>(
+            "inbound",
+            tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
+        )
+    }
+}
+
+impl transport::metrics::TransportLabels<Source> for TransportLabels {
+    type Labels = transport::labels::Key;
+
+    fn transport_labels(&self, source: &Source) -> Self::Labels {
+        transport::labels::Key::accept("inbound", source.tls_peer.as_ref())
+    }
 }

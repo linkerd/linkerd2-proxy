@@ -1,5 +1,5 @@
 use super::io::internal::Io;
-use crate::transport::AddrInfo;
+use crate::AddrInfo;
 use bytes::{Buf, Bytes};
 use std::{cmp, fmt::Debug, io, net::SocketAddr};
 use tokio::prelude::*;

@@ -3,4 +3,7 @@
 pub mod listen;
 pub mod resolve;
 
-pub use self::resolve::{Resolution, Resolve};
+pub use self::{
+    listen::{Accept, Listen},
+    resolve::{Resolution, Resolve},
+};

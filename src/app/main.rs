@@ -50,16 +50,8 @@ struct ProxyParts<G> {
     outbound_listener: Listen,
 }
 
-impl<G> Main<G>
-where
-    G: GetOriginalDst + Clone + Send + 'static,
-{
-    pub fn new<R>(
-        config: Config,
-        trace_level: trace::LevelHandle,
-        get_original_dst: G,
-        runtime: R,
-    ) -> Self
+impl Main<transport::SoOriginalDst> {
+    pub fn new<R>(config: Config, trace_level: trace::LevelHandle, runtime: R) -> Self
     where
         R: Into<task::MainRuntime>,
     {
@@ -92,17 +84,41 @@ where
             runtime: runtime.into(),
             proxy_parts: ProxyParts {
                 config,
-                get_original_dst,
                 start_time,
                 trace_level,
                 inbound_listener,
                 outbound_listener,
                 control_listener,
                 admin_listener,
+                get_original_dst: transport::SoOriginalDst,
             },
         }
     }
 
+    pub fn with_original_dst_from<G>(self, get_original_dst: G) -> Main<G>
+    where
+        G: GetOriginalDst + Clone + Send + 'static,
+    {
+        Main {
+            runtime: self.runtime,
+            proxy_parts: ProxyParts {
+                get_original_dst,
+                config: self.proxy_parts.config,
+                start_time: self.proxy_parts.start_time,
+                trace_level: self.proxy_parts.trace_level,
+                inbound_listener: self.proxy_parts.inbound_listener,
+                outbound_listener: self.proxy_parts.outbound_listener,
+                control_listener: self.proxy_parts.control_listener,
+                admin_listener: self.proxy_parts.admin_listener,
+            },
+        }
+    }
+}
+
+impl<G> Main<G>
+where
+    G: GetOriginalDst + Clone + Send + 'static,
+{
     pub fn control_addr(&self) -> Option<SocketAddr> {
         self.proxy_parts
             .control_listener
@@ -345,7 +361,7 @@ where
                         .expect("initialize admin thread runtime")
                         .block_on(future::lazy(move || {
                             trace!("spawning admin server");
-                            task::spawn(serve::serve(
+                            serve::spawn(
                                 "admin",
                                 admin_listener,
                                 tls::AcceptTls::new(
@@ -354,12 +370,12 @@ where
                                     Admin::new(report, readiness, trace_level).into_accept(),
                                 ),
                                 drain_rx.clone(),
-                            ));
+                            );
 
                             if let Some((listener, tap_svc_name)) = control_listener {
                                 trace!("spawning tap server");
                                 task::spawn(tap_daemon.map_err(|_| ()));
-                                task::spawn(serve::serve(
+                                serve::spawn(
                                     "tap",
                                     listener,
                                     tls::AcceptTls::new(
@@ -371,7 +387,7 @@ where
                                         ),
                                     ),
                                     drain_rx.clone(),
-                                ));
+                                );
                             } else {
                                 drop((tap_daemon, tap_grpc));
                             }

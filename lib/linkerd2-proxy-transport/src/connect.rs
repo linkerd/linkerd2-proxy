@@ -1,20 +1,17 @@
-use crate::svc::{mk, Service};
 use futures::{try_ready, Future, Poll};
 use std::{io, net::SocketAddr, time::Duration};
 use tokio::net::{tcp, TcpStream};
+use tower::{service_fn, Service};
 use tracing::debug;
 
 pub trait HasPeerAddr {
     fn peer_addr(&self) -> SocketAddr;
 }
 
-pub fn svc<T>(
+pub fn svc<T: HasPeerAddr>(
     keepalive: Option<Duration>,
-) -> impl Service<T, Response = TcpStream, Error = io::Error, Future = ConnectFuture> + Clone
-where
-    T: HasPeerAddr,
-{
-    mk(move |target: T| {
+) -> impl Service<T, Response = TcpStream, Error = io::Error, Future = ConnectFuture> + Clone {
+    service_fn(move |target: T| {
         let addr = target.peer_addr();
         debug!("connecting to {}", addr);
         ConnectFuture {

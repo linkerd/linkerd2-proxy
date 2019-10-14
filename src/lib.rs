@@ -21,7 +21,7 @@ mod proxy;
 mod svc;
 mod tap;
 pub mod telemetry;
-pub mod transport;
+mod transport;
 
 pub use self::logging::trace;
 pub use self::transport::SoOriginalDst;
