@@ -113,7 +113,7 @@ where
         let sub = fmt::Subscriber::builder()
             .with_env_filter(EnvFilter::from_default_env())
             .finish();
-        let _ = tracing::subscriber::set_global_default(sub);
+        let _  tracing::subscriber::set_global_default(sub);
     }
 
     let (client_tls, client_target_name) = match client_tls {
