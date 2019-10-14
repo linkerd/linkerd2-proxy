@@ -4,6 +4,11 @@ version = "0.1.0"
 authors = ["The OpenCensus Authors"]
 edition = "2018"
 publish = false
+description = """
+gRPC bindings for OpenCensus.
+
+Vendored from https://github.com/census-instrumentation/opencensus-proto/.
+"""
 
 [dependencies]
 bytes = "0.4"

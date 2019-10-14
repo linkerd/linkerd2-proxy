@@ -4,6 +4,12 @@ version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
 publish = false
+description = """
+Core infrastructure for the proxy application
+
+This crate conglomerates proxy configuration, runtime administration, etc,
+independently of the inbound and outbound proxy logic.
+"""
 
 [dependencies]
 bytes = "0.4"

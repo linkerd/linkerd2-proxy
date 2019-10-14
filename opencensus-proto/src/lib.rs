@@ -1,3 +1,7 @@
+//! gRPC bindings for OpenCensus.
+//!
+//! Vendored from https://github.com/census-instrumentation/opencensus-proto/.
+
 #![deny(warnings, rust_2018_idioms)]
 
 pub mod agent {

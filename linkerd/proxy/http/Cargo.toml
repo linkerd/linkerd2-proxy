@@ -5,6 +5,11 @@ version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
 publish = false
+description = """
+HTTP-specific implementations that rely on other proxy infrastructure
+
+This should probably be decomposed into smaller, decoupled crates.
+"""
 
 [dependencies]
 bytes = "0.4"

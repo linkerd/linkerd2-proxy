@@ -1,3 +1,5 @@
+//! Configures and executes the proxy
+
 #![deny(warnings, rust_2018_idioms)]
 
 use futures::{self, future, Future};

@@ -1,3 +1,12 @@
+//! Core infrastructure for the proxy application.
+//!
+//! Conglomerates:
+//! - Configuration
+//! - Runtime initialization
+//! - Admin interfaces
+//! - Tap
+//! - Metric labeling
+
 #![deny(warnings, rust_2018_idioms)]
 
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};

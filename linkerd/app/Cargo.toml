@@ -4,12 +4,11 @@ version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
 publish = false
+description = """
+Configures and executes the proxy
 
-[features]
-#default = ["flaky_tests"]
-# Disable to skip certain tests that should not be run on CI.
-flaky_tests = []
-
+This is used by tests and the executable.
+"""
 
 [dependencies]
 futures = "0.1"

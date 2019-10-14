@@ -4,11 +4,7 @@ version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
 publish = false
-
-[features]
-default = ["flaky_tests"]
-# Disable to skip certain tests that should not be run on CI.
-flaky_tests = []
+description = "The main proxy executable"
 
 [dependencies]
 linkerd2-app = { path = "../linkerd/app" }
