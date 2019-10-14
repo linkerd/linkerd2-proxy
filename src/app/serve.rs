@@ -5,8 +5,10 @@ use futures::{try_ready, Future, Poll};
 use tracing::info_span;
 use tracing_futures::Instrument;
 
-/// Spawns a task that binds an `S`-typed server with an `L`-typed listener until
-/// a drain is signaled.
+/// Spawns a task that binds an `L`-typed listener with an `A`-typed
+/// connection-accepting service.
+///
+/// The task is driven until the provided `drain` is notified.
 pub fn spawn<L, A>(server: &'static str, listen: L, accept: A, drain: drain::Watch)
 where
     L: Listen + Send + 'static,
