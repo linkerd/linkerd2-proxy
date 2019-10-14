@@ -1,4 +1,5 @@
 //! Shared infrastructure for integration tests
+
 #![deny(warnings, rust_2018_idioms)]
 #![type_length_limit = "1070525"]
 
@@ -32,9 +33,8 @@ pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 /// By default, disable logging in modules that are expected to error in tests.
 const DEFAULT_LOG: &'static str = "error,\
-                                   linkerd2_proxy::proxy::canonicalize=off,\
-                                   linkerd2_proxy::proxy::http::router=off,\
-                                   linkerd2_proxy::proxy::tcp=off";
+                                   linkerd2_proxy_http=off,\
+                                   linkerd2_proxy_transport=off";
 
 pub fn init_env() -> app::config::TestEnv {
     app::config::TestEnv::new()
