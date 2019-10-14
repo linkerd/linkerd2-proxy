@@ -2,13 +2,13 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-use linkerd2_app_main::Main;
+use linkerd2_app::Main;
 use linkerd2_signal as signal;
 use tokio::runtime::current_thread;
 
 /// Loads configuration from the environment
 fn main() {
-    let (config, trace_admin) = match linkerd2_app_main::init() {
+    let (config, trace_admin) = match linkerd2_app::init() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("configuration error: {:#?}", e);
