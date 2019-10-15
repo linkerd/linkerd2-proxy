@@ -26,7 +26,7 @@ where
                 s.cancel()
             })
             .map_err(|e| panic!("Server failed: {}", e))
-            .instrument(Span::current()),
+            .in_current_span(),
     );
 }
 
@@ -42,7 +42,7 @@ where
     A::Future: Send + 'static,
 {
     fn new(listen: L, accept: A) -> Self {
-        let exec = tokio::executor::DefaultExecutor::current().instrument(Span::current());
+        let exec = tokio::executor::DefaultExecutor::current().in_current_span();
         let accept = TraceAccept {
             accept: AcceptError::new(accept),
             span: Span::current(),

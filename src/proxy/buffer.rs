@@ -229,7 +229,7 @@ where
 {
     pub fn new(svc: S, deadline: D, capacity: usize) -> Self {
         let mut exec =
-            tokio::executor::DefaultExecutor::current().instrument(tracing::Span::current());
+            tokio::executor::DefaultExecutor::current().in_current_span();
         let inner = buffer::Buffer::with_executor(Dequeue(svc), capacity, &mut exec);
         Self { deadline, inner }
     }

@@ -132,7 +132,7 @@ pub fn spawn<P>(
         ))
         .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
         .push(trace::layer(
-            |dst: &DstAddr| info_span!("logical", dst=%dst.dst_logical()),
+            |dst: &DstAddr| info_span!("logical", dst = %dst.dst_logical()),
         ));
 
     // Routes requests to a `DstAddr`.
@@ -158,7 +158,8 @@ pub fn spawn<P>(
         .push(router::layer(
             router::Config::new(capacity, max_idle_age),
             |req: &http::Request<_>| {
-                req.headers()
+                let dst = req
+                    .headers()
                     .get(super::CANONICAL_DST_HEADER)
                     .and_then(|dst| {
                         dst.to_str().ok().and_then(|d| {
@@ -172,14 +173,16 @@ pub fn spawn<P>(
                         super::http_request_l5d_override_dst_addr(req)
                             .ok()
                             .map(|override_addr| {
-                                debug!("using l5d-dst-override");
+                                debug!("using {}", super::DST_OVERRIDE_HEADER);
                                 override_addr
                             })
                     })
                     .or_else(|| super::http_request_authority_addr(req).ok())
                     .or_else(|| super::http_request_host_addr(req).ok())
                     .or_else(|| super::http_request_orig_dst_addr(req).ok())
-                    .map(|addr| DstAddr::inbound(addr, settings::Settings::from_request(req)))
+                    .map(|addr| DstAddr::inbound(addr, settings::Settings::from_request(req)));
+                debug!(dst.logical = ?dst);
+                dst
             },
         ))
         .into_inner()
