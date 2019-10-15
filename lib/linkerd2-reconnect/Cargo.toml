@@ -8,6 +8,5 @@ publish = false
 [dependencies]
 linkerd2-error = { path = "../linkerd2-error" }
 futures = "0.1"
-tokio = "0.1"
 tower = "0.1"
 tracing = "0.1"

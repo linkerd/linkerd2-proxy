@@ -26,7 +26,6 @@ untrusted = "0.7"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
-procinfo = "0.4.2"
 
 [dev-dependencies]
 linkerd2-identity = { path = "../linkerd2-identity", features = ["test-util"] }
