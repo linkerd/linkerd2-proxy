@@ -32,22 +32,6 @@ impl Source {
                 (a0, a1) => (a0 == a1),
             }
     }
-
-    #[cfg(test)]
-    pub fn for_test(
-        remote: SocketAddr,
-        local: SocketAddr,
-        orig_dst: Option<SocketAddr>,
-        tls_peer: tls::PeerIdentity,
-    ) -> Self {
-        Self {
-            remote,
-            local,
-            orig_dst,
-            tls_peer,
-            _p: (),
-        }
-    }
 }
 
 // for logging context
