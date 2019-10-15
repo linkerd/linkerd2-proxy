@@ -19,7 +19,7 @@ SHASUM = shasum -a 256
 CARGO ?= cargo
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
 CARGO_TEST = $(CARGO) test --frozen $(RELEASE)
-CARGO_FMT = $(CARGO) fmt
+CARGO_FMT = $(CARGO) fmt --all
 
 DOCKER = docker
 DOCKER_BUILD = docker build
