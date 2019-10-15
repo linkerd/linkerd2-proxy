@@ -1,13 +1,14 @@
-use crate::logging;
 use futures::{prelude::*, try_ready};
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::convert::TryFrom;
 use std::time::Instant;
 use std::{fmt, net};
-use tracing::trace;
+use tracing::{info_span, trace};
+use tracing_futures::Instrument;
 pub use trust_dns_resolver::config::ResolverOpts;
 pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
-use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver, BackgroundLookupIp};
+use trust_dns_resolver::lookup_ip::LookupIp;
+use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver};
 
 #[derive(Clone)]
 pub struct Resolver {
@@ -24,21 +25,13 @@ pub enum Error {
     ResolutionFailed(ResolveError),
 }
 
-pub struct IpAddrFuture(logging::ContextualFuture<Ctx, BackgroundLookupIp>);
+pub struct IpAddrFuture(Box<dyn Future<Item = LookupIp, Error = ResolveError> + Send + 'static>);
 
-pub struct RefineFuture(logging::ContextualFuture<Ctx, BackgroundLookupIp>);
-
-struct Ctx(Name);
+pub struct RefineFuture(Box<dyn Future<Item = LookupIp, Error = ResolveError> + Send + 'static>);
 
 pub struct Refine {
     pub name: Name,
     pub valid_until: Instant,
-}
-
-impl fmt::Display for Ctx {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "dns={}", self.0)
-    }
 }
 
 impl Resolver {
@@ -77,8 +70,12 @@ impl Resolver {
     }
 
     pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {
-        let f = self.resolver.lookup_ip(name.as_ref());
-        IpAddrFuture(logging::context_future(Ctx(name.clone()), f))
+        let name = name.clone();
+        let f = self
+            .resolver
+            .lookup_ip(name.as_ref())
+            .instrument(info_span!("resolve_one_ip", %name));
+        IpAddrFuture(Box::new(f))
     }
 
     /// Attempts to refine `name` to a fully-qualified name.
@@ -89,8 +86,12 @@ impl Resolver {
     /// For example, a name like `web` may be refined to `web.example.com.`,
     /// depending on the DNS search path.
     pub fn refine(&self, name: &Name) -> RefineFuture {
-        let f = self.resolver.lookup_ip(name.as_ref());
-        RefineFuture(logging::context_future(Ctx(name.clone()), f))
+        let name = name.clone();
+        let f = self
+            .resolver
+            .lookup_ip(name.as_ref())
+            .instrument(info_span!("refine", %name));
+        RefineFuture(Box::new(f))
     }
 }
 

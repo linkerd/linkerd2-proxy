@@ -4,24 +4,23 @@ use super::{
     h1, h2,
     settings::{HasSettings, Settings},
 };
-use crate::app::config::H2Settings;
-use crate::svc::{self, ServiceExt};
-use crate::transport::connect;
-use crate::Error;
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper;
+use linkerd2_error::Error;
+use linkerd2_proxy_transport::connect;
 use std::fmt;
 use std::marker::PhantomData;
-use tracing::{debug, trace};
+use tower::ServiceExt;
+use tracing::{debug, info_span, trace};
+use tracing_futures::Instrument;
 
 /// Configurs an HTTP client that uses a `C`-typed connector
 ///
-/// The `proxy_name` is used for diagnostics (logging, mostly).
+/// The `span` is used for diagnostics (logging, mostly).
 #[derive(Debug)]
 pub struct Layer<T, B> {
-    proxy_name: &'static str,
-    h2_settings: H2Settings,
+    h2_settings: super::h2::Settings,
     _p: PhantomData<fn(T) -> B>,
 }
 
@@ -30,16 +29,16 @@ type HyperClient<C, T, B> = hyper::Client<HyperConnect<C, T>, B>;
 /// A `MakeService` that can speak either HTTP/1 or HTTP/2.
 pub struct Client<C, T, B> {
     connect: C,
-    proxy_name: &'static str,
-    h2_settings: H2Settings,
+    h2_settings: super::h2::Settings,
     _p: PhantomData<fn(T) -> B>,
 }
 
 /// A `Future` returned from `Client::new_service()`.
 pub enum ClientNewServiceFuture<C, T, B>
 where
+    T: connect::HasPeerAddr,
     B: hyper::body::Payload + 'static,
-    C: svc::MakeConnection<T> + 'static,
+    C: tower::MakeConnection<T> + 'static,
     C::Connection: Send + 'static,
     C::Error: Into<Error>,
 {
@@ -51,7 +50,7 @@ where
 pub enum ClientService<C, T, B>
 where
     B: hyper::body::Payload + 'static,
-    C: svc::MakeConnection<T> + 'static,
+    C: tower::MakeConnection<T> + 'static,
 {
     Http1(HyperClient<C, T, B>),
     Http2(h2::Connection<B>),
@@ -68,12 +67,11 @@ pub enum ClientServiceFuture {
 
 // === impl Layer ===
 
-pub fn layer<T, B>(proxy_name: &'static str, h2_settings: H2Settings) -> Layer<T, B>
+pub fn layer<T, B>(h2_settings: super::h2::Settings) -> Layer<T, B>
 where
     B: hyper::body::Payload + Send + 'static,
 {
     Layer {
-        proxy_name,
         h2_settings,
         _p: PhantomData,
     }
@@ -85,16 +83,15 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            proxy_name: self.proxy_name,
             h2_settings: self.h2_settings,
             _p: PhantomData,
         }
     }
 }
 
-impl<T, C, B> svc::Layer<C> for Layer<T, B>
+impl<T, C, B> tower::layer::Layer<C> for Layer<T, B>
 where
-    Client<C, T, B>: svc::Service<T>,
+    Client<C, T, B>: tower::Service<T>,
     B: hyper::body::Payload + Send + 'static,
 {
     type Service = Client<C, T, B>;
@@ -102,7 +99,6 @@ where
     fn layer(&self, connect: C) -> Self::Service {
         Client {
             connect,
-            proxy_name: self.proxy_name,
             h2_settings: self.h2_settings,
             _p: PhantomData,
         }
@@ -112,9 +108,9 @@ where
 // === impl Client ===
 
 /// MakeService
-impl<C, T, B> svc::Service<T> for Client<C, T, B>
+impl<C, T, B> tower::Service<T> for Client<C, T, B>
 where
-    C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: tower::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: Into<Error>,
     C::Connection: Send + 'static,
@@ -131,20 +127,19 @@ where
 
     fn call(&mut self, config: T) -> Self::Future {
         debug!("building client={:?}", config);
+        let peer_addr = config.peer_addr();
 
         let connect = self.connect.clone();
-        let executor = crate::logging::Client::proxy(self.proxy_name, config.peer_addr())
-            .with_settings(config.http_settings().clone())
-            .executor();
-
         match *config.http_settings() {
             Settings::Http1 {
                 keep_alive,
                 wants_h1_upgrade: _,
                 was_absolute_form,
             } => {
+                let exec = tokio::executor::DefaultExecutor::current()
+                    .instrument(info_span!("http1", %peer_addr));
                 let h1 = hyper::Client::builder()
-                    .executor(executor)
+                    .executor(exec)
                     .keep_alive(keep_alive)
                     // hyper should never try to automatically set the Host
                     // header, instead always just passing whatever we received.
@@ -153,8 +148,7 @@ where
                 ClientNewServiceFuture::Http1(Some(h1))
             }
             Settings::Http2 => {
-                let h2 =
-                    h2::Connect::new(connect, executor, self.h2_settings.clone()).oneshot(config);
+                let h2 = h2::Connect::new(connect, self.h2_settings.clone()).oneshot(config);
                 ClientNewServiceFuture::Http2(h2)
             }
             Settings::NotHttp => {
@@ -171,7 +165,6 @@ where
     fn clone(&self) -> Self {
         Client {
             connect: self.connect.clone(),
-            proxy_name: self.proxy_name,
             h2_settings: self.h2_settings,
             _p: PhantomData,
         }
@@ -182,7 +175,8 @@ where
 
 impl<C, T, B> Future for ClientNewServiceFuture<C, T, B>
 where
-    C: svc::MakeConnection<T> + Send + Sync + 'static,
+    T: connect::HasPeerAddr,
+    C: tower::MakeConnection<T> + Send + Sync + 'static,
     C::Connection: Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
@@ -207,9 +201,9 @@ where
 
 // === impl ClientService ===
 
-impl<C, T, B> svc::Service<http::Request<B>> for ClientService<C, T, B>
+impl<C, T, B> tower::Service<http::Request<B>> for ClientService<C, T, B>
 where
-    C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: tower::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: Send,
     C::Future: Send + 'static,
     <C::Future as Future>::Error: Into<Error>,

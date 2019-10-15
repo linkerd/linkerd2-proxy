@@ -1,18 +1,17 @@
 //! HTTP/1.1 Upgrades
 use super::{glue::HttpBody, h1};
-use crate::drain;
-use crate::proxy::tcp;
-use crate::svc;
+use crate::proxy::tcp::Duplex;
 use futures::{
     future::{self, Either},
     Future, Poll,
 };
 use hyper::upgrade::OnUpgrade;
-use linkerd2_task::{BoxSendFuture, ErasedExecutor, Executor};
+use linkerd2_drain as drain;
 use std::fmt;
 use std::mem;
 use std::sync::Arc;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, Span};
+use tracing_futures::Instrument;
 use try_lock::TryLock;
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
@@ -48,14 +47,6 @@ struct Inner {
     server: TryLock<Option<OnUpgrade>>,
     client: TryLock<Option<OnUpgrade>>,
     upgrade_drain_signal: Option<drain::Watch>,
-    /// An ErasedExecutor is used because the containing type, Http11Upgrade,
-    /// is inserted into `http::Extensions`, which is a type map.
-    ///
-    /// If this were instead a generic `E: Executor`, it'd be very easy
-    /// to specify the wrong when trying to remove the `Http11Upgrade` from
-    /// the type map, since with different generics, they'd generate
-    /// different `TypeId`s.
-    upgrade_executor: ErasedExecutor,
 }
 
 #[derive(Debug)]
@@ -65,13 +56,10 @@ enum Half {
 }
 
 #[derive(Debug)]
-pub struct Service<S, E> {
+pub struct Service<S> {
     service: S,
     /// Watch any spawned HTTP/1.1 upgrade tasks.
     upgrade_drain_signal: drain::Watch,
-    /// Executor used to spawn HTTP/1.1 upgrade tasks, and TCP proxies
-    /// after they succeed.
-    upgrade_executor: E,
 }
 
 // ===== impl Http11Upgrade =====
@@ -81,15 +69,11 @@ impl Http11Upgrade {
     ///
     /// Each handle is used to insert 1 half of the upgrade. When both handles
     /// have inserted, the upgrade future will be spawned onto the executor.
-    pub fn new(
-        upgrade_drain_signal: drain::Watch,
-        upgrade_executor: ErasedExecutor,
-    ) -> Http11UpgradeHalves {
+    pub fn new(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
         let inner = Arc::new(Inner {
             server: TryLock::new(None),
             client: TryLock::new(None),
             upgrade_drain_signal: Some(upgrade_drain_signal),
-            upgrade_executor,
         });
 
         Http11UpgradeHalves {
@@ -157,22 +141,20 @@ impl Drop for Inner {
                     .join(client_upgrade)
                     .and_then(|(server_conn, client_conn)| {
                         trace!("HTTP upgrade successful");
-                        tcp::Duplex::new(server_conn, client_conn)
+                        Duplex::new(server_conn, client_conn)
                             .map_err(|e| info!("tcp duplex error: {}", e))
                     });
 
             // There's nothing to do when drain is signaled, we just have to hope
             // the sockets finish soon. However, the drain signal still needs to
             // 'watch' the TCP future so that the process doesn't close early.
-            let fut = self
-                .upgrade_drain_signal
-                .take()
-                .expect("only taken in drop")
-                .watch(both_upgrades, |_| ());
-
-            if let Err(_) = self.upgrade_executor.execute(fut) {
-                trace!("error spawning HTTP upgrade task");
-            }
+            tokio::spawn(
+                self.upgrade_drain_signal
+                    .take()
+                    .expect("only taken in drop")
+                    .watch(both_upgrades, |_| ())
+                    .instrument(Span::current()),
+            );
         } else {
             trace!("HTTP/1.1 upgrade half missing");
         }
@@ -180,24 +162,18 @@ impl Drop for Inner {
 }
 
 // ===== impl Service =====
-impl<S, E> Service<S, E> {
-    pub(in crate::proxy) fn new(
-        service: S,
-        upgrade_drain_signal: drain::Watch,
-        upgrade_executor: E,
-    ) -> Self {
-        Service {
+impl<S> Service<S> {
+    pub fn new(service: S, upgrade_drain_signal: drain::Watch) -> Self {
+        Self {
             service,
             upgrade_drain_signal,
-            upgrade_executor,
         }
     }
 }
 
-impl<S, E, B> svc::Service<http::Request<HttpBody>> for Service<S, E>
+impl<S, B> tower::Service<http::Request<HttpBody>> for Service<S>
 where
-    S: svc::Service<http::Request<HttpBody>, Response = http::Response<B>>,
-    E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
+    S: tower::Service<http::Request<HttpBody>, Response = http::Response<B>>,
     B: Default,
 {
     type Response = S::Response;
@@ -227,10 +203,7 @@ where
             // cannot be removed.
 
             // Setup HTTP Upgrade machinery.
-            let halves = Http11Upgrade::new(
-                self.upgrade_drain_signal.clone(),
-                ErasedExecutor::erase(self.upgrade_executor.clone()),
-            );
+            let halves = Http11Upgrade::new(self.upgrade_drain_signal.clone());
             req.extensions_mut().insert(halves.client);
 
             Some(halves.server)

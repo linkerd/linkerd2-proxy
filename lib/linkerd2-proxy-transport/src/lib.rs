@@ -8,6 +8,7 @@ mod listen;
 pub mod metrics;
 mod peek;
 mod prefixed;
+mod source;
 pub mod tls;
 
 pub use self::{
@@ -15,6 +16,7 @@ pub use self::{
     io::BoxedIo,
     listen::Listen,
     peek::Peek,
+    source::Source,
     tls::Connection,
 };
 

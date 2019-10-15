@@ -16,12 +16,11 @@ use linkerd2_trace_context as trace_context;
 
 pub mod app;
 mod dns;
-pub mod logging;
 mod proxy;
 mod svc;
 mod tap;
 pub mod telemetry;
+pub mod trace;
 mod transport;
 
-pub use self::logging::trace;
 pub use self::transport::SoOriginalDst;

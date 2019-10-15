@@ -1,8 +1,7 @@
 use super::super::dst::{DstAddr, Route};
 use super::super::{classify, identity};
 use crate::proxy::http::{router, settings};
-use crate::proxy::server::Source;
-use crate::transport::{connect, tls};
+use crate::transport::{connect, tls, Source};
 use crate::{tap, Conditional, NameAddr};
 use http;
 use indexmap::IndexMap;

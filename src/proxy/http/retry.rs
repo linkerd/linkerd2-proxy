@@ -196,7 +196,7 @@ impl<B: TryClone> TryClone for Request<B> {
             *clone.headers_mut() = self.headers().clone();
             *clone.version_mut() = self.version();
 
-            if let Some(ext) = self.extensions().get::<crate::proxy::server::Source>() {
+            if let Some(ext) = self.extensions().get::<crate::transport::Source>() {
                 clone.extensions_mut().insert(ext.clone());
             }
 
