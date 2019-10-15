@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
+#![type_length_limit = "1070525"]
 
 use linkerd2_addr::{self as addr, Addr, NameAddr};
 use linkerd2_conditional::Conditional;
