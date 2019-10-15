@@ -1,6 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
-#![type_length_limit="1070525"]
+#![type_length_limit = "1070525"]
 
 mod support;
 use self::support::*;
