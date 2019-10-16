@@ -50,20 +50,21 @@ jobs:
         ) >~/.ssh/config
         # Confirm that the SSH configuration works.
         ssh linkerd-docker docker version
+        cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 8 | head -n 1 >image.tag
 
     # Use the previously built image to run tests.
     - name: Docker (Origin)
       if: '!github.event.pull_request.head.repo.fork'
       env:
         DOCKER_HOST: "ssh://linkerd-docker"
-      run: DOCKER_TAG=ci-proxy:${{ job.container.id }} make docker
+      run: DOCKER_TAG=ci-proxy:$(cat image.tag) make docker
 
     # Try to delete the build image.
     - name: Cleanup (Origin)
-      if: always() && !github.event.pull_request.head.repo.fork
+      if: '!github.event.pull_request.head.repo.fork'
       env:
         DOCKER_HOST: "ssh://linkerd-docker"
       run: |
-        if [ -f image.ref ]; then docker rmi -f ci-proxy:${{ job.container.id }}
+        if [ -f image.ref ]; then docker rmi -f ci-proxy:$(cat image.tag)
         else echo "skipped" >&2
         fi
