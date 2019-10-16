@@ -1,0 +1,14 @@
+[package]
+name = "hyper-balance"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.1"
+http = "0.1"
+hyper = "0.12"
+
+tower-load = { git = "https://github.com/tower-rs/tower" }
+tower-service = "0.2"

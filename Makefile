@@ -18,7 +18,7 @@ SHASUM = shasum -a 256
 
 CARGO ?= cargo
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
-CARGO_TEST = $(CARGO) test --all --frozen $(RELEASE)
+CARGO_TEST = $(CARGO) test --frozen $(RELEASE)
 CARGO_FMT = $(CARGO) fmt --all
 
 DOCKER = docker
@@ -74,18 +74,18 @@ fmt:
 
 .PHONY: test-lib
 test-lib:: fetch
-	$(CARGO_TEST) --lib --no-default-features
+	$(CARGO_TEST) --lib
 
 .PHONY: test-integration
 test-integration: fetch
-	$(CARGO_TEST) --tests --no-default-features
+	$(CARGO_TEST) --tests
 
 .PHONY: test
 test: test-lib test-integration
 
 .PHONY: test-flakey
 test-flakey: fetch
-	$(CARGO_TEST)
+	$(CARGO_TEST) --features linkerd-app-integration/flaky_tests
 
 .PHONY: package
 package: $(PKG_ROOT)/$(PKG)

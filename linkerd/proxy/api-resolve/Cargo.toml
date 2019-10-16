@@ -1,0 +1,21 @@
+[package]
+name = "linkerd2-proxy-api-resolve"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+description = """
+Implements the Resolve trait using the proxy's gRPC API
+"""
+
+[dependencies]
+futures = "0.1"
+linkerd2-identity = { path = "../../identity" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.10" }
+linkerd2-proxy-core = { path = "../core" }
+prost = "0.5.0"
+tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
+indexmap = "1.0"
+tokio-sync = "0.1"
+tower = "0.1"
+tracing = "0.1"
