@@ -26,6 +26,9 @@ DOCKER_BUILD = docker build
 ifdef DOCKER_TAG
 	DOCKER_BUILD = docker build -t $(DOCKER_TAG)
 endif
+ifdef DOCKER_UNOPTIMIZED
+	DOCKER_BUILD += --build-arg="PROXY_UNOPTIMIZED=$(DOCKER_UNOPTIMIZED)"
+endif
 
 RUSTCFLAGS ?=
 ifdef CARGO_DEBUG
