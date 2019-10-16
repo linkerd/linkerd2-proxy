@@ -1,3 +1,6 @@
+# Ensures that the local development dockerfile builds properly.
+#
+# The resulting Docker image is discarded.
 name: Docker
 
 on:
@@ -20,10 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
-
-    - name: Docker (Fork)
-      if: github.event.pull_request.head.repo.fork
-      run: make docker
 
     # Create a build image on a Linkerd build host.
     - name: Setup (Origin)
@@ -59,3 +58,6 @@ jobs:
         DOCKER_HOST: "ssh://linkerd-docker"
       run: make docker
 
+    - name: Docker (Fork)
+      if: github.event.pull_request.head.repo.fork
+      run: make docker
