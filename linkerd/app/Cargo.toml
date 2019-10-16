@@ -22,7 +22,6 @@ tracing-futures = "0.1"
 
 [dev-dependencies]
 bytes = "0.4"
-flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 h2 = "0.1"
 http = "0.1"
 http-body = "0.1"
