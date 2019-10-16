@@ -57,6 +57,6 @@ jobs:
       env:
         DOCKER_HOST: "ssh://linkerd-docker"
       run:
-        #DOCKER_TAG="ci-proxy:$(tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w 8 | head -n 1)"
+        export DOCKER_TAG="ci-proxy:$(tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w 8 | head -n 1)"
         make docker
-        #docker rmi -f "$DOCKER_TAG"
+        docker rmi -f "$DOCKER_TAG"
