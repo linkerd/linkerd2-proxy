@@ -50,8 +50,6 @@ jobs:
         # Confirm that the SSH configuration works.
         ssh linkerd-docker docker version
 
-    # Use the previously built image to run tests. The image will be left on
-    # the build host; but orphaned image layers are pruned regularly.
     - name: Docker (Origin)
       if: '!github.event.pull_request.head.repo.fork'
       env:
