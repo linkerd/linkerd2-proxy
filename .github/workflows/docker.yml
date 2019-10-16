@@ -50,7 +50,7 @@ jobs:
         ) >~/.ssh/config
         # Confirm that the SSH configuration works.
         ssh linkerd-docker docker version
-        cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 8 | head -n 1 >image.tag
+        (tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w 8 | head -n 1) >image.tag
 
     # Use the previously built image to run tests.
     - name: Docker (Origin)
