@@ -57,7 +57,7 @@ jobs:
       env:
         DOCKER_HOST: "ssh://linkerd-docker"
       run: |
-        export DOCKER_TAG="proxy-ci:$(dd bs=64 count=1 if=/dev/urandom status=none | tr -dc 'a-zA-Z0-9')""
+        export DOCKER_TAG="proxy-ci:$(dd bs=64 count=1 if=/dev/urandom status=none | tr -dc 'a-zA-Z0-9')"
         make docker
         docker image rm -f "$DOCKER_TAG"
 
