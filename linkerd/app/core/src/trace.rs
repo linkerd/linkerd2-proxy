@@ -268,6 +268,7 @@ pub mod layer {
             let span = self.get_span.get_span(&target);
             let _enter = span.enter();
 
+            // `span` is not passed through to avoid making `new_svc` capture...
             let new_svc: fn(M::Response) -> Service<M::Response> = |service| Service {
                 service,
                 span: Span::current(),
