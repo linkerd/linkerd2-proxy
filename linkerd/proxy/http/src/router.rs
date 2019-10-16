@@ -113,7 +113,7 @@ where
             self.config.capacity,
             self.config.max_idle_age,
         );
-        tokio::spawn(cache_bg.instrument(info_span!("router")));
+        tokio::spawn(cache_bg.instrument(info_span!("router.purge")));
         Service { inner }
     }
 }

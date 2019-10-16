@@ -17,7 +17,7 @@ indexmap = "1.0"
 tokio = "0.1"
 tower = "0.1"
 tracing = "0.1"
-tracing-futures = "0.0.1-alpha.1"
+tracing-futures = "0.1"
 
 [dev-dependencies]
 tower-util = "0.1"

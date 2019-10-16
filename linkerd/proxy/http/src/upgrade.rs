@@ -10,7 +10,7 @@ use linkerd2_duplex::Duplex;
 use std::fmt;
 use std::mem;
 use std::sync::Arc;
-use tracing::{debug, info, trace, Span};
+use tracing::{debug, info, trace};
 use tracing_futures::Instrument;
 use try_lock::TryLock;
 
@@ -153,7 +153,7 @@ impl Drop for Inner {
                     .take()
                     .expect("only taken in drop")
                     .watch(both_upgrades, |_| ())
-                    .instrument(Span::current()),
+                    .in_current_span(),
             );
         } else {
             trace!("HTTP/1.1 upgrade half missing");

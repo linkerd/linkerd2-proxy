@@ -189,7 +189,7 @@ pub fn spawn<R, P>(
         .push(fallback::layer(balancer_layer, orig_dst_router_layer))
         .serves::<DstAddr>()
         .push(trace::layer(
-            |dst: &DstAddr| info_span!("concrete", dst=%dst.dst_concrete()),
+            |dst: &DstAddr| info_span!("concrete", dst.concrete = %dst.dst_concrete()),
         ));
 
     // A per-`DstAddr` stack that does the following:
@@ -214,7 +214,7 @@ pub fn spawn<R, P>(
     // canonicalize to the same DstAddr use the same dst-stack service.
     let dst_router = dst_stack
         .push(trace::layer(
-            |dst: &DstAddr| info_span!("logical", dst=%dst.dst_logical()),
+            |dst: &DstAddr| info_span!("logical", dst.logical = %dst.dst_logical()),
         ))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(

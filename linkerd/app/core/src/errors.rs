@@ -132,7 +132,7 @@ fn map_err_to_5xx(e: Error) -> StatusCode {
         error!("could not recognize request");
         http::StatusCode::BAD_GATEWAY
     } else if let Some(err) = e.downcast_ref::<StatusError>() {
-        error!("{} {}", err.status, err.message);
+        error!(%err.status, %err.message);
         err.status
     } else {
         // we probably should have handled this before?

@@ -18,7 +18,7 @@ linkerd2-app-outbound = { path = "./outbound" }
 opencensus-proto = { path = "../../opencensus-proto" }
 tokio = "0.1.14"
 tracing = "0.1.9"
-tracing-futures = "0.0.1-alpha.1"
+tracing-futures = "0.1"
 
 [dev-dependencies]
 bytes = "0.4"
