@@ -56,7 +56,10 @@ jobs:
       if: '!github.event.pull_request.head.repo.fork'
       env:
         DOCKER_HOST: "ssh://linkerd-docker"
-      run: make docker
+      run: |
+        export DOCKER_TAG="proxy-ci:$(dd bs=64 count=1 if=/dev/urandom status=none | tr -dc 'a-zA-Z0-9')""
+        make docker
+        docker image rm -f "$DOCKER_TAG"
 
     - name: Docker (Fork)
       if: github.event.pull_request.head.repo.fork
