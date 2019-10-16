@@ -58,7 +58,6 @@ tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"
 tracing = "0.1.9"
 tracing-futures = "0.1"
 tracing-log = "0.1"
-tracing-tower = { git = "https://github.com/tokio-rs/tracing", default-features = false, features = ["tower-layer"] }
 
 [dependencies.tracing-subscriber]
 version = "0.1.4"

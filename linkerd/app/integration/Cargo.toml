@@ -17,7 +17,6 @@ flaky_tests = []
 
 [dependencies]
 bytes = "0.4"
-flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 futures = "0.1"
 h2 = "0.1"
 http = "0.1"
