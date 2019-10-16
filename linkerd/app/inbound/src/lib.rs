@@ -187,7 +187,7 @@ pub fn spawn<P>(
                         http_request_l5d_override_dst_addr(req)
                             .ok()
                             .map(|override_addr| {
-                                debug!("using l5d-dst-override");
+                                debug!("using {}", DST_OVERRIDE_HEADER);
                                 override_addr
                             })
                     })
