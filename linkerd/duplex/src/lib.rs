@@ -258,5 +258,4 @@ mod tests {
         assert_eq!(duplex.poll().unwrap(), Async::NotReady);
         assert_eq!(duplex.poll().unwrap(), Async::Ready(()));
     }
-
 }

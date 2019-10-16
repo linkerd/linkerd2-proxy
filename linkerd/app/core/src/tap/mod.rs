@@ -160,5 +160,4 @@ mod iface {
     }
 
     impl ::std::error::Error for NoCapacity {}
-
 }

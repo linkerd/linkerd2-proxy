@@ -721,7 +721,6 @@ mod http1 {
             client: client::http1_absolute_uris
         }
     }
-
 }
 
 mod proxy_to_proxy {
