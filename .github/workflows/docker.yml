@@ -51,12 +51,11 @@ jobs:
         # Confirm that the SSH configuration works.
         ssh linkerd-docker docker version
 
-    # Use the previously built image to run tests.
+    # Use the previously built image to run tests. The image will be left on
+    # the build host; but orphaned image layers are pruned regularly.
     - name: Docker (Origin)
       if: '!github.event.pull_request.head.repo.fork'
       env:
         DOCKER_HOST: "ssh://linkerd-docker"
-      run:
-        export DOCKER_TAG="ci-proxy:$(tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w 8 | head -n 1)"
-        make docker
-        docker rmi -f "$DOCKER_TAG"
+      run: make docker
+
