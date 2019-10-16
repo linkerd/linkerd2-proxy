@@ -1,5 +1,6 @@
-use crate::{logging, svc, Error};
+use crate::svc;
 use futures::{try_ready, Async, Future, Poll};
+use linkerd2_error::Error;
 use linkerd2_router as rt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, Weak};
@@ -7,6 +8,7 @@ use std::time::{Duration, Instant};
 use std::{error, fmt};
 use tokio_timer::{clock, Delay};
 use tower::buffer;
+use tracing_futures::Instrument;
 
 /// Determines the dispatch deadline for a request.
 pub trait Deadline<Req>: Clone {
@@ -58,10 +60,9 @@ pub enum DequeueFuture<F> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Aborted;
 
-pub struct MakeFuture<F, T, D, Req> {
+pub struct MakeFuture<F, D, Req> {
     capacity: usize,
     deadline: D,
-    executor: logging::ContextualExecutor<T>,
     inner: F,
     _marker: PhantomData<fn(Req)>,
 }
@@ -132,20 +133,18 @@ where
 {
     type Response = Enqueue<M::Response, D, Req>;
     type Error = Error;
-    type Future = MakeFuture<M::Future, T, D, Req>;
+    type Future = MakeFuture<M::Future, D, Req>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready().map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let executor = logging::context_executor(target.clone());
         let inner = self.inner.call(target);
 
         Self::Future {
             capacity: self.capacity,
             deadline: self.deadline.clone(),
-            executor,
             inner,
             _marker: PhantomData,
         }
@@ -169,7 +168,6 @@ where
             self.inner.make(target),
             self.deadline.clone(),
             self.capacity,
-            &mut logging::context_executor(target.clone()),
         )
     }
 }
@@ -190,14 +188,13 @@ impl<M, D, Req> Make<M, D, Req> {
             self.inner.make(&target),
             self.deadline.clone(),
             self.capacity,
-            &mut logging::context_executor(target),
         )
     }
 }
 
 // === impl MakeFuture ===
 
-impl<F, T, D, Req, Svc> Future for MakeFuture<F, T, D, Req>
+impl<F, D, Req, Svc> Future for MakeFuture<F, D, Req>
 where
     F: Future<Item = Svc>,
     F::Error: Into<Error>,
@@ -206,19 +203,13 @@ where
     Svc::Error: Into<Error>,
     D: Deadline<Req>,
     Req: Send + 'static,
-    T: fmt::Display + Send + Sync + 'static,
 {
     type Item = Enqueue<Svc, D, Req>;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let svc = try_ready!(self.inner.poll().map_err(Into::into));
-        let enq = Enqueue::new(
-            svc,
-            self.deadline.clone(),
-            self.capacity,
-            &mut self.executor,
-        );
+        let enq = Enqueue::new(svc, self.deadline.clone(), self.capacity);
         Ok(enq.into())
     }
 }
@@ -236,11 +227,9 @@ where
     D: Deadline<Req>,
     Req: Send + 'static,
 {
-    pub fn new<E>(svc: S, deadline: D, capacity: usize, exec: &mut E) -> Self
-    where
-        E: buffer::WorkerExecutor<Dequeue<S>, Stealer<Req>>,
-    {
-        let inner = buffer::Buffer::with_executor(Dequeue(svc), capacity, exec);
+    pub fn new(svc: S, deadline: D, capacity: usize) -> Self {
+        let mut exec = tokio::executor::DefaultExecutor::current().in_current_span();
+        let inner = buffer::Buffer::with_executor(Dequeue(svc), capacity, &mut exec);
         Self { deadline, inner }
     }
 }
@@ -452,12 +441,7 @@ mod tests {
     #[test]
     fn request_aborted_with_idle_service() {
         tokio::run(future::lazy(|| {
-            let mut svc = Enqueue::new(
-                Idle(Arc::new(())),
-                Duration::from_millis(100),
-                1,
-                &mut logging::context_executor("test"),
-            );
+            let mut svc = Enqueue::new(Idle(Arc::new(())), Duration::from_millis(100), 1);
 
             assert!(svc.poll_ready().ok().map(|r| r.is_ready()).unwrap_or(false));
 
@@ -477,12 +461,7 @@ mod tests {
             let anchor = Arc::new(());
             let handle = Arc::downgrade(&anchor);
             let inner = Idle(anchor);
-            let mut svc = Enqueue::new(
-                inner,
-                Duration::from_secs(0),
-                1,
-                &mut logging::context_executor("test"),
-            );
+            let mut svc = Enqueue::new(inner, Duration::from_secs(0), 1);
 
             assert!(svc.poll_ready().ok().map(|r| r.is_ready()).unwrap_or(false));
             let call = svc.call(());
@@ -505,12 +484,7 @@ mod tests {
     fn request_not_aborted_if_dispatched() {
         tokio::run(future::lazy(|| {
             let (tx, rx) = oneshot::channel();
-            let mut svc = Enqueue::new(
-                Active(Some(tx)),
-                Duration::from_millis(100),
-                1,
-                &mut logging::context_executor("test"),
-            );
+            let mut svc = Enqueue::new(Active(Some(tx)), Duration::from_millis(100), 1);
 
             svc.poll_ready().expect("service must be ready");
 

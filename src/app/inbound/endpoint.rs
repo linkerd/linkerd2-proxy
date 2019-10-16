@@ -1,8 +1,7 @@
 use super::super::dst::{DstAddr, Route};
 use super::super::{classify, identity};
 use crate::proxy::http::{router, settings};
-use crate::proxy::server::Source;
-use crate::transport::{connect, tls};
+use crate::transport::{connect, tls, Source};
 use crate::{tap, Conditional, NameAddr};
 use http;
 use indexmap::IndexMap;
@@ -156,8 +155,7 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
 mod tests {
     use super::{Endpoint, RecognizeEndpoint};
     use crate::proxy::http::{router::Recognize, Settings};
-    use crate::proxy::server::Source;
-    use crate::transport::tls;
+    use crate::transport::{tls, Source};
     use crate::Conditional;
     use http;
     use quickcheck::quickcheck;
@@ -190,7 +188,7 @@ mod tests {
             local: net::SocketAddr,
             remote: net::SocketAddr
         ) -> bool {
-            let src = Source::for_test(remote, local, Some(orig_dst), TLS_DISABLED);
+            let src = Source { remote, local, orig_dst: Some(orig_dst), tls_peer: TLS_DISABLED } ;
             let rec = src.orig_dst_if_not_local().map(make_test_endpoint);
 
             let mut req = http::Request::new(());
@@ -207,7 +205,7 @@ mod tests {
         ) -> bool {
             let mut req = http::Request::new(());
             req.extensions_mut()
-                .insert(Source::for_test(remote, local, None, TLS_DISABLED));
+                .insert(Source { remote, local, orig_dst: None, tls_peer: TLS_DISABLED });
             dst_addr(&mut req);
 
             RecognizeEndpoint::new(default).recognize(&req) == default.map(make_test_endpoint)
@@ -226,7 +224,7 @@ mod tests {
         ) -> bool {
             let mut req = http::Request::new(());
             req.extensions_mut()
-                .insert(Source::for_test(remote, local, Some(local), TLS_DISABLED));
+                .insert(Source { remote, local, orig_dst: Some(local), tls_peer: TLS_DISABLED });
             dst_addr(&mut req);
 
             RecognizeEndpoint::new(default).recognize(&req) == default.map(make_test_endpoint)

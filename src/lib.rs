@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "128"]
+#![type_length_limit = "1070525"]
 
 use linkerd2_addr::{self as addr, Addr, NameAddr};
 use linkerd2_conditional::Conditional;
@@ -16,12 +17,11 @@ use linkerd2_trace_context as trace_context;
 
 pub mod app;
 mod dns;
-pub mod logging;
 mod proxy;
 mod svc;
 mod tap;
 pub mod telemetry;
+pub mod trace;
 mod transport;
 
-pub use self::logging::trace;
 pub use self::transport::SoOriginalDst;

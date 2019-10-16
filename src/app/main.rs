@@ -8,8 +8,11 @@ use crate::opencensus::SpanExporter;
 use crate::proxy::{self, http::metrics as http_metrics};
 use crate::svc::{self, LayerExt};
 use crate::transport::{self, connect, tls, GetOriginalDst, Listen};
-use crate::{dns, drain, logging, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional};
+use crate::{
+    api_resolve, dns, drain, metrics::FmtMetrics, tap, task, telemetry, trace, Conditional,
+};
 use futures::{self, future, Future};
+use linkerd2_opencensus as opencensus;
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::agent::common::v1 as oc;
 use std::net::SocketAddr;
@@ -17,7 +20,8 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 use tokio::runtime::current_thread;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, info_span, trace};
+use tracing_futures::Instrument;
 
 /// Runs a sidecar proxy.
 ///
@@ -239,7 +243,7 @@ where
 
         let (transport_metrics, transport_report) = transport::metrics::new();
 
-        let (span_metrics, span_report) = linkerd2_opencensus::metrics::new();
+        let (span_metrics, span_report) = opencensus::metrics::new();
 
         let report = endpoint_http_report
             .and_then(route_http_report)
@@ -294,7 +298,7 @@ where
 
                 identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
 
-                task::spawn(
+                tokio::spawn(
                     local_identity
                         .clone()
                         .await_crt()
@@ -305,7 +309,8 @@ where
                         .map_err(|_| {
                             // The daemon task was lost?!
                             panic!("Failed to certify identity!");
-                        }),
+                        })
+                        .instrument(info_span!("await identity")),
                 );
 
                 Conditional::Some(local_identity)
@@ -343,7 +348,7 @@ where
                 .make(config.destination_addr.clone())
         };
 
-        let resolver = crate::api_resolve::Resolve::new(dst_svc.clone())
+        let resolver = api_resolve::Resolve::new(dst_svc.clone())
             .with_context_token(&config.destination_context);
 
         let (tap_layer, tap_grpc, tap_daemon) = tap::new();
@@ -360,50 +365,63 @@ where
                     current_thread::Runtime::new()
                         .expect("initialize admin thread runtime")
                         .block_on(future::lazy(move || {
-                            trace!("spawning admin server");
-                            serve::spawn(
-                                "admin",
-                                admin_listener,
-                                tls::AcceptTls::new(
-                                    get_original_dst.clone(),
-                                    local_identity.clone(),
-                                    Admin::new(report, readiness, trace_level).into_accept(),
-                                ),
-                                drain_rx.clone(),
+                            info_span!("admin", local_addr=%admin_listener.local_addr()).in_scope(
+                                || {
+                                    trace!("spawning");
+                                    serve::spawn(
+                                        admin_listener,
+                                        tls::AcceptTls::new(
+                                            get_original_dst.clone(),
+                                            local_identity.clone(),
+                                            Admin::new(report, readiness, trace_level)
+                                                .into_accept(),
+                                        ),
+                                        drain_rx.clone(),
+                                    );
+                                },
                             );
 
                             if let Some((listener, tap_svc_name)) = control_listener {
-                                trace!("spawning tap server");
-                                task::spawn(tap_daemon.map_err(|_| ()));
-                                serve::spawn(
-                                    "tap",
-                                    listener,
-                                    tls::AcceptTls::new(
-                                        get_original_dst.clone(),
-                                        local_identity,
-                                        tap::AcceptPermittedClients::new(
-                                            std::iter::once(tap_svc_name),
-                                            tap_grpc,
-                                        ),
-                                    ),
-                                    drain_rx.clone(),
+                                info_span!("tap", local_addr=%listener.local_addr()).in_scope(
+                                    || {
+                                        trace!("spawning");
+                                        tokio::spawn(tap_daemon.map_err(|_| ()).in_current_span());
+                                        serve::spawn(
+                                            listener,
+                                            tls::AcceptTls::new(
+                                                get_original_dst.clone(),
+                                                local_identity,
+                                                tap::AcceptPermittedClients::new(
+                                                    std::iter::once(tap_svc_name),
+                                                    tap_grpc,
+                                                ),
+                                            ),
+                                            drain_rx.clone(),
+                                        );
+                                    },
                                 );
                             } else {
                                 drop((tap_daemon, tap_grpc));
                             }
 
-                            trace!("spawning dns resolver");
-                            task::spawn(logging::admin().bg("dns-resolver").future(dns_bg));
+                            info_span!("dns").in_scope(|| {
+                                trace!("spawning");
+                                tokio::spawn(dns_bg.in_current_span());
+                            });
 
                             if let Some(d) = identity_daemon {
-                                task::spawn(
-                                    logging::admin()
-                                        .bg("identity")
-                                        .future(d.map_err(|_| error!("identity task failed"))),
-                                );
+                                info_span!("identity").in_scope(|| {
+                                    trace!("spawning");
+                                    tokio::spawn(
+                                        d.map_err(|e| panic!("failed {}", e)).in_current_span(),
+                                    );
+                                });
                             }
 
-                            admin_shutdown_signal.map(|_| ()).map_err(|_| ())
+                            admin_shutdown_signal
+                                .map(|_| ())
+                                .map_err(|_| ())
+                                .instrument(info_span!("shutdown"))
                         }))
                         .expect("admin");
 
@@ -421,7 +439,7 @@ where
                 Ok(futures::Async::NotReady)
             })
             .map(|()| drop(tx));
-            task::spawn(admin_shutdown);
+            tokio::spawn(admin_shutdown);
         }
 
         // Build the outbound and inbound proxies using the dst_svc client.
@@ -476,47 +494,55 @@ where
                 ..oc::Node::default()
             };
             let span_exporter = SpanExporter::new(trace_collector, node, spans_rx, span_metrics);
-            task::spawn(span_exporter.map_err(|e| {
-                error!("span exporter failed: {}", e);
-            }));
+            tokio::spawn(
+                span_exporter
+                    .map_err(|e| {
+                        error!("span exporter failed: {}", e);
+                    })
+                    .instrument(info_span!("opencensus-exporter")),
+            );
             spans_tx
         });
 
-        outbound::spawn(
-            &config,
-            local_identity.clone(),
-            outbound_listener,
-            get_original_dst.clone(),
-            outbound::resolve(
-                config.destination_get_suffixes.clone(),
-                config.control_backoff.clone(),
-                resolver,
-            ),
-            dns_resolver,
-            profiles_client.clone(),
-            tap_layer.clone(),
-            outbound_handle_time,
-            endpoint_http_metrics.clone(),
-            route_http_metrics.clone(),
-            retry_http_metrics,
-            transport_metrics.clone(),
-            spans_tx.clone(),
-            drain_rx.clone(),
-        );
+        info_span!("out", local_addr=%outbound_listener.local_addr()).in_scope(|| {
+            outbound::spawn(
+                &config,
+                local_identity.clone(),
+                outbound_listener,
+                get_original_dst.clone(),
+                outbound::resolve(
+                    config.destination_get_suffixes.clone(),
+                    config.control_backoff.clone(),
+                    resolver,
+                ),
+                dns_resolver,
+                profiles_client.clone(),
+                tap_layer.clone(),
+                outbound_handle_time,
+                endpoint_http_metrics.clone(),
+                route_http_metrics.clone(),
+                retry_http_metrics,
+                transport_metrics.clone(),
+                spans_tx.clone(),
+                drain_rx.clone(),
+            )
+        });
 
-        inbound::spawn(
-            &config,
-            local_identity,
-            inbound_listener,
-            get_original_dst,
-            profiles_client,
-            tap_layer,
-            inbound_handle_time,
-            endpoint_http_metrics,
-            route_http_metrics,
-            transport_metrics,
-            spans_tx,
-            drain_rx,
-        );
+        info_span!("in", local_addr=%inbound_listener.local_addr()).in_scope(move || {
+            inbound::spawn(
+                &config,
+                local_identity,
+                inbound_listener,
+                get_original_dst,
+                profiles_client,
+                tap_layer,
+                inbound_handle_time,
+                endpoint_http_metrics,
+                route_http_metrics,
+                transport_metrics,
+                spans_tx,
+                drain_rx,
+            )
+        });
     }
 }

@@ -1,10 +1,10 @@
-use crate::{transport::tls, Addr};
+use linkerd2_addr::Addr;
 use std::fmt;
 
 #[derive(Clone, Debug)]
 pub struct ControlAddr {
     pub addr: Addr,
-    pub identity: tls::PeerIdentity,
+    pub identity: crate::transport::tls::PeerIdentity,
 }
 
 impl fmt::Display for ControlAddr {
@@ -16,9 +16,10 @@ impl fmt::Display for ControlAddr {
 /// Sets the request's URI from `Config`.
 pub mod add_origin {
     use super::ControlAddr;
-    use crate::{svc, Error};
+    use crate::svc;
     use futures::try_ready;
     use futures::{Future, Poll};
+    use linkerd2_error::Error;
     use std::marker::PhantomData;
     use tower_request_modifier::{Builder, RequestModifier};
 
@@ -145,10 +146,14 @@ pub mod add_origin {
 /// Resolves the controller's `addr` once before building a client.
 pub mod resolve {
     use super::{client, ControlAddr};
-    use crate::{dns, logging, svc, Addr};
+    use crate::dns;
+    use crate::svc;
     use futures::{try_ready, Future, Poll};
+    use linkerd2_addr::Addr;
     use std::net::SocketAddr;
     use std::{error, fmt};
+    use tracing::info_span;
+    use tracing_futures::{Instrument, Instrumented};
 
     #[derive(Clone, Debug)]
     pub struct Layer {
@@ -177,7 +182,7 @@ pub mod resolve {
             config: ControlAddr,
             stack: M,
         },
-        Inner(M::Future),
+        Inner(Instrumented<M::Future>),
     }
 
     #[derive(Debug)]
@@ -263,10 +268,10 @@ pub mod resolve {
             let target = client::Target {
                 addr,
                 server_name: dst.identity.clone(),
-                log_ctx: logging::admin().client("control", dst.addr.clone()),
             };
 
-            State::Inner(mk_svc.call(target))
+            info_span!("control", peer.addr = %addr, peer.identity = ?dst.identity)
+                .in_scope(move || State::Inner(mk_svc.call(target).in_current_span()))
         }
     }
 
@@ -289,7 +294,7 @@ pub mod resolve {
 pub mod client {
     use super::super::config::H2Settings;
     use crate::transport::{connect, tls};
-    use crate::{logging, proxy::http, svc, task, Addr};
+    use crate::{proxy::http, svc};
     use futures::Poll;
     use std::net::SocketAddr;
 
@@ -297,7 +302,6 @@ pub mod client {
     pub struct Target {
         pub(super) addr: SocketAddr,
         pub(super) server_name: tls::PeerIdentity,
-        pub(super) log_ctx: logging::Client<&'static str, Addr>,
     }
 
     #[derive(Debug)]
@@ -326,7 +330,7 @@ pub mod client {
         http::h2::Connect<C, B>: svc::Service<Target>,
     {
         svc::layer::mk(|mk_conn| {
-            let inner = http::h2::Connect::new(mk_conn, task::LazyExecutor, H2Settings::default());
+            let inner = http::h2::Connect::new(mk_conn, H2Settings::default());
             Client { inner }
         })
     }
@@ -341,13 +345,13 @@ pub mod client {
         type Error = <http::h2::Connect<C, B> as svc::Service<Target>>::Error;
         type Future = <http::h2::Connect<C, B> as svc::Service<Target>>::Future;
 
+        #[inline]
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             self.inner.poll_ready()
         }
 
+        #[inline]
         fn call(&mut self, target: Target) -> Self::Future {
-            let exe = target.log_ctx.clone().with_remote(target.addr).executor();
-            self.inner.set_executor(exe);
             self.inner.call(target)
         }
     }

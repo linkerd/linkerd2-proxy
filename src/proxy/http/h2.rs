@@ -1,21 +1,29 @@
 use super::Body;
-use crate::task::{ArcExecutor, BoxSendFuture, Executor};
-use crate::{app::config::H2Settings, svc, Error};
 use futures::{try_ready, Future, Poll};
 use http;
 use hyper::{
     body::Payload,
     client::conn::{self, Handshake, SendRequest},
 };
+use linkerd2_error::Error;
+use linkerd2_proxy_transport::connect;
 use std::marker::PhantomData;
+use std::net::SocketAddr;
+use tokio::executor::{DefaultExecutor, Executor};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::debug;
+use tracing::{debug, info_span};
+use tracing_futures::Instrument;
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Settings {
+    pub initial_stream_window_size: Option<u32>,
+    pub initial_connection_window_size: Option<u32>,
+}
 
 #[derive(Debug)]
 pub struct Connect<C, B> {
     connect: C,
-    executor: ArcExecutor,
-    h2_settings: H2Settings,
+    h2_settings: Settings,
     _marker: PhantomData<fn() -> B>,
 }
 
@@ -25,9 +33,9 @@ pub struct Connection<B> {
 }
 
 pub struct ConnectFuture<F: Future, B> {
-    executor: ArcExecutor,
     state: ConnectState<F, B>,
-    h2_settings: H2Settings,
+    peer_addr: SocketAddr,
+    h2_settings: Settings,
 }
 
 enum ConnectState<F: Future, B> {
@@ -42,23 +50,12 @@ pub struct ResponseFuture {
 // ===== impl Connect =====
 
 impl<C, B> Connect<C, B> {
-    pub fn new<E>(connect: C, executor: E, h2_settings: H2Settings) -> Self
-    where
-        E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
-    {
+    pub fn new(connect: C, h2_settings: Settings) -> Self {
         Connect {
             connect,
-            executor: ArcExecutor::new(executor),
             h2_settings,
             _marker: PhantomData,
         }
-    }
-
-    pub fn set_executor<E>(&mut self, executor: E)
-    where
-        E: Executor<BoxSendFuture> + Clone + Send + Sync + 'static,
-    {
-        self.executor = ArcExecutor::new(executor);
     }
 }
 
@@ -66,16 +63,16 @@ impl<C: Clone, B> Clone for Connect<C, B> {
     fn clone(&self) -> Self {
         Connect {
             connect: self.connect.clone(),
-            executor: self.executor.clone(),
             h2_settings: self.h2_settings.clone(),
             _marker: PhantomData,
         }
     }
 }
 
-impl<C, B, Target> svc::Service<Target> for Connect<C, B>
+impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
-    C: svc::MakeConnection<Target>,
+    T: connect::HasPeerAddr,
+    C: tower::MakeConnection<T>,
     C::Connection: Send + 'static,
     C::Error: Into<Error>,
     B: Payload,
@@ -88,9 +85,9 @@ where
         self.connect.poll_ready().map_err(Into::into)
     }
 
-    fn call(&mut self, target: Target) -> Self::Future {
+    fn call(&mut self, target: T) -> Self::Future {
         ConnectFuture {
-            executor: self.executor.clone(),
+            peer_addr: target.peer_addr(),
             state: ConnectState::Connect(self.connect.make_connection(target)),
             h2_settings: self.h2_settings,
         }
@@ -115,16 +112,20 @@ where
                 ConnectState::Connect(ref mut fut) => try_ready!(fut.poll().map_err(Into::into)),
                 ConnectState::Handshake(ref mut hs) => {
                     let (tx, conn) = try_ready!(hs.poll());
-                    let _ = self
-                        .executor
-                        .execute(conn.map_err(|err| debug!("http2 conn error: {}", err)));
+
+                    DefaultExecutor::current()
+                        .instrument(info_span!("h2", peer_addr=%self.peer_addr))
+                        .spawn(Box::new(conn.map_err(|error| debug!(%error, "failed"))))
+                        .map_err(Error::from)?;
 
                     return Ok(Connection { tx }.into());
                 }
             };
 
+            let exec =
+                DefaultExecutor::current().instrument(info_span!("h2", peer_addr=%self.peer_addr));
             let hs = conn::Builder::new()
-                .executor(self.executor.clone())
+                .executor(exec)
                 .http2_only(true)
                 .http2_initial_stream_window_size(self.h2_settings.initial_stream_window_size)
                 .http2_initial_connection_window_size(
@@ -138,7 +139,7 @@ where
 
 // ===== impl Connection =====
 
-impl<B> svc::Service<http::Request<B>> for Connection<B>
+impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
     B: Payload,
 {

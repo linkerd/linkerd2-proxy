@@ -1,13 +1,13 @@
 use super::spans::SpanConverter;
-use super::{classify, config::Config, dst::DstAddr, identity, serve, DispatchDeadline};
+use super::{classify, config::Config, dst::DstAddr, errors, identity, serve, DispatchDeadline};
 use crate::core::resolve::Resolve;
 use crate::proxy::http::{
     balance, canonicalize, client, fallback, header_from_target, insert, metrics as http_metrics,
     normalize_uri, profiles, retry, router, settings, strip_header,
 };
-use crate::proxy::{self, Server, Source};
-use crate::transport::{self, connect, tls};
-use crate::{drain, svc, trace_context, Addr, Conditional};
+use crate::proxy::{self, Server};
+use crate::transport::{self, connect, tls, Source};
+use crate::{drain, svc, trace, trace_context, Addr, Conditional};
 use linkerd2_proxy_discover as discover;
 use linkerd2_reconnect as reconnect;
 use opencensus_proto::trace::v1 as oc;
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::debug;
+use tracing::{debug, info_span};
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;
@@ -26,9 +26,8 @@ mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
 mod resolve;
 
-pub(super) use self::endpoint::Endpoint;
-pub(super) use self::require_identity_on_endpoint::RequireIdentityError;
-pub(super) use self::resolve::resolve;
+pub use self::endpoint::Endpoint;
+pub use self::resolve::resolve;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -83,7 +82,7 @@ pub fn spawn<R, P>(
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = connect
         .clone()
-        .push(client::layer("out", config.h2_settings))
+        .push(client::layer(config.h2_settings))
         .push(reconnect::layer({
             let backoff = config.outbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
@@ -104,6 +103,7 @@ pub fn spawn<R, P>(
     // 6. Strips any `l5d-server-id` that may have been received from
     //    the server, before we apply our own.
     let endpoint_stack = client_stack
+        .serves::<Endpoint>()
         .push(strip_header::response::layer(super::L5D_REMOTE_IP))
         .push(strip_header::response::layer(super::L5D_SERVER_ID))
         .push(strip_header::request::layer(super::L5D_REQUIRE_ID))
@@ -116,7 +116,9 @@ pub fn spawn<R, P>(
             endpoint_http_metrics,
         ))
         .push(require_identity_on_endpoint::layer())
-        .serves::<Endpoint>();
+        .push(trace::layer(|endpoint: &Endpoint| {
+            info_span!("endpoint", ?endpoint)
+        }));
 
     // A per-`dst::Route` layer that uses profile data to configure
     // a per-route layer.
@@ -150,12 +152,8 @@ pub fn spawn<R, P>(
     let orig_dst_router_layer = svc::layers()
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
-            router::Config::new("out ep", capacity, max_idle_age),
-            |req: &http::Request<_>| {
-                let ep = Endpoint::from_request(req);
-                debug!("outbound ep={:?}", ep);
-                ep
-            },
+            router::Config::new(capacity, max_idle_age),
+            Endpoint::from_request,
         ));
 
     // Resolves the target via the control plane and balances requests
@@ -174,7 +172,10 @@ pub fn spawn<R, P>(
     // application-selected original destination.
     let distributor = endpoint_stack
         .push(fallback::layer(balancer_layer, orig_dst_router_layer))
-        .serves::<DstAddr>();
+        .serves::<DstAddr>()
+        .push(trace::layer(
+            |dst: &DstAddr| info_span!("concrete", dst.concrete = %dst.dst_concrete()),
+        ));
 
     // A per-`DstAddr` stack that does the following:
     //
@@ -197,16 +198,17 @@ pub fn spawn<R, P>(
     // This is shared across addr-stacks so that multiple addrs that
     // canonicalize to the same DstAddr use the same dst-stack service.
     let dst_router = dst_stack
+        .push(trace::layer(
+            |dst: &DstAddr| info_span!("logical", dst.logical = %dst.dst_logical()),
+        ))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
-            router::Config::new("out dst", capacity, max_idle_age),
+            router::Config::new(capacity, max_idle_age),
             |req: &http::Request<_>| {
-                let addr = req.extensions().get::<Addr>().cloned().map(|addr| {
-                    let settings = settings::Settings::from_request(req);
-                    DstAddr::outbound(addr, settings)
-                });
-                debug!("outbound dst={:?}", addr);
-                addr
+                req.extensions()
+                    .get::<Addr>()
+                    .cloned()
+                    .map(|addr| DstAddr::outbound(addr, settings::Settings::from_request(req)))
             },
         ))
         .into_inner()
@@ -237,22 +239,19 @@ pub fn spawn<R, P>(
         .push(strip_header::request::layer(super::L5D_CLIENT_ID))
         .push(strip_header::request::layer(super::DST_OVERRIDE_HEADER))
         .push(insert::target::layer())
+        .push(trace::layer(|addr: &Addr| info_span!("addr", %addr)))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .push(router::layer(
-            router::Config::new("out addr", capacity, max_idle_age),
+            router::Config::new(capacity, max_idle_age),
             |req: &http::Request<_>| {
                 super::http_request_l5d_override_dst_addr(req)
                     .map(|override_addr| {
-                        debug!("outbound addr={:?}; dst-override", override_addr);
+                        debug!("using dst-override");
                         override_addr
                     })
-                    .or_else(|_| {
-                        let addr = super::http_request_authority_addr(req)
-                            .or_else(|_| super::http_request_host_addr(req))
-                            .or_else(|_| super::http_request_orig_dst_addr(req));
-                        debug!("outbound addr={:?}", addr);
-                        addr
-                    })
+                    .or_else(|_| super::http_request_authority_addr(req))
+                    .or_else(|_| super::http_request_host_addr(req))
+                    .or_else(|_| super::http_request_orig_dst_addr(req))
                     .ok()
             },
         ))
@@ -276,13 +275,17 @@ pub fn spawn<R, P>(
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(insert::target::layer())
-        .push(super::errors::layer())
+        .push(errors::layer())
+        .push(trace::layer(|src: &Source| {
+            src.orig_dst
+                .as_ref()
+                .map(|orig_dst_addr| info_span!("source", %orig_dst_addr))
+                .unwrap_or_else(|| info_span!("source"))
+        }))
         .push(trace_context_layer)
         .push(handle_time.layer());
 
     let proxy = Server::new(
-        "out",
-        listen.local_addr(),
         TransportLabels,
         transport_metrics,
         connect,
@@ -300,7 +303,7 @@ pub fn spawn<R, P>(
     let accept = tls::AcceptTls::new(get_original_dst, no_tls, proxy)
         .without_protocol_detection_for(skip_ports);
 
-    serve::spawn("out", listen, accept, drain);
+    serve::spawn(listen, accept, drain);
 }
 
 #[derive(Copy, Clone, Debug)]

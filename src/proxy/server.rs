@@ -1,3 +1,4 @@
+use super::http::h2::Settings as H2Settings;
 use crate::core::listen::Accept;
 use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
@@ -5,20 +6,22 @@ use crate::proxy::http::{
 };
 use crate::proxy::{protocol::Protocol, tcp};
 use crate::svc::{MakeService, Service};
-use crate::transport::tls::{self, HasPeerIdentity};
+use crate::transport::tls::HasPeerIdentity;
 use crate::transport::{
-    self, labels::Key as TransportKey, metrics::TransportLabels, Connection, Peek,
+    self, labels::Key as TransportKey, metrics::TransportLabels, Connection, Peek, Source,
 };
-use crate::{app::config::H2Settings, drain, logging, Error, Never};
 use futures::future::{self, Either};
 use futures::{Future, Poll};
 use http;
 use hyper;
+use linkerd2_drain as drain;
+use linkerd2_error::{Error, Never};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, trace};
+use tracing::{debug, info_span, trace};
+use tracing_futures::Instrument;
 
 /// A protocol-transparent Server!
 ///
@@ -54,23 +57,11 @@ where
 {
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
-    listen_addr: SocketAddr,
     transport_labels: L,
     transport_metrics: transport::MetricsRegistry,
     connect: ForwardConnect<T, C>,
     make_http: H,
-    log: logging::Server,
     drain: drain::Watch,
-}
-
-/// Describes an accepted connection.
-#[derive(Clone, Debug)]
-pub struct Source {
-    pub remote: SocketAddr,
-    pub local: SocketAddr,
-    pub orig_dst: Option<SocketAddr>,
-    pub tls_peer: tls::PeerIdentity,
-    _p: (),
 }
 
 /// Establishes connections for forwarded connections.
@@ -83,64 +74,6 @@ struct ForwardConnect<T, C>(C, PhantomData<T>);
 /// address and therefore could not be forwarded.
 #[derive(Clone, Debug)]
 pub struct NoOriginalDst;
-
-impl Source {
-    pub fn orig_dst_if_not_local(&self) -> Option<SocketAddr> {
-        match self.orig_dst {
-            None => {
-                trace!("no SO_ORIGINAL_DST on source");
-                None
-            }
-            Some(orig_dst) => {
-                // If the original destination is actually the listening socket,
-                // we don't want to create a loop.
-                if Self::same_addr(orig_dst, self.local) {
-                    trace!(
-                        "SO_ORIGINAL_DST={}; local={}; avoiding loop",
-                        orig_dst,
-                        self.local
-                    );
-                    None
-                } else {
-                    Some(orig_dst)
-                }
-            }
-        }
-    }
-
-    fn same_addr(a0: SocketAddr, a1: SocketAddr) -> bool {
-        use std::net::IpAddr::{V4, V6};
-        (a0.port() == a1.port())
-            && match (a0.ip(), a1.ip()) {
-                (V6(a0), V4(a1)) => a0.to_ipv4() == Some(a1),
-                (V4(a0), V6(a1)) => Some(a0) == a1.to_ipv4(),
-                (a0, a1) => (a0 == a1),
-            }
-    }
-
-    #[cfg(test)]
-    pub fn for_test(
-        remote: SocketAddr,
-        local: SocketAddr,
-        orig_dst: Option<SocketAddr>,
-        tls_peer: tls::PeerIdentity,
-    ) -> Self {
-        Self {
-            remote,
-            local,
-            orig_dst,
-            tls_peer,
-            _p: (),
-        }
-    }
-}
-
-// for logging context
-impl fmt::Display for Source {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.remote.fmt(f)
-    }
-}
 
 impl<T, C> Service<Source> for ForwardConnect<T, C>
 where
@@ -198,8 +131,6 @@ where
 {
     /// Creates a new `Server`.
     pub fn new(
-        proxy_name: &'static str,
-        listen_addr: SocketAddr,
         transport_labels: L,
         transport_metrics: transport::MetricsRegistry,
         connect: C,
@@ -208,16 +139,13 @@ where
         drain: drain::Watch,
     ) -> Self {
         let connect = ForwardConnect(connect, PhantomData);
-        let log = logging::Server::proxy(proxy_name, listen_addr);
         Self {
             http: hyper::server::conn::Http::new(),
             h2_settings,
-            listen_addr,
             transport_labels,
             transport_metrics,
             connect,
             make_http,
-            log,
             drain,
         }
     }
@@ -262,10 +190,11 @@ where
     fn call(&mut self, connection: Connection) -> Self::Future {
         let source = Source {
             remote: connection.remote_addr(),
-            local: connection.local_addr().unwrap_or(self.listen_addr),
+            local: connection
+                .local_addr()
+                .expect("socket must have a local address"),
             orig_dst: connection.original_dst_addr(),
             tls_peer: connection.peer_identity(),
-            _p: (),
         };
 
         // TODO just match ports here instead of encoding this all into
@@ -290,12 +219,10 @@ where
         };
 
         let connect = self.connect.clone();
-        let log = self.log.clone().with_remote(source.remote);
 
-        let mut http = self.http.clone();
+        let http = self.http.clone();
         let mut make_http = self.make_http.clone();
         let drain = self.drain.clone();
-        let log_clone = log.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
         let serve_fut = accept_fut.and_then(move |(proto, io)| match proto {
@@ -313,12 +240,11 @@ where
                         Protocol::Http1 => Either::A({
                             trace!("detected HTTP/1");
                             // Enable support for HTTP upgrades (CONNECT and websockets).
-                            let svc = upgrade::Service::new(
-                                http_svc,
-                                drain.clone(),
-                                log_clone.executor(),
-                            );
+                            let svc = upgrade::Service::new(http_svc, drain.clone());
+                            let exec = tokio::executor::DefaultExecutor::current()
+                                .instrument(info_span!("http1"));
                             let conn = http
+                                .with_executor(exec)
                                 .http1_only(true)
                                 .serve_connection(io, HyperServerSvc::new(svc))
                                 .with_upgrades();
@@ -330,8 +256,10 @@ where
 
                         Protocol::Http2 => Either::B({
                             trace!("detected HTTP/2");
+                            let exec = tokio::executor::DefaultExecutor::current()
+                                .instrument(info_span!("h2"));
                             let conn = http
-                                .with_executor(log_clone.executor())
+                                .with_executor(exec)
                                 .http2_only(true)
                                 .http2_initial_stream_window_size(initial_stream_window_size)
                                 .http2_initial_connection_window_size(initial_conn_window_size)
@@ -366,13 +294,11 @@ where
         Self {
             http: self.http.clone(),
             h2_settings: self.h2_settings.clone(),
-            listen_addr: self.listen_addr,
             transport_labels: self.transport_labels.clone(),
             transport_metrics: self.transport_metrics.clone(),
             connect: self.connect.clone(),
             make_http: self.make_http.clone(),
             drain: self.drain.clone(),
-            log: self.log.clone(),
         }
     }
 }

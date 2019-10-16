@@ -45,7 +45,7 @@ pub fn init_env() -> app::config::TestEnv {
     app::config::TestEnv::new()
 }
 
-pub fn trace_init() -> Result<(), Error> {
+pub fn trace_init() -> (Dispatch, trace::LevelHandle) {
     use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
@@ -53,7 +53,8 @@ pub fn trace_init() -> Result<(), Error> {
     env::set_var("RUST_LOG", &log);
     env::set_var("LINKERD2_PROXY_LOG", &log);
 
-    trace::init_with_filter(&log).map(|_| ())
+    let _ = trace::init_log_compat();
+    trace::with_filter(&log)
 }
 
 /// Retry an assertion up to a specified number of times, waiting

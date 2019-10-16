@@ -8,4 +8,4 @@ mod protocol;
 pub mod server;
 mod tcp;
 
-pub use self::server::{Server, Source};
+pub use self::server::Server;

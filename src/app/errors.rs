@@ -1,8 +1,10 @@
 //! Layer to map HTTP service errors into appropriate `http::Response`s.
 
-use crate::{proxy::http::HasH2Reason, svc, Error};
+use crate::proxy::http::HasH2Reason;
+use crate::svc;
 use futures::{Future, Poll};
 use http::{header, Request, Response, StatusCode, Version};
+use linkerd2_error::Error;
 use tracing::{debug, error, warn};
 
 /// Layer to map HTTP service errors into appropriate `http::Response`s.
@@ -25,6 +27,12 @@ pub struct Service<S>(S);
 pub struct ResponseFuture<F> {
     inner: F,
     is_http2: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct StatusError {
+    pub status: http::StatusCode,
+    pub message: String,
 }
 
 impl<M> svc::Layer<M> for Layer {
@@ -107,7 +115,6 @@ where
 }
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
-    use crate::app::outbound;
     use crate::proxy::buffer;
     use crate::proxy::http::router::error as router;
     use tower::load_shed::error as shed;
@@ -124,12 +131,20 @@ fn map_err_to_5xx(e: Error) -> StatusCode {
     } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
         error!("could not recognize request");
         http::StatusCode::BAD_GATEWAY
-    } else if let Some(err) = e.downcast_ref::<outbound::RequireIdentityError>() {
-        error!("{}", err);
-        http::StatusCode::FORBIDDEN
+    } else if let Some(err) = e.downcast_ref::<StatusError>() {
+        error!(%err.status, %err.message);
+        err.status
     } else {
         // we probably should have handled this before?
         error!("unexpected error: {}", e);
         http::StatusCode::BAD_GATEWAY
     }
 }
+
+impl std::fmt::Display for StatusError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.message.fmt(f)
+    }
+}
+
+impl std::error::Error for StatusError {}

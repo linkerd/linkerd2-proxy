@@ -1,6 +1,7 @@
 use super::control::ControlAddr;
 use super::identity;
 use crate::addr::{self, Addr};
+pub use crate::proxy::http::h2::Settings as H2Settings;
 use crate::transport::tls;
 use crate::{dns, Conditional};
 use indexmap::IndexSet;
@@ -141,12 +142,6 @@ pub struct Config {
     pub dns_canonicalize_timeout: Duration,
 
     pub h2_settings: H2Settings,
-}
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct H2Settings {
-    pub initial_stream_window_size: Option<u32>,
-    pub initial_connection_window_size: Option<u32>,
 }
 
 /// Configuration settings for the tap server

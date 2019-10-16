@@ -1,5 +1,5 @@
-use super::super::server::Source;
 use super::upgrade::HttpConnect;
+use crate::transport::Source;
 use bytes::BytesMut;
 use http;
 use http::header::{CONNECTION, HOST, UPGRADE};
