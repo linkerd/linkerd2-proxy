@@ -1,5 +1,7 @@
 //! Unix signal handling for the proxy binary.
 
+#![deny(warnings, rust_2018_idioms)]
+
 use futures::Future;
 
 type ShutdownSignal = Box<dyn Future<Item = (), Error = ()> + Send>;

@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use futures::{prelude::*, try_ready};
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::convert::TryFrom;

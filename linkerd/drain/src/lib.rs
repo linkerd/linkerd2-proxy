@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use futures::future::Shared;
 use futures::sync::{mpsc, oneshot};
 use futures::{try_ready, Async, Future, Poll, Stream};

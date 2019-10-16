@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use bytes::Bytes;
 use futures::Sink;
 use linkerd2_error::Error;

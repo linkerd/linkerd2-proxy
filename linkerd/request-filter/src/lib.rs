@@ -1,6 +1,8 @@
 //! A `Service` middleware that applies arbitrary-user provided logic to each
 //! target before it is issued to an inner service.
 
+#![deny(warnings, rust_2018_idioms)]
+
 use futures::{Future, Poll};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;

@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
