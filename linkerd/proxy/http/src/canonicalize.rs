@@ -144,7 +144,7 @@ where
             let (tx, rx) = mpsc::channel(1);
             let (_tx_stop, rx_stop) = oneshot::channel();
 
-            tokio::spawn(Task::new(na, resolver, timeout, tx, rx_stop).instrument(Span::current()));
+            tokio::spawn(Task::new(na, resolver, timeout, tx, rx_stop).in_current_span());
 
             tower::util::Either::A(Service {
                 canonicalized: None,

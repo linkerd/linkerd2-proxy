@@ -240,7 +240,7 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                         let _ = cb.send(result);
                         Ok(())
                     });
-                    tokio::spawn(fut.instrument(Span::current()));
+                    tokio::spawn(fut.in_current_span());
                     Ok(())
                 })
                 .map_err(|e| println!("client error: {:?}", e));
