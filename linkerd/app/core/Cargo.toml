@@ -1,0 +1,75 @@
+[package]
+name = "linkerd2-app-core"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+description = """
+Core infrastructure for the proxy application
+
+This crate conglomerates proxy configuration, runtime administration, etc,
+independently of the inbound and outbound proxy logic.
+"""
+
+[dependencies]
+bytes = "0.4"
+http = "0.1"
+httparse = "1.2"
+hyper = "0.12"
+futures = "0.1"
+indexmap = "1.0"
+ipnet = "1.0"
+linkerd2-addr = { path = "../../addr" }
+linkerd2-conditional = { path = "../../conditional" }
+linkerd2-dns = { path = "../../dns" }
+linkerd2-drain = { path = "../../drain" }
+linkerd2-duplex = { path = "../../duplex" }
+linkerd2-error = { path = "../../error" }
+linkerd2-exp-backoff = { path = "../../exp-backoff" }
+linkerd2-fallback = { path = "../../fallback" }
+linkerd2-identity = { path = "../../identity" }
+linkerd2-metrics = { path = "../../metrics" }
+linkerd2-opencensus = { path = "../../opencensus" }
+linkerd2-proxy-core = { path = "../../proxy/core" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.10" }
+linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
+linkerd2-proxy-discover = { path = "../../proxy/discover" }
+linkerd2-proxy-http = { path = "../../proxy/http" }
+linkerd2-proxy-resolve = { path = "../../proxy/resolve" }
+linkerd2-proxy-transport = { path = "../../proxy/transport" }
+linkerd2-reconnect = { path = "../../reconnect" }
+linkerd2-request-filter = { path = "../../request-filter" }
+linkerd2-router = { path = "../../router" }
+linkerd2-stack = { path = "../../stack" }
+linkerd2-task = { path = "../../task" }
+linkerd2-timeout = { path = "../../timeout" }
+linkerd2-trace-context = { path = "../../trace-context" }
+opencensus-proto = { path = "../../../opencensus-proto" }
+rand = "0.6"
+regex = "1.0.0"
+tokio = "0.1.14"
+tokio-timer = "0.2"
+tower = "0.1"
+tower-balance = { git = "https://github.com/tower-rs/tower" }
+tower-load = { git = "https://github.com/tower-rs/tower" }
+tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
+tower-spawn-ready = { git = "https://github.com/tower-rs/tower" }
+tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
+tracing = "0.1.9"
+tracing-futures = "0.1"
+tracing-log = "0.1"
+
+[dependencies.tracing-subscriber]
+version = "0.1.4"
+# we don't need ANSI colors or `chrono` time formatting
+default-features = false
+features = ["env-filter", "fmt", "smallvec", "tracing-log"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+procinfo = "0.4.2"
+
+[dev-dependencies]
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.10" }
+prost-types = "0.5.0"
+quickcheck = { version = "0.8", default-features = false }
