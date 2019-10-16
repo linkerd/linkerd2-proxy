@@ -18,7 +18,7 @@ use std::time::Duration;
 use tokio;
 use tokio::sync::{mpsc, oneshot};
 use tokio_timer::{clock, Delay, Timeout};
-use tracing::{debug, trace, warn, Span};
+use tracing::{debug, trace, warn};
 use tracing_futures::Instrument;
 
 /// Duration to wait before polling DNS again after an error (or a NXDOMAIN

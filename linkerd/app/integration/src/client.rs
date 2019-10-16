@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::executor::DefaultExecutor;
 use tokio::net::TcpStream;
-use tracing::{info_span, Span};
+use tracing::info_span;
 use tracing_futures::Instrument;
 use webpki::{DNSName, DNSNameRef};
 

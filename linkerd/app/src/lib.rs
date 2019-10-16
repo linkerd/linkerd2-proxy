@@ -394,7 +394,7 @@ where
                                 info_span!("tap", local_addr=%listener.local_addr()).in_scope(
                                     || {
                                         trace!("spawning");
-                                        tokio::spawn(tap_daemon.map_err(|_| ()));
+                                        tokio::spawn(tap_daemon.map_err(|_| ()).in_current_span());
                                         serve::spawn(
                                             listener,
                                             tls::AcceptTls::new(
@@ -419,10 +419,12 @@ where
                             });
 
                             if let Some(d) = identity_daemon {
-                                tokio::spawn(
-                                    d.map_err(|e| panic!("failed {}", e))
-                                        .instrument(info_span!("identity")),
-                                );
+                                info_span!("identity").in_scope(|| {
+                                    trace!("spawning");
+                                    tokio::spawn(
+                                        d.map_err(|e| panic!("failed {}", e)).in_current_span(),
+                                    );
+                                });
                             }
 
                             admin_shutdown_signal

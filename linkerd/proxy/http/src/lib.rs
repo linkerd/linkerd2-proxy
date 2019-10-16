@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use http::header::AsHeaderName;
 use http::uri::Authority;
 use linkerd2_error::Error;
