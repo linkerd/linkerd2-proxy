@@ -46,6 +46,12 @@ following targets:
    If the `DOCKER_TAG` environment variable is set, the image is given this
    name. Otherwise, the image is not named.
 
+The `Makefile` test targets are intended to replicate the tests run on CI.
+Therefore, the Rust compiler is configured to deny all warnings. For testing a
+local in-development branch, the `cargo test` command can be used directly,
+which will emit warnings but not fail the build if they are present. The
+`Makefile` test targets may then be used to ensure the branch is ready to merge.
+
 ### Cargo
 
 Usually, [Cargo][cargo], Rust's package manager, is used to build and test this
