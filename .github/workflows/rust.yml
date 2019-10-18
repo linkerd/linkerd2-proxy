@@ -23,8 +23,6 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - run: make test-lib
-      env:
-        RUSTFLAGS: "-D warnings"
 
   integration:
     runs-on: ubuntu-18.04
@@ -35,8 +33,6 @@ jobs:
     - name: Test (Fork)
       if: github.event.pull_request.head.repo.fork
       run: make test-integration
-      env:
-        RUSTFLAGS: "-D warnings"
 
     # Create a build image on a Linkerd build host.
     - name: Setup (Origin)

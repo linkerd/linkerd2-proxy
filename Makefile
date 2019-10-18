@@ -16,9 +16,12 @@ PKG = $(PKG_NAME).tar.gz
 
 SHASUM = shasum -a 256
 
+RUSTFLAGS = "-D warnings"
+
 CARGO ?= cargo
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
-CARGO_TEST = $(CARGO) test --frozen $(RELEASE)
+CARGO_TEST = env RUSTFLAGS=$(RUSTFLAGS) \
+	$(CARGO) test --frozen $(RELEASE)
 CARGO_FMT = $(CARGO) fmt --all
 
 DOCKER = docker

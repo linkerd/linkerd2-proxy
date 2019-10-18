@@ -4,5 +4,4 @@ FROM $RUST_IMAGE as build
 WORKDIR /usr/src/linkerd2-proxy
 COPY . ./
 RUN ["make", "fetch"]
-ENV RUSTFLAGS="-D warnings"
 ENTRYPOINT ["make"]
