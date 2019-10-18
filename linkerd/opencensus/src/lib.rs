@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 use futures::{task, try_ready, Async, Future, Poll, Stream};
 use linkerd2_error::Error;

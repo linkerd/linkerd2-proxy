@@ -3,7 +3,7 @@
 //! The outound proxy is responsible for routing traffic from the local
 //! application to external network endpoints.
 
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 use linkerd2_app_core::{
     classify,

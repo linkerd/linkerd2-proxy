@@ -1,6 +1,6 @@
 //! Configures and executes the proxy
 
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 use futures::{self, future, Future};
 pub use linkerd2_app_core::init;

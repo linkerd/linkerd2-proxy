@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 use bytes::{Buf, BufMut};
 use futures::{try_ready, Async, Future, Poll};

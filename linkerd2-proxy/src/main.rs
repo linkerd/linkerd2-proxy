@@ -1,6 +1,6 @@
 //! The main entrypoint for the proxy.
 
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 

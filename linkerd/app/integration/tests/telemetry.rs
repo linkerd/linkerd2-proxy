@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 // The compiler cannot figure out that the `use linkerd2_app_integration::*`

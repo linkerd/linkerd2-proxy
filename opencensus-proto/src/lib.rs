@@ -2,7 +2,7 @@
 //!
 //! Vendored from https://github.com/census-instrumentation/opencensus-proto/.
 
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 pub mod agent {
     pub mod trace {

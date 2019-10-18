@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 use futures::{try_ready, Future, Poll, Stream};
 use rand::{rngs::SmallRng, FromEntropy};

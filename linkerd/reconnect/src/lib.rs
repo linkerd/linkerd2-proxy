@@ -1,5 +1,5 @@
 //! Conditionally reconnects with a pluggable recovery/backoff strategy.
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 use linkerd2_error::Recover;
 

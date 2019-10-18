@@ -3,7 +3,7 @@
 //! The inbound proxy is responsible for terminating traffic from other network
 //! endpoints inbound to the local application.
 
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 use linkerd2_app_core::{
     classify,

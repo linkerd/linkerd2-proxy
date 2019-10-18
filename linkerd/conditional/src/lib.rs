@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 
 /// Like `std::option::Option<C>` but `None` carries a reason why the value
 /// isn't available.
