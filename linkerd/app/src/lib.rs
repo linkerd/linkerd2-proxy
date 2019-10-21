@@ -203,16 +203,13 @@ where
             Conditional::Some(config) => info!("using identity service at {:?}", config.svc.addr),
             Conditional::None(reason) => info!("identity is DISABLED: {}", reason),
         }
-        info!("routing on {:?}", outbound_listener.local_addr());
+        info!("admin on {}", admin_listener.local_addr(),);
         info!(
-            "proxying on {:?} to {:?}",
-            inbound_listener.local_addr(),
-            config.inbound_forward
+            "tap on {:?}",
+            control_listener.as_ref().map(|l| l.0.local_addr())
         );
-        info!(
-            "serving admin endpoint metrics on {:?}",
-            admin_listener.local_addr(),
-        );
+        info!("outbound on {:?}", outbound_listener.local_addr());
+        info!("inbound on {}", inbound_listener.local_addr(),);
         info!(
             "protocol detection disabled for inbound ports {:?}",
             config.inbound_ports_disable_protocol_detection,

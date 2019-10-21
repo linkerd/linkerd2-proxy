@@ -179,7 +179,6 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     );
 
     if let Some(inbound) = inbound {
-        env.put(app::config::ENV_INBOUND_FORWARD, format!("{}", inbound));
         mock_orig_dst.inbound_orig_addr = Some(inbound);
     }
 
