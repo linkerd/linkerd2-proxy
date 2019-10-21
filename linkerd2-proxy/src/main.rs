@@ -6,7 +6,6 @@
 
 use linkerd2_app::Main;
 use linkerd2_signal as signal;
-use tokio::runtime::current_thread;
 
 /// Loads configuration from the environment
 fn main() {
@@ -17,8 +16,7 @@ fn main() {
             std::process::exit(64)
         }
     };
-    let runtime = current_thread::Runtime::new().expect("initialize main runtime");
-    let main = Main::new(config, trace_admin, runtime);
+    let main = Main::new(config, trace_admin);
     let shutdown_signal = signal::shutdown();
     main.run_until(shutdown_signal);
 }

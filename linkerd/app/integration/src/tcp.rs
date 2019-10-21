@@ -111,7 +111,7 @@ impl TcpConn {
     }
 
     pub fn read_timeout(&self, timeout: Duration) -> Vec<u8> {
-        use linkerd2_task::test_util::BlockOnFor;
+        use linkerd2_task_test_util::BlockOnFor;
         use tokio::runtime::current_thread;
         current_thread::Runtime::new()
             .unwrap()

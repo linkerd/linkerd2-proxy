@@ -117,7 +117,7 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
 mod tests {
     use super::*;
     use http::method::Method;
-    use linkerd2_task::test_util::BlockOnFor;
+    use linkerd2_task_test_util::BlockOnFor;
     use std::time::Duration;
     use tokio::runtime::current_thread::Runtime;
 
