@@ -69,7 +69,7 @@ libc = "0.2"
 procinfo = "0.4.2"
 
 [dev-dependencies]
-linkerd2-task-test-util = { path = "../../task-test-util" }
+linkerd2-test-util = { path = "../../test-util" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.10" }
 prost-types = "0.5.0"
 quickcheck = { version = "0.8", default-features = false }

@@ -152,20 +152,17 @@ where
         let Main { proxy_parts } = self;
         Runtime::new()
             .expect("runtime")
-            .block_on(
-                futures::lazy(move || {
-                    let (drain_tx, drain_rx) = drain::channel();
+            .block_on(futures::lazy(move || {
+                let (drain_tx, drain_rx) = drain::channel();
 
-                    proxy_parts.build_proxy_task(drain_rx);
-                    trace!("main task spawned");
+                proxy_parts.build_proxy_task(drain_rx);
+                trace!("main task spawned");
 
-                    shutdown_signal.and_then(move |()| {
-                        debug!("shutdown signaled");
-                        drain_tx.drain().map(|()| debug!("shutdown complete"))
-                    })
+                shutdown_signal.and_then(move |()| {
+                    debug!("shutdown signaled");
+                    drain_tx.drain().map(|()| debug!("shutdown complete"))
                 })
-                .instrument(info_span!("main")),
-            )
+            }))
             .expect("main");
     }
 }
