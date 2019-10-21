@@ -20,3 +20,5 @@ tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"
 [build-dependencies]
 tower-grpc-build = { version = "0.1", default-features = false }
 
+[lib]
+doctest = false
