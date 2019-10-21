@@ -63,7 +63,6 @@ pub fn spawn<P>(
     let max_idle_age = config.inbound_router_max_idle_age;
     let max_in_flight = config.inbound_max_requests_in_flight;
     let profile_suffixes = config.destination_profile_suffixes.clone();
-    let default_fwd_addr = config.inbound_forward.map(|a| a.into());
     let dispatch_timeout = config.inbound_dispatch_timeout;
 
     let mut trace_labels = HashMap::new();
@@ -95,9 +94,6 @@ pub fn spawn<P>(
 
     // A stack configured by `router::Config`, responsible for building
     // a router made of route stacks configured by `inbound::Endpoint`.
-    //
-    // If there is no `SO_ORIGINAL_DST` for an inbound socket,
-    // `default_fwd_addr` may be used.
     let endpoint_router = client_stack
         .push(tap_layer)
         .push(http_metrics::layer::<_, classify::Response>(
@@ -111,7 +107,7 @@ pub fn spawn<P>(
         .makes::<Endpoint>()
         .push(router::layer(
             router::Config::new(capacity, max_idle_age),
-            RecognizeEndpoint::new(default_fwd_addr),
+            RecognizeEndpoint::default(),
         ))
         .into_inner()
         .make();

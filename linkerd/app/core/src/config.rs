@@ -36,9 +36,6 @@ pub struct Config {
     /// Where to serve admin HTTP.
     pub admin_listener: Listener,
 
-    /// Where to forward externally received connections.
-    pub inbound_forward: Option<SocketAddr>,
-
     /// The maximum amount of time that an inbound request can spend buffered in the inbound proxy.
     pub inbound_dispatch_timeout: Duration,
 
@@ -200,7 +197,6 @@ pub struct TestEnv {
 
 // Environment variables to look at when loading the configuration
 pub const ENV_OUTBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_LISTEN_ADDR";
-pub const ENV_INBOUND_FORWARD: &str = "LINKERD2_PROXY_INBOUND_FORWARD";
 pub const ENV_INBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_INBOUND_LISTEN_ADDR";
 pub const ENV_CONTROL_LISTEN_ADDR: &str = "LINKERD2_PROXY_CONTROL_LISTEN_ADDR";
 pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
@@ -216,7 +212,6 @@ const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEP
 const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
 
 pub const DEPRECATED_ENV_PRIVATE_LISTEN_ADDR: &str = "LINKERD2_PROXY_PRIVATE_LISTEN_ADDR";
-pub const DEPRECATED_ENV_PRIVATE_FORWARD: &str = "LINKERD2_PROXY_PRIVATE_FORWARD";
 
 // Limits the number of HTTP routes that may be active in the proxy at any time. There is
 // an inbound route for each local port that receives connections. There is an outbound
@@ -391,7 +386,6 @@ impl Config {
         let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTEN_ADDR, parse_socket_addr);
         let inbound_listener_addr = parse(strings, ENV_INBOUND_LISTEN_ADDR, parse_socket_addr);
         let admin_listener_addr = parse(strings, ENV_ADMIN_LISTEN_ADDR, parse_socket_addr);
-        let inbound_forward = parse(strings, ENV_INBOUND_FORWARD, parse_socket_addr);
 
         let inbound_dispatch_timeout = parse(strings, ENV_INBOUND_DISPATCH_TIMEOUT, parse_duration);
         let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
@@ -500,7 +494,6 @@ impl Config {
                 addr: admin_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
             },
-            inbound_forward: inbound_forward?,
 
             inbound_connect_timeout: inbound_connect_timeout?
                 .unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),

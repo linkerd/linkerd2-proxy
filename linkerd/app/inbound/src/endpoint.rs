@@ -25,7 +25,7 @@ pub struct Endpoint {
 
 #[derive(Clone, Debug, Default)]
 pub struct RecognizeEndpoint {
-    default_addr: Option<SocketAddr>,
+    _p: (),
 }
 
 // === impl Endpoint ===
@@ -114,21 +114,13 @@ impl fmt::Display for Endpoint {
 
 // === impl RecognizeEndpoint ===
 
-impl RecognizeEndpoint {
-    pub fn new(default_addr: Option<SocketAddr>) -> Self {
-        Self { default_addr }
-    }
-}
-
 impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
     type Target = Endpoint;
 
     fn recognize(&self, req: &http::Request<A>) -> Option<Self::Target> {
         let src = req.extensions().get::<Source>();
         debug!("inbound endpoint: src={:?}", src);
-        let addr = src
-            .and_then(Source::orig_dst_if_not_local)
-            .or(self.default_addr)?;
+        let addr = src.and_then(Source::orig_dst_if_not_local)?;
 
         let tls_client_id = src
             .map(|s| s.tls_peer.clone())
@@ -202,40 +194,6 @@ mod tests {
             dst_addr(&mut req);
 
             RecognizeEndpoint::default().recognize(&req) == rec
-        }
-
-        fn recognize_default_no_orig_dst(
-            default: Option<net::SocketAddr>,
-            local: net::SocketAddr,
-            remote: net::SocketAddr
-        ) -> bool {
-            let mut req = http::Request::new(());
-            let src = Source { remote, local, orig_dst: None, tls_peer: TLS_DISABLED } ;
-            req.extensions_mut()
-                .insert(src);
-            dst_addr(&mut req);
-
-            RecognizeEndpoint::new(default).recognize(&req) == default.map(make_test_endpoint)
-        }
-
-        fn recognize_default_no_ctx(default: Option<net::SocketAddr>) -> bool {
-            let mut req = http::Request::new(());
-            dst_addr(&mut req);
-            RecognizeEndpoint::new(default).recognize(&req) == default.map(make_test_endpoint)
-        }
-
-        fn recognize_default_no_loop(
-            default: Option<net::SocketAddr>,
-            local: net::SocketAddr,
-            remote: net::SocketAddr
-        ) -> bool {
-            let mut req = http::Request::new(());
-            let src = Source { remote, local, orig_dst: Some(local), tls_peer: TLS_DISABLED } ;
-            req.extensions_mut()
-                .insert(src);
-            dst_addr(&mut req);
-
-            RecognizeEndpoint::new(default).recognize(&req) == default.map(make_test_endpoint)
         }
     }
 }
