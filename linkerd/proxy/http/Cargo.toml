@@ -17,6 +17,7 @@ futures = "0.1"
 h2 = "0.1"
 http = "0.1"
 http-body = "0.1"
+httparse = "1.2"
 hyper = "0.12.3"
 hyper-balance = { path  = "../../../hyper-balance" }
 indexmap = "1.0"

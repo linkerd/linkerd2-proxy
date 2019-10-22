@@ -6,22 +6,27 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_app_core::{
-    classify,
-    config::Config,
-    core::resolve::Resolve,
-    discover, dns, drain,
+    self as core, classify,
+    config::ProxyConfig,
+    dns, drain,
     dst::DstAddr,
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, identity,
-    proxy::http::{
-        balance, canonicalize, client, fallback, header_from_target, insert,
-        metrics as http_metrics, normalize_uri, profiles, retry, router, settings, strip_header,
+    proxy::{
+        self,
+        core::{resolve::Resolve, Listen},
+        discover,
+        http::{
+            balance, canonicalize, client, fallback, header_from_target, insert,
+            metrics as http_metrics, normalize_uri, profiles, retry, router, settings,
+            strip_header,
+        },
+        Server,
     },
-    proxy::{self, Server},
     reconnect, serve,
     spans::SpanConverter,
     svc, trace, trace_context,
-    transport::{self as transport, connect, tls, Source},
+    transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, Conditional, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
     L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
@@ -47,23 +52,41 @@ pub use self::resolve::resolve;
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-pub fn spawn<R, P>(
-    config: &Config,
+#[derive(Clone, Debug)]
+pub struct Config<O: OrigDstAddr = SysOrigDstAddr> {
+    pub proxy: ProxyConfig<O>,
+    pub canonicalize_timeout: Duration,
+}
+
+impl<O: OrigDstAddr> Config<O> {
+    pub fn with_orig_dst_addrs_from<P: OrigDstAddr>(self, orig_dst_addrs: P) -> Config<P> {
+        Config {
+            proxy: self.proxy.with_orig_dst_addrs_from(orig_dst_addrs.clone()),
+            canonicalize_timeout: self.canonicalize_timeout,
+        }
+    }
+}
+
+pub fn spawn<O, L, R, P>(
+    listen: L,
+    config: Config<O>,
     local_identity: tls::Conditional<identity::Local>,
-    listen: transport::Listen,
-    get_original_dst: impl transport::GetOriginalDst + Send + 'static,
     resolve: R,
     dns_resolver: dns::Resolver,
-    profiles_client: linkerd2_app_core::profiles::Client<P>,
-    tap_layer: linkerd2_app_core::tap::Layer,
-    handle_time: http_metrics::handle_time::Scope,
-    endpoint_http_metrics: linkerd2_app_core::HttpEndpointMetricsRegistry,
-    route_http_metrics: linkerd2_app_core::HttpRouteMetricsRegistry,
-    retry_http_metrics: linkerd2_app_core::HttpRouteMetricsRegistry,
-    transport_metrics: linkerd2_app_core::transport::MetricsRegistry,
+    profiles_client: core::profiles::Client<P>,
+    profile_suffixes: Vec<dns::Suffix>,
+    tap_layer: core::tap::Layer,
     span_sink: Option<mpsc::Sender<oc::Span>>,
+    handle_time: http_metrics::handle_time::Scope,
+    endpoint_http_metrics: core::HttpEndpointMetricsRegistry,
+    route_http_metrics: core::HttpRouteMetricsRegistry,
+    retry_http_metrics: core::HttpRouteMetricsRegistry,
+    transport_metrics: transport::MetricsRegistry,
     drain: drain::Watch,
 ) where
+    O: transport::OrigDstAddr + Send + 'static,
+    L: Listen<Connection = transport::listen::Connection> + Send + 'static,
+    L::Error: std::error::Error + Send + 'static,
     R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
     R::Future: Send,
     R::Resolution: Send,
@@ -72,21 +95,20 @@ pub fn spawn<R, P>(
     <P::ResponseBody as grpc::Body>::Data: Send,
     P::Future: Send,
 {
-    let capacity = config.outbound_router_capacity;
-    let max_idle_age = config.outbound_router_max_idle_age;
-    let max_in_flight = config.outbound_max_requests_in_flight;
-    let profile_suffixes = config.destination_profile_suffixes.clone();
-    let canonicalize_timeout = config.dns_canonicalize_timeout;
-    let dispatch_timeout = config.outbound_dispatch_timeout;
+    let capacity = config.proxy.router_capacity;
+    let max_idle_age = config.proxy.router_max_idle_age;
+    let max_in_flight = config.proxy.server.buffer.max_in_flight;
+    let dispatch_timeout = config.proxy.server.buffer.dispatch_timeout;
+    let canonicalize_timeout = config.canonicalize_timeout;
 
     let mut trace_labels = HashMap::new();
     trace_labels.insert("direction".to_string(), "outbound".to_string());
 
     // Establishes connections to remote peers (for both TCP
     // forwarding and HTTP proxying).
-    let connect = svc::stack(connect::svc(config.outbound_connect_keepalive))
+    let connect = svc::stack(connect::svc(config.proxy.connect.keepalive))
         .push(tls::client::layer(local_identity))
-        .push_timeout(config.outbound_connect_timeout)
+        .push_timeout(config.proxy.connect.timeout)
         .push(transport_metrics.layer_connect(TransportLabels));
 
     let trace_context_layer = trace_context::layer(
@@ -97,9 +119,9 @@ pub fn spawn<R, P>(
     // Instantiates an HTTP client for for a `client::Config`
     let client_stack = connect
         .clone()
-        .push(client::layer(config.h2_settings))
+        .push(client::layer(config.proxy.connect.h2_settings))
         .push(reconnect::layer({
-            let backoff = config.outbound_connect_backoff.clone();
+            let backoff = config.proxy.connect.backoff.clone();
             move |_| Ok(backoff.stream())
         }))
         .push(trace_context_layer)
@@ -248,7 +270,7 @@ pub fn spawn<R, P>(
     //
     // 4. If the request has an HTTP/1 Host header, it is used.
     //
-    // 5. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
+    // 5. Finally, if the tls::accept::Meta had an SO_ORIGINAL_DST, this TCP
     // address is used.
     let addr_router = addr_stack
         .push(strip_header::request::layer(L5D_CLIENT_ID))
@@ -282,8 +304,8 @@ pub fn spawn<R, P>(
     let trace_context_layer = trace_context::layer(
         span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels)),
     );
-    // Instantiates an HTTP service for each `Source` using the
-    // shared `addr_router`. The `Source` is stored in the request's
+    // Instantiates an HTTP service for each `tls::accept::Meta` using the
+    // shared `addr_router`. The `tls::accept::Meta` is stored in the request's
     // extensions so that it can be used by the `addr_router`.
     let server_stack = svc::stack(svc::Shared::new(admission_control))
         .push(insert::layer(move || {
@@ -291,32 +313,29 @@ pub fn spawn<R, P>(
         }))
         .push(insert::target::layer())
         .push(errors::layer())
-        .push(trace::layer(|src: &Source| {
-            src.orig_dst
-                .as_ref()
-                .map(|orig_dst_addr| info_span!("source", %orig_dst_addr))
-                .unwrap_or_else(|| info_span!("source"))
-        }))
+        .push(trace::layer(
+            |src: &tls::accept::Meta| info_span!("source", target.addr = %src.addrs.target_addr()),
+        ))
         .push(trace_context_layer)
         .push(handle_time.layer());
+
+    let skip_ports = config.proxy.disable_protocol_detection_for_ports;
 
     let proxy = Server::new(
         TransportLabels,
         transport_metrics,
-        connect,
+        svc::stack(connect)
+            .push(svc::map_target::layer(Endpoint::from))
+            .into_inner(),
         server_stack,
-        config.h2_settings,
+        config.proxy.server.h2_settings,
         drain.clone(),
+        skip_ports.clone(),
     );
 
     let no_tls: tls::Conditional<identity::Local> =
         Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
-    let skip_ports = config
-        .outbound_ports_disable_protocol_detection
-        .iter()
-        .map(|p| *p);
-    let accept = tls::AcceptTls::new(get_original_dst, no_tls, proxy)
-        .without_protocol_detection_for(skip_ports);
+    let accept = tls::AcceptTls::new(no_tls, proxy).with_skip_ports(skip_ports);
 
     serve::spawn(listen, accept, drain);
 }
@@ -332,10 +351,10 @@ impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
     }
 }
 
-impl transport::metrics::TransportLabels<Source> for TransportLabels {
+impl transport::metrics::TransportLabels<proxy::server::Protocol> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, source: &Source) -> Self::Labels {
-        transport::labels::Key::accept("outbound", source.tls_peer.as_ref())
+    fn transport_labels(&self, proto: &proxy::server::Protocol) -> Self::Labels {
+        transport::labels::Key::accept("outbound", proto.tls.peer_identity.as_ref())
     }
 }

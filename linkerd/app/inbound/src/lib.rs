@@ -6,23 +6,26 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_app_core::{
-    classify,
-    config::Config,
-    drain,
+    self as core, classify,
+    config::ProxyConfig,
+    dns, drain,
     dst::DstAddr,
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, identity,
-    proxy::http::{
-        client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
-        strip_header,
+    proxy::{
+        core::Listen,
+        http::{
+            client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
+            strip_header,
+        },
+        server::{Protocol as ServerProtocol, Server},
     },
-    proxy::Server,
     reconnect, serve,
     spans::SpanConverter,
-    svc, trace, trace_context,
-    transport::{self as transport, connect, tls, Source},
-    Addr, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
-    L5D_REMOTE_IP, L5D_SERVER_ID,
+    svc, tap, trace, trace_context,
+    transport::{self, connect, tls, OrigDstAddr},
+    Addr, DispatchDeadline, HttpEndpointMetricsRegistry, HttpRouteMetricsRegistry,
+    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_SERVER_ID,
 };
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
@@ -40,39 +43,41 @@ mod set_remote_ip_on_req;
 
 pub use self::endpoint::{Endpoint, RecognizeEndpoint};
 
-pub fn spawn<P>(
-    config: &Config,
+pub fn spawn<O, L, P>(
+    listen: L,
+    config: ProxyConfig<O>,
     local_identity: tls::Conditional<identity::Local>,
-    listen: transport::Listen,
-    get_original_dst: impl transport::GetOriginalDst + Send + 'static,
-    profiles_client: linkerd2_app_core::profiles::Client<P>,
-    tap_layer: linkerd2_app_core::tap::Layer,
+    profiles_client: core::profiles::Client<P>,
+    profile_suffixes: Vec<dns::Suffix>,
+    tap_layer: tap::Layer,
     handle_time: http_metrics::handle_time::Scope,
-    endpoint_http_metrics: linkerd2_app_core::HttpEndpointMetricsRegistry,
-    route_http_metrics: linkerd2_app_core::HttpRouteMetricsRegistry,
-    transport_metrics: linkerd2_app_core::transport::MetricsRegistry,
+    endpoint_http_metrics: HttpEndpointMetricsRegistry,
+    route_http_metrics: HttpRouteMetricsRegistry,
+    transport_metrics: transport::MetricsRegistry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
+    O: OrigDstAddr + Send + Sync + 'static,
+    L: Listen<Connection = transport::listen::Connection> + Send + 'static,
+    L::Error: std::error::Error + Send + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
     P::Future: Send,
 {
-    let capacity = config.inbound_router_capacity;
-    let max_idle_age = config.inbound_router_max_idle_age;
-    let max_in_flight = config.inbound_max_requests_in_flight;
-    let profile_suffixes = config.destination_profile_suffixes.clone();
-    let dispatch_timeout = config.inbound_dispatch_timeout;
+    let capacity = config.router_capacity;
+    let max_idle_age = config.router_max_idle_age;
+    let max_in_flight = config.server.buffer.max_in_flight;
+    let dispatch_timeout = config.server.buffer.dispatch_timeout;
 
     let mut trace_labels = HashMap::new();
     trace_labels.insert("direction".to_string(), "inbound".to_string());
 
     // Establishes connections to the local application (for both
     // TCP forwarding and HTTP proxying).
-    let connect = svc::stack(connect::svc(config.inbound_connect_keepalive))
+    let connect = svc::stack(connect::svc(config.connect.keepalive))
         .push(tls::client::layer(local_identity.clone()))
-        .push_timeout(config.inbound_connect_timeout)
+        .push_timeout(config.connect.timeout)
         .push(transport_metrics.layer_connect(TransportLabels))
         .push(rewrite_loopback_addr::layer());
 
@@ -84,9 +89,9 @@ pub fn spawn<P>(
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = connect
         .clone()
-        .push(client::layer(config.h2_settings))
+        .push(client::layer(config.connect.h2_settings))
         .push(reconnect::layer({
-            let backoff = config.inbound_connect_backoff.clone();
+            let backoff = config.connect.backoff.clone();
             move |_| Ok(backoff.stream())
         }))
         .push(trace_context_layer)
@@ -161,7 +166,7 @@ pub fn spawn<P>(
     //
     // 5. If the request has an HTTP/1 Host header, it is used.
     //
-    // 6. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
+    // 6. Finally, if the tls::accept::Meta had an SO_ORIGINAL_DST, this TCP
     // address is used.
     let dst_router = dst_stack
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
@@ -207,14 +212,14 @@ pub fn spawn<P>(
     let trace_context_layer = trace_context::layer(
         span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels)),
     );
-    // As HTTP requests are accepted, the `Source` connection
+    // As HTTP requests are accepted, the `tls::accept::Meta` connection
     // metadata is stored on each request's extensions.
     //
     // Furthermore, HTTP/2 requests may be downgraded to HTTP/1.1 per
     // `orig-proto` headers. This happens in the source stack so that
     // the router need not detect whether a request _will be_ downgraded.
     let source_stack = svc::stack(svc::Shared::new(admission_control))
-        .serves::<Source>()
+        .serves::<tls::accept::Meta>()
         .push(orig_proto_downgrade::layer())
         .push(insert::target::layer())
         // disabled due to information leagkage
@@ -227,28 +232,32 @@ pub fn spawn<P>(
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(errors::layer())
-        .push(trace::layer(
-            |src: &Source| info_span!("source", peer_ip = %src.remote.ip(), peer_id=?src.tls_peer),
-        ))
+        .push(trace::layer(|src: &tls::accept::Meta| {
+            info_span!(
+                "source",
+                peer.ip = %src.addrs.peer().ip(),
+                peer.id = ?src.peer_identity
+            )
+        }))
         .push(trace_context_layer)
         .push(handle_time.layer())
-        .serves::<Source>();
+        .serves::<tls::accept::Meta>();
+
+    let skip_ports = config.disable_protocol_detection_for_ports;
 
     let server = Server::new(
         TransportLabels,
         transport_metrics,
-        connect,
+        svc::stack(connect)
+            .push(svc::map_target::layer(Endpoint::from))
+            .into_inner(),
         source_stack,
-        config.h2_settings,
+        config.server.h2_settings,
         drain.clone(),
+        skip_ports.clone(),
     );
 
-    let skip_ports = config
-        .inbound_ports_disable_protocol_detection
-        .iter()
-        .map(|p| *p);
-    let accept = tls::AcceptTls::new(get_original_dst, local_identity, server)
-        .without_protocol_detection_for(skip_ports);
+    let accept = tls::AcceptTls::new(local_identity, server).with_skip_ports(skip_ports);
 
     serve::spawn(listen, accept, drain);
 }
@@ -267,10 +276,10 @@ impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
     }
 }
 
-impl transport::metrics::TransportLabels<Source> for TransportLabels {
+impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, source: &Source) -> Self::Labels {
-        transport::labels::Key::accept("inbound", source.tls_peer.as_ref())
+    fn transport_labels(&self, proto: &ServerProtocol) -> Self::Labels {
+        transport::labels::Key::accept("inbound", proto.tls.peer_identity.as_ref())
     }
 }

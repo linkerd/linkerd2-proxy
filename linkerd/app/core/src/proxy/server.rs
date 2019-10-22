@@ -1,27 +1,63 @@
 use crate::proxy::http::{
     glue::{HttpBody, HyperServerSvc},
-    upgrade,
+    upgrade, Version as HttpVersion,
 };
-use crate::proxy::{protocol::Protocol, tcp};
+use crate::proxy::{detect, tcp};
 use crate::svc::{MakeService, Service};
-use crate::transport::tls::HasPeerIdentity;
 use crate::transport::{
-    self, labels::Key as TransportKey, metrics::TransportLabels, Connection, Peek, Source,
+    self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls,
 };
 use futures::future::{self, Either};
 use futures::{Future, Poll};
 use http;
 use hyper;
+use indexmap::IndexSet;
 use linkerd2_drain as drain;
 use linkerd2_error::{Error, Never};
 use linkerd2_proxy_core::listen::Accept;
 use linkerd2_proxy_http::h2::Settings as H2Settings;
-use std::marker::PhantomData;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::{error, fmt};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, info_span, trace};
+use tracing::{info_span, trace};
 use tracing_futures::Instrument;
+
+#[derive(Clone, Debug)]
+pub struct Protocol {
+    pub http: Option<HttpVersion>,
+    pub tls: tls::accept::Meta,
+}
+
+pub type Connection = (Protocol, BoxedIo);
+
+#[derive(Clone, Debug)]
+pub struct ProtocolDetect {
+    skip_ports: Arc<IndexSet<u16>>,
+}
+
+impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
+    type Target = Protocol;
+
+    fn detect_before_peek(
+        &self,
+        tls: tls::accept::Meta,
+    ) -> Result<Self::Target, tls::accept::Meta> {
+        let port = tls.addrs.target_addr().port();
+        if self.skip_ports.contains(&port) {
+            return Ok(Protocol { tls, http: None });
+        }
+
+        Err(tls)
+    }
+
+    fn detect_peeked_prefix(&self, tls: tls::accept::Meta, prefix: &[u8]) -> Self::Target {
+        Protocol {
+            tls,
+            http: HttpVersion::from_prefix(prefix),
+        }
+    }
+}
 
 /// A protocol-transparent Server!
 ///
@@ -40,15 +76,14 @@ use tracing_futures::Instrument;
 ///    instrumented with telemetry, etc).
 ///
 /// *  Otherwise, an `H`-typed `Service` is used to build a service that
-///    can route HTTP  requests for the `Source`.
-pub struct Server<L, T, C, H, B>
+///    can route HTTP  requests for the `tls::accept::Meta`.
+pub struct Server<L, C, H, B>
 where
     // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
-    T: From<SocketAddr>,
-    L: TransportLabels<Source, Labels = TransportKey>,
+    L: TransportLabels<Protocol, Labels = TransportKey>,
     // Prepares a route for each accepted HTTP connection.
     H: MakeService<
-            Source,
+            tls::accept::Meta,
             http::Request<HttpBody>,
             Response = http::Response<B>,
             MakeError = Never,
@@ -59,26 +94,26 @@ where
     h2_settings: H2Settings,
     transport_labels: L,
     transport_metrics: transport::MetricsRegistry,
-    connect: ForwardConnect<T, C>,
+    connect: ForwardConnect<C>,
     make_http: H,
     drain: drain::Watch,
 }
 
 /// Establishes connections for forwarded connections.
 ///
-/// Fails to produce a `Connect` if a `Source`'s `orig_dst` is None.
-#[derive(Debug)]
-struct ForwardConnect<T, C>(C, PhantomData<T>);
+/// Fails to produce a `Connect` if this would connect to the listener that
+/// already accepted this.
+#[derive(Clone, Debug)]
+struct ForwardConnect<C>(C);
 
 /// An error indicating an accepted socket did not have an SO_ORIGINAL_DST
 /// address and therefore could not be forwarded.
 #[derive(Clone, Debug)]
-pub struct NoOriginalDst;
+pub struct NoForwardTarget;
 
-impl<T, C> Service<Source> for ForwardConnect<T, C>
+impl<C> Service<tls::accept::Meta> for ForwardConnect<C>
 where
-    T: From<SocketAddr>,
-    C: Service<T>,
+    C: Service<SocketAddr>,
     C::Error: Into<Error>,
 {
     type Response = C::Response;
@@ -92,36 +127,28 @@ where
         self.0.poll_ready().map_err(Into::into)
     }
 
-    fn call(&mut self, s: Source) -> Self::Future {
-        let target = match s.orig_dst {
-            Some(addr) => T::from(addr),
-            None => return future::Either::A(future::err(NoOriginalDst.into())),
-        };
+    fn call(&mut self, meta: tls::accept::Meta) -> Self::Future {
+        if meta.addrs.target_addr_is_local() {
+            return future::Either::A(future::err(NoForwardTarget.into()));
+        }
 
-        future::Either::B(self.0.call(target).map_err(Into::into))
+        future::Either::B(self.0.call(meta.addrs.target_addr()).map_err(Into::into))
     }
 }
 
-impl<T, C: Clone> Clone for ForwardConnect<T, C> {
-    fn clone(&self) -> Self {
-        ForwardConnect(self.0.clone(), PhantomData)
-    }
-}
+impl error::Error for NoForwardTarget {}
 
-impl error::Error for NoOriginalDst {}
-
-impl fmt::Display for NoOriginalDst {
+impl fmt::Display for NoForwardTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Missing SO_ORIGINAL_DST address")
+        write!(f, "Could not forward to a target address")
     }
 }
 
-impl<L, T, C, H, B> Server<L, T, C, H, B>
+impl<L, C, H, B> Server<L, C, H, B>
 where
-    T: From<SocketAddr>,
-    L: TransportLabels<Source, Labels = TransportKey>,
+    L: TransportLabels<Protocol, Labels = TransportKey>,
     H: MakeService<
-            Source,
+            tls::accept::Meta,
             http::Request<HttpBody>,
             Response = http::Response<B>,
             MakeError = Never,
@@ -137,30 +164,32 @@ where
         make_http: H,
         h2_settings: H2Settings,
         drain: drain::Watch,
-    ) -> Self {
-        let connect = ForwardConnect(connect, PhantomData);
-        Self {
-            http: hyper::server::conn::Http::new(),
-            h2_settings,
-            transport_labels,
-            transport_metrics,
-            connect,
-            make_http,
-            drain,
-        }
+        skip_ports: Arc<IndexSet<u16>>,
+    ) -> detect::Accept<ProtocolDetect, Self> {
+        detect::Accept::new(
+            ProtocolDetect { skip_ports },
+            Self {
+                http: hyper::server::conn::Http::new(),
+                h2_settings,
+                transport_labels,
+                transport_metrics,
+                connect: ForwardConnect(connect),
+                make_http,
+                drain,
+            },
+        )
     }
 }
 
-impl<L, T, C, H, B> Service<Connection> for Server<L, T, C, H, B>
+impl<L, C, H, B> Service<(Protocol, BoxedIo)> for Server<L, C, H, B>
 where
-    L: TransportLabels<Source, Labels = TransportKey>,
-    T: From<SocketAddr> + Send + 'static,
-    C: Service<T> + Clone + Send + 'static,
-    C::Response: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
+    L: TransportLabels<Protocol, Labels = TransportKey>,
+    C: Service<SocketAddr> + Clone + Send + 'static,
+    C::Response: AsyncRead + AsyncWrite + Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
     H: MakeService<
-            Source,
+            tls::accept::Meta,
             http::Request<HttpBody>,
             Response = http::Response<B>,
             MakeError = Never,
@@ -187,103 +216,75 @@ where
     /// what protocol the connection is speaking. From there, the connection
     /// will be mapped into respective services, and spawned into an
     /// executor.
-    fn call(&mut self, connection: Connection) -> Self::Future {
-        let source = Source {
-            remote: connection.remote_addr(),
-            local: connection
-                .local_addr()
-                .expect("socket must have a local address"),
-            orig_dst: connection.original_dst_addr(),
-            tls_peer: connection.peer_identity(),
-        };
-
-        // TODO just match ports here instead of encoding this all into
-        // `Connection`.
-        let should_detect = connection.should_detect_protocol();
-
-        // TODO move this into a distinct Accept...
+    fn call(&mut self, (proto, io): Connection) -> Self::Future {
+        // TODO move this into a distinct Accept?
         let io = {
-            let labels = self.transport_labels.transport_labels(&source);
-            self.transport_metrics
-                .wrap_server_transport(labels, connection)
+            let labels = self.transport_labels.transport_labels(&proto);
+            self.transport_metrics.wrap_server_transport(labels, io)
         };
 
-        let accept_fut = if should_detect {
-            Either::A(io.peek().map_err(Into::into).map(|io| {
-                let proto = Protocol::detect(io.peeked());
-                (proto, io)
-            }))
-        } else {
-            debug!("protocol detection disabled for {:?}", source.orig_dst);
-            Either::B(future::ok((None, io)))
-        };
-
-        let connect = self.connect.clone();
-
-        let http = self.http.clone();
-        let mut make_http = self.make_http.clone();
         let drain = self.drain.clone();
-        let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
-        let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
-        let serve_fut = accept_fut.and_then(move |(proto, io)| match proto {
+        let http_version = match proto.http {
+            Some(http) => http,
             None => {
                 trace!("did not detect protocol; forwarding TCP");
-                let fwd = tcp::forward(io, connect, source);
-                Either::A(drain.watch(fwd, |_| {}))
+                let fwd = tcp::forward(io, self.connect.clone(), proto.tls);
+                return Box::new(drain.watch(fwd, |_| {}));
+            }
+        };
+
+        let make_http = self
+            .make_http
+            .make_service(proto.tls)
+            .map_err(|never| match never {});
+
+        let http = self.http.clone();
+        let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
+        let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
+        Box::new(make_http.and_then(move |http_svc| match http_version {
+            HttpVersion::Http1 => {
+                // Enable support for HTTP upgrades (CONNECT and websockets).
+                let svc = upgrade::Service::new(http_svc, drain.clone());
+                let exec =
+                    tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
+                let conn = http
+                    .with_executor(exec)
+                    .http1_only(true)
+                    .serve_connection(io, HyperServerSvc::new(svc))
+                    .with_upgrades();
+                Either::A(
+                    drain
+                        .watch(conn, |conn| conn.graceful_shutdown())
+                        .map(|_| ())
+                        .map_err(Into::into),
+                )
             }
 
-            Some(proto) => Either::B({
-                make_http
-                    .make_service(source)
-                    .map_err(|never| match never {})
-                    .and_then(move |http_svc| match proto {
-                        Protocol::Http1 => Either::A({
-                            trace!("detected HTTP/1");
-                            // Enable support for HTTP upgrades (CONNECT and websockets).
-                            let svc = upgrade::Service::new(http_svc, drain.clone());
-                            let exec = tokio::executor::DefaultExecutor::current()
-                                .instrument(info_span!("http1"));
-                            let conn = http
-                                .with_executor(exec)
-                                .http1_only(true)
-                                .serve_connection(io, HyperServerSvc::new(svc))
-                                .with_upgrades();
-                            drain
-                                .watch(conn, |conn| conn.graceful_shutdown())
-                                .map(|_| ())
-                                .map_err(Into::into)
-                        }),
-
-                        Protocol::Http2 => Either::B({
-                            trace!("detected HTTP/2");
-                            let exec = tokio::executor::DefaultExecutor::current()
-                                .instrument(info_span!("h2"));
-                            let conn = http
-                                .with_executor(exec)
-                                .http2_only(true)
-                                .http2_initial_stream_window_size(initial_stream_window_size)
-                                .http2_initial_connection_window_size(initial_conn_window_size)
-                                .serve_connection(io, HyperServerSvc::new(http_svc));
-                            drain
-                                .watch(conn, |conn| conn.graceful_shutdown())
-                                .map(|_| ())
-                                .map_err(Into::into)
-                        }),
-                    })
-            }),
-        });
-
-        Box::new(serve_fut)
+            HttpVersion::H2 => {
+                let exec = tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
+                let conn = http
+                    .with_executor(exec)
+                    .http2_only(true)
+                    .http2_initial_stream_window_size(initial_stream_window_size)
+                    .http2_initial_connection_window_size(initial_conn_window_size)
+                    .serve_connection(io, HyperServerSvc::new(http_svc));
+                Either::B(
+                    drain
+                        .watch(conn, |conn| conn.graceful_shutdown())
+                        .map(|_| ())
+                        .map_err(Into::into),
+                )
+            }
+        }))
     }
 }
 
-impl<L, T, C, H, B> Clone for Server<L, T, C, H, B>
+impl<L, C, H, B> Clone for Server<L, C, H, B>
 where
-    L: TransportLabels<Source, Labels = TransportKey> + Clone,
-    T: From<SocketAddr>,
+    L: TransportLabels<Protocol, Labels = TransportKey> + Clone,
     C: Clone,
     H: MakeService<
-            Source,
+            tls::accept::Meta,
             http::Request<HttpBody>,
             Response = http::Response<B>,
             MakeError = Never,

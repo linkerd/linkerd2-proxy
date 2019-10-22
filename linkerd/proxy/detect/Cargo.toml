@@ -1,0 +1,17 @@
+[package]
+name = "linkerd2-proxy-detect"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+description = """
+Client stream detection
+"""
+
+[dependencies]
+futures = "0.1"
+linkerd2-error = { path = "../../error" }
+linkerd2-io = { path = "../../io" }
+linkerd2-proxy-core = { path = "../core" }
+tokio = "0.1"
+tower = "0.1"

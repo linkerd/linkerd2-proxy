@@ -1,14 +1,15 @@
 use super::endpoint;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
-    api_resolve::Metadata,
-    core::{resolve, Resolve},
     dns::Suffix,
     dst::DstAddr,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    request_filter,
-    resolve::{map_endpoint, recover},
-    Error, Recover,
+    proxy::{
+        api_resolve::Metadata,
+        core::{resolve, Resolve},
+        resolve::{map_endpoint, recover},
+    },
+    request_filter, Error, Recover,
 };
 use std::sync::Arc;
 use tower_grpc as grpc;

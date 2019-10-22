@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     metric_labels::EndpointLabels,
     proxy::http::{router, settings},
     tap,
-    transport::{connect, tls, Source},
+    transport::{connect, tls},
     Conditional, NameAddr,
 };
 use std::fmt;
@@ -69,7 +69,9 @@ impl classify::CanClassify for Endpoint {
 
 impl tap::Inspect for Endpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<Source>().map(|s| s.remote)
+        req.extensions()
+            .get::<tls::accept::Meta>()
+            .map(|s| s.addrs.peer())
     }
 
     fn src_tls<'a, B>(
@@ -77,8 +79,8 @@ impl tap::Inspect for Endpoint {
         req: &'a http::Request<B>,
     ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
         req.extensions()
-            .get::<Source>()
-            .map(|s| s.tls_peer.as_ref())
+            .get::<tls::accept::Meta>()
+            .map(|s| s.peer_identity.as_ref())
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled))
     }
 
@@ -118,12 +120,12 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
     type Target = Endpoint;
 
     fn recognize(&self, req: &http::Request<A>) -> Option<Self::Target> {
-        let src = req.extensions().get::<Source>();
+        let src = req.extensions().get::<tls::accept::Meta>();
         debug!("inbound endpoint: src={:?}", src);
-        let addr = src.and_then(Source::orig_dst_if_not_local)?;
+        let addr = src.and_then(|m| m.addrs.target_addr_if_not_local())?;
 
         let tls_client_id = src
-            .map(|s| s.tls_peer.clone())
+            .map(|s| s.peer_identity.clone())
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled));
 
         let dst_addr = req
@@ -154,7 +156,7 @@ mod tests {
     use http;
     use linkerd2_app_core::{
         proxy::http::{router::Recognize, Settings},
-        transport::{tls, Source},
+        transport::{listen, tls},
         Conditional,
     };
     use quickcheck::quickcheck;
@@ -184,10 +186,11 @@ mod tests {
         fn recognize_orig_dst(
             orig_dst: net::SocketAddr,
             local: net::SocketAddr,
-            remote: net::SocketAddr
+            peer: net::SocketAddr
         ) -> bool {
-            let src = Source { remote, local, orig_dst: Some(orig_dst), tls_peer: TLS_DISABLED } ;
-            let rec = src.orig_dst_if_not_local().map(make_test_endpoint);
+            let addrs = listen::Addrs::new(peer, local, Some(orig_dst) ) ;
+            let src = tls::accept::Meta { addrs, peer_identity: TLS_DISABLED } ;
+            let rec = src.addrs.target_addr_if_not_local().map(make_test_endpoint);
 
             let mut req = http::Request::new(());
             req.extensions_mut().insert(src);

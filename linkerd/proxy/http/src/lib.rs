@@ -25,10 +25,14 @@ pub mod settings;
 pub mod strip_header;
 pub mod timeout;
 pub mod upgrade;
+mod version;
 
-pub use self::client::Client;
-pub use self::glue::{HttpBody as Body, HyperServerSvc};
-pub use self::settings::Settings;
+pub use self::{
+    client::Client,
+    glue::{HttpBody as Body, HyperServerSvc},
+    settings::Settings,
+    version::Version,
+};
 pub use linkerd2_fallback as fallback;
 
 pub trait HasH2Reason {
