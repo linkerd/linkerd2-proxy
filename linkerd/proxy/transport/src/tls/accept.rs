@@ -113,10 +113,7 @@ where
         match &self.tls {
             // Tls is disabled. Return a new plaintext connection.
             Conditional::None(reason) => {
-                debug!(
-                    %reason,
-                    "skipping Tls",
-                );
+                debug!(%reason, "skipping TLS");
                 let meta = Meta {
                     addrs,
                     peer_identity: Conditional::None(*reason),
@@ -127,11 +124,7 @@ where
 
             // Tls is enabled. Try to accept a Tls handshake.
             Conditional::Some(tls) => {
-                debug!(
-                    "accepted connection from {} to {:?}; attempting Tls handshake",
-                    addrs.peer(),
-                    addrs.orig_dst(),
-                );
+                debug!("attempting TLS handshake");
                 AcceptFuture::TryTls(Some(TryTls {
                     meta: AcceptMeta {
                         accept: self.accept.clone(),
@@ -166,7 +159,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                         .poll_match_client_hello());
                     match match_ {
                         conditional_accept::Match::Matched => {
-                            trace!("upgrading accepted connection to Tls");
+                            trace!("upgrading accepted connection to TLS");
                             let TryTls {
                                 meta,
                                 socket,
@@ -182,7 +175,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                         }
 
                         conditional_accept::Match::NotMatched => {
-                            trace!("passing through accepted connection without Tls");
+                            trace!("passing through accepted connection without TLS");
                             let TryTls {
                                 peek_buf,
                                 socket,
@@ -217,7 +210,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                                     super::ReasonForNoPeerName::NotProvidedByRemote,
                                 ))
                             });
-                    trace!(peer.identity=?peer_identity, "accepted Tls connection");
+                    trace!(peer.identity=?peer_identity, "accepted TLS connection");
 
                     let AcceptMeta { accept, addrs } = meta.take().expect("polled after complete");
                     // FIXME the connection doesn't know about TLS connections
