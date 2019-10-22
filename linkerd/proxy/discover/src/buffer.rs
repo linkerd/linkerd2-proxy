@@ -3,7 +3,6 @@ use linkerd2_error::{Error, Never};
 use std::fmt;
 use tokio::sync::{mpsc, oneshot};
 use tower::discover;
-use tracing::info_span;
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -20,7 +19,6 @@ pub struct Discover<K, S> {
 
 pub struct DiscoverFuture<F, D> {
     future: F,
-    target: String,
     capacity: usize,
     _marker: std::marker::PhantomData<fn() -> D>,
 }
@@ -61,12 +59,11 @@ where
         self.inner.poll_ready()
     }
 
+    #[inline]
     fn call(&mut self, req: T) -> Self::Future {
-        let target = req.to_string().into();
         let future = self.inner.call(req);
         Self::Future {
             future,
-            target,
             capacity: self.capacity,
             _marker: std::marker::PhantomData,
         }
@@ -94,7 +91,7 @@ where
             disconnect_rx,
             tx,
         };
-        tokio::spawn(fut.instrument(info_span!("discover", target = %self.target)));
+        tokio::spawn(fut.in_current_span());
 
         Ok(Discover { rx, _disconnect_tx }.into())
     }
