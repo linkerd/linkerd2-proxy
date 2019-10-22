@@ -237,6 +237,7 @@ pub fn spawn<O, L, P>(
                 "source",
                 peer.ip = %src.addrs.peer().ip(),
                 peer.id = ?src.peer_identity
+                target.addr = %src.target_addr()
             )
         }))
         .push(trace_context_layer)
