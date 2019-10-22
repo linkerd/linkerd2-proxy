@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::reactor;
+use tracing::trace;
 
 /// A mockable source for address info, i.e., for tests.
 pub trait OrigDstAddr: Clone {
@@ -114,7 +115,7 @@ where
                     // `Handle::current()` creating a new thread for the global
                     // background reactor if `polled before the runtime is
                     // initialized.
-                    tracing::trace!("listening on {}", self.listen_addr);
+                    trace!("listening");
                     let listener = tokio::net::TcpListener::from_std(
                         std.take().expect("illegal state"),
                         &reactor::Handle::current(),
@@ -122,8 +123,9 @@ where
                     State::Bound(listener)
                 }
                 State::Bound(ref mut listener) => {
-                    tracing::trace!("accepting on {}", self.listen_addr);
                     let (tcp, peer_addr) = try_ready!(listener.poll_accept());
+                    let orig_dst = self.orig_dst_addr.orig_dst_addr(&tcp);
+                    trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "accepted");
                     // TODO: On Linux and most other platforms it would be better
                     // to set the `TCP_NODELAY` option on the bound socket and
                     // then have the listening sockets inherit it. However, that
@@ -133,11 +135,7 @@ where
                     super::set_nodelay_or_warn(&tcp);
                     super::set_keepalive_or_warn(&tcp, self.keepalive);
 
-                    let addrs = Addrs::new(
-                        tcp.local_addr()?,
-                        peer_addr,
-                        self.orig_dst_addr.orig_dst_addr(&tcp),
-                    );
+                    let addrs = Addrs::new(tcp.local_addr()?, peer_addr, orig_dst);
 
                     return Ok((addrs, tcp).into());
                 }
