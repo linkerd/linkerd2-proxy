@@ -23,7 +23,6 @@ pub use linkerd2_proxy_discover as discover;
 pub use linkerd2_proxy_resolve as resolve;
 pub use linkerd2_reconnect as reconnect;
 pub use linkerd2_request_filter as request_filter;
-pub use linkerd2_task as task;
 pub use linkerd2_trace_context as trace_context;
 
 pub mod accept_error;

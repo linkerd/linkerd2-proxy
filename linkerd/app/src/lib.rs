@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     proxy::{self, http::metrics as http_metrics},
     reconnect, serve,
     svc::{self, LayerExt},
-    tap, task, telemetry, trace,
+    tap, telemetry, trace,
     transport::{self, connect, tls, GetOriginalDst, Listen},
     Conditional,
 };
@@ -27,7 +27,7 @@ use opencensus_proto::agent::common::v1 as oc;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};
-use tokio::runtime::current_thread;
+use tokio::runtime::current_thread::Runtime;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, info_span, trace};
 use tracing_futures::Instrument;
@@ -46,7 +46,6 @@ use tracing_futures::Instrument;
 ///
 pub struct Main<G> {
     proxy_parts: ProxyParts<G>,
-    runtime: task::MainRuntime,
 }
 
 struct ProxyParts<G> {
@@ -64,10 +63,7 @@ struct ProxyParts<G> {
 }
 
 impl Main<transport::SoOriginalDst> {
-    pub fn new<R>(config: Config, trace_level: trace::LevelHandle, runtime: R) -> Self
-    where
-        R: Into<task::MainRuntime>,
-    {
+    pub fn new(config: Config, trace_level: trace::LevelHandle) -> Self {
         let start_time = SystemTime::now();
 
         let control_listener = config.control_listener.as_ref().map(|cl| {
@@ -94,7 +90,6 @@ impl Main<transport::SoOriginalDst> {
         .expect("outbound listener bind");
 
         Self {
-            runtime: runtime.into(),
             proxy_parts: ProxyParts {
                 config,
                 start_time,
@@ -113,7 +108,6 @@ impl Main<transport::SoOriginalDst> {
         G: GetOriginalDst + Clone + Send + 'static,
     {
         Main {
-            runtime: self.runtime,
             proxy_parts: ProxyParts {
                 get_original_dst,
                 config: self.proxy_parts.config,
@@ -155,28 +149,21 @@ where
     where
         F: Future<Item = (), Error = ()> + Send + 'static,
     {
-        let Main {
-            proxy_parts,
-            mut runtime,
-        } = self;
+        let Main { proxy_parts } = self;
+        Runtime::new()
+            .expect("runtime")
+            .block_on(futures::lazy(move || {
+                let (drain_tx, drain_rx) = drain::channel();
 
-        let (drain_tx, drain_rx) = drain::channel();
+                proxy_parts.build_proxy_task(drain_rx);
+                trace!("main task spawned");
 
-        let d = drain_rx.clone();
-        runtime.spawn(futures::lazy(move || {
-            proxy_parts.build_proxy_task(d);
-            trace!("main task spawned");
-            Ok(())
-        }));
-
-        let shutdown_signal = shutdown_signal.and_then(move |()| {
-            debug!("shutdown signaled");
-            drain_tx.drain()
-        });
-
-        runtime.run_until(shutdown_signal).expect("executor");
-
-        debug!("shutdown complete");
+                shutdown_signal.and_then(move |()| {
+                    debug!("shutdown signaled");
+                    drain_tx.drain().map(|()| debug!("shutdown complete"))
+                })
+            }))
+            .expect("main");
     }
 }
 
@@ -368,8 +355,8 @@ where
             thread::Builder::new()
                 .name("admin".into())
                 .spawn(move || {
-                    current_thread::Runtime::new()
-                        .expect("initialize admin thread runtime")
+                    Runtime::new()
+                        .expect("admin runtime")
                         .block_on(future::lazy(move || {
                             info_span!("admin", local_addr=%admin_listener.local_addr()).in_scope(
                                 || {
@@ -429,7 +416,7 @@ where
                                 .map_err(|_| ())
                                 .instrument(info_span!("shutdown"))
                         }))
-                        .expect("admin");
+                        .ok();
 
                     trace!("admin shutdown finished");
                 })

@@ -41,7 +41,6 @@ linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-request-filter = { path = "../../request-filter" }
 linkerd2-router = { path = "../../router" }
 linkerd2-stack = { path = "../../stack" }
-linkerd2-task = { path = "../../task" }
 linkerd2-timeout = { path = "../../timeout" }
 linkerd2-trace-context = { path = "../../trace-context" }
 opencensus-proto = { path = "../../../opencensus-proto" }
@@ -70,6 +69,7 @@ libc = "0.2"
 procinfo = "0.4.2"
 
 [dev-dependencies]
+linkerd2-test-util = { path = "../../test-util" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.10" }
 prost-types = "0.5.0"
 quickcheck = { version = "0.8", default-features = false }

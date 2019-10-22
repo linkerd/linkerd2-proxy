@@ -258,33 +258,24 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
                 let _i = identity;
 
                 let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
-                // TODO: a mock timer could be injected here?
-                let runtime = tokio::runtime::current_thread::Runtime::new()
-                    .expect("initialize main runtime");
-                let main = linkerd2_app::Main::new(config, trace_handle, runtime)
+                let main = linkerd2_app::Main::new(config, trace_handle)
                     .with_original_dst_from(mock_orig_dst.clone());
-
-                let control_addr = main.control_addr();
-                let identity_addr = identity_addr;
-                let inbound_addr = main.inbound_addr();
-                let outbound_addr = main.outbound_addr();
-                let metrics_addr = main.metrics_addr();
 
                 {
                     let mut inner = mock_orig_dst.0.lock().unwrap();
-                    inner.inbound_local_addr = Some(inbound_addr);
-                    inner.outbound_local_addr = Some(outbound_addr);
+                    inner.inbound_local_addr = Some(main.inbound_addr());
+                    inner.outbound_local_addr = Some(main.outbound_addr());
                 }
 
                 // slip the running tx into the shutdown future, since the first time
                 // the shutdown future is polled, that means all of the proxy is now
                 // running.
                 let addrs = (
-                    control_addr,
+                    main.control_addr(),
                     identity_addr,
-                    inbound_addr,
-                    outbound_addr,
-                    metrics_addr,
+                    main.inbound_addr(),
+                    main.outbound_addr(),
+                    main.metrics_addr(),
                 );
                 let mut running = Some((running_tx, addrs));
                 let on_shutdown = future::poll_fn(move || {

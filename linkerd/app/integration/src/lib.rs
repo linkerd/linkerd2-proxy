@@ -9,7 +9,7 @@ pub use futures::{future::Executor, *};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app::Main;
-pub use linkerd2_app_core::{self as app, task::LazyExecutor};
+pub use linkerd2_app_core as app;
 pub use std::collections::HashMap;
 use std::fmt;
 use std::io;
