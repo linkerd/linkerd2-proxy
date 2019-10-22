@@ -154,7 +154,7 @@ pub fn spawn<O, L, R, P>(
         ))
         .push(require_identity_on_endpoint::layer())
         .push(trace::layer(|endpoint: &Endpoint| {
-            info_span!("endpoint", ?endpoint)
+            info_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
         }));
 
     // A per-`dst::Route` layer that uses profile data to configure

@@ -105,9 +105,9 @@ pub fn spawn<O, L, P>(
             endpoint_http_metrics,
         ))
         .serves::<Endpoint>()
-        .push(trace::layer(|endpoint: &Endpoint| {
-            info_span!("endpoint", ?endpoint)
-        }))
+        .push(trace::layer(
+            |endpoint: &Endpoint| info_span!("endpoint", peer.addr = %endpoint.addr),
+        ))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .makes::<Endpoint>()
         .push(router::layer(
