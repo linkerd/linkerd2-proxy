@@ -77,7 +77,7 @@ fn inbound_tcp() {
     assert_eq!(tcp_client.read(), msg2.as_bytes());
 }
 
-fn test_server_speaks_first(env: TestEnv) {
+fn test_server_speaks_first(env: app::config::TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     let _ = trace_init();
@@ -114,7 +114,7 @@ fn test_server_speaks_first(env: TestEnv) {
 
 #[test]
 fn tcp_server_first() {
-    test_server_speaks_first(TestEnv::new());
+    test_server_speaks_first(app::config::TestEnv::new());
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn tcp_server_first_tls() {
         (cert, key, trust_anchors)
     };
 
-    let env = TestEnv::new();
+    let env = app::config::TestEnv::new();
 
     // FIXME
     //env.put(app::config::ENV_TLS_CERT, cert);
@@ -1144,7 +1144,7 @@ mod max_in_flight {
         .run();
 
         // Only allow 1 in-flight request at a time...
-        let mut env = TestEnv::new();
+        let mut env = app::config::TestEnv::new();
         let prop = match dir {
             Dir::In => app::config::ENV_INBOUND_MAX_IN_FLIGHT,
             Dir::Out => app::config::ENV_OUTBOUND_MAX_IN_FLIGHT,

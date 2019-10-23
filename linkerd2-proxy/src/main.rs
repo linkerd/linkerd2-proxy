@@ -4,28 +4,19 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-use linkerd2_app::Main;
-use linkerd2_signal as sig;
+use linkerd2_app::{Main, SysOrigDstAddr};
+use linkerd2_signal as signal;
 
+/// Loads configuration from the environment
 fn main() {
-    // Load configuration from the environment without binding ports.
-    let main = match Main::try_from_env() {
-        Ok(main) => main,
+    let (config, trace_admin) = match linkerd2_app::init() {
+        Ok(c) => c,
         Err(e) => {
-            eprintln!("Configuration error: {}", e);
-            std::process::exit(64) // EX_USAGE
+            eprintln!("configuration error: {:#?}", e);
+            std::process::exit(64)
         }
     };
-
-    // Bind server ports.
-    let bound = match main.bind() {
-        Ok(bound) => bound,
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1)
-        }
-    };
-
-    // Run the application until a shutdown signal is received.
-    bound.run_until(sig::shutdown());
+    let main = Main::new(config, trace_admin, SysOrigDstAddr::default());
+    let shutdown_signal = signal::shutdown();
+    main.run_until(shutdown_signal);
 }

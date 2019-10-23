@@ -48,6 +48,12 @@ pub const L5D_SERVER_ID: &'static str = "l5d-server-id";
 pub const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 pub const L5D_REQUIRE_ID: &'static str = "l5d-require-id";
 
+pub fn init() -> Result<(config::Config, trace::LevelHandle), linkerd2_error::Error> {
+    let trace_admin = trace::init()?;
+    let cfg = config::Config::parse(&config::Env)?;
+    Ok((cfg, trace_admin))
+}
+
 const DEFAULT_PORT: u16 = 80;
 
 pub fn http_request_l5d_override_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {

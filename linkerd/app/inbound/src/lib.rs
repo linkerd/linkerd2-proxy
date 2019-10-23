@@ -6,14 +6,13 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_app_core::{
-    self as core, classify,
-    config::ProxyConfig,
-    dns, drain,
+    classify,
+    config::Config,
+    drain,
     dst::DstAddr,
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, identity,
     proxy::{
-        core::Listen,
         http::{
             client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
             strip_header,
@@ -22,10 +21,10 @@ use linkerd2_app_core::{
     },
     reconnect, serve,
     spans::SpanConverter,
-    svc, tap, trace, trace_context,
-    transport::{self, connect, tls, OrigDstAddr},
-    Addr, DispatchDeadline, HttpEndpointMetricsRegistry, HttpRouteMetricsRegistry,
-    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_SERVER_ID,
+    svc, trace, trace_context,
+    transport::{self, connect, tls, Listen, OrigDstAddr},
+    Addr, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
+    L5D_REMOTE_IP, L5D_SERVER_ID,
 };
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
@@ -43,41 +42,39 @@ mod set_remote_ip_on_req;
 
 pub use self::endpoint::{Endpoint, RecognizeEndpoint};
 
-pub fn spawn<O, L, P>(
-    listen: L,
-    config: ProxyConfig<O>,
+pub fn spawn<A, P>(
+    config: &Config,
     local_identity: tls::Conditional<identity::Local>,
-    profiles_client: core::profiles::Client<P>,
-    profile_suffixes: Vec<dns::Suffix>,
-    tap_layer: tap::Layer,
+    listen: Listen<A>,
+    profiles_client: linkerd2_app_core::profiles::Client<P>,
+    tap_layer: linkerd2_app_core::tap::Layer,
     handle_time: http_metrics::handle_time::Scope,
-    endpoint_http_metrics: HttpEndpointMetricsRegistry,
-    route_http_metrics: HttpRouteMetricsRegistry,
-    transport_metrics: transport::MetricsRegistry,
+    endpoint_http_metrics: linkerd2_app_core::HttpEndpointMetricsRegistry,
+    route_http_metrics: linkerd2_app_core::HttpRouteMetricsRegistry,
+    transport_metrics: linkerd2_app_core::transport::MetricsRegistry,
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
-    O: OrigDstAddr + Send + Sync + 'static,
-    L: Listen<Connection = transport::listen::Connection> + Send + 'static,
-    L::Error: std::error::Error + Send + 'static,
+    A: OrigDstAddr + Send + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
     P::Future: Send,
 {
-    let capacity = config.router_capacity;
-    let max_idle_age = config.router_max_idle_age;
-    let max_in_flight = config.server.buffer.max_in_flight;
-    let dispatch_timeout = config.server.buffer.dispatch_timeout;
+    let capacity = config.inbound_router_capacity;
+    let max_idle_age = config.inbound_router_max_idle_age;
+    let max_in_flight = config.inbound_max_requests_in_flight;
+    let profile_suffixes = config.destination_profile_suffixes.clone();
+    let dispatch_timeout = config.inbound_dispatch_timeout;
 
     let mut trace_labels = HashMap::new();
     trace_labels.insert("direction".to_string(), "inbound".to_string());
 
     // Establishes connections to the local application (for both
     // TCP forwarding and HTTP proxying).
-    let connect = svc::stack(connect::svc(config.connect.keepalive))
+    let connect = svc::stack(connect::svc(config.inbound_connect_keepalive))
         .push(tls::client::layer(local_identity.clone()))
-        .push_timeout(config.connect.timeout)
+        .push_timeout(config.inbound_connect_timeout)
         .push(transport_metrics.layer_connect(TransportLabels))
         .push(rewrite_loopback_addr::layer());
 
@@ -89,9 +86,9 @@ pub fn spawn<O, L, P>(
     // Instantiates an HTTP client for a `client::Config`
     let client_stack = connect
         .clone()
-        .push(client::layer(config.connect.h2_settings))
+        .push(client::layer(config.h2_settings))
         .push(reconnect::layer({
-            let backoff = config.connect.backoff.clone();
+            let backoff = config.inbound_connect_backoff.clone();
             move |_| Ok(backoff.stream())
         }))
         .push(trace_context_layer)
@@ -105,9 +102,9 @@ pub fn spawn<O, L, P>(
             endpoint_http_metrics,
         ))
         .serves::<Endpoint>()
-        .push(trace::layer(
-            |endpoint: &Endpoint| info_span!("endpoint", peer.addr = %endpoint.addr),
-        ))
+        .push(trace::layer(|endpoint: &Endpoint| {
+            info_span!("endpoint", ?endpoint)
+        }))
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
         .makes::<Endpoint>()
         .push(router::layer(
@@ -232,20 +229,14 @@ pub fn spawn<O, L, P>(
             DispatchDeadline::after(dispatch_timeout)
         }))
         .push(errors::layer())
-        .push(trace::layer(|src: &tls::accept::Meta| {
-            info_span!(
-                "source",
-                peer.ip = %src.addrs.peer().ip(),
-                peer.id = ?src.peer_identity,
-                target.addr = %src.addrs.target_addr(),
-            )
-        }))
+        .push(trace::layer(
+            |src: &tls::accept::Meta| info_span!("source", peer_ip = %src.addrs.peer().ip(), peer_id = ?src.peer_identity),
+        ))
         .push(trace_context_layer)
         .push(handle_time.layer())
         .serves::<tls::accept::Meta>();
 
-    let skip_ports = config.disable_protocol_detection_for_ports;
-
+    let skip_ports = std::sync::Arc::new(config.inbound_ports_disable_protocol_detection.clone());
     let server = Server::new(
         TransportLabels,
         transport_metrics,
@@ -253,13 +244,12 @@ pub fn spawn<O, L, P>(
             .push(svc::map_target::layer(Endpoint::from))
             .into_inner(),
         source_stack,
-        config.server.h2_settings,
+        config.h2_settings,
         drain.clone(),
         skip_ports.clone(),
     );
 
     let accept = tls::AcceptTls::new(local_identity, server).with_skip_ports(skip_ports);
-
     serve::spawn(listen, accept, drain);
 }
 

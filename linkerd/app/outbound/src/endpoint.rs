@@ -52,11 +52,11 @@ impl Endpoint {
     }
 
     pub fn from_request<B>(req: &http::Request<B>) -> Option<Self> {
-        let src = req.extensions().get::<tls::accept::Meta>()?;
-        if src.addrs.target_addr_is_local() {
-            return None;
-        }
-
+        let addr = req
+            .extensions()
+            .get::<tls::accept::Meta>()?
+            .addrs
+            .target_addr_if_not_local()?;
         let http_settings = settings::Settings::from_request(req);
         let identity = match identity_from_header(req, L5D_REQUIRE_ID) {
             Some(require_id) => Conditional::Some(require_id),
@@ -66,7 +66,7 @@ impl Endpoint {
         };
 
         Some(Self {
-            addr: src.addrs.target_addr(),
+            addr,
             dst_logical: None,
             dst_concrete: None,
             identity,

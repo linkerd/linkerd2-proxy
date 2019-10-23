@@ -13,6 +13,7 @@ use tracing::{debug, error, trace};
 /// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
 pub struct Config {
+    pub svc: super::control::ControlAddr,
     pub trust_anchors: TrustAnchors,
     pub key: Key,
     pub csr: Csr,
