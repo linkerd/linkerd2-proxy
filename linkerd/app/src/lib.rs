@@ -238,13 +238,13 @@ where
 
         let mut identity_daemon = None;
         let (readiness, ready_latch) = Readiness::new();
-        let listen_identity = match config.identity_config.clone() {
+        let local_identity = match config.identity_config.clone() {
             Conditional::None(r) => {
                 ready_latch.release();
                 Conditional::None(r)
             }
             Conditional::Some(id_config) => {
-                let (listen_identity, crt_store) = identity::Local::new(&id_config);
+                let (local_identity, crt_store) = identity::Local::new(&id_config);
 
                 // If the service is on localhost, use the inbound keepalive.
                 // If the service. is remote, use the outbound keepalive.
@@ -280,7 +280,7 @@ where
                 identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
 
                 tokio::spawn(
-                    listen_identity
+                    local_identity
                         .clone()
                         .await_crt()
                         .map(move |id| {
@@ -294,7 +294,7 @@ where
                         .instrument(info_span!("await identity")),
                 );
 
-                Conditional::Some(listen_identity)
+                Conditional::Some(local_identity)
             }
         };
 
@@ -308,7 +308,7 @@ where
             };
 
             svc::stack(connect::svc(keepalive))
-                .push(tls::client::layer(listen_identity.clone()))
+                .push(tls::client::layer(local_identity.clone()))
                 .push_timeout(config.control_connect_timeout)
                 .push(control::client::layer())
                 .push(control::resolve::layer(dns_resolver.clone()))
@@ -337,7 +337,7 @@ where
         // Spawn a separate thread to handle the admin stuff.
         {
             let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
-            let listen_identity = listen_identity.clone();
+            let local_identity = local_identity.clone();
             let drain_rx = drain_rx.clone();
             thread::Builder::new()
                 .name("admin".into())
@@ -351,7 +351,7 @@ where
                                     serve::spawn(
                                         admin_listener,
                                         tls::AcceptTls::new(
-                                            listen_identity.clone(),
+                                            local_identity.clone(),
                                             Admin::new(report, readiness, trace_level)
                                                 .into_accept(),
                                         ),
@@ -367,7 +367,7 @@ where
                                         serve::spawn(
                                             listener,
                                             tls::AcceptTls::new(
-                                                listen_identity,
+                                                local_identity,
                                                 tap::AcceptPermittedClients::new(
                                                     std::sync::Arc::new(
                                                         Some(tap_svc_name).into_iter().collect(),
@@ -436,7 +436,7 @@ where
                 config.outbound_connect_keepalive
             };
             svc::stack(connect::svc(keepalive))
-                .push(tls::client::layer(listen_identity.clone()))
+                .push(tls::client::layer(local_identity.clone()))
                 .push_timeout(config.control_connect_timeout)
                 // TODO: perhaps rename from "control" to "grpc"
                 .push(control::client::layer())
@@ -486,7 +486,7 @@ where
         info_span!("out", listen_addr=%outbound_listener.listen_addr()).in_scope(|| {
             outbound::spawn(
                 &config,
-                listen_identity.clone(),
+                local_identity.clone(),
                 outbound_listener,
                 outbound::resolve(
                     config.destination_get_suffixes.clone(),
@@ -509,7 +509,7 @@ where
         info_span!("in", listen_addr=%inbound_listener.listen_addr()).in_scope(move || {
             inbound::spawn(
                 &config,
-                listen_identity,
+                local_identity,
                 inbound_listener,
                 profiles_client,
                 tap_layer,
