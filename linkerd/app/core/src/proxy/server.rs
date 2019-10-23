@@ -181,7 +181,7 @@ where
     }
 }
 
-impl<L, C, H, B> Service<(Protocol, BoxedIo)> for Server<L, C, H, B>
+impl<L, C, H, B> Service<Connection> for Server<L, C, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey>,
     C: Service<SocketAddr> + Clone + Send + 'static,
