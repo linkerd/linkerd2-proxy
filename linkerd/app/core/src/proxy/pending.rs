@@ -18,7 +18,7 @@ pub enum Pending<F, S> {
     Made(S),
 }
 
-pub type Svc<M, T> = Pending<svc::Oneshot<M, T>, <M as svc::Service<T>>::Response>;
+pub type Svc<M, T> = Pending<tower::util::Oneshot<M, T>, <M as svc::Service<T>>::Response>;
 
 pub fn layer() -> Layer {
     Layer(())

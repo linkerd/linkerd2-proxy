@@ -33,8 +33,7 @@ pub struct MakeFuture<F, H, R> {
 
 #[derive(Clone, Debug)]
 pub struct Service<H, S, R> {
-    header: H,
-    value: HeaderValue,
+    header: Option<(H, HeaderValue)>,
     inner: S,
     _req_or_res: PhantomData<fn(R)>,
 }
@@ -81,7 +80,7 @@ where
     T: fmt::Debug,
     M: tower::Service<T>,
 {
-    type Response = tower::util::Either<Service<H, M::Response, R>, M::Response>;
+    type Response = Service<H, M::Response, R>;
     type Error = M::Error;
     type Future = MakeFuture<M::Future, H, R>;
 
@@ -92,14 +91,6 @@ where
     fn call(&mut self, t: T) -> Self::Future {
         let header = if let Some(value) = (self.get_header)(&t) {
             Some((self.header.clone(), value))
-        /*
-        tower::util::Either::A(Service {
-            header: self.header.clone(),
-            value,
-            inner,
-            _req_or_res: PhantomData,
-        }));
-        */
         } else {
             trace!("{:?} not enabled for {:?}", self.header, t);
             None
@@ -134,20 +125,15 @@ impl<F, H, R> Future for MakeFuture<F, H, R>
 where
     F: Future,
 {
-    type Item = tower::util::Either<Service<H, F::Item, R>, F::Item>;
+    type Item = Service<H, F::Item, R>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        let svc = if let Some((header, value)) = self.header.take() {
-            tower::util::Either::A(Service {
-                header,
-                value,
-                inner,
-                _req_or_res: PhantomData,
-            })
-        } else {
-            tower::util::Either::B(inner)
+        let svc = Service {
+            header: self.header.take(),
+            inner,
+            _req_or_res: PhantomData,
         };
         Ok(svc.into())
     }
@@ -183,8 +169,9 @@ pub mod request {
         }
 
         fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-            req.headers_mut()
-                .insert(self.header.clone(), self.value.clone());
+            if let Some((header, value)) = self.header.clone() {
+                req.headers_mut().insert(header, value);
+            }
             self.inner.call(req)
         }
     }
@@ -208,8 +195,7 @@ pub mod response {
 
     pub struct ResponseFuture<F, H> {
         inner: F,
-        header: H,
-        value: HeaderValue,
+        header: Option<(H, HeaderValue)>,
     }
 
     impl<H, S, B, Req> tower::Service<Req> for super::Service<H, S, ResHeader>
@@ -231,7 +217,6 @@ pub mod response {
             ResponseFuture {
                 inner: fut,
                 header: self.header.clone(),
-                value: self.value.clone(),
             }
         }
     }
@@ -246,8 +231,9 @@ pub mod response {
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             let mut res = try_ready!(self.inner.poll());
-            res.headers_mut()
-                .insert(self.header.clone(), self.value.clone());
+            if let Some((header, value)) = self.header.take() {
+                res.headers_mut().insert(header, value);
+            }
             Ok(res.into())
         }
     }
