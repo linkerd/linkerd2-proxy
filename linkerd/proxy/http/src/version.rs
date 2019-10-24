@@ -1,23 +1,20 @@
-use httparse;
-
-/// Transport protocols that can be transparently detected by `Server`.
-#[derive(Debug)]
-pub enum Protocol {
+#[derive(Copy, Clone, Debug)]
+pub enum Version {
     Http1,
-    Http2,
+    H2,
 }
 
-const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+impl Version {
+    const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
-impl Protocol {
     /// Tries to detect a known protocol in the peeked bytes.
     ///
     /// If no protocol can be determined, returns `None`.
-    pub fn detect(bytes: &[u8]) -> Option<Protocol> {
+    pub fn from_prefix(bytes: &[u8]) -> Option<Version> {
         // http2 is easiest to detect
-        if bytes.len() >= H2_PREFACE.len() {
-            if &bytes[..H2_PREFACE.len()] == H2_PREFACE {
-                return Some(Protocol::Http2);
+        if bytes.len() >= Self::H2_PREFACE.len() {
+            if &bytes[..Self::H2_PREFACE.len()] == Self::H2_PREFACE {
+                return Some(Version::H2);
             }
         }
 
@@ -35,7 +32,7 @@ impl Protocol {
             // We didn't want to keep parsing headers, just validate that
             // the first line is HTTP1.
             Ok(_) | Err(httparse::Error::TooManyHeaders) => {
-                return Some(Protocol::Http1);
+                return Some(Version::Http1);
             }
             _ => {}
         }

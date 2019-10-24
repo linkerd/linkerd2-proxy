@@ -8,20 +8,25 @@
 use linkerd2_app_core::{
     classify,
     config::Config,
-    core::resolve::Resolve,
-    discover, dns, drain,
+    dns, drain,
     dst::DstAddr,
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, identity,
-    proxy::http::{
-        balance, canonicalize, client, fallback, header_from_target, insert,
-        metrics as http_metrics, normalize_uri, profiles, retry, router, settings, strip_header,
+    proxy::{
+        self,
+        core::resolve::Resolve,
+        discover,
+        http::{
+            balance, canonicalize, client, fallback, header_from_target, insert,
+            metrics as http_metrics, normalize_uri, profiles, retry, router, settings,
+            strip_header,
+        },
+        Server,
     },
-    proxy::{self, Server},
     reconnect, serve,
     spans::SpanConverter,
     svc, trace, trace_context,
-    transport::{self as transport, connect, tls, Source},
+    transport::{self, connect, tls, OrigDstAddr},
     Addr, Conditional, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
     L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
@@ -47,11 +52,10 @@ pub use self::resolve::resolve;
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-pub fn spawn<R, P>(
+pub fn spawn<A, R, P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
-    listen: transport::Listen,
-    get_original_dst: impl transport::GetOriginalDst + Send + 'static,
+    listen: transport::Listen<A>,
     resolve: R,
     dns_resolver: dns::Resolver,
     profiles_client: linkerd2_app_core::profiles::Client<P>,
@@ -64,6 +68,7 @@ pub fn spawn<R, P>(
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
+    A: OrigDstAddr + Send + 'static,
     R: Resolve<DstAddr, Endpoint = Endpoint> + Clone + Send + Sync + 'static,
     R::Future: Send,
     R::Resolution: Send,
@@ -291,32 +296,28 @@ pub fn spawn<R, P>(
         }))
         .push(insert::target::layer())
         .push(errors::layer())
-        .push(trace::layer(|src: &Source| {
-            src.orig_dst
-                .as_ref()
-                .map(|orig_dst_addr| info_span!("source", %orig_dst_addr))
-                .unwrap_or_else(|| info_span!("source"))
-        }))
+        .push(trace::layer(
+            |src: &tls::accept::Meta| info_span!("source", target.addr = %src.addrs.target_addr()),
+        ))
         .push(trace_context_layer)
         .push(handle_time.layer());
 
+    let skip_ports = std::sync::Arc::new(config.outbound_ports_disable_protocol_detection.clone());
     let proxy = Server::new(
         TransportLabels,
         transport_metrics,
-        connect,
+        svc::stack(connect)
+            .push(svc::map_target::layer(Endpoint::from))
+            .into_inner(),
         server_stack,
         config.h2_settings,
         drain.clone(),
+        skip_ports.clone(),
     );
 
     let no_tls: tls::Conditional<identity::Local> =
         Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
-    let skip_ports = config
-        .outbound_ports_disable_protocol_detection
-        .iter()
-        .map(|p| *p);
-    let accept = tls::AcceptTls::new(get_original_dst, no_tls, proxy)
-        .without_protocol_detection_for(skip_ports);
+    let accept = tls::AcceptTls::new(no_tls, proxy).with_skip_ports(skip_ports);
 
     serve::spawn(listen, accept, drain);
 }
@@ -332,10 +333,10 @@ impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
     }
 }
 
-impl transport::metrics::TransportLabels<Source> for TransportLabels {
+impl transport::metrics::TransportLabels<proxy::server::Protocol> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, source: &Source) -> Self::Labels {
-        transport::labels::Key::accept("outbound", source.tls_peer.as_ref())
+    fn transport_labels(&self, proto: &proxy::server::Protocol) -> Self::Labels {
+        transport::labels::Key::accept("outbound", proto.tls.peer_identity.as_ref())
     }
 }

@@ -147,8 +147,8 @@ struct DstInner {
     outbound_local_addr: Option<SocketAddr>,
 }
 
-impl app::transport::GetOriginalDst for MockOriginalDst {
-    fn get_original_dst(&self, sock: &dyn app::transport::AddrInfo) -> Option<SocketAddr> {
+impl app::transport::OrigDstAddr for MockOriginalDst {
+    fn orig_dst_addr(&self, sock: &tokio::net::TcpStream) -> Option<SocketAddr> {
         sock.local_addr().ok().and_then(|local| {
             let inner = self.0.lock().unwrap();
             if inner.inbound_local_addr == Some(local) {
@@ -258,8 +258,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
                 let _i = identity;
 
                 let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
-                let main = linkerd2_app::Main::new(config, trace_handle)
-                    .with_original_dst_from(mock_orig_dst.clone());
+                let main = linkerd2_app::Main::new(config, trace_handle, mock_orig_dst.clone());
 
                 {
                     let mut inner = mock_orig_dst.0.lock().unwrap();

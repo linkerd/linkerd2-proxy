@@ -1,6 +1,6 @@
 use futures::{Future, Poll};
 use http;
-use linkerd2_app_core::{proxy::http::orig_proto, svc, transport::Source};
+use linkerd2_app_core::{proxy::http::orig_proto, svc, transport::tls};
 use std::marker::PhantomData;
 use tracing::trace;
 
@@ -27,7 +27,7 @@ impl<A, B> Clone for Layer<A, B> {
 
 impl<M, A, B> svc::Layer<M> for Layer<A, B>
 where
-    M: svc::MakeService<Source, http::Request<A>, Response = http::Response<B>>,
+    M: svc::MakeService<tls::accept::Meta, http::Request<A>, Response = http::Response<B>>,
 {
     type Service = Stack<M, A, B>;
 
@@ -50,9 +50,9 @@ impl<M: Clone, A, B> Clone for Stack<M, A, B> {
     }
 }
 
-impl<M, A, B> svc::Service<Source> for Stack<M, A, B>
+impl<M, A, B> svc::Service<tls::accept::Meta> for Stack<M, A, B>
 where
-    M: svc::MakeService<Source, http::Request<A>, Response = http::Response<B>>,
+    M: svc::MakeService<tls::accept::Meta, http::Request<A>, Response = http::Response<B>>,
 {
     type Response = orig_proto::Downgrade<M::Service>;
     type Error = M::MakeError;
@@ -62,7 +62,7 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, target: Source) -> Self::Future {
+    fn call(&mut self, target: tls::accept::Meta) -> Self::Future {
         trace!(
             "supporting {} downgrades for source={:?}",
             orig_proto::L5D_ORIG_PROTO,

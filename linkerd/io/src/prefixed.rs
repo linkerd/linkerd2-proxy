@@ -1,26 +1,28 @@
-use super::io::internal::Io;
-use crate::AddrInfo;
+use crate::internal::Io;
 use bytes::{Buf, Bytes};
-use std::{cmp, fmt::Debug, io, net::SocketAddr};
-use tokio::prelude::*;
+use futures::Poll;
+use std::{cmp, io};
+use tokio::io::{AsyncRead, AsyncWrite};
 
 /// A TcpStream where the initial reads will be served from `prefix`.
 #[derive(Debug)]
-pub struct Prefixed<S> {
+pub struct PrefixedIo<S> {
     prefix: Bytes,
     io: S,
 }
 
-impl<S> Prefixed<S> {
-    pub fn new(prefix: Bytes, io: S) -> Self {
+impl<S: AsyncRead + AsyncWrite> PrefixedIo<S> {
+    pub fn new(prefix: impl Into<Bytes>, io: S) -> Self {
+        let prefix = prefix.into();
         Self { prefix, io }
+    }
+
+    pub fn prefix(&self) -> &Bytes {
+        &self.prefix
     }
 }
 
-impl<S> io::Read for Prefixed<S>
-where
-    S: Debug + io::Read,
-{
+impl<S: io::Read> io::Read for PrefixedIo<S> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         // Check the length only once, since looking as the length
         // of a Bytes isn't as cheap as the length of a &[u8].
@@ -32,7 +34,7 @@ where
             let len = cmp::min(buf.len(), peeked_len);
             buf[..len].copy_from_slice(&self.prefix.as_ref()[..len]);
             self.prefix.advance(len);
-            // If we've finally emptied the peek_buf, drop it so we don't
+            // If we've finally emptied the prefix, drop it so we don't
             // hold onto the allocated memory any longer. We won't peek
             // again.
             if peeked_len == len {
@@ -43,19 +45,13 @@ where
     }
 }
 
-impl<S> AsyncRead for Prefixed<S>
-where
-    S: AsyncRead + Debug,
-{
+impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
     unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
         self.io.prepare_uninitialized_buffer(buf)
     }
 }
 
-impl<S> io::Write for Prefixed<S>
-where
-    S: Debug + io::Write,
-{
+impl<S: io::Write> io::Write for PrefixedIo<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.io.write(buf)
     }
@@ -65,11 +61,8 @@ where
     }
 }
 
-impl<S> AsyncWrite for Prefixed<S>
-where
-    S: AsyncWrite + Debug,
-{
-    fn shutdown(&mut self) -> Result<Async<()>, io::Error> {
+impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
+    fn shutdown(&mut self) -> super::Poll<()> {
         self.io.shutdown()
     }
 
@@ -81,32 +74,12 @@ where
     }
 }
 
-impl<S> AddrInfo for Prefixed<S>
-where
-    S: AddrInfo,
-{
-    fn remote_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.io.remote_addr()
-    }
-
-    fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.io.local_addr()
-    }
-
-    fn get_original_dst(&self) -> Option<SocketAddr> {
-        self.io.get_original_dst()
-    }
-}
-
-impl<S> Io for Prefixed<S>
-where
-    S: Io,
-{
-    fn shutdown_write(&mut self) -> Result<(), io::Error> {
+impl<S: Io> Io for PrefixedIo<S> {
+    fn shutdown_write(&mut self) -> io::Result<()> {
         self.io.shutdown_write()
     }
 
-    fn write_buf_erased(&mut self, buf: &mut dyn Buf) -> Result<Async<usize>, io::Error> {
+    fn write_buf_erased(&mut self, buf: &mut dyn Buf) -> Poll<usize, io::Error> {
         self.io.write_buf_erased(buf)
     }
 }

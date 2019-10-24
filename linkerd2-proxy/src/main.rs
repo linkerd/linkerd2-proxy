@@ -4,7 +4,7 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-use linkerd2_app::Main;
+use linkerd2_app::{Main, SysOrigDstAddr};
 use linkerd2_signal as signal;
 
 /// Loads configuration from the environment
@@ -16,7 +16,7 @@ fn main() {
             std::process::exit(64)
         }
     };
-    let main = Main::new(config, trace_admin);
+    let main = Main::new(config, trace_admin, SysOrigDstAddr::default());
     let shutdown_signal = signal::shutdown();
     main.run_until(shutdown_signal);
 }

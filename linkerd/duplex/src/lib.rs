@@ -2,7 +2,7 @@
 
 use bytes::{Buf, BufMut};
 use futures::{try_ready, Async, Future, Poll};
-use std::{fmt, io};
+use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::trace;
 
@@ -34,8 +34,8 @@ struct CopyBuf {
 
 impl<In, Out> Duplex<In, Out>
 where
-    In: AsyncRead + AsyncWrite + fmt::Debug,
-    Out: AsyncRead + AsyncWrite + fmt::Debug,
+    In: AsyncRead + AsyncWrite,
+    Out: AsyncRead + AsyncWrite,
 {
     pub fn new(in_io: In, out_io: Out) -> Self {
         Duplex {
@@ -47,8 +47,8 @@ where
 
 impl<In, Out> Future for Duplex<In, Out>
 where
-    In: AsyncRead + AsyncWrite + fmt::Debug,
-    Out: AsyncRead + AsyncWrite + fmt::Debug,
+    In: AsyncRead + AsyncWrite,
+    Out: AsyncRead + AsyncWrite,
 {
     type Item = ();
     type Error = io::Error;
@@ -57,7 +57,7 @@ where
         // This purposefully ignores the Async part, since we don't want to
         // return early if the first half isn't ready, but the other half
         // could make progress.
-        trace!("poll {:?} <-> {:?}", self.half_in.io, self.half_out.io);
+        trace!("poll");
         self.half_in.copy_into(&mut self.half_out)?;
         self.half_out.copy_into(&mut self.half_in)?;
         if self.half_in.is_done() && self.half_out.is_done() {
@@ -70,7 +70,7 @@ where
 
 impl<T> HalfDuplex<T>
 where
-    T: AsyncRead + fmt::Debug,
+    T: AsyncRead,
 {
     fn new(io: T) -> Self {
         Self {
@@ -82,7 +82,7 @@ where
 
     fn copy_into<U>(&mut self, dst: &mut HalfDuplex<U>) -> Poll<(), io::Error>
     where
-        U: AsyncWrite + fmt::Debug,
+        U: AsyncWrite,
     {
         // Since Duplex::poll() intentionally ignores the Async part of our
         // return value, we may be polled again after returning Ready, if the
@@ -90,14 +90,14 @@ where
         // shutdown, we finished in a previous poll, so don't even enter into
         // the copy loop.
         if dst.is_shutdown {
-            trace!("already shutdown {:?}", dst.io);
+            trace!("already shutdown");
             return Ok(Async::Ready(()));
         }
         loop {
             try_ready!(self.read());
             try_ready!(self.write_into(dst));
             if self.buf.is_none() {
-                trace!("shutting down {:?}", dst.io);
+                trace!("shutting down");
                 debug_assert!(!dst.is_shutdown, "attempted to shut down destination twice");
                 try_ready!(dst.io.shutdown());
                 dst.is_shutdown = true;
@@ -130,7 +130,7 @@ where
 
     fn write_into<U>(&mut self, dst: &mut HalfDuplex<U>) -> Poll<(), io::Error>
     where
-        U: AsyncWrite + fmt::Debug,
+        U: AsyncWrite,
     {
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {

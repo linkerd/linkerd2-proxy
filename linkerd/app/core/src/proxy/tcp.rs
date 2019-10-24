@@ -2,7 +2,6 @@ use crate::svc::{self, ServiceExt};
 use futures::Future;
 use linkerd2_duplex::Duplex;
 use linkerd2_error::Error;
-use std::fmt;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 /// Attempt to proxy the `server_io` stream to a `T`-typed target.
@@ -16,11 +15,11 @@ pub(super) fn forward<I, C, T>(
 ) -> impl Future<Item = (), Error = Error> + Send + 'static
 where
     T: Send + 'static,
-    I: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
+    I: AsyncRead + AsyncWrite + Send + 'static,
     C: svc::Service<T> + Send + 'static,
     C::Error: Into<Error>,
     C::Future: Send + 'static,
-    C::Response: AsyncRead + AsyncWrite + fmt::Debug + Send + 'static,
+    C::Response: AsyncRead + AsyncWrite + Send + 'static,
 {
     connect
         .oneshot(target)

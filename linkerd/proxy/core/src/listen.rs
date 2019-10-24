@@ -3,9 +3,18 @@ use linkerd2_error::{Error, Never};
 use tokio;
 use tower::Service;
 
+pub trait Bind {
+    type Connection;
+    type Listen: Listen<Connection = Self::Connection>;
+
+    fn bind(self) -> std::io::Result<Self::Listen>;
+}
+
 pub trait Listen {
     type Connection;
     type Error: Into<Error>;
+
+    fn listen_addr(&self) -> std::net::SocketAddr;
 
     fn poll_accept(&mut self) -> Poll<Self::Connection, Self::Error>;
 

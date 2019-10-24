@@ -1,7 +1,7 @@
 use crate::metrics::{handle_time, Scoped, Stats};
 use futures::{future, try_ready, Future, Poll};
 use http::{Request, Response};
-use linkerd2_proxy_transport::Source;
+use linkerd2_proxy_transport::tls;
 use std::marker::PhantomData;
 use tower::retry as tower_retry;
 pub use tower::retry::budget::Budget;
@@ -187,6 +187,7 @@ where
     }
 }
 
+// TODO this needs to be moved up into the application!
 impl<B: TryClone> TryClone for Request<B> {
     fn try_clone(&self) -> Option<Self> {
         if let Some(body) = self.body().try_clone() {
@@ -196,7 +197,7 @@ impl<B: TryClone> TryClone for Request<B> {
             *clone.headers_mut() = self.headers().clone();
             *clone.version_mut() = self.version();
 
-            if let Some(ext) = self.extensions().get::<Source>() {
+            if let Some(ext) = self.extensions().get::<tls::accept::Meta>() {
                 clone.extensions_mut().insert(ext.clone());
             }
 

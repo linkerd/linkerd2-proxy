@@ -3,7 +3,7 @@
 //! * `/metrics` -- reports prometheus-formatted metrics.
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
-use crate::{svc, transport::tls};
+use crate::{svc, transport::tls::accept::Connection};
 use futures::{future, Future, Poll};
 use http::StatusCode;
 use hyper::service::{service_fn, Service};
@@ -77,7 +77,7 @@ impl<M: FmtMetrics> Service for Admin<M> {
     }
 }
 
-impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<tls::Connection> for Accept<M> {
+impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
     type Response = ();
     type Error = hyper::error::Error;
     type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
@@ -86,17 +86,17 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<tls::Connection> for A
         Ok(().into())
     }
 
-    fn call(&mut self, conn: tls::Connection) -> Self::Future {
+    fn call(&mut self, (meta, io): Connection) -> Self::Future {
         // Since the `/proxy-log-level` controls access based on the
         // client's IP address, we wrap the service with a new service
         // that adds the remote IP as a request extension.
-        let remote = conn.remote_addr();
+        let peer = meta.addrs.peer();
         let mut svc = self.0.clone();
         let svc = service_fn(move |mut req| {
-            req.extensions_mut().insert(ClientAddr(remote));
+            req.extensions_mut().insert(ClientAddr(peer));
             svc.call(req)
         });
-        Box::new(self.1.serve_connection(conn, svc))
+        Box::new(self.1.serve_connection(io, svc))
     }
 }
 

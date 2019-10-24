@@ -36,6 +36,8 @@ pub struct Refine {
     pub valid_until: Instant,
 }
 
+pub type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
+
 impl Resolver {
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
@@ -49,7 +51,7 @@ impl Resolver {
     /// TODO: This should be infallible like it is in the `domain` crate.
     pub fn from_system_config_with<C: ConfigureResolver>(
         c: &C,
-    ) -> Result<(Self, impl Future<Item = (), Error = ()> + Send), ResolveError> {
+    ) -> Result<(Self, Task), ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
@@ -57,18 +59,12 @@ impl Resolver {
         Ok(Self::new(config, opts))
     }
 
-    /// NOTE: It would be nice to be able to return a named type rather than
-    ///       `impl Future` for the background future; it would be called
-    ///       `Background` or `ResolverBackground` if that were possible.
-    pub fn new(
-        config: ResolverConfig,
-        mut opts: ResolverOpts,
-    ) -> (Self, impl Future<Item = (), Error = ()> + Send) {
+    pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> (Self, Task) {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
-        let (resolver, background) = AsyncResolver::new(config, opts);
+        let (resolver, task) = AsyncResolver::new(config, opts);
         let resolver = Resolver { resolver };
-        (resolver, background)
+        (resolver, Box::new(task))
     }
 
     pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {

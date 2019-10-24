@@ -17,10 +17,6 @@ pub use linkerd2_error::{Error, Never, Recover};
 pub use linkerd2_exp_backoff as exp_backoff;
 pub use linkerd2_metrics as metrics;
 pub use linkerd2_opencensus as opencensus;
-pub use linkerd2_proxy_api_resolve as api_resolve;
-pub use linkerd2_proxy_core as core;
-pub use linkerd2_proxy_discover as discover;
-pub use linkerd2_proxy_resolve as resolve;
 pub use linkerd2_reconnect as reconnect;
 pub use linkerd2_request_filter as request_filter;
 pub use linkerd2_trace_context as trace_context;
@@ -82,11 +78,11 @@ pub fn http_request_host_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::E
 }
 
 pub fn http_request_orig_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
-    use crate::transport::Source;
+    use crate::transport::tls;
 
     req.extensions()
-        .get::<Source>()
-        .and_then(|src| src.orig_dst_if_not_local())
+        .get::<tls::accept::Meta>()
+        .and_then(|m| m.addrs.target_addr_if_not_local())
         .map(Addr::Socket)
         .ok_or(addr::Error::InvalidHost)
 }

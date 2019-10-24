@@ -1,10 +1,11 @@
-use super::super::{io::internal::Io, tls, AddrInfo, BoxedIo, Connection};
-use futures::{try_ready, Async, Future, Poll};
+use crate::io::BoxedIo;
+use futures::{try_ready, Future, Poll};
 use linkerd2_conditional::Conditional;
 use linkerd2_identity as identity;
 pub use rustls::ClientConfig as Config;
 use std::io;
 use std::sync::Arc;
+use tokio::net::TcpStream;
 use tracing::trace;
 
 pub trait HasConfig {
@@ -12,30 +13,28 @@ pub trait HasConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct Layer<L>(tls::Conditional<L>);
+pub struct Layer<L>(super::Conditional<L>);
 
 #[derive(Clone, Debug)]
 pub struct Connect<L, C> {
-    local: tls::Conditional<L>,
+    local: super::Conditional<L>,
     inner: C,
 }
+
+pub type Connection = BoxedIo;
 
 /// A socket that is in the process of connecting.
 pub enum ConnectFuture<L, F: Future> {
     Init {
         future: F,
-        tls: tls::Conditional<(identity::Name, L)>,
+        tls: super::Conditional<(identity::Name, L)>,
     },
-    Handshake {
-        future: tokio_rustls::Connect<F::Item>,
-        remote_addr: std::net::SocketAddr,
-        server_name: identity::Name,
-    },
+    Handshake(tokio_rustls::Connect<F::Item>),
 }
 
 // === impl Layer ===
 
-pub fn layer<L: HasConfig + Clone>(l: tls::Conditional<L>) -> Layer<L> {
+pub fn layer<L: HasConfig + Clone>(l: super::Conditional<L>) -> Layer<L> {
     Layer(l)
 }
 
@@ -58,10 +57,9 @@ where
 /// impl MakeConnection
 impl<L, C, Target> tower::Service<Target> for Connect<L, C>
 where
-    Target: tls::HasPeerIdentity,
+    Target: super::HasPeerIdentity,
     L: HasConfig + Clone,
-    C: tower::MakeConnection<Target>,
-    C::Connection: Io + Send + 'static,
+    C: tower::MakeConnection<Target, Connection = TcpStream>,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,
     C::Error: From<io::Error>,
@@ -75,8 +73,11 @@ where
     }
 
     fn call(&mut self, target: Target) -> Self::Future {
-        let server_name = target.peer_identity();
-        let tls = self.local.clone().and_then(|l| server_name.map(|n| (n, l)));
+        let peer_identity = target.peer_identity();
+        let tls = self
+            .local
+            .clone()
+            .and_then(|l| peer_identity.map(|n| (n, l)));
         ConnectFuture::Init {
             future: self.inner.make_connection(target),
             tls,
@@ -89,8 +90,7 @@ where
 impl<L, F> Future for ConnectFuture<L, F>
 where
     L: HasConfig,
-    F: Future,
-    F::Item: Io + 'static,
+    F: Future<Item = TcpStream>,
     F::Error: From<io::Error>,
 {
     type Item = Connection;
@@ -101,36 +101,25 @@ where
             *self = match self {
                 ConnectFuture::Init { future, tls } => {
                     let io = try_ready!(future.poll());
-                    let remote_addr = io.remote_addr().expect("socket must have remote addr");
 
                     match tls {
-                        Conditional::Some((server_name, local_tls)) => {
-                            trace!("initiating TLS to {}", server_name.as_ref());
-                            let future =
+                        Conditional::Some((peer_identity, local_tls)) => {
+                            trace!("initiating TLS");
+                            ConnectFuture::Handshake(
                                 tokio_rustls::TlsConnector::from(local_tls.tls_client_config())
-                                    .connect(server_name.as_dns_name_ref(), io);
-                            ConnectFuture::Handshake {
-                                future,
-                                remote_addr,
-                                server_name: server_name.clone(),
-                            }
+                                    .connect(peer_identity.as_dns_name_ref(), io),
+                            )
                         }
-                        Conditional::None(why) => {
-                            trace!("skipping TLS ({:?})", why);
-                            return Ok(Async::Ready(tls::Connection::plain(io, remote_addr, *why)));
+                        Conditional::None(_) => {
+                            trace!("skipping TLS");
+                            return Ok(Connection::new(io).into());
                         }
                     }
                 }
-                ConnectFuture::Handshake {
-                    future,
-                    remote_addr,
-                    server_name,
-                } => {
-                    let io = try_ready!(future.poll());
-                    let io = BoxedIo::new(io);
-                    trace!("established TLS to {}", server_name.as_ref());
-                    let tls = Conditional::Some(server_name.clone());
-                    return Ok(Async::Ready(Connection::tls(io, *remote_addr, tls)));
+                ConnectFuture::Handshake(ref mut fut) => {
+                    let io = try_ready!(fut.poll());
+                    trace!("established TLS");
+                    return Ok(Connection::new(io).into());
                 }
             };
         }

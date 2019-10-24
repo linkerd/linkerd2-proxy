@@ -1,5 +1,4 @@
 use super::Sensor;
-use crate::Peek;
 use bytes::Buf;
 use futures::{try_ready, Async, Poll};
 use std::io;
@@ -79,15 +78,5 @@ impl<T: AsyncRead + AsyncWrite> AsyncWrite for Io<T> {
         self.sensor.record_write(bytes);
 
         Ok(Async::Ready(bytes))
-    }
-}
-
-impl<T: AsyncRead + AsyncWrite + Peek> Peek for Io<T> {
-    fn poll_peek(&mut self) -> Poll<usize, io::Error> {
-        self.sense_err(|io| io.poll_peek())
-    }
-
-    fn peeked(&self) -> &[u8] {
-        self.io.peeked()
     }
 }

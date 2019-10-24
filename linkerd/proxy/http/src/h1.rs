@@ -3,14 +3,15 @@ use bytes::BytesMut;
 use http;
 use http::header::{CONNECTION, HOST, UPGRADE};
 use http::uri::{Authority, Parts, Scheme, Uri};
-use linkerd2_proxy_transport::Source;
+use linkerd2_proxy_transport::tls;
 use std::fmt::Write;
 use std::mem;
-use tracing::debug;
+use tracing::{debug, trace};
 
 /// Tries to make sure the `Uri` of the request is in a form needed by
 /// hyper's Client.
 pub fn normalize_our_view_of_uri<B>(req: &mut http::Request<B>) {
+    trace!(uri = %req.uri());
     debug_assert!(
         req.uri().scheme_part().is_none(),
         "normalize_uri shouldn't be called with absolute URIs: {:?}",
@@ -19,23 +20,27 @@ pub fn normalize_our_view_of_uri<B>(req: &mut http::Request<B>) {
 
     // try to parse the Host header
     if let Some(auth) = authority_from_host(&req) {
+        trace!("using host header");
         set_authority(req.uri_mut(), auth);
         return;
     }
 
     // last resort is to use the so_original_dst
-    let orig_dst = req
+    if let Some(addr) = req
         .extensions()
-        .get::<Source>()
-        .and_then(|ctx| ctx.orig_dst_if_not_local());
-
-    if let Some(orig_dst) = orig_dst {
+        .get::<tls::accept::Meta>()
+        .map(|s| s.addrs.target_addr())
+    {
+        trace!(target.addr = %addr, "using target address");
         let mut bytes = BytesMut::with_capacity(31);
-        write!(&mut bytes, "{}", orig_dst).expect("socket address display is under 31 bytes");
+        write!(&mut bytes, "{}", addr).expect("socket address display is under 31 bytes");
         let auth =
             Authority::from_shared(bytes.freeze()).expect("socket address is valid authority");
         set_authority(req.uri_mut(), auth);
+        return;
     }
+
+    trace!("not normalizing");
 }
 
 /// Convert any URI into its origin-form (relative path part only).

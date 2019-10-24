@@ -2,32 +2,33 @@ use crate::identity;
 use crate::proxy::grpc::{req_box_body, res_body_as_payload};
 use crate::proxy::http::HyperServerSvc;
 use crate::svc::Service;
-use crate::transport::tls::{self, HasPeerIdentity};
+use crate::transport::io::BoxedIo;
+use crate::transport::tls::{
+    accept::Connection, Conditional, ReasonForNoIdentity, ReasonForNoPeerName,
+};
 use futures::{Future, Poll};
 use indexmap::IndexSet;
 use linkerd2_error::Error;
 use linkerd2_proxy_api::tap::server::{Tap, TapServer};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct AcceptPermittedClients {
-    permitted_client_ids: IndexSet<identity::Name>,
+    permitted_client_ids: Arc<IndexSet<identity::Name>>,
     server: super::Server,
 }
 
 pub struct ServeFuture(Box<dyn Future<Item = (), Error = Error> + Send + 'static>);
 
 impl AcceptPermittedClients {
-    pub fn new(
-        permitted_ids: impl IntoIterator<Item = identity::Name>,
-        server: super::Server,
-    ) -> Self {
+    pub fn new(permitted_client_ids: Arc<IndexSet<identity::Name>>, server: super::Server) -> Self {
         Self {
-            permitted_client_ids: permitted_ids.into_iter().collect(),
+            permitted_client_ids,
             server,
         }
     }
 
-    fn serve<T>(&self, conn: tls::Connection, tap: T) -> ServeFuture
+    fn serve<T>(&self, io: BoxedIo, tap: T) -> ServeFuture
     where
         T: Tap + Send + 'static,
         T::ObserveFuture: Send + 'static,
@@ -40,21 +41,21 @@ impl AcceptPermittedClients {
         ServeFuture(Box::new(
             hyper::server::conn::Http::new()
                 .http2_only(true)
-                .serve_connection(conn, HyperServerSvc::new(svc))
+                .serve_connection(io, HyperServerSvc::new(svc))
                 .map_err(Into::into),
         ))
     }
 
-    fn serve_authenticated(&self, conn: tls::Connection) -> ServeFuture {
-        self.serve(conn, self.server.clone())
+    fn serve_authenticated(&self, io: BoxedIo) -> ServeFuture {
+        self.serve(io, self.server.clone())
     }
 
-    fn serve_unauthenticated(&self, conn: tls::Connection, msg: impl Into<String>) -> ServeFuture {
-        self.serve(conn, unauthenticated::new(msg))
+    fn serve_unauthenticated(&self, io: BoxedIo, msg: impl Into<String>) -> ServeFuture {
+        self.serve(io, unauthenticated::new(msg))
     }
 }
 
-impl Service<tls::Connection> for AcceptPermittedClients {
+impl Service<Connection> for AcceptPermittedClients {
     type Response = ();
     type Error = Error;
     type Future = ServeFuture;
@@ -63,19 +64,19 @@ impl Service<tls::Connection> for AcceptPermittedClients {
         Ok(().into())
     }
 
-    fn call(&mut self, conn: tls::Connection) -> Self::Future {
-        match conn.peer_identity() {
-            tls::Conditional::Some(ref peer) => {
+    fn call(&mut self, (meta, io): Connection) -> Self::Future {
+        match meta.peer_identity {
+            Conditional::Some(ref peer) => {
                 if self.permitted_client_ids.contains(peer) {
-                    self.serve_authenticated(conn)
+                    self.serve_authenticated(io)
                 } else {
-                    self.serve_unauthenticated(conn, format!("Unauthorized peer: {}", peer))
+                    self.serve_unauthenticated(io, format!("Unauthorized peer: {}", peer))
                 }
             }
-            tls::Conditional::None(tls::ReasonForNoIdentity::NoPeerName(
-                tls::ReasonForNoPeerName::Loopback,
-            )) => self.serve_authenticated(conn),
-            tls::Conditional::None(reason) => self.serve_unauthenticated(conn, reason.to_string()),
+            Conditional::None(ReasonForNoIdentity::NoPeerName(ReasonForNoPeerName::Loopback)) => {
+                self.serve_authenticated(io)
+            }
+            Conditional::None(reason) => self.serve_unauthenticated(io, reason.to_string()),
         }
     }
 }

@@ -3,10 +3,8 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use futures::{self, future, Future};
-pub use linkerd2_app_core::init;
 use linkerd2_app_core::{
     admin::{Admin, Readiness},
-    api_resolve,
     classify::{self, Class},
     config::Config,
     control, dns, drain, handle_time, identity,
@@ -14,13 +12,18 @@ use linkerd2_app_core::{
     metrics::FmtMetrics,
     opencensus::{self, SpanExporter},
     profiles::Client as ProfilesClient,
-    proxy::{self, http::metrics as http_metrics},
+    proxy::{
+        self, api_resolve,
+        core::listen::{Bind as _Bind, Listen as _Listen},
+        http::metrics as http_metrics,
+    },
     reconnect, serve,
     svc::{self, LayerExt},
     tap, telemetry, trace,
-    transport::{self, connect, tls, GetOriginalDst, Listen},
+    transport::{self, connect, listen, tls, OrigDstAddr},
     Conditional,
 };
+pub use linkerd2_app_core::{init, transport::SysOrigDstAddr};
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use opencensus_proto::agent::common::v1 as oc;
@@ -44,49 +47,54 @@ use tracing_futures::Instrument;
 ///
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
-pub struct Main<G> {
-    proxy_parts: ProxyParts<G>,
+pub struct Main<A: OrigDstAddr> {
+    proxy_parts: ProxyParts<A>,
 }
 
-struct ProxyParts<G> {
+struct ProxyParts<A: OrigDstAddr> {
     config: Config,
-    get_original_dst: G,
 
     start_time: SystemTime,
     trace_level: trace::LevelHandle,
 
-    admin_listener: Listen,
-    control_listener: Option<(Listen, identity::Name)>,
+    admin_listener: listen::Listen,
+    control_listener: Option<(listen::Listen, identity::Name)>,
 
-    inbound_listener: Listen,
-    outbound_listener: Listen,
+    inbound_listener: listen::Listen<A>,
+    outbound_listener: listen::Listen<A>,
 }
 
-impl Main<transport::SoOriginalDst> {
-    pub fn new(config: Config, trace_level: trace::LevelHandle) -> Self {
+impl<A: OrigDstAddr> Main<A> {
+    pub fn new(config: Config, trace_level: trace::LevelHandle, orig_dsts: A) -> Self {
         let start_time = SystemTime::now();
 
         let control_listener = config.control_listener.as_ref().map(|cl| {
-            let listener = Listen::bind(cl.listener.addr, config.inbound_accept_keepalive)
+            let listener = listen::Bind::new(cl.listener.addr, config.inbound_accept_keepalive)
+                .bind()
                 .expect("tap listener bind");
 
             (listener, cl.tap_svc_name.clone())
         });
 
         let admin_listener =
-            Listen::bind(config.admin_listener.addr, config.inbound_accept_keepalive)
+            listen::Bind::new(config.admin_listener.addr, config.inbound_accept_keepalive)
+                .bind()
                 .expect("tap listener bind");
 
-        let inbound_listener = Listen::bind(
+        let inbound_listener = listen::Bind::new(
             config.inbound_listener.addr,
             config.inbound_accept_keepalive,
         )
+        .with_orig_dst_addr(orig_dsts.clone())
+        .bind()
         .expect("inbound listener bind");
 
-        let outbound_listener = Listen::bind(
+        let outbound_listener = listen::Bind::new(
             config.outbound_listener.addr,
             config.outbound_accept_keepalive,
         )
+        .with_orig_dst_addr(orig_dsts)
+        .bind()
         .expect("outbound listener bind");
 
         Self {
@@ -98,51 +106,32 @@ impl Main<transport::SoOriginalDst> {
                 outbound_listener,
                 control_listener,
                 admin_listener,
-                get_original_dst: transport::SoOriginalDst,
-            },
-        }
-    }
-
-    pub fn with_original_dst_from<G>(self, get_original_dst: G) -> Main<G>
-    where
-        G: GetOriginalDst + Clone + Send + 'static,
-    {
-        Main {
-            proxy_parts: ProxyParts {
-                get_original_dst,
-                config: self.proxy_parts.config,
-                start_time: self.proxy_parts.start_time,
-                trace_level: self.proxy_parts.trace_level,
-                inbound_listener: self.proxy_parts.inbound_listener,
-                outbound_listener: self.proxy_parts.outbound_listener,
-                control_listener: self.proxy_parts.control_listener,
-                admin_listener: self.proxy_parts.admin_listener,
             },
         }
     }
 }
 
-impl<G> Main<G>
+impl<A> Main<A>
 where
-    G: GetOriginalDst + Clone + Send + 'static,
+    A: OrigDstAddr + Clone + Send + 'static,
 {
     pub fn control_addr(&self) -> Option<SocketAddr> {
         self.proxy_parts
             .control_listener
             .as_ref()
-            .map(|l| l.0.local_addr().clone())
+            .map(|l| l.0.listen_addr().clone())
     }
 
     pub fn inbound_addr(&self) -> SocketAddr {
-        self.proxy_parts.inbound_listener.local_addr()
+        self.proxy_parts.inbound_listener.listen_addr()
     }
 
     pub fn outbound_addr(&self) -> SocketAddr {
-        self.proxy_parts.outbound_listener.local_addr()
+        self.proxy_parts.outbound_listener.listen_addr()
     }
 
     pub fn metrics_addr(&self) -> SocketAddr {
-        self.proxy_parts.admin_listener.local_addr()
+        self.proxy_parts.admin_listener.listen_addr()
     }
 
     pub fn run_until<F>(self, shutdown_signal: F)
@@ -167,16 +156,15 @@ where
     }
 }
 
-impl<G> ProxyParts<G>
+impl<A> ProxyParts<A>
 where
-    G: GetOriginalDst + Clone + Send + 'static,
+    A: OrigDstAddr + Clone + Send + 'static,
 {
     /// This is run inside a `futures::lazy`, so the default Executor is
     /// setup for use in here.
     fn build_proxy_task(self, drain_rx: drain::Watch) {
         let ProxyParts {
             config,
-            get_original_dst,
             start_time,
             trace_level,
             control_listener,
@@ -190,13 +178,13 @@ where
             Conditional::Some(config) => info!("using identity service at {:?}", config.svc.addr),
             Conditional::None(reason) => info!("identity is DISABLED: {}", reason),
         }
-        info!("admin on {}", admin_listener.local_addr());
+        info!("admin on {}", admin_listener.listen_addr());
         info!(
             "tap on {:?}",
-            control_listener.as_ref().map(|l| l.0.local_addr())
+            control_listener.as_ref().map(|l| l.0.listen_addr())
         );
-        info!("outbound on {:?}", outbound_listener.local_addr());
-        info!("inbound on {}", inbound_listener.local_addr());
+        info!("outbound on {:?}", outbound_listener.listen_addr());
+        info!("inbound on {}", inbound_listener.listen_addr());
         info!(
             "protocol detection disabled for inbound ports {:?}",
             config.inbound_ports_disable_protocol_detection,
@@ -351,41 +339,39 @@ where
             let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
             let local_identity = local_identity.clone();
             let drain_rx = drain_rx.clone();
-            let get_original_dst = get_original_dst.clone();
             thread::Builder::new()
                 .name("admin".into())
                 .spawn(move || {
                     Runtime::new()
                         .expect("admin runtime")
                         .block_on(future::lazy(move || {
-                            info_span!("admin", local_addr=%admin_listener.local_addr()).in_scope(
-                                || {
+                            info_span!("admin", listen_addr=%admin_listener.listen_addr())
+                                .in_scope(|| {
                                     trace!("spawning");
                                     serve::spawn(
                                         admin_listener,
                                         tls::AcceptTls::new(
-                                            get_original_dst.clone(),
                                             local_identity.clone(),
                                             Admin::new(report, readiness, trace_level)
                                                 .into_accept(),
                                         ),
                                         drain_rx.clone(),
                                     );
-                                },
-                            );
+                                });
 
                             if let Some((listener, tap_svc_name)) = control_listener {
-                                info_span!("tap", local_addr=%listener.local_addr()).in_scope(
+                                info_span!("tap", listen_addr=%listener.listen_addr()).in_scope(
                                     || {
                                         trace!("spawning");
                                         tokio::spawn(tap_daemon.map_err(|_| ()).in_current_span());
                                         serve::spawn(
                                             listener,
                                             tls::AcceptTls::new(
-                                                get_original_dst.clone(),
                                                 local_identity,
                                                 tap::AcceptPermittedClients::new(
-                                                    std::iter::once(tap_svc_name),
+                                                    std::sync::Arc::new(
+                                                        Some(tap_svc_name).into_iter().collect(),
+                                                    ),
                                                     tap_grpc,
                                                 ),
                                             ),
@@ -497,12 +483,11 @@ where
             spans_tx
         });
 
-        info_span!("out", local_addr=%outbound_listener.local_addr()).in_scope(|| {
+        info_span!("out", listen_addr=%outbound_listener.listen_addr()).in_scope(|| {
             outbound::spawn(
                 &config,
                 local_identity.clone(),
                 outbound_listener,
-                get_original_dst.clone(),
                 outbound::resolve(
                     config.destination_get_suffixes.clone(),
                     config.control_backoff.clone(),
@@ -521,12 +506,11 @@ where
             )
         });
 
-        info_span!("in", local_addr=%inbound_listener.local_addr()).in_scope(move || {
+        info_span!("in", listen_addr=%inbound_listener.listen_addr()).in_scope(move || {
             inbound::spawn(
                 &config,
                 local_identity,
                 inbound_listener,
-                get_original_dst,
                 profiles_client,
                 tap_layer,
                 inbound_handle_time,

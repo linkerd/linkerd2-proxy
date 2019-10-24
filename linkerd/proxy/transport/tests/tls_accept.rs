@@ -7,14 +7,18 @@
 
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
-use linkerd2_proxy_core::listen::{Accept, Listen as CoreListen};
-use linkerd2_proxy_transport::tls::{self, AcceptTls, Conditional, Connection, HasPeerIdentity};
-use linkerd2_proxy_transport::{connect, Listen, SoOriginalDst};
+use linkerd2_proxy_core::listen::{Accept, Bind as _Bind, Listen as CoreListen};
+use linkerd2_proxy_transport::tls::{
+    self,
+    accept::{AcceptTls, Connection as ServerConnection},
+    client::Connection as ClientConnection,
+    Conditional,
+};
+use linkerd2_proxy_transport::{connect, Bind, Listen};
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::{self, io, prelude::*};
 use tower::{layer::Layer, Service, ServiceExt};
 use tower_util::service_fn;
-use tracing::trace;
 
 #[test]
 fn plaintext() {
@@ -22,7 +26,7 @@ fn plaintext() {
         Conditional::None(tls::ReasonForNoIdentity::Disabled),
         |conn| write_then_read(conn, PING),
         Conditional::None(tls::ReasonForNoIdentity::Disabled),
-        |conn| read_then_write(conn, PING.len(), PONG),
+        |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), false);
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -38,7 +42,7 @@ fn proxy_to_proxy_tls_works() {
         Conditional::Some((client_tls, server_tls.tls_server_name())),
         |conn| write_then_read(conn, PING),
         Conditional::Some(server_tls),
-        |conn| read_then_write(conn, PING.len(), PONG),
+        |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), true);
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -59,7 +63,7 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
         Conditional::Some((client_tls, client_target)),
         |conn| write_then_read(conn, PING),
         Conditional::Some(server_tls),
-        |conn| read_then_write(conn, START_OF_TLS.len(), PONG),
+        |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
     );
 
     // The server's connection will succeed with the TLS client hello passed
@@ -100,11 +104,11 @@ fn run_test<C, CF, CR, S, SF, SR>(
 ) -> (Transported<CR>, Transported<SR>)
 where
     // Client
-    C: FnOnce(Connection) -> CF + Clone + Send + 'static,
+    C: FnOnce(ClientConnection) -> CF + Clone + Send + 'static,
     CF: Future<Item = CR, Error = io::Error> + Send + 'static,
     CR: Send + 'static,
     // Server
-    S: Fn(Connection) -> SF + Clone + Send + 'static,
+    S: Fn(ServerConnection) -> SF + Clone + Send + 'static,
     SF: Future<Item = SR, Error = io::Error> + Send + 'static,
     SR: Send + 'static,
 {
@@ -134,17 +138,15 @@ where
         // tests to run at once, which wouldn't work if they all were bound on
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-        let listen = Listen::bind(addr, None).expect("must bind");
-        let listen_addr = listen.local_addr();
+        let listen = Bind::new(addr, None).bind().expect("must bind");
+        let listen_addr = listen.listen_addr();
 
         let accept = AcceptTls::new(
-            SoOriginalDst,
             server_tls,
-            service_fn(move |conn: Connection| {
+            service_fn(move |(meta, conn): ServerConnection| {
                 let sender = sender.clone();
-                let peer_identity = Some(conn.peer_identity());
-                trace!("server peer_identity: {:?}", peer_identity);
-                server(conn).then(move |result| {
+                let peer_identity = Some(meta.peer_identity.clone());
+                server((meta, conn)).then(move |result| {
                     sender
                         .send(Transported {
                             peer_identity,
@@ -169,6 +171,7 @@ where
         let (sender, receiver) = mpsc::channel::<Transported<CR>>();
         let sender_clone = sender.clone();
 
+        let peer_identity = Some(client_target_name.clone());
         let client = tls::client::layer(client_tls)
             .layer(connect::svc(None))
             .ready()
@@ -182,9 +185,7 @@ where
                     .expect("send result");
                 ()
             })
-            .and_then(|conn| {
-                let peer_identity = Some(conn.peer_identity());
-                trace!("client peer_identity: {:?}", peer_identity);
+            .and_then(move |conn| {
                 client(conn).then(move |result| {
                     sender
                         .send(Transported {
@@ -248,17 +249,15 @@ const PING: &[u8] = b"ping";
 const PONG: &[u8] = b"pong";
 const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 
-enum Server<A: Accept<Connection>>
+enum Server<A: Accept<ServerConnection>>
 where
-    AcceptTls<A, CrtKey, SoOriginalDst>: Accept<<Listen as CoreListen>::Connection>,
+    AcceptTls<A, CrtKey>: Accept<<Listen as CoreListen>::Connection>,
 {
     Init {
         listen: Listen,
-        accept: AcceptTls<A, CrtKey, SoOriginalDst>,
+        accept: AcceptTls<A, CrtKey>,
     },
-    Serving(
-        <AcceptTls<A, CrtKey, SoOriginalDst> as Accept<<Listen as CoreListen>::Connection>>::Future,
-    ),
+    Serving(<AcceptTls<A, CrtKey> as Accept<<Listen as CoreListen>::Connection>>::Future),
 }
 
 #[derive(Clone)]
@@ -267,7 +266,7 @@ struct Target(SocketAddr, Conditional<Name>);
 #[derive(Clone)]
 struct ClientTls(CrtKey);
 
-impl<A: Accept<Connection> + Clone> Future for Server<A> {
+impl<A: Accept<ServerConnection> + Clone> Future for Server<A> {
     type Item = ();
     type Error = ();
 

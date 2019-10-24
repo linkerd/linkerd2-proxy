@@ -12,15 +12,17 @@ use linkerd2_app_core::{
     dst::DstAddr,
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, identity,
-    proxy::http::{
-        client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
-        strip_header,
+    proxy::{
+        http::{
+            client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
+            strip_header,
+        },
+        server::{Protocol as ServerProtocol, Server},
     },
-    proxy::Server,
     reconnect, serve,
     spans::SpanConverter,
     svc, trace, trace_context,
-    transport::{self as transport, connect, tls, Source},
+    transport::{self, connect, tls, Listen, OrigDstAddr},
     Addr, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
     L5D_REMOTE_IP, L5D_SERVER_ID,
 };
@@ -40,11 +42,10 @@ mod set_remote_ip_on_req;
 
 pub use self::endpoint::{Endpoint, RecognizeEndpoint};
 
-pub fn spawn<P>(
+pub fn spawn<A, P>(
     config: &Config,
     local_identity: tls::Conditional<identity::Local>,
-    listen: transport::Listen,
-    get_original_dst: impl transport::GetOriginalDst + Send + 'static,
+    listen: Listen<A>,
     profiles_client: linkerd2_app_core::profiles::Client<P>,
     tap_layer: linkerd2_app_core::tap::Layer,
     handle_time: http_metrics::handle_time::Scope,
@@ -54,6 +55,7 @@ pub fn spawn<P>(
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) where
+    A: OrigDstAddr + Send + 'static,
     P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
     P::ResponseBody: Send,
     <P::ResponseBody as grpc::Body>::Data: Send,
@@ -161,7 +163,7 @@ pub fn spawn<P>(
     //
     // 5. If the request has an HTTP/1 Host header, it is used.
     //
-    // 6. Finally, if the Source had an SO_ORIGINAL_DST, this TCP
+    // 6. Finally, if the tls::accept::Meta had an SO_ORIGINAL_DST, this TCP
     // address is used.
     let dst_router = dst_stack
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
@@ -207,14 +209,14 @@ pub fn spawn<P>(
     let trace_context_layer = trace_context::layer(
         span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels)),
     );
-    // As HTTP requests are accepted, the `Source` connection
+    // As HTTP requests are accepted, the `tls::accept::Meta` connection
     // metadata is stored on each request's extensions.
     //
     // Furthermore, HTTP/2 requests may be downgraded to HTTP/1.1 per
     // `orig-proto` headers. This happens in the source stack so that
     // the router need not detect whether a request _will be_ downgraded.
     let source_stack = svc::stack(svc::Shared::new(admission_control))
-        .serves::<Source>()
+        .serves::<tls::accept::Meta>()
         .push(orig_proto_downgrade::layer())
         .push(insert::target::layer())
         // disabled due to information leagkage
@@ -228,28 +230,26 @@ pub fn spawn<P>(
         }))
         .push(errors::layer())
         .push(trace::layer(
-            |src: &Source| info_span!("source", peer_ip = %src.remote.ip(), peer_id=?src.tls_peer),
+            |src: &tls::accept::Meta| info_span!("source", peer_ip = %src.addrs.peer().ip(), peer_id = ?src.peer_identity),
         ))
         .push(trace_context_layer)
         .push(handle_time.layer())
-        .serves::<Source>();
+        .serves::<tls::accept::Meta>();
 
+    let skip_ports = std::sync::Arc::new(config.inbound_ports_disable_protocol_detection.clone());
     let server = Server::new(
         TransportLabels,
         transport_metrics,
-        connect,
+        svc::stack(connect)
+            .push(svc::map_target::layer(Endpoint::from))
+            .into_inner(),
         source_stack,
         config.h2_settings,
         drain.clone(),
+        skip_ports.clone(),
     );
 
-    let skip_ports = config
-        .inbound_ports_disable_protocol_detection
-        .iter()
-        .map(|p| *p);
-    let accept = tls::AcceptTls::new(get_original_dst, local_identity, server)
-        .without_protocol_detection_for(skip_ports);
-
+    let accept = tls::AcceptTls::new(local_identity, server).with_skip_ports(skip_ports);
     serve::spawn(listen, accept, drain);
 }
 
@@ -267,10 +267,10 @@ impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
     }
 }
 
-impl transport::metrics::TransportLabels<Source> for TransportLabels {
+impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, source: &Source) -> Self::Labels {
-        transport::labels::Key::accept("inbound", source.tls_peer.as_ref())
+    fn transport_labels(&self, proto: &ServerProtocol) -> Self::Labels {
+        transport::labels::Key::accept("inbound", proto.tls.peer_identity.as_ref())
     }
 }

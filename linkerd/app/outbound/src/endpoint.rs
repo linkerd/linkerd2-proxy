@@ -1,13 +1,15 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
-    api_resolve::{Metadata, ProtocolHint},
     dst::{DstAddr, Route},
     identity,
     metric_labels::{prefix_labels, EndpointLabels},
-    proxy::http::{identity_from_header, settings},
-    resolve::map_endpoint::MapEndpoint,
+    proxy::{
+        api_resolve::{Metadata, ProtocolHint},
+        http::{identity_from_header, settings},
+        resolve::map_endpoint::MapEndpoint,
+    },
     tap,
-    transport::{connect, tls, Source},
+    transport::{connect, tls},
     Conditional, NameAddr, L5D_REQUIRE_ID,
 };
 use std::net::SocketAddr;
@@ -50,7 +52,11 @@ impl Endpoint {
     }
 
     pub fn from_request<B>(req: &http::Request<B>) -> Option<Self> {
-        let addr = req.extensions().get::<Source>()?.orig_dst_if_not_local()?;
+        let addr = req
+            .extensions()
+            .get::<tls::accept::Meta>()?
+            .addrs
+            .target_addr_if_not_local()?;
         let http_settings = settings::Settings::from_request(req);
         let identity = match identity_from_header(req, L5D_REQUIRE_ID) {
             Some(require_id) => Conditional::Some(require_id),
@@ -120,7 +126,9 @@ impl settings::HasSettings for Endpoint {
 
 impl tap::Inspect for Endpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<Source>().map(|s| s.remote)
+        req.extensions()
+            .get::<tls::accept::Meta>()
+            .map(|s| s.addrs.peer())
     }
 
     fn src_tls<'a, B>(
