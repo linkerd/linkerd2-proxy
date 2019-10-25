@@ -207,7 +207,7 @@ impl OrigDstAddr for SysOrigDstAddr {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn orig_dst_addr(&self, sock: &TcpStream) -> Option<SocketAddr> {
+    fn orig_dst_addr(&self, _sock: &TcpStream) -> Option<SocketAddr> {
         None
     }
 }
