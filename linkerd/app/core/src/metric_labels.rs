@@ -98,7 +98,8 @@ impl FmtLabels for EndpointLabels {
         }
 
         write!(f, ",")?;
-        TlsStatus::from(self.tls_id.as_ref()).fmt_labels(f)?;
+        let tls_id = self.tls_id.clone().map(Into::<identity::Name>::into);
+        TlsStatus::from(tls_id.as_ref()).fmt_labels(f)?;
 
         if let Conditional::Some(ref id) = self.tls_id {
             write!(f, ",")?;
@@ -114,6 +115,15 @@ impl FmtLabels for Direction {
         match self {
             Direction::In => write!(f, "direction=\"inbound\""),
             Direction::Out => write!(f, "direction=\"outbound\""),
+        }
+    }
+}
+
+impl Into<identity::Name> for TlsId {
+    fn into(self) -> identity::Name {
+        match self {
+            TlsId::ClientId(name) => name,
+            TlsId::ServerId(name) => name,
         }
     }
 }

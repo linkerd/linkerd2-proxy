@@ -305,7 +305,7 @@ pub fn spawn<A, R, P>(
     let skip_ports = std::sync::Arc::new(config.outbound_ports_disable_protocol_detection.clone());
     let proxy = Server::new(
         TransportLabels,
-        transport_metrics,
+        (),
         svc::stack(connect)
             .push(svc::map_target::layer(Endpoint::from))
             .into_inner(),
@@ -329,14 +329,18 @@ impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, endpoint: &Endpoint) -> Self::Labels {
-        transport::labels::Key::connect("outbound", endpoint.identity.as_ref())
+        transport::labels::Key::connect(
+            endpoint.addr,
+            &endpoint.identity,
+            endpoint.http_settings.is_http(),
+        )
     }
 }
 
 impl transport::metrics::TransportLabels<proxy::server::Protocol> for TransportLabels {
-    type Labels = transport::labels::Key;
+    type Labels = ();
 
-    fn transport_labels(&self, proto: &proxy::server::Protocol) -> Self::Labels {
-        transport::labels::Key::accept("outbound", proto.tls.peer_identity.as_ref())
+    fn transport_labels(&self, _: &proxy::server::Protocol) -> Self::Labels {
+        ()
     }
 }

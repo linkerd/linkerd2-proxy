@@ -72,4 +72,11 @@ impl Settings {
             Settings::Http1 { .. } | Settings::NotHttp => false,
         }
     }
+
+    pub fn is_http(&self) -> bool {
+        match self {
+            Settings::Http1 { .. } | Settings::Http2 => true,
+            Settings::NotHttp => false,
+        }
+    }
 }

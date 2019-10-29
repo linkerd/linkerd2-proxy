@@ -75,7 +75,6 @@ pub fn spawn<A, P>(
     let connect = svc::stack(connect::svc(config.inbound_connect_keepalive))
         .push(tls::client::layer(local_identity.clone()))
         .push_timeout(config.inbound_connect_timeout)
-        .push(transport_metrics.layer_connect(TransportLabels))
         .push(rewrite_loopback_addr::layer());
 
     let trace_context_layer = trace_context::layer(
@@ -256,21 +255,14 @@ pub fn spawn<A, P>(
 #[derive(Copy, Clone, Debug)]
 struct TransportLabels;
 
-impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
-    type Labels = transport::labels::Key;
-
-    fn transport_labels(&self, _: &Endpoint) -> Self::Labels {
-        transport::labels::Key::connect::<()>(
-            "inbound",
-            tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
-        )
-    }
-}
-
 impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, proto: &ServerProtocol) -> Self::Labels {
-        transport::labels::Key::accept("inbound", proto.tls.peer_identity.as_ref())
+        transport::labels::Key::accept(
+            proto.tls.addrs.peer(),
+            &proto.tls.peer_identity,
+            proto.http.is_some(),
+        )
     }
 }

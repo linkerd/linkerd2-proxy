@@ -156,6 +156,12 @@ impl<A: FmtLabels, B: FmtLabels> FmtLabels for (Option<A>, B) {
     }
 }
 
+impl FmtLabels for () {
+    fn fmt_labels(&self, _: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Ok(())
+    }
+}
+
 // ===== impl FmtMetrics =====
 
 impl<'a, A: FmtMetrics + 'a> FmtMetrics for &'a A {

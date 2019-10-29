@@ -1,4 +1,5 @@
 use super::tls;
+use super::io::BoxedIo;
 use futures::{try_ready, Future, Poll};
 use indexmap::IndexMap;
 use linkerd2_metrics::{
@@ -36,6 +37,12 @@ pub trait TransportLabels<T> {
     type Labels: Hash + Eq + FmtLabels;
 
     fn transport_labels(&self, transport: &T) -> Self::Labels;
+}
+
+pub trait WrapServerTransport<K: Eq + Hash + FmtLabels> {
+    type Output: AsyncRead + AsyncWrite + Send + 'static;
+
+    fn wrap_server_transport(&self, labels: K, io: BoxedIo) -> Self::Output;
 }
 
 /// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
@@ -181,8 +188,12 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
     {
         LayerConnect::new(label, self.0.clone())
     }
+}
 
-    pub fn wrap_server_transport<T: AsyncRead + AsyncWrite>(&self, labels: K, io: T) -> Io<T> {
+impl<K: Eq + Hash + FmtLabels> WrapServerTransport<K> for Registry<K> {
+    type Output = Io<BoxedIo>;
+
+    fn wrap_server_transport(&self, labels: K, io: BoxedIo) -> Self::Output {
         let metrics = self
             .0
             .lock()
@@ -190,6 +201,14 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
             .get_or_default(labels)
             .clone();
         Io::new(io, Sensor::open(metrics))
+    }
+}
+
+impl<K: Eq + Hash + FmtLabels> WrapServerTransport<K> for () {
+    type Output = BoxedIo;
+
+    fn wrap_server_transport(&self, _labels: K, io: BoxedIo) -> Self::Output {
+        io
     }
 }
 

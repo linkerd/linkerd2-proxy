@@ -5,7 +5,7 @@ use crate::proxy::http::{
 use crate::proxy::{detect, tcp};
 use crate::svc::{MakeService, Service};
 use crate::transport::{
-    self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls,
+    io::BoxedIo, metrics::TransportLabels, tls,
 };
 use futures::future::{self, Either};
 use futures::{Future, Poll};
@@ -14,8 +14,11 @@ use hyper;
 use indexmap::IndexSet;
 use linkerd2_drain as drain;
 use linkerd2_error::{Error, Never};
+use linkerd2_metrics::FmtLabels;
 use linkerd2_proxy_core::listen::Accept;
 use linkerd2_proxy_http::h2::Settings as H2Settings;
+use linkerd2_proxy_transport::metrics::WrapServerTransport;
+use std::hash::Hash;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::{error, fmt};
@@ -77,10 +80,10 @@ impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
 ///
 /// *  Otherwise, an `H`-typed `Service` is used to build a service that
 ///    can route HTTP  requests for the `tls::accept::Meta`.
-pub struct Server<L, C, H, B>
+pub struct Server<L, C, H, B, W, K>
 where
     // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
-    L: TransportLabels<Protocol, Labels = TransportKey>,
+    L: TransportLabels<Protocol, Labels = K>,
     // Prepares a route for each accepted HTTP connection.
     H: MakeService<
             tls::accept::Meta,
@@ -89,11 +92,13 @@ where
             MakeError = Never,
         > + Clone,
     B: hyper::body::Payload,
+    W: WrapServerTransport<K>,
+    K: Hash + Eq + FmtLabels,
 {
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
     transport_labels: L,
-    transport_metrics: transport::MetricsRegistry,
+    transport_metrics: W,
     connect: ForwardConnect<C>,
     make_http: H,
     drain: drain::Watch,
@@ -144,9 +149,9 @@ impl fmt::Display for NoForwardTarget {
     }
 }
 
-impl<L, C, H, B> Server<L, C, H, B>
+impl<L, C, H, B, W, K> Server<L, C, H, B, W, K>
 where
-    L: TransportLabels<Protocol, Labels = TransportKey>,
+    L: TransportLabels<Protocol, Labels = K>,
     H: MakeService<
             tls::accept::Meta,
             http::Request<HttpBody>,
@@ -154,12 +159,14 @@ where
             MakeError = Never,
         > + Clone,
     B: hyper::body::Payload,
+    W: WrapServerTransport<K>,
+    K: Hash + Eq + FmtLabels,
     Self: Accept<Connection>,
 {
     /// Creates a new `Server`.
     pub fn new(
         transport_labels: L,
-        transport_metrics: transport::MetricsRegistry,
+        transport_metrics: W,
         connect: C,
         make_http: H,
         h2_settings: H2Settings,
@@ -181,9 +188,9 @@ where
     }
 }
 
-impl<L, C, H, B> Service<Connection> for Server<L, C, H, B>
+impl<L, C, H, B, W, K> Service<Connection> for Server<L, C, H, B, W, K>
 where
-    L: TransportLabels<Protocol, Labels = TransportKey>,
+    L: TransportLabels<Protocol, Labels = K>,
     C: Service<SocketAddr> + Clone + Send + 'static,
     C::Response: AsyncRead + AsyncWrite + Send + 'static,
     C::Future: Send + 'static,
@@ -201,6 +208,8 @@ where
     H::Future: Send + 'static,
     <H::Service as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
+    W: WrapServerTransport<K>,
+    K: Hash + Eq + FmtLabels,
 {
     type Response = ();
     type Error = Error;
@@ -279,9 +288,9 @@ where
     }
 }
 
-impl<L, C, H, B> Clone for Server<L, C, H, B>
+impl<L, C, H, B, W, K> Clone for Server<L, C, H, B, W, K>
 where
-    L: TransportLabels<Protocol, Labels = TransportKey> + Clone,
+    L: TransportLabels<Protocol, Labels = K> + Clone,
     C: Clone,
     H: MakeService<
             tls::accept::Meta,
@@ -290,6 +299,8 @@ where
             MakeError = Never,
         > + Clone,
     B: hyper::body::Payload,
+    W: WrapServerTransport<K> + Clone,
+    K: Hash + Eq + FmtLabels,
 {
     fn clone(&self) -> Self {
         Self {

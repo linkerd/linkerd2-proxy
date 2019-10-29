@@ -1,61 +1,75 @@
 use super::tls;
 use linkerd2_conditional::Conditional;
 use linkerd2_metrics::FmtLabels;
+use linkerd2_identity as identity;
 use std::fmt;
+use std::net::SocketAddr;
 
 /// Describes a class of transport.
 ///
 /// A `Metrics` type exists for each unique `Key`.
 ///
 /// Implements `FmtLabels`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Key {
     direction: Direction,
-    peer: Peer,
+    remote_addr: RemoteAddr,
     tls_status: TlsStatus,
+    protocol: Protocol,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct Direction(&'static str);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-enum Peer {
-    /// Represents the side of the proxy that accepts connections.
-    Src,
-    /// Represents the side of the proxy that opens connections.
-    Dst,
-}
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct RemoteAddr(SocketAddr);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsStatus(tls::Conditional<()>);
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TlsStatus(tls::Conditional<identity::Name>);
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+enum Protocol {
+    TCP,
+    HTTP,
+}
 
 // ===== impl Key =====
 
 impl Key {
-    pub fn accept<T>(direction: &'static str, tls: tls::Conditional<T>) -> Self {
+    pub fn accept(remote_addr: SocketAddr, tls: &tls::Conditional<identity::Name>, http: bool) -> Self {
+        let protocol = if http {
+            Protocol::HTTP
+        } else {
+            Protocol::TCP
+        };
         Self {
-            direction: Direction(direction),
-            tls_status: TlsStatus(tls.map(|_| ())),
-            peer: Peer::Src,
+            direction: Direction("inbound"),
+            remote_addr: RemoteAddr(remote_addr),
+            tls_status: TlsStatus(tls.clone()),
+            protocol,
         }
     }
 
-    pub fn connect<T>(direction: &'static str, tls: tls::Conditional<T>) -> Self {
+    pub fn connect(remote_addr: SocketAddr, tls: &tls::Conditional<identity::Name>, http: bool) -> Self {
+        let protocol = if http {
+            Protocol::HTTP
+        } else {
+            Protocol::TCP
+        };
         Self {
-            direction: Direction(direction),
-            tls_status: TlsStatus(tls.map(|_| ())),
-            peer: Peer::Dst,
+            direction: Direction("outbound"),
+             remote_addr: RemoteAddr(remote_addr),
+            tls_status: TlsStatus(tls.clone()),
+            protocol,
         }
     }
 }
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        ((self.direction, self.peer), self.tls_status).fmt_labels(f)
+        (((&self.direction, &self.remote_addr), &self.tls_status), &self.protocol).fmt_labels(f)
     }
 }
-
-// ===== impl Peer =====
 
 impl FmtLabels for Direction {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -63,52 +77,41 @@ impl FmtLabels for Direction {
     }
 }
 
-// ===== impl Peer =====
+impl FmtLabels for RemoteAddr {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "remote_addr=\"{}\"", self.0)
+    }
+}
 
-impl FmtLabels for Peer {
+impl FmtLabels for Protocol {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Peer::Src => f.pad("peer=\"src\""),
-            Peer::Dst => f.pad("peer=\"dst\""),
-        }
-    }
-}
-
-// === impl TlsStatus ===
-
-impl<T> From<tls::Conditional<T>> for TlsStatus {
-    fn from(inner: tls::Conditional<T>) -> Self {
-        TlsStatus(inner.map(|_| ()))
-    }
-}
-
-impl Into<tls::Conditional<()>> for TlsStatus {
-    fn into(self) -> tls::Conditional<()> {
-        self.0
-    }
-}
-
-impl TlsStatus {
-    pub fn no_tls_reason(&self) -> Option<tls::ReasonForNoIdentity> {
-        self.0.reason()
-    }
-}
-
-impl fmt::Display for TlsStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Conditional::Some(()) => write!(f, "true"),
-            Conditional::None(r) => fmt::Display::fmt(&r, f),
+            Protocol::TCP => write!(f, "protocol=\"tcp\""),
+            Protocol::HTTP => write!(f, "protocol=\"http\""),
         }
     }
 }
 
 impl FmtLabels for TlsStatus {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(tls::ReasonForNoIdentity::NoPeerName(why)) = self.no_tls_reason() {
-            return write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why);
+        match &self.0 {
+            Conditional::None(reason) => write!(f, "tls=\"false\",no_tls_reason=\"{}\"", reason),
+            Conditional::Some(name) => write!(f, "tls=\"true\",remote_identity=\"{}\"", name),
         }
+    }
+}
 
-        write!(f, "tls=\"{}\"", self)
+impl fmt::Display for TlsStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Conditional::Some(_) => write!(f, "true"),
+            Conditional::None(r) => fmt::Display::fmt(&r, f),
+        }
+    }
+}
+
+impl From<tls::Conditional<&identity::Name>> for TlsStatus {
+    fn from(tls: tls::Conditional<&identity::Name>) -> TlsStatus {
+        TlsStatus(tls.cloned())
     }
 }
