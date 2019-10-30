@@ -3,7 +3,7 @@ use linkerd2_conditional::Conditional;
 use linkerd2_metrics::FmtLabels;
 use linkerd2_identity as identity;
 use std::fmt;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 /// Describes a class of transport.
 ///
@@ -14,8 +14,7 @@ use std::net::SocketAddr;
 pub struct Key {
     direction: Direction,
     addrs: Addrs,
-    remote_identity: TlsStatus,
-    local_identity: LocalIdentity,
+    identity: Identity,
     protocol: Protocol,
 }
 
@@ -27,7 +26,7 @@ enum Direction {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct Addrs {
-    src_addr: SocketAddr,
+    src_addr: IpAddr,
     dst_addr: SocketAddr,
 }  
 
@@ -35,7 +34,10 @@ struct Addrs {
 pub struct TlsStatus(tls::Conditional<identity::Name>);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct LocalIdentity(tls::Conditional<identity::Name>);
+struct Identity {
+    remote: TlsStatus,
+    local: tls::Conditional<identity::Name>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum Protocol {
@@ -61,11 +63,13 @@ impl Key {
         Self {
             direction: Direction::Inbound,
             addrs: Addrs {
-                src_addr,
+                src_addr: src_addr.ip(),
                 dst_addr,
             },
-            remote_identity: TlsStatus(remote_identity.cloned()),
-            local_identity: LocalIdentity(local_identity.cloned()),
+            identity: Identity {
+                remote: TlsStatus(remote_identity.cloned()),
+                local: local_identity.cloned(),
+            },
             protocol,
         }
     }
@@ -85,11 +89,13 @@ impl Key {
         Self {
             direction: Direction::Outbound,
             addrs: Addrs {
-                src_addr,
+                src_addr: src_addr.ip(),
                 dst_addr,
             },
-            remote_identity: TlsStatus(remote_identity.cloned()),
-            local_identity: LocalIdentity(local_identity.cloned()),
+            identity: Identity {
+                remote: TlsStatus(remote_identity.cloned()),
+                local: local_identity.cloned(),
+            },
             protocol,
         }
     }
@@ -97,22 +103,22 @@ impl Key {
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        ((((&self.direction, &self.addrs), &self.remote_identity), &self.local_identity), &self.protocol).fmt_labels(f)
+        (((&self.direction, &self.addrs), &self.identity), &self.protocol).fmt_labels(f)
     }
 }
 
 impl FmtLabels for Direction {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Direction::Inbound => write!(f, "direction=\"inbound\","),
-            Direction::Outbound => write!(f, "direction=\"outbound\","),
+            Direction::Inbound => write!(f, "direction=\"inbound\""),
+            Direction::Outbound => write!(f, "direction=\"outbound\""),
         }
     }
 }
 
 impl FmtLabels for Addrs {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "src_addr=\"{}\",", self.src_addr.ip())?;
+        write!(f, "src_addr=\"{}\",", self.src_addr)?;
         write!(f, "dst_addr=\"{}\"", self.dst_addr)
     }
 }
@@ -150,11 +156,17 @@ impl From<tls::Conditional<&identity::Name>> for TlsStatus {
     }
 }
 
-impl FmtLabels for LocalIdentity {
+impl FmtLabels for Identity {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Conditional::None(_) => write!(f, "local_identity=\"\""),
-            Conditional::Some(name) => write!(f, "local_identity=\"{}\"", name),
+        self.remote.fmt_labels(f)?;
+        // Only include the local identity labels if the connection has TLS.
+        if self.remote.0.is_some() {
+            match &self.local {
+                Conditional::None(_) => Ok(()),
+                Conditional::Some(name) => write!(f, ",local_identity=\"{}\"", name),
+            }
+        } else {
+            Ok(())
         }
     }
 }
