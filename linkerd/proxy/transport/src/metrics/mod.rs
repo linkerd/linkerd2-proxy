@@ -1,5 +1,5 @@
-use super::tls;
 use super::io::BoxedIo;
+use super::tls;
 use futures::{try_ready, Future, Poll};
 use indexmap::IndexMap;
 use linkerd2_metrics::{

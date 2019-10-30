@@ -4,9 +4,7 @@ use crate::proxy::http::{
 };
 use crate::proxy::{detect, tcp};
 use crate::svc::{MakeService, Service};
-use crate::transport::{
-    io::BoxedIo, metrics::TransportLabels, tls,
-};
+use crate::transport::{io::BoxedIo, metrics::TransportLabels, tls};
 use futures::future::{self, Either};
 use futures::{Future, Poll};
 use http;

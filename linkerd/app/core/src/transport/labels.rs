@@ -1,7 +1,7 @@
 use super::tls;
 use linkerd2_conditional::Conditional;
-use linkerd2_metrics::FmtLabels;
 use linkerd2_identity as identity;
+use linkerd2_metrics::FmtLabels;
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 
@@ -28,7 +28,7 @@ enum Direction {
 struct Addrs {
     src_addr: Option<IpAddr>,
     dst_addr: SocketAddr,
-}  
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsStatus(tls::Conditional<identity::Name>);
@@ -53,13 +53,9 @@ impl Key {
         dst_addr: SocketAddr,
         remote_identity: tls::Conditional<&identity::Name>,
         local_identity: tls::Conditional<&identity::Name>,
-        http: bool
+        http: bool,
     ) -> Self {
-        let protocol = if http {
-            Protocol::HTTP
-        } else {
-            Protocol::TCP
-        };
+        let protocol = if http { Protocol::HTTP } else { Protocol::TCP };
         Self {
             direction: Direction::Inbound,
             addrs: Addrs {
@@ -78,13 +74,9 @@ impl Key {
         dst_addr: SocketAddr,
         local_identity: tls::Conditional<&identity::Name>,
         remote_identity: tls::Conditional<&identity::Name>,
-        http: bool
+        http: bool,
     ) -> Self {
-        let protocol = if http {
-            Protocol::HTTP
-        } else {
-            Protocol::TCP
-        };
+        let protocol = if http { Protocol::HTTP } else { Protocol::TCP };
         Self {
             direction: Direction::Outbound,
             addrs: Addrs {
@@ -102,9 +94,15 @@ impl Key {
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        (((&self.direction, &self.addrs), &self.identity), &self.protocol).fmt_labels(f)
+        (
+            ((&self.direction, &self.addrs), &self.identity),
+            &self.protocol,
+        )
+            .fmt_labels(f)
     }
 }
+
+// ===== impl Direction =====
 
 impl FmtLabels for Direction {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -115,6 +113,8 @@ impl FmtLabels for Direction {
     }
 }
 
+// ===== impl Addrs =====
+
 impl FmtLabels for Addrs {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(src) = &self.src_addr {
@@ -124,6 +124,8 @@ impl FmtLabels for Addrs {
     }
 }
 
+// ===== impl Protocol =====
+
 impl FmtLabels for Protocol {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -132,6 +134,8 @@ impl FmtLabels for Protocol {
         }
     }
 }
+
+// ===== impl TlsStatus =====
 
 impl FmtLabels for TlsStatus {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -156,6 +160,8 @@ impl From<tls::Conditional<&identity::Name>> for TlsStatus {
         TlsStatus(tls.cloned())
     }
 }
+
+// ===== impl Identity =====
 
 impl FmtLabels for Identity {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

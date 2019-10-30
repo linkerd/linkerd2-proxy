@@ -28,7 +28,7 @@ pub struct Listen<O: OrigDstAddr = NoOrigDstAddr> {
 
 pub type Connection = (Addrs, TcpStream);
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Addrs {
     local: SocketAddr,
     peer: SocketAddr,
