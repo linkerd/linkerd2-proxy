@@ -13,19 +13,29 @@ use std::net::SocketAddr;
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Key {
     direction: Direction,
-    remote_addr: RemoteAddr,
-    tls_status: TlsStatus,
+    addrs: Addrs,
+    remote_identity: TlsStatus,
+    local_identity: LocalIdentity,
     protocol: Protocol,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct Direction(&'static str);
+enum Direction {
+    Outbound,
+    Inbound,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct RemoteAddr(SocketAddr);
+struct Addrs {
+    src_addr: SocketAddr,
+    dst_addr: SocketAddr,
+}  
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsStatus(tls::Conditional<identity::Name>);
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct LocalIdentity(tls::Conditional<identity::Name>);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum Protocol {
@@ -36,30 +46,50 @@ enum Protocol {
 // ===== impl Key =====
 
 impl Key {
-    pub fn accept(remote_addr: SocketAddr, tls: &tls::Conditional<identity::Name>, http: bool) -> Self {
+    pub fn accept(
+        src_addr: SocketAddr,
+        dst_addr: SocketAddr,
+        remote_identity: tls::Conditional<&identity::Name>,
+        local_identity: tls::Conditional<&identity::Name>,
+        http: bool
+    ) -> Self {
         let protocol = if http {
             Protocol::HTTP
         } else {
             Protocol::TCP
         };
         Self {
-            direction: Direction("inbound"),
-            remote_addr: RemoteAddr(remote_addr),
-            tls_status: TlsStatus(tls.clone()),
+            direction: Direction::Inbound,
+            addrs: Addrs {
+                src_addr,
+                dst_addr,
+            },
+            remote_identity: TlsStatus(remote_identity.cloned()),
+            local_identity: LocalIdentity(local_identity.cloned()),
             protocol,
         }
     }
 
-    pub fn connect(remote_addr: SocketAddr, tls: &tls::Conditional<identity::Name>, http: bool) -> Self {
+    pub fn connect(
+        src_addr: SocketAddr,
+        dst_addr: SocketAddr,
+        local_identity: tls::Conditional<&identity::Name>,
+        remote_identity: tls::Conditional<&identity::Name>,
+        http: bool
+    ) -> Self {
         let protocol = if http {
             Protocol::HTTP
         } else {
             Protocol::TCP
         };
         Self {
-            direction: Direction("outbound"),
-             remote_addr: RemoteAddr(remote_addr),
-            tls_status: TlsStatus(tls.clone()),
+            direction: Direction::Outbound,
+            addrs: Addrs {
+                src_addr,
+                dst_addr,
+            },
+            remote_identity: TlsStatus(remote_identity.cloned()),
+            local_identity: LocalIdentity(local_identity.cloned()),
             protocol,
         }
     }
@@ -67,19 +97,23 @@ impl Key {
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        (((&self.direction, &self.remote_addr), &self.tls_status), &self.protocol).fmt_labels(f)
+        ((((&self.direction, &self.addrs), &self.remote_identity), &self.local_identity), &self.protocol).fmt_labels(f)
     }
 }
 
 impl FmtLabels for Direction {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "direction=\"{}\"", self.0)
+        match self {
+            Direction::Inbound => write!(f, "direction=\"inbound\","),
+            Direction::Outbound => write!(f, "direction=\"outbound\","),
+        }
     }
 }
 
-impl FmtLabels for RemoteAddr {
+impl FmtLabels for Addrs {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "remote_addr=\"{}\"", self.0)
+        write!(f, "src_addr=\"{}\",", self.src_addr.ip())?;
+        write!(f, "dst_addr=\"{}\"", self.dst_addr)
     }
 }
 
@@ -113,5 +147,14 @@ impl fmt::Display for TlsStatus {
 impl From<tls::Conditional<&identity::Name>> for TlsStatus {
     fn from(tls: tls::Conditional<&identity::Name>) -> TlsStatus {
         TlsStatus(tls.cloned())
+    }
+}
+
+impl FmtLabels for LocalIdentity {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Conditional::None(_) => write!(f, "local_identity=\"\""),
+            Conditional::Some(name) => write!(f, "local_identity=\"{}\"", name),
+        }
     }
 }

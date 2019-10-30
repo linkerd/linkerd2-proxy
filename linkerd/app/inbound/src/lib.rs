@@ -237,7 +237,9 @@ pub fn spawn<A, P>(
 
     let skip_ports = std::sync::Arc::new(config.inbound_ports_disable_protocol_detection.clone());
     let server = Server::new(
-        TransportLabels,
+        TransportLabels {
+            local_identity: local_identity.clone(),
+        },
         transport_metrics,
         svc::stack(connect)
             .push(svc::map_target::layer(Endpoint::from))
@@ -252,8 +254,10 @@ pub fn spawn<A, P>(
     serve::spawn(listen, accept, drain);
 }
 
-#[derive(Copy, Clone, Debug)]
-struct TransportLabels;
+#[derive(Clone, Debug)]
+struct TransportLabels {
+    local_identity: tls::Conditional<identity::Local>,
+}
 
 impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
     type Labels = transport::labels::Key;
@@ -261,7 +265,9 @@ impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
     fn transport_labels(&self, proto: &ServerProtocol) -> Self::Labels {
         transport::labels::Key::accept(
             proto.tls.addrs.peer(),
-            &proto.tls.peer_identity,
+            proto.tls.addrs.local(),
+            proto.tls.peer_identity.as_ref(),
+            self.local_identity.as_ref().map(|local| local.name()),
             proto.http.is_some(),
         )
     }

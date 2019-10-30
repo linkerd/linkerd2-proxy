@@ -15,6 +15,7 @@ use linkerd2_app_core::{
     proxy::{
         self,
         core::resolve::Resolve,
+        core::listen::Listen,
         discover,
         http::{
             balance, canonicalize, client, fallback, header_from_target, insert,
@@ -33,6 +34,7 @@ use linkerd2_app_core::{
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use std::time::Duration;
+use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::{debug, info_span};
@@ -90,9 +92,12 @@ pub fn spawn<A, R, P>(
     // Establishes connections to remote peers (for both TCP
     // forwarding and HTTP proxying).
     let connect = svc::stack(connect::svc(config.outbound_connect_keepalive))
-        .push(tls::client::layer(local_identity))
+        .push(tls::client::layer(local_identity.clone()))
         .push_timeout(config.outbound_connect_timeout)
-        .push(transport_metrics.layer_connect(TransportLabels));
+        .push(transport_metrics.layer_connect(TransportLabels {
+            local_addr: listen.listen_addr(),
+            local_identity: local_identity,
+        }));
 
     let trace_context_layer = trace_context::layer(
         span_sink
@@ -304,7 +309,7 @@ pub fn spawn<A, R, P>(
 
     let skip_ports = std::sync::Arc::new(config.outbound_ports_disable_protocol_detection.clone());
     let proxy = Server::new(
-        TransportLabels,
+        NullTransportLabels,
         (),
         svc::stack(connect)
             .push(svc::map_target::layer(Endpoint::from))
@@ -322,22 +327,30 @@ pub fn spawn<A, R, P>(
     serve::spawn(listen, accept, drain);
 }
 
-#[derive(Copy, Clone, Debug)]
-struct TransportLabels;
+#[derive(Clone, Debug)]
+struct TransportLabels {
+    local_addr: SocketAddr,
+    local_identity: tls::Conditional<identity::Local>,
+}
+
+#[derive(Clone, Debug)]
+struct NullTransportLabels;
 
 impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, endpoint: &Endpoint) -> Self::Labels {
         transport::labels::Key::connect(
+            self.local_addr,
             endpoint.addr,
-            &endpoint.identity,
+            endpoint.identity.as_ref(),
+            self.local_identity.as_ref().map(|local| local.name()),
             endpoint.http_settings.is_http(),
         )
     }
 }
 
-impl transport::metrics::TransportLabels<proxy::server::Protocol> for TransportLabels {
+impl transport::metrics::TransportLabels<proxy::server::Protocol> for NullTransportLabels {
     type Labels = ();
 
     fn transport_labels(&self, _: &proxy::server::Protocol) -> Self::Labels {
