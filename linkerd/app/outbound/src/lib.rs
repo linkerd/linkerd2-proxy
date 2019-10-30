@@ -15,7 +15,6 @@ use linkerd2_app_core::{
     proxy::{
         self,
         core::resolve::Resolve,
-        core::listen::Listen,
         discover,
         http::{
             balance, canonicalize, client, fallback, header_from_target, insert,
@@ -34,7 +33,6 @@ use linkerd2_app_core::{
 use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use std::time::Duration;
-use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::{debug, info_span};
@@ -95,7 +93,6 @@ pub fn spawn<A, R, P>(
         .push(tls::client::layer(local_identity.clone()))
         .push_timeout(config.outbound_connect_timeout)
         .push(transport_metrics.layer_connect(TransportLabels {
-            local_addr: listen.listen_addr(),
             local_identity: local_identity,
         }));
 
@@ -329,7 +326,6 @@ pub fn spawn<A, R, P>(
 
 #[derive(Clone, Debug)]
 struct TransportLabels {
-    local_addr: SocketAddr,
     local_identity: tls::Conditional<identity::Local>,
 }
 
@@ -341,7 +337,6 @@ impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
 
     fn transport_labels(&self, endpoint: &Endpoint) -> Self::Labels {
         transport::labels::Key::connect(
-            self.local_addr,
             endpoint.addr,
             endpoint.identity.as_ref(),
             self.local_identity.as_ref().map(|local| local.name()),

@@ -26,7 +26,7 @@ enum Direction {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct Addrs {
-    src_addr: IpAddr,
+    src_addr: Option<IpAddr>,
     dst_addr: SocketAddr,
 }  
 
@@ -63,7 +63,7 @@ impl Key {
         Self {
             direction: Direction::Inbound,
             addrs: Addrs {
-                src_addr: src_addr.ip(),
+                src_addr: Some(src_addr.ip()),
                 dst_addr,
             },
             identity: Identity {
@@ -75,7 +75,6 @@ impl Key {
     }
 
     pub fn connect(
-        src_addr: SocketAddr,
         dst_addr: SocketAddr,
         local_identity: tls::Conditional<&identity::Name>,
         remote_identity: tls::Conditional<&identity::Name>,
@@ -89,7 +88,7 @@ impl Key {
         Self {
             direction: Direction::Outbound,
             addrs: Addrs {
-                src_addr: src_addr.ip(),
+                src_addr: None,
                 dst_addr,
             },
             identity: Identity {
@@ -118,7 +117,9 @@ impl FmtLabels for Direction {
 
 impl FmtLabels for Addrs {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "src_addr=\"{}\",", self.src_addr)?;
+        if let Some(src) = &self.src_addr {
+            write!(f, "src_addr=\"{}\",", src)?;
+        }
         write!(f, "dst_addr=\"{}\"", self.dst_addr)
     }
 }
