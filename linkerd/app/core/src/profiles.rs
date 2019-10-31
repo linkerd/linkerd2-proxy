@@ -1,3 +1,4 @@
+use crate::dns;
 use crate::proxy::http::{profiles, retry::Budget};
 use futures::sync::{mpsc, oneshot};
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
@@ -8,7 +9,6 @@ use linkerd2_proxy_api::destination as api;
 use regex::Regex;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::executor::{DefaultExecutor, Executor};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::{debug, error, info, trace, warn};
@@ -18,6 +18,7 @@ pub struct Client<T> {
     service: api::client::Destination<T>,
     backoff: Duration,
     context_token: String,
+    suffixes: Vec<dns::Suffix>,
 }
 
 pub struct Rx {
@@ -60,11 +61,17 @@ where
     <T::ResponseBody as Body>::Data: Send,
     T::Future: Send,
 {
-    pub fn new(service: T, backoff: Duration, context_token: String) -> Self {
+    pub fn new(
+        service: T,
+        backoff: Duration,
+        context_token: String,
+        suffixes: impl IntoIterator<Item = dns::Suffix>,
+    ) -> Self {
         Self {
             service: api::client::Destination::new(service),
             backoff,
             context_token,
+            suffixes: suffixes.into_iter().collect(),
         }
     }
 }
@@ -79,11 +86,16 @@ where
     type Stream = Rx;
 
     fn get_routes(&self, dst: &NameAddr) -> Option<Self::Stream> {
-        let (tx, rx) = mpsc::channel(1);
+        if !self.suffixes.iter().any(|s| s.contains(dst.name())) {
+            debug!("name not in profile suffixes");
+            return None;
+        }
+        debug!("watching routes");
+
         // This oneshot allows the daemon to be notified when the Self::Stream
         // is dropped.
         let (hangup_tx, hangup_rx) = oneshot::channel();
-
+        let (tx, rx) = mpsc::channel(1);
         let daemon = Daemon {
             tx,
             hangup: hangup_rx,
@@ -93,9 +105,9 @@ where
             backoff: self.backoff,
             context_token: self.context_token.clone(),
         };
-        let spawn = DefaultExecutor::current().spawn(Box::new(daemon.map_err(|_| ())));
 
-        spawn.ok().map(|_| Rx {
+        tokio::spawn(daemon.map_err(|_| ()));
+        Some(Rx {
             rx,
             _hangup: hangup_tx,
         })
