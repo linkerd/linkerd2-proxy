@@ -19,7 +19,6 @@ linkerd2-app-outbound = { path = "./outbound" }
 linkerd2-opencensus = { path = "../opencensus" }
 regex = "1.0.0"
 tokio = "0.1.14"
-tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 tracing = "0.1.9"
 tracing-futures = "0.1"
 
@@ -41,4 +40,5 @@ tokio-io = "0.1.6"
 tokio-current-thread = "0.1.4"
 tokio-rustls = "0.10"
 tower = "0.1"
+tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 webpki = "0.21"
