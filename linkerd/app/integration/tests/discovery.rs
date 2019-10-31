@@ -686,9 +686,9 @@ mod http2 {
         drop(srv1);
 
         // Wait until the proxy has seen the `srv1` disconnect...
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_close_total\\{direction=\"outbound\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"not_provided_by_service_discovery\",protocol=\"http\",errno=\"\"\\} 1"
         );
 
         // Start a new request to the destination, now that the server is dead.

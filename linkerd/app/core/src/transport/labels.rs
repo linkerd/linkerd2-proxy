@@ -72,8 +72,8 @@ impl Key {
 
     pub fn connect(
         dst_addr: SocketAddr,
-        local_identity: tls::Conditional<&identity::Name>,
         remote_identity: tls::Conditional<&identity::Name>,
+        local_identity: tls::Conditional<&identity::Name>,
         http: bool,
     ) -> Self {
         let protocol = if http { Protocol::HTTP } else { Protocol::TCP };

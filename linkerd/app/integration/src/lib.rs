@@ -140,6 +140,19 @@ macro_rules! assert_eventually_contains {
     };
 }
 
+#[macro_export]
+macro_rules! assert_eventually_matches {
+    ($scrape:expr, $re:expr) => {
+        let re = regex::Regex::new($re).unwrap();
+        assert_eventually!(
+            re.is_match($scrape),
+            "metrics scrape:\n{}\ndid not match:\n{}",
+            $scrape,
+            $re
+        )
+    };
+}
+
 pub mod client;
 pub mod controller;
 pub mod identity;

@@ -114,13 +114,13 @@ fn metrics_endpoint_inbound_request_count() {
 
     // prior to seeing any requests, request count should be empty.
     assert!(!metrics.get("/metrics")
-        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\"}"));
+        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"false\",no_tls_reason=\"disabled\"}"));
 
     info!("client.get(/)");
     assert_eq!(client.get("/"), "hello");
 
     // after seeing a request, the request count should be 1.
-    assert_eventually_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\"} 1");
+    assert_eventually_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"false\",no_tls_reason=\"disabled\"} 1");
 }
 
 #[test]
@@ -134,13 +134,13 @@ fn metrics_endpoint_outbound_request_count() {
 
     // prior to seeing any requests, request count should be empty.
     assert!(!metrics.get("/metrics")
-        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}"));
+        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"false\",no_tls_reason=\"not_provided_by_service_discovery\"}"));
 
     info!("client.get(/)");
     assert_eq!(client.get("/"), "hello");
 
     // after seeing a request, the request count should be 1.
-    assert_eventually_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+    assert_eventually_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"false\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
 }
 
 mod response_classification {
@@ -231,7 +231,7 @@ mod response_classification {
                 // all previous requests are *not* incremented.
                 assert_eventually_contains!(
                     metrics.get("/metrics"),
-                    &expected_metric(status, "inbound", "disabled", None)
+                    &expected_metric(status, "inbound", "false", Some("disabled"))
                 )
             }
         }
@@ -263,7 +263,7 @@ mod response_classification {
                     &expected_metric(
                         status,
                         "outbound",
-                        "no_identity",
+                        "false",
                         Some("not_provided_by_service_discovery")
                     )
                 )
@@ -545,11 +545,11 @@ mod outbound_dst_labels {
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
         assert_eventually_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"false\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
         assert_eventually_contains!(metrics.get("/metrics"),
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"false\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_eventually_contains!(metrics.get("/metrics"),
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"false\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
     }
 
     // Ignore this test on CI, as it may fail due to the reduced concurrency
@@ -743,15 +743,15 @@ mod transport {
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_open_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"http\"\\} 1"
         );
         // drop the client to force the connection to close.
         drop(client);
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"ENOTCONN\"} 1"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_close_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"http\",errno=\"ENOTCONN\"\\} 1"
         );
 
         // create a new client to force a new connection
@@ -759,80 +759,15 @@ mod transport {
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 2"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_open_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"http\"\\} 2"
         );
         // drop the client to force the connection to close.
         drop(client);
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"ENOTCONN\"} 2"
-        );
-    }
-
-    #[test]
-    fn inbound_http_connect() {
-        let _ = trace_init();
-        let Fixture {
-            client,
-            metrics,
-            proxy,
-        } = Fixture::inbound();
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-
-        // create a new client to force a new connection
-        let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/"), "hello");
-        // server connection should be pooled
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-    }
-
-    #[test]
-    fn outbound_http_accept() {
-        let _ = trace_init();
-        let Fixture {
-            client,
-            metrics,
-            proxy,
-        } = Fixture::outbound();
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-        // drop the client to force the connection to close.
-        drop(client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"ENOTCONN\"} 1"
-        );
-
-        // create a new client to force a new connection
-        let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 2"
-        );
-        // drop the client to force the connection to close.
-        drop(client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"ENOTCONN\"} 2"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_close_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"http\",errno=\"ENOTCONN\"\\} 2"
         );
     }
 
@@ -847,8 +782,8 @@ mod transport {
 
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+        assert_eventually_matches!(&metrics.get("/metrics"),
+            "tcp_open_total\\{direction=\"outbound\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"not_provided_by_service_discovery\",protocol=\"http\"\\} 1");
 
         // create a new client to force a new connection
         let client2 = client::new(proxy.outbound, "tele.test.svc.cluster.local");
@@ -856,55 +791,8 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client2.get("/"), "hello");
         // server connection should be pooled
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-    }
-
-    #[test]
-    fn inbound_tcp_connect() {
-        let _ = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-        } = TcpFixture::inbound();
-
-        let tcp_client = client.connect();
-
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1");
-    }
-
-    #[test]
-    #[cfg(macos)]
-    fn inbound_tcp_connect_err() {
-        let _ = trace_init();
-        let srv = tcp::server()
-            .accept_fut(move |sock| {
-                drop(sock);
-                future::ok(())
-            })
-            .run();
-        let proxy = proxy::new().inbound(srv).run();
-
-        let client = client::tcp(proxy.inbound);
-        let metrics = client::http1(proxy.metrics, "localhost");
-
-        let tcp_client = client.connect();
-
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), &[]);
-        // Connection to the server should be a failure with the EXFULL error
-        // code.
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"EXFULL\"} 1");
-        // Connection from the client should have closed cleanly.
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
-        );
+        assert_eventually_matches!(&metrics.get("/metrics"),
+            "tcp_open_total\\{direction=\"outbound\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"not_provided_by_service_discovery\",protocol=\"http\"\\} 1");
     }
 
     #[test]
@@ -928,11 +816,8 @@ mod transport {
         assert_eq!(tcp_client.read(), &[]);
         // Connection to the server should be a failure with the EXFULL error
         // code.
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"EXFULL\"} 1");
-        // Connection from the client should have closed cleanly.
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
+        assert_eventually_matches!(&metrics.get("/metrics"),
+            "tcp_close_total\\{direction=\"outbound\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"not_http\",protocol=\"tcp\",errno=\"EXFULL\"\\} 1");
     }
 
     #[test]
@@ -949,15 +834,15 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
 
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_open_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"tcp\"\\} 1"
         );
 
         drop(tcp_client);
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_close_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"tcp\",errno=\"\"\\} 1"
         );
 
         let tcp_client = client.connect();
@@ -965,14 +850,14 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
 
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 2"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_open_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"tcp\"\\} 2"
         );
         drop(tcp_client);
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 2"
+        assert_eventually_matches!(
+            &metrics.get("/metrics"),
+            "tcp_close_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"tcp\",errno=\"\"\\} 2"
         );
     }
 
@@ -1026,12 +911,8 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::inbound();
         let src_expected = format!(
-            "tcp_write_bytes_total{{direction=\"inbound\",peer=\"src\",tls=\"disabled\"}} {}",
+            "tcp_write_bytes_total\\{{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"tcp\"\\}} {}",
             TcpFixture::BYE_MSG.len()
-        );
-        let dst_expected = format!(
-            "tcp_write_bytes_total{{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"loopback\"}} {}",
-            TcpFixture::HELLO_MSG.len()
         );
 
         let tcp_client = client.connect();
@@ -1041,8 +922,7 @@ mod transport {
         drop(tcp_client);
 
         let out = metrics.get("/metrics");
-        assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);
+        assert_eventually_matches!(&out, &src_expected);
     }
 
     #[test]
@@ -1054,12 +934,8 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::inbound();
         let src_expected = format!(
-            "tcp_read_bytes_total{{direction=\"inbound\",peer=\"src\",tls=\"disabled\"}} {}",
+            "tcp_read_bytes_total\\{{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"tcp\"\\}} {}",
             TcpFixture::HELLO_MSG.len()
-        );
-        let dst_expected = format!(
-            "tcp_read_bytes_total{{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"loopback\"}} {}",
-            TcpFixture::BYE_MSG.len()
         );
 
         let tcp_client = client.connect();
@@ -1069,8 +945,7 @@ mod transport {
         drop(tcp_client);
 
         let out = metrics.get("/metrics");
-        assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);
+        assert_eventually_matches!(&out, &src_expected);
     }
 
     #[test]
@@ -1086,45 +961,8 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG);
         assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"} 1");
-    }
-
-    #[test]
-    fn outbound_tcp_accept() {
-        let _ = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-        } = TcpFixture::outbound();
-
-        let tcp_client = client.connect();
-
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
-
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-
-        drop(tcp_client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
-
-        let tcp_client = client.connect();
-
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
-
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 2"
-        );
-        drop(tcp_client);
-        assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2");
+        assert_eventually_matches!(&metrics.get("/metrics"),
+            "tcp_open_total\\{direction=\"outbound\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"not_http\",protocol=\"tcp\"\\} 1");
     }
 
     #[test]
@@ -1144,8 +982,6 @@ mod transport {
         drop(tcp_client);
         // TODO: make assertions about buckets
         let out = metrics.get("/metrics");
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"\"} 1");
 
@@ -1175,12 +1011,8 @@ mod transport {
             metrics,
             proxy: _proxy,
         } = TcpFixture::outbound();
-        let src_expected = format!(
-            "tcp_write_bytes_total{{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"}} {}",
-            TcpFixture::BYE_MSG.len()
-        );
         let dst_expected = format!(
-            "tcp_write_bytes_total{{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
+            "tcp_write_bytes_total\\{{direction=\"outbound\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"not_http\",protocol=\"tcp\"\\}} {}",
             TcpFixture::HELLO_MSG.len()
         );
 
@@ -1191,8 +1023,7 @@ mod transport {
         drop(tcp_client);
 
         let out = metrics.get("/metrics");
-        assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);
+        assert_eventually_matches!(&out, &dst_expected);
     }
 
     #[test]
@@ -1203,12 +1034,8 @@ mod transport {
             metrics,
             proxy: _proxy,
         } = TcpFixture::outbound();
-        let src_expected = format!(
-            "tcp_read_bytes_total{{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"}} {}",
-            TcpFixture::HELLO_MSG.len()
-        );
         let dst_expected = format!(
-            "tcp_read_bytes_total{{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
+            "tcp_read_bytes_total\\{{direction=\"outbound\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"not_http\",protocol=\"tcp\"\\}} {}",
             TcpFixture::BYE_MSG.len()
         );
 
@@ -1219,86 +1046,9 @@ mod transport {
         drop(tcp_client);
 
         let out = metrics.get("/metrics");
-        assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);
+        assert_eventually_matches!(&out, &dst_expected);
     }
 
-    #[test]
-    fn outbound_tcp_open_connections() {
-        let _ = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-        } = TcpFixture::outbound();
-
-        let tcp_client = client.connect();
-
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-        drop(tcp_client);
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
-        );
-        let tcp_client = client.connect();
-
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-
-        drop(tcp_client);
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
-        );
-    }
-
-    #[test]
-    fn outbound_http_tcp_open_connections() {
-        let _ = trace_init();
-        let Fixture {
-            client,
-            metrics,
-            proxy,
-        } = Fixture::outbound();
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/"), "hello");
-
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-        drop(client);
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
-        );
-
-        // create a new client to force a new connection
-        let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/"), "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-
-        drop(client);
-        assert_eventually_contains!(
-            metrics.get("/metrics"),
-            "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
-        );
-    }
 }
 
 // linkerd/linkerd2#613
@@ -1362,7 +1112,7 @@ fn metrics_compression() {
 
     for &encoding in encodings {
         assert_eventually_contains!(do_scrape(encoding),
-            "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"false\",no_tls_reason=\"disabled\",status_code=\"200\"} 1");
     }
 
     info!("client.get(/)");
@@ -1370,6 +1120,6 @@ fn metrics_compression() {
 
     for &encoding in encodings {
         assert_eventually_contains!(do_scrape(encoding),
-            "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 2");
+            "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"false\",no_tls_reason=\"disabled\",status_code=\"200\"} 2");
     }
 }
