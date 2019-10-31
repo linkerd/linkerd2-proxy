@@ -427,6 +427,7 @@ where
             dst_svc,
             Duration::from_secs(3),
             config.destination_context.clone(),
+            config.destination_profile_suffixes.clone(),
         );
 
         let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| {

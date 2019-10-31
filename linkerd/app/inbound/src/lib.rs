@@ -64,7 +64,6 @@ pub fn spawn<A, P>(
     let capacity = config.inbound_router_capacity;
     let max_idle_age = config.inbound_router_max_idle_age;
     let max_in_flight = config.inbound_max_requests_in_flight;
-    let profile_suffixes = config.destination_profile_suffixes.clone();
     let dispatch_timeout = config.inbound_dispatch_timeout;
 
     let mut trace_labels = HashMap::new();
@@ -137,11 +136,7 @@ pub fn spawn<A, P>(
     let dst_stack = svc::stack(svc::Shared::new(endpoint_router))
         .push(insert::target::layer())
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .push(profiles::router::layer(
-            profile_suffixes,
-            profiles_client,
-            dst_route_layer,
-        ))
+        .push(profiles::router::layer(profiles_client, dst_route_layer))
         .push(strip_header::request::layer(DST_OVERRIDE_HEADER))
         .push(trace::layer(
             |dst: &DstAddr| info_span!("logical", dst = %dst.dst_logical()),

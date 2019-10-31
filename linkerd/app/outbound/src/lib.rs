@@ -80,7 +80,6 @@ pub fn spawn<A, R, P>(
     let capacity = config.outbound_router_capacity;
     let max_idle_age = config.outbound_router_max_idle_age;
     let max_in_flight = config.outbound_max_requests_in_flight;
-    let profile_suffixes = config.destination_profile_suffixes.clone();
     let canonicalize_timeout = config.dns_canonicalize_timeout;
     let dispatch_timeout = config.outbound_dispatch_timeout;
 
@@ -206,11 +205,7 @@ pub fn spawn<A, R, P>(
     //   `DstAddr` with a resolver.
     let dst_stack = distributor
         .push_buffer_pending(max_in_flight, DispatchDeadline::extract)
-        .push(profiles::router::layer(
-            profile_suffixes,
-            profiles_client,
-            dst_route_layer,
-        ))
+        .push(profiles::router::layer(profiles_client, dst_route_layer))
         .push(header_from_target::layer(CANONICAL_DST_HEADER));
 
     // Routes request using the `DstAddr` extension.
