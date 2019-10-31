@@ -1,4 +1,4 @@
-use crate::tap::Inspect;
+use crate::Inspect;
 use http;
 use indexmap::IndexMap;
 use ipnet::{Contains, Ipv4Net, Ipv6Net};

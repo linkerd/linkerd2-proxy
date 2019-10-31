@@ -12,6 +12,7 @@ use linkerd2_app_core::{
     dst::DstAddr,
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, identity,
+    opencensus::proto::trace::v1 as oc,
     proxy::{
         self,
         core::resolve::Resolve,
@@ -30,7 +31,6 @@ use linkerd2_app_core::{
     Addr, Conditional, DispatchDeadline, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
     L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
-use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -59,7 +59,7 @@ pub fn spawn<A, R, P>(
     resolve: R,
     dns_resolver: dns::Resolver,
     profiles_client: linkerd2_app_core::profiles::Client<P>,
-    tap_layer: linkerd2_app_core::tap::Layer,
+    tap_layer: linkerd2_app_core::proxy::tap::Layer,
     handle_time: http_metrics::handle_time::Scope,
     endpoint_http_metrics: linkerd2_app_core::HttpEndpointMetricsRegistry,
     route_http_metrics: linkerd2_app_core::HttpRouteMetricsRegistry,

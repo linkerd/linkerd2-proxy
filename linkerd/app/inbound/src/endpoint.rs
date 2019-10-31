@@ -5,8 +5,10 @@ use linkerd2_app_core::{
     dst::{DstAddr, Route},
     identity,
     metric_labels::EndpointLabels,
-    proxy::http::{router, settings},
-    tap,
+    proxy::{
+        http::{router, settings},
+        tap,
+    },
     transport::{connect, tls},
     Conditional, NameAddr,
 };

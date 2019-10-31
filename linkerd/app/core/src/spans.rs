@@ -1,6 +1,6 @@
 use linkerd2_error::Error;
+use linkerd2_opencensus::proto::trace::v1 as oc;
 use linkerd2_trace_context as trace_context;
-use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use std::{error, fmt};
 use tokio::sync::mpsc;

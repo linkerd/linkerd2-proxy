@@ -14,7 +14,6 @@ http = "0.1"
 futures = "0.1"
 indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
-opencensus-proto = { path = "../../../opencensus-proto" }
 tokio = "0.1.14"
 tower = "0.1"
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }

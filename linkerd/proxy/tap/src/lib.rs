@@ -1,8 +1,10 @@
-use crate::identity;
-use crate::transport::tls::ReasonForNoIdentity;
+#![deny(warnings, rust_2018_idioms)]
+
 use http;
 use indexmap::IndexMap;
 use linkerd2_conditional::Conditional;
+use linkerd2_identity as identity;
+use linkerd2_proxy_transport::tls::ReasonForNoIdentity;
 use std::net;
 use std::sync::Arc;
 
@@ -89,11 +91,11 @@ pub trait Inspect {
 /// for Layer/Server/Daemon, but need not be implemented outside of the `tap`
 /// module.
 mod iface {
-    use crate::proxy::http::HasH2Reason;
     use bytes::Buf;
     use futures::{Future, Stream};
     use http;
     use hyper::body::Payload;
+    use linkerd2_proxy_http::HasH2Reason;
 
     /// Registers a stack to receive taps.
     pub trait Register {

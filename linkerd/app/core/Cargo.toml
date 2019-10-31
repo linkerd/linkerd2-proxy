@@ -17,7 +17,6 @@ http = "0.1"
 hyper = "0.12"
 futures = "0.1"
 indexmap = "1.0"
-ipnet = "1.0"
 linkerd2-addr = { path = "../../addr" }
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns = { path = "../../dns" }
@@ -36,6 +35,7 @@ linkerd2-proxy-detect = { path = "../../proxy/detect" }
 linkerd2-proxy-discover = { path = "../../proxy/discover" }
 linkerd2-proxy-http = { path = "../../proxy/http" }
 linkerd2-proxy-resolve = { path = "../../proxy/resolve" }
+linkerd2-proxy-tap = { path = "../../proxy/tap" }
 linkerd2-proxy-transport = { path = "../../proxy/transport" }
 linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-request-filter = { path = "../../request-filter" }
@@ -43,7 +43,6 @@ linkerd2-router = { path = "../../router" }
 linkerd2-stack = { path = "../../stack" }
 linkerd2-timeout = { path = "../../timeout" }
 linkerd2-trace-context = { path = "../../trace-context" }
-opencensus-proto = { path = "../../../opencensus-proto" }
 rand = "0.6"
 regex = "1.0.0"
 tokio = "0.1.14"
