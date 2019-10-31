@@ -258,7 +258,7 @@ fn refresh() {
         .run();
 
     // Disable the minimum bound on when to refresh identity for this test.
-    env.put(app::config::ENV_IDENTITY_MIN_REFRESH, "0ms".into());
+    env.put(app::env::ENV_IDENTITY_MIN_REFRESH, "0ms".into());
     let _proxy = proxy::new().identity(id_svc).run_with_test_env(env);
 
     let expiry = expiry_rx.wait().expect("wait for expiry");

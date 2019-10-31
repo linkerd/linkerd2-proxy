@@ -26,7 +26,7 @@ pub struct Proxy {
 }
 
 pub struct Listening {
-    pub control: Option<SocketAddr>,
+    pub tap: Option<SocketAddr>,
     pub inbound: SocketAddr,
     pub outbound: SocketAddr,
     pub metrics: SocketAddr,
@@ -128,10 +128,10 @@ impl Proxy {
     }
 
     pub fn run(self) -> Listening {
-        self.run_with_test_env(app::config::TestEnv::new())
+        self.run_with_test_env(TestEnv::new())
     }
 
-    pub fn run_with_test_env(self, env: app::config::TestEnv) -> Listening {
+    pub fn run_with_test_env(self, env: TestEnv) -> Listening {
         run(self, env)
     }
 }
@@ -147,22 +147,27 @@ struct DstInner {
     outbound_local_addr: Option<SocketAddr>,
 }
 
-impl app::transport::OrigDstAddr for MockOriginalDst {
+impl app::core::transport::OrigDstAddr for MockOriginalDst {
     fn orig_dst_addr(&self, sock: &tokio::net::TcpStream) -> Option<SocketAddr> {
-        sock.local_addr().ok().and_then(|local| {
-            let inner = self.0.lock().unwrap();
-            if inner.inbound_local_addr == Some(local) {
-                inner.inbound_orig_addr
-            } else if inner.outbound_local_addr == Some(local) {
-                inner.outbound_orig_addr
-            } else {
-                None
-            }
+        info_span!("mock original dst").in_scope(|| {
+            sock.local_addr().ok().and_then(|local| {
+                let inner = self.0.lock().unwrap();
+                if inner.inbound_local_addr == Some(local) {
+                    debug!(local = %local, mock = ?inner.inbound_orig_addr, "inbound");
+                    inner.inbound_orig_addr
+                } else if inner.outbound_local_addr == Some(local) {
+                    debug!(local = %local, mock = ?inner.outbound_orig_addr, "outbound");
+                    inner.outbound_orig_addr
+                } else {
+                    debug!(local = %local, "failed");
+                    None
+                }
+            })
         })
     }
 }
 
-fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
+fn run(proxy: Proxy, mut env: TestEnv) -> Listening {
     let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
@@ -170,29 +175,17 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     let mut mock_orig_dst = DstInner::default();
 
     env.put(
-        app::config::ENV_DESTINATION_SVC_ADDR,
+        "LINKERD2_PROXY_DESTINATION_SVC_ADDR",
         format!("{}", controller.addr),
     );
-    env.put(
-        app::config::ENV_OUTBOUND_LISTEN_ADDR,
-        "127.0.0.1:0".to_owned(),
-    );
+    env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
 
-    if let Some(inbound) = inbound {
-        mock_orig_dst.inbound_orig_addr = Some(inbound);
-    }
-
+    mock_orig_dst.inbound_orig_addr = inbound;
     mock_orig_dst.outbound_orig_addr = outbound;
 
-    env.put(
-        app::config::ENV_INBOUND_LISTEN_ADDR,
-        "127.0.0.1:0".to_owned(),
-    );
-    env.put(
-        app::config::ENV_CONTROL_LISTEN_ADDR,
-        "127.0.0.1:0".to_owned(),
-    );
-    env.put(app::config::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+    env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+    env.put(app::env::ENV_CONTROL_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+    env.put(app::env::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
 
     static IDENTITY_SVC_NAME: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_NAME";
     static IDENTITY_SVC_ADDR: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_ADDR";
@@ -202,17 +195,17 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         env.put(IDENTITY_SVC_ADDR, format!("{}", identity.addr));
         Some(identity.addr)
     } else {
-        env.put(app::config::ENV_IDENTITY_DISABLED, "test".to_owned());
-        env.put(app::config::ENV_TAP_DISABLED, "test".to_owned());
+        env.put(app::env::ENV_IDENTITY_DISABLED, "test".to_owned());
+        env.put(app::env::ENV_TAP_DISABLED, "test".to_owned());
         None
     };
 
     // If identity is enabled but the test is not concerned with tap, ensure
     // there is a tap service name set
-    if !env.contains_key(app::config::ENV_TAP_DISABLED)
-        && !env.contains_key(app::config::ENV_TAP_SVC_NAME)
+    if !env.contains_key(app::env::ENV_TAP_DISABLED)
+        && !env.contains_key(app::env::ENV_TAP_SVC_NAME)
     {
-        env.put(app::config::ENV_TAP_SVC_NAME, "test-identity".to_owned())
+        env.put(app::env::ENV_TAP_SVC_NAME, "test-identity".to_owned())
     }
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
@@ -222,7 +215,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             .collect::<Vec<_>>()
             .join(",");
         env.put(
-            app::config::ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+            app::env::ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
             ports,
         );
     }
@@ -234,12 +227,12 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
             .collect::<Vec<_>>()
             .join(",");
         env.put(
-            app::config::ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+            app::env::ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
             ports,
         );
     }
 
-    let config = app::config::Config::parse(&env).unwrap();
+    let config = app::env::parse_config(&env).unwrap();
     let (trace, trace_handle) = super::trace_init();
 
     let (running_tx, running_rx) = oneshot::channel();
@@ -249,55 +242,68 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
         rx = Box::new(rx.select(fut).then(|_| Ok(())));
     }
 
-    let tname = format!("support proxy (test={})", thread_name());
-    ::std::thread::Builder::new()
-        .name(tname)
+    std::thread::Builder::new()
+        .name(format!("{}:proxy", thread_name()))
         .spawn(move || {
             tracing::dispatcher::with_default(&trace, || {
-                let _c = controller;
-                let _i = identity;
+                info_span!("proxy", test = %thread_name()).in_scope(|| {
+                    let _c = controller;
+                    let _i = identity;
 
-                let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
-                let main = linkerd2_app::Main::new(config, trace_handle, mock_orig_dst.clone());
+                    tokio::runtime::current_thread::Runtime::new()
+                        .expect("proxy")
+                        .block_on(future::lazy(move || {
+                            let mock_orig_dst =
+                                MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
+                            let main = config
+                                .with_orig_dst_addr(mock_orig_dst.clone())
+                                .build(trace_handle)
+                                .expect("config");
 
-                {
-                    let mut inner = mock_orig_dst.0.lock().unwrap();
-                    inner.inbound_local_addr = Some(main.inbound_addr());
-                    inner.outbound_local_addr = Some(main.outbound_addr());
-                }
+                            {
+                                let mut inner = mock_orig_dst.0.lock().unwrap();
+                                inner.inbound_local_addr = Some(main.inbound_addr());
+                                inner.outbound_local_addr = Some(main.outbound_addr());
+                            }
 
-                // slip the running tx into the shutdown future, since the first time
-                // the shutdown future is polled, that means all of the proxy is now
-                // running.
-                let addrs = (
-                    main.control_addr(),
-                    identity_addr,
-                    main.inbound_addr(),
-                    main.outbound_addr(),
-                    main.metrics_addr(),
-                );
-                let mut running = Some((running_tx, addrs));
-                let on_shutdown = future::poll_fn(move || {
-                    if let Some((tx, addrs)) = running.take() {
-                        let _ = tx.send(addrs);
-                    }
+                            // slip the running tx into the shutdown future, since the first time
+                            // the shutdown future is polled, that means all of the proxy is now
+                            // running.
+                            let addrs = (
+                                main.tap_addr(),
+                                identity_addr,
+                                main.inbound_addr(),
+                                main.outbound_addr(),
+                                main.admin_addr(),
+                            );
+                            let mut running = Some((running_tx, addrs));
+                            let on_shutdown = future::poll_fn(move || {
+                                debug!("polling shutdown");
+                                if let Some((tx, addrs)) = running.take() {
+                                    let _ = tx.send(addrs);
+                                }
 
-                    try_ready!(rx.poll());
-                    Ok(().into())
-                });
+                                try_ready!(rx.poll());
+                                debug!("shutdown");
+                                Ok(().into())
+                            });
 
-                main.run_until(on_shutdown);
+                            let drain = main.spawn();
+                            on_shutdown.and_then(move |()| drain.drain())
+                        }))
+                        .expect("proxy");
+                })
             })
         })
-        .unwrap();
+        .expect("spawn");
 
-    let (control_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
+    let (tap_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
         running_rx.wait().unwrap();
 
     // printlns will show if the test fails...
     println!(
-        "proxy running; control={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
-        control_addr
+        "proxy running; tap={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
+        tap_addr
             .as_ref()
             .map(SocketAddr::to_string)
             .unwrap_or_default(),
@@ -316,7 +322,7 @@ fn run(proxy: Proxy, mut env: app::config::TestEnv) -> Listening {
     );
 
     Listening {
-        control: control_addr,
+        tap: tap_addr,
         inbound: inbound_addr,
         outbound: outbound_addr,
         metrics: metrics_addr,

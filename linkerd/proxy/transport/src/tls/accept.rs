@@ -100,16 +100,6 @@ where
         // new connection without protocol detection.
         let target_addr = addrs.target_addr();
 
-        if self.skip_ports.contains(&target_addr.port()) {
-            debug!("skipping protocol detection");
-            let meta = Meta {
-                peer_identity: Conditional::None(super::ReasonForNoPeerName::NotHttp.into()),
-                addrs,
-            };
-            let conn = (meta, BoxedIo::new(socket));
-            return AcceptFuture::Accept(self.accept.accept(conn));
-        }
-
         match &self.tls {
             // Tls is disabled. Return a new plaintext connection.
             Conditional::None(reason) => {
@@ -124,17 +114,30 @@ where
 
             // Tls is enabled. Try to accept a Tls handshake.
             Conditional::Some(tls) => {
-                debug!("attempting TLS handshake");
-                AcceptFuture::TryTls(Some(TryTls {
-                    meta: AcceptMeta {
+                if self.skip_ports.contains(&target_addr.port()) {
+                    debug!("skipping protocol detection");
+                    let meta = Meta {
+                        peer_identity: Conditional::None(
+                            super::ReasonForNoPeerName::NotHttp.into(),
+                        ),
+                        addrs,
+                    };
+                    let conn = (meta, BoxedIo::new(socket));
+                    AcceptFuture::Accept(self.accept.accept(conn))
+                } else {
+                    debug!("attempting TLS handshake");
+                    let meta = AcceptMeta {
                         accept: self.accept.clone(),
                         addrs,
-                    },
-                    socket,
-                    peek_buf: BytesMut::with_capacity(Self::PEEK_CAPACITY),
-                    config: tls.tls_server_config(),
-                    server_name: tls.tls_server_name(),
-                }))
+                    };
+                    AcceptFuture::TryTls(Some(TryTls {
+                        meta,
+                        socket,
+                        peek_buf: BytesMut::with_capacity(Self::PEEK_CAPACITY),
+                        config: tls.tls_server_config(),
+                        server_name: tls.tls_server_name(),
+                    }))
+                }
             }
         }
     }

@@ -11,7 +11,6 @@
 
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};
 pub use linkerd2_conditional::Conditional;
-pub use linkerd2_dns as dns;
 pub use linkerd2_drain as drain;
 pub use linkerd2_error::{Error, Never, Recover};
 pub use linkerd2_exp_backoff as exp_backoff;
@@ -26,17 +25,16 @@ pub mod admin;
 pub mod classify;
 pub mod config;
 pub mod control;
+pub mod dns;
 pub mod dst;
 pub mod errors;
 pub mod handle_time;
-pub mod identity;
 pub mod metric_labels;
 pub mod profiles;
 pub mod proxy;
 pub mod serve;
 pub mod spans;
 pub mod svc;
-pub mod tap;
 pub mod telemetry;
 pub mod trace;
 pub mod transport;
@@ -47,12 +45,6 @@ pub const L5D_REMOTE_IP: &'static str = "l5d-remote-ip";
 pub const L5D_SERVER_ID: &'static str = "l5d-server-id";
 pub const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 pub const L5D_REQUIRE_ID: &'static str = "l5d-require-id";
-
-pub fn init() -> Result<(config::Config, trace::LevelHandle), linkerd2_error::Error> {
-    let trace_admin = trace::init()?;
-    let cfg = config::Config::parse(&config::Env)?;
-    Ok((cfg, trace_admin))
-}
 
 const DEFAULT_PORT: u16 = 80;
 
@@ -100,8 +92,20 @@ impl DispatchDeadline {
     }
 }
 
+pub type ControlHttpMetricsRegistry =
+    proxy::http::metrics::SharedRegistry<metric_labels::ControlLabels, classify::Class>;
+
 pub type HttpEndpointMetricsRegistry =
-    linkerd2_proxy_http::metrics::SharedRegistry<metric_labels::EndpointLabels, classify::Class>;
+    proxy::http::metrics::SharedRegistry<metric_labels::EndpointLabels, classify::Class>;
 
 pub type HttpRouteMetricsRegistry =
-    linkerd2_proxy_http::metrics::SharedRegistry<metric_labels::RouteLabels, classify::Class>;
+    proxy::http::metrics::SharedRegistry<metric_labels::RouteLabels, classify::Class>;
+
+#[derive(Clone)]
+pub struct ProxyMetrics {
+    pub http_handle_time: proxy::http::metrics::handle_time::Scope,
+    pub http_route: HttpRouteMetricsRegistry,
+    pub http_route_retry: HttpRouteMetricsRegistry,
+    pub http_endpoint: HttpEndpointMetricsRegistry,
+    pub transport: transport::MetricsRegistry,
+}

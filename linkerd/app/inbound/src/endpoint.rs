@@ -3,10 +3,11 @@ use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify,
     dst::{DstAddr, Route},
-    identity,
     metric_labels::EndpointLabels,
-    proxy::http::{router, settings},
-    tap,
+    proxy::{
+        http::{router, settings},
+        identity, tap,
+    },
     transport::{connect, tls},
     Conditional, NameAddr,
 };
@@ -122,7 +123,7 @@ impl<A> router::Recognize<http::Request<A>> for RecognizeEndpoint {
     fn recognize(&self, req: &http::Request<A>) -> Option<Self::Target> {
         let src = req.extensions().get::<tls::accept::Meta>();
         debug!("inbound endpoint: src={:?}", src);
-        let addr = src.and_then(|s| s.addrs.target_addr_if_not_local())?;
+        let addr = src.and_then(|m| m.addrs.target_addr_if_not_local())?;
 
         let tls_client_id = src
             .map(|s| s.peer_identity.clone())

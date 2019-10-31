@@ -104,14 +104,14 @@ where
 
                     match tls {
                         Conditional::Some((peer_identity, local_tls)) => {
-                            trace!("initiating TLS");
+                            trace!(peer.id = %peer_identity, "initiating TLS");
                             ConnectFuture::Handshake(
                                 tokio_rustls::TlsConnector::from(local_tls.tls_client_config())
                                     .connect(peer_identity.as_dns_name_ref(), io),
                             )
                         }
-                        Conditional::None(_) => {
-                            trace!("skipping TLS");
+                        Conditional::None(reason) => {
+                            trace!(%reason, "skipping TLS");
                             return Ok(Connection::new(io).into());
                         }
                     }

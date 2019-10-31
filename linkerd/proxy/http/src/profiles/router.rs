@@ -3,7 +3,6 @@ use super::{CanGetDestination, GetRoutes, Route, Routes, WeightedAddr, WithAddr,
 use futures::{Async, Poll, Stream};
 use http;
 use indexmap::IndexMap;
-use linkerd2_dns as dns;
 use linkerd2_error::{Error, Never};
 use linkerd2_router as rt;
 use linkerd2_stack::Shared;
@@ -20,7 +19,6 @@ type RouteRouter<Target, RouteTarget, Svc, Body> =
     rt::Router<http::Request<Body>, RouteRecognize<Target>, rt::FixedMake<RouteTarget, Svc>>;
 
 pub fn layer<G, Inner, RouteLayer, RouteBody, InnerBody>(
-    suffixes: Vec<dns::Suffix>,
     get_routes: G,
     route_layer: RouteLayer,
 ) -> Layer<G, Inner, RouteLayer, RouteBody, InnerBody>
@@ -29,7 +27,6 @@ where
     RouteLayer: Clone,
 {
     Layer {
-        suffixes,
         get_routes,
         route_layer,
         default_route: Route::default(),
@@ -41,7 +38,6 @@ where
 pub struct Layer<G, Inner, RouteLayer, RouteBody, InnerBody> {
     get_routes: G,
     route_layer: RouteLayer,
-    suffixes: Vec<dns::Suffix>,
     /// This is saved into a field so that the same `Arc`s are used and
     /// cloned, instead of calling `Route::default()` every time.
     default_route: Route,
@@ -53,7 +49,6 @@ pub struct MakeSvc<G, Inner, RouteLayer, RouteBody, InnerBody> {
     inner: Inner,
     get_routes: G,
     route_layer: RouteLayer,
-    suffixes: Vec<dns::Suffix>,
     default_route: Route,
     _p: ::std::marker::PhantomData<fn(RouteBody, InnerBody)>,
 }
@@ -109,7 +104,6 @@ where
             inner,
             get_routes: self.get_routes.clone(),
             route_layer: self.route_layer.clone(),
-            suffixes: self.suffixes.clone(),
             default_route: self.default_route.clone(),
             _p: ::std::marker::PhantomData,
         }
@@ -124,7 +118,6 @@ where
 {
     fn clone(&self) -> Self {
         Layer {
-            suffixes: self.suffixes.clone(),
             get_routes: self.get_routes.clone(),
             route_layer: self.route_layer.clone(),
             default_route: self.default_route.clone(),
@@ -186,15 +179,7 @@ where
         // Initiate a stream to get route and dst_override updates for this
         // destination.
         let route_stream = match target.get_destination() {
-            Some(ref dst) => {
-                if self.suffixes.iter().any(|s| s.contains(dst.name())) {
-                    debug!("fetching routes for {:?}", dst);
-                    self.get_routes.get_routes(&dst)
-                } else {
-                    debug!("skipping route discovery for dst={:?}", dst);
-                    None
-                }
-            }
+            Some(ref dst) => self.get_routes.get_routes(&dst),
             None => {
                 debug!("no destination for routes");
                 None
@@ -225,7 +210,6 @@ where
             inner: self.inner.clone(),
             get_routes: self.get_routes.clone(),
             route_layer: self.route_layer.clone(),
-            suffixes: self.suffixes.clone(),
             default_route: self.default_route.clone(),
             _p: ::std::marker::PhantomData,
         }

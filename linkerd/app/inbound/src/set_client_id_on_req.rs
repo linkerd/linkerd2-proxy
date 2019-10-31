@@ -1,5 +1,5 @@
 //! Adds `l5d-client-id` headers to http::Requests derived from the
-//! TlsIdentity of a `Source`.
+//! TlsIdentity of a `tls::accept::Meta`.
 
 use http::header::HeaderValue;
 use linkerd2_app_core::{
@@ -12,15 +12,12 @@ use tracing::{debug, warn};
 pub fn layer() -> Layer<&'static str, tls::accept::Meta, ReqHeader> {
     add_header::request::layer(L5D_CLIENT_ID, |source: &tls::accept::Meta| {
         if let Conditional::Some(ref id) = source.peer_identity {
-            match HeaderValue::from_str(id.as_ref()) {
-                Ok(value) => {
-                    debug!("l5d-client-id enabled for {:?}", source);
-                    return Some(value);
-                }
-                Err(_err) => {
-                    warn!("l5d-client-id identity header is invalid: {:?}", source);
-                }
-            };
+            if let Ok(value) = HeaderValue::from_str(id.as_ref()) {
+                debug!("l5d-client-id enabled");
+                return Some(value);
+            }
+
+            warn!("l5d-client-id identity header is invalid");
         }
 
         None

@@ -4,19 +4,29 @@
 #![recursion_limit = "128"]
 #![type_length_limit = "1110183"]
 
-use linkerd2_app::{Main, SysOrigDstAddr};
+use futures::{future, Future};
+use linkerd2_app::{trace, Config};
 use linkerd2_signal as signal;
 
-/// Loads configuration from the environment
 fn main() {
-    let (config, trace_admin) = match linkerd2_app::init() {
-        Ok(c) => c,
+    // Load configuration from the environment without binding ports.
+    let config = match Config::try_from_env() {
+        Ok(config) => config,
         Err(e) => {
-            eprintln!("configuration error: {:#?}", e);
-            std::process::exit(64)
+            eprintln!("Invalid configuration: {}", e);
+            const EX_USAGE: i32 = 64;
+            std::process::exit(EX_USAGE);
         }
     };
-    let main = Main::new(config, trace_admin, SysOrigDstAddr::default());
-    let shutdown_signal = signal::shutdown();
-    main.run_until(shutdown_signal);
+
+    let log_level = trace::init().expect("log");
+
+    tokio::runtime::current_thread::Runtime::new()
+        .expect("main runtime")
+        .block_on(future::lazy(move || {
+            let main = config.build(log_level).expect("config");
+            let drain = main.spawn();
+            signal::shutdown().and_then(|()| drain.drain())
+        }))
+        .expect("main");
 }

@@ -1,16 +1,18 @@
-use crate::identity;
-use crate::proxy::grpc::{req_box_body, res_body_as_payload};
-use crate::proxy::http::HyperServerSvc;
-use crate::svc::Service;
-use crate::transport::io::BoxedIo;
-use crate::transport::tls::{
-    accept::Connection, Conditional, ReasonForNoIdentity, ReasonForNoPeerName,
-};
 use futures::{Future, Poll};
 use indexmap::IndexSet;
 use linkerd2_error::Error;
+use linkerd2_identity as identity;
 use linkerd2_proxy_api::tap::server::{Tap, TapServer};
+use linkerd2_proxy_http::{
+    grpc::{req_box_body, res_body_as_payload},
+    HyperServerSvc,
+};
+use linkerd2_proxy_transport::io::BoxedIo;
+use linkerd2_proxy_transport::tls::{
+    accept::Connection, Conditional, ReasonForNoIdentity, ReasonForNoPeerName,
+};
 use std::sync::Arc;
+use tower::Service;
 
 #[derive(Clone, Debug)]
 pub struct AcceptPermittedClients {

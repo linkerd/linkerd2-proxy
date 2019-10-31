@@ -17,7 +17,6 @@ http = "0.1"
 hyper = "0.12"
 futures = "0.1"
 indexmap = "1.0"
-ipnet = "1.0"
 linkerd2-addr = { path = "../../addr" }
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns = { path = "../../dns" }
@@ -26,7 +25,6 @@ linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
 linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-fallback = { path = "../../fallback" }
-linkerd2-identity = { path = "../../identity" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
@@ -34,8 +32,10 @@ linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", ta
 linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd2-proxy-detect = { path = "../../proxy/detect" }
 linkerd2-proxy-discover = { path = "../../proxy/discover" }
+linkerd2-proxy-identity = { path = "../../proxy/identity" }
 linkerd2-proxy-http = { path = "../../proxy/http" }
 linkerd2-proxy-resolve = { path = "../../proxy/resolve" }
+linkerd2-proxy-tap = { path = "../../proxy/tap" }
 linkerd2-proxy-transport = { path = "../../proxy/transport" }
 linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-request-filter = { path = "../../request-filter" }
@@ -43,7 +43,6 @@ linkerd2-router = { path = "../../router" }
 linkerd2-stack = { path = "../../stack" }
 linkerd2-timeout = { path = "../../timeout" }
 linkerd2-trace-context = { path = "../../trace-context" }
-opencensus-proto = { path = "../../../opencensus-proto" }
 rand = "0.6"
 regex = "1.0.0"
 tokio = "0.1.14"

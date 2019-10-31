@@ -3,6 +3,7 @@
 use futures::{task, try_ready, Async, Future, Poll, Stream};
 use linkerd2_error::Error;
 use metrics::Registry;
+pub use opencensus_proto as proto;
 use opencensus_proto::agent::common::v1::Node;
 use opencensus_proto::agent::trace::v1::{
     client::TraceService, ExportTraceServiceRequest, ExportTraceServiceResponse,

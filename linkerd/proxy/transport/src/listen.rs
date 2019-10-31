@@ -38,7 +38,7 @@ pub struct Addrs {
 #[derive(Copy, Clone, Debug)]
 pub struct NoOrigDstAddr(());
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug)]
 pub struct SysOrigDstAddr(());
 
 #[derive(Debug)]
@@ -57,13 +57,17 @@ impl Bind {
     }
 }
 
-impl<O: OrigDstAddr> Bind<O> {
-    pub fn with_orig_dst_addr<P: OrigDstAddr>(self, orig_dst_addr: P) -> Bind<P> {
+impl<A: OrigDstAddr> Bind<A> {
+    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addr: B) -> Bind<B> {
         Bind {
             orig_dst_addr,
             bind_addr: self.bind_addr,
             keepalive: self.keepalive,
         }
+    }
+
+    pub fn with_sys_orig_dst_addr(self) -> Bind<SysOrigDstAddr> {
+        self.with_orig_dst_addr(SysOrigDstAddr(()))
     }
 
     pub fn bind_addr(&self) -> SocketAddr {

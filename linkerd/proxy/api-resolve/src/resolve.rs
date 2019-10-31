@@ -27,7 +27,10 @@ where
     <S::ResponseBody as Body>::Data: Send,
     S::Future: Send,
 {
-    pub fn new(svc: S) -> Self {
+    pub fn new<T>(svc: S) -> Self
+    where
+        Self: resolve::Resolve<T>,
+    {
         Self {
             service: api::client::Destination::new(svc),
             scheme: "".into(),

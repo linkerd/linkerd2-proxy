@@ -17,7 +17,7 @@ fn tap_enabled_when_identity_enabled() {
         .identity(identity_env.service().run())
         .run_with_test_env(identity_env.env);
 
-    assert!(proxy.control.is_some())
+    assert!(proxy.tap.is_some())
 }
 
 #[test]
@@ -25,18 +25,18 @@ fn tap_disabled_when_identity_disabled() {
     let _ = trace_init();
     let proxy = proxy::new().disable_identity().run();
 
-    assert!(proxy.control.is_none())
+    assert!(proxy.tap.is_none())
 }
 
 #[test]
 fn can_disable_tap() {
     let _ = trace_init();
-    let mut env = app::config::TestEnv::new();
-    env.put(app::config::ENV_TAP_DISABLED, "true".to_owned());
+    let mut env = TestEnv::new();
+    env.put(app::env::ENV_TAP_DISABLED, "true".to_owned());
 
     let proxy = proxy::new().run_with_test_env(env);
 
-    assert!(proxy.control.is_none())
+    assert!(proxy.tap.is_none())
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn rejects_incorrect_identity_when_identity_is_expected() {
 
     let expected_identity = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
     let mut expected_identity_env = identity_env.env.clone();
-    expected_identity_env.put(app::config::ENV_TAP_SVC_NAME, expected_identity.to_owned());
+    expected_identity_env.put(app::env::ENV_TAP_SVC_NAME, expected_identity.to_owned());
 
     let srv = server::http1().route("/", "hello").run();
 
@@ -58,7 +58,7 @@ fn rejects_incorrect_identity_when_identity_is_expected() {
         .run_with_test_env(expected_identity_env);
 
     let tap_proxy = proxy::new()
-        .outbound_ip(in_proxy.control.unwrap())
+        .outbound_ip(in_proxy.tap.unwrap())
         .identity(identity_env.service().run())
         .run_with_test_env(identity_env.env.clone());
 
@@ -98,7 +98,7 @@ fn inbound_http1() {
 
     // Add expected tap service identity
     env.put(
-        app::config::ENV_TAP_SVC_NAME,
+        app::env::ENV_TAP_SVC_NAME,
         client_proxy_authority.to_owned(),
     );
 
@@ -112,7 +112,7 @@ fn inbound_http1() {
 
     // Run client proxy with client proxy identity service.
     let client_proxy = proxy::new()
-        .outbound_ip(srv_proxy.control.unwrap())
+        .outbound_ip(srv_proxy.tap.unwrap())
         .identity(client_proxy_identity.service().run())
         .run_with_test_env(client_proxy_identity.env);
 
@@ -167,7 +167,7 @@ fn grpc_headers_end() {
 
     // Add expected tap service identity
     env.put(
-        app::config::ENV_TAP_SVC_NAME,
+        app::env::ENV_TAP_SVC_NAME,
         client_proxy_authority.to_owned(),
     );
 
@@ -188,7 +188,7 @@ fn grpc_headers_end() {
 
     // Run client proxy with client proxy identity service.
     let client_proxy = proxy::new()
-        .outbound_ip(srv_proxy.control.unwrap())
+        .outbound_ip(srv_proxy.tap.unwrap())
         .identity(client_proxy_identity.service().run())
         .run_with_test_env(client_proxy_identity.env);
 

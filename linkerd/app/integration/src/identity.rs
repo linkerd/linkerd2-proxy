@@ -10,7 +10,7 @@ use std::{
 use linkerd2_proxy_api::identity as pb;
 
 pub struct Identity {
-    pub env: app::config::TestEnv,
+    pub env: TestEnv,
     pub certify_rsp: pb::CertifyResponse,
     pub client_config: Arc<rustls::ClientConfig>,
     pub server_config: Arc<rustls::ServerConfig>,
@@ -142,12 +142,12 @@ impl Identity {
 
         let certify_rsp = certs.response();
         let (client_config, server_config) = Identity::configs(&trust_anchors, &certs, key);
-        let mut env = app::config::TestEnv::new();
+        let mut env = TestEnv::new();
 
-        env.put(app::config::ENV_IDENTITY_DIR, id_dir);
-        env.put(app::config::ENV_IDENTITY_TOKEN_FILE, token);
-        env.put(app::config::ENV_IDENTITY_TRUST_ANCHORS, trust_anchors);
-        env.put(app::config::ENV_IDENTITY_IDENTITY_LOCAL_NAME, local_name);
+        env.put(app::env::ENV_IDENTITY_DIR, id_dir);
+        env.put(app::env::ENV_IDENTITY_TOKEN_FILE, token);
+        env.put(app::env::ENV_IDENTITY_TRUST_ANCHORS, trust_anchors);
+        env.put(app::env::ENV_IDENTITY_IDENTITY_LOCAL_NAME, local_name);
 
         Self {
             env,

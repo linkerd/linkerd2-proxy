@@ -1,13 +1,12 @@
 use super::match_::Match;
-use crate::proxy::http::HasH2Reason;
-use crate::tap::{iface, Inspect};
-use crate::transport::labels::TlsStatus;
+use crate::{iface, Inspect};
 use bytes::Buf;
 use futures::sync::mpsc;
 use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
 use linkerd2_conditional::Conditional;
 use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
+use linkerd2_proxy_http::HasH2Reason;
 use std::convert::TryFrom;
 use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -98,7 +97,7 @@ enum ExtractKind {
 // === impl Server ===
 
 impl<T: iface::Subscribe<Tap>> Server<T> {
-    pub(in crate::tap) fn new(subscribe: T) -> Self {
+    pub(in crate) fn new(subscribe: T) -> Self {
         let base_id = Arc::new(0.into());
         Self { base_id, subscribe }
     }
@@ -556,12 +555,15 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
         source: inspect.src_addr(req).as_ref().map(|a| a.into()),
         source_meta: {
             let mut m = api::tap_event::EndpointMeta::default();
-            let tls = inspect.src_tls(req);
-            let tls_status = TlsStatus::from(tls.as_ref());
-            m.labels.insert("tls".to_owned(), tls_status.to_string());
-            if let Conditional::Some(id) = tls {
-                m.labels
-                    .insert("client_id".to_owned(), id.as_ref().to_owned());
+            match inspect.src_tls(req) {
+                Conditional::None(reason) => {
+                    m.labels.insert("tls".to_owned(), reason.to_string());
+                }
+                Conditional::Some(id) => {
+                    m.labels.insert("tls".to_owned(), "true".to_owned());
+                    m.labels
+                        .insert("client_id".to_owned(), id.as_ref().to_owned());
+                }
             }
             Some(m)
         },
@@ -570,12 +572,15 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
             let mut m = api::tap_event::EndpointMeta::default();
             m.labels
                 .extend(labels.iter().map(|(k, v)| (k.clone(), v.clone())));
-            let tls = inspect.dst_tls(req);
-            let tls_status = TlsStatus::from(tls.as_ref());
-            m.labels.insert("tls".to_owned(), tls_status.to_string());
-            if let Conditional::Some(id) = tls {
-                m.labels
-                    .insert("server_id".to_owned(), id.as_ref().to_owned());
+            match inspect.dst_tls(req) {
+                Conditional::None(reason) => {
+                    m.labels.insert("tls".to_owned(), reason.to_string());
+                }
+                Conditional::Some(id) => {
+                    m.labels.insert("tls".to_owned(), "true".to_owned());
+                    m.labels
+                        .insert("server_id".to_owned(), id.as_ref().to_owned());
+                }
             }
             m
         }),

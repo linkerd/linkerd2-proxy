@@ -77,7 +77,7 @@ fn inbound_tcp() {
     assert_eq!(tcp_client.read(), msg2.as_bytes());
 }
 
-fn test_server_speaks_first(env: app::config::TestEnv) {
+fn test_server_speaks_first(env: TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     let _ = trace_init();
@@ -114,7 +114,7 @@ fn test_server_speaks_first(env: app::config::TestEnv) {
 
 #[test]
 fn tcp_server_first() {
-    test_server_speaks_first(app::config::TestEnv::new());
+    test_server_speaks_first(TestEnv::new());
 }
 
 #[test]
@@ -146,14 +146,14 @@ fn tcp_server_first_tls() {
         (cert, key, trust_anchors)
     };
 
-    let env = app::config::TestEnv::new();
+    let env = TestEnv::new();
 
     // FIXME
-    //env.put(app::config::ENV_TLS_CERT, cert);
-    //env.put(app::config::ENV_TLS_PRIVATE_KEY, key);
-    //env.put(app::config::ENV_TLS_TRUST_ANCHORS, trust_anchors);
+    //env.put(app::env::ENV_TLS_CERT, cert);
+    //env.put(app::env::ENV_TLS_PRIVATE_KEY, key);
+    //env.put(app::env::ENV_TLS_TRUST_ANCHORS, trust_anchors);
     //env.put(
-    //    app::config::ENV_TLS_LOCAL_IDENTITY,
+    //    app::env::ENV_TLS_LOCAL_IDENTITY,
     //    "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
     //);
 
@@ -1144,10 +1144,10 @@ mod max_in_flight {
         .run();
 
         // Only allow 1 in-flight request at a time...
-        let mut env = app::config::TestEnv::new();
+        let mut env = TestEnv::new();
         let prop = match dir {
-            Dir::In => app::config::ENV_INBOUND_MAX_IN_FLIGHT,
-            Dir::Out => app::config::ENV_OUTBOUND_MAX_IN_FLIGHT,
+            Dir::In => app::env::ENV_INBOUND_MAX_IN_FLIGHT,
+            Dir::Out => app::env::ENV_OUTBOUND_MAX_IN_FLIGHT,
         };
         env.put(prop, "1".into());
         let proxy = match dir {

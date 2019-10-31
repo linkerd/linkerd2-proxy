@@ -1,8 +1,8 @@
-use crate::transport::tls;
+use crate::{Crt, CrtKey, Csr, Key, Name, TokenSource, TrustAnchors};
 use futures::{try_ready, Async, Future, Poll};
 use linkerd2_error::Never;
-pub use linkerd2_identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
 use linkerd2_proxy_api::identity as api;
+use linkerd2_proxy_transport::tls;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
@@ -13,7 +13,6 @@ use tracing::{debug, error, trace};
 /// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub svc: super::control::ControlAddr,
     pub trust_anchors: TrustAnchors,
     pub key: Key,
     pub csr: Csr,

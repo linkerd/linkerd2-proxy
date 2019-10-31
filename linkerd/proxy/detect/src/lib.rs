@@ -3,7 +3,7 @@ use linkerd2_error::Error;
 use linkerd2_io::{BoxedIo, Peek};
 use linkerd2_proxy_core as core;
 
-/// A strategy for detecting values out of a client transport.
+/// A strategy for detectin values out of a client transport.
 pub trait Detect<T>: Clone {
     type Target;
 
@@ -24,11 +24,7 @@ pub struct Accept<D, A> {
     peek_capacity: usize,
 }
 
-pub enum AcceptFuture<T, D, A>
-where
-    D: Detect<T>,
-    A: core::listen::Accept<(D::Target, BoxedIo)>,
-{
+pub enum AcceptFuture<T, D: Detect<T>, A: core::listen::Accept<(D::Target, BoxedIo)>> {
     Accept(A::Future),
     Detect {
         detect: D,
@@ -64,7 +60,7 @@ impl<D, A> Accept<D, A> {
 
 impl<T, D, A> tower::Service<(T, BoxedIo)> for Accept<D, A>
 where
-    D: Detect<T>,
+    D: Detect<T> + Clone,
     A: core::listen::Accept<(D::Target, BoxedIo)> + Clone,
 {
     type Response = ();

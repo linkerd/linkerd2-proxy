@@ -7,6 +7,7 @@ publish = false
 description = "The main proxy executable"
 
 [dependencies]
+futures = "0.1"
 linkerd2-app = { path = "../linkerd/app" }
 linkerd2-signal = { path = "../linkerd/signal" }
 tokio = "0.1.14"

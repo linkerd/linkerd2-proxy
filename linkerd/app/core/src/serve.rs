@@ -1,16 +1,18 @@
 use super::accept_error::AcceptError;
-use futures::{try_ready, Future, Poll};
+use futures::{future, try_ready, Future, Poll};
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::listen::{Accept, Listen, Serve};
 use tracing::Span;
 use tracing_futures::{Instrument, Instrumented};
 
+pub type Task = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
+
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
 ///
 /// The task is driven until the provided `drain` is notified.
-pub fn spawn<L, A>(listen: L, accept: A, drain: drain::Watch)
+pub fn serve<L, A>(listen: L, accept: A, drain: drain::Watch) -> Task
 where
     L: Listen + Send + 'static,
     L::Error: std::error::Error + Send + 'static,
@@ -20,14 +22,11 @@ where
 {
     // As soon as we get a shutdown signal, the listener task completes and
     // stops accepting new connections.
-    tokio::spawn(
-        drain
-            .watch(ServeAndSpawnUntilCancel::new(listen, accept), |s| {
-                s.cancel()
-            })
-            .map_err(|e| panic!("Server failed: {}", e))
-            .in_current_span(),
-    );
+    Box::new(future::lazy(move || {
+        drain.watch(ServeAndSpawnUntilCancel::new(listen, accept), |s| {
+            s.cancel()
+        })
+    }))
 }
 
 struct ServeAndSpawnUntilCancel<L: Listen, A: Accept<L::Connection>>(

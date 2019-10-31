@@ -1,14 +1,14 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     dst::{DstAddr, Route},
-    identity,
     metric_labels::{prefix_labels, EndpointLabels},
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
         http::{identity_from_header, settings},
+        identity,
         resolve::map_endpoint::MapEndpoint,
+        tap,
     },
-    tap,
     transport::{connect, tls},
     Conditional, NameAddr, L5D_REQUIRE_ID,
 };
@@ -52,11 +52,11 @@ impl Endpoint {
     }
 
     pub fn from_request<B>(req: &http::Request<B>) -> Option<Self> {
-        let addr = req
-            .extensions()
-            .get::<tls::accept::Meta>()?
-            .addrs
-            .target_addr_if_not_local()?;
+        let src = req.extensions().get::<tls::accept::Meta>()?;
+        if src.addrs.target_addr_is_local() {
+            return None;
+        }
+
         let http_settings = settings::Settings::from_request(req);
         let identity = match identity_from_header(req, L5D_REQUIRE_ID) {
             Some(require_id) => Conditional::Some(require_id),
@@ -66,7 +66,7 @@ impl Endpoint {
         };
 
         Some(Self {
-            addr,
+            addr: src.addrs.target_addr(),
             dst_logical: None,
             dst_concrete: None,
             identity,
