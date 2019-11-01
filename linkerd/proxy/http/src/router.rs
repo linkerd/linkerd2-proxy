@@ -2,10 +2,10 @@ use futures::Poll;
 use http;
 use linkerd2_error::{Error, Never};
 use linkerd2_router as rt;
-pub use linkerd2_router::{error, LoadShed, PurgeCache, Recognize, Router};
+pub use linkerd2_router::{error, Recognize, Router};
 use std::marker::PhantomData;
 use std::time::Duration;
-use tracing::info_span;
+use tracing::{info_span, trace};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -106,19 +106,15 @@ where
     <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
     B: Default + Send + 'static,
 {
-    pub fn make(
-        &self,
-    ) -> (
-        Service<Req, Rec, Mk>,
-        PurgeCache<Rec::Target, LoadShed<Mk::Value>>,
-    ) {
-        let (inner, purge) = Router::new(
+    pub fn make(&self) -> Service<Req, Rec, Mk> {
+        let (inner, cache_bg) = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
             self.config.capacity,
             self.config.max_idle_age,
         );
-        (Service { inner }, purge)
+        tokio::spawn(cache_bg.instrument(info_span!("router.purge")));
+        Service { inner }
     }
 }
 
@@ -135,16 +131,12 @@ where
     type Error = Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
-    #[inline(always)]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into()) // always ready to make a Router
     }
 
-    #[inline(always)]
     fn call(&mut self, _: T) -> Self::Future {
-        let (svc, purge) = self.make();
-        tokio::spawn(purge.instrument(info_span!("router.purge")));
-        futures::future::ok(svc)
+        futures::future::ok(self.make())
     }
 }
 
@@ -180,8 +172,8 @@ where
         self.inner.poll_ready()
     }
 
-    #[inline(always)]
     fn call(&mut self, request: Req) -> Self::Future {
+        trace!("routing...");
         self.inner.call(request)
     }
 }
