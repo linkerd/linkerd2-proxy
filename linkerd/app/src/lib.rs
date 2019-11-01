@@ -231,96 +231,108 @@ impl App {
             tap,
         } = self;
 
-        debug!("main runtime initialized");
         // Run a daemon thread for all administative tasks.
         //
         // The main reactor holds `admin_shutdown_tx` until the reactor drops
         // the task. This causes the daemon reactor to stop.
         let (admin_shutdown_tx, admin_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-        debug!("spawning admin handle");
+        debug!("spawning daemon thread");
         tokio::spawn(future::poll_fn(|| Ok(Async::NotReady)).map(|()| drop(admin_shutdown_tx)));
         std::thread::Builder::new()
             .name("admin".into())
             .spawn(move || {
                 tokio::runtime::current_thread::Runtime::new()
                     .expect("admin runtime")
-                    .block_on(future::lazy(move || {
-                        debug!("running admin thread");
-                        tokio::spawn(dns);
+                    .block_on(
+                        future::lazy(move || {
+                            debug!("running admin thread");
+                            tokio::spawn(dns);
 
-                        // Start the admin server to serve the readiness endpoint.
-                        tokio::spawn(
-                            admin
-                                .serve
-                                .map_err(|e| panic!("admin server died: {}", e))
-                                .instrument(info_span!("admin", listen.addr = %admin.listen_addr)),
-                        );
-
-                        // Kick off the identity so that the process can become ready.
-                        if let identity::Identity::Enabled { local, task } = identity {
+                            // Start the admin server to serve the readiness endpoint.
                             tokio::spawn(
-                                task.map_err(|e| {
-                                    panic!("identity task failed: {}", e);
-                                })
-                                .instrument(info_span!("identity")),
+                                admin
+                                    .serve
+                                    .map_err(|e| panic!("admin server died: {}", e))
+                                    .instrument(
+                                        info_span!("admin", listen.addr = %admin.listen_addr),
+                                    ),
                             );
 
-                            let latch = admin.latch;
-                            tokio::spawn(
-                                local
-                                    .await_crt()
-                                    .map(move |id| {
-                                        latch.release();
-                                        info!("Certified identity: {}", id.name().as_ref());
-                                    })
-                                    .map_err(|_| {
-                                        // The daemon task was lost?!
-                                        panic!("Failed to certify identity!");
+                            // Kick off the identity so that the process can become ready.
+                            if let identity::Identity::Enabled { local, task } = identity {
+                                tokio::spawn(
+                                    task.map_err(|e| {
+                                        panic!("identity task failed: {}", e);
                                     })
                                     .instrument(info_span!("identity")),
-                            );
-                        } else {
-                            admin.latch.release()
-                        }
+                                );
 
-                        if let tap::Tap::Enabled { daemon, serve, .. } = tap {
-                            tokio::spawn(
-                                daemon
-                                    .map_err(|never| match never {})
-                                    .instrument(info_span!("tap")),
-                            );
-                            tokio::spawn(
-                                serve
-                                    .map_err(|error| error!(%error, "server died"))
-                                    .instrument(info_span!("tap")),
-                            );
-                        }
+                                let latch = admin.latch;
+                                tokio::spawn(
+                                    local
+                                        .await_crt()
+                                        .map(move |id| {
+                                            latch.release();
+                                            info!("Certified identity: {}", id.name().as_ref());
+                                        })
+                                        .map_err(|_| {
+                                            // The daemon task was lost?!
+                                            panic!("Failed to certify identity!");
+                                        })
+                                        .instrument(info_span!("identity")),
+                                );
+                            } else {
+                                admin.latch.release()
+                            }
 
-                        if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
-                            tokio::spawn(
-                                task.map_err(|error| error!(%error, "failure"))
-                                    .instrument(info_span!("oc-tracing")),
-                            );
-                        }
+                            if let tap::Tap::Enabled { daemon, serve, .. } = tap {
+                                tokio::spawn(
+                                    daemon
+                                        .map_err(|never| match never {})
+                                        .instrument(info_span!("tap")),
+                                );
+                                tokio::spawn(
+                                    serve
+                                        .map_err(|error| error!(%error, "server died"))
+                                        .instrument(info_span!("tap")),
+                                );
+                            }
 
-                        admin_shutdown_rx.map_err(|_| ())
-                    }))
+                            if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
+                                tokio::spawn(
+                                    task.map_err(|error| error!(%error, "failure"))
+                                        .instrument(info_span!("oc-tracing")),
+                                );
+                            }
+
+                            admin_shutdown_rx.map_err(|_| ())
+                        })
+                        .instrument(info_span!("daemon")),
+                    )
                     .ok()
             })
             .expect("admin");
 
-        tokio::spawn(
-            outbound
-                .serve
-                .map_err(|e| panic!("outbound died: {}", e))
-                .instrument(info_span!("outbound")),
-        );
-        tokio::spawn(
-            inbound
-                .serve
-                .map_err(|e| panic!("inbound died: {}", e))
-                .instrument(info_span!("inbound")),
-        );
+        tokio::spawn({
+            let serve = outbound.serve;
+            info_span!("outbound").in_scope(|| {
+                future::lazy(|| {
+                    debug!("running");
+                    serve.map_err(|e| panic!("outbound died: {}", e))
+                })
+                .in_current_span()
+            })
+        });
+        tokio::spawn({
+            let serve = inbound.serve;
+            info_span!("inbound").in_scope(|| {
+                future::lazy(|| {
+                    debug!("running");
+                    serve.map_err(|e| panic!("inbound died: {}", e))
+                })
+                .in_current_span()
+            })
+        });
 
         drain
     }
