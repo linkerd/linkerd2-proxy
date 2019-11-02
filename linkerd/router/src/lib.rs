@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::sync::lock::Lock;
 pub use tower_load_shed::LoadShed;
 use tower_service as svc;
-use tracing::debug;
+use tracing::{debug, trace};
 
 /// Routes requests based on a configurable `Key`.
 pub struct Router<Req, Rec, Mk>
@@ -305,7 +305,7 @@ where
                     // If the target is already cached, route the request to
                     // the service; otherwise, try to insert it
                     if let Some(service) = cache.access(&target) {
-                        debug!("target already cached");
+                        trace!("target already cached");
                         State::Call(Some(request), Some(service))
                     } else {
                         debug!("target not cached");
