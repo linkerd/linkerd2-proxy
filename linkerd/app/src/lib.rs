@@ -11,7 +11,7 @@ pub mod oc_collector;
 pub mod tap;
 
 use self::metrics::Metrics;
-use futures::{self, Future};
+use futures::{future, Async, Future};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     dns, drain,
@@ -219,7 +219,6 @@ impl App {
     }
 
     pub fn spawn(self) -> drain::Signal {
-        use futures::{future, Async};
         let App {
             admin,
             dns,
