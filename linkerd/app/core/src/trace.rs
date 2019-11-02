@@ -3,7 +3,8 @@ const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
-use tracing::{info, Dispatch, Event, Level};
+pub use tracing::{debug, error, info, warn};
+use tracing::{Dispatch, Event, Level};
 use tracing_subscriber::{
     filter,
     fmt::{format, Builder, Context, Formatter},

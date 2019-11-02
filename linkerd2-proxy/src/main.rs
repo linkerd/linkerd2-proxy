@@ -19,13 +19,53 @@ fn main() {
         }
     };
 
-    let log_level = trace::init().expect("log");
-
     tokio::runtime::current_thread::Runtime::new()
         .expect("main runtime")
         .block_on(future::lazy(move || {
-            let main = config.build(log_level).expect("config");
-            let drain = main.spawn();
+            let app = match trace::init().and_then(move |t| config.build(t)) {
+                Ok(app) => app,
+                Err(e) => {
+                    eprintln!("Initialization failure: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            trace::info!("Admin interface on {}", app.admin_addr());
+            trace::info!("Inbound interface on {}", app.inbound_addr());
+            trace::info!("Outbound interface on {}", app.outbound_addr());
+            match app.tap_addr() {
+                None => trace::info!("Tap DISABLED"),
+                Some(addr) => trace::info!("Tap interface on {}", addr),
+            }
+            match app.local_identity() {
+                None => trace::warn!("Identity is DISABLED"),
+                Some(identity) => {
+                    trace::info!("Local identity is {}", identity.name());
+                    let addr = app.identity_addr().unwrap();
+                    trace::info!(
+                        "Identity verified via {} ({})",
+                        addr.addr,
+                        addr.identity.value().unwrap()
+                    );
+                }
+            }
+            let dst_addr = app.dst_addr();
+            match dst_addr.identity.value() {
+                None => trace::info!("Destinations resolved via {}", dst_addr.addr),
+                Some(identity) => {
+                    trace::info!("Destinations resolved via {} ({})", dst_addr.addr, identity)
+                }
+            }
+            if let Some(oc) = app.opencensus_addr() {
+                match oc.identity.value() {
+                    None => trace::info!("OpenCensus tracing collector at {}", oc.addr),
+                    Some(identity) => {
+                        trace::info!("OpenCensus tracing collector at {} ({})", oc.addr, identity)
+                    }
+                }
+            }
+
+            let drain = app.spawn();
             signal::shutdown().and_then(|()| drain.drain())
         }))
         .expect("main");

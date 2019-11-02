@@ -1,7 +1,7 @@
 use crate::{dns, identity::LocalIdentity};
-use futures::Future;
+use futures::{future, Future};
 use linkerd2_app_core::{
-    config::ControlConfig,
+    config::{ControlAddr, ControlConfig},
     control, proxy, reconnect,
     svc::{self, LayerExt},
     transport::{connect, tls},
@@ -10,6 +10,7 @@ use linkerd2_app_core::{
 use linkerd2_opencensus::{metrics, proto, SpanExporter};
 use std::time::SystemTime;
 use tokio::sync::mpsc;
+use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub enum Config {
@@ -26,7 +27,11 @@ pub type SpanSink = mpsc::Sender<proto::trace::v1::Span>;
 
 pub enum OcCollector {
     Disabled,
-    Enabled { span_sink: SpanSink, task: Task },
+    Enabled {
+        addr: ControlAddr,
+        span_sink: SpanSink,
+        task: Task,
+    },
 }
 
 impl Config {
@@ -42,6 +47,7 @@ impl Config {
         match self {
             Config::Disabled => Ok(OcCollector::Disabled),
             Config::Enabled { control, hostname } => {
+                let addr = control.addr;
                 let svc = svc::stack(connect::svc(control.connect.keepalive))
                     .push(tls::client::layer(identity))
                     .push_timeout(control.connect.timeout)
@@ -62,7 +68,7 @@ impl Config {
                         control.buffer.dispatch_timeout,
                     )
                     .into_inner()
-                    .make(control.addr);
+                    .make(addr.clone());
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
 
@@ -80,10 +86,19 @@ impl Config {
                         }),
                         ..oc::Node::default()
                     };
-                    Box::new(SpanExporter::new(svc, node, spans_rx, metrics))
+
+                    let addr = addr.clone();
+                    Box::new(future::lazy(move || {
+                        debug!(peer.addr = ?addr, "running");
+                        SpanExporter::new(svc, node, spans_rx, metrics)
+                    }))
                 };
 
-                Ok(OcCollector::Enabled { task, span_sink })
+                Ok(OcCollector::Enabled {
+                    addr,
+                    task,
+                    span_sink,
+                })
             }
         }
     }

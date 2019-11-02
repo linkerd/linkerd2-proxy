@@ -14,6 +14,7 @@ use self::metrics::Metrics;
 use futures::{future, Async, Future};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
+    config::ControlAddr,
     dns, drain,
     transport::{OrigDstAddr, SysOrigDstAddr},
     Error,
@@ -53,6 +54,7 @@ pub struct App {
     admin: admin::Admin,
     dns: dns::Task,
     drain: drain::Signal,
+    dst: ControlAddr,
     identity: identity::Identity,
     inbound: inbound::Inbound,
     oc_collector: oc_collector::OcCollector,
@@ -80,6 +82,10 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
         }
     }
 
+    /// Build an appication.
+    ///
+    /// It is currently required that this be run on a Tokio runtime, since some
+    /// services are created eagerly and must spawn tasks to do so.
     pub fn build(self, log_level: trace::LevelHandle) -> Result<App, Error> {
         let Config {
             admin,
@@ -145,7 +151,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
             let identity = identity.local();
             let dns = dns.resolver.clone();
             let metrics = metrics.opencensus;
-            info_span!("oc-tracing").in_scope(|| oc_collector.build(identity, dns, metrics))
+            info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
         }?;
 
         let admin = {
@@ -154,6 +160,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
             info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
         };
 
+        let dst_addr = dst.addr.clone();
         let inbound = {
             let inbound = inbound;
             let identity = identity.local();
@@ -188,6 +195,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
         Ok(App {
             admin,
             dns: dns.task,
+            dst: dst_addr,
             drain: drain_tx,
             identity,
             inbound,
@@ -218,6 +226,31 @@ impl App {
         }
     }
 
+    pub fn dst_addr(&self) -> &ControlAddr {
+        &self.dst
+    }
+
+    pub fn local_identity(&self) -> Option<&identity::Local> {
+        match self.identity {
+            identity::Identity::Disabled => None,
+            identity::Identity::Enabled { ref local, .. } => Some(local),
+        }
+    }
+
+    pub fn identity_addr(&self) -> Option<&ControlAddr> {
+        match self.identity {
+            identity::Identity::Disabled => None,
+            identity::Identity::Enabled { ref addr, .. } => Some(addr),
+        }
+    }
+
+    pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
+        match self.oc_collector {
+            oc_collector::OcCollector::Disabled { .. } => None,
+            oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
+        }
+    }
+
     pub fn spawn(self) -> drain::Signal {
         let App {
             admin,
@@ -228,6 +261,7 @@ impl App {
             oc_collector,
             outbound,
             tap,
+            ..
         } = self;
 
         // Run a daemon thread for all administative tasks.
@@ -258,7 +292,7 @@ impl App {
                             );
 
                             // Kick off the identity so that the process can become ready.
-                            if let identity::Identity::Enabled { local, task } = identity {
+                            if let identity::Identity::Enabled { local, task, .. } = identity {
                                 tokio::spawn(
                                     task.map_err(|e| {
                                         panic!("identity task failed: {}", e);
@@ -299,8 +333,8 @@ impl App {
 
                             if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
                                 tokio::spawn(
-                                    task.map_err(|error| error!(%error, "failure"))
-                                        .instrument(info_span!("oc-tracing")),
+                                    task.map_err(|error| error!(%error, "client died"))
+                                        .instrument(info_span!("opencensus")),
                                 );
                             }
 
@@ -312,26 +346,18 @@ impl App {
             })
             .expect("admin");
 
-        tokio::spawn({
-            let serve = outbound.serve;
-            info_span!("outbound").in_scope(|| {
-                future::lazy(|| {
-                    debug!("running");
-                    serve.map_err(|e| panic!("outbound died: {}", e))
-                })
-                .in_current_span()
-            })
-        });
-        tokio::spawn({
-            let serve = inbound.serve;
-            info_span!("inbound").in_scope(|| {
-                future::lazy(|| {
-                    debug!("running");
-                    serve.map_err(|e| panic!("inbound died: {}", e))
-                })
-                .in_current_span()
-            })
-        });
+        tokio::spawn(
+            outbound
+                .serve
+                .map_err(|e| panic!("outbound died: {}", e))
+                .instrument(info_span!("outbound")),
+        );
+        tokio::spawn(
+            inbound
+                .serve
+                .map_err(|e| panic!("inbound died: {}", e))
+                .instrument(info_span!("inbound")),
+        );
 
         drain
     }

@@ -1,6 +1,9 @@
 mod resolve;
 
-use linkerd2_app_core::{config::ControlConfig, dns, profiles, Error};
+use linkerd2_app_core::{
+    config::{ControlAddr, ControlConfig},
+    dns, profiles, Error,
+};
 use std::time::Duration;
 use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
 
@@ -13,6 +16,7 @@ pub struct Config {
 }
 
 pub struct Dst<S> {
+    pub addr: ControlAddr,
     pub profiles: profiles::Client<S>,
     pub resolve: resolve::Resolve<S>,
 }
@@ -41,6 +45,10 @@ impl Config {
             self.profile_suffixes,
         );
 
-        Ok(Dst { resolve, profiles })
+        Ok(Dst {
+            addr: self.control.addr,
+            resolve,
+            profiles,
+        })
     }
 }

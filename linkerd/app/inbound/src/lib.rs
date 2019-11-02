@@ -35,7 +35,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::{debug, info_span};
+use tracing::{debug, info, info_span};
 
 mod endpoint;
 mod orig_proto_downgrade;
@@ -284,6 +284,7 @@ impl<A: OrigDstAddr> Config<A> {
             let accept = tls::AcceptTls::new(local_identity, server)
                 .with_skip_ports(disable_protocol_detection_for_ports);
 
+            info!(listen.addr = %listen.listen_addr(), "serving");
             serve::serve(listen, accept, drain)
         }));
 

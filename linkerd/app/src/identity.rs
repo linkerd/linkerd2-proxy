@@ -1,15 +1,16 @@
-use futures::Future;
+use futures::{future, Future};
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
 use linkerd2_app_core::{
     classify,
-    config::ControlConfig,
+    config::{ControlAddr, ControlConfig},
     control, dns, proxy, reconnect,
     svc::{self, LayerExt},
     transport::{connect, tls},
     ControlHttpMetricsRegistry as Metrics, Error, Never,
 };
+use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub enum Config {
@@ -22,7 +23,11 @@ pub enum Config {
 
 pub enum Identity {
     Disabled,
-    Enabled { local: Local, task: Task },
+    Enabled {
+        addr: ControlAddr,
+        local: Local,
+        task: Task,
+    },
 }
 
 pub type Task = Box<dyn Future<Item = (), Error = Never> + Send + 'static>;
@@ -36,6 +41,7 @@ impl Config {
             Config::Enabled { control, certify } => {
                 let (local, crt_store) = Local::new(&certify);
 
+                let addr = control.addr;
                 let svc = svc::stack(connect::svc(control.connect.keepalive))
                     .push(tls::client::layer(tls::Conditional::Some(
                         certify.trust_anchors.clone(),
@@ -57,12 +63,18 @@ impl Config {
                         control.buffer.dispatch_timeout,
                     )
                     .into_inner()
-                    .make(control.addr);
+                    .make(addr.clone());
 
                 // Save to be spawned on an auxiliary runtime.
-                let task = Box::new(certify::Daemon::new(certify, crt_store, svc));
+                let task = {
+                    let addr = addr.clone();
+                    Box::new(future::lazy(move || {
+                        debug!(peer.addr = ?addr, "running");
+                        certify::Daemon::new(certify, crt_store, svc)
+                    }))
+                };
 
-                Ok(Identity::Enabled { local, task })
+                Ok(Identity::Enabled { addr, local, task })
             }
         }
     }
