@@ -41,12 +41,13 @@ fn main() {
                 None => trace::warn!("Identity is DISABLED"),
                 Some(identity) => {
                     trace::info!("Local identity is {}", identity.name());
-                    let addr = app.identity_addr().unwrap();
-                    trace::info!(
-                        "Identity verified via {} ({})",
-                        addr.addr,
-                        addr.identity.value().unwrap()
-                    );
+                    let addr = app.identity_addr().expect("must have identity addr");
+                    match addr.identity.value() {
+                        None => trace::info!("Identity verified via {}", addr.addr),
+                        Some(identity) => {
+                            trace::info!("Identity verified via {} ({})", addr.addr, identity);
+                        }
+                    }
                 }
             }
             let dst_addr = app.dst_addr();
