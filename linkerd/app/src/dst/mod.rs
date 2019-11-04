@@ -1,5 +1,6 @@
 mod resolve;
 
+use indexmap::IndexSet;
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
     dns, profiles, Error,
@@ -11,8 +12,9 @@ use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
 pub struct Config {
     pub control: ControlConfig,
     pub context: String,
-    pub get_suffixes: Vec<dns::Suffix>,
-    pub profile_suffixes: Vec<dns::Suffix>,
+    pub get_suffixes: IndexSet<dns::Suffix>,
+    pub get_networks: IndexSet<ipnet::IpNet>,
+    pub profile_suffixes: IndexSet<dns::Suffix>,
 }
 
 pub struct Dst<S> {
@@ -33,6 +35,7 @@ impl Config {
         let resolve = resolve::new(
             svc.clone(),
             self.get_suffixes,
+            self.get_networks,
             &self.context,
             self.control.connect.backoff,
         );

@@ -13,6 +13,7 @@ This is used by tests and the executable.
 [dependencies]
 futures = "0.1"
 indexmap = "1.0"
+ipnet = "1.0"
 linkerd2-app-core = { path = "./core" }
 linkerd2-app-inbound = { path = "./inbound" }
 linkerd2-app-outbound = { path = "./outbound" }
