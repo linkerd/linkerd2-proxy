@@ -1083,9 +1083,9 @@ fn retry_reconnect_errors() {
 
     // wait until metrics has seen our connection, this can be flaky depending on
     // all the other threads currently running...
-    assert_eventually_contains!(
-        metrics.get("/metrics"),
-        "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
+    assert_eventually_matches!(
+        &metrics.get("/metrics"),
+        "tcp_open_total\\{direction=\"inbound\",src_addr=\"127.0.0.1\",dst_addr=\"127.0.0.1:\\d+\",tls=\"false\",no_tls_reason=\"disabled\",protocol=\"http\"\\} 1"
     );
 
     drop(tx); // start `listen` now
