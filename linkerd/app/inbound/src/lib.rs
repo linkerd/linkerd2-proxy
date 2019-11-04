@@ -13,6 +13,7 @@ use linkerd2_app_core::{
     dst::DstAddr,
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr,
+    opencensus::proto::trace::v1 as oc,
     proxy::{
         self,
         http::{
@@ -29,7 +30,6 @@ use linkerd2_app_core::{
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, DispatchDeadline, Error, ProxyMetrics, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
     L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_SERVER_ID,
-    opencensus::proto::trace::v1 as oc,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
