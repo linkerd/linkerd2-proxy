@@ -32,8 +32,8 @@ use linkerd2_app_core::{
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, Conditional, DispatchDeadline, Error, ProxyMetrics, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
+    opencensus::proto::trace::v1 as oc,
 };
-use opencensus_proto::trace::v1 as oc;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;

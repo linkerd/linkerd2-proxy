@@ -30,7 +30,6 @@ http = "0.1"
 http-body = "0.1"
 hyper = "0.12"
 linkerd2-metrics = { path = "../metrics", features = ["test_util"] }
-linkerd2-test-util = { path = "../test-util" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.10" }
 net2 = "0.2"
 quickcheck = { version = "0.8", default-features = false }
