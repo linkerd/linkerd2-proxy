@@ -1,11 +1,10 @@
 use super::iface::{Register, Tap, TapPayload, TapResponse};
 use super::Inspect;
-use crate::proxy::http::HasH2Reason;
-use crate::svc;
 use bytes::IntoBuf;
 use futures::{try_ready, Async, Future, Poll, Stream};
 use http;
 use hyper::body::Payload as HyperPayload;
+use linkerd2_proxy_http::HasH2Reason;
 
 /// A layer that wraps MakeServices to record taps.
 #[derive(Clone, Debug)]
@@ -63,7 +62,7 @@ where
     }
 }
 
-impl<R, M> svc::Layer<M> for Layer<R>
+impl<R, M> tower::layer::Layer<M> for Layer<R>
 where
     R: Register + Clone,
 {
@@ -79,11 +78,11 @@ where
 
 // === Stack ===
 
-impl<R, T, M> svc::Service<T> for Stack<R, M>
+impl<R, T, M> tower::Service<T> for Stack<R, M>
 where
     T: Inspect + Clone,
     R: Register,
-    M: svc::Service<T>,
+    M: tower::Service<T>,
 {
     type Response = Service<T, R::Taps, R::Tap, M::Response>;
     type Error = M::Error;
@@ -129,14 +128,17 @@ where
 
 // === Service ===
 
-impl<I, R, S, T, A, B> svc::Service<http::Request<A>> for Service<I, R, T, S>
+impl<I, R, S, T, A, B> tower::Service<http::Request<A>> for Service<I, R, T, S>
 where
     I: Inspect,
     R: Stream<Item = T>,
     T: Tap,
     T::TapRequestPayload: Send + 'static,
     T::TapResponsePayload: Send + 'static,
-    S: svc::Service<http::Request<Payload<A, T::TapRequestPayload>>, Response = http::Response<B>>,
+    S: tower::Service<
+        http::Request<Payload<A, T::TapRequestPayload>>,
+        Response = http::Response<B>,
+    >,
     S::Error: HasH2Reason,
     A: HyperPayload,
     A::Error: HasH2Reason,

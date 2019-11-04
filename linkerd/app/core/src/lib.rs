@@ -36,7 +36,6 @@ pub mod proxy;
 pub mod serve;
 pub mod spans;
 pub mod svc;
-pub mod tap;
 pub mod telemetry;
 pub mod trace;
 pub mod transport;
@@ -100,8 +99,11 @@ impl DispatchDeadline {
     }
 }
 
+pub type ControlHttpMetricsRegistry =
+    proxy::http::metrics::SharedRegistry<metric_labels::ControlLabels, classify::Class>;
+
 pub type HttpEndpointMetricsRegistry =
-    linkerd2_proxy_http::metrics::SharedRegistry<metric_labels::EndpointLabels, classify::Class>;
+    proxy::http::metrics::SharedRegistry<metric_labels::EndpointLabels, classify::Class>;
 
 pub type HttpRouteMetricsRegistry =
-    linkerd2_proxy_http::metrics::SharedRegistry<metric_labels::RouteLabels, classify::Class>;
+    proxy::http::metrics::SharedRegistry<metric_labels::RouteLabels, classify::Class>;

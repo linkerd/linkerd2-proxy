@@ -10,23 +10,24 @@ use linkerd2_app_core::{
     control, dns, drain, handle_time, identity,
     metric_labels::{ControlLabels, EndpointLabels, RouteLabels},
     metrics::FmtMetrics,
+    opencensus::proto::agent::common::v1 as oc,
     opencensus::{self, SpanExporter},
     profiles::Client as ProfilesClient,
     proxy::{
         self, api_resolve,
         core::listen::{Bind as _Bind, Listen as _Listen},
         http::metrics as http_metrics,
+        tap,
     },
     reconnect, serve,
     svc::{self, LayerExt},
-    tap, telemetry, trace,
+    telemetry, trace,
     transport::{self, connect, listen, tls, OrigDstAddr},
     Conditional,
 };
 pub use linkerd2_app_core::{init, transport::SysOrigDstAddr};
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
-use opencensus_proto::agent::common::v1 as oc;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::{Duration, SystemTime};

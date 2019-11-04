@@ -7,8 +7,8 @@ use linkerd2_app_core::{
         api_resolve::{Metadata, ProtocolHint},
         http::{identity_from_header, settings},
         resolve::map_endpoint::MapEndpoint,
+        tap,
     },
-    tap,
     transport::{connect, tls},
     Conditional, NameAddr, L5D_REQUIRE_ID,
 };
