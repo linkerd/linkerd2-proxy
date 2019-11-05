@@ -33,10 +33,12 @@ fn main() {
             trace::info!("Admin interface on {}", app.admin_addr());
             trace::info!("Inbound interface on {}", app.inbound_addr());
             trace::info!("Outbound interface on {}", app.outbound_addr());
+
             match app.tap_addr() {
                 None => trace::info!("Tap DISABLED"),
                 Some(addr) => trace::info!("Tap interface on {}", addr),
             }
+
             match app.local_identity() {
                 None => trace::warn!("Identity is DISABLED"),
                 Some(identity) => {
@@ -50,6 +52,7 @@ fn main() {
                     }
                 }
             }
+
             let dst_addr = app.dst_addr();
             match dst_addr.identity.value() {
                 None => trace::info!("Destinations resolved via {}", dst_addr.addr),
@@ -57,6 +60,7 @@ fn main() {
                     trace::info!("Destinations resolved via {} ({})", dst_addr.addr, identity)
                 }
             }
+
             if let Some(oc) = app.opencensus_addr() {
                 match oc.identity.value() {
                     None => trace::info!("OpenCensus tracing collector at {}", oc.addr),
