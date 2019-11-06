@@ -58,7 +58,6 @@ where
         self.inner.poll_ready()
     }
 
-    #[inline]
     fn call(&mut self, req: T) -> Self::Future {
         let future = self.inner.call(req);
         Self::Future {
