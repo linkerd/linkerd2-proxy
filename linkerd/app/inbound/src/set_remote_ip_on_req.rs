@@ -1,5 +1,5 @@
 //! Adds `l5d-remote-ip` headers to http::Requests derived from the
-//! `remote` of a `Source`.
+//! `remote` of a `tls::accept::Meta`.
 
 use bytes::Bytes;
 use http::header::HeaderValue;

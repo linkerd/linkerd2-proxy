@@ -1,4 +1,4 @@
-use crate::identity;
+use crate::proxy::identity;
 use crate::transport::{labels::TlsStatus, tls};
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_conditional::Conditional;

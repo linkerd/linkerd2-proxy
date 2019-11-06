@@ -1,39 +1,36 @@
-use super::endpoint;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     dns::Suffix,
     dst::DstAddr,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    proxy::{
-        api_resolve::Metadata,
-        core::{resolve, Resolve},
-        resolve::{map_endpoint, recover},
-    },
+    proxy::{api_resolve as api, resolve::recover},
     request_filter, Error, Recover,
 };
 use std::sync::Arc;
-use tower_grpc as grpc;
+use tower_grpc::{generic::client::GrpcService, Body, BoxBody, Code, Status};
 
-pub fn resolve<R, S>(
-    suffixes: S,
+pub type Resolve<S> = request_filter::Service<
+    PermitNamesInSuffixes,
+    recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<S>>,
+>;
+
+pub fn new<S>(
+    service: S,
+    suffixes: Vec<Suffix>,
+    token: &str,
     backoff: ExponentialBackoff,
-    resolve: R,
-) -> map_endpoint::Resolve<
-    endpoint::FromMetadata,
-    request_filter::Service<
-        PermitNamesInSuffixes,
-        resolve::Service<recover::Resolve<BackoffUnlessInvalidArgument, R>>,
-    >,
->
+) -> Resolve<S>
 where
-    R: Resolve<DstAddr, Endpoint = Metadata> + Clone,
-    S: IntoIterator<Item = Suffix>,
+    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S::ResponseBody: Send,
+    <S::ResponseBody as Body>::Data: Send,
+    S::Future: Send,
 {
-    map_endpoint::Resolve::new(
-        endpoint::FromMetadata,
-        request_filter::Service::new(
-            suffixes.into(),
-            recover::Resolve::new(backoff.into(), resolve).into_service(),
+    request_filter::Service::new::<DstAddr>(
+        PermitNamesInSuffixes::new(suffixes),
+        recover::Resolve::new::<DstAddr>(
+            backoff.into(),
+            api::Resolve::new::<DstAddr>(service).with_context_token(token),
         ),
     )
 }
@@ -51,8 +48,8 @@ pub struct Unresolvable(());
 
 // === impl PermitNamesInSuffixes ===
 
-impl<I: IntoIterator<Item = Suffix>> From<I> for PermitNamesInSuffixes {
-    fn from(permitted: I) -> Self {
+impl PermitNamesInSuffixes {
+    fn new(permitted: impl IntoIterator<Item = Suffix>) -> Self {
         Self {
             permitted: Arc::new(permitted.into_iter().collect()),
         }
@@ -101,8 +98,8 @@ impl Recover<Error> for BackoffUnlessInvalidArgument {
     type Error = <ExponentialBackoffStream as futures::Stream>::Error;
 
     fn recover(&self, err: Error) -> Result<Self::Backoff, Error> {
-        match err.downcast::<grpc::Status>() {
-            Ok(ref status) if status.code() == grpc::Code::InvalidArgument => {
+        match err.downcast::<Status>() {
+            Ok(ref status) if status.code() == Code::InvalidArgument => {
                 tracing::debug!(message = "cannot recover", %status);
                 return Err(Unresolvable(()).into());
             }

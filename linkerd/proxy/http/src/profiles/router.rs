@@ -7,7 +7,7 @@ use linkerd2_error::{Error, Never};
 use linkerd2_router as rt;
 use linkerd2_stack::Shared;
 use std::hash::Hash;
-use tracing::{debug, error, trace};
+use tracing::{debug, error};
 
 // A router which routes based on the `dst_overrides` of the profile or, if
 // no `dst_overrdies` exist, on the router's target.
@@ -179,12 +179,9 @@ where
         // Initiate a stream to get route and dst_override updates for this
         // destination.
         let route_stream = match target.get_destination() {
-            Some(ref dst) => {
-                debug!("fetching routes");
-                self.get_routes.get_routes(&dst)
-            }
+            Some(ref dst) => self.get_routes.get_routes(&dst),
             None => {
-                trace!("no destination for routes");
+                debug!("no destination for routes");
                 None
             }
         };

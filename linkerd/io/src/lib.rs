@@ -13,8 +13,8 @@ mod internal {
     use bytes::Buf;
     use std::net::Shutdown;
 
-    /// This trait is private, since it's purpose is for creating a dynamic trait
-    /// object, but doing so without care can lead to not getting vectored
+    /// This trait is private, since its purpose is for creating a dynamic trait
+    /// object, but doing so without care can to lead not getting vectored
     /// writes.
     ///
     /// Instead, use the concrete `BoxedIo` type.

@@ -25,7 +25,6 @@ linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
 linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-fallback = { path = "../../fallback" }
-linkerd2-identity = { path = "../../identity" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
@@ -33,6 +32,7 @@ linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", ta
 linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd2-proxy-detect = { path = "../../proxy/detect" }
 linkerd2-proxy-discover = { path = "../../proxy/discover" }
+linkerd2-proxy-identity = { path = "../../proxy/identity" }
 linkerd2-proxy-http = { path = "../../proxy/http" }
 linkerd2-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd2-proxy-tap = { path = "../../proxy/tap" }

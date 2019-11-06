@@ -3,13 +3,15 @@
 #![deny(warnings, rust_2018_idioms)]
 #![type_length_limit = "1070525"]
 
+mod test_env;
+
+pub use self::test_env::TestEnv;
 pub use bytes::Bytes;
 pub use futures::sync::oneshot;
 pub use futures::{future::Executor, *};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
-pub use linkerd2_app::Main;
-pub use linkerd2_app_core as app;
+pub use linkerd2_app as app;
 pub use std::collections::HashMap;
 use std::fmt;
 use std::io;
@@ -36,11 +38,7 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy_http=off,\
                                    linkerd2_proxy_transport=off";
 
-pub fn init_env() -> app::config::TestEnv {
-    app::config::TestEnv::new()
-}
-
-pub fn trace_init() -> (Dispatch, app::trace::LevelHandle) {
+pub fn trace_init() -> (Dispatch, app::core::trace::LevelHandle) {
     use std::env;
     let log = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
@@ -49,8 +47,8 @@ pub fn trace_init() -> (Dispatch, app::trace::LevelHandle) {
     env::set_var("LINKERD2_PROXY_LOG", &log);
     // This may fail, since the global log compat layer may have been
     // initialized by another test.
-    let _ = app::trace::init_log_compat();
-    app::trace::with_filter(&log)
+    let _ = app::core::trace::init_log_compat();
+    app::core::trace::with_filter(&log)
 }
 
 /// Retry an assertion up to a specified number of times, waiting

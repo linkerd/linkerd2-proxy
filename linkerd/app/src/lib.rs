@@ -2,41 +2,30 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{self, future, Future};
+pub mod admin;
+pub mod dst;
+pub mod env;
+pub mod identity;
+pub mod metrics;
+pub mod oc_collector;
+pub mod tap;
+
+use self::metrics::Metrics;
+use futures::{future, Async, Future};
+pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
-    admin::{Admin, Readiness},
-    classify::{self, Class},
-    config::Config,
-    control, dns, drain, handle_time, identity,
-    metric_labels::{ControlLabels, EndpointLabels, RouteLabels},
-    metrics::FmtMetrics,
-    opencensus::proto::agent::common::v1 as oc,
-    opencensus::{self, SpanExporter},
-    profiles::Client as ProfilesClient,
-    proxy::{
-        self, api_resolve,
-        core::listen::{Bind as _Bind, Listen as _Listen},
-        http::metrics as http_metrics,
-        tap,
-    },
-    reconnect, serve,
-    svc::{self, LayerExt},
-    telemetry, trace,
-    transport::{self, connect, listen, tls, OrigDstAddr},
-    Conditional,
+    config::ControlAddr,
+    dns, drain,
+    transport::{OrigDstAddr, SysOrigDstAddr},
+    Error,
 };
-pub use linkerd2_app_core::{init, transport::SysOrigDstAddr};
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
-use std::thread;
-use std::time::{Duration, SystemTime};
-use tokio::runtime::current_thread::Runtime;
-use tokio::sync::mpsc;
-use tracing::{debug, error, info, info_span, trace};
+use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
-/// Runs a sidecar proxy.
+/// Spawns a sidecar proxy.
 ///
 /// The proxy binds two listeners:
 ///
@@ -48,480 +37,328 @@ use tracing_futures::Instrument;
 ///
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
-pub struct Main<A: OrigDstAddr> {
-    proxy_parts: ProxyParts<A>,
+#[derive(Clone, Debug)]
+pub struct Config<A: OrigDstAddr = SysOrigDstAddr> {
+    pub outbound: outbound::Config<A>,
+    pub inbound: inbound::Config<A>,
+
+    pub dns: dns::Config,
+    pub identity: identity::Config,
+    pub dst: dst::Config,
+    pub admin: admin::Config,
+    pub tap: tap::Config,
+    pub oc_collector: oc_collector::Config,
 }
 
-struct ProxyParts<A: OrigDstAddr> {
-    config: Config,
-
-    start_time: SystemTime,
-    trace_level: trace::LevelHandle,
-
-    admin_listener: listen::Listen,
-    control_listener: Option<(listen::Listen, identity::Name)>,
-
-    inbound_listener: listen::Listen<A>,
-    outbound_listener: listen::Listen<A>,
+pub struct App {
+    admin: admin::Admin,
+    dns: dns::Task,
+    drain: drain::Signal,
+    dst: ControlAddr,
+    identity: identity::Identity,
+    inbound: inbound::Inbound,
+    oc_collector: oc_collector::OcCollector,
+    outbound: outbound::Outbound,
+    tap: tap::Tap,
 }
 
-impl<A: OrigDstAddr> Main<A> {
-    pub fn new(config: Config, trace_level: trace::LevelHandle, orig_dsts: A) -> Self {
-        let start_time = SystemTime::now();
-
-        let control_listener = config.control_listener.as_ref().map(|cl| {
-            let listener = listen::Bind::new(cl.listener.addr, config.inbound_accept_keepalive)
-                .bind()
-                .expect("tap listener bind");
-
-            (listener, cl.tap_svc_name.clone())
-        });
-
-        let admin_listener =
-            listen::Bind::new(config.admin_listener.addr, config.inbound_accept_keepalive)
-                .bind()
-                .expect("tap listener bind");
-
-        let inbound_listener = listen::Bind::new(
-            config.inbound_listener.addr,
-            config.inbound_accept_keepalive,
-        )
-        .with_orig_dst_addr(orig_dsts.clone())
-        .bind()
-        .expect("inbound listener bind");
-
-        let outbound_listener = listen::Bind::new(
-            config.outbound_listener.addr,
-            config.outbound_accept_keepalive,
-        )
-        .with_orig_dst_addr(orig_dsts)
-        .bind()
-        .expect("outbound listener bind");
-
-        Self {
-            proxy_parts: ProxyParts {
-                config,
-                start_time,
-                trace_level,
-                inbound_listener,
-                outbound_listener,
-                control_listener,
-                admin_listener,
-            },
-        }
+impl Config<SysOrigDstAddr> {
+    pub fn try_from_env() -> Result<Self, env::EnvError> {
+        env::Env.try_config()
     }
 }
 
-impl<A> Main<A>
-where
-    A: OrigDstAddr + Clone + Send + 'static,
-{
-    pub fn control_addr(&self) -> Option<SocketAddr> {
-        self.proxy_parts
-            .control_listener
-            .as_ref()
-            .map(|l| l.0.listen_addr().clone())
+impl<A: OrigDstAddr + Send + 'static> Config<A> {
+    pub fn with_orig_dst_addr<B: OrigDstAddr + Send + 'static>(self, orig_dst: B) -> Config<B> {
+        Config {
+            outbound: self.outbound.with_orig_dst_addr(orig_dst.clone()),
+            inbound: self.inbound.with_orig_dst_addr(orig_dst),
+            dns: self.dns,
+            identity: self.identity,
+            dst: self.dst,
+            admin: self.admin,
+            tap: self.tap,
+            oc_collector: self.oc_collector,
+        }
+    }
+
+    /// Build an application.
+    ///
+    /// It is currently required that this be run on a Tokio runtime, since some
+    /// services are created eagerly and must spawn tasks to do so.
+    pub fn build(self, log_level: trace::LevelHandle) -> Result<App, Error> {
+        let Config {
+            admin,
+            dns,
+            dst,
+            identity,
+            inbound,
+            oc_collector,
+            outbound,
+            tap,
+        } = self;
+        debug!("building app");
+        let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
+
+        let dns = info_span!("dns").in_scope(|| dns.build())?;
+
+        let identity = info_span!("identity")
+            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+
+        let (drain_tx, drain_rx) = drain::channel();
+
+        let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
+
+        let dst = {
+            use linkerd2_app_core::{
+                classify, control,
+                proxy::{grpc, http},
+                reconnect,
+                svc::{self, LayerExt},
+                transport::{connect, tls},
+            };
+
+            let metrics = metrics.control.clone();
+            let dns = dns.resolver.clone();
+            info_span!("dst").in_scope(|| {
+                // XXX This is unfortunate. But we don't daemonize the service into a
+                // task in the build, so we'd have to name the motherfucker. And that's
+                // not happening today. Really, we should daemonize the whole client
+                // into a task so consumers can be ignorant.
+                let svc = svc::stack(connect::svc(dst.control.connect.keepalive))
+                    .push(tls::client::layer(identity.local()))
+                    .push_timeout(dst.control.connect.timeout)
+                    .push(control::client::layer())
+                    .push(control::resolve::layer(dns))
+                    .push(reconnect::layer({
+                        let backoff = dst.control.connect.backoff;
+                        move |_| Ok(backoff.stream())
+                    }))
+                    .push(http::metrics::layer::<_, classify::Response>(metrics))
+                    .push(grpc::req_body_as_payload::layer().per_make())
+                    .push(control::add_origin::layer())
+                    .push_buffer_pending(
+                        dst.control.buffer.max_in_flight,
+                        dst.control.buffer.dispatch_timeout,
+                    )
+                    .into_inner()
+                    .make(dst.control.addr.clone());
+                dst.build(svc)
+            })
+        }?;
+
+        let oc_collector = {
+            let identity = identity.local();
+            let dns = dns.resolver.clone();
+            let metrics = metrics.opencensus;
+            info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
+        }?;
+
+        let admin = {
+            let identity = identity.local();
+            let drain = drain_rx.clone();
+            info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
+        };
+
+        let dst_addr = dst.addr.clone();
+        let inbound = {
+            let inbound = inbound;
+            let identity = identity.local();
+            let profiles = dst.profiles.clone();
+            let tap = tap.layer();
+            let metrics = metrics.inbound;
+            let oc = oc_collector.span_sink();
+            let drain = drain_rx.clone();
+            info_span!("inbound")
+                .in_scope(move || inbound.build(identity, profiles, tap, metrics, oc, drain))?
+        };
+        let outbound = {
+            let identity = identity.local();
+            let dns = dns.resolver;
+            let tap = tap.layer();
+            let metrics = metrics.outbound;
+            let oc = oc_collector.span_sink();
+            info_span!("outbound").in_scope(move || {
+                outbound.build(
+                    identity,
+                    dst.resolve,
+                    dns,
+                    dst.profiles,
+                    tap,
+                    metrics,
+                    oc,
+                    drain_rx,
+                )
+            })?
+        };
+
+        Ok(App {
+            admin,
+            dns: dns.task,
+            dst: dst_addr,
+            drain: drain_tx,
+            identity,
+            inbound,
+            oc_collector,
+            outbound,
+            tap,
+        })
+    }
+}
+
+impl App {
+    pub fn admin_addr(&self) -> SocketAddr {
+        self.admin.listen_addr
     }
 
     pub fn inbound_addr(&self) -> SocketAddr {
-        self.proxy_parts.inbound_listener.listen_addr()
+        self.inbound.listen_addr
     }
 
     pub fn outbound_addr(&self) -> SocketAddr {
-        self.proxy_parts.outbound_listener.listen_addr()
+        self.outbound.listen_addr
     }
 
-    pub fn metrics_addr(&self) -> SocketAddr {
-        self.proxy_parts.admin_listener.listen_addr()
+    pub fn tap_addr(&self) -> Option<SocketAddr> {
+        match self.tap {
+            tap::Tap::Disabled { .. } => None,
+            tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),
+        }
     }
 
-    pub fn run_until<F>(self, shutdown_signal: F)
-    where
-        F: Future<Item = (), Error = ()> + Send + 'static,
-    {
-        let Main { proxy_parts } = self;
-        Runtime::new()
-            .expect("runtime")
-            .block_on(futures::lazy(move || {
-                let (drain_tx, drain_rx) = drain::channel();
-
-                proxy_parts.build_proxy_task(drain_rx);
-                trace!("main task spawned");
-
-                shutdown_signal.and_then(move |()| {
-                    debug!("shutdown signaled");
-                    drain_tx.drain().map(|()| debug!("shutdown complete"))
-                })
-            }))
-            .expect("main");
+    pub fn dst_addr(&self) -> &ControlAddr {
+        &self.dst
     }
-}
 
-impl<A> ProxyParts<A>
-where
-    A: OrigDstAddr + Clone + Send + 'static,
-{
-    /// This is run inside a `futures::lazy`, so the default Executor is
-    /// setup for use in here.
-    fn build_proxy_task(self, drain_rx: drain::Watch) {
-        let ProxyParts {
-            config,
-            start_time,
-            trace_level,
-            control_listener,
-            inbound_listener,
-            outbound_listener,
-            admin_listener,
+    pub fn local_identity(&self) -> Option<&identity::Local> {
+        match self.identity {
+            identity::Identity::Disabled => None,
+            identity::Identity::Enabled { ref local, .. } => Some(local),
+        }
+    }
+
+    pub fn identity_addr(&self) -> Option<&ControlAddr> {
+        match self.identity {
+            identity::Identity::Disabled => None,
+            identity::Identity::Enabled { ref addr, .. } => Some(addr),
+        }
+    }
+
+    pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
+        match self.oc_collector {
+            oc_collector::OcCollector::Disabled { .. } => None,
+            oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
+        }
+    }
+
+    pub fn spawn(self) -> drain::Signal {
+        let App {
+            admin,
+            dns,
+            drain,
+            identity,
+            inbound,
+            oc_collector,
+            outbound,
+            tap,
+            ..
         } = self;
 
-        info!("using destination service at {:?}", config.destination_addr);
-        match config.identity_config.as_ref() {
-            Conditional::Some(config) => info!("using identity service at {:?}", config.svc.addr),
-            Conditional::None(reason) => info!("identity is DISABLED: {}", reason),
-        }
-        info!("admin on {}", admin_listener.listen_addr());
-        info!(
-            "tap on {:?}",
-            control_listener.as_ref().map(|l| l.0.listen_addr())
-        );
-        info!("outbound on {:?}", outbound_listener.listen_addr());
-        info!("inbound on {}", inbound_listener.listen_addr());
-        info!(
-            "protocol detection disabled for inbound ports {:?}",
-            config.inbound_ports_disable_protocol_detection,
-        );
-        info!(
-            "protocol detection disabled for outbound ports {:?}",
-            config.outbound_ports_disable_protocol_detection,
-        );
+        // Run a daemon thread for all administative tasks.
+        //
+        // The main reactor holds `admin_shutdown_tx` until the reactor drops
+        // the task. This causes the daemon reactor to stop.
+        let (admin_shutdown_tx, admin_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        debug!("spawning daemon thread");
+        tokio::spawn(future::poll_fn(|| Ok(Async::NotReady)).map(|()| drop(admin_shutdown_tx)));
+        std::thread::Builder::new()
+            .name("admin".into())
+            .spawn(move || {
+                tokio::runtime::current_thread::Runtime::new()
+                    .expect("admin runtime")
+                    .block_on(
+                        future::lazy(move || {
+                            debug!("running admin thread");
+                            tokio::spawn(dns);
 
-        let (dns_resolver, dns_bg) = dns::Resolver::from_system_config_with(&config)
-            .unwrap_or_else(|e| {
-                // FIXME: DNS configuration should be infallible.
-                panic!("invalid DNS configuration: {:?}", e);
-            });
+                            // Start the admin server to serve the readiness endpoint.
+                            tokio::spawn(
+                                admin
+                                    .serve
+                                    .map_err(|e| panic!("admin server died: {}", e))
+                                    .instrument(
+                                        info_span!("admin", listen.addr = %admin.listen_addr),
+                                    ),
+                            );
 
-        let (ctl_http_metrics, ctl_http_report) = {
-            let (m, r) = http_metrics::new::<ControlLabels, Class>(config.metrics_retain_idle);
-            (m, r.with_prefix("control"))
-        };
+                            // Kick off the identity so that the process can become ready.
+                            if let identity::Identity::Enabled { local, task, .. } = identity {
+                                tokio::spawn(
+                                    task.map_err(|e| {
+                                        panic!("identity task failed: {}", e);
+                                    })
+                                    .instrument(info_span!("identity")),
+                                );
 
-        let (endpoint_http_metrics, endpoint_http_report) =
-            http_metrics::new::<EndpointLabels, Class>(config.metrics_retain_idle);
-
-        let (route_http_metrics, route_http_report) = {
-            let (m, r) = http_metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
-            (m, r.with_prefix("route"))
-        };
-
-        let (retry_http_metrics, retry_http_report) = {
-            let (m, r) = http_metrics::new::<RouteLabels, Class>(config.metrics_retain_idle);
-            (m, r.with_prefix("route_actual"))
-        };
-
-        let handle_time_report = handle_time::Metrics::new();
-        let inbound_handle_time = handle_time_report.inbound();
-        let outbound_handle_time = handle_time_report.outbound();
-
-        let (transport_metrics, transport_report) = transport::metrics::new();
-
-        let (span_metrics, span_report) = opencensus::metrics::new();
-
-        let report = endpoint_http_report
-            .and_then(route_http_report)
-            .and_then(retry_http_report)
-            .and_then(transport_report)
-            //.and_then(tls_config_report)
-            .and_then(ctl_http_report)
-            .and_then(handle_time_report)
-            .and_then(telemetry::process::Report::new(start_time))
-            .and_then(span_report);
-
-        let mut identity_daemon = None;
-        let (readiness, ready_latch) = Readiness::new();
-        let local_identity = match config.identity_config.clone() {
-            Conditional::None(r) => {
-                ready_latch.release();
-                Conditional::None(r)
-            }
-            Conditional::Some(id_config) => {
-                let (local_identity, crt_store) = identity::Local::new(&id_config);
-
-                // If the service is on localhost, use the inbound keepalive.
-                // If the service. is remote, use the outbound keepalive.
-                let keepalive = if id_config.svc.addr.is_loopback() {
-                    config.inbound_connect_keepalive
-                } else {
-                    config.outbound_connect_keepalive
-                };
-
-                let svc = svc::stack(connect::svc(keepalive))
-                    .push(tls::client::layer(Conditional::Some(
-                        id_config.trust_anchors.clone(),
-                    )))
-                    .push_timeout(config.control_connect_timeout)
-                    .push(control::client::layer())
-                    .push(control::resolve::layer(dns_resolver.clone()))
-                    .push(reconnect::layer({
-                        let backoff = config.control_backoff.clone();
-                        move |_| Ok(backoff.stream())
-                    }))
-                    .push(http_metrics::layer::<_, classify::Response>(
-                        ctl_http_metrics.clone(),
-                    ))
-                    .push(proxy::grpc::req_body_as_payload::layer().per_make())
-                    .push(control::add_origin::layer())
-                    .push_buffer_pending(
-                        config.destination_buffer_capacity,
-                        config.control_dispatch_timeout,
-                    )
-                    .into_inner()
-                    .make(id_config.svc.clone());
-
-                identity_daemon = Some(identity::Daemon::new(id_config, crt_store, svc));
-
-                tokio::spawn(
-                    local_identity
-                        .clone()
-                        .await_crt()
-                        .map(move |id| {
-                            ready_latch.release();
-                            info!("Certified identity: {}", id.name().as_ref());
-                        })
-                        .map_err(|_| {
-                            // The daemon task was lost?!
-                            panic!("Failed to certify identity!");
-                        })
-                        .instrument(info_span!("await identity")),
-                );
-
-                Conditional::Some(local_identity)
-            }
-        };
-
-        let dst_svc = {
-            // If the dst_svc is on localhost, use the inbound keepalive.
-            // If the dst_svc is remote, use the outbound keepalive.
-            let keepalive = if config.destination_addr.addr.is_loopback() {
-                config.inbound_connect_keepalive
-            } else {
-                config.outbound_connect_keepalive
-            };
-
-            svc::stack(connect::svc(keepalive))
-                .push(tls::client::layer(local_identity.clone()))
-                .push_timeout(config.control_connect_timeout)
-                .push(control::client::layer())
-                .push(control::resolve::layer(dns_resolver.clone()))
-                .push(reconnect::layer({
-                    let backoff = config.control_backoff.clone();
-                    move |_| Ok(backoff.stream())
-                }))
-                .push(http_metrics::layer::<_, classify::Response>(
-                    ctl_http_metrics.clone(),
-                ))
-                .push(proxy::grpc::req_body_as_payload::layer().per_make())
-                .push(control::add_origin::layer())
-                .push_buffer_pending(
-                    config.destination_buffer_capacity,
-                    config.control_dispatch_timeout,
-                )
-                .into_inner()
-                .make(config.destination_addr.clone())
-        };
-
-        let resolver = api_resolve::Resolve::new(dst_svc.clone())
-            .with_context_token(&config.destination_context);
-
-        let (tap_layer, tap_grpc, tap_daemon) = tap::new();
-
-        // Spawn a separate thread to handle the admin stuff.
-        {
-            let (tx, admin_shutdown_signal) = futures::sync::oneshot::channel::<()>();
-            let local_identity = local_identity.clone();
-            let drain_rx = drain_rx.clone();
-            thread::Builder::new()
-                .name("admin".into())
-                .spawn(move || {
-                    Runtime::new()
-                        .expect("admin runtime")
-                        .block_on(future::lazy(move || {
-                            info_span!("admin", listen_addr=%admin_listener.listen_addr())
-                                .in_scope(|| {
-                                    trace!("spawning");
-                                    serve::spawn(
-                                        admin_listener,
-                                        tls::AcceptTls::new(
-                                            local_identity.clone(),
-                                            Admin::new(report, readiness, trace_level)
-                                                .into_accept(),
-                                        ),
-                                        drain_rx.clone(),
-                                    );
-                                });
-
-                            if let Some((listener, tap_svc_name)) = control_listener {
-                                info_span!("tap", listen_addr=%listener.listen_addr()).in_scope(
-                                    || {
-                                        trace!("spawning");
-                                        tokio::spawn(tap_daemon.map_err(|_| ()).in_current_span());
-                                        serve::spawn(
-                                            listener,
-                                            tls::AcceptTls::new(
-                                                local_identity,
-                                                tap::AcceptPermittedClients::new(
-                                                    std::sync::Arc::new(
-                                                        Some(tap_svc_name).into_iter().collect(),
-                                                    ),
-                                                    tap_grpc,
-                                                ),
-                                            ),
-                                            drain_rx.clone(),
-                                        );
-                                    },
+                                let latch = admin.latch;
+                                tokio::spawn(
+                                    local
+                                        .await_crt()
+                                        .map(move |id| {
+                                            latch.release();
+                                            info!("Certified identity: {}", id.name().as_ref());
+                                        })
+                                        .map_err(|_| {
+                                            // The daemon task was lost?!
+                                            panic!("Failed to certify identity!");
+                                        })
+                                        .instrument(info_span!("identity")),
                                 );
                             } else {
-                                drop((tap_daemon, tap_grpc));
+                                admin.latch.release()
                             }
 
-                            info_span!("dns").in_scope(|| {
-                                trace!("spawning");
-                                tokio::spawn(dns_bg);
-                            });
-
-                            if let Some(d) = identity_daemon {
-                                info_span!("identity").in_scope(|| {
-                                    trace!("spawning");
-                                    tokio::spawn(
-                                        d.map_err(|e| panic!("failed {}", e)).in_current_span(),
-                                    );
-                                });
+                            if let tap::Tap::Enabled { daemon, serve, .. } = tap {
+                                tokio::spawn(
+                                    daemon
+                                        .map_err(|never| match never {})
+                                        .instrument(info_span!("tap")),
+                                );
+                                tokio::spawn(
+                                    serve
+                                        .map_err(|error| error!(%error, "server died"))
+                                        .instrument(info_span!("tap")),
+                                );
                             }
 
-                            admin_shutdown_signal
-                                .map(|_| ())
-                                .map_err(|_| ())
-                                .instrument(info_span!("shutdown"))
-                        }))
-                        .ok();
+                            if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
+                                tokio::spawn(
+                                    task.map_err(|error| error!(%error, "client died"))
+                                        .instrument(info_span!("opencensus")),
+                                );
+                            }
 
-                    trace!("admin shutdown finished");
-                })
-                .expect("initialize dst_svc api thread");
-            trace!("dst_svc client thread spawned");
-
-            // spawn a task to so that the admin shutdown signal is sent when
-            // the main runtime drops (and thus this thread doesn't live forever).
-            // This is mostly to help out the tests.
-            let admin_shutdown = future::poll_fn(move || {
-                // never ready, we only want to be dropped when the whole
-                // runtime drops.
-                Ok(futures::Async::NotReady)
+                            admin_shutdown_rx.map_err(|_| ())
+                        })
+                        .instrument(info_span!("daemon")),
+                    )
+                    .ok()
             })
-            .map(|()| drop(tx));
-            tokio::spawn(admin_shutdown);
-        }
+            .expect("admin");
 
-        // Build the outbound and inbound proxies using the dst_svc client.
-
-        let profiles_client = ProfilesClient::new(
-            dst_svc,
-            Duration::from_secs(3),
-            config.destination_context.clone(),
-            config.destination_profile_suffixes.clone(),
+        tokio::spawn(
+            outbound
+                .serve
+                .map_err(|e| panic!("outbound died: {}", e))
+                .instrument(info_span!("outbound")),
+        );
+        tokio::spawn(
+            inbound
+                .serve
+                .map_err(|e| panic!("inbound died: {}", e))
+                .instrument(info_span!("inbound")),
         );
 
-        let trace_collector_svc = config.trace_collector_addr.as_ref().map(|addr| {
-            let keepalive = if addr.addr.is_loopback() {
-                config.inbound_connect_keepalive
-            } else {
-                config.outbound_connect_keepalive
-            };
-            svc::stack(connect::svc(keepalive))
-                .push(tls::client::layer(local_identity.clone()))
-                .push_timeout(config.control_connect_timeout)
-                // TODO: perhaps rename from "control" to "grpc"
-                .push(control::client::layer())
-                .push(control::resolve::layer(dns_resolver.clone()))
-                // TODO: we should have metrics of some kind, but the standard
-                // HTTP metrics aren't useful for a client where we never read
-                // the response.
-                .push(reconnect::layer({
-                    let backoff = config.control_backoff.clone();
-                    move |_| Ok(backoff.stream())
-                }))
-                .push(proxy::grpc::req_body_as_payload::layer().per_make())
-                .push(control::add_origin::layer())
-                .push_buffer_pending(
-                    config.destination_buffer_capacity,
-                    config.control_dispatch_timeout,
-                )
-                .into_inner()
-                .make(addr.clone())
-        });
-
-        let spans_tx = trace_collector_svc.map(|trace_collector| {
-            let (spans_tx, spans_rx) = mpsc::channel(100);
-
-            let node = oc::Node {
-                identifier: Some(oc::ProcessIdentifier {
-                    host_name: config.hostname.clone().unwrap_or_default(),
-                    pid: 0,
-                    start_timestamp: Some(start_time.into()),
-                }),
-                service_info: Some(oc::ServiceInfo {
-                    name: "linkerd-proxy".to_string(),
-                }),
-                ..oc::Node::default()
-            };
-            let span_exporter = SpanExporter::new(trace_collector, node, spans_rx, span_metrics);
-            tokio::spawn(
-                span_exporter
-                    .map_err(|e| {
-                        error!("span exporter failed: {}", e);
-                    })
-                    .instrument(info_span!("opencensus-exporter")),
-            );
-            spans_tx
-        });
-
-        info_span!("out", listen_addr=%outbound_listener.listen_addr()).in_scope(|| {
-            outbound::spawn(
-                &config,
-                local_identity.clone(),
-                outbound_listener,
-                outbound::resolve(
-                    config.destination_get_suffixes.clone(),
-                    config.control_backoff.clone(),
-                    resolver,
-                ),
-                dns_resolver,
-                profiles_client.clone(),
-                tap_layer.clone(),
-                outbound_handle_time,
-                endpoint_http_metrics.clone(),
-                route_http_metrics.clone(),
-                retry_http_metrics,
-                transport_metrics.clone(),
-                spans_tx.clone(),
-                drain_rx.clone(),
-            )
-        });
-
-        info_span!("in", listen_addr=%inbound_listener.listen_addr()).in_scope(move || {
-            inbound::spawn(
-                &config,
-                local_identity,
-                inbound_listener,
-                profiles_client,
-                tap_layer,
-                inbound_handle_time,
-                endpoint_http_metrics,
-                route_http_metrics,
-                transport_metrics,
-                spans_tx,
-                drain_rx,
-            )
-        });
+        drain
     }
 }

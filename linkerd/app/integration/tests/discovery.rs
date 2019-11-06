@@ -29,11 +29,11 @@ macro_rules! generate_tests {
             let srv = $make_server().route("/", "hello").run();
             let srv_addr = srv.addr;
 
-            let mut env = app::config::TestEnv::new();
+            let mut env = TestEnv::new();
 
             // Testing what happens if we go over the router capacity...
             let router_cap = 2;
-            env.put(app::config::ENV_OUTBOUND_ROUTER_CAPACITY, router_cap.to_string());
+            env.put(app::env::ENV_OUTBOUND_ROUTER_CAPACITY, router_cap.to_string());
 
             let ctrl = controller::new();
             let _txs = (0..=router_cap).map(|n| {
@@ -183,7 +183,7 @@ macro_rules! generate_tests {
         fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update) {
             use std::thread;
 
-            let env = init_env();
+            let env = TestEnv::new();
             let srv = $make_server().route("/", "hello").run();
             let ctrl = controller::new();
 
@@ -215,7 +215,7 @@ macro_rules! generate_tests {
         #[test]
         #[ignore] //TODO: there's currently no destination-acquisition timeout...
         fn outbound_times_out() {
-            let env = init_env();
+            let env = TestEnv::new();
 
             let srv = $make_server().route("/hi", "hello").run();
             let ctrl = controller::new();
@@ -237,7 +237,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_asks_controller_without_orig_dst() {
-            let _ = init_env();
+            let _ = TestEnv::new();
 
             let srv = $make_server()
                 .route("/", "hello")
@@ -260,7 +260,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_error_reconnects_after_backoff() {
-            let mut env = init_env();
+            let env = TestEnv::new();
 
             let srv = $make_server()
                 .route("/", "hello")
@@ -274,10 +274,6 @@ macro_rules! generate_tests {
             let dst_tx = ctrl.destination_tx("disco.test.svc.cluster.local");
             dst_tx.send_addr(srv.addr);
             // but don't drop, to not trigger stream closing reconnects
-
-            env.put(app::config::ENV_CONTROL_EXP_BACKOFF_MIN, "100ms".to_owned());
-            env.put(app::config::ENV_CONTROL_EXP_BACKOFF_MAX, "300ms".to_owned());
-            env.put(app::config::ENV_CONTROL_EXP_BACKOFF_JITTER, "0.1".to_owned());
 
             let proxy = proxy::new()
                 .controller(ctrl.delay_listen(rx.map_err(|_| ())))
@@ -791,7 +787,7 @@ mod proxy_to_proxy {
 
         let srv = server::http1()
             .route_fn("/stripped", |req| {
-                assert_eq!(req.headers().get("l5d-client-id"), None);
+                assert_eq!(req.headers().get("l5d-client-id"), None, "header is set");
                 Response::default()
             })
             .run();
@@ -805,7 +801,7 @@ mod proxy_to_proxy {
                 .request_builder("/stripped")
                 .header("l5d-client-id", "sneaky.sneaky"),
         );
-        assert_eq!(res.status(), 200);
+        assert_eq!(res.status(), 200, "not successful");
     }
 
     #[test]
@@ -852,8 +848,12 @@ mod proxy_to_proxy {
         let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
 
         let res = client.request(&mut client.request_builder("/strip-me"));
-        assert_eq!(res.status(), 200);
-        assert_eq!(res.headers().get("l5d-server-id"), None);
+        assert_eq!(res.status(), 200, "must be sucessful");
+        assert_eq!(
+            res.headers().get("l5d-server-id"),
+            None,
+            "header must not exist"
+        );
     }
 
     #[test]

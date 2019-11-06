@@ -1,11 +1,11 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     dst::{DstAddr, Route},
-    identity,
     metric_labels::{prefix_labels, EndpointLabels},
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
         http::{identity_from_header, settings},
+        identity,
         resolve::map_endpoint::MapEndpoint,
         tap,
     },
@@ -57,6 +57,7 @@ impl Endpoint {
             .get::<tls::accept::Meta>()?
             .addrs
             .target_addr_if_not_local()?;
+
         let http_settings = settings::Settings::from_request(req);
         let identity = match identity_from_header(req, L5D_REQUIRE_ID) {
             Some(require_id) => Conditional::Some(require_id),

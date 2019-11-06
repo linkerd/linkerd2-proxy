@@ -16,11 +16,6 @@ pub mod test_util;
 
 pub use linkerd2_dns_name::InvalidName;
 
-pub trait LocalIdentity {
-    fn name(&self) -> &Name;
-    fn credentials(&self) -> Option<&CrtKey>;
-}
-
 /// A DER-encoded X.509 certificate signing request.
 #[derive(Clone, Debug)]
 pub struct Csr(Arc<Vec<u8>>);

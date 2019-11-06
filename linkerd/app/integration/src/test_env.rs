@@ -1,4 +1,4 @@
-use linkerd2_app::config::{EnvError, Strings};
+use linkerd2_app::env::{EnvError, Strings};
 use std::collections::HashMap;
 
 #[derive(Clone)]

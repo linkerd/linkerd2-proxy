@@ -59,6 +59,9 @@ impl Resolver {
         Ok(Self::new(config, opts))
     }
 
+    /// NOTE: It would be nice to be able to return a named type rather than
+    ///       `impl Future` for the background future; it would be called
+    ///       `Background` or `ResolverBackground` if that were possible.
     pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> (Self, Task) {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;

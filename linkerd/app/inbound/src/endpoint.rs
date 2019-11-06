@@ -3,11 +3,10 @@ use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify,
     dst::{DstAddr, Route},
-    identity,
     metric_labels::EndpointLabels,
     proxy::{
         http::{router, settings},
-        tap,
+        identity, tap,
     },
     transport::{connect, tls},
     Conditional, NameAddr,

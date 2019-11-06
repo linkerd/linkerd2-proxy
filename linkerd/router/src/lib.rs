@@ -1,19 +1,18 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use std::hash::Hash;
-use std::time::Duration;
-
-use futures::{Async, Future, Poll};
-use indexmap::IndexMap;
-use tokio::sync::lock::Lock;
-use tower_load_shed::LoadShed;
-use tower_service as svc;
-use tracing::debug;
-
 mod cache;
 pub mod error;
 
-use self::cache::{Cache, PurgeCache};
+use self::cache::Cache;
+pub use self::cache::PurgeCache;
+use futures::{Async, Future, Poll};
+use indexmap::IndexMap;
+use std::hash::Hash;
+use std::time::Duration;
+use tokio::sync::lock::Lock;
+pub use tower_load_shed::LoadShed;
+use tower_service as svc;
+use tracing::{debug, trace};
 
 /// Routes requests based on a configurable `Key`.
 pub struct Router<Req, Rec, Mk>
@@ -306,7 +305,7 @@ where
                     // If the target is already cached, route the request to
                     // the service; otherwise, try to insert it
                     if let Some(service) = cache.access(&target) {
-                        debug!("target already cached");
+                        trace!("target already cached");
                         State::Call(Some(request), Some(service))
                     } else {
                         debug!("target not cached");
