@@ -56,7 +56,7 @@ impl Endpoint {
             .extensions()
             .get::<tls::accept::Meta>()?
             .addrs
-            .target_addr_is_local()?;
+            .target_addr_if_not_local()?;
 
         let http_settings = settings::Settings::from_request(req);
         let identity = match identity_from_header(req, L5D_REQUIRE_ID) {
