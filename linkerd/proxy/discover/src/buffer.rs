@@ -54,7 +54,6 @@ where
     type Error = M::Error;
     type Future = DiscoverFuture<M::Future, M::Response>;
 
-    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
     }

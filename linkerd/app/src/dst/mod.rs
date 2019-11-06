@@ -17,6 +17,9 @@ pub struct Config {
     pub profile_suffixes: IndexSet<dns::Suffix>,
 }
 
+/// Handles to destination service clients.
+///
+/// The addr is preserved for logging.
 pub struct Dst<S> {
     pub addr: ControlAddr,
     pub profiles: profiles::Client<S>,

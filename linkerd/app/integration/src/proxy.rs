@@ -246,53 +246,53 @@ fn run(proxy: Proxy, mut env: TestEnv) -> Listening {
         .name(format!("{}:proxy", thread_name()))
         .spawn(move || {
             tracing::dispatcher::with_default(&trace, || {
-                info_span!("proxy", test = %thread_name()).in_scope(|| {
-                    let _c = controller;
-                    let _i = identity;
+                let span = info_span!("proxy", test = %thread_name());
+                let _enter = span.enter();
 
-                    tokio::runtime::current_thread::Runtime::new()
-                        .expect("proxy")
-                        .block_on(future::lazy(move || {
-                            let mock_orig_dst =
-                                MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
-                            let main = config
-                                .with_orig_dst_addr(mock_orig_dst.clone())
-                                .build(trace_handle)
-                                .expect("config");
+                let _c = controller;
+                let _i = identity;
 
-                            {
-                                let mut inner = mock_orig_dst.0.lock().unwrap();
-                                inner.inbound_local_addr = Some(main.inbound_addr());
-                                inner.outbound_local_addr = Some(main.outbound_addr());
+                tokio::runtime::current_thread::Runtime::new()
+                    .expect("proxy")
+                    .block_on(future::lazy(move || {
+                        let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
+                        let main = config
+                            .with_orig_dst_addr(mock_orig_dst.clone())
+                            .build(trace_handle)
+                            .expect("config");
+
+                        {
+                            let mut inner = mock_orig_dst.0.lock().unwrap();
+                            inner.inbound_local_addr = Some(main.inbound_addr());
+                            inner.outbound_local_addr = Some(main.outbound_addr());
+                        }
+
+                        // slip the running tx into the shutdown future, since the first time
+                        // the shutdown future is polled, that means all of the proxy is now
+                        // running.
+                        let addrs = (
+                            main.tap_addr(),
+                            identity_addr,
+                            main.inbound_addr(),
+                            main.outbound_addr(),
+                            main.admin_addr(),
+                        );
+                        let mut running = Some((running_tx, addrs));
+                        let on_shutdown = future::poll_fn(move || {
+                            debug!("polling shutdown");
+                            if let Some((tx, addrs)) = running.take() {
+                                let _ = tx.send(addrs);
                             }
 
-                            // slip the running tx into the shutdown future, since the first time
-                            // the shutdown future is polled, that means all of the proxy is now
-                            // running.
-                            let addrs = (
-                                main.tap_addr(),
-                                identity_addr,
-                                main.inbound_addr(),
-                                main.outbound_addr(),
-                                main.admin_addr(),
-                            );
-                            let mut running = Some((running_tx, addrs));
-                            let on_shutdown = future::poll_fn(move || {
-                                debug!("polling shutdown");
-                                if let Some((tx, addrs)) = running.take() {
-                                    let _ = tx.send(addrs);
-                                }
+                            try_ready!(rx.poll());
+                            debug!("shutdown");
+                            Ok(().into())
+                        });
 
-                                try_ready!(rx.poll());
-                                debug!("shutdown");
-                                Ok(().into())
-                            });
-
-                            let drain = main.spawn();
-                            on_shutdown.and_then(move |()| drain.drain())
-                        }))
-                        .expect("proxy");
-                })
+                        let drain = main.spawn();
+                        on_shutdown.and_then(move |()| drain.drain())
+                    }))
+                    .expect("proxy");
             })
         })
         .expect("spawn");
