@@ -82,7 +82,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
         }
     }
 
-    /// Build an appication.
+    /// Build an application.
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
