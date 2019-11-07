@@ -1,22 +1,24 @@
-use indexmap::IndexSet;
+use ipnet::{Contains, IpNet};
 use linkerd2_app_core::{
     dns::Suffix,
     dst::DstAddr,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     proxy::{api_resolve as api, resolve::recover},
-    request_filter, Error, Recover,
+    request_filter, Addr, Error, Recover,
 };
+use std::net::IpAddr;
 use std::sync::Arc;
 use tower_grpc::{generic::client::GrpcService, Body, BoxBody, Code, Status};
 
 pub type Resolve<S> = request_filter::Service<
-    PermitNamesInSuffixes,
+    PermitConfiguredDsts,
     recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<S>>,
 >;
 
 pub fn new<S>(
     service: S,
-    suffixes: Vec<Suffix>,
+    suffixes: impl IntoIterator<Item = Suffix>,
+    nets: impl IntoIterator<Item = IpNet>,
     token: &str,
     backoff: ExponentialBackoff,
 ) -> Resolve<S>
@@ -27,7 +29,7 @@ where
     S::Future: Send,
 {
     request_filter::Service::new::<DstAddr>(
-        PermitNamesInSuffixes::new(suffixes),
+        PermitConfiguredDsts::new(suffixes, nets),
         recover::Resolve::new::<DstAddr>(
             backoff.into(),
             api::Resolve::new::<DstAddr>(service).with_context_token(token),
@@ -36,8 +38,9 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct PermitNamesInSuffixes {
-    permitted: Arc<IndexSet<Suffix>>,
+pub struct PermitConfiguredDsts {
+    name_suffixes: Arc<Vec<Suffix>>,
+    networks: Arc<Vec<IpNet>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -46,32 +49,41 @@ pub struct BackoffUnlessInvalidArgument(ExponentialBackoff);
 #[derive(Debug)]
 pub struct Unresolvable(());
 
-// === impl PermitNamesInSuffixes ===
+// === impl PermitConfiguredDsts ===
 
-impl PermitNamesInSuffixes {
-    fn new(permitted: impl IntoIterator<Item = Suffix>) -> Self {
+impl PermitConfiguredDsts {
+    fn new(
+        name_suffixes: impl IntoIterator<Item = Suffix>,
+        nets: impl IntoIterator<Item = IpNet>,
+    ) -> Self {
         Self {
-            permitted: Arc::new(permitted.into_iter().collect()),
+            name_suffixes: Arc::new(name_suffixes.into_iter().collect()),
+            networks: Arc::new(nets.into_iter().collect()),
         }
     }
 }
 
-impl request_filter::RequestFilter<DstAddr> for PermitNamesInSuffixes {
+impl request_filter::RequestFilter<DstAddr> for PermitConfiguredDsts {
     type Error = Unresolvable;
 
     fn filter(&self, dst: DstAddr) -> Result<DstAddr, Self::Error> {
-        if let Some(name) = dst.dst_concrete().name_addr() {
-            if self
-                .permitted
+        let permitted = match dst.dst_concrete() {
+            Addr::Name(name) => self
+                .name_suffixes
                 .iter()
-                .any(|suffix| suffix.contains(name.name()))
-            {
-                tracing::debug!("suffix matches");
-                return Ok(dst);
-            }
-        }
+                .any(|suffix| suffix.contains(name.name())),
+            Addr::Socket(sa) => self.networks.iter().any(|net| match (net, sa.ip()) {
+                (IpNet::V4(net), IpAddr::V4(addr)) => net.contains(&addr),
+                (IpNet::V6(net), IpAddr::V6(addr)) => net.contains(&addr),
+                _ => false,
+            }),
+        };
 
-        Err(Unresolvable(()))
+        if permitted {
+            Ok(dst)
+        } else {
+            Err(Unresolvable(()))
+        }
     }
 }
 

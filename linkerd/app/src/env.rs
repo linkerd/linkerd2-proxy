@@ -39,6 +39,7 @@ pub enum ParseError {
     NotADuration,
     NotADomainSuffix,
     NotANumber,
+    NotANetwork,
     HostIsNotAnIpAddress,
     AddrError(addr::Error),
     NameError,
@@ -85,6 +86,17 @@ pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLI
 ///
 /// If unspecified, a default value is used.
 pub const ENV_DESTINATION_GET_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_GET_SUFFIXES";
+
+/// Constrains which destination addresses are resolved through the destination
+/// service.
+///
+/// The value is a comma-separated list of networks that may be
+/// resolved via the destination service.
+///
+/// If specified and empty, the destination service is not used for resolution.
+///
+/// If unspecified, a default value is used
+pub const ENV_DESTINATION_GET_NETWORKS: &str = "LINKERD2_PROXY_DESTINATION_GET_NETWORKS";
 
 /// Constrains which destination names may be used for profile/route discovery.
 ///
@@ -184,6 +196,10 @@ const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 10_000;
 const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
 
+// RFC6890 private networks
+// Doesn't make sense to include the IPv6 network yet (fd00::/8).
+const DEFAULT_DESTINATION_GET_NETWORKS: &str = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16";
+
 const DEFAULT_IDENTITY_MIN_REFRESH: Duration = Duration::from_secs(10);
 const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24);
 
@@ -276,6 +292,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
     let dst_get_suffixes = parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
+    let dst_get_networks = parse(strings, ENV_DESTINATION_GET_NETWORKS, parse_networks);
     let dst_profile_suffixes = parse(
         strings,
         ENV_DESTINATION_PROFILE_SUFFIXES,
@@ -391,6 +408,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             context: dst_token?.unwrap_or_default(),
             get_suffixes: dst_get_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
+            get_networks: dst_get_networks?
+                .unwrap_or(parse_networks(DEFAULT_DESTINATION_GET_NETWORKS).unwrap()),
             profile_suffixes: dst_profile_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
             control: ControlConfig {
@@ -666,13 +685,13 @@ where
     }
 }
 
-fn parse_dns_suffixes(list: &str) -> Result<Vec<dns::Suffix>, ParseError> {
-    let mut suffixes = Vec::new();
+fn parse_dns_suffixes(list: &str) -> Result<IndexSet<dns::Suffix>, ParseError> {
+    let mut suffixes = IndexSet::new();
     for item in list.split(',') {
         let item = item.trim();
         if !item.is_empty() {
             let sfx = parse_dns_suffix(item)?;
-            suffixes.push(sfx);
+            suffixes.insert(sfx);
         }
     }
 
@@ -687,6 +706,21 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
     dns::Name::try_from(s.as_bytes())
         .map(dns::Suffix::Name)
         .map_err(|_| ParseError::NotADomainSuffix)
+}
+
+fn parse_networks(list: &str) -> Result<IndexSet<ipnet::IpNet>, ParseError> {
+    let mut nets = IndexSet::new();
+    for input in list.split(',') {
+        let input = input.trim();
+        if !input.is_empty() {
+            let net = ipnet::IpNet::from_str(input).map_err(|error| {
+                error!(%input, %error, "Invalid network");
+                ParseError::NotANetwork
+            })?;
+            nets.insert(net);
+        }
+    }
+    Ok(nets)
 }
 
 pub fn parse_backoff<S: Strings>(

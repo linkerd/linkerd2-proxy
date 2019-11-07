@@ -510,6 +510,7 @@ dependencies = [
  "http-body 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.12.34 (registry+https://github.com/rust-lang/crates.io-index)",
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ipnet 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-app-core 0.1.0",
  "linkerd2-app-inbound 0.1.0",
  "linkerd2-app-outbound 0.1.0",
