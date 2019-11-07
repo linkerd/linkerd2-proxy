@@ -36,6 +36,7 @@ linkerd2-proxy-identity = { path = "../../proxy/identity" }
 linkerd2-proxy-http = { path = "../../proxy/http" }
 linkerd2-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd2-proxy-tap = { path = "../../proxy/tap" }
+linkerd2-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd2-proxy-transport = { path = "../../proxy/transport" }
 linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-request-filter = { path = "../../request-filter" }

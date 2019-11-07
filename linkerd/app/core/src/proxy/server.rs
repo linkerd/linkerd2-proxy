@@ -1,25 +1,23 @@
-use crate::proxy::http::{
-    glue::{HttpBody, HyperServerSvc},
-    upgrade, Version as HttpVersion,
+use crate::{
+    drain,
+    proxy::{
+        core::Accept,
+        detect,
+        http::{
+            glue::{HttpBody, HyperServerSvc},
+            h2::Settings as H2Settings,
+            upgrade, Version as HttpVersion,
+        },
+    },
+    svc::{MakeService, Service, ServiceExt},
+    transport::{self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls},
+    Error, Never,
 };
-use crate::proxy::{detect, tcp};
-use crate::svc::{MakeService, Service};
-use crate::transport::{
-    self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls,
-};
-use futures::future::{self, Either};
-use futures::{Future, Poll};
+use futures::{future::Either, Future, Poll};
 use http;
 use hyper;
 use indexmap::IndexSet;
-use linkerd2_drain as drain;
-use linkerd2_error::{Error, Never};
-use linkerd2_proxy_core::listen::Accept;
-use linkerd2_proxy_http::h2::Settings as H2Settings;
-use std::net::SocketAddr;
 use std::sync::Arc;
-use std::{error, fmt};
-use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{info_span, trace};
 use tracing_futures::Instrument;
 
@@ -77,7 +75,7 @@ impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
 ///
 /// *  Otherwise, an `H`-typed `Service` is used to build a service that
 ///    can route HTTP  requests for the `tls::accept::Meta`.
-pub struct Server<L, C, H, B>
+pub struct Server<L, F, H, B>
 where
     // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
     L: TransportLabels<Protocol, Labels = TransportKey>,
@@ -94,57 +92,12 @@ where
     h2_settings: H2Settings,
     transport_labels: L,
     transport_metrics: transport::MetricsRegistry,
-    connect: ForwardConnect<C>,
+    forward_tcp: F,
     make_http: H,
     drain: drain::Watch,
 }
 
-/// Establishes connections for forwarded connections.
-///
-/// Fails to produce a `Connect` if this would connect to the listener that
-/// already accepted this.
-#[derive(Clone, Debug)]
-struct ForwardConnect<C>(C);
-
-/// An error indicating an accepted socket did not have an SO_ORIGINAL_DST
-/// address and therefore could not be forwarded.
-#[derive(Clone, Debug)]
-pub struct NoForwardTarget;
-
-impl<C> Service<tls::accept::Meta> for ForwardConnect<C>
-where
-    C: Service<SocketAddr>,
-    C::Error: Into<Error>,
-{
-    type Response = C::Response;
-    type Error = Error;
-    type Future = future::Either<
-        future::FutureResult<C::Response, Error>,
-        future::MapErr<C::Future, fn(C::Error) -> Error>,
-    >;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready().map_err(Into::into)
-    }
-
-    fn call(&mut self, meta: tls::accept::Meta) -> Self::Future {
-        if meta.addrs.target_addr_is_local() {
-            return future::Either::A(future::err(NoForwardTarget.into()));
-        }
-
-        future::Either::B(self.0.call(meta.addrs.target_addr()).map_err(Into::into))
-    }
-}
-
-impl error::Error for NoForwardTarget {}
-
-impl fmt::Display for NoForwardTarget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Could not forward to a target address")
-    }
-}
-
-impl<L, C, H, B> Server<L, C, H, B>
+impl<L, F, H, B> Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey>,
     H: MakeService<
@@ -160,7 +113,7 @@ where
     pub fn new(
         transport_labels: L,
         transport_metrics: transport::MetricsRegistry,
-        connect: C,
+        forward_tcp: F,
         make_http: H,
         h2_settings: H2Settings,
         drain: drain::Watch,
@@ -173,7 +126,7 @@ where
                 h2_settings,
                 transport_labels,
                 transport_metrics,
-                connect: ForwardConnect(connect),
+                forward_tcp,
                 make_http,
                 drain,
             },
@@ -181,13 +134,11 @@ where
     }
 }
 
-impl<L, C, H, B> Service<Connection> for Server<L, C, H, B>
+impl<L, F, H, B> Service<Connection> for Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey>,
-    C: Service<SocketAddr> + Clone + Send + 'static,
-    C::Response: AsyncRead + AsyncWrite + Send + 'static,
-    C::Future: Send + 'static,
-    C::Error: Into<Error>,
+    F: Accept<(tls::accept::Meta, transport::metrics::Io<BoxedIo>)> + Clone + Send + 'static,
+    F::Future: Send + 'static,
     H: MakeService<
             tls::accept::Meta,
             http::Request<HttpBody>,
@@ -228,8 +179,12 @@ where
             Some(http) => http,
             None => {
                 trace!("did not detect protocol; forwarding TCP");
-                let fwd = tcp::forward(io, self.connect.clone(), proto.tls);
-                return Box::new(drain.watch(fwd, |_| {}));
+                let fwd = self
+                    .forward_tcp
+                    .clone()
+                    .into_service()
+                    .oneshot((proto.tls, io));
+                return Box::new(drain.watch(fwd.map_err(Into::into), |_| {}));
             }
         };
 
@@ -279,10 +234,10 @@ where
     }
 }
 
-impl<L, C, H, B> Clone for Server<L, C, H, B>
+impl<L, F, H, B> Clone for Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey> + Clone,
-    C: Clone,
+    F: Clone,
     H: MakeService<
             tls::accept::Meta,
             http::Request<HttpBody>,
@@ -297,7 +252,7 @@ where
             h2_settings: self.h2_settings.clone(),
             transport_labels: self.transport_labels.clone(),
             transport_metrics: self.transport_metrics.clone(),
-            connect: self.connect.clone(),
+            forward_tcp: self.forward_tcp.clone(),
             make_http: self.make_http.clone(),
             drain: self.drain.clone(),
         }

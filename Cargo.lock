@@ -563,6 +563,7 @@ dependencies = [
  "linkerd2-proxy-identity 0.1.0",
  "linkerd2-proxy-resolve 0.1.0",
  "linkerd2-proxy-tap 0.1.0",
+ "linkerd2-proxy-tcp 0.1.0",
  "linkerd2-proxy-transport 0.1.0",
  "linkerd2-reconnect 0.1.0",
  "linkerd2-request-filter 0.1.0",
@@ -949,6 +950,18 @@ dependencies = [
  "tower-grpc 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-futures 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "linkerd2-proxy-tcp"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linkerd2-duplex 0.1.0",
+ "linkerd2-error 0.1.0",
+ "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-load 0.1.0 (git+https://github.com/tower-rs/tower)",
 ]
 
 [[package]]
