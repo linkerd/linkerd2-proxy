@@ -36,7 +36,7 @@ ifdef CARGO_DEBUG
 endif
 
 $(TARGET_BIN): fetch
-	$(CARGO_BUILD)
+	$(CARGO_BUILD) -p linkerd2-proxy
 
 $(PKG_ROOT)/$(PKG): $(TARGET_BIN)
 	mkdir -p $(PKG_BASE)/bin
