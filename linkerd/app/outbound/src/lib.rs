@@ -25,7 +25,7 @@ use linkerd2_app_core::{
         },
         identity,
         resolve::map_endpoint,
-        tap, Server,
+        tap, tcp, Server,
     },
     reconnect, serve,
     spans::SpanConverter,
@@ -329,12 +329,18 @@ impl<A: OrigDstAddr> Config<A> {
             ))
                 .push(metrics.http_handle_time.layer());
 
+            let forward_tcp = tcp::Forward::new(
+                svc::stack(connect_stack)
+                    .push(svc::map_target::layer(|meta: tls::accept::Meta| {
+                        Endpoint::from(meta.addrs.target_addr())
+                    }))
+                    .into_inner(),
+            );
+
             let proxy = Server::new(
                 TransportLabels,
                 metrics.transport,
-                svc::stack(connect_stack)
-                    .push(svc::map_target::layer(Endpoint::from))
-                    .into_inner(),
+                forward_tcp,
                 server_stack,
                 h2_settings,
                 drain.clone(),

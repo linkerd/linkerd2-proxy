@@ -22,7 +22,7 @@ use linkerd2_app_core::{
         },
         identity,
         server::{Protocol as ServerProtocol, Server},
-        tap,
+        tap, tcp,
     },
     reconnect, serve,
     spans::SpanConverter,
@@ -269,12 +269,18 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(metrics.http_handle_time.layer())
                 .serves::<tls::accept::Meta>();
 
+            let forward_tcp = tcp::Forward::new(
+                svc::stack(connect_stack)
+                    .push(svc::map_target::layer(|meta: tls::accept::Meta| {
+                        Endpoint::from(meta.addrs.target_addr())
+                    }))
+                    .into_inner(),
+            );
+
             let server = Server::new(
                 TransportLabels,
                 metrics.transport,
-                svc::stack(connect_stack)
-                    .push(svc::map_target::layer(Endpoint::from))
-                    .into_inner(),
+                forward_tcp,
                 source_stack,
                 h2_settings,
                 drain.clone(),

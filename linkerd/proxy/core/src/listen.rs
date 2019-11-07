@@ -42,7 +42,17 @@ pub trait Accept<C> {
     fn poll_ready(&mut self) -> Poll<(), Self::Error>;
 
     fn accept(&mut self, connection: C) -> Self::Future;
+
+    fn into_service(self) -> AcceptService<Self>
+    where
+        Self: Sized,
+    {
+        AcceptService(self)
+    }
 }
+
+#[derive(Clone, Debug)]
+pub struct AcceptService<S>(S);
 
 impl<C, S> Accept<C> for S
 where
@@ -52,14 +62,26 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    #[inline]
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Service::poll_ready(self)
     }
 
-    #[inline]
     fn accept(&mut self, connection: C) -> Self::Future {
         Service::call(self, connection)
+    }
+}
+
+impl<C, S: Accept<C>> Service<C> for AcceptService<S> {
+    type Response = ();
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.0.poll_ready()
+    }
+
+    fn call(&mut self, connection: C) -> Self::Future {
+        self.0.accept(connection)
     }
 }
 

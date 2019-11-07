@@ -8,10 +8,10 @@ pub use linkerd2_proxy_http::{self as http, grpc};
 pub use linkerd2_proxy_identity as identity;
 pub use linkerd2_proxy_resolve as resolve;
 pub use linkerd2_proxy_tap as tap;
+pub use linkerd2_proxy_tcp as tcp;
 
 pub mod buffer;
 pub mod pending;
 pub mod server;
-mod tcp;
 
 pub use self::server::Server;
