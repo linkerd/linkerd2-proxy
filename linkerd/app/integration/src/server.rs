@@ -235,9 +235,7 @@ enum Run {
 
 struct Route(
     Box<
-        dyn Fn(
-                Request<ReqBody>,
-            ) -> Box<dyn Future<Item = Response<Bytes>, Error = BoxError> + Send>
+        dyn Fn(Request<ReqBody>) -> Box<dyn Future<Item = Response<Bytes>, Error = BoxError> + Send>
             + Send,
     >,
 );
