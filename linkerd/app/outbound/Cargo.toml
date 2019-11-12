@@ -20,4 +20,4 @@ tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"
 tracing = "0.1.9"
 
 [dev-dependencies]
-quickcheck = { version = "0.8", default-features = false }
+quickcheck = { version = "0.9", default-features = false }

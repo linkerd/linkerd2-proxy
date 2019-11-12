@@ -8,8 +8,8 @@ publish = false
 
 [dependencies]
 futures = "0.1"
-rand = "0.6.3"
+rand = { version = "0.7", features = ["small_rng"] }
 tokio-timer = "0.2.6"
 
 [dev-dependencies]
-quickcheck = { version = "0.8", default-features = false }
+quickcheck = { version = "0.9", default-features = false }

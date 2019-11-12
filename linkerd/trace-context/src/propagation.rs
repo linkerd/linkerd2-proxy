@@ -1,7 +1,7 @@
 use super::{Error, Flags, Id, InsufficientBytes};
 use bytes::Bytes;
 use http::header::HeaderValue;
-use rand::{rngs::SmallRng, FromEntropy};
+use rand::{rngs::SmallRng, SeedableRng};
 use std::convert::TryInto;
 use std::fmt;
 use tracing::{trace, warn};

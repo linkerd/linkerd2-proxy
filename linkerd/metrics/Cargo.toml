@@ -18,4 +18,4 @@ indexmap = "1.0"
 tracing = "0.1.2"
 
 [dev-dependencies]
-quickcheck = { version = "0.8", default-features = false }
+quickcheck = { version = "0.9", default-features = false }

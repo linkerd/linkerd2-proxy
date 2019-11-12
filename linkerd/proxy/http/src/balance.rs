@@ -1,8 +1,9 @@
+use crate::Error;
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::body::Payload;
 pub use hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
-use rand::{rngs::SmallRng, FromEntropy};
+use rand::{rngs::SmallRng, SeedableRng};
 use std::{marker::PhantomData, time::Duration};
 pub use tower_balance::p2c::Balance;
 use tower_discover::Discover;
@@ -88,6 +89,7 @@ where
     M::Response: Discover,
     <M::Response as Discover>::Service:
         tower::Service<http::Request<A>, Response = http::Response<B>>,
+    <<M::Response as Discover>::Service as tower::Service<http::Request<A>>>::Error: Into<Error>,
     A: Payload,
     B: Payload,
     Balance<PeakEwmaDiscover<M::Response, PendingUntilFirstData>, http::Request<A>>:
@@ -119,6 +121,7 @@ where
     F: Future,
     F::Item: Discover,
     <F::Item as Discover>::Service: tower::Service<http::Request<A>, Response = http::Response<B>>,
+    <<F::Item as Discover>::Service as tower::Service<http::Request<A>>>::Error: Into<Error>,
     A: Payload,
     B: Payload,
     Balance<PeakEwmaDiscover<F::Item, PendingUntilFirstData>, http::Request<A>>:

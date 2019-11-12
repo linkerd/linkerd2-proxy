@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use futures::{try_ready, Future, Poll, Stream};
-use rand::{rngs::SmallRng, FromEntropy};
+use rand::{rngs::SmallRng, SeedableRng};
 use std::fmt;
 use std::ops::Mul;
 use std::time::Duration;
