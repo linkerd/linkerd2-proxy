@@ -3,13 +3,12 @@ const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
-pub use tracing::{debug, error, info, warn};
 use tracing::{Dispatch, Event, Level};
 use tracing_subscriber::{
     filter,
     fmt::{format, Builder, Context, Formatter},
+    reload, EnvFilter, FmtSubscriber,
 };
-use tracing_subscriber::{reload, EnvFilter, FmtSubscriber};
 
 type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::LevelFilter>;
 type Subscriber = Formatter<format::NewRecorder, Format>;
@@ -119,7 +118,7 @@ impl LevelHandle {
         let level = level.as_ref();
         let filter = level.parse::<EnvFilter>()?;
         self.inner.reload(filter)?;
-        info!(message = "set new log level", %level);
+        tracing::info!(%level, "set new log level");
         Ok(())
     }
 
