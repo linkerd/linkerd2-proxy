@@ -370,7 +370,7 @@ mod test_util {
     use std::cell::Cell;
     use std::fmt;
     use std::rc::Rc;
-    use tower_service::Service;
+    use tower::Service;
 
     #[derive(Clone)]
     pub struct Recognize;
@@ -494,7 +494,7 @@ mod tests {
     use futures::Future;
     use std::time::Duration;
     use std::usize;
-    use tower_service::{self as svc, Service};
+    use tower::Service;
 
     impl<Mk> Router<Request, Recognize, Mk>
     where
