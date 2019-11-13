@@ -154,7 +154,8 @@ mod tests {
     use super::{Endpoint, RecognizeEndpoint};
     use http;
     use linkerd2_app_core::{
-        proxy::http::{router::Recognize, Settings},
+        proxy::http::Settings,
+        router::Recognize,
         transport::{listen, tls},
         Conditional,
     };
