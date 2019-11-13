@@ -17,14 +17,14 @@ use linkerd2_app_core::{
     proxy::{
         self,
         http::{
-            client, insert, metrics as http_metrics, normalize_uri, profiles, router, settings,
+            client, insert, metrics as http_metrics, normalize_uri, profiles, settings,
             strip_header,
         },
         identity,
         server::{Protocol as ServerProtocol, Server},
         tap, tcp,
     },
-    reconnect, serve,
+    reconnect, router, serve,
     spans::SpanConverter,
     svc, trace, trace_context,
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
@@ -138,7 +138,7 @@ impl<A: OrigDstAddr> Config<A> {
                 ))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .makes::<Endpoint>()
-                .push(router::layer(
+                .push(router::Layer::new(
                     router::Config::new(router_capacity, router_max_idle_age),
                     RecognizeEndpoint::default(),
                 ))
@@ -194,7 +194,7 @@ impl<A: OrigDstAddr> Config<A> {
             // address is used.
             let dst_router = dst_stack
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .push(router::layer(
+                .push(router::Layer::new(
                     router::Config::new(router_capacity, router_max_idle_age),
                     |req: &http::Request<_>| {
                         let dst = req

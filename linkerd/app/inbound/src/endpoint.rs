@@ -4,10 +4,8 @@ use linkerd2_app_core::{
     classify,
     dst::{DstAddr, Route},
     metric_labels::EndpointLabels,
-    proxy::{
-        http::{router, settings},
-        identity, tap,
-    },
+    proxy::{http::settings, identity, tap},
+    router,
     transport::{connect, tls},
     Conditional, NameAddr,
 };
@@ -156,7 +154,8 @@ mod tests {
     use super::{Endpoint, RecognizeEndpoint};
     use http;
     use linkerd2_app_core::{
-        proxy::http::{router::Recognize, Settings},
+        proxy::http::Settings,
+        router::Recognize,
         transport::{listen, tls},
         Conditional,
     };

@@ -116,7 +116,7 @@ where
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
     use crate::proxy::buffer;
-    use crate::proxy::http::router::error as router;
+    use linkerd2_router::error as router;
     use tower::load_shed::error as shed;
 
     if let Some(ref c) = e.downcast_ref::<router::NoCapacity>() {
