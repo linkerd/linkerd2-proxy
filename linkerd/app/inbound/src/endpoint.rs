@@ -4,10 +4,8 @@ use linkerd2_app_core::{
     classify,
     dst::{DstAddr, Route},
     metric_labels::EndpointLabels,
-    proxy::{
-        http::{router, settings},
-        identity, tap,
-    },
+    proxy::{http::settings, identity, tap},
+    router,
     transport::{connect, tls},
     Conditional, NameAddr,
 };

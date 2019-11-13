@@ -18,6 +18,7 @@ pub use linkerd2_metrics as metrics;
 pub use linkerd2_opencensus as opencensus;
 pub use linkerd2_reconnect as reconnect;
 pub use linkerd2_request_filter as request_filter;
+pub use linkerd2_router as router;
 pub use linkerd2_trace_context as trace_context;
 
 pub mod accept_error;

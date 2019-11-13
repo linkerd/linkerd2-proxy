@@ -2,16 +2,19 @@
 
 mod cache;
 pub mod error;
+pub mod layer;
 
 use self::cache::Cache;
-pub use self::cache::PurgeCache;
+pub use self::{
+    cache::PurgeCache,
+    layer::{Config, Layer},
+};
 use futures::{Async, Future, Poll};
 use indexmap::IndexMap;
 use std::hash::Hash;
 use std::time::Duration;
 use tokio::sync::lock::Lock;
 pub use tower_load_shed::LoadShed;
-use tower_service as svc;
 use tracing::{debug, trace};
 
 /// Routes requests based on a configurable `Key`.
@@ -19,7 +22,7 @@ pub struct Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req>,
+    Mk::Value: tower::Service<Req>,
 {
     inner: Inner<Req, Rec, Mk>,
 }
@@ -63,8 +66,8 @@ pub struct ResponseFuture<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req>,
-    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+    Mk::Value: tower::Service<Req>,
+    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
 {
     state: State<Req, Rec, Mk>,
 }
@@ -73,7 +76,7 @@ struct Inner<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req>,
+    Mk::Value: tower::Service<Req>,
 {
     recognize: Rec,
     make: Mk,
@@ -84,8 +87,8 @@ enum State<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req>,
-    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+    Mk::Value: tower::Service<Req>,
+    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
 {
     Acquire {
         request: Option<Req>,
@@ -94,7 +97,7 @@ where
         cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
     },
     Call(Option<Req>, Option<LoadShed<Mk::Value>>),
-    Respond(<LoadShed<Mk::Value> as svc::Service<Req>>::Future),
+    Respond(<LoadShed<Mk::Value> as tower::Service<Req>>::Future),
     Error(Option<error::Error>),
 }
 
@@ -136,7 +139,7 @@ where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
     <Mk as Make<Rec::Target>>::Value: Clone,
-    Mk::Value: svc::Service<Req>,
+    Mk::Value: tower::Service<Req>,
 {
     pub fn new(
         recognize: Rec,
@@ -160,7 +163,7 @@ where
 impl<Req, Rec, Svc> Router<Req, Rec, FixedMake<Rec::Target, Svc>>
 where
     Rec: Recognize<Req>,
-    Svc: svc::Service<Req> + Clone,
+    Svc: tower::Service<Req> + Clone,
 {
     /// A router that is created with a fixed set of known routes.
     ///
@@ -185,14 +188,14 @@ where
     }
 }
 
-impl<Req, Rec, Mk> svc::Service<Req> for Router<Req, Rec, Mk>
+impl<Req, Rec, Mk> tower::Service<Req> for Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target> + Clone,
-    Mk::Value: svc::Service<Req> + Clone,
-    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+    Mk::Value: tower::Service<Req> + Clone,
+    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
 {
-    type Response = <Mk::Value as svc::Service<Req>>::Response;
+    type Response = <Mk::Value as tower::Service<Req>>::Response;
     type Error = error::Error;
     type Future = ResponseFuture<Req, Rec, Mk>;
 
@@ -227,7 +230,7 @@ impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone,
     Mk: Make<Rec::Target> + Clone,
-    Mk::Value: svc::Service<Req>,
+    Mk::Value: tower::Service<Req>,
 {
     fn clone(&self) -> Self {
         Router {
@@ -242,8 +245,8 @@ impl<Req, Rec, Mk> ResponseFuture<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req>,
-    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+    Mk::Value: tower::Service<Req>,
+    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
 {
     fn new(
         request: Req,
@@ -276,14 +279,14 @@ impl<Req, Rec, Mk> Future for ResponseFuture<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
     Mk: Make<Rec::Target>,
-    Mk::Value: svc::Service<Req> + Clone,
-    <Mk::Value as svc::Service<Req>>::Error: Into<error::Error>,
+    Mk::Value: tower::Service<Req> + Clone,
+    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
 {
-    type Item = <LoadShed<Mk::Value> as svc::Service<Req>>::Response;
+    type Item = <LoadShed<Mk::Value> as tower::Service<Req>>::Response;
     type Error = error::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        use svc::Service;
+        use tower::Service;
 
         loop {
             self.state = match self.state {
@@ -349,7 +352,7 @@ impl<Req, Rec, Mk> Clone for Inner<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone,
     Mk: Make<Rec::Target> + Clone,
-    Mk::Value: svc::Service<Req>,
+    Mk::Value: tower::Service<Req>,
 {
     fn clone(&self) -> Self {
         Inner {
@@ -496,8 +499,8 @@ mod tests {
     impl<Mk> Router<Request, Recognize, Mk>
     where
         Mk: Make<usize> + Clone,
-        Mk::Value: svc::Service<Request, Response = usize> + Clone,
-        <Mk::Value as svc::Service<Request>>::Error: Into<error::Error>,
+        Mk::Value: tower::Service<Request, Response = usize> + Clone,
+        <Mk::Value as tower::Service<Request>>::Error: Into<error::Error>,
     {
         fn call_ok(&mut self, request: impl Into<Request>) -> usize {
             let request = request.into();
