@@ -1,4 +1,5 @@
-use crate::proxy::{buffer, pending};
+use crate::proxy::{buffer, http, pending};
+use crate::Error;
 pub use linkerd2_router::Make;
 pub use linkerd2_stack::{self as stack, layer, map_target, Layer, LayerExt, Shared};
 pub use linkerd2_timeout::stack as timeout;
@@ -53,6 +54,14 @@ impl<L> Layers<L> {
     pub fn push_spawn_ready(self) -> Layers<Pair<L, SpawnReadyLayer>> {
         self.push(SpawnReadyLayer::new())
     }
+
+    pub fn boxed<A, B>(self) -> Layers<Pair<L, http::boxed::Layer<A, B>>>
+    where
+        A: 'static,
+        B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
+    {
+        self.push(http::boxed::Layer::new())
+    }
 }
 
 impl<M, L: Layer<M>> Layer<M> for Layers<L> {
@@ -102,6 +111,15 @@ impl<S> Stack<S> {
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(TimeoutLayer::new(timeout))
+    }
+
+    pub fn boxed<T, A, B>(self) -> Stack<http::boxed::Make<S, A, B>>
+    where
+        A: 'static,
+        S: tower::MakeService<T, http::Request<A>, Response = http::Response<B>>,
+        B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
+    {
+        self.push(http::boxed::Layer::new())
     }
 
     /// Validates that this stack serves T-typed targets.
