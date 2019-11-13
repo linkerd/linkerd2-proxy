@@ -1,9 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use bytes::Buf;
 use futures::{try_ready, Future, Poll};
-use http;
-use hyper::body::Payload;
 use linkerd2_error::Error;
 use tracing::trace;
 
@@ -36,12 +33,6 @@ where
     target: Option<T>,
     predicate: P,
     state: FallbackState<A, B::Future, T>,
-}
-
-#[derive(Clone)]
-pub enum Either<A, B> {
-    A(A),
-    B(B),
 }
 
 enum FallbackState<A, B, T> {
@@ -113,11 +104,12 @@ where
     A: tower::Service<T>,
     A::Error: Into<Error>,
     B: tower::Service<T> + Clone,
+    B::Response: Into<A::Response>,
     B::Error: Into<Error>,
     P: Fn(&Error) -> bool + Clone,
     T: Clone,
 {
-    type Response = Either<A::Response, B::Response>;
+    type Response = A::Response;
     type Error = Error;
     type Future = MakeFuture<A::Future, B, P, T>;
 
@@ -140,10 +132,11 @@ where
     A: Future,
     A::Error: Into<Error>,
     B: tower::Service<T>,
+    B::Response: Into<A::Item>,
     B::Error: Into<Error>,
     P: Fn(&Error) -> bool,
 {
-    type Item = Either<A::Item, B::Response>;
+    type Item = A::Item;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -152,7 +145,7 @@ where
                 // We've called the primary service and are waiting for its
                 // future to complete.
                 FallbackState::Primary(ref mut f) => match f.poll() {
-                    Ok(r) => return Ok(r.map(Either::A)),
+                    Ok(r) => return Ok(r),
                     Err(error) => {
                         let error = error.into();
                         if (self.predicate)(&error) {
@@ -174,132 +167,9 @@ where
                 // We've called the fallback service and are waiting for its
                 // future to complete.
                 FallbackState::Fallback(ref mut f) => {
-                    return f.poll().map(|a| a.map(Either::B)).map_err(Into::into)
+                    return f.poll().map(|a| a.map(Into::into)).map_err(Into::into);
                 }
             }
-        }
-    }
-}
-
-// === impl Either ===
-
-impl<A, B, B1, B2, R> tower::Service<R> for Either<A, B>
-where
-    A: tower::Service<R, Response = http::Response<B1>>,
-    A::Error: Into<Error>,
-    B: tower::Service<R, Response = http::Response<B2>>,
-    B::Error: Into<Error>,
-{
-    type Response = http::Response<Either<B1, B2>>;
-    type Future = Either<A::Future, B::Future>;
-    type Error = Error;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        match self {
-            Either::A(ref mut inner) => inner.poll_ready().map_err(Into::into),
-            Either::B(ref mut inner) => inner.poll_ready().map_err(Into::into),
-        }
-    }
-
-    fn call(&mut self, req: R) -> Self::Future {
-        match self {
-            Either::A(ref mut inner) => Either::A(inner.call(req)),
-            Either::B(ref mut inner) => Either::B(inner.call(req)),
-        }
-    }
-}
-
-impl<A, B, B1, B2> Future for Either<A, B>
-where
-    A: Future<Item = http::Response<B1>>,
-    A::Error: Into<Error>,
-    B: Future<Item = http::Response<B2>>,
-    B::Error: Into<Error>,
-{
-    type Item = http::Response<Either<B1, B2>>;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self {
-            Either::A(ref mut inner) => {
-                let rsp = try_ready!(inner.poll().map_err(Into::into));
-                Ok(rsp.map(Either::A).into())
-            }
-            Either::B(ref mut inner) => {
-                let rsp = try_ready!(inner.poll().map_err(Into::into));
-                Ok(rsp.map(Either::B).into())
-            }
-        }
-    }
-}
-
-impl<A, B> Payload for Either<A, B>
-where
-    A: Payload,
-    A::Error: Into<Error>,
-    B: Payload,
-    B::Error: Into<Error>,
-{
-    type Data = Either<A::Data, B::Data>;
-    type Error = Error;
-
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        match self {
-            Either::A(ref mut body) => body
-                .poll_data()
-                .map(|r| r.map(|o| o.map(Either::A)))
-                .map_err(Into::into),
-            Either::B(ref mut body) => body
-                .poll_data()
-                .map(|r| r.map(|o| o.map(Either::B)))
-                .map_err(Into::into),
-        }
-    }
-
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
-        match self {
-            Either::A(ref mut body) => body.poll_trailers().map_err(Into::into),
-            Either::B(ref mut body) => body.poll_trailers().map_err(Into::into),
-        }
-    }
-
-    fn is_end_stream(&self) -> bool {
-        match self {
-            Either::A(ref body) => body.is_end_stream(),
-            Either::B(ref body) => body.is_end_stream(),
-        }
-    }
-}
-
-impl<A, B: Default> Default for Either<A, B> {
-    fn default() -> Self {
-        Either::B(Default::default())
-    }
-}
-
-impl<A, B> Buf for Either<A, B>
-where
-    A: Buf,
-    B: Buf,
-{
-    fn remaining(&self) -> usize {
-        match self {
-            Either::A(ref buf) => buf.remaining(),
-            Either::B(ref buf) => buf.remaining(),
-        }
-    }
-
-    fn bytes(&self) -> &[u8] {
-        match self {
-            Either::A(ref buf) => buf.bytes(),
-            Either::B(ref buf) => buf.bytes(),
-        }
-    }
-
-    fn advance(&mut self, cnt: usize) {
-        match self {
-            Either::A(ref mut buf) => buf.advance(cnt),
-            Either::B(ref mut buf) => buf.advance(cnt),
         }
     }
 }

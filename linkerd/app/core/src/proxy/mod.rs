@@ -1,5 +1,6 @@
 //! Tools for building a transparent TCP/HTTP proxy.
 
+pub use linkerd2_fallback as fallback;
 pub use linkerd2_proxy_api_resolve as api_resolve;
 pub use linkerd2_proxy_core as core;
 pub use linkerd2_proxy_detect as detect;
