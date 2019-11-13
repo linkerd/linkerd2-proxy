@@ -1,8 +1,6 @@
+use crate::{Recognize, Router};
 use futures::Poll;
-use http;
 use linkerd2_error::{Error, Never};
-use linkerd2_router as rt;
-pub use linkerd2_router::{error, Recognize, Router};
 use std::marker::PhantomData;
 use std::time::Duration;
 use tracing::{info_span, trace};
@@ -27,7 +25,7 @@ pub struct Layer<Req, Rec: Recognize<Req>> {
 }
 
 #[derive(Debug)]
-pub struct Stack<Req, Rec: Recognize<Req>, Mk> {
+pub struct Make<Req, Rec: Recognize<Req>, Mk> {
     config: Config,
     recognize: Rec,
     inner: Mk,
@@ -37,7 +35,7 @@ pub struct Stack<Req, Rec: Recognize<Req>, Mk> {
 pub struct Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
-    Mk: rt::Make<Rec::Target>,
+    Mk: super::Make<Rec::Target>,
     Mk::Value: tower::Service<Req>,
 {
     inner: Router<Req, Rec, Mk>,
@@ -56,29 +54,30 @@ impl Config {
 
 // === impl Layer ===
 
-pub fn layer<Rec, Req>(config: Config, recognize: Rec) -> Layer<Req, Rec>
+impl<Req, Rec> Layer<Req, Rec>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
 {
-    Layer {
-        config,
-        recognize,
-        _p: PhantomData,
+    pub fn new(config: Config, recognize: Rec) -> Self {
+        Self {
+            config,
+            recognize,
+            _p: PhantomData,
+        }
     }
 }
 
-impl<Req, Rec, Mk, B> tower::layer::Layer<Mk> for Layer<Req, Rec>
+impl<Req, Rec, Mk> tower::layer::Layer<Mk> for Layer<Req, Rec>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: tower::Service<Req, Response = http::Response<B>> + Clone,
+    Mk: super::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: tower::Service<Req> + Clone,
     <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
-    B: Default + Send + 'static,
 {
-    type Service = Stack<Req, Rec, Mk>;
+    type Service = Make<Req, Rec, Mk>;
 
     fn layer(&self, inner: Mk) -> Self::Service {
-        Stack {
+        Make {
             inner,
             config: self.config.clone(),
             recognize: self.recognize.clone(),
@@ -92,19 +91,18 @@ where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
 {
     fn clone(&self) -> Self {
-        layer(self.config.clone(), self.recognize.clone())
+        Self::new(self.config.clone(), self.recognize.clone())
     }
 }
-// === impl Stack ===
+// === impl Make ===
 
-impl<Req, Rec, Mk, B> Stack<Req, Rec, Mk>
+impl<Req, Rec, Mk> Make<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     <Rec as Recognize<Req>>::Target: Send + 'static,
-    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: tower::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
+    Mk: super::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: tower::Service<Req> + Clone + Send + 'static,
     <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
-    B: Default + Send + 'static,
 {
     pub fn make(&self) -> Service<Req, Rec, Mk> {
         let (inner, cache_bg) = Router::new(
@@ -118,14 +116,13 @@ where
     }
 }
 
-impl<Req, Rec, Mk, B, T> tower::Service<T> for Stack<Req, Rec, Mk>
+impl<Req, Rec, Mk, T> tower::Service<T> for Make<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     <Rec as Recognize<Req>>::Target: Send + 'static,
-    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: tower::Service<Req, Response = http::Response<B>> + Clone + Send + 'static,
+    Mk: super::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: tower::Service<Req> + Clone + Send + 'static,
     <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
-    B: Default + Send + 'static,
 {
     type Response = Service<Req, Rec, Mk>;
     type Error = Never;
@@ -140,7 +137,7 @@ where
     }
 }
 
-impl<Req, Rec, Mk> Clone for Stack<Req, Rec, Mk>
+impl<Req, Rec, Mk> Clone for Make<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone,
     Mk: Clone,
@@ -156,13 +153,12 @@ where
 }
 // === impl Service ===
 
-impl<Req, Rec, Mk, B> tower::Service<Req> for Service<Req, Rec, Mk>
+impl<Req, Rec, Mk> tower::Service<Req> for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Send + Sync + 'static,
-    Mk: rt::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: tower::Service<Req, Response = http::Response<B>> + Clone,
+    Mk: super::Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Value: tower::Service<Req> + Clone,
     <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
-    B: Default + Send + 'static,
 {
     type Response = <Router<Req, Rec, Mk> as tower::Service<Req>>::Response;
     type Error = <Router<Req, Rec, Mk> as tower::Service<Req>>::Error;
@@ -181,7 +177,7 @@ where
 impl<Req, Rec, Mk> Clone for Service<Req, Rec, Mk>
 where
     Rec: Recognize<Req>,
-    Mk: rt::Make<Rec::Target>,
+    Mk: super::Make<Rec::Target>,
     Mk::Value: tower::Service<Req>,
     Router<Req, Rec, Mk>: Clone,
 {

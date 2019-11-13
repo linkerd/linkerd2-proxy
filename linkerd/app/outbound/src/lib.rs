@@ -18,7 +18,7 @@ use linkerd2_app_core::{
         self, core::resolve::Resolve, discover, fallback, http, identity, resolve::map_endpoint,
         tap, tcp, Server,
     },
-    reconnect, serve,
+    reconnect, router, serve,
     spans::SpanConverter,
     svc, trace, trace_context,
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
@@ -196,8 +196,8 @@ impl<A: OrigDstAddr> Config<A> {
             // used as the server name when connecting to the endpoint.
             let orig_dst_router_layer = svc::layers()
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .push(http::router::layer(
-                    http::router::Config::new(router_capacity, router_max_idle_age),
+                .push(router::Layer::new(
+                    router::Config::new(router_capacity, router_max_idle_age),
                     Endpoint::from_request,
                 ));
 
@@ -251,8 +251,8 @@ impl<A: OrigDstAddr> Config<A> {
                     |dst: &DstAddr| info_span!("logical", dst.logical = %dst.dst_logical()),
                 ))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .push(http::router::layer(
-                    http::router::Config::new(router_capacity, router_max_idle_age),
+                .push(router::Layer::new(
+                    router::Config::new(router_capacity, router_max_idle_age),
                     |req: &http::Request<_>| {
                         req.extensions().get::<Addr>().cloned().map(|addr| {
                             DstAddr::outbound(addr, http::settings::Settings::from_request(req))
@@ -290,8 +290,8 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(http::insert::target::layer())
                 .push(trace::layer(|addr: &Addr| info_span!("addr", %addr)))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .push(http::router::layer(
-                    http::router::Config::new(router_capacity, router_max_idle_age),
+                .push(router::Layer::new(
+                    router::Config::new(router_capacity, router_max_idle_age),
                     |req: &http::Request<_>| {
                         http_request_l5d_override_dst_addr(req)
                             .map(|override_addr| {
