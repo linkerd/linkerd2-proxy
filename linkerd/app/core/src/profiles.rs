@@ -1,6 +1,5 @@
 use crate::dns;
 use crate::proxy::http::{profiles, retry::Budget};
-use futures::sync::{mpsc, oneshot};
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use http;
 use linkerd2_addr::NameAddr;
@@ -9,6 +8,7 @@ use linkerd2_proxy_api::destination as api;
 use regex::Regex;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::{oneshot, watch};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::{debug, error, info, trace, warn};
@@ -22,7 +22,7 @@ pub struct Client<T> {
 }
 
 pub struct Rx {
-    rx: mpsc::Receiver<profiles::Routes>,
+    rx: watch::Receiver<profiles::Routes>,
     _hangup: oneshot::Sender<Never>,
 }
 
@@ -34,7 +34,7 @@ where
     backoff: Duration,
     service: api::client::Destination<T>,
     state: State<T>,
-    tx: mpsc::Sender<profiles::Routes>,
+    tx: watch::Sender<profiles::Routes>,
     context_token: String,
     hangup: oneshot::Receiver<Never>,
 }
@@ -95,7 +95,7 @@ where
         // This oneshot allows the daemon to be notified when the Self::Stream
         // is dropped.
         let (hangup_tx, hangup_rx) = oneshot::channel();
-        let (tx, rx) = mpsc::channel(1);
+        let (tx, rx) = watch::channel(profiles::Routes::default());
         let daemon = Daemon {
             tx,
             hangup: hangup_rx,
@@ -138,16 +138,10 @@ where
 {
     fn proxy_stream(
         rx: &mut grpc::Streaming<api::DestinationProfile, T::ResponseBody>,
-        tx: &mut mpsc::Sender<profiles::Routes>,
+        tx: &mut watch::Sender<profiles::Routes>,
         hangup: &mut oneshot::Receiver<Never>,
     ) -> Async<StreamState> {
         loop {
-            match tx.poll_ready() {
-                Ok(Async::NotReady) => return Async::NotReady,
-                Ok(Async::Ready(())) => {}
-                Err(_) => return StreamState::SendLost.into(),
-            }
-
             match rx.poll() {
                 Ok(Async::NotReady) => match hangup.poll() {
                     Ok(Async::Ready(never)) => match never {}, // unreachable!
