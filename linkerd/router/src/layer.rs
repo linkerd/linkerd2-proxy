@@ -1,5 +1,5 @@
 use crate::{Recognize, Router};
-use futures::Poll;
+use futures::{Future, Poll};
 use linkerd2_error::{Error, Never};
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -111,7 +111,11 @@ where
             self.config.capacity,
             self.config.max_idle_age,
         );
-        tokio::spawn(cache_bg.instrument(info_span!("router.purge")));
+        tokio::spawn(
+            cache_bg
+                .map_err(|never| match never {})
+                .instrument(info_span!("router.purge")),
+        );
         Service { inner }
     }
 }
