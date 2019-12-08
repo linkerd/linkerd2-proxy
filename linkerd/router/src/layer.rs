@@ -105,14 +105,14 @@ where
     <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
 {
     pub fn make(&self) -> Service<Req, Rec, Mk> {
-        let (inner, cache_bg) = Router::new(
+        let (inner, purge) = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
             self.config.capacity,
             self.config.max_idle_age,
         );
         tokio::spawn(
-            cache_bg
+            purge
                 .map_err(|never| match never {})
                 .instrument(info_span!("router.purge")),
         );

@@ -15,9 +15,10 @@ pub struct Purge<K: Clone + Eq + Hash, V> {
 
 /// Ensures that `Purge` runs until all handles are dropped.
 #[derive(Clone)]
+#[must_use = "handle must be held until purge should complete"]
 pub struct Handle(mpsc::Sender<Never>);
 
-// ===== impl PurgeCache =====
+// ===== impl Purge =====
 
 impl<K, V> Purge<K, V>
 where
@@ -50,5 +51,50 @@ where
         }
 
         Ok(Async::NotReady)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use futures::future;
+    use std::sync::{
+        Arc,
+    };
+    use std::time::{Duration, Instant};
+
+    const UNUSED: Duration = Duration::from_secs(12345);
+
+    #[test]
+    fn completes_on_handle_drop() {
+        tokio::run(future::lazy(|| {
+            let (purge, purge_handle) = Purge::new(Lock::new(Cache::<usize, ()>::new(2, UNUSED)));
+
+            let polls = Arc::new(());
+            let polls_handle = Arc::downgrade(&polls);
+            struct Wrap(Option<Arc<()>>, Purge<usize, ()>);
+            impl Future for Wrap {
+                type Item = ();
+                type Error = ();
+                fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+                    match self.1.poll() {
+                        Err(n) => match n {},
+                        Ok(Async::Ready(())) => {
+                            drop(self.0.take().unwrap());
+                            Ok(Async::Ready(()))
+                        }
+                        Ok(Async::NotReady) => Ok(Async::NotReady),
+                    }
+                }
+            }
+            tokio::spawn(Wrap(Some(polls), purge));
+
+            drop(purge_handle);
+
+            tokio::timer::Delay::new(Instant::now() + Duration::from_millis(100)).then(move |_| {
+                assert!(polls_handle.upgrade().is_none());
+                Ok(())
+            })
+        }));
     }
 }

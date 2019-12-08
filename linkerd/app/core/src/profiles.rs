@@ -106,7 +106,7 @@ where
             context_token: self.context_token.clone(),
         };
 
-        tokio::spawn(daemon.map_err(|_| ()));
+        tokio::spawn(daemon.map_err(|never| match never {}));
         Some(Rx {
             rx,
             _hangup: hangup_tx,
