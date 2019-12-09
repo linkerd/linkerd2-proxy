@@ -11,7 +11,8 @@ use std::time::Duration;
 use tokio::sync::{oneshot, watch};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, info_span, trace, warn};
+use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Client<T> {
@@ -30,13 +31,12 @@ struct Daemon<T>
 where
     T: GrpcService<BoxBody>,
 {
-    dst: String,
     backoff: Duration,
     service: api::client::Destination<T>,
     state: State<T>,
     tx: watch::Sender<profiles::Routes>,
-    context_token: String,
     hangup: oneshot::Receiver<Never>,
+    request: api::GetDestination,
 }
 
 enum State<T>
@@ -99,14 +99,17 @@ where
         let daemon = Daemon {
             tx,
             hangup: hangup_rx,
-            dst: format!("{}", dst),
             state: State::Disconnected,
             service: self.service.clone(),
             backoff: self.backoff,
-            context_token: self.context_token.clone(),
+            request: api::GetDestination {
+                path: format!("{}", dst),
+                context_token: self.context_token.clone(),
+                ..Default::default()
+            },
         };
 
-        tokio::spawn(daemon.map_err(|_| ()));
+        tokio::spawn(daemon.in_current_span().map_err(|never| match never {}));
         Some(Rx {
             rx,
             _hangup: hangup_tx,
@@ -210,21 +213,14 @@ where
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
                         Ok(Async::Ready(())) => {}
                         Err(err) => {
-                            error!(
-                                "profile service unexpected error (dst = {}): {:?}",
-                                self.dst, err,
-                            );
+                            error!("profile service unexpected error: {:?}", err,);
                             return Ok(Async::Ready(()));
                         }
                     };
-
-                    let req = api::GetDestination {
-                        path: self.dst.clone(),
-                        context_token: self.context_token.clone(),
-                        ..Default::default()
-                    };
-                    debug!("getting profile: {:?}", req);
-                    let rspf = self.service.get_profile(grpc::Request::new(req));
+                    debug!("getting profile");
+                    let rspf = self
+                        .service
+                        .get_profile(grpc::Request::new(self.request.clone()));
                     State::Waiting(rspf)
                 }
                 State::Waiting(ref mut f) => match f.poll() {
@@ -234,7 +230,7 @@ where
                         State::Streaming(rsp.into_inner())
                     }
                     Err(e) => {
-                        warn!("error fetching profile for {}: {:?}", self.dst, e);
+                        warn!("error fetching profile: {:?}", e);
                         State::Backoff(Delay::new(clock::now() + self.backoff))
                     }
                 },
