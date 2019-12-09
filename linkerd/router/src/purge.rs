@@ -58,9 +58,7 @@ where
 pub mod tests {
     use super::*;
     use futures::future;
-    use std::sync::{
-        Arc,
-    };
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     const UNUSED: Duration = Duration::from_secs(12345);
