@@ -1,6 +1,6 @@
 use crate::dns;
 use crate::proxy::http::{profiles, retry::Budget};
-use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
+use futures::{Async, Future, Poll, Stream};
 use http;
 use linkerd2_addr::NameAddr;
 use linkerd2_error::Never;
@@ -11,7 +11,7 @@ use std::time::Duration;
 use tokio::sync::{oneshot, watch};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -160,33 +160,25 @@ where
                     }
                 },
                 Ok(Async::Ready(None)) => return StreamState::RecvDone.into(),
-                Ok(Async::Ready(Some(profile))) => {
-                    debug!("profile received: {:?}", profile);
-                    let retry_budget = profile.retry_budget.and_then(convert_retry_budget);
-                    let routes = profile
+                Ok(Async::Ready(Some(proto))) => {
+                    debug!("profile received: {:?}", proto);
+                    let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
+                    let routes = proto
                         .routes
                         .into_iter()
                         .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
                         .collect();
-                    let dst_overrides = profile
+                    let dst_overrides = proto
                         .dst_overrides
                         .into_iter()
                         .filter_map(convert_dst_override)
                         .collect();
-                    match tx.start_send(profiles::Routes {
+                    let profile = profiles::Routes {
                         routes,
                         dst_overrides,
-                    }) {
-                        Ok(AsyncSink::Ready) => {} // continue
-                        Ok(AsyncSink::NotReady(_)) => {
-                            info!("dropping profile update due to a full buffer");
-                            // This must have been because another task stole
-                            // our tx slot? It seems pretty unlikely, but possible?
-                            return Async::NotReady;
-                        }
-                        Err(_) => {
-                            return StreamState::SendLost.into();
-                        }
+                    };
+                    if tx.broadcast(profile).is_err() {
+                        return StreamState::SendLost.into();
                     }
                 }
                 Err(e) => {
