@@ -26,12 +26,13 @@ pub mod recognize;
 /// underlying stack.
 pub mod router;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WeightedAddr {
     pub addr: NameAddr,
     pub weight: u32,
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct Routes {
     pub routes: Vec<(RequestMatch, Route)>,
     pub dst_overrides: Vec<WeightedAddr>,

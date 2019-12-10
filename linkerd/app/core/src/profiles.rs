@@ -1,7 +1,6 @@
 use crate::dns;
 use crate::proxy::http::{profiles, retry::Budget};
-use futures::sync::{mpsc, oneshot};
-use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
+use futures::{Async, Future, Poll, Stream};
 use http;
 use linkerd2_addr::NameAddr;
 use linkerd2_error::Never;
@@ -9,9 +8,11 @@ use linkerd2_proxy_api::destination as api;
 use regex::Regex;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::{oneshot, watch};
 use tokio_timer::{clock, Delay};
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
+use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Client<T> {
@@ -22,7 +23,7 @@ pub struct Client<T> {
 }
 
 pub struct Rx {
-    rx: mpsc::Receiver<profiles::Routes>,
+    rx: watch::Receiver<profiles::Routes>,
     _hangup: oneshot::Sender<Never>,
 }
 
@@ -30,13 +31,12 @@ struct Daemon<T>
 where
     T: GrpcService<BoxBody>,
 {
-    dst: String,
     backoff: Duration,
     service: api::client::Destination<T>,
     state: State<T>,
-    tx: mpsc::Sender<profiles::Routes>,
-    context_token: String,
+    tx: watch::Sender<profiles::Routes>,
     hangup: oneshot::Receiver<Never>,
+    request: api::GetDestination,
 }
 
 enum State<T>
@@ -95,18 +95,21 @@ where
         // This oneshot allows the daemon to be notified when the Self::Stream
         // is dropped.
         let (hangup_tx, hangup_rx) = oneshot::channel();
-        let (tx, rx) = mpsc::channel(1);
+        let (tx, rx) = watch::channel(profiles::Routes::default());
         let daemon = Daemon {
             tx,
             hangup: hangup_rx,
-            dst: format!("{}", dst),
             state: State::Disconnected,
             service: self.service.clone(),
             backoff: self.backoff,
-            context_token: self.context_token.clone(),
+            request: api::GetDestination {
+                path: format!("{}", dst),
+                context_token: self.context_token.clone(),
+                ..Default::default()
+            },
         };
 
-        tokio::spawn(daemon.map_err(|_| ()));
+        tokio::spawn(daemon.in_current_span().map_err(|never| match never {}));
         Some(Rx {
             rx,
             _hangup: hangup_tx,
@@ -138,16 +141,10 @@ where
 {
     fn proxy_stream(
         rx: &mut grpc::Streaming<api::DestinationProfile, T::ResponseBody>,
-        tx: &mut mpsc::Sender<profiles::Routes>,
+        tx: &mut watch::Sender<profiles::Routes>,
         hangup: &mut oneshot::Receiver<Never>,
     ) -> Async<StreamState> {
         loop {
-            match tx.poll_ready() {
-                Ok(Async::NotReady) => return Async::NotReady,
-                Ok(Async::Ready(())) => {}
-                Err(_) => return StreamState::SendLost.into(),
-            }
-
             match rx.poll() {
                 Ok(Async::NotReady) => match hangup.poll() {
                     Ok(Async::Ready(never)) => match never {}, // unreachable!
@@ -163,33 +160,25 @@ where
                     }
                 },
                 Ok(Async::Ready(None)) => return StreamState::RecvDone.into(),
-                Ok(Async::Ready(Some(profile))) => {
-                    debug!("profile received: {:?}", profile);
-                    let retry_budget = profile.retry_budget.and_then(convert_retry_budget);
-                    let routes = profile
+                Ok(Async::Ready(Some(proto))) => {
+                    debug!("profile received: {:?}", proto);
+                    let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
+                    let routes = proto
                         .routes
                         .into_iter()
                         .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
                         .collect();
-                    let dst_overrides = profile
+                    let dst_overrides = proto
                         .dst_overrides
                         .into_iter()
                         .filter_map(convert_dst_override)
                         .collect();
-                    match tx.start_send(profiles::Routes {
+                    let profile = profiles::Routes {
                         routes,
                         dst_overrides,
-                    }) {
-                        Ok(AsyncSink::Ready) => {} // continue
-                        Ok(AsyncSink::NotReady(_)) => {
-                            info!("dropping profile update due to a full buffer");
-                            // This must have been because another task stole
-                            // our tx slot? It seems pretty unlikely, but possible?
-                            return Async::NotReady;
-                        }
-                        Err(_) => {
-                            return StreamState::SendLost.into();
-                        }
+                    };
+                    if tx.broadcast(profile).is_err() {
+                        return StreamState::SendLost.into();
                     }
                 }
                 Err(e) => {
@@ -216,21 +205,14 @@ where
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
                         Ok(Async::Ready(())) => {}
                         Err(err) => {
-                            error!(
-                                "profile service unexpected error (dst = {}): {:?}",
-                                self.dst, err,
-                            );
+                            error!("profile service unexpected error: {:?}", err,);
                             return Ok(Async::Ready(()));
                         }
                     };
-
-                    let req = api::GetDestination {
-                        path: self.dst.clone(),
-                        context_token: self.context_token.clone(),
-                        ..Default::default()
-                    };
-                    debug!("getting profile: {:?}", req);
-                    let rspf = self.service.get_profile(grpc::Request::new(req));
+                    debug!("getting profile");
+                    let rspf = self
+                        .service
+                        .get_profile(grpc::Request::new(self.request.clone()));
                     State::Waiting(rspf)
                 }
                 State::Waiting(ref mut f) => match f.poll() {
@@ -240,7 +222,7 @@ where
                         State::Streaming(rsp.into_inner())
                     }
                     Err(e) => {
-                        warn!("error fetching profile for {}: {:?}", self.dst, e);
+                        warn!("error fetching profile: {:?}", e);
                         State::Backoff(Delay::new(clock::now() + self.backoff))
                     }
                 },
