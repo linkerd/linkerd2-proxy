@@ -104,7 +104,7 @@ where
     Mk::Value: tower::Service<Req> + Clone + Send + 'static,
     <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
 {
-    pub fn make(&self) -> Service<Req, Rec, Mk> {
+    pub fn spawn(&self) -> Service<Req, Rec, Mk> {
         let (inner, purge) = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
@@ -113,7 +113,7 @@ where
         );
         tokio::spawn(
             purge
-                .map_err(|never| match never {})
+                .map_err(|e| match e {})
                 .instrument(info_span!("router.purge")),
         );
         Service { inner }
@@ -137,7 +137,7 @@ where
     }
 
     fn call(&mut self, _: T) -> Self::Future {
-        futures::future::ok(self.make())
+        futures::future::ok(self.spawn())
     }
 }
 
