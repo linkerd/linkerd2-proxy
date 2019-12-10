@@ -98,9 +98,9 @@ impl<C: HasSpan, A: Accept<C>> tower::Service<C> for TraceAccept<A> {
     }
 
     fn call(&mut self, conn: C) -> Self::Future {
-        let _enter = self.span.enter();
         let span = conn.span();
-        self.accept.accept(conn).instrument(span)
+        let _enter = span.enter();
+        self.accept.accept(conn).in_current_span()
     }
 }
 
