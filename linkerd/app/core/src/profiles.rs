@@ -109,7 +109,7 @@ where
             },
         };
 
-        tokio::spawn(daemon.in_current_span().map_err(|e| match e {}));
+        tokio::spawn(daemon.in_current_span().map_err(|never| match never {}));
         Some(Rx {
             rx,
             _hangup: hangup_tx,
