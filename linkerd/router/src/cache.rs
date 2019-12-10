@@ -1,9 +1,6 @@
-use std::{hash::Hash, time::Duration};
-
-use futures::{task, try_ready, Async, Future, Poll, Stream};
+use futures::{task, Async, Stream};
 use indexmap::IndexMap;
-
-use tokio::sync::lock::Lock;
+use std::{hash::Hash, time::Duration};
 use tokio_timer::{delay_queue, DelayQueue};
 use tracing::trace;
 
@@ -43,13 +40,6 @@ where
     purge_task: Option<task::Task>,
 }
 
-/// A background future that eagerly removes expired cache values.
-///
-/// If the cache is dropped, this future will complete.
-pub struct PurgeCache<K, V>(Lock<Cache<K, V>>)
-where
-    K: Clone + Eq + Hash;
-
 /// A handle to a cache value.
 struct Node<T> {
     dq_key: delay_queue::Key,
@@ -63,17 +53,15 @@ where
     K: Clone + Eq + Hash,
     V: Clone,
 {
-    pub fn new(capacity: usize, expires: Duration) -> (Lock<Cache<K, V>>, PurgeCache<K, V>) {
+    pub fn new(capacity: usize, expires: Duration) -> Self {
         assert!(capacity != 0);
-        let cache = Lock::new(Self {
+        Self {
             capacity,
             expires,
             expirations: DelayQueue::with_capacity(capacity),
             values: IndexMap::default(),
             purge_task: None,
-        });
-
-        (cache.clone(), PurgeCache(cache))
+        }
     }
 
     pub fn capacity(&self) -> usize {
@@ -121,18 +109,16 @@ where
     ///
     /// Polls the underlying `DelayQueue`. When elements are returned from the
     /// queue, remove the associated key from `values`.
-    fn poll_purge(&mut self) -> Poll<(), ()> {
+    pub fn purge(&mut self) {
         loop {
-            match try_ready!(self
-                .expirations
-                .poll()
-                .map_err(|e| unreachable!("expiration must not fail: {}", e)))
-            {
-                None => {
+            match self.expirations.poll() {
+                Err(e) => unreachable!("expiration must not fail: {}", e),
+                Ok(Async::NotReady) => return,
+                Ok(Async::Ready(None)) => {
                     self.purge_task = Some(task::current());
-                    return Ok(Async::NotReady);
+                    return;
                 }
-                Some(key) => {
+                Ok(Async::Ready(Some(key))) => {
                     trace!("expiring an item from the cache");
                     self.values.remove(key.get_ref());
                 }
@@ -141,37 +127,18 @@ where
     }
 }
 
-// ===== impl PurgeCache =====
-
-impl<K, V> Future for PurgeCache<K, V>
-where
-    K: Clone + Eq + Hash,
-    V: Clone,
-{
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut cache = try_ready!(Ok(self.0.poll_lock()));
-        cache.poll_purge()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::future;
+    use crate::Purge;
+    use futures::{future, Async, Future};
     use tokio::runtime::current_thread::{self, Runtime};
+    use tokio::sync::lock::Lock;
 
     #[test]
     fn check_capacity_and_insert() {
         current_thread::run(future::lazy(|| {
-            let (mut cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
-
-            let mut cache = match cache.poll_lock() {
-                Async::Ready(acquired) => acquired,
-                _ => panic!("cache lock should be Ready"),
-            };
+            let mut cache = Cache::new(2, Duration::from_millis(10));
 
             cache.insert(1, 2);
             assert_eq!(cache.values.len(), 1);
@@ -187,12 +154,7 @@ mod tests {
     #[test]
     fn insert_and_access_value() {
         current_thread::run(future::lazy(|| {
-            let (mut cache, _cache_purge) = Cache::new(2, Duration::from_millis(10));
-
-            let mut cache = match cache.poll_lock() {
-                Async::Ready(acquired) => acquired,
-                _ => panic!("cache lock should be Ready"),
-            };
+            let mut cache = Cache::new(2, Duration::from_millis(10));
 
             assert!(cache.access(&1).is_none());
             assert!(cache.access(&2).is_none());
@@ -216,19 +178,16 @@ mod tests {
     fn insert_and_background_purge() {
         let mut rt = Runtime::new().unwrap();
 
-        let (mut cache, cache_purge) = rt
-            .block_on(futures::future::lazy(|| {
-                Ok::<_, ()>(Cache::new(2, Duration::from_millis(10)))
-            }))
-            .unwrap();
+        let mut lock = Lock::new(Cache::new(2, Duration::from_millis(10)));
 
         // Spawn a background purge task on the runtime
-        rt.spawn(cache_purge);
+        let (purge, _handle) = Purge::new(lock.clone());
+        rt.spawn(purge.map_err(|n| match n {}));
 
         // Fill the cache
         rt.block_on(future::lazy(|| {
-            let mut cache = match cache.poll_lock() {
-                Async::Ready(acquired) => acquired,
+            let mut cache = match lock.poll_lock() {
+                Async::Ready(cache) => cache,
                 _ => panic!("cache lock should be Ready"),
             };
 
@@ -244,7 +203,7 @@ mod tests {
         rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
             .unwrap();
 
-        let cache = match cache.poll_lock() {
+        let cache = match lock.poll_lock() {
             Async::Ready(acquired) => acquired,
             _ => panic!("cache lock should be Ready"),
         };
@@ -255,19 +214,16 @@ mod tests {
     fn access_resets_expiration() {
         let mut rt = Runtime::new().unwrap();
 
-        let (mut cache, cache_purge) = rt
-            .block_on(future::lazy(|| {
-                Ok::<_, ()>(Cache::new(2, Duration::from_millis(100)))
-            }))
-            .unwrap();
+        let mut lock = Lock::new(Cache::new(2, Duration::from_millis(100)));
 
         // Spawn a background purge task on the runtime
-        rt.spawn(cache_purge);
+        let (purge, _handle) = Purge::new(lock.clone());
+        rt.spawn(purge.map_err(|n| match n {}));
 
         // Insert into the cache
         rt.block_on(future::lazy(|| {
-            let mut cache = match cache.poll_lock() {
-                Async::Ready(acquired) => acquired,
+            let mut cache = match lock.poll_lock() {
+                Async::Ready(cache) => cache,
                 _ => panic!("cache lock should be Ready"),
             };
 
@@ -284,8 +240,8 @@ mod tests {
 
         // Access the value that was inserted
         rt.block_on(future::lazy(|| {
-            let mut cache = match cache.poll_lock() {
-                Async::Ready(acquired) => acquired,
+            let mut cache = match lock.poll_lock() {
+                Async::Ready(cache) => cache,
                 _ => panic!("cache lock should be Ready"),
             };
             assert!(cache.access(&1).is_some());
@@ -301,7 +257,7 @@ mod tests {
         // If the access reset the value's expiration, it should still be
         // retrievable
         rt.block_on(future::lazy(|| {
-            let mut cache = match cache.poll_lock() {
+            let mut cache = match lock.poll_lock() {
                 Async::Ready(acquired) => acquired,
                 _ => panic!("cache lock should be Ready"),
             };

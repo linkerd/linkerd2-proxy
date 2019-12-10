@@ -260,7 +260,7 @@ impl<A: OrigDstAddr> Config<A> {
                     },
                 ))
                 .into_inner()
-                .make();
+                .spawn();
 
             // Canonicalizes the request-specified `Addr` via DNS, and
             // annotates each request with a refined `Addr` so that it may be
@@ -305,7 +305,7 @@ impl<A: OrigDstAddr> Config<A> {
                     },
                 ))
                 .into_inner()
-                .make();
+                .spawn();
 
             // Share a single semaphore across all requests to signal when
             // the proxy is overloaded.

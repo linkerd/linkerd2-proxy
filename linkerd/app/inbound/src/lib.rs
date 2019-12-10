@@ -143,7 +143,7 @@ impl<A: OrigDstAddr> Config<A> {
                     RecognizeEndpoint::default(),
                 ))
                 .into_inner()
-                .make();
+                .spawn();
 
             // A per-`dst::Route` layer that uses profile data to configure
             // a per-route layer.
@@ -227,7 +227,7 @@ impl<A: OrigDstAddr> Config<A> {
                     },
                 ))
                 .into_inner()
-                .make();
+                .spawn();
 
             // Share a single semaphore across all requests to signal when
             // the proxy is overloaded.

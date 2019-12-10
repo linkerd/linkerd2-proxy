@@ -1,5 +1,5 @@
 use crate::{Recognize, Router};
-use futures::Poll;
+use futures::{Future, Poll};
 use linkerd2_error::{Error, Never};
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -104,14 +104,18 @@ where
     Mk::Value: tower::Service<Req> + Clone + Send + 'static,
     <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
 {
-    pub fn make(&self) -> Service<Req, Rec, Mk> {
-        let (inner, cache_bg) = Router::new(
+    pub fn spawn(&self) -> Service<Req, Rec, Mk> {
+        let (inner, purge) = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
             self.config.capacity,
             self.config.max_idle_age,
         );
-        tokio::spawn(cache_bg.instrument(info_span!("router.purge")));
+        tokio::spawn(
+            purge
+                .map_err(|e| match e {})
+                .instrument(info_span!("router.purge")),
+        );
         Service { inner }
     }
 }
@@ -133,7 +137,7 @@ where
     }
 
     fn call(&mut self, _: T) -> Self::Future {
-        futures::future::ok(self.make())
+        futures::future::ok(self.spawn())
     }
 }
 

@@ -3,12 +3,11 @@
 mod cache;
 pub mod error;
 pub mod layer;
+mod purge;
 
 use self::cache::Cache;
-pub use self::{
-    cache::PurgeCache,
-    layer::{Config, Layer},
-};
+pub use self::layer::{Config, Layer};
+pub use self::purge::Purge;
 use futures::{Async, Future, Poll};
 use indexmap::IndexMap;
 use std::hash::Hash;
@@ -25,6 +24,7 @@ where
     Mk::Value: tower::Service<Req>,
 {
     inner: Inner<Req, Rec, Mk>,
+    _hangup: purge::Handle,
 }
 
 /// Provides a strategy for routing a Request to a Service.
@@ -146,9 +146,11 @@ where
         make: Mk,
         capacity: usize,
         max_idle_age: Duration,
-    ) -> (Self, PurgeCache<Rec::Target, LoadShed<Mk::Value>>) {
-        let (cache, cache_bg) = Cache::new(capacity, max_idle_age);
+    ) -> (Self, Purge<Rec::Target, LoadShed<Mk::Value>>) {
+        let cache = Lock::new(Cache::new(capacity, max_idle_age));
+        let (purge, _hangup) = Purge::new(cache.clone());
         let router = Self {
+            _hangup,
             inner: Inner {
                 recognize,
                 make,
@@ -156,7 +158,7 @@ where
             },
         };
 
-        (router, cache_bg)
+        (router, purge)
     }
 }
 
@@ -235,6 +237,7 @@ where
     fn clone(&self) -> Self {
         Router {
             inner: self.inner.clone(),
+            _hangup: self._hangup.clone(),
         }
     }
 }
