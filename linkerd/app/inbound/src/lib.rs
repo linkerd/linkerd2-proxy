@@ -258,7 +258,6 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(trace::layer(|src: &tls::accept::Meta| {
                     info_span!(
                         "source",
-                        peer.addr = %src.addrs.peer(),
                         peer.id = ?src.peer_identity,
                         target.addr = %src.addrs.target_addr(),
                     )
