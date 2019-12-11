@@ -3,10 +3,15 @@ use futures::{future, try_ready, Future, Poll};
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::listen::{Accept, Listen, Serve};
-use tracing::{debug, Span};
+use linkerd2_proxy_transport::listen::Addrs;
+use tracing::{debug, info_span, Span};
 use tracing_futures::{Instrument, Instrumented};
 
 pub type Task = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
+
+pub trait HasSpan {
+    fn span(&self) -> Span;
+}
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
@@ -15,6 +20,7 @@ pub type Task = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
 pub fn serve<L, A>(listen: L, accept: A, drain: drain::Watch) -> Task
 where
     L: Listen + Send + 'static,
+    L::Connection: HasSpan,
     L::Error: std::error::Error + Send + 'static,
     A: Accept<L::Connection> + Send + 'static,
     A::Error: 'static,
@@ -37,6 +43,7 @@ struct ServeAndSpawnUntilCancel<L: Listen, A: Accept<L::Connection>>(
 impl<L, A> ServeAndSpawnUntilCancel<L, A>
 where
     L: Listen,
+    L::Connection: HasSpan,
     A: Accept<L::Connection>,
     A::Error: 'static,
     A::Future: Send + 'static,
@@ -59,6 +66,7 @@ where
 impl<L, A> Future for ServeAndSpawnUntilCancel<L, A>
 where
     L: Listen,
+    L::Connection: HasSpan,
     A: Accept<L::Connection>,
     A::Future: Send + 'static,
     A::Error: 'static,
@@ -79,7 +87,7 @@ struct TraceAccept<A> {
     span: Span,
 }
 
-impl<C, A: Accept<C>> tower::Service<C> for TraceAccept<A> {
+impl<C: HasSpan, A: Accept<C>> tower::Service<C> for TraceAccept<A> {
     type Response = ();
     type Error = A::Error;
     type Future = Instrumented<A::Future>;
@@ -90,7 +98,18 @@ impl<C, A: Accept<C>> tower::Service<C> for TraceAccept<A> {
     }
 
     fn call(&mut self, conn: C) -> Self::Future {
-        let _enter = self.span.enter();
-        self.accept.accept(conn).instrument(self.span.clone())
+        let span = conn.span();
+        let _enter = span.enter();
+        self.accept.accept(conn).in_current_span()
+    }
+}
+
+impl<C> HasSpan for (Addrs, C) {
+    fn span(&self) -> Span {
+        // The local addr should be instrumented from the listener's context.
+        info_span!(
+            "accept",
+            peer.addr = %self.0.peer(),
+        )
     }
 }
