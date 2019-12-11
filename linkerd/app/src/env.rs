@@ -404,7 +404,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             context: dst_token?.unwrap_or_default(),
             get_suffixes: dst_get_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
-            get_networks: dst_get_networks?.unwrap_or(IndexSet::new()),
+            get_networks: dst_get_networks?.unwrap_or_default(),
             profile_suffixes: dst_profile_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
             control: ControlConfig {
