@@ -310,10 +310,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let h2_settings = h2::Settings {
         initial_stream_window_size: Some(
-            initial_stream_window_size?.unwrap_or(DEFAULT_STREAM_WINDOW_SIZE),
+            initial_stream_window_size?.unwrap_or(DEFAULT_INITIAL_STREAM_WINDOW_SIZE),
         ),
         initial_connection_window_size: Some(
-            initial_connection_window_size?.unwrap_or(DEFAULT_CONNECTION_WINDOW_SIZE),
+            initial_connection_window_size?.unwrap_or(DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE),
         ),
     };
 
