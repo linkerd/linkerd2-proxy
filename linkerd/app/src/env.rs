@@ -196,10 +196,6 @@ const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 10_000;
 const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
 
-// RFC6890 private networks
-// Doesn't make sense to include the IPv6 network yet (fd00::/8).
-const DEFAULT_DESTINATION_GET_NETWORKS: &str = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16";
-
 const DEFAULT_IDENTITY_MIN_REFRESH: Duration = Duration::from_secs(10);
 const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24);
 
@@ -408,8 +404,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             context: dst_token?.unwrap_or_default(),
             get_suffixes: dst_get_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
-            get_networks: dst_get_networks?
-                .unwrap_or(parse_networks(DEFAULT_DESTINATION_GET_NETWORKS).unwrap()),
+            get_networks: dst_get_networks?.unwrap_or(IndexSet::new()),
             profile_suffixes: dst_profile_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
             control: ControlConfig {
