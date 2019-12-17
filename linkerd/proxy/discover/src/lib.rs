@@ -3,6 +3,7 @@
 use linkerd2_error::Error;
 use linkerd2_proxy_core::Resolve;
 use std::fmt;
+use std::time::Duration;
 
 pub mod buffer;
 pub mod from_resolve;
@@ -15,6 +16,7 @@ use self::make_endpoint::MakeEndpoint;
 #[derive(Clone, Debug)]
 pub struct Layer<T, R> {
     capacity: usize,
+    watchdog: Duration,
     resolve: R,
     _marker: std::marker::PhantomData<fn(T)>,
 }
@@ -22,13 +24,14 @@ pub struct Layer<T, R> {
 // === impl Layer ===
 
 impl<T, R> Layer<T, R> {
-    pub fn new(capacity: usize, resolve: R) -> Self
+    pub fn new(capacity: usize, watchdog: Duration, resolve: R) -> Self
     where
         R: Resolve<T> + Clone,
         R::Endpoint: fmt::Debug + Clone + PartialEq,
     {
         Self {
             capacity,
+            watchdog,
             resolve,
             _marker: std::marker::PhantomData,
         }
@@ -53,6 +56,6 @@ where
     fn layer(&self, make_endpoint: M) -> Self::Service {
         let make_discover =
             MakeEndpoint::new(make_endpoint, FromResolve::new(self.resolve.clone()));
-        Buffer::new(self.capacity, make_discover)
+        Buffer::new(self.capacity, self.watchdog, make_discover)
     }
 }

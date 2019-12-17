@@ -203,11 +203,12 @@ impl<A: OrigDstAddr> Config<A> {
 
             // Resolves the target via the control plane and balances requests
             // over all endpoints returned from the destination service.
-            const DISCOVER_UPDATE_BUFFER_CAPACITY: usize = 2;
+            const DISCOVER_UPDATE_BUFFER_CAPACITY: usize = 10;
             let balancer_layer = svc::layers()
                 .push_spawn_ready()
                 .push(discover::Layer::new(
                     DISCOVER_UPDATE_BUFFER_CAPACITY,
+                    router_max_idle_age,
                     map_endpoint::Resolve::new(endpoint::FromMetadata, resolve.clone()),
                 ))
                 .push(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));
