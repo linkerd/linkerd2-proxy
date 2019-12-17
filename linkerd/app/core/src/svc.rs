@@ -1,7 +1,6 @@
 use crate::proxy::{buffer, http, pending};
 use crate::Error;
-pub use linkerd2_router::Make;
-pub use linkerd2_stack::{self as stack, layer, map_target, Layer, LayerExt, Shared};
+pub use linkerd2_stack::{self as stack, layer, map_target, Layer, LayerExt, Shared, Make};
 pub use linkerd2_timeout::stack as timeout;
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};
@@ -89,7 +88,7 @@ impl<S> Stack<S> {
         self,
         bound: usize,
         d: D,
-    ) -> Stack<buffer::Make<pending::MakePending<S>, D, Req>>
+    ) -> Stack<buffer::MakeBuffer<pending::MakePending<S>, D, Req>>
     where
         D: buffer::Deadline<Req>,
         Req: Send + 'static,

@@ -1,7 +1,7 @@
 use crate::svc;
 use futures::{try_ready, Async, Future, Poll};
 use linkerd2_error::Error;
-use linkerd2_router as rt;
+use linkerd2_stack::Make;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -25,7 +25,7 @@ pub struct Layer<D, Req> {
 
 /// Produces `MakeService`s where the output `Service` is wrapped with a `Buffer`
 #[derive(Debug)]
-pub struct Make<M, D, Req> {
+pub struct MakeBuffer<M, D, Req> {
     capacity: usize,
     deadline: D,
     inner: M,
@@ -95,7 +95,7 @@ impl<M, D, Req> svc::Layer<M> for Layer<D, Req>
 where
     D: Deadline<Req>,
 {
-    type Service = Make<M, D, Req>;
+    type Service = MakeBuffer<M, D, Req>;
 
     fn layer(&self, inner: M) -> Self::Service {
         Self::Service {
@@ -109,7 +109,7 @@ where
 
 // === impl Make ===
 
-impl<M: Clone, D: Clone, Req> Clone for Make<M, D, Req> {
+impl<M: Clone, D: Clone, Req> Clone for MakeBuffer<M, D, Req> {
     fn clone(&self) -> Self {
         Self {
             capacity: self.capacity,
@@ -120,7 +120,7 @@ impl<M: Clone, D: Clone, Req> Clone for Make<M, D, Req> {
     }
 }
 
-impl<T, M, D, Req> svc::Service<T> for Make<M, D, Req>
+impl<T, M, D, Req> svc::Service<T> for MakeBuffer<M, D, Req>
 where
     T: fmt::Display + Clone + Send + Sync + 'static,
     M: svc::Service<T>,
@@ -151,19 +151,19 @@ where
     }
 }
 
-impl<T, M, D, Req> rt::Make<T> for Make<M, D, Req>
+impl<T, M, D, Req> Make<T> for MakeBuffer<M, D, Req>
 where
     T: fmt::Display + Clone + Send + Sync + 'static,
-    M: rt::Make<T>,
-    M::Value: svc::Service<Req> + Send + 'static,
-    <M::Value as svc::Service<Req>>::Future: Send,
-    <M::Value as svc::Service<Req>>::Error: Into<Error>,
+    M: Make<T>,
+    M::Service: svc::Service<Req> + Send + 'static,
+    <M::Service as svc::Service<Req>>::Future: Send,
+    <M::Service as svc::Service<Req>>::Error: Into<Error>,
     D: Deadline<Req>,
     Req: Send + 'static,
 {
-    type Value = Enqueue<M::Value, D, Req>;
+    type Service = Enqueue<M::Service, D, Req>;
 
-    fn make(&self, target: &T) -> Self::Value {
+    fn make(&self, target: T) -> Self::Service {
         Enqueue::new(
             self.inner.make(target),
             self.deadline.clone(),
@@ -172,20 +172,20 @@ where
     }
 }
 
-impl<M, D, Req> Make<M, D, Req> {
+impl<M, D, Req> MakeBuffer<M, D, Req> {
     /// Creates a buffer immediately.
-    pub fn make<T>(&self, target: T) -> Enqueue<M::Value, D, Req>
+    pub fn make<T>(&self, target: T) -> Enqueue<M::Service, D, Req>
     where
         T: fmt::Display + Clone + Send + Sync + 'static,
-        M: rt::Make<T>,
-        M::Value: svc::Service<Req> + Send + 'static,
-        <M::Value as svc::Service<Req>>::Future: Send,
-        <M::Value as svc::Service<Req>>::Error: Into<Error>,
+        M: Make<T>,
+        M::Service: svc::Service<Req> + Send + 'static,
+        <M::Service as svc::Service<Req>>::Future: Send,
+        <M::Service as svc::Service<Req>>::Error: Into<Error>,
         Req: Send + 'static,
         D: Deadline<Req> + Clone,
     {
         Enqueue::new(
-            self.inner.make(&target),
+            self.inner.make(target),
             self.deadline.clone(),
             self.capacity,
         )

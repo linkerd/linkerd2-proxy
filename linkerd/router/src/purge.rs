@@ -33,7 +33,6 @@ where
 impl<K, V> Future for Purge<K, V>
 where
     K: Clone + Eq + Hash,
-    V: Clone,
 {
     type Item = ();
     type Error = Never;

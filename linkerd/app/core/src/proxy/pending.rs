@@ -1,7 +1,7 @@
 use crate::svc::{self, ServiceExt};
 use futures::{try_ready, Future, Poll};
 use linkerd2_error::Error;
-use linkerd2_router as rt;
+use linkerd2_stack::Make;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Layer(());
@@ -36,16 +36,15 @@ impl<M> svc::Layer<M> for Layer {
 
 // === impl MakePending ===
 
-impl<T, M> rt::Make<T> for MakePending<M>
+impl<T, M> Make<T> for MakePending<M>
 where
     M: svc::Service<T> + Clone,
     M::Error: Into<Error>,
-    T: Clone,
 {
-    type Value = Svc<M, T>;
+    type Service = Svc<M, T>;
 
-    fn make(&self, target: &T) -> Self::Value {
-        let fut = self.inner.clone().oneshot(target.clone());
+    fn make(&self, target: T) -> Self::Service {
+        let fut = self.inner.clone().oneshot(target);
         Pending::Making(fut)
     }
 }

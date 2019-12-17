@@ -5,7 +5,7 @@ use http;
 use indexmap::IndexMap;
 use linkerd2_error::{Error, Never};
 use linkerd2_router as rt;
-use linkerd2_stack::Shared;
+use linkerd2_stack::{Shared, Make};
 use std::hash::Hash;
 use tracing::{debug, error};
 
@@ -73,21 +73,21 @@ pub struct Service<RouteStream, Target, RouteLayer, RouteMake, Inner, RouteBody,
 where
     Target: WithAddr + WithRoute + Clone + Eq + Hash,
     Target::Output: Clone + Eq + Hash,
-    Inner: rt::Make<Target>,
-    Inner::Value: tower::Service<http::Request<InnerBody>> + Clone,
+    Inner: Make<Target>,
+    Inner::Service: tower::Service<http::Request<InnerBody>> + Clone,
     RouteLayer: tower::layer::Layer<
-        Shared<ConcreteRouter<Target, Inner::Value, InnerBody>>,
+        Shared<ConcreteRouter<Target, Inner::Service, InnerBody>>,
         Service = RouteMake,
     >,
-    RouteMake: rt::Make<Target::Output>,
-    RouteMake::Value: tower::Service<http::Request<RouteBody>> + Clone,
+    RouteMake: Make<Target::Output>,
+    RouteMake::Service: tower::Service<http::Request<RouteBody>> + Clone,
 {
     target: Target,
     inner: Inner,
     route_layer: RouteLayer,
     route_stream: Option<RouteStream>,
-    concrete_router: Option<ConcreteRouter<Target, Inner::Value, InnerBody>>,
-    router: RouteRouter<Target, Target::Output, RouteMake::Value, RouteBody>,
+    concrete_router: Option<ConcreteRouter<Target, Inner::Service, InnerBody>>,
+    router: RouteRouter<Target, Target::Output, RouteMake::Service, RouteBody>,
     default_route: Route,
 }
 
@@ -132,12 +132,12 @@ where
     G: GetRoutes,
     Target: CanGetDestination + WithRoute + WithAddr + Eq + Hash + Clone,
     <Target as WithRoute>::Output: Eq + Hash + Clone,
-    Inner: rt::Make<Target> + Clone,
-    Inner::Value: tower::Service<http::Request<InnerBody>> + Clone,
-    <Inner::Value as tower::Service<http::Request<InnerBody>>>::Error: Into<Error>,
+    Inner: Make<Target> + Clone,
+    Inner::Service: tower::Service<http::Request<InnerBody>> + Clone,
+    <Inner::Service as tower::Service<http::Request<InnerBody>>>::Error: Into<Error>,
     RouteLayer:
-        tower::layer::Layer<Shared<ConcreteRouter<Target, Inner::Value, InnerBody>>> + Clone,
-    RouteLayer::Service: rt::Make<<Target as WithRoute>::Output, Value = RouteSvc> + Clone,
+        tower::layer::Layer<Shared<ConcreteRouter<Target, Inner::Service, InnerBody>>> + Clone,
+    RouteLayer::Service: Make<<Target as WithRoute>::Output, Service = RouteSvc> + Clone,
     RouteSvc: tower::Service<http::Request<RouteBody>> + Clone,
     RouteSvc::Error: Into<Error>,
 {
@@ -155,7 +155,7 @@ where
             // Initially there are no dst_overrides, so build a concrete router
             // with only the default target.
             let mut make = IndexMap::with_capacity(1);
-            make.insert(target.clone(), self.inner.make(&target));
+            make.insert(target.clone(), self.inner.make(target.clone()));
 
             let rec = ConcreteDstRecognize::new(target.clone(), Vec::new());
             rt::Router::new_fixed(rec, make)
@@ -167,10 +167,10 @@ where
         // the default route.
         let router = {
             let default_route = target.clone().with_route(self.default_route.clone());
-            let stack = rt::Make::make(&concrete_stack, &default_route);
+            let stack = concrete_stack.make(default_route.clone());
 
             let mut make = IndexMap::with_capacity(1);
-            make.insert(default_route.clone(), stack);
+            make.insert(default_route, stack);
 
             let recognize = RouteRecognize::new(target.clone(), vec![], self.default_route.clone());
             rt::Router::new_fixed(recognize, make)
@@ -223,13 +223,13 @@ where
     Target: WithRoute + WithAddr + Eq + Hash + Clone,
     Target::Output: Clone + Eq + Hash,
     RouteLayer: tower::layer::Layer<
-            Shared<ConcreteRouter<Target, Inner::Value, InnerBody>>,
+            Shared<ConcreteRouter<Target, Inner::Service, InnerBody>>,
             Service = RouteMake,
         > + Clone,
-    RouteMake: rt::Make<Target::Output> + Clone,
-    RouteMake::Value: tower::Service<http::Request<RouteBody>> + Clone,
-    Inner: rt::Make<Target> + Clone,
-    Inner::Value: tower::Service<http::Request<InnerBody>> + Clone,
+    RouteMake: Make<Target::Output> + Clone,
+    RouteMake::Service: tower::Service<http::Request<RouteBody>> + Clone,
+    Inner: Make<Target> + Clone,
+    Inner::Service: tower::Service<http::Request<InnerBody>> + Clone,
 {
     fn update_routes(&mut self, routes: Routes) {
         // We must build a new concrete router with a service for each
@@ -247,7 +247,7 @@ where
 
         let target_svc = old_make.remove(&self.target).unwrap_or_else(|| {
             error!("concrete dst router did not contain target dst");
-            self.inner.make(&self.target)
+            self.inner.make(self.target.clone())
         });
         make.insert(self.target.clone(), target_svc);
 
@@ -255,7 +255,7 @@ where
             let target = self.target.clone().with_addr(addr.clone());
             let service = old_make
                 .remove(&target)
-                .unwrap_or_else(|| self.inner.make(&target));
+                .unwrap_or_else(|| self.inner.make(target.clone()));
             make.insert(target, service);
         }
 
@@ -278,11 +278,11 @@ where
         // cache.
         let capacity = routes.routes.len() + 1;
         let mut make = IndexMap::with_capacity(capacity);
-        make.insert(default_route.clone(), stack.make(&default_route));
+        make.insert(default_route.clone(), stack.make(default_route));
 
         for (_, route) in &routes.routes {
             let route = self.target.clone().with_route(route.clone());
-            let service = stack.make(&route);
+            let service = stack.make(route.clone());
             make.insert(route, service);
         }
 
@@ -313,12 +313,12 @@ where
     Target: WithRoute + WithAddr + Eq + Hash + Clone,
     Target::Output: Clone + Eq + Hash,
     RouteLayer: tower::layer::Layer<
-            Shared<ConcreteRouter<Target, Inner::Value, InnerBody>>,
+            Shared<ConcreteRouter<Target, Inner::Service, InnerBody>>,
             Service = RouteMake,
         > + Clone,
-    RouteMake: rt::Make<Target::Output, Value = RouteSvc> + Clone,
-    Inner: rt::Make<Target> + Clone,
-    Inner::Value: tower::Service<http::Request<InnerBody>> + Clone,
+    RouteMake: Make<Target::Output, Service = RouteSvc> + Clone,
+    Inner: Make<Target> + Clone,
+    Inner::Service: tower::Service<http::Request<InnerBody>> + Clone,
     RouteSvc: tower::Service<http::Request<RouteBody>> + Clone,
     RouteSvc::Error: Into<Error>,
 {

@@ -51,7 +51,6 @@ struct Node<T> {
 impl<K, V> Cache<K, V>
 where
     K: Clone + Eq + Hash,
-    V: Clone,
 {
     pub fn new(capacity: usize, expires: Duration) -> Self {
         assert!(capacity != 0);
@@ -76,12 +75,12 @@ where
     ///
     /// If a value is returned, this key will not be considered for eviction
     /// for another `expires` span of time.
-    pub fn access(&mut self, key: &K) -> Option<V> {
+    pub fn access(&mut self, key: &K) -> Option<&mut V> {
         if let Some(node) = self.values.get_mut(key) {
             self.expirations.reset(&node.dq_key, self.expires);
             trace!("reset expiration for cache value associated with key");
 
-            return Some(node.value.clone());
+            return Some(&mut node.value);
         }
 
         None
@@ -167,8 +166,8 @@ mod tests {
             assert!(cache.access(&1).is_some());
             assert!(cache.access(&2).is_some());
 
-            assert_eq!(cache.access(&1).take().unwrap(), 2);
-            assert_eq!(cache.access(&2).take().unwrap(), 3);
+            assert_eq!(cache.access(&1).take().unwrap(), &2);
+            assert_eq!(cache.access(&2).take().unwrap(), &3);
 
             Ok::<_, ()>(())
         }))

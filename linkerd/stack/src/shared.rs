@@ -12,6 +12,14 @@ impl<V: Clone> Shared<V> {
     }
 }
 
+impl<T, V: Clone> super::Make<T> for Shared<V> {
+    type Service = V;
+
+    fn make(&self, _: T) -> Self::Service {
+        self.0.clone()
+    }
+}
+
 impl<T, V: Clone> svc::Service<T> for Shared<V> {
     type Response = V;
     type Error = Never;

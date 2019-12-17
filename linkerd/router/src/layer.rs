@@ -1,9 +1,10 @@
 use crate::{Recognize, Router};
 use futures::{Future, Poll};
 use linkerd2_error::{Error, Never};
+use linkerd2_stack::Make;
 use std::marker::PhantomData;
 use std::time::Duration;
-use tracing::{info_span, trace};
+use tracing::info_span;
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -25,20 +26,11 @@ pub struct Layer<Req, Rec: Recognize<Req>> {
 }
 
 #[derive(Debug)]
-pub struct Make<Req, Rec: Recognize<Req>, Mk> {
+pub struct MakeRouter<Req, Rec: Recognize<Req>, Mk> {
     config: Config,
     recognize: Rec,
     inner: Mk,
     _p: PhantomData<fn() -> Req>,
-}
-
-pub struct Service<Req, Rec, Mk>
-where
-    Rec: Recognize<Req>,
-    Mk: super::Make<Rec::Target>,
-    Mk::Value: tower::Service<Req>,
-{
-    inner: Router<Req, Rec, Mk>,
 }
 
 // === impl Config ===
@@ -70,14 +62,14 @@ where
 impl<Req, Rec, Mk> tower::layer::Layer<Mk> for Layer<Req, Rec>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
-    Mk: super::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: tower::Service<Req> + Clone,
-    <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
+    Mk: Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Service: tower::Service<Req>,
+    <Mk::Service as tower::Service<Req>>::Error: Into<Error>,
 {
-    type Service = Make<Req, Rec, Mk>;
+    type Service = MakeRouter<Req, Rec, Mk>;
 
     fn layer(&self, inner: Mk) -> Self::Service {
-        Make {
+        MakeRouter {
             inner,
             config: self.config.clone(),
             recognize: self.recognize.clone(),
@@ -94,18 +86,18 @@ where
         Self::new(self.config.clone(), self.recognize.clone())
     }
 }
-// === impl Make ===
+// === impl MakeRouter ===
 
-impl<Req, Rec, Mk> Make<Req, Rec, Mk>
+impl<Req, Rec, Mk> MakeRouter<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     <Rec as Recognize<Req>>::Target: Send + 'static,
-    Mk: super::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: tower::Service<Req> + Clone + Send + 'static,
-    <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
+    Mk: Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Service: tower::Service<Req> + Send + 'static,
+    <Mk::Service as tower::Service<Req>>::Error: Into<Error>,
 {
-    pub fn spawn(&self) -> Service<Req, Rec, Mk> {
-        let (inner, purge) = Router::new(
+    pub fn spawn(&self) -> Router<Req, Rec, Mk> {
+        let (router, purge) = Router::new(
             self.recognize.clone(),
             self.inner.clone(),
             self.config.capacity,
@@ -116,19 +108,34 @@ where
                 .map_err(|e| match e {})
                 .instrument(info_span!("router.purge")),
         );
-        Service { inner }
+        router
     }
 }
 
-impl<Req, Rec, Mk, T> tower::Service<T> for Make<Req, Rec, Mk>
+impl<Req, Rec, Mk, T> Make<T> for MakeRouter<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone + Send + Sync + 'static,
     <Rec as Recognize<Req>>::Target: Send + 'static,
-    Mk: super::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: tower::Service<Req> + Clone + Send + 'static,
-    <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
+    Mk: Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Service: tower::Service<Req> + Send + 'static,
+    <Mk::Service as tower::Service<Req>>::Error: Into<Error>,
 {
-    type Response = Service<Req, Rec, Mk>;
+    type Service = Router<Req, Rec, Mk>;
+
+    fn make(&self, _: T) -> Self::Service {
+        self.spawn()
+    }
+}
+
+impl<Req, Rec, Mk, T> tower::Service<T> for MakeRouter<Req, Rec, Mk>
+where
+    Rec: Recognize<Req> + Clone + Send + Sync + 'static,
+    <Rec as Recognize<Req>>::Target: Send + 'static,
+    Mk: Make<Rec::Target> + Clone + Send + Sync + 'static,
+    Mk::Service: tower::Service<Req> + Send + 'static,
+    <Mk::Service as tower::Service<Req>>::Error: Into<Error>,
+{
+    type Response = Router<Req, Rec, Mk>;
     type Error = Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
 
@@ -141,7 +148,7 @@ where
     }
 }
 
-impl<Req, Rec, Mk> Clone for Make<Req, Rec, Mk>
+impl<Req, Rec, Mk> Clone for MakeRouter<Req, Rec, Mk>
 where
     Rec: Recognize<Req> + Clone,
     Mk: Clone,
@@ -152,42 +159,6 @@ where
             recognize: self.recognize.clone(),
             inner: self.inner.clone(),
             _p: PhantomData,
-        }
-    }
-}
-// === impl Service ===
-
-impl<Req, Rec, Mk> tower::Service<Req> for Service<Req, Rec, Mk>
-where
-    Rec: Recognize<Req> + Send + Sync + 'static,
-    Mk: super::Make<Rec::Target> + Clone + Send + Sync + 'static,
-    Mk::Value: tower::Service<Req> + Clone,
-    <Mk::Value as tower::Service<Req>>::Error: Into<Error>,
-{
-    type Response = <Router<Req, Rec, Mk> as tower::Service<Req>>::Response;
-    type Error = <Router<Req, Rec, Mk> as tower::Service<Req>>::Error;
-    type Future = <Router<Req, Rec, Mk> as tower::Service<Req>>::Future;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
-
-    fn call(&mut self, request: Req) -> Self::Future {
-        trace!("routing...");
-        self.inner.call(request)
-    }
-}
-
-impl<Req, Rec, Mk> Clone for Service<Req, Rec, Mk>
-where
-    Rec: Recognize<Req>,
-    Mk: super::Make<Rec::Target>,
-    Mk::Value: tower::Service<Req>,
-    Router<Req, Rec, Mk>: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
         }
     }
 }
