@@ -1,6 +1,6 @@
 use crate::proxy::{buffer, http, pending};
 use crate::Error;
-pub use linkerd2_stack::{self as stack, layer, map_target, Layer, LayerExt, Shared, Make};
+pub use linkerd2_stack::{self as stack, layer, map_target, Layer, LayerExt, Make, Shared};
 pub use linkerd2_timeout::stack as timeout;
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};

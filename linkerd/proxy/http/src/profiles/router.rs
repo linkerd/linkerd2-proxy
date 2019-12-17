@@ -5,7 +5,7 @@ use http;
 use indexmap::IndexMap;
 use linkerd2_error::{Error, Never};
 use linkerd2_router as rt;
-use linkerd2_stack::{Shared, Make};
+use linkerd2_stack::{Make, Shared};
 use std::hash::Hash;
 use tracing::{debug, error};
 

@@ -5,11 +5,11 @@ pub mod error;
 pub mod layer;
 mod purge;
 
-use indexmap::IndexMap;
 use self::cache::Cache;
 pub use self::layer::{Config, Layer};
 pub use self::purge::Purge;
 use futures::{Async, Future, Poll};
+use indexmap::IndexMap;
 use linkerd2_stack::Make;
 use std::hash::Hash;
 use std::time::Duration;
