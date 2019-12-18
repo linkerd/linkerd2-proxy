@@ -141,7 +141,10 @@ where
                         .take()
                         .unwrap_or_else(|| Delay::new(Instant::now() + self.watchdog_timeout));
                     if watchdog.poll().expect("timer must not fail").is_ready() {
-                        tracing::warn!("dropping resolution due to watchdog timeout");
+                        tracing::warn!(
+                            timeout = ?self.watchdog_timeout,
+                            "dropping rescolution due to watchdog",
+                        );
                         return Err(());
                     }
                     self.watchdog = Some(watchdog);
