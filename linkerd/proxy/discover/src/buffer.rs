@@ -1,13 +1,16 @@
 use futures::{try_ready, Async, Future, Poll, Stream};
 use linkerd2_error::{Error, Never};
 use std::fmt;
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
+use tokio::timer::Delay;
 use tower::discover;
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Buffer<M> {
     capacity: usize,
+    watchdog_timeout: Duration,
     inner: M,
 }
 
@@ -20,6 +23,7 @@ pub struct Discover<K, S> {
 pub struct DiscoverFuture<F, D> {
     future: F,
     capacity: usize,
+    watchdog_timeout: Duration,
     _marker: std::marker::PhantomData<fn() -> D>,
 }
 
@@ -27,17 +31,23 @@ pub struct Daemon<D: discover::Discover> {
     discover: D,
     disconnect_rx: oneshot::Receiver<Never>,
     tx: mpsc::Sender<discover::Change<D::Key, D::Service>>,
+    watchdog: Option<Delay>,
+    watchdog_timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
 pub struct Lost(());
 
 impl<M> Buffer<M> {
-    pub fn new<T>(capacity: usize, inner: M) -> Self
+    pub fn new<T>(capacity: usize, watchdog_timeout: Duration, inner: M) -> Self
     where
         Self: tower::Service<T>,
     {
-        Self { capacity, inner }
+        Self {
+            capacity,
+            watchdog_timeout,
+            inner,
+        }
     }
 }
 
@@ -63,6 +73,7 @@ where
         Self::Future {
             future,
             capacity: self.capacity,
+            watchdog_timeout: self.watchdog_timeout,
             _marker: std::marker::PhantomData,
         }
     }
@@ -88,6 +99,8 @@ where
             discover,
             disconnect_rx,
             tx,
+            watchdog_timeout: self.watchdog_timeout,
+            watchdog: None,
         };
         tokio::spawn(fut.in_current_span());
 
@@ -111,10 +124,33 @@ where
                 Ok(Async::Ready(n)) => match n {},
             }
 
-            try_ready!(self
-                .tx
-                .poll_ready()
-                .map_err(|_| tracing::trace!("lost sender")));
+            // The watchdog bounds the amount of time that the send buffer stays
+            // full. This is designed to release the `discover` resources, i.e.
+            // if we expect that the receiver has leaked.
+            match self.tx.poll_ready() {
+                Ok(Async::Ready(())) => {
+                    self.watchdog = None;
+                }
+                Err(_) => {
+                    tracing::trace!("lost sender");
+                    return Err(());
+                }
+                Ok(Async::NotReady) => {
+                    let mut watchdog = self
+                        .watchdog
+                        .take()
+                        .unwrap_or_else(|| Delay::new(Instant::now() + self.watchdog_timeout));
+                    if watchdog.poll().expect("timer must not fail").is_ready() {
+                        tracing::warn!(
+                            timeout = ?self.watchdog_timeout,
+                            "dropping resolution due to watchdog",
+                        );
+                        return Err(());
+                    }
+                    self.watchdog = Some(watchdog);
+                    return Ok(Async::NotReady);
+                }
+            }
 
             let up = try_ready!(self.discover.poll().map_err(|e| {
                 let e: Error = e.into();
