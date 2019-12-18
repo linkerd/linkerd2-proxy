@@ -143,7 +143,7 @@ where
                     if watchdog.poll().expect("timer must not fail").is_ready() {
                         tracing::warn!(
                             timeout = ?self.watchdog_timeout,
-                            "dropping rescolution due to watchdog",
+                            "dropping resolution due to watchdog",
                         );
                         return Err(());
                     }
