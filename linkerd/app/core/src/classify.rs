@@ -3,6 +3,7 @@ use linkerd2_error::Error;
 pub use linkerd2_proxy_http::metrics::classify::{self, layer, CanClassify};
 use linkerd2_proxy_http::{profiles, timeout, HasH2Reason};
 use std::borrow::Cow;
+use tower_grpc::{self as grpc};
 use tracing::trace;
 
 #[derive(Clone, Debug)]
@@ -183,10 +184,13 @@ fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u32>().ok())
         .map(|grpc_status| {
-            let ok = if grpc_status == 0 {
-                SuccessOrFailure::Success
-            } else {
-                SuccessOrFailure::Failure
+            let ok = match grpc::Code::from_i32(grpc_status as i32) {
+                grpc::Code::Unknown
+                | grpc::Code::DeadlineExceeded
+                | grpc::Code::Internal
+                | grpc::Code::Unavailable
+                | grpc::Code::DataLoss => SuccessOrFailure::Failure,
+                _ => SuccessOrFailure::Success,
             };
             Class::Grpc(ok, grpc_status)
         })
@@ -285,10 +289,10 @@ mod tests {
     fn grpc_response_trailer_error() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
         let mut trailers = HeaderMap::new();
-        trailers.insert("grpc-status", 3.into());
+        trailers.insert("grpc-status", 4.into());
 
         let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 3));
+        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 4));
     }
 
     #[test]
@@ -303,11 +307,11 @@ mod tests {
     fn profile_without_response_match_falls_back_to_grpc() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
         let mut trailers = HeaderMap::new();
-        trailers.insert("grpc-status", 3.into());
+        trailers.insert("grpc-status", 4.into());
 
         let class = super::Response::Profile(Default::default())
             .start(&rsp)
             .eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 3));
+        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 4));
     }
 }
