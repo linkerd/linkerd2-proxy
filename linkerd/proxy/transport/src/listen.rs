@@ -112,13 +112,13 @@ where
                 State::Init(ref mut std) => {
                     // Create the TCP listener lazily, so that it's not bound to a
                     // reactor until the future is run. This will avoid
-                    // `Handle::current()` creating a new thread for the global
+                    // `Handle::default()` creating a new thread for the global
                     // background reactor if `polled before the runtime is
                     // initialized.
                     trace!("listening");
                     let listener = tokio::net::TcpListener::from_std(
                         std.take().expect("illegal state"),
-                        &reactor::Handle::current(),
+                        &reactor::Handle::default(),
                     )?;
                     State::Bound(listener)
                 }

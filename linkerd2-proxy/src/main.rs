@@ -20,7 +20,7 @@ fn main() {
         }
     };
 
-    tokio::runtime::current_thread::Runtime::new()
+    tokio_compat::runtime::current_thread::Runtime::new()
         .expect("main runtime")
         .block_on(future::lazy(move || {
             let app = match trace::init().and_then(move |t| config.build(t)) {

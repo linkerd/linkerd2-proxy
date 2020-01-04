@@ -10,5 +10,5 @@ description = "The main proxy executable"
 futures = "0.1"
 linkerd2-app = { path = "../linkerd/app" }
 linkerd2-signal = { path = "../linkerd/signal" }
-tokio = "0.1.14"
+tokio-compat = "0.1"
 tracing = "0.1"

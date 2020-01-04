@@ -252,7 +252,7 @@ fn run(proxy: Proxy, mut env: TestEnv) -> Listening {
                 let _c = controller;
                 let _i = identity;
 
-                tokio::runtime::current_thread::Runtime::new()
+                tokio_compat::runtime::current_thread::Runtime::new()
                     .expect("proxy")
                     .block_on(future::lazy(move || {
                         let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
