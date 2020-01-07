@@ -5,10 +5,10 @@ pub mod req_body_as_payload {
     use hyper::body::Payload;
     use linkerd2_stack::layer;
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct Service<S>(S);
 
-    pub fn layer<S, B>() -> impl layer::Layer<S, Service = Service<S>> + Copy
+    pub fn layer<S, B>() -> impl tower::layer::Layer<S, Service = Service<S>> + Copy
     where
         GrpcBody<B>: Payload,
         S: tower::Service<http::Request<GrpcBody<B>>>,
@@ -43,6 +43,7 @@ pub mod req_box_body {
     use http;
     use tower_grpc::{Body, BoxBody};
 
+    #[derive(Clone, Debug)]
     pub struct Service<S>(S);
 
     impl<S> Service<S> {
@@ -78,6 +79,7 @@ pub mod res_body_as_payload {
     use hyper::body::Payload;
     use tower_grpc::Body;
 
+    #[derive(Clone, Debug)]
     pub struct Service<S>(S);
 
     impl<S> Service<S> {

@@ -5,6 +5,7 @@ use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::body::Payload;
 use linkerd2_error::Error;
+use linkerd2_stack::{NewService, Proxy};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -50,7 +51,7 @@ where
 
 /// A middleware that records HTTP metrics.
 #[derive(Debug)]
-pub struct Service<S, C>
+pub struct Metrics<S, C>
 where
     C: ClassifyResponse,
     C::Class: Hash + Eq,
@@ -98,15 +99,17 @@ where
 
 // === impl Layer ===
 
-pub fn layer<K, C>(registry: Arc<Mutex<Registry<K, C::Class>>>) -> Layer<K, C>
+impl<K, C> Layer<K, C>
 where
-    K: Clone + Hash + Eq,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    K: Hash + Eq,
+    C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    Layer {
-        registry,
-        _p: PhantomData,
+    pub fn new(registry: Arc<Mutex<Registry<K, C::Class>>>) -> Self {
+        Layer {
+            registry,
+            _p: PhantomData,
+        }
     }
 }
 
@@ -159,6 +162,37 @@ where
     }
 }
 
+impl<T, M, K, C> NewService<T> for MakeSvc<M, K, C>
+where
+    T: Clone + Debug + Into<K>,
+    K: Hash + Eq,
+    M: NewService<T>,
+    C: ClassifyResponse + Default + Send + Sync + 'static,
+    C::Class: Hash + Eq,
+{
+    type Service = Metrics<M::Service, C>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        let metrics = match self.registry.lock() {
+            Ok(mut r) => Some(
+                r.by_target
+                    .entry(target.clone().into())
+                    .or_insert_with(|| Arc::new(Mutex::new(RequestMetrics::default())))
+                    .clone(),
+            ),
+            Err(_) => None,
+        };
+
+        let inner = self.inner.new_service(target);
+
+        Metrics {
+            inner,
+            metrics,
+            _p: PhantomData,
+        }
+    }
+}
+
 impl<T, M, K, C> tower::Service<T> for MakeSvc<M, K, C>
 where
     T: Clone + Debug + Into<K>,
@@ -167,7 +201,7 @@ where
     C: ClassifyResponse + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Response = Service<M::Response, C>;
+    type Response = Metrics<M::Response, C>;
     type Error = M::Error;
     type Future = MakeFuture<M::Future, C>;
 
@@ -206,12 +240,12 @@ where
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Item = Service<F::Item, C>;
+    type Item = Metrics<F::Item, C>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        Ok(Service {
+        Ok(Metrics {
             inner,
             metrics: self.metrics.clone(),
             _p: PhantomData,
@@ -220,9 +254,9 @@ where
     }
 }
 
-// === impl Service ===
+// === impl Metrics ===
 
-impl<S, C> Clone for Service<S, C>
+impl<S, C> Clone for Metrics<S, C>
 where
     S: Clone,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
@@ -237,7 +271,54 @@ where
     }
 }
 
-impl<C, S, A, B> tower::Service<http::Request<A>> for Service<S, C>
+impl<C, P, S, A, B> Proxy<http::Request<A>, S> for Metrics<P, C>
+where
+    P: Proxy<http::Request<RequestBody<A, C::Class>>, S, Response = http::Response<B>>,
+    S: tower::Service<P::Request>,
+    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C::Class: Hash + Eq + Send + Sync,
+    A: Payload,
+    B: Payload,
+{
+    type Request = P::Request;
+    type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
+    type Error = Error;
+    type Future = ResponseFuture<P::Future, C>;
+
+    fn proxy(&self, svc: &mut S, req: http::Request<A>) -> Self::Future {
+        let mut req_metrics = self.metrics.clone();
+
+        if req.body().is_end_stream() {
+            if let Some(lock) = req_metrics.take() {
+                let now = clock::now();
+                if let Ok(mut metrics) = lock.lock() {
+                    (*metrics).last_update = now;
+                    (*metrics).total.incr();
+                }
+            }
+        }
+
+        let req = {
+            let (head, inner) = req.into_parts();
+            let body = RequestBody {
+                metrics: req_metrics,
+                inner,
+            };
+            http::Request::from_parts(head, body)
+        };
+
+        let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
+
+        ResponseFuture {
+            classify: Some(classify),
+            metrics: self.metrics.clone(),
+            stream_open_at: clock::now(),
+            inner: self.inner.proxy(svc, req),
+        }
+    }
+}
+
+impl<C, S, A, B> tower::Service<http::Request<A>> for Metrics<S, C>
 where
     S: tower::Service<http::Request<RequestBody<A, C::Class>>, Response = http::Response<B>>,
     S::Error: Into<Error>,

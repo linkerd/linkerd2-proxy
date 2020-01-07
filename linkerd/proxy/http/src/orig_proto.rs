@@ -10,6 +10,7 @@ pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 #[derive(Clone, Debug)]
 pub struct Upgrade<S> {
     inner: S,
+    pub absolute_form: bool,
 }
 
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
@@ -22,11 +23,11 @@ pub struct Downgrade<S> {
 // ==== impl Upgrade =====
 
 impl<S> Upgrade<S> {
-    pub fn new<A, B>(inner: S) -> Self
-    where
-        S: tower::Service<http::Request<A>, Response = http::Response<B>>,
-    {
-        Self { inner }
+    pub fn new(inner: S) -> Self {
+        Self {
+            inner,
+            absolute_form: false,
+        }
     }
 }
 
@@ -53,15 +54,7 @@ where
         // absolute-form is far less common, origin-form is the usual,
         // so only encode the extra information if it's different than
         // the normal.
-        let was_absolute_form = h1::is_absolute_form(req.uri());
-        if !was_absolute_form {
-            // Since the version is going to set to HTTP_2, the NormalizeUri
-            // middleware won't normalize the URI automatically, so it
-            // needs to be done now.
-            h1::normalize_our_view_of_uri(&mut req);
-        }
-
-        let val = match (req.version(), was_absolute_form) {
+        let val = match (req.version(), self.absolute_form) {
             (http::Version::HTTP_11, false) => "HTTP/1.1",
             (http::Version::HTTP_11, true) => "HTTP/1.1; absolute-form",
             (http::Version::HTTP_10, false) => "HTTP/1.0",

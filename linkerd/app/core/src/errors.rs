@@ -8,20 +8,11 @@ use linkerd2_proxy_http::HasH2Reason;
 use tracing::{debug, error, warn};
 
 /// Layer to map HTTP service errors into appropriate `http::Response`s.
-pub fn layer() -> Layer {
-    Layer
-}
-
 #[derive(Clone, Debug)]
 pub struct Layer;
 
 #[derive(Clone, Debug)]
-pub struct Stack<M> {
-    inner: M,
-}
-
-#[derive(Clone, Debug)]
-pub struct Service<S>(S);
+pub struct Errors<S>(S);
 
 #[derive(Debug)]
 pub struct ResponseFuture<F> {
@@ -35,31 +26,15 @@ pub struct StatusError {
     pub message: String,
 }
 
-impl<M> svc::Layer<M> for Layer {
-    type Service = Stack<M>;
+impl<S> svc::Layer<S> for Layer {
+    type Service = Errors<S>;
 
-    fn layer(&self, inner: M) -> Self::Service {
-        Stack { inner }
+    fn layer(&self, inner: S) -> Self::Service {
+        Errors(inner)
     }
 }
 
-impl<T, M> svc::Service<T> for Stack<M>
-where
-    M: svc::Service<T>,
-{
-    type Response = Service<M::Response>;
-    type Error = M::Error;
-    type Future = futures::future::Map<M::Future, fn(M::Response) -> Self::Response>;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
-    fn call(&mut self, target: T) -> Self::Future {
-        self.inner.call(target).map(Service)
-    }
-}
-
-impl<S, B1, B2> svc::Service<Request<B1>> for Service<S>
+impl<S, B1, B2> svc::Service<Request<B1>> for Errors<S>
 where
     S: svc::Service<Request<B1>, Response = Response<B2>>,
     S::Error: Into<Error>,
@@ -115,28 +90,24 @@ where
 }
 
 fn map_err_to_5xx(e: Error) -> StatusCode {
-    use crate::proxy::buffer;
-    use linkerd2_router::error as router;
+    use linkerd2_cache::error as cache;
     use tower::load_shed::error as shed;
 
-    if let Some(ref c) = e.downcast_ref::<router::NoCapacity>() {
-        warn!("router at capacity ({})", c.0);
+    if let Some(ref c) = e.downcast_ref::<cache::NoCapacity>() {
+        warn!("service cache at capacity ({})", c.0);
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if let Some(_) = e.downcast_ref::<shed::Overloaded>() {
         warn!("server overloaded, max-in-flight reached");
         http::StatusCode::SERVICE_UNAVAILABLE
-    } else if let Some(_) = e.downcast_ref::<buffer::Aborted>() {
-        warn!("request aborted because it reached the configured dispatch deadline");
+    } else if e.is::<tower::timeout::error::Elapsed>() {
+        warn!("failed to acquire a client");
         http::StatusCode::SERVICE_UNAVAILABLE
-    } else if let Some(_) = e.downcast_ref::<router::NotRecognized>() {
-        error!("could not recognize request");
-        http::StatusCode::BAD_GATEWAY
     } else if let Some(err) = e.downcast_ref::<StatusError>() {
         error!(%err.status, %err.message);
         err.status
     } else {
         // we probably should have handled this before?
-        error!("unexpected error: {}", e);
+        error!("unexpected error: {:?}", e);
         http::StatusCode::BAD_GATEWAY
     }
 }

@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     classify,
     config::{ControlAddr, ControlConfig},
     control, dns, proxy, reconnect,
-    svc::{self, LayerExt},
+    svc::{self, NewService},
     transport::{connect, tls},
     ControlHttpMetricsRegistry as Metrics, Error, Never,
 };
@@ -42,8 +42,8 @@ impl Config {
                 let (local, crt_store) = Local::new(&certify);
 
                 let addr = control.addr;
-                let svc = svc::stack(connect::svc(control.connect.keepalive))
-                    .push(tls::client::layer(tls::Conditional::Some(
+                let svc = svc::stack(connect::Connect::new(control.connect.keepalive))
+                    .push(tls::client::Layer::new(tls::Conditional::Some(
                         certify.trust_anchors.clone(),
                     )))
                     .push_timeout(control.connect.timeout)
@@ -53,17 +53,15 @@ impl Config {
                         let backoff = control.connect.backoff;
                         move |_| Ok(backoff.stream())
                     }))
-                    .push(proxy::http::metrics::layer::<_, classify::Response>(
+                    .push(proxy::http::metrics::Layer::<_, classify::Response>::new(
                         metrics,
                     ))
-                    .push(proxy::grpc::req_body_as_payload::layer().per_make())
-                    .push(control::add_origin::layer())
-                    .push_buffer_pending(
-                        control.buffer.max_in_flight,
-                        control.buffer.dispatch_timeout,
-                    )
+                    .push_per_service(proxy::grpc::req_body_as_payload::layer())
+                    .push(control::add_origin::Layer::new())
+                    .push_pending()
+                    .push_per_service(svc::lock::Layer::default())
                     .into_inner()
-                    .make(addr.clone());
+                    .new_service(addr.clone());
 
                 // Save to be spawned on an auxiliary runtime.
                 let task = {

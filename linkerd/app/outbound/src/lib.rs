@@ -5,32 +5,37 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+pub use self::endpoint::{
+    Concrete, HttpEndpoint, Logical, LogicalOrFallbackTarget, Profile, ProfileTarget, TcpEndpoint,
+};
 use futures::future;
 use linkerd2_app_core::{
-    self as core, classify,
+    classify,
     config::{ProxyConfig, ServerConfig},
-    dns, drain,
-    dst::DstAddr,
-    errors, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, http_request_orig_dst_addr,
+    dns, drain, dst, errors,
     opencensus::proto::trace::v1 as oc,
     proxy::{
-        self, core::resolve::Resolve, discover, fallback, http, identity, resolve::map_endpoint,
+        self,
+        core::resolve::Resolve,
+        discover, fallback,
+        http::{self, profiles},
+        identity,
+        resolve::map_endpoint,
         tap, tcp, Server,
     },
     reconnect, router, serve,
     spans::SpanConverter,
-    svc, trace, trace_context,
+    svc::{self, NewService},
+    trace_context,
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
-    Addr, Conditional, DispatchDeadline, Error, ProxyMetrics, CANONICAL_DST_HEADER,
-    DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
+    Conditional, Error, ProxyMetrics, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID,
+    L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::{debug, info_span};
+use tracing::info_span;
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;
@@ -39,8 +44,6 @@ mod add_server_id_on_rsp;
 mod endpoint;
 mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
-
-pub use self::endpoint::Endpoint;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -69,7 +72,7 @@ impl<A: OrigDstAddr> Config<A> {
         local_identity: tls::Conditional<identity::Local>,
         resolve: R,
         dns_resolver: dns::Resolver,
-        profiles_client: core::profiles::Client<P>,
+        profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
@@ -77,16 +80,14 @@ impl<A: OrigDstAddr> Config<A> {
     ) -> Result<Outbound, Error>
     where
         A: Send + 'static,
-        R: Resolve<DstAddr, Endpoint = proxy::api_resolve::Metadata>
+        R: Resolve<Concrete, Endpoint = proxy::api_resolve::Metadata>
             + Clone
             + Send
             + Sync
             + 'static,
         R::Future: Send,
         R::Resolution: Send,
-        P: GrpcService<grpc::BoxBody> + Clone + Send + Sync + 'static,
-        P::ResponseBody: Send,
-        <P::ResponseBody as grpc::Body>::Data: Send,
+        P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
         use proxy::core::listen::{Bind, Listen};
@@ -94,264 +95,272 @@ impl<A: OrigDstAddr> Config<A> {
             canonicalize_timeout,
             proxy:
                 ProxyConfig {
-                    server:
-                        ServerConfig {
-                            bind,
-                            buffer,
-                            h2_settings,
-                        },
+                    server: ServerConfig { bind, h2_settings },
                     connect,
-                    router_capacity,
-                    router_max_idle_age,
+                    cache_capacity,
+                    cache_max_idle_age,
                     disable_protocol_detection_for_ports,
+                    service_acquisition_timeout,
+                    max_in_flight_requests,
                 },
         } = self;
 
         let listen = bind.bind().map_err(Error::from)?;
         let listen_addr = listen.listen_addr();
 
-        // The stack is served lazily since some layers (notably buffer) spawn
-        // tasks from their constructor. This helps to ensure that tasks are
-        // spawned on the same runtime as the proxy.
+        // The stack is served lazily since caching layers spawn tasks from
+        // their constructor. This helps to ensure that tasks are spawned on the
+        // same runtime as the proxy.
         let serve = Box::new(future::lazy(move || {
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
-            let connect_stack = svc::stack(connect::svc(connect.keepalive))
-                .push(tls::client::layer(local_identity))
+            let tcp_connect = svc::stack(connect::Connect::new(connect.keepalive))
+                // Initiates mTLS if the target is configured with identity.
+                .push(tls::client::Layer::new(local_identity))
+                // Limits the time we wait for a connection to be established.
                 .push_timeout(connect.timeout)
                 .push(metrics.transport.layer_connect(TransportLabels));
 
-            // Instantiates an HTTP client for for a `client::Config`
-            let client_stack = connect_stack
+            // Forwards TCP streams that cannot be decoded as HTTP.
+            let tcp_forward = tcp_connect
                 .clone()
+                .push_map_target(|meta: tls::accept::Meta| {
+                    TcpEndpoint::from(meta.addrs.target_addr())
+                })
+                .push(svc::layer::mk(tcp::Forward::new));
+
+            // Registers the stack with Tap, Metrics, and OpenCensus tracing
+            // export.
+            let http_endpoint_observability = svc::layers()
+                .push(tap_layer.clone())
+                .push(http::metrics::Layer::<_, classify::Response>::new(
+                    metrics.http_endpoint.clone(),
+                ))
+                .push_per_service(trace_context::layer(
+                    span_sink
+                        .clone()
+                        .map(|sink| SpanConverter::client(sink, trace_labels())),
+                ));
+
+            // Checks the headers to validate that a client-specified required
+            // identity matches the configured identity.
+            let http_endpoint_identity_headers = svc::layers()
+                .push_per_service(
+                    svc::layers()
+                        .push(http::strip_header::response::layer(L5D_REMOTE_IP))
+                        .push(http::strip_header::response::layer(L5D_SERVER_ID))
+                        .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
+                )
+                .push(require_identity_on_endpoint::layer());
+
+            let http_balancer_endpoint = tcp_connect
+                .clone()
+                // Initiates an HTTP client on the underlying transport.
+                // Prior-knowledge HTTP/2 is typically used (i.e. when
+                // communicating with other proxies); though HTTP/1.x fallback
+                // is supported as needed.
+                .push(http::client::layer(connect.h2_settings))
+                // Re-establishes a connection when the client fails.
+                .push(reconnect::layer({
+                    let backoff = connect.backoff.clone();
+                    move |_| Ok(backoff.stream())
+                }))
+                .push(http_endpoint_observability.clone())
+                .push(http_endpoint_identity_headers.clone())
+                // Ensures that the request's URI is in the proper form.
+                .push(http::normalize_uri::layer())
+                // Upgrades HTTP/1 requests to be transported over HTTP/2
+                // connections.
+                //
+                // This sets headers so that the inbound proxy can downgrade the
+                // request properly.
+                .push(orig_proto_upgrade::layer())
+                .push_trace(|endpoint: &HttpEndpoint| {
+                    info_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
+                });
+
+            // Resolves each target via the control plane on a background task,
+            // buffering results.
+            //
+            // This buffer controls how many discovery updates may be
+            // pending/unconsumed by the balancer before backpressure is applied
+            // on the resolution stream. If the buffer is full for
+            // `cache_max_idle_age`, then the resolution task fails.
+            let discover = {
+                const BUFFER_CAPACITY: usize = 10;
+                let resolve = map_endpoint::Resolve::new(endpoint::FromMetadata, resolve.clone());
+                discover::Layer::new(BUFFER_CAPACITY, cache_max_idle_age, resolve)
+            };
+
+            // If the balancer fails to be created, i.e., because it is
+            // unresolvable, fall back to using a router that dispatches request
+            // to the application-selected original destination.
+
+            // Builds a balancer for each concrete destination.
+            let http_balancer_cache = http_balancer_endpoint
+                .push_spawn_ready()
+                .push(discover)
+                .push_per_service(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                .check_service::<Concrete>()
+                .push_pending()
+                // Shares the balancer, ensuring discovery errors are propagated.
+                .push_per_service(svc::lock::Layer::<LogicalError>::new())
+                .spawn_cache(cache_capacity, cache_max_idle_age)
+                .push_trace(|c: &Concrete| info_span!("balance", addr = %c.dst));
+
+            let http_profile_route_proxy = svc::proxies()
+                // Records metrics within retries.
+                .push(http::metrics::Layer::<_, classify::Response>::new(
+                    metrics.http_route_retry.clone(),
+                ))
+                // Sets an optional retry policy.
+                .push(http::retry::layer(metrics.http_route_retry))
+                // Sets an optional request timeout.
+                .push(http::timeout::layer())
+                // Records per-route metrics.
+                .push(http::metrics::Layer::<_, classify::Response>::new(
+                    metrics.http_route,
+                ))
+                // Sets the per-route response classifier as a request
+                // extension.
+                .push(classify::layer())
+                .check_new_clone_service::<dst::Route>();
+
+            // Routes `Logical` targets to a cached `Profile` stack, i.e. so
+            // that profile resolutions are shared even as the type of request
+            // may vary.
+            let http_logical_profile_cache = http_balancer_cache
+                .check_service::<Concrete>()
+                // Provides route configuration. The profile service operates
+                // over `Concret` services. When overrides are in play, the
+                // Concrete destination may be overridden.
+                .push(http::profiles::Layer::with_overrides(
+                    profiles_client,
+                    http_profile_route_proxy.into_inner(),
+                ))
+                // Use the `Logical` target as a `Concrete` target. It may be
+                // overridden by the profile layer.
+                .push_per_service(svc::map_target::Layer::new(Concrete::from))
+                .push_pending()
+                .push_per_service(svc::lock::Layer::<LogicalError>::new())
+                .spawn_cache(cache_capacity, cache_max_idle_age)
+                .push_trace(|_: &Profile| info_span!("profile"))
+                .check_service::<Profile>()
+                .push(router::Layer::new(|()| ProfileTarget))
+                .check_new_service_routes::<(), Logical>()
+                .new_service(());
+
+            // Caches DNS refinements from relative names to canonical names.
+            //
+            // For example, a client may send requests to `foo` or `foo.ns`; and
+            // the canonical form of these names is `foo.ns.svc.cluster.local
+            let dns_refine_cache = svc::stack(dns_resolver.into_make_refine())
+                .push_per_service(svc::lock::Layer::default())
+                .spawn_cache(cache_capacity, cache_max_idle_age)
+                .push_trace(|name: &dns::Name| info_span!("canonicalize", %name))
+                // Obtains the lock, advances the state of the resolution
+                .push(svc::make_response::Layer)
+                // Ensures that the cache isn't locked when polling readiness.
+                .push_oneshot()
+                .check_service_response::<dns::Name, dns::Name>()
+                .into_inner();
+
+            // Routes requests to their logical target.
+            let http_logical_router = svc::stack(http_logical_profile_cache)
+                // Sets the canonical-dst header on all outbound requests.
+                .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+                // Strips headers that may be set by this proxy.
+                .push(http::canonicalize::Layer::new(
+                    dns_refine_cache,
+                    canonicalize_timeout,
+                ))
+                .push_per_service(
+                    // Strips headers that may be set by this proxy.
+                    svc::layers()
+                        .push(http::strip_header::request::layer(L5D_CLIENT_ID))
+                        .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
+                )
+                .push_trace(|logical: &Logical| info_span!("logical", addr = %logical.dst));
+
+            // Caches clients that bypass discovery/balancing.
+            //
+            // This is effectively the same as the endpoint stack; but the
+            // client layer captures the requst body type (via PhantomData), so
+            // the stack cannot be shared directly.
+            let http_forward_cache = tcp_connect
                 .push(http::client::layer(connect.h2_settings))
                 .push(reconnect::layer({
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
                 }))
-                .push(trace_context::layer(span_sink.clone().map(|span_sink| {
-                    SpanConverter::client(span_sink, trace_labels())
-                })))
-                .push(http::normalize_uri::layer());
+                .push(http::normalize_uri::layer())
+                .push(http_endpoint_observability.clone())
+                .push(http_endpoint_identity_headers.clone())
+                .push_pending()
+                .push_per_service(svc::lock::Layer::default())
+                .spawn_cache(cache_capacity, cache_max_idle_age)
+                .push_trace(|endpoint: &HttpEndpoint| {
+                    info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
+                })
+                .check_service::<HttpEndpoint>();
 
-            // A per-`outbound::Endpoint` stack that:
-            //
-            // 1. Records http metrics  with per-endpoint labels.
-            // 2. Instruments `tap` inspection.
-            // 3. Changes request/response versions when the endpoint
-            //    supports protocol upgrade (and the request may be upgraded).
-            // 4. Appends `l5d-server-id` to responses coming back iff meshed
-            //    TLS was used on the connection.
-            // 5. Routes requests to the correct client (based on the
-            //    request version and headers).
-            // 6. Strips any `l5d-server-id` that may have been received from
-            //    the server, before we apply our own.
-            let endpoint_stack = client_stack
-                .serves::<Endpoint>()
-                .push(http::strip_header::response::layer(L5D_REMOTE_IP))
-                .push(http::strip_header::response::layer(L5D_SERVER_ID))
-                .push(http::strip_header::request::layer(L5D_REQUIRE_ID))
-                // disabled due to information leagkage
-                //.push(add_remote_ip_on_rsp::layer())
-                //.push(add_server_id_on_rsp::layer())
-                .push(orig_proto_upgrade::layer())
-                .push(tap_layer.clone())
-                .push(http::metrics::layer::<_, classify::Response>(
-                    metrics.http_endpoint,
-                ))
-                .push(require_identity_on_endpoint::layer())
-                .push(trace::layer(|endpoint: &Endpoint| {
-                    info_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
-                }))
-                .serves::<Endpoint>();
-
-            // A per-`dst::Route` layer that uses profile data to configure
-            // a per-route layer.
-            //
-            // 1. The `classify` module installs a `classify::Response`
-            //    extension into each request so that all lower metrics
-            //    implementations can use the route-specific configuration.
-            // 2. A timeout is optionally enabled if the target `dst::Route`
-            //    specifies a timeout. This goes before `retry` to cap
-            //    retries.
-            // 3. Retries are optionally enabled depending on if the route
-            //    is retryable.
-            let dst_route_layer = svc::layers()
-                .push(http::insert::target::layer())
-                .push(http::metrics::layer::<_, classify::Response>(
-                    metrics.http_route_retry.clone(),
-                ))
-                .push(http::retry::layer(metrics.http_route_retry))
-                .push(http::timeout::layer())
-                .push(http::metrics::layer::<_, classify::Response>(
-                    metrics.http_route,
-                ))
-                .push(classify::layer())
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract);
-
-            // Routes requests to their original destination endpoints. Used as
-            // a fallback when service discovery has no endpoints for a destination.
-            //
-            // If the `l5d-require-id` header is present, then that identity is
-            // used as the server name when connecting to the endpoint.
-            let orig_dst_router_layer = svc::layers()
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .push(router::Layer::new(
-                    router::Config::new(router_capacity, router_max_idle_age),
-                    Endpoint::from_request,
-                ));
-
-            // Resolves the target via the control plane and balances requests
-            // over all endpoints returned from the destination service.
-            const DISCOVER_UPDATE_BUFFER_CAPACITY: usize = 10;
-            let balancer_layer = svc::layers()
-                .push_spawn_ready()
-                .push(discover::Layer::new(
-                    DISCOVER_UPDATE_BUFFER_CAPACITY,
-                    router_max_idle_age,
-                    map_endpoint::Resolve::new(endpoint::FromMetadata, resolve.clone()),
-                ))
-                .push(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));
-
-            // If the balancer fails to be created, i.e., because it is unresolvable,
-            // fall back to using a router that dispatches request to the
-            // application-selected original destination.
-            let distributor = endpoint_stack
-                .serves::<Endpoint>()
-                .push(fallback::layer(
-                    balancer_layer.boxed(),
-                    orig_dst_router_layer.boxed(),
-                ))
-                .push(trace::layer(
-                    |dst: &DstAddr| info_span!("concrete", dst.concrete = %dst.dst_concrete()),
-                ));
-
-            // A per-`DstAddr` stack that does the following:
-            //
-            // 1. Adds the `CANONICAL_DST_HEADER` from the `DstAddr`.
-            // 2. Determines the profile of the destination and applies
-            //    per-route policy.
-            // 3. Creates a load balancer , configured by resolving the
-            //   `DstAddr` with a resolver.
-            let dst_stack = distributor
-                .serves::<DstAddr>()
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .makes::<DstAddr>()
-                .push(http::profiles::router::layer(
-                    profiles_client,
-                    dst_route_layer,
-                ))
-                .push(http::header_from_target::layer(CANONICAL_DST_HEADER));
-
-            // Routes request using the `DstAddr` extension.
-            //
-            // This is shared across addr-stacks so that multiple addrs that
-            // canonicalize to the same DstAddr use the same dst-stack service.
-            let dst_router = dst_stack
-                .push(trace::layer(
-                    |dst: &DstAddr| info_span!("logical", dst.logical = %dst.dst_logical()),
-                ))
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .push(router::Layer::new(
-                    router::Config::new(router_capacity, router_max_idle_age),
-                    |req: &http::Request<_>| {
-                        req.extensions().get::<Addr>().cloned().map(|addr| {
-                            DstAddr::outbound(addr, http::settings::Settings::from_request(req))
-                        })
-                    },
-                ))
-                .into_inner()
-                .spawn();
-
-            // Canonicalizes the request-specified `Addr` via DNS, and
-            // annotates each request with a refined `Addr` so that it may be
-            // routed by the dst_router.
-            let addr_stack = svc::stack(svc::Shared::new(dst_router)).push(
-                http::canonicalize::layer(dns_resolver, canonicalize_timeout),
-            );
-
-            // Routes requests to an `Addr`:
-            //
-            // 1. If the request had an `l5d-override-dst` header, this value
-            // is used.
-            //
-            // 2. If the request is HTTP/2 and has an :authority, this value
-            // is used.
-            //
-            // 3. If the request is absolute-form HTTP/1, the URI's
-            // authority is used.
-            //
-            // 4. If the request has an HTTP/1 Host header, it is used.
-            //
-            // 5. Finally, if the tls::accept::Meta had an SO_ORIGINAL_DST, this TCP
-            // address is used.
-            let addr_router = addr_stack
-                .push(http::strip_header::request::layer(L5D_CLIENT_ID))
-                .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-                .push(http::insert::target::layer())
-                .push(trace::layer(|addr: &Addr| info_span!("addr", %addr)))
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .push(router::Layer::new(
-                    router::Config::new(router_capacity, router_max_idle_age),
-                    |req: &http::Request<_>| {
-                        http_request_l5d_override_dst_addr(req)
-                            .map(|override_addr| {
-                                debug!("using dst-override");
-                                override_addr
-                            })
-                            .or_else(|_| http_request_authority_addr(req))
-                            .or_else(|_| http_request_host_addr(req))
-                            .or_else(|_| http_request_orig_dst_addr(req))
-                            .ok()
-                    },
-                ))
-                .into_inner()
-                .spawn();
-
-            // Share a single semaphore across all requests to signal when
-            // the proxy is overloaded.
-            let admission_control = svc::stack(addr_router)
-                .push_concurrency_limit(buffer.max_in_flight)
-                .push_load_shed();
-
-            // Instantiates an HTTP service for each `tls::accept::Meta` using the
-            // shared `addr_router`. The `tls::accept::Meta` is stored in the request's
-            // extensions so that it can be used by the `addr_router`.
-            let server_stack = svc::stack(svc::Shared::new(admission_control))
-                .push(http::insert::layer(move || {
-                    DispatchDeadline::after(buffer.dispatch_timeout)
-                }))
-                .push(http::insert::target::layer())
-                .push(errors::layer())
-                .push(trace::layer(
-                    |src: &tls::accept::Meta| info_span!("source", target.addr = %src.addrs.target_addr()),
-                ))
+            let http_admit_request = svc::layers()
+                // Ensures that load is not shed if the inner service is in-use.
+                .push_oneshot()
+                // Limits the number of in-flight requests.
+                .push_concurrency_limit(max_in_flight_requests)
+                // Sheds load if too many requests are in flight.
+                //
+                // XXX Can this be removed? Is it okay to just backpressure onto
+                // the client? Should we instead limit the number of active
+                // connections?
+                .push_load_shed()
+                // Synthesizes responses for proxy errors.
+                .push(errors::Layer)
+                // Initiates OpenCensus tracing.
                 .push(trace_context::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
+                // Tracks proxy handletime.
                 .push(metrics.http_handle_time.layer());
 
-            let forward_tcp = tcp::Forward::new(
-                svc::stack(connect_stack)
-                    .push(svc::map_target::layer(|meta: tls::accept::Meta| {
-                        Endpoint::from(meta.addrs.target_addr())
-                    }))
-                    .into_inner(),
-            );
+            let http_server = http_logical_router
+                .push_make_ready()
+                .push_map_target(|(l, _): (Logical, HttpEndpoint)| l)
+                .push_per_service(svc::layers().boxed())
+                .push(fallback::layer(
+                    http_forward_cache
+                        .push_make_ready()
+                        .push_map_target(|(_, e): (Logical, HttpEndpoint)| e)
+                        .push_per_service(svc::layers().boxed())
+                        .into_inner()
+                ).with_predicate(LogicalError::is_discovery_rejected))
+                .check_service::<(Logical, HttpEndpoint)>()
+                .push_make_ready()
+                .push_timeout(service_acquisition_timeout)
+                .push(router::Layer::new(LogicalOrFallbackTarget::from))
+                .push_per_service(http_admit_request)
+                .push_trace(
+                    |src: &tls::accept::Meta| {
+                        info_span!("source", target.addr = %src.addrs.target_addr())
+                    },
+                )
+                .check_new_service::<tls::accept::Meta>();
 
-            let proxy = Server::new(
+            let tcp_server = Server::new(
                 TransportLabels,
                 metrics.transport,
-                forward_tcp,
-                server_stack,
+                tcp_forward.into_inner(),
+                http_server.into_inner(),
                 h2_settings,
                 drain.clone(),
                 disable_protocol_detection_for_ports.clone(),
             );
 
+            // The local application does not establish mTLS with the proxy.
             let no_tls: tls::Conditional<identity::Local> =
                 Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
-            let accept = tls::AcceptTls::new(no_tls, proxy)
+            let accept = tls::AcceptTls::new(no_tls, tcp_server)
                 .with_skip_ports(disable_protocol_detection_for_ports);
 
             serve::serve(listen, accept, drain)
@@ -364,10 +373,18 @@ impl<A: OrigDstAddr> Config<A> {
 #[derive(Copy, Clone, Debug)]
 struct TransportLabels;
 
-impl transport::metrics::TransportLabels<Endpoint> for TransportLabels {
+impl transport::metrics::TransportLabels<HttpEndpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, endpoint: &Endpoint) -> Self::Labels {
+    fn transport_labels(&self, endpoint: &HttpEndpoint) -> Self::Labels {
+        transport::labels::Key::connect("outbound", endpoint.identity.as_ref())
+    }
+}
+
+impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
+    type Labels = transport::labels::Key;
+
+    fn transport_labels(&self, endpoint: &TcpEndpoint) -> Self::Labels {
         transport::labels::Key::connect("outbound", endpoint.identity.as_ref())
     }
 }
@@ -385,3 +402,64 @@ pub fn trace_labels() -> HashMap<String, String> {
     l.insert("direction".to_string(), "outbound".to_string());
     l
 }
+
+#[derive(Clone, Debug)]
+enum LogicalError {
+    DiscoveryRejected,
+    Inner(String),
+}
+
+impl std::fmt::Display for LogicalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LogicalError::DiscoveryRejected => write!(f, "discovery rejected"),
+            LogicalError::Inner(e) => e.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for LogicalError {}
+
+impl From<Error> for LogicalError {
+    fn from(orig: Error) -> Self {
+        if let Some(inner) = orig.downcast_ref::<LogicalError>() {
+            return inner.clone();
+        }
+
+        if orig.is::<DiscoveryRejected>() {
+            return LogicalError::DiscoveryRejected;
+        }
+
+        LogicalError::Inner(orig.to_string())
+    }
+}
+
+impl LogicalError {
+    fn is_discovery_rejected(err: &Error) -> bool {
+        tracing::trace!(?err, "is_discovery_rejected");
+        if let Some(LogicalError::DiscoveryRejected) = err.downcast_ref::<LogicalError>() {
+            return true;
+        }
+
+        false
+    }
+}
+
+// === impl DiscoveryRejected ===
+
+#[derive(Clone, Debug)]
+pub struct DiscoveryRejected(());
+
+impl DiscoveryRejected {
+    pub fn new() -> Self {
+        DiscoveryRejected(())
+    }
+}
+
+impl std::fmt::Display for DiscoveryRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "discovery rejected")
+    }
+}
+
+impl std::error::Error for DiscoveryRejected {}

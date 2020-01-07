@@ -168,6 +168,7 @@ impl app::core::transport::OrigDstAddr for MockOriginalDst {
 }
 
 fn run(proxy: Proxy, mut env: TestEnv) -> Listening {
+    let _ = trace_init();
     let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
@@ -279,7 +280,6 @@ fn run(proxy: Proxy, mut env: TestEnv) -> Listening {
                         );
                         let mut running = Some((running_tx, addrs));
                         let on_shutdown = future::poll_fn(move || {
-                            debug!("polling shutdown");
                             if let Some((tx, addrs)) = running.take() {
                                 let _ = tx.send(addrs);
                             }

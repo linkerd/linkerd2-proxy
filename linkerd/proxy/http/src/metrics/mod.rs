@@ -11,7 +11,7 @@ pub mod handle_time;
 mod report;
 mod service;
 
-pub use self::{report::Report, service::layer};
+pub use self::{report::Report, service::Layer};
 
 pub type SharedRegistry<T, C> = Arc<Mutex<Registry<T, C>>>;
 
@@ -98,9 +98,10 @@ where
     }
 }
 
-impl<T, C> Scoped<T> for Arc<Mutex<Registry<T, C>>>
+impl<T, K, C> Scoped<T> for Arc<Mutex<Registry<K, C>>>
 where
-    T: Hash + Eq,
+    K: From<T>,
+    K: Hash + Eq,
     C: Hash + Eq,
 {
     type Scope = Arc<Mutex<RequestMetrics<C>>>;
@@ -109,7 +110,7 @@ where
         self.lock()
             .expect("metrics Registry lock")
             .by_target
-            .entry(target)
+            .entry(target.into())
             .or_insert_with(|| Arc::new(Mutex::new(RequestMetrics::default())))
             .clone()
     }

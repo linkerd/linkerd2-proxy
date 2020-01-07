@@ -16,6 +16,7 @@ pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
+    svc::{self, NewService},
     transport::{OrigDstAddr, SysOrigDstAddr},
     Error,
 };
@@ -69,7 +70,10 @@ impl Config<SysOrigDstAddr> {
 }
 
 impl<A: OrigDstAddr + Send + 'static> Config<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr + Send + 'static>(self, orig_dst: B) -> Config<B> {
+    pub fn with_orig_dst_addr<B: OrigDstAddr + Send + Sync + 'static>(
+        self,
+        orig_dst: B,
+    ) -> Config<B> {
         Config {
             outbound: self.outbound.with_orig_dst_addr(orig_dst.clone()),
             inbound: self.inbound.with_orig_dst_addr(orig_dst),
@@ -114,7 +118,6 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
                 classify, control,
                 proxy::{grpc, http},
                 reconnect,
-                svc::{self, LayerExt},
                 transport::{connect, tls},
             };
 
@@ -122,11 +125,12 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
             let dns = dns.resolver.clone();
             info_span!("dst").in_scope(|| {
                 // XXX This is unfortunate. But we don't daemonize the service into a
-                // task in the build, so we'd have to name the motherfucker. And that's
-                // not happening today. Really, we should daemonize the whole client
-                // into a task so consumers can be ignorant.
-                let svc = svc::stack(connect::svc(dst.control.connect.keepalive))
-                    .push(tls::client::layer(identity.local()))
+                // task in the build, so we'd have to name it. And that's not
+                // happening today. Really, we should daemonize the whole client
+                // into a task so consumers can be ignorant. This woudld also
+                // probably enable the use of a lock.
+                let svc = svc::stack(connect::Connect::new(dst.control.connect.keepalive))
+                    .push(tls::client::Layer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns))
@@ -134,15 +138,18 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
                         let backoff = dst.control.connect.backoff;
                         move |_| Ok(backoff.stream())
                     }))
-                    .push(http::metrics::layer::<_, classify::Response>(metrics))
-                    .push(grpc::req_body_as_payload::layer().per_make())
-                    .push(control::add_origin::layer())
-                    .push_buffer_pending(
-                        dst.control.buffer.max_in_flight,
-                        dst.control.buffer.dispatch_timeout,
+                    .push(http::metrics::Layer::<_, classify::Response>::new(metrics))
+                    .push(control::add_origin::Layer::new())
+                    .push_pending()
+                    .push_per_service(
+                        svc::layers()
+                            .push(grpc::req_body_as_payload::layer())
+                            // This stack isn't currently Sync; so a Buffer
+                            // needs to be used instead of a Lock.
+                            // TODO .push(svc::lock::Layer::default())
+                            .push_buffer(dst.control.buffer_capacity),
                     )
-                    .into_inner()
-                    .make(dst.control.addr.clone());
+                    .new_service(dst.control.addr.clone());
                 dst.build(svc)
             })
         }?;

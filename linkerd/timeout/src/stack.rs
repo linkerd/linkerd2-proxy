@@ -1,9 +1,6 @@
-use std::time::Duration;
-
 use super::Timeout;
 use futures::{try_ready, Future, Poll};
-use linkerd2_stack as stk;
-use tower_service as svc;
+use std::time::Duration;
 
 /// Creates a layer that *always* applies the timeout to every request.
 ///
@@ -19,7 +16,7 @@ pub struct Layer {
 }
 
 #[derive(Clone, Debug)]
-pub struct Stack<M> {
+pub struct MakeService<M> {
     inner: M,
     timeout: Duration,
 }
@@ -29,20 +26,20 @@ pub struct MakeFuture<F> {
     timeout: Duration,
 }
 
-impl<M> stk::Layer<M> for Layer {
-    type Service = Stack<M>;
+impl<M> tower::layer::Layer<M> for Layer {
+    type Service = MakeService<M>;
 
     fn layer(&self, inner: M) -> Self::Service {
-        Stack {
+        MakeService {
             inner,
             timeout: self.timeout,
         }
     }
 }
 
-impl<T, M> svc::Service<T> for Stack<M>
+impl<T, M> tower::Service<T> for MakeService<M>
 where
-    M: svc::Service<T>,
+    M: tower::Service<T>,
 {
     type Response = Timeout<M::Response>;
     type Error = M::Error;

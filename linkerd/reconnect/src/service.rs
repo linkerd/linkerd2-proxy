@@ -46,6 +46,18 @@ where
             state: State::Disconnected { backoff: None },
         }
     }
+
+    pub fn pending(future: M::Future, target: T, make_service: M, recover: R) -> Self {
+        Self {
+            target,
+            recover,
+            make_service,
+            state: State::Pending {
+                future,
+                backoff: None,
+            },
+        }
+    }
 }
 
 impl<Req, T, R, M, S> tower::Service<Req> for Service<T, R, M>

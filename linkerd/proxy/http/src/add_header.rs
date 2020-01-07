@@ -6,7 +6,7 @@ use tracing::trace;
 /// A function used to get the header value for a given Stack target.
 type GetHeader<T> = fn(&T) -> Option<HeaderValue>;
 
-/// Wraps HTTP `Service` `Stack<T>`s so that a given header is removed from a
+/// Wraps HTTP `Service` `MakeAddHeader<T>`s so that a given header is removed from a
 /// request or response.
 #[derive(Clone)]
 pub struct Layer<H, T, R> {
@@ -18,7 +18,7 @@ pub struct Layer<H, T, R> {
 /// Wraps an HTTP `Service` so that a given header is added from each request
 /// or response.
 #[derive(Clone)]
-pub struct Stack<H, T, M, R> {
+pub struct MakeAddHeader<H, T, M, R> {
     header: H,
     get_header: GetHeader<T>,
     inner: M,
@@ -32,7 +32,7 @@ pub struct MakeFuture<F, H, R> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<H, S, R> {
+pub struct AddHeader<H, S, R> {
     header: H,
     value: HeaderValue,
     inner: S,
@@ -41,16 +41,14 @@ pub struct Service<H, S, R> {
 
 // === impl Layer ===
 
-/// Call `request::layer(header)` or `response::layer(header)`.
-fn layer<H, T, R>(header: H, get_header: GetHeader<T>) -> Layer<H, T, R>
-where
-    H: AsHeaderName + Clone,
-    R: Clone,
-{
-    Layer {
-        header,
-        get_header,
-        _req_or_res: PhantomData,
+impl<H, T, R> Layer<H, T, R> {
+    /// Used by the `request` and `response` modules.
+    fn new(header: H, get_header: GetHeader<T>) -> Self {
+        Self {
+            header,
+            get_header,
+            _req_or_res: PhantomData,
+        }
     }
 }
 
@@ -60,10 +58,10 @@ where
     T: fmt::Debug,
     M: tower::Service<T>,
 {
-    type Service = Stack<H, T, M, R>;
+    type Service = MakeAddHeader<H, T, M, R>;
 
     fn layer(&self, inner: M) -> Self::Service {
-        Stack {
+        Self::Service {
             header: self.header.clone(),
             get_header: self.get_header,
             inner,
@@ -75,13 +73,13 @@ where
 // === impl Stack ===
 
 /// impl MakeService
-impl<H, T, M, R> tower::Service<T> for Stack<H, T, M, R>
+impl<H, T, M, R> tower::Service<T> for MakeAddHeader<H, T, M, R>
 where
     H: AsHeaderName + Clone + fmt::Debug,
     T: fmt::Debug,
     M: tower::Service<T>,
 {
-    type Response = tower::util::Either<Service<H, M::Response, R>, M::Response>;
+    type Response = tower::util::Either<AddHeader<H, M::Response, R>, M::Response>;
     type Error = M::Error;
     type Future = MakeFuture<M::Future, H, R>;
 
@@ -113,34 +111,19 @@ where
     }
 }
 
-impl<H, T, M, R> fmt::Debug for Stack<H, T, M, R>
-where
-    H: fmt::Debug,
-    T: fmt::Debug,
-    M: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Stack")
-            .field("header", &self.header)
-            .field("get_header", &format_args!("{}", "..."))
-            .field("inner", &self.inner)
-            .finish()
-    }
-}
-
 // === impl MakeFuture ===
 
 impl<F, H, R> Future for MakeFuture<F, H, R>
 where
     F: Future,
 {
-    type Item = tower::util::Either<Service<H, F::Item, R>, F::Item>;
+    type Item = tower::util::Either<AddHeader<H, F::Item, R>, F::Item>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
         let svc = if let Some((header, value)) = self.header.take() {
-            tower::util::Either::A(Service {
+            tower::util::Either::A(AddHeader {
                 header,
                 value,
                 inner,
@@ -162,14 +145,14 @@ pub mod request {
     where
         H: AsHeaderName + Clone,
     {
-        super::layer(header, get_header)
+        super::Layer::new(header, get_header)
     }
 
     /// Marker type used to specify that the `Request` headers should be added.
     #[derive(Clone, Debug)]
     pub enum ReqHeader {}
 
-    impl<H, S, B> tower::Service<http::Request<B>> for super::Service<H, S, ReqHeader>
+    impl<H, S, B> tower::Service<http::Request<B>> for super::AddHeader<H, S, ReqHeader>
     where
         H: IntoHeaderName + Clone,
         S: tower::Service<http::Request<B>>,
@@ -199,7 +182,7 @@ pub mod response {
     where
         H: AsHeaderName + Clone,
     {
-        super::layer(header, get_header)
+        super::Layer::new(header, get_header)
     }
 
     /// Marker type used to specify that the `Response` headers should be added.
@@ -212,7 +195,7 @@ pub mod response {
         value: HeaderValue,
     }
 
-    impl<H, S, B, Req> tower::Service<Req> for super::Service<H, S, ResHeader>
+    impl<H, S, B, Req> tower::Service<Req> for super::AddHeader<H, S, ResHeader>
     where
         H: IntoHeaderName + Clone,
         S: tower::Service<Req, Response = http::Response<B>>,

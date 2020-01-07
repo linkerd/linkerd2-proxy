@@ -8,5 +8,4 @@ publish = false
 [dependencies]
 futures = "0.1"
 linkerd2-error = { path = "../error" }
-tower-layer = "0.1"
-tower-service = "0.2"
+tower = "0.1"

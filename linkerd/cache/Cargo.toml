@@ -1,0 +1,18 @@
+[package]
+name = "linkerd2-cache"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.1"
+indexmap = "1.0"
+linkerd2-error = { path = "../error" }
+linkerd2-stack = { path = "../stack" }
+tokio = "0.1"
+tokio-sync = "0.1"
+tokio-timer = "0.2"
+tower = "0.1"
+tracing = "0.1"
+tracing-futures = "0.1"

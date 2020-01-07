@@ -1,52 +1,53 @@
 use futures::{try_ready, Future, Poll};
 use std::{io, net::SocketAddr, time::Duration};
 use tokio::net::{tcp, TcpStream};
-use tower::{service_fn, Service};
 use tracing::debug;
 
-pub trait HasPeerAddr {
-    fn peer_addr(&self) -> SocketAddr;
+pub trait ConnectAddr {
+    fn connect_addr(&self) -> SocketAddr;
 }
 
-pub fn svc<T: HasPeerAddr>(
+#[derive(Copy, Clone, Debug)]
+pub struct Connect {
     keepalive: Option<Duration>,
-) -> impl Service<T, Response = TcpStream, Error = io::Error, Future = ConnectFuture> + Clone {
-    service_fn(move |target: T| {
-        let addr = target.peer_addr();
-        debug!("connecting to {}", addr);
-        ConnectFuture {
-            addr,
-            keepalive,
-            future: TcpStream::connect(&addr),
-        }
-    })
 }
 
 #[derive(Debug)]
 pub struct ConnectFuture {
-    addr: SocketAddr,
     keepalive: Option<Duration>,
     future: tcp::ConnectFuture,
 }
 
-impl HasPeerAddr for SocketAddr {
-    fn peer_addr(&self) -> SocketAddr {
-        *self
+impl Connect {
+    pub fn new(keepalive: Option<Duration>) -> Self {
+        Connect { keepalive }
     }
 }
 
-// === impl ConnectFuture ===
+impl<C: ConnectAddr> tower::Service<C> for Connect {
+    type Response = TcpStream;
+    type Error = io::Error;
+    type Future = ConnectFuture;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        Ok(().into())
+    }
+
+    fn call(&mut self, c: C) -> Self::Future {
+        let keepalive = self.keepalive;
+        debug!(?keepalive, "Connecting");
+        let future = TcpStream::connect(&c.connect_addr());
+        ConnectFuture { future, keepalive }
+    }
+}
 
 impl Future for ConnectFuture {
     type Item = TcpStream;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let io = try_ready!(self.future.poll().map_err(|e| {
-            let details = format!("{} (address: {})", e, self.addr);
-            io::Error::new(e.kind(), details)
-        }));
-        debug!("connection established to {}", self.addr);
+        let io = try_ready!(self.future.poll());
+        debug!("Connected");
         super::set_nodelay_or_warn(&io);
         super::set_keepalive_or_warn(&io, self.keepalive);
         Ok(io.into())

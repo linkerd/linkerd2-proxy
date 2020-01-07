@@ -1,100 +1,102 @@
-use super::Endpoint;
+use super::HttpEndpoint;
 use crate::proxy::http::{orig_proto, settings::Settings};
 use crate::svc;
 use futures::{try_ready, Future, Poll};
-use http;
-use std::marker::PhantomData;
 use tracing::trace;
 
-#[derive(Debug)]
-pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
+#[derive(Clone, Debug)]
+pub struct Layer(());
 
-#[derive(Debug)]
-pub struct MakeSvc<M, A, B> {
+#[derive(Clone, Debug)]
+pub struct MakeSvc<M> {
     inner: M,
-    _marker: PhantomData<fn(A) -> B>,
 }
 
-pub struct MakeFuture<F, A, B> {
+pub struct MakeFuture<F> {
     can_upgrade: bool,
     inner: F,
-    _marker: PhantomData<fn(A) -> B>,
+    was_absolute: bool,
 }
 
-pub fn layer<A, B>() -> Layer<A, B> {
-    Layer(PhantomData)
+pub fn layer() -> Layer {
+    Layer(())
 }
 
-impl<A, B> Clone for Layer<A, B> {
-    fn clone(&self) -> Self {
-        Layer(PhantomData)
-    }
-}
-
-impl<M, A, B> svc::Layer<M> for Layer<A, B>
-where
-    M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
-{
-    type Service = MakeSvc<M, A, B>;
+impl<M> svc::Layer<M> for Layer {
+    type Service = MakeSvc<M>;
 
     fn layer(&self, inner: M) -> Self::Service {
-        MakeSvc {
-            inner,
-            _marker: PhantomData,
-        }
+        MakeSvc { inner }
     }
 }
 
 // === impl MakeSvc ===
 
-impl<M: Clone, A, B> Clone for MakeSvc<M, A, B> {
-    fn clone(&self) -> Self {
-        MakeSvc {
-            inner: self.inner.clone(),
-            _marker: PhantomData,
+impl<N> svc::NewService<HttpEndpoint> for MakeSvc<N>
+where
+    N: svc::NewService<HttpEndpoint>,
+{
+    type Service = svc::Either<orig_proto::Upgrade<N::Service>, N::Service>;
+
+    fn new_service(&self, mut endpoint: HttpEndpoint) -> Self::Service {
+        if !endpoint.can_use_orig_proto() {
+            trace!("Endpoint does not support transparent HTTP/2 upgrades");
+            return svc::Either::B(self.inner.new_service(endpoint));
         }
+
+        let was_absolute = endpoint.concrete.settings.was_absolute_form();
+        trace!(
+            header = %orig_proto::L5D_ORIG_PROTO,
+            %was_absolute,
+            "Endpoint supports transparent HTTP/2 upgrades",
+        );
+        endpoint.concrete.settings = Settings::Http2;
+
+        let mut upgrade = orig_proto::Upgrade::new(self.inner.new_service(endpoint));
+        upgrade.absolute_form = was_absolute;
+        svc::Either::A(upgrade)
     }
 }
 
-impl<M, A, B> svc::Service<Endpoint> for MakeSvc<M, A, B>
+impl<M> svc::Service<HttpEndpoint> for MakeSvc<M>
 where
-    M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
+    M: svc::Service<HttpEndpoint>,
 {
-    type Response = svc::Either<orig_proto::Upgrade<M::Service>, M::Service>;
-    type Error = M::MakeError;
-    type Future = MakeFuture<M::Future, A, B>;
+    type Response = svc::Either<orig_proto::Upgrade<M::Response>, M::Response>;
+    type Error = M::Error;
+    type Future = MakeFuture<M::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, mut endpoint: Endpoint) -> Self::Future {
+    fn call(&mut self, mut endpoint: HttpEndpoint) -> Self::Future {
         let can_upgrade = endpoint.can_use_orig_proto();
 
+        let was_absolute = endpoint.concrete.settings.was_absolute_form();
         if can_upgrade {
             trace!(
-                "supporting {} upgrades for endpoint={:?}",
-                orig_proto::L5D_ORIG_PROTO,
-                endpoint,
+                header = %orig_proto::L5D_ORIG_PROTO,
+                %was_absolute,
+                "Endpoint supports transparent HTTP/2 upgrades",
             );
-            endpoint.http_settings = Settings::Http2;
+            endpoint.concrete.settings = Settings::Http2;
         }
 
-        let inner = self.inner.make_service(endpoint);
+        let inner = self.inner.call(endpoint);
         MakeFuture {
             can_upgrade,
             inner,
-            _marker: PhantomData,
+            was_absolute,
         }
     }
 }
 
 // === impl MakeFuture ===
 
-impl<F, A, B> Future for MakeFuture<F, A, B>
+impl<F> Future for MakeFuture<F>
 where
     F: Future,
-    F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>,
 {
     type Item = svc::Either<orig_proto::Upgrade<F::Item>, F::Item>;
     type Error = F::Error;
@@ -103,7 +105,9 @@ where
         let inner = try_ready!(self.inner.poll());
 
         if self.can_upgrade {
-            Ok(svc::Either::A(orig_proto::Upgrade::new(inner)).into())
+            let mut upgrade = orig_proto::Upgrade::new(inner);
+            upgrade.absolute_form = self.was_absolute;
+            Ok(svc::Either::A(upgrade).into())
         } else {
             Ok(svc::Either::B(inner).into())
         }

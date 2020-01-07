@@ -1,5 +1,3 @@
-const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
-
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
@@ -9,6 +7,8 @@ use tracing_subscriber::{
     fmt::{format, Builder, Context, Formatter},
     reload, EnvFilter, FmtSubscriber,
 };
+
+const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 
 type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::LevelFilter>;
 type Subscriber = Formatter<format::NewRecorder, Format>;
@@ -181,130 +181,225 @@ where
     }
 }
 
+impl<T: GetSpan<()>> GetSpan<T> for () {
+    fn get_span(&self, t: &T) -> tracing::Span {
+        t.get_span(&())
+    }
+}
+
 impl<T> GetSpan<T> for tracing::Span {
     fn get_span(&self, _: &T) -> tracing::Span {
         self.clone()
     }
 }
 
+pub use self::layer::Layer;
+
 pub mod layer {
     use super::GetSpan;
-    use futures::{future, Future, Poll};
-    use tracing::Span;
+    use futures::{future, Async, Future, Poll};
+    use linkerd2_error::Error;
+    use linkerd2_stack::{NewService, Proxy};
+    use tracing::{info_span, trace, Span};
     use tracing_futures::{Instrument, Instrumented};
 
-    pub struct Layer<T, G: GetSpan<T>> {
+    #[derive(Clone, Debug)]
+    pub struct Layer<G> {
         get_span: G,
-        _marker: std::marker::PhantomData<fn(T)>,
     }
 
-    pub struct Make<T, G: GetSpan<T>, M: tower::Service<T>> {
+    #[derive(Clone, Debug)]
+    pub struct MakeSpan<G, M> {
         get_span: G,
         make: M,
-        _marker: std::marker::PhantomData<fn(T)>,
     }
 
-    pub struct Service<S> {
+    #[derive(Clone, Debug)]
+    pub struct SetSpan<S> {
         span: Span,
-        service: S,
+        inner: S,
     }
 
-    impl<T, G: GetSpan<T> + Clone> Layer<T, G> {
+    impl<G> Layer<G> {
         pub fn new(get_span: G) -> Self {
-            Self {
-                get_span,
-                _marker: std::marker::PhantomData,
-            }
+            Self { get_span }
         }
     }
 
-    impl<T> Default for Layer<T, Span> {
+    impl Layer<()> {
+        pub fn from_target() -> Self {
+            Self::new(())
+        }
+    }
+
+    impl Default for Layer<Span> {
         fn default() -> Self {
             Self::new(Span::current())
         }
     }
 
-    impl<T, G: GetSpan<T> + Clone> Clone for Layer<T, G> {
-        fn clone(&self) -> Self {
-            Self {
-                get_span: self.get_span.clone(),
-                _marker: std::marker::PhantomData,
-            }
-        }
-    }
-
-    impl<T, G: GetSpan<T> + Clone, M: tower::Service<T>> tower::layer::Layer<M> for Layer<T, G> {
-        type Service = Make<T, G, M>;
+    impl<G: Clone, M> tower::layer::Layer<M> for Layer<G> {
+        type Service = MakeSpan<G, M>;
 
         fn layer(&self, make: M) -> Self::Service {
             Self::Service {
                 make,
                 get_span: self.get_span.clone(),
-                _marker: std::marker::PhantomData,
             }
         }
     }
 
-    impl<T, G: GetSpan<T> + Clone, M: tower::Service<T> + Clone> Clone for Make<T, G, M> {
-        fn clone(&self) -> Self {
-            Self {
-                make: self.make.clone(),
-                get_span: self.get_span.clone(),
-                _marker: std::marker::PhantomData,
-            }
+    impl<T, G, N> NewService<T> for MakeSpan<G, N>
+    where
+        T: std::fmt::Debug,
+        G: GetSpan<T>,
+        N: NewService<T>,
+    {
+        type Service = SetSpan<N::Service>;
+
+        fn new_service(&self, target: T) -> Self::Service {
+            trace!(?target, "new_service");
+
+            let span = self.get_span.get_span(&target);
+            let inner = {
+                let _enter = span.enter();
+                self.make.new_service(target)
+            };
+
+            SetSpan { inner, span }
         }
     }
 
-    impl<T, G: GetSpan<T>, M: tower::Service<T>> tower::Service<T> for Make<T, G, M> {
-        type Response = Service<M::Response>;
-        type Error = M::Error;
-        type Future = Instrumented<future::Map<M::Future, fn(M::Response) -> Service<M::Response>>>;
+    impl<T, G, M> tower::Service<T> for MakeSpan<G, M>
+    where
+        T: std::fmt::Debug,
+        G: GetSpan<T>,
+        M: tower::Service<T>,
+        M::Error: Into<Error>,
+    {
+        type Response = SetSpan<M::Response>;
+        type Error = Error;
+        type Future = SetSpan<M::Future>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.make.poll_ready()
+            let span = info_span!("make_service");
+            let _enter = span.enter();
+
+            trace!("poll_ready");
+            match self.make.poll_ready() {
+                Err(e) => {
+                    let error = e.into();
+                    trace!(%error);
+                    Err(error)
+                }
+                Ok(ready) => {
+                    trace!(ready = ready.is_ready());
+                    Ok(ready)
+                }
+            }
         }
 
         fn call(&mut self, target: T) -> Self::Future {
-            let span = self.get_span.get_span(&target);
-            let _enter = span.enter();
+            info_span!("make_service").in_scope(|| trace!(?target, "call"));
 
-            // `span` is not passed through to avoid making `new_svc` capture...
-            let new_svc: fn(M::Response) -> Service<M::Response> = |service| Service {
-                service,
-                span: Span::current(),
+            let span = self.get_span.get_span(&target);
+            let inner = {
+                let _enter = span.enter();
+                self.make.call(target)
             };
-            self.make.call(target).map(new_svc).instrument(span.clone())
+
+            SetSpan { inner, span }
         }
     }
 
-    impl<S: Clone> Clone for Service<S> {
-        fn clone(&self) -> Self {
-            Self {
-                service: self.service.clone(),
-                span: self.span.clone(),
+    impl<F> Future for SetSpan<F>
+    where
+        F: Future,
+        F::Error: Into<Error>,
+    {
+        type Item = SetSpan<F::Item>;
+        type Error = Error;
+
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            let _enter = self.span.enter();
+            let span = info_span!("making");
+            let _enter = span.enter();
+
+            match self.inner.poll() {
+                Err(e) => {
+                    let error = e.into();
+                    trace!(%error);
+                    Err(error)
+                }
+                Ok(Async::NotReady) => {
+                    trace!(ready = false);
+                    Ok(Async::NotReady)
+                }
+                Ok(Async::Ready(inner)) => {
+                    trace!(ready = true);
+                    let svc = SetSpan {
+                        inner,
+                        span: self.span.clone(),
+                    };
+                    Ok(svc.into())
+                }
             }
         }
     }
 
-    impl<Req, S: tower::Service<Req>> tower::Service<Req> for Service<S> {
+    impl<Req, S, P> Proxy<Req, S> for SetSpan<P>
+    where
+        Req: std::fmt::Debug,
+        P: Proxy<Req, S>,
+        S: tower::Service<P::Request>,
+    {
+        type Request = P::Request;
+        type Response = P::Response;
+        type Error = P::Error;
+        type Future = Instrumented<P::Future>;
+
+        fn proxy(&self, svc: &mut S, request: Req) -> Self::Future {
+            let _enter = self.span.enter();
+            trace!(?request, "proxy");
+            self.inner.proxy(svc, request).instrument(self.span.clone())
+        }
+    }
+
+    impl<Req, S> tower::Service<Req> for SetSpan<S>
+    where
+        Req: std::fmt::Debug,
+        S: tower::Service<Req>,
+        S::Error: Into<Error>,
+    {
         type Response = S::Response;
-        type Error = S::Error;
-        type Future = Instrumented<S::Future>;
+        type Error = Error;
+        type Future = future::MapErr<Instrumented<S::Future>, fn(S::Error) -> Error>;
 
         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
             let _enter = self.span.enter();
-            self.service.poll_ready()
+
+            trace!("poll ready");
+            match self.inner.poll_ready() {
+                Err(e) => {
+                    let error = e.into();
+                    trace!(%error);
+                    Err(error)
+                }
+                Ok(ready) => {
+                    trace!(ready = ready.is_ready());
+                    Ok(ready)
+                }
+            }
         }
 
-        fn call(&mut self, req: Req) -> Self::Future {
+        fn call(&mut self, request: Req) -> Self::Future {
             let _enter = self.span.enter();
-            self.service.call(req).instrument(self.span.clone())
+
+            trace!(?request, "call");
+            self.inner
+                .call(request)
+                .instrument(self.span.clone())
+                .map_err(Into::into)
         }
     }
-}
-
-pub use self::layer::Layer;
-
-pub fn layer<T, G: GetSpan<T> + Clone>(get_span: G) -> Layer<T, G> {
-    Layer::new(get_span)
 }

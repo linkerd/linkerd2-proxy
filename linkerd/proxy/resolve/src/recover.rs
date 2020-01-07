@@ -242,6 +242,7 @@ where
                 // backoff in case this connection attempt fails.
                 State::Disconnected { ref mut backoff } => {
                     tracing::trace!("connecting");
+                    try_ready!(self.resolve.poll_ready().map_err(Into::into));
                     let future = self.resolve.resolve(self.target.clone());
                     State::Connecting {
                         future,
@@ -297,7 +298,7 @@ where
                     ref mut backoff,
                 } => {
                     let err = error.take().expect("illegal state");
-                    tracing::debug!(message = %err);
+                    tracing::debug!(%err, "recovering");
                     let new_backoff = self.recover.recover(err)?;
                     State::Backoff(backoff.take().or(Some(new_backoff)))
                 }

@@ -1,4 +1,4 @@
-use futures::{future, try_ready, Future, Poll};
+use futures::{try_ready, Future, Poll};
 use linkerd2_error::Error;
 
 pub type Data = hyper::body::Chunk;
@@ -20,23 +20,9 @@ pub struct Layer<A, B> {
     _marker: std::marker::PhantomData<fn(A) -> B>,
 }
 
-pub struct Make<M, A, B> {
-    inner: M,
-    _marker: std::marker::PhantomData<fn(A) -> B>,
-}
-
 impl<A, B> Clone for Layer<A, B> {
     fn clone(&self) -> Self {
         Self {
-            _marker: self._marker,
-        }
-    }
-}
-
-impl<M: Clone, A, B> Clone for Make<M, A, B> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
             _marker: self._marker,
         }
     }
@@ -54,36 +40,18 @@ where
     }
 }
 
-impl<M, A, B> tower::layer::Layer<M> for Layer<A, B> {
-    type Service = Make<M, A, B>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        Self::Service {
-            inner,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T, M, A, B> tower::Service<T> for Make<M, A, B>
+impl<S, A, B> tower::layer::Layer<S> for Layer<A, B>
 where
     A: 'static,
-    M: tower::MakeService<T, http::Request<A>, Response = http::Response<B>>,
-    M::Error: Into<Error> + 'static,
-    M::Service: Send + 'static,
-    <M::Service as tower::Service<http::Request<A>>>::Future: Send + 'static,
+    S: tower::Service<http::Request<A>, Response = http::Response<B>> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Error> + 'static,
     B: hyper::body::Payload<Data = Data, Error = Error> + 'static,
 {
-    type Response = BoxedService<A>;
-    type Error = M::MakeError;
-    type Future = future::Map<M::Future, fn(M::Service) -> BoxedService<A>>;
+    type Service = BoxedService<A>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        self.inner.make_service(target).map(BoxedService::new)
+    fn layer(&self, inner: S) -> Self::Service {
+        BoxedService::new(inner)
     }
 }
 

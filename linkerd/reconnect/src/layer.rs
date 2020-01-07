@@ -1,6 +1,6 @@
 use super::Service;
 use futures::{future, Poll};
-use linkerd2_error::{Error, Never, Recover};
+use linkerd2_error::{Error, Recover};
 
 #[derive(Clone, Debug)]
 pub struct Layer<R: Recover> {
@@ -45,15 +45,17 @@ where
     M::Error: Into<Error>,
 {
     type Response = Service<T, R, M>;
-    type Error = Never;
+    type Error = M::Error;
     type Future = future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+        self.make_service.poll_ready()
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        future::ok(Service::new(
+        let future = self.make_service.call(target.clone());
+        future::ok(Service::pending(
+            future,
             target,
             self.make_service.clone(),
             self.recover.clone(),

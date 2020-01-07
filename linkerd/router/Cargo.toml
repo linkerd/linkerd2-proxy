@@ -9,7 +9,7 @@ publish = false
 futures = "0.1"
 indexmap = "1.0.0"
 linkerd2-error = { path = "../error" }
-tower-load-shed = "0.1"
+linkerd2-stack = { path = "../stack" }
 tokio = "0.1.20"
 tokio-sync = "0.1.6"
 tokio-timer = "0.2.4"

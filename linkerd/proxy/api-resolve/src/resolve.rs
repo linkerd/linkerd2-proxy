@@ -5,7 +5,7 @@ use crate::pb;
 use futures::{future, try_ready, Future, Poll, Stream};
 use tower::Service;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tracing::{debug, trace};
+use tracing::trace;
 
 #[derive(Clone)]
 pub struct Resolve<S> {
@@ -82,7 +82,7 @@ where
                 context_token: self.context_token.clone(),
             }))
             .map(|rsp| {
-                debug!(metadata = ?rsp.metadata());
+                trace!(metadata = ?rsp.metadata());
                 Resolution {
                     inner: rsp.into_inner(),
                 }

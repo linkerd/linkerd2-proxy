@@ -9,9 +9,9 @@ use crate::{
             upgrade, Version as HttpVersion,
         },
     },
-    svc::{MakeService, Service, ServiceExt},
+    svc::{NewService, Service, ServiceExt},
     transport::{self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls},
-    Error, Never,
+    Error,
 };
 use futures::{future::Either, Future, Poll};
 use http;
@@ -77,16 +77,8 @@ impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
 ///    can route HTTP  requests for the `tls::accept::Meta`.
 pub struct Server<L, F, H, B>
 where
-    // Used when forwarding a TCP stream (e.g. with telemetry, timeouts).
-    L: TransportLabels<Protocol, Labels = TransportKey>,
-    // Prepares a route for each accepted HTTP connection.
-    H: MakeService<
-            tls::accept::Meta,
-            http::Request<HttpBody>,
-            Response = http::Response<B>,
-            MakeError = Never,
-        > + Clone,
-    B: hyper::body::Payload,
+    H: NewService<tls::accept::Meta>,
+    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
 {
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
@@ -100,13 +92,8 @@ where
 impl<L, F, H, B> Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey>,
-    H: MakeService<
-            tls::accept::Meta,
-            http::Request<HttpBody>,
-            Response = http::Response<B>,
-            MakeError = Never,
-        > + Clone,
-    B: hyper::body::Payload,
+    H: NewService<tls::accept::Meta>,
+    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
     Self: Accept<Connection>,
 {
     /// Creates a new `Server`.
@@ -139,17 +126,10 @@ where
     L: TransportLabels<Protocol, Labels = TransportKey>,
     F: Accept<(tls::accept::Meta, transport::metrics::Io<BoxedIo>)> + Clone + Send + 'static,
     F::Future: Send + 'static,
-    H: MakeService<
-            tls::accept::Meta,
-            http::Request<HttpBody>,
-            Response = http::Response<B>,
-            MakeError = Never,
-        > + Clone
+    H: NewService<tls::accept::Meta> + Send + 'static,
+    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>, Error = Error>
         + Send
         + 'static,
-    H::Error: Into<Error> + Send + 'static,
-    H::Service: Send + 'static,
-    H::Future: Send + 'static,
     <H::Service as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
 {
@@ -188,21 +168,18 @@ where
             }
         };
 
-        let make_http = self
-            .make_http
-            .make_service(proto.tls)
-            .map_err(|never| match never {});
+        let http_svc = self.make_http.new_service(proto.tls);
 
-        let http = self.http.clone();
+        let builder = self.http.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
-        Box::new(make_http.and_then(move |http_svc| match http_version {
+        Box::new(match http_version {
             HttpVersion::Http1 => {
                 // Enable support for HTTP upgrades (CONNECT and websockets).
                 let svc = upgrade::Service::new(http_svc, drain.clone());
                 let exec =
                     tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
-                let conn = http
+                let conn = builder
                     .with_executor(exec)
                     .http1_only(true)
                     .serve_connection(io, HyperServerSvc::new(svc))
@@ -217,7 +194,7 @@ where
 
             HttpVersion::H2 => {
                 let exec = tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
-                let conn = http
+                let conn = builder
                     .with_executor(exec)
                     .http2_only(true)
                     .http2_initial_stream_window_size(initial_stream_window_size)
@@ -230,7 +207,7 @@ where
                         .map_err(Into::into),
                 )
             }
-        }))
+        })
     }
 }
 
@@ -238,12 +215,8 @@ impl<L, F, H, B> Clone for Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey> + Clone,
     F: Clone,
-    H: MakeService<
-            tls::accept::Meta,
-            http::Request<HttpBody>,
-            Response = http::Response<B>,
-            MakeError = Never,
-        > + Clone,
+    H: NewService<tls::accept::Meta> + Clone,
+    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
     B: hyper::body::Payload,
 {
     fn clone(&self) -> Self {

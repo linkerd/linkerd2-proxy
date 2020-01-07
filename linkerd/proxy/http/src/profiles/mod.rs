@@ -1,9 +1,9 @@
 use super::retry::Budget;
-use futures::Stream;
+use futures::{Future, Poll};
 use http;
 use indexmap::IndexMap;
-use linkerd2_addr::NameAddr;
-use linkerd2_error::Never;
+use linkerd2_addr::{Addr, NameAddr};
+use linkerd2_error::Error;
 use regex::Regex;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -11,20 +11,13 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::watch;
 
-pub mod recognize;
-/// A stack module that produces a Service that routes requests through alternate
-/// middleware configurations
-///
-/// As the router's Stack is built, a destination is extracted from the stack's
-/// target and it is used to get route profiles from ` GetRoutes` implementation.
-///
-/// Each route uses a shared underlying concrete dst router.  The concrete dst
-/// router picks a concrete dst (NameAddr) from the profile's `dst_overrides` if
-/// they exist, or uses the router's target's addr if no `dst_overrides` exist.
-/// The concrete dst router uses the concrete dst as the target for the
-/// underlying stack.
-pub mod router;
+mod concrete;
+mod requests;
+pub mod service;
+
+pub use self::service::Layer;
 
 #[derive(Clone, Debug)]
 pub struct WeightedAddr {
@@ -38,33 +31,57 @@ pub struct Routes {
     pub dst_overrides: Vec<WeightedAddr>,
 }
 
+pub type Receiver = watch::Receiver<Routes>;
+pub type Sender = watch::Sender<Routes>;
+
 /// Watches a destination's Routes.
 ///
 /// The stream updates with all routes for the given destination. The stream
 /// never ends and cannot fail.
-pub trait GetRoutes {
-    type Stream: Stream<Item = Routes, Error = Never>;
+pub trait GetRoutes<T> {
+    type Error: Into<Error>;
+    type Future: Future<Item = Option<Receiver>, Error = Self::Error>;
 
-    fn get_routes(&self, dst: &NameAddr) -> Option<Self::Stream>;
+    fn poll_ready(&mut self) -> Poll<(), Self::Error>;
+
+    fn get_routes(&mut self, target: T) -> Self::Future;
+}
+
+impl<T, S> GetRoutes<T> for S
+where
+    T: HasDestination,
+    S: tower::Service<Addr, Response = Option<watch::Receiver<Routes>>>,
+    S::Error: Into<Error>,
+{
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        tower::Service::poll_ready(self)
+    }
+
+    fn get_routes(&mut self, target: T) -> Self::Future {
+        tower::Service::call(self, target.destination())
+    }
 }
 
 /// Implemented by target types that may be combined with a Route.
 pub trait WithRoute {
-    type Output;
+    type Route;
 
-    fn with_route(self, route: Route) -> Self::Output;
+    fn with_route(self, route: Route) -> Self::Route;
 }
 
 /// Implemented by target types that can have their `NameAddr` destination
 /// changed.
-pub trait WithAddr {
-    fn with_addr(self, addr: NameAddr) -> Self;
+pub trait OverrideDestination {
+    fn dst_mut(&mut self) -> &mut Addr;
 }
 
 /// Implemented by target types that may have a `NameAddr` destination that
 /// can be discovered via `GetRoutes`.
-pub trait CanGetDestination {
-    fn get_destination(&self) -> Option<&NameAddr>;
+pub trait HasDestination {
+    fn destination(&self) -> Addr;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]

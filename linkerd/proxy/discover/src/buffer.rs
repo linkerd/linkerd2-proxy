@@ -124,9 +124,6 @@ where
                 Ok(Async::Ready(n)) => match n {},
             }
 
-            // The watchdog bounds the amount of time that the send buffer stays
-            // full. This is designed to release the `discover` resources, i.e.
-            // if we expect that the receiver has leaked.
             match self.tx.poll_ready() {
                 Ok(Async::Ready(())) => {
                     self.watchdog = None;
@@ -141,10 +138,7 @@ where
                         .take()
                         .unwrap_or_else(|| Delay::new(Instant::now() + self.watchdog_timeout));
                     if watchdog.poll().expect("timer must not fail").is_ready() {
-                        tracing::warn!(
-                            timeout = ?self.watchdog_timeout,
-                            "dropping resolution due to watchdog",
-                        );
+                        tracing::warn!(timeout = ?self.watchdog_timeout, "dropping resolution due to watchdog timeout");
                         return Err(());
                     }
                     self.watchdog = Some(watchdog);

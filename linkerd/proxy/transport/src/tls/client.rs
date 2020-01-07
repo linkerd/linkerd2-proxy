@@ -34,8 +34,13 @@ pub enum ConnectFuture<L, F: Future> {
 
 // === impl Layer ===
 
-pub fn layer<L: HasConfig + Clone>(l: super::Conditional<L>) -> Layer<L> {
-    Layer(l)
+impl<L> Layer<L>
+where
+    L: HasConfig + Clone,
+{
+    pub fn new(l: super::Conditional<L>) -> Layer<L> {
+        Layer(l)
+    }
 }
 
 impl<L, C> tower::layer::Layer<C> for Layer<L>
@@ -55,11 +60,11 @@ where
 // === impl Connect ===
 
 /// impl MakeConnection
-impl<L, C, Target> tower::Service<Target> for Connect<L, C>
+impl<L, C, T> tower::Service<T> for Connect<L, C>
 where
-    Target: super::HasPeerIdentity,
+    T: super::HasPeerIdentity,
     L: HasConfig + Clone,
-    C: tower::MakeConnection<Target, Connection = TcpStream>,
+    C: tower::MakeConnection<T, Connection = TcpStream>,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,
     C::Error: From<io::Error>,
@@ -72,7 +77,7 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, target: Target) -> Self::Future {
+    fn call(&mut self, target: T) -> Self::Future {
         let peer_identity = target.peer_identity();
         let tls = self
             .local

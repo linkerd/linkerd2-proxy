@@ -17,14 +17,14 @@ pub struct ControlLabels {
 pub struct EndpointLabels {
     pub direction: Direction,
     pub tls_id: Conditional<TlsId, tls::ReasonForNoIdentity>,
-    pub dst_logical: Option<NameAddr>,
     pub dst_concrete: Option<NameAddr>,
     pub labels: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RouteLabels {
-    dst: dst::DstAddr,
+    direction: Direction,
+    target: Addr,
     labels: Option<String>,
 }
 
@@ -67,8 +67,9 @@ impl FmtLabels for ControlLabels {
 
 impl From<dst::Route> for RouteLabels {
     fn from(r: dst::Route) -> Self {
-        RouteLabels {
-            dst: r.dst_addr,
+        Self {
+            target: r.target,
+            direction: r.direction,
             labels: prefix_labels("rt", r.route.labels().as_ref().into_iter()),
         }
     }
@@ -76,7 +77,8 @@ impl From<dst::Route> for RouteLabels {
 
 impl FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.dst.fmt_labels(f)?;
+        self.direction.fmt_labels(f)?;
+        write!(f, ",dst=\"{}\"", self.target)?;
 
         if let Some(labels) = self.labels.as_ref() {
             write!(f, ",{}", labels)?;
@@ -90,7 +92,7 @@ impl FmtLabels for RouteLabels {
 
 impl FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let authority = self.dst_logical.as_ref().map(Authority);
+        let authority = self.dst_concrete.as_ref().map(Authority);
         (authority, &self.direction).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
@@ -125,17 +127,6 @@ impl<'a> FmtLabels for Authority<'a> {
         } else {
             write!(f, "authority=\"{}\"", self.0)
         }
-    }
-}
-
-impl FmtLabels for dst::DstAddr {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.direction() {
-            dst::Direction::In => Direction::In.fmt_labels(f)?,
-            dst::Direction::Out => Direction::Out.fmt_labels(f)?,
-        }
-
-        write!(f, ",dst=\"{}\"", self.as_ref())
     }
 }
 

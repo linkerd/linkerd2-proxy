@@ -11,10 +11,11 @@ fn outbound_http1() {
     let _ = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run();
-    let ctrl = controller::new()
-        .destination_and_close("transparency.test.svc.cluster.local", srv.addr)
-        .run();
-    let proxy = proxy::new().controller(ctrl).outbound(srv).run();
+    let ctrl = controller::new();
+    ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+    ctrl.destination_tx("transparency.test.svc.cluster.local")
+        .send_addr(srv.addr);
+    let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
     let client = client::http1(proxy.outbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/"), "hello h1");
@@ -25,7 +26,12 @@ fn inbound_http1() {
     let _ = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run();
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+    let ctrl = controller::new();
+    ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+    let proxy = proxy::new()
+        .controller(ctrl.run())
+        .inbound_fuzz_addr(srv)
+        .run();
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/"), "hello h1");
@@ -196,7 +202,6 @@ fn tcp_connections_close_if_client_closes() {
             tokio_io::io::read(sock, vec![0; 1024])
                 .and_then(move |(sock, vec, n)| {
                     assert_eq!(&vec[..n], msg1.as_bytes());
-
                     tokio_io::io::write_all(sock, msg2.as_bytes())
                 })
                 .and_then(|(sock, _)| {
@@ -890,7 +895,11 @@ macro_rules! http1_tests {
 mod one_proxy {
     use linkerd2_app_integration::*;
 
-    http1_tests! { proxy: |srv| proxy::new().inbound(srv).run() }
+    http1_tests! { proxy: |srv| {
+        let ctrl = controller::new();
+        ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+        proxy::new().inbound(srv).controller(ctrl.run()).run()
+    }}
 }
 
 mod proxy_to_proxy {
@@ -906,9 +915,12 @@ mod proxy_to_proxy {
     }
 
     http1_tests! { proxy: |srv| {
-        let inbound = proxy::new().inbound(srv).run();
+        let ctrl = controller::new();
+        ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+        let inbound = proxy::new().controller(ctrl.run()).inbound(srv).run();
 
         let ctrl = controller::new();
+        ctrl.profile_tx_default("transparency.test.svc.cluster.local");
         let dst = ctrl.destination_tx("transparency.test.svc.cluster.local");
         dst.send_h2_hinted(inbound.inbound);
 
@@ -1150,16 +1162,21 @@ mod max_in_flight {
             Dir::Out => app::env::ENV_OUTBOUND_MAX_IN_FLIGHT,
         };
         env.put(prop, "1".into());
+        let ctrl = controller::new();
+        ctrl.profile_tx_default(host);
         let proxy = match dir {
-            Dir::In => proxy::new().inbound(srv),
+            Dir::In => proxy::new()
+                .inbound(srv)
+                .controller(ctrl.run())
+                .run_with_test_env(env),
             Dir::Out => {
-                let ctrl = controller::new()
-                    .destination_and_close(host, srv.addr)
-                    .run();
-                proxy::new().outbound(srv).controller(ctrl)
+                ctrl.destination_tx(host).send_addr(srv.addr);
+                proxy::new()
+                    .outbound(srv)
+                    .controller(ctrl.run())
+                    .run_with_test_env(env)
             }
-        }
-        .run_with_test_env(env);
+        };
 
         let dst = match dir {
             Dir::In => proxy.inbound,

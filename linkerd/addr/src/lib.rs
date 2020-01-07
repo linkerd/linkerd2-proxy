@@ -74,10 +74,14 @@ impl Addr {
         }
     }
 
-    pub fn as_authority(&self) -> http::uri::Authority {
+    pub fn to_http_authority(&self) -> http::uri::Authority {
         match self {
-            Addr::Name(n) => n.as_authority(),
-            Addr::Socket(a) => http::uri::Authority::from_str(&format!("{}", a))
+            Addr::Name(n) => n.as_http_authority(),
+            Addr::Socket(ref a) if a.port() == 80 => {
+                http::uri::Authority::from_str(&a.ip().to_string())
+                    .expect("SocketAddr must be valid authority")
+            }
+            Addr::Socket(a) => http::uri::Authority::from_str(&a.to_string())
                 .expect("SocketAddr must be valid authority"),
         }
     }
@@ -110,6 +114,12 @@ impl fmt::Display for Addr {
             Addr::Name(name) => name.fmt(f),
             Addr::Socket(addr) => addr.fmt(f),
         }
+    }
+}
+
+impl From<SocketAddr> for Addr {
+    fn from(sa: SocketAddr) -> Self {
+        Addr::Socket(sa)
     }
 }
 
@@ -175,9 +185,14 @@ impl NameAddr {
         self.name.is_localhost()
     }
 
-    pub fn as_authority(&self) -> http::uri::Authority {
-        http::uri::Authority::from_str(&format!("{}", self))
-            .expect("NameAddr must be valid authority")
+    pub fn as_http_authority(&self) -> http::uri::Authority {
+        if self.port == 80 {
+            http::uri::Authority::from_str(self.name.as_ref())
+                .expect("NameAddr must be valid authority")
+        } else {
+            http::uri::Authority::from_str(&self.to_string())
+                .expect("NameAddr must be valid authority")
+        }
     }
 }
 
