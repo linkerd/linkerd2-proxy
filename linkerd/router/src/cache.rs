@@ -132,8 +132,8 @@ mod tests {
     use super::*;
     use crate::Purge;
     use futures::{future, Async, Future};
-    use tokio::runtime::current_thread::{self, Runtime};
     use tokio::sync::lock::Lock;
+    use tokio_compat::runtime::current_thread::{self, Runtime};
 
     #[test]
     fn check_capacity_and_insert() {

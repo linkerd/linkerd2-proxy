@@ -49,3 +49,4 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names-0.21" }
+tokio-compat = { git = "https://github.com/tokio-rs/tokio-compat", branch = "eliza/futures-executor" }

@@ -529,7 +529,7 @@ mod tests {
     #[test]
     fn cache_limited_by_capacity() {
         use futures::future;
-        use tokio::runtime::current_thread;
+        use tokio_compat::runtime::current_thread;
 
         current_thread::run(future::lazy(|| {
             let (mut router, _cache_bg) =

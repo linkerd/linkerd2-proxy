@@ -629,6 +629,7 @@ dependencies = [
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-compat 0.1.2 (git+https://github.com/tokio-rs/tokio-compat?branch=eliza/futures-executor)",
  "tokio-timer 0.2.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-balance 0.1.0 (git+https://github.com/tower-rs/tower)",
@@ -680,7 +681,7 @@ dependencies = [
  "ring 0.16.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls 0.16.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio-compat 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-compat 0.1.2 (git+https://github.com/tokio-rs/tokio-compat?branch=eliza/futures-executor)",
  "tokio-connect 0.1.0 (git+https://github.com/carllerche/tokio-connect)",
  "tokio-current-thread 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-io 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -831,7 +832,7 @@ dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-app 0.1.0",
  "linkerd2-signal 0.1.0",
- "tokio-compat 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-compat 0.1.2 (git+https://github.com/tokio-rs/tokio-compat?branch=eliza/futures-executor)",
  "tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1068,6 +1069,7 @@ dependencies = [
  "indexmap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "linkerd2-error 0.1.0",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-compat 0.1.2 (git+https://github.com/tokio-rs/tokio-compat?branch=eliza/futures-executor)",
  "tokio-sync 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-timer 0.2.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1101,6 +1103,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-compat 0.1.2 (git+https://github.com/tokio-rs/tokio-compat?branch=eliza/futures-executor)",
 ]
 
 [[package]]
@@ -1956,7 +1959,7 @@ dependencies = [
 [[package]]
 name = "tokio-compat"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/tokio-rs/tokio-compat?branch=eliza/futures-executor#80b181ab519ef9d2b4ddbc139e6a53d6ca8ad3a2"
 dependencies = [
  "futures 0.1.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-core 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2874,7 +2877,7 @@ dependencies = [
 "checksum tokio 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "0e1bef565a52394086ecac0a6fa3b8ace4cb3a138ee1d96bd2b93283b56824e3"
 "checksum tokio-buf 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "473a45a40e558d6d80e9f60e3d934c32488045def2745488a257e472941e9bce"
 "checksum tokio-codec 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "5c501eceaf96f0e1793cf26beb63da3d11c738c4a943fdf3746d81d64684c39f"
-"checksum tokio-compat 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "70e246ae8387abbacd2ab552072312a00a4d97c683ec29bb7e645597efb0148d"
+"checksum tokio-compat 0.1.2 (git+https://github.com/tokio-rs/tokio-compat?branch=eliza/futures-executor)" = "<none>"
 "checksum tokio-connect 0.1.0 (git+https://github.com/carllerche/tokio-connect)" = "<none>"
 "checksum tokio-current-thread 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "d16217cad7f1b840c5a97dfb3c43b0c871fef423a6e8d2118c604e843662a443"
 "checksum tokio-executor 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)" = "ca6df436c42b0c3330a82d855d2ef017cd793090ad550a6bc2184f4b933532ab"

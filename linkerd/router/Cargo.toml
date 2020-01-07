@@ -16,3 +16,6 @@ tokio-timer = "0.2.4"
 tower = "0.1"
 tracing = "0.1.2"
 tracing-futures = "0.1"
+
+[dev-dependencies]
+tokio-compat = "0.1"
