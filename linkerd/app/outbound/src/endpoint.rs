@@ -4,13 +4,13 @@ use linkerd2_app_core::{
     metric_labels::{prefix_labels, EndpointLabels},
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::{identity_from_header, settings},
+        http::{self, identity_from_header},
         identity,
         resolve::map_endpoint::MapEndpoint,
         tap,
     },
     transport::{connect, tls},
-    Conditional, NameAddr, L5D_REQUIRE_ID,
+    Addr, Conditional, NameAddr, L5D_REQUIRE_ID,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ pub struct Endpoint {
     pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
-    pub http_settings: settings::Settings,
+    pub http_settings: http::Settings,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -36,13 +36,13 @@ impl Endpoint {
         }
 
         match self.http_settings {
-            settings::Settings::Http2 => false,
-            settings::Settings::Http1 {
+            http::Settings::Http2 => false,
+            http::Settings::Http1 {
                 keep_alive: _,
                 wants_h1_upgrade,
                 was_absolute_form: _,
             } => !wants_h1_upgrade,
-            settings::Settings::NotHttp => {
+            http::Settings::NotHttp => {
                 unreachable!(
                     "Endpoint::can_use_orig_proto called when NotHttp: {:?}",
                     self,
@@ -58,7 +58,7 @@ impl Endpoint {
             .addrs
             .target_addr_if_not_local()?;
 
-        let http_settings = settings::Settings::from_request(req);
+        let http_settings = http::Settings::from_request(req);
         let identity = match identity_from_header(req, L5D_REQUIRE_ID) {
             Some(require_id) => Conditional::Some(require_id),
             None => {
@@ -85,7 +85,7 @@ impl From<SocketAddr> for Endpoint {
             dst_concrete: None,
             identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
             metadata: Metadata::empty(),
-            http_settings: settings::Settings::NotHttp,
+            http_settings: http::Settings::NotHttp,
         }
     }
 }
@@ -119,8 +119,26 @@ impl connect::HasPeerAddr for Endpoint {
     }
 }
 
-impl settings::HasSettings for Endpoint {
-    fn http_settings(&self) -> &settings::Settings {
+impl http::normalize_uri::ShouldNormalizeUri for Endpoint {
+    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
+        if let http::Settings::Http1 {
+            was_absolute_form: false,
+            ..
+        } = self.http_settings
+        {
+            return Some(
+                self.dst_logical
+                    .as_ref()
+                    .map(|dst| dst.as_http_authority())
+                    .unwrap_or_else(|| Addr::from(self.addr).to_http_authority()),
+            );
+        }
+        None
+    }
+}
+
+impl http::settings::HasSettings for Endpoint {
+    fn http_settings(&self) -> &http::Settings {
         &self.http_settings
     }
 }

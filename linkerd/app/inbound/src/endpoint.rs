@@ -1,13 +1,12 @@
-use http;
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify,
     dst::{DstAddr, Route},
     metric_labels::EndpointLabels,
-    proxy::{http::settings, identity, tap},
+    proxy::{http, identity, tap},
     router,
     transport::{connect, tls},
-    Conditional, NameAddr,
+    Addr, Conditional, NameAddr,
 };
 use std::fmt;
 use std::net::SocketAddr;
@@ -18,7 +17,7 @@ use tracing::debug;
 pub struct Endpoint {
     pub addr: SocketAddr,
     pub dst_name: Option<NameAddr>,
-    pub http_settings: settings::Settings,
+    pub http_settings: http::Settings,
     pub tls_client_id: tls::PeerIdentity,
 }
 
@@ -34,7 +33,7 @@ impl From<SocketAddr> for Endpoint {
         Self {
             addr,
             dst_name: None,
-            http_settings: settings::Settings::NotHttp,
+            http_settings: http::Settings::NotHttp,
             tls_client_id: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
         }
     }
@@ -52,8 +51,26 @@ impl tls::HasPeerIdentity for Endpoint {
     }
 }
 
-impl settings::HasSettings for Endpoint {
-    fn http_settings(&self) -> &settings::Settings {
+impl http::normalize_uri::ShouldNormalizeUri for Endpoint {
+    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
+        if let http::Settings::Http1 {
+            was_absolute_form: false,
+            ..
+        } = self.http_settings
+        {
+            return Some(
+                self.dst_name
+                    .as_ref()
+                    .map(|dst| dst.as_http_authority())
+                    .unwrap_or_else(|| Addr::from(self.addr).to_http_authority()),
+            );
+        }
+        None
+    }
+}
+
+impl http::settings::HasSettings for Endpoint {
+    fn http_settings(&self) -> &http::Settings {
         &self.http_settings
     }
 }

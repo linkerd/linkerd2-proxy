@@ -88,7 +88,7 @@ pub mod add_origin {
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
-            let authority = target.addr.as_authority();
+            let authority = target.addr.to_http_authority();
             let inner = self.inner.call(target);
             MakeFuture {
                 inner,
