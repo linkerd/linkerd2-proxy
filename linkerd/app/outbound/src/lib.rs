@@ -165,6 +165,8 @@ impl<A: OrigDstAddr> Config<A> {
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
                 }))
+                // Used by tap.
+                .push_http_insert_target()
                 .push(http_endpoint_observability.clone())
                 .push(http_endpoint_identity_headers.clone())
                 // Ensures that the request's URI is in the proper form.

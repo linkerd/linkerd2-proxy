@@ -223,6 +223,8 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(trace::Layer::from_target())
                 .push(router::Layer::new(RequestTarget::from))
                 .check_new_service::<tls::accept::Meta>()
+                // Used by tap.
+                .push_http_insert_target()
                 .push_per_service(http_strip_headers)
                 .push_per_service(http_admit_request)
                 .push_per_service(http_server_observability)
