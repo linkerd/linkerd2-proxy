@@ -165,8 +165,6 @@ impl<A: OrigDstAddr> Config<A> {
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
                 }))
-                // Used by tap.
-                .push_http_insert_target()
                 .push(http_endpoint_observability.clone())
                 .push(http_endpoint_identity_headers.clone())
                 // Ensures that the request's URI is in the proper form.
@@ -341,6 +339,8 @@ impl<A: OrigDstAddr> Config<A> {
                 .push_make_ready()
                 .push_timeout(service_acquisition_timeout)
                 .push(router::Layer::new(LogicalOrFallbackTarget::from))
+                // Used by tap.
+                .push_http_insert_target()
                 .push_per_service(http_admit_request)
                 .push_trace(
                     |src: &tls::accept::Meta| {
