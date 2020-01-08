@@ -44,13 +44,13 @@ where
             return svc::Either::B(self.inner.new_service(endpoint));
         }
 
-        let was_absolute = endpoint.concrete.settings.was_absolute_form();
+        let was_absolute = endpoint.concrete.logical.settings.was_absolute_form();
         trace!(
             header = %orig_proto::L5D_ORIG_PROTO,
             %was_absolute,
             "Endpoint supports transparent HTTP/2 upgrades",
         );
-        endpoint.concrete.settings = Settings::Http2;
+        endpoint.concrete.logical.settings = Settings::Http2;
 
         let mut upgrade = orig_proto::Upgrade::new(self.inner.new_service(endpoint));
         upgrade.absolute_form = was_absolute;
@@ -73,14 +73,14 @@ where
     fn call(&mut self, mut endpoint: HttpEndpoint) -> Self::Future {
         let can_upgrade = endpoint.can_use_orig_proto();
 
-        let was_absolute = endpoint.concrete.settings.was_absolute_form();
+        let was_absolute = endpoint.concrete.logical.settings.was_absolute_form();
         if can_upgrade {
             trace!(
                 header = %orig_proto::L5D_ORIG_PROTO,
                 %was_absolute,
                 "Endpoint supports transparent HTTP/2 upgrades",
             );
-            endpoint.concrete.settings = Settings::Http2;
+            endpoint.concrete.logical.settings = Settings::Http2;
         }
 
         let inner = self.inner.call(endpoint);

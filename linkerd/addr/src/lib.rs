@@ -187,7 +187,7 @@ impl NameAddr {
 
     pub fn as_http_authority(&self) -> http::uri::Authority {
         if self.port == 80 {
-            http::uri::Authority::from_str(self.name.as_ref())
+            http::uri::Authority::from_str(self.name.without_trailing_dot())
                 .expect("NameAddr must be valid authority")
         } else {
             http::uri::Authority::from_str(&self.to_string())

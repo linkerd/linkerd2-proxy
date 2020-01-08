@@ -1,6 +1,6 @@
 use crate::proxy::identity;
 use crate::transport::{labels::TlsStatus, tls};
-use linkerd2_addr::{Addr, NameAddr};
+use linkerd2_addr::Addr;
 use linkerd2_conditional::Conditional;
 use linkerd2_metrics::FmtLabels;
 use std::fmt::{self, Write};
@@ -17,7 +17,7 @@ pub struct ControlLabels {
 pub struct EndpointLabels {
     pub direction: Direction,
     pub tls_id: Conditional<TlsId, tls::ReasonForNoIdentity>,
-    pub dst_concrete: Option<NameAddr>,
+    pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
 }
 
@@ -41,7 +41,7 @@ pub enum TlsId {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Authority<'a>(&'a NameAddr);
+struct Authority<'a>(&'a http::uri::Authority);
 
 // === impl CtlLabels ===
 
@@ -92,7 +92,7 @@ impl FmtLabels for RouteLabels {
 
 impl FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let authority = self.dst_concrete.as_ref().map(Authority);
+        let authority = self.authority.as_ref().map(Authority);
         (authority, &self.direction).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
@@ -122,11 +122,7 @@ impl FmtLabels for Direction {
 
 impl<'a> FmtLabels for Authority<'a> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.0.port() == 80 {
-            write!(f, "authority=\"{}\"", self.0.name().without_trailing_dot())
-        } else {
-            write!(f, "authority=\"{}\"", self.0)
-        }
+        write!(f, "authority=\"{}\"", self.0)
     }
 }
 

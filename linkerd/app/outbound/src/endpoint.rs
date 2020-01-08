@@ -37,7 +37,9 @@ pub struct ProfileTarget;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concrete {
     pub dst: Addr,
-    pub settings: http::Settings,
+    // Concrete endpoints may not be shared across logical endpoints, since the
+    // logical authority is used when registering metrics, etc.
+    pub logical: Logical,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -62,7 +64,7 @@ impl HttpEndpoint {
             return false;
         }
 
-        match self.concrete.settings {
+        match self.concrete.logical.settings {
             http::Settings::Http2 => false,
             http::Settings::Http1 {
                 keep_alive: _,
@@ -102,7 +104,7 @@ impl connect::ConnectAddr for HttpEndpoint {
 
 impl http::settings::HasSettings for HttpEndpoint {
     fn http_settings(&self) -> &http::Settings {
-        &self.concrete.settings
+        &self.concrete.logical.settings
     }
 }
 
@@ -111,7 +113,7 @@ impl http::normalize_uri::ShouldNormalizeUri for HttpEndpoint {
         if let http::Settings::Http1 {
             was_absolute_form: false,
             ..
-        } = self.concrete.settings
+        } = self.concrete.logical.settings
         {
             return Some(self.concrete.dst.to_http_authority());
         }
@@ -189,7 +191,7 @@ impl Into<EndpointLabels> for HttpEndpoint {
     fn into(self) -> EndpointLabels {
         use linkerd2_app_core::metric_labels::{Direction, TlsId};
         EndpointLabels {
-            dst_concrete: self.concrete.dst.name_addr().cloned(),
+            authority: Some(self.concrete.logical.dst.to_http_authority()),
             direction: Direction::Out,
             tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
             labels: prefix_labels("dst", self.metadata.labels().into_iter()),
@@ -226,7 +228,7 @@ impl Into<EndpointLabels> for TcpEndpoint {
         EndpointLabels {
             direction: Direction::Out,
             tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
-            dst_concrete: None,
+            authority: None,
             labels: None,
         }
     }
@@ -343,7 +345,7 @@ impl From<Logical> for Concrete {
     fn from(logical: Logical) -> Self {
         Concrete {
             dst: logical.dst.clone(),
-            settings: logical.settings,
+            logical,
         }
     }
 }
