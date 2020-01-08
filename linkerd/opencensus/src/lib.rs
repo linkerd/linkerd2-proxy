@@ -180,10 +180,9 @@ where
                     ref mut metrics,
                     ..
                 } => {
-                    let mut sender = sender.clone();
                     match Self::poll_send_spans(
                         &mut self.spans,
-                        &mut sender,
+                        sender,
                         node,
                         self.max_batch_size,
                         metrics,
