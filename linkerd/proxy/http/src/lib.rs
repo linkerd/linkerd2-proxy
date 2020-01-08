@@ -33,7 +33,7 @@ pub use self::{
     settings::Settings,
     version::Version,
 };
-pub use http::{uri, Request, Response};
+pub use http::{header, uri, Request, Response};
 
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;

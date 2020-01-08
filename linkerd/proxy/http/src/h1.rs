@@ -1,12 +1,9 @@
 #![allow(unused_imports)]
 
 use super::upgrade::HttpConnect;
-use bytes::BytesMut;
 use http;
 use http::header::{CONNECTION, HOST, UPGRADE};
 use http::uri::{Authority, Parts, Scheme, Uri};
-use linkerd2_proxy_transport::tls;
-use std::fmt::Write;
 use std::mem;
 use tracing::{debug, trace};
 
@@ -26,21 +23,6 @@ pub fn normalize_our_view_of_uri<B>(req: &mut http::Request<B>) {
         set_authority(req.uri_mut(), host);
         return;
     }
-
-    // // last resort is to use the so_original_dst
-    // if let Some(addr) = req
-    //     .extensions()
-    //     .get::<tls::accept::Meta>()
-    //     .map(|s| s.addrs.target_addr())
-    // {
-    //     trace!(target.addr = %addr, "using target address");
-    //     let mut bytes = BytesMut::with_capacity(31);
-    //     write!(&mut bytes, "{}", addr).expect("socket address display is under 31 bytes");
-    //     let auth =
-    //         Authority::from_shared(bytes.freeze()).expect("socket address is valid authority");
-    //     set_authority(req.uri_mut(), auth);
-    //     return;
-    // }
 
     trace!("not normalizing");
 }
