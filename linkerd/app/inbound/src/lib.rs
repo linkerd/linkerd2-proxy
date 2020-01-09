@@ -153,6 +153,13 @@ impl<A: OrigDstAddr> Config<A> {
 
             let http_target_cache = http_endpoint_cache
                 .push_map_target(HttpEndpoint::from)
+                // Normalizes the URI, i.e. if it was originally in
+                // absolute-form on the outbound side.
+                //
+                // XXX Note that this uses the canonical name from the target
+                // rather than the relative name that may have originally
+                // existed on the outbound request.
+                .push(normalize_uri::layer())
                 .push(http_target_observability)
                 .push_pending()
                 .push_per_service(svc::lock::Layer::default())
@@ -213,9 +220,6 @@ impl<A: OrigDstAddr> Config<A> {
 
             let http_server = svc::stack(http_profile_cache)
                 .check_service::<Target>()
-                // Normalizes the URI, i.e. if it was originally in
-                // absolute-form on the outbound side.
-                .push(normalize_uri::layer())
                 // Ensures that the built service is ready before it is returned
                 // to the router to dispatch a request.
                 .push_make_ready()

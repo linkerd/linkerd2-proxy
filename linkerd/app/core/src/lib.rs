@@ -74,16 +74,6 @@ pub fn http_request_host_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::E
         .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
 }
 
-pub fn http_request_orig_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
-    use crate::transport::tls;
-
-    req.extensions()
-        .get::<tls::accept::Meta>()
-        .and_then(|m| m.addrs.target_addr_if_not_local())
-        .map(Addr::Socket)
-        .ok_or(addr::Error::InvalidHost)
-}
-
 pub type ControlHttpMetricsRegistry =
     proxy::http::metrics::SharedRegistry<metric_labels::ControlLabels, classify::Class>;
 

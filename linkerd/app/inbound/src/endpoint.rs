@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, http_request_orig_dst_addr, metric_labels,
+    http_request_l5d_override_dst_addr, metric_labels,
     proxy::{
         http::{self, profiles},
         identity, tap,
@@ -305,7 +305,7 @@ impl<A> router::Key<http::Request<A>> for RequestTarget {
             })
             .or_else(|| http_request_authority_addr(req).ok())
             .or_else(|| http_request_host_addr(req).ok())
-            .or_else(|| http_request_orig_dst_addr(req).ok())
+            .or_else(|| self.accept.addrs.target_addr_if_not_local().map(Addr::from))
             .and_then(|a| a.name_addr().cloned());
 
         Target {
