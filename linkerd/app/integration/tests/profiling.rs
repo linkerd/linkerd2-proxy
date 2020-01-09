@@ -1,8 +1,6 @@
 #![deny(warnings)]
 #![recursion_limit = "128"]
-#[macro_use]
-mod support;
-use self::support::*;
+use linkerd2_app_integration::*;
 use std::env;
 use std::io::Read;
 use std::net::TcpListener;
@@ -11,7 +9,6 @@ use std::net::TcpListener;
 fn profiling_setup() {
     match env::var_os("PROFILING_SUPPORT_SERVER") {
         Some(srv_addr) => {
-            let _ = env_logger_init();
             let addr: SocketAddr = srv_addr
                 .to_str()
                 .expect("PROFILING_SUPPORT_SERVER not a string")
@@ -23,7 +20,7 @@ fn profiling_setup() {
             let ctrl = controller::new()
                 .destination_and_close("transparency.test.svc.cluster.local", srv.addr)
                 .run();
-            let env = app::config::TestEnv::new();
+            let env = TestEnv::new();
             let _proxy = proxy::new()
                 .controller(ctrl)
                 .outbound(srv)

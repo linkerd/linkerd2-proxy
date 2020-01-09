@@ -50,7 +50,7 @@ pub fn mock_listening(a: SocketAddr) -> Listening {
     let conn_count = Arc::new(AtomicUsize::from(0));
     Listening {
         addr: a,
-        shutdown: tx,
+        _shutdown: tx,
         conn_count,
     }
 }

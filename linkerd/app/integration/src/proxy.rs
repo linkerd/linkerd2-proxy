@@ -135,7 +135,7 @@ impl Proxy {
         run(self, env, true)
     }
 
-    pub fn run_with_test_env_and_keep_ports(self, env: app::config::TestEnv) -> Listening {
+    pub fn run_with_test_env_and_keep_ports(self, env: TestEnv) -> Listening {
         run(self, env, false)
     }
 }
@@ -172,6 +172,8 @@ impl app::core::transport::OrigDstAddr for MockOriginalDst {
 }
 
 fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
+    use app::env::Strings;
+
     let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
@@ -196,11 +198,13 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     } else {
         let local_inbound = env
             .get(app::env::ENV_INBOUND_LISTEN_ADDR)
+            .unwrap_or(None)
             .unwrap_or_else(|| app::env::DEFAULT_INBOUND_LISTEN_ADDR.to_owned())
             .replace("0.0.0.0", "127.0.0.1");
         env.put(app::env::ENV_INBOUND_LISTEN_ADDR, local_inbound);
         let local_control = env
             .get(app::env::ENV_CONTROL_LISTEN_ADDR)
+            .unwrap_or(None)
             .unwrap_or_else(|| app::env::DEFAULT_CONTROL_LISTEN_ADDR.to_owned())
             .replace("0.0.0.0", "127.0.0.1");
         env.put(app::env::ENV_CONTROL_LISTEN_ADDR, local_control);
