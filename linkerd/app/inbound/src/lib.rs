@@ -151,12 +151,19 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(classify::layer())
                 .check_new_clone_service::<dst::Route>();
 
-            // Routes targets to a Profile stack, i.e. so that profile
-            // resolutions are shared even as the type of request may vary.
-            let http_profile_cache = http_endpoint_cache
-                .check_service::<HttpEndpoint>()
+            let http_target_cache = http_endpoint_cache
                 .push_map_target(HttpEndpoint::from)
                 .push(http_target_observability)
+                .push_pending()
+                .push_per_service(svc::lock::Layer::default())
+                .check_new_clone_service::<Target>()
+                .spawn_cache(cache_capacity, cache_max_idle_age)
+                .push_trace(|_: &Target| info_span!("target"))
+                .check_service::<Target>();
+
+            // Routes targets to a Profile stack, i.e. so that profile
+            // resolutions are shared even as the type of request may vary.
+            let http_profile_cache = http_target_cache
                 .check_service::<Target>()
                 // Provides route configuration without pdestination overrides.
                 .push(profiles::Layer::without_overrides(
@@ -168,7 +175,7 @@ impl<A: OrigDstAddr> Config<A> {
                 // Caches profile stacks.
                 .check_new_clone_service::<Profile>()
                 .spawn_cache(cache_capacity, cache_max_idle_age)
-                .push_trace(|_: &Profile| info_span!("profile"))
+                .push_trace(|p: &Profile| info_span!(addr = %p.addr, "profile"))
                 .check_service::<Profile>()
                 .push(router::Layer::new(|()| ProfileTarget))
                 .check_new_service_routes::<(), Target>()

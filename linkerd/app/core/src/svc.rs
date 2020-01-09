@@ -103,8 +103,8 @@ impl<L> Layers<L> {
         self.push(per_service::layer(layer))
     }
 
-    pub fn per_service(self) -> Layers<per_service::Layer<L>> {
-        Layers(per_service::layer(self.0))
+    pub fn push_trace<G: Clone>(self, get_span: G) -> Layers<Pair<L, trace::layer::Layer<G>>> {
+        self.push(trace::Layer::new(get_span))
     }
 }
 
