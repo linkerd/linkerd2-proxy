@@ -1,5 +1,3 @@
-#![allow(unused_imports)]
-
 use super::upgrade::HttpConnect;
 use http;
 use http::header::{CONNECTION, HOST, UPGRADE};

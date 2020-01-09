@@ -103,7 +103,13 @@ where
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
-        if let Some(ref authority) = self.authority {
+        if let Some(ref default_authority) = self.authority {
+            let authority = request
+                .uri()
+                .authority_part()
+                .cloned()
+                .or_else(|| h1::authority_from_host(&request))
+                .unwrap_or_else(|| default_authority.clone());
             trace!(%authority, "Normalizing URI");
             debug_assert!(
                 request.version() != http::Version::HTTP_2,
