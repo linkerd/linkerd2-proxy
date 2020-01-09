@@ -115,7 +115,7 @@ impl Profile {
 
 impl profiles::HasDestination for Profile {
     fn destination(&self) -> Addr {
-       self.0.clone()
+        self.0.clone()
     }
 }
 
