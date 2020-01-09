@@ -107,9 +107,15 @@ impl From<Target> for Profile {
     }
 }
 
+impl Profile {
+    pub fn addr(&self) -> &Addr {
+        &self.0
+    }
+}
+
 impl profiles::HasDestination for Profile {
     fn destination(&self) -> Addr {
-        self.0.clone()
+       self.0.clone()
     }
 }
 

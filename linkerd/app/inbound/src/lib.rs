@@ -175,7 +175,7 @@ impl<A: OrigDstAddr> Config<A> {
                 // Caches profile stacks.
                 .check_new_clone_service::<Profile>()
                 .spawn_cache(cache_capacity, cache_max_idle_age)
-                .push_trace(|p: &Profile| info_span!(addr = %p.addr, "profile"))
+                .push_trace(|p: &Profile| info_span!("profile", addr = %p.addr()))
                 .check_service::<Profile>()
                 .push(router::Layer::new(|()| ProfileTarget))
                 .check_new_service_routes::<(), Target>()
