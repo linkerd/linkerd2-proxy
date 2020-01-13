@@ -5,8 +5,7 @@ use std::env;
 use std::io::Read;
 use std::net::TcpListener;
 
-#[test]
-fn profiling_setup() {
+fn main() {
     match env::var_os("PROFILING_SUPPORT_SERVER") {
         Some(srv_addr) => {
             let addr: SocketAddr = srv_addr

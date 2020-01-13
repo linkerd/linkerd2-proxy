@@ -20,7 +20,7 @@ PROXY_PORT_OUTBOUND=4140
 PROXY_PORT_INBOUND=4143
 PROFDIR=$(dirname "$0")
 ID=$(date +"%Y%h%d_%Hh%Mm%Ss")
-LINKERD_TEST_BIN="../target/release/profiling-opt-and-dbg-symbols"
+LINKERD_TEST_BIN="../target/release/profile-opt-and-dbg-symbols"
 
 BRANCH_NAME=$(git symbolic-ref -q HEAD)
 BRANCH_NAME=${BRANCH_NAME##refs/heads/}
@@ -120,7 +120,7 @@ single_benchmark_run () {
   ) &
   rm ./perf.data* &> "$LOG" || true
   # run proxy in foreground
-  PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT" perf record -F 2000 --call-graph dwarf $LINKERD_TEST_BIN --exact profiling_setup --nocapture &> "$LOG" || echo "proxy failed"
+  PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT" perf record -F 2000 --call-graph dwarf $LINKERD_TEST_BIN &> "$LOG" || echo "proxy failed"
   perf script | inferno-collapse-perf > "out_$NAME.$ID.folded"  # separate step to be able to rerun flamegraph with another width if needed
   inferno-flamegraph --width 4000 "out_$NAME.$ID.folded" > "flamegraph_$NAME.$ID.svg"
 }

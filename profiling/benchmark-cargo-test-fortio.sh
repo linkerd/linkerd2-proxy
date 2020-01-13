@@ -109,7 +109,7 @@ single_benchmark_run () {
   done
   ) &
   # run proxy in foreground
-  PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT" cargo test --release profiling_setup -- --exact profiling_setup --nocapture &> "$LOG" || echo "proxy failed"
+  PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT" cargo run --release --bin profile &> "$LOG" || echo "proxy failed"
 }
 
 if [ "$HIDE" -eq "1" ]; then

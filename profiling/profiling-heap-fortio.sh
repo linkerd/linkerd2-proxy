@@ -20,7 +20,7 @@ PROXY_PORT_OUTBOUND=4140
 PROXY_PORT_INBOUND=4143
 PROFDIR=$(dirname "$0")
 ID=$(date +"%Y%h%d_%Hh%Mm%Ss")
-LINKERD_TEST_BIN="../target/release/profiling-opt-and-dbg-symbols"
+LINKERD_TEST_BIN="../target/release/profile-opt-and-dbg-symbols"
 
 BRANCH_NAME=$(git symbolic-ref -q HEAD)
 BRANCH_NAME=${BRANCH_NAME##refs/heads/}
@@ -113,7 +113,7 @@ single_benchmark_run () {
   ) &
   rm memory-profiling_*.dat &> "$LOG" || true
   # run proxy in foreground
-  PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT" LD_PRELOAD=./libmemory_profiler.so $LINKERD_TEST_BIN --exact profiling_setup --nocapture &> "$LOG" || echo "proxy failed"
+  PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT" LD_PRELOAD=./libmemory_profiler.so $LINKERD_TEST_BIN &> "$LOG" || echo "proxy failed"
   mv memory-profiling_*.dat "$NAME.$ID.heap.dat"
   ./memory-profiler-cli server "$NAME.$ID.heap.dat" &> "$LOG" &
   MPID=$!
