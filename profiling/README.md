@@ -24,11 +24,11 @@ Two summary CSVs can be compared by plotting them as graphs:
 ```
 $ cd profiling/
 $ ./benchmark-cargo-test-fortio.sh ; git checkout master && ./benchmark-cargo-test-fortio.sh
-$ ./plot.py summary.mybranch.2019Jun19_15h13m12s.txt summary.master.2019Jun19_15h34m26s.txt mybranch-vs-master-
+$ ./plot.sh summary.mybranch.2019Jun19_15h13m12s.txt summary.master.2019Jun19_15h34m26s.txt mybranch-vs-master-
 $ eog mybranch-vs-master-*png
 ```
 
-Consider to use `./plot.py --logy ...` if the difference between the values is too high to see the low values.
+Consider to use `./plot.sh --logy ...` if the difference between the values is too high to see the low values.
 
 Another option is to quickly compare in textual form:
 ```
