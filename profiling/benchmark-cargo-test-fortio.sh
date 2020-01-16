@@ -50,12 +50,12 @@ single_benchmark_run () {
   $SERVER &> "$LOG" &
   SPID=$!
   # wait for service to start
-  until ( ss -tan | grep "LISTEN.*:$SERVER_PORT" &> "$LOG" )
+  until ( port_open "$SERVER_PORT" )
   do
     sleep 1
   done
   # wait for proxy to start
-  until ( ss -tan | grep "LISTEN.*:$PROXY_PORT" &> "$LOG" )
+  until ( port_open "$PROXY_PORT" )
   do
     sleep 1
   done
@@ -98,12 +98,12 @@ single_benchmark_run () {
   # signal that proxy can terminate now
   (echo F | nc 127.0.0.1 7777 &> /dev/null) || true
   # wait for proxy to terminate
-  while ( ss -tan | grep "LISTEN.*:$PROXY_PORT" &> "$LOG" )
+  while ( port_open "$PROXY_PORT" )
   do
     sleep 1
   done
   # wait for service to terminate
-  while ( ss -tan | grep "LISTEN.*:$SERVER_PORT" &> "$LOG" )
+  while ( port_open "$SERVER_PORT" )
   do
     sleep 1
   done
