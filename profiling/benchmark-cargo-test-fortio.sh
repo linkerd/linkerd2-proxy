@@ -3,35 +3,15 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-# Configuration env vars and their defaults:
-HIDE="${HIDE-1}"
-ITERATIONS="${ITERATIONS-1}"
-DURATION="${DURATION-10s}"
-CONNECTIONS="${CONNECTIONS-4}"
-GRPC_STREAMS="${GRPC_STREAMS-4}"
-HTTP_RPS="${HTTP_RPS-4000 7000}"
-GRPC_RPS="${GRPC_RPS-4000 6000}"
-REQ_BODY_LEN="${REQ_BODY_LEN-10 200}"
-TCP="${TCP-1}"
-HTTP="${HTTP-1}"
-GRPC="${GRPC-1}"
-
-PROXY_PORT_OUTBOUND=4140
-PROXY_PORT_INBOUND=4143
 PROFDIR=$(dirname "$0")
-ID=$(date +"%Y%h%d_%Hh%Mm%Ss")
 
-BRANCH_NAME=$(git symbolic-ref -q HEAD)
-BRANCH_NAME=${BRANCH_NAME##refs/heads/}
-BRANCH_NAME=${BRANCH_NAME:-HEAD}
-BRANCH_NAME=$(echo $BRANCH_NAME | sed -e 's/\//-/g')
-RUN_NAME="$BRANCH_NAME $ID Iter: $ITERATIONS Dur: $DURATION Conns: $CONNECTIONS Streams: $GRPC_STREAMS"
+source "$PROFDIR/profiling-util.sh"
 
 echo "File marker $RUN_NAME"
 
 cd "$PROFDIR"
-which fortio &> /dev/null || go get fortio.org/fortio
-which fortio &> /dev/null || ( echo "fortio not found: Add the bin folder of your GOPATH to your PATH" ; exit 1 )
+
+dep_fortio || exit 1
 
 # Cleanup background processes when script is canceled
 trap '{ killall iperf fortio >& /dev/null; }' EXIT
@@ -112,11 +92,6 @@ single_benchmark_run () {
   PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT" cargo run --release --bin profile &> "$LOG" || echo "proxy failed"
 }
 
-if [ "$HIDE" -eq "1" ]; then
-  LOG=/dev/null
-else
-  LOG=/dev/stdout
-fi
 
 if [ "$TCP" -eq "1" ]; then
   MODE=TCP DIRECTION=outbound NAME=tcpoutbound_bench PROXY_PORT=$PROXY_PORT_OUTBOUND SERVER_PORT=8080 single_benchmark_run
