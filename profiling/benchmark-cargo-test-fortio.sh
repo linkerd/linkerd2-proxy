@@ -62,7 +62,7 @@ single_benchmark_run () {
         for i in $(seq $ITERATIONS); do
           echo "$MODE $DIRECTION Iteration: $i RPS: $r REQ_BODY_LEN: $l"
           fortio load $XARG -resolve 127.0.0.1 -c="$CONNECTIONS" -qps="$r" -t="$DURATION" -payload-size="$l" -labels="$RUN_NAME" -json="$NAME-$r-rps.$ID.json" -keepalive=false -H 'Host: transparency.test.svc.cluster.local' "localhost:$PROXY_PORT" &> "$LOG"
-          T=$(tac "$NAME-$r-rps.$ID.json" | grep -m 1 Value | cut  -d':' -f2)
+          T=$(rev "$NAME-$r-rps.$ID.json" | grep -m 1 Value | cut  -d':' -f2)
           if [ -z "$T" ]; then
             echo "No last percentile value found"
             exit 1
