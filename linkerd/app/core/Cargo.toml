@@ -25,6 +25,8 @@ linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
 linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-fallback = { path = "../../fallback" }
+linkerd2-http-classify = { path = "../../http-classify" }
+linkerd2-http-metrics = { path = "../../http-metrics" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
@@ -40,6 +42,7 @@ linkerd2-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd2-proxy-transport = { path = "../../proxy/transport" }
 linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-request-filter = { path = "../../request-filter" }
+linkerd2-retry = { path = "../../retry" }
 linkerd2-router = { path = "../../router" }
 linkerd2-stack = { path = "../../stack" }
 linkerd2-timeout = { path = "../../timeout" }

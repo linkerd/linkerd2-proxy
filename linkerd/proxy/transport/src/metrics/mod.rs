@@ -129,37 +129,39 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
     }
 
     /// Formats a metric across all instances of `Metrics` in the registry.
-    fn fmt_by<F, M>(
+    fn fmt_by<F, N, M>(
         &self,
         f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, M>,
+        metric: Metric<'_, N, M>,
         get_metric: F,
     ) -> fmt::Result
     where
         F: Fn(&Metrics) -> &M,
+        N: fmt::Display,
         M: FmtMetric,
     {
         for (key, m) in self.iter() {
-            get_metric(&*m).fmt_metric_labeled(f, metric.name, key)?;
+            get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
         }
 
         Ok(())
     }
 
     /// Formats a metric across all instances of `EosMetrics` in the registry.
-    fn fmt_eos_by<F, M>(
+    fn fmt_eos_by<F, N, M>(
         &self,
         f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, M>,
+        metric: Metric<'_, N, M>,
         get_metric: F,
     ) -> fmt::Result
     where
         F: Fn(&EosMetrics) -> &M,
+        N: fmt::Display,
         M: FmtMetric,
     {
         for (key, metrics) in self.iter() {
             for (eos, m) in (*metrics).by_eos.iter() {
-                get_metric(&*m).fmt_metric_labeled(f, metric.name, (key, eos))?;
+                get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
             }
         }
 

@@ -16,10 +16,7 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     proxy::{
         self,
-        http::{
-            client, insert, metrics as http_metrics, normalize_uri, profiles, settings,
-            strip_header,
-        },
+        http::{client, insert, normalize_uri, profiles, settings, strip_header},
         identity,
         server::{Protocol as ServerProtocol, Server},
         tap, tcp,
@@ -129,9 +126,7 @@ impl<A: OrigDstAddr> Config<A> {
             // a router made of route stacks configured by `inbound::Endpoint`.
             let endpoint_router = client_stack
                 .push(tap_layer)
-                .push(http_metrics::layer::<_, classify::Response>(
-                    metrics.http_endpoint,
-                ))
+                .push(metrics.http_endpoint.into_layer::<classify::Response>())
                 .serves::<Endpoint>()
                 .push(trace::layer(
                     |endpoint: &Endpoint| info_span!("endpoint", peer.addr = %endpoint.addr),
@@ -153,10 +148,8 @@ impl<A: OrigDstAddr> Config<A> {
             // implementations can use the route-specific configuration.
             let dst_route_layer = svc::layers()
                 .push(insert::target::layer())
-                .push(http_metrics::layer::<_, classify::Response>(
-                    metrics.http_route,
-                ))
-                .push(classify::layer())
+                .push(metrics.http_route.into_layer::<classify::Response>())
+                .push(classify::Layer::new())
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract);
 
             // A per-`DstAddr` stack that does the following:

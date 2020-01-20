@@ -1,4 +1,3 @@
-use super::retry::Budget;
 use futures::Stream;
 use http;
 use indexmap::IndexMap;
@@ -11,6 +10,7 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use tower::retry::budget::Budget;
 
 pub mod recognize;
 /// A stack module that produces a Service that routes requests through alternate

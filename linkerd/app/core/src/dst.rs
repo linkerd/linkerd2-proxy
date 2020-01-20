@@ -2,13 +2,12 @@ use super::classify;
 use http;
 use indexmap::IndexMap;
 use linkerd2_addr::{Addr, NameAddr};
-use linkerd2_proxy_http::{
-    metrics::classify::{CanClassify, Classify, ClassifyEos, ClassifyResponse},
-    profiles, retry, settings, timeout,
-};
+use linkerd2_http_classify::CanClassify;
+use linkerd2_proxy_http::{profiles, settings, timeout};
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
+use tower::retry::budget::Budget;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -24,7 +23,7 @@ pub struct Route {
 
 #[derive(Clone, Debug)]
 pub struct Retry {
-    budget: Arc<retry::Budget>,
+    budget: Arc<Budget>,
     response_classes: profiles::ResponseClasses,
 }
 
@@ -46,57 +45,9 @@ impl CanClassify for Route {
     }
 }
 
-impl retry::CanRetry for Route {
-    type Retry = Retry;
-
-    fn can_retry(&self) -> Option<Self::Retry> {
-        self.route.retries().map(|retries| Retry {
-            budget: retries.budget().clone(),
-            response_classes: self.route.response_classes().clone(),
-        })
-    }
-}
-
 impl timeout::HasTimeout for Route {
     fn timeout(&self) -> Option<Duration> {
         self.route.timeout()
-    }
-}
-
-// === impl Retry ===
-
-impl retry::Retry for Retry {
-    fn retry<B1, B2>(
-        &self,
-        req: &http::Request<B1>,
-        res: &http::Response<B2>,
-    ) -> Result<(), retry::NoRetry> {
-        let class = classify::Request::from(self.response_classes.clone())
-            .classify(req)
-            .start(res)
-            .eos(None);
-
-        if class.is_failure() {
-            return self
-                .budget
-                .withdraw()
-                .map_err(|_overdrawn| retry::NoRetry::Budget);
-        }
-
-        self.budget.deposit();
-        Err(retry::NoRetry::Success)
-    }
-
-    fn clone_request<B: retry::TryClone>(
-        &self,
-        req: &http::Request<B>,
-    ) -> Option<http::Request<B>> {
-        retry::TryClone::try_clone(req).map(|mut clone| {
-            if let Some(ext) = req.extensions().get::<classify::Response>() {
-                clone.extensions_mut().insert(ext.clone());
-            }
-            clone
-        })
     }
 }
 

@@ -22,7 +22,7 @@ macro_rules! metrics {
     { $( $name:ident : $kind:ty { $help:expr } ),+ } => {
         $(
             #[allow(non_upper_case_globals)]
-            const $name: ::linkerd2_metrics::Metric<'static, $kind> =
+            const $name: ::linkerd2_metrics::Metric<'static, &str, $kind> =
                 ::linkerd2_metrics::Metric {
                     name: stringify!($name),
                     help: $help,

@@ -406,10 +406,6 @@ impl fmt::Display for InvalidCrt {
 }
 
 impl Error for InvalidCrt {
-    fn description(&self) -> &str {
-        self.0.description()
-    }
-
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.0.source()
     }

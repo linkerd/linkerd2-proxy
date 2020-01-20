@@ -110,22 +110,14 @@ impl From<io::Error> for ServeError {
 
 impl fmt::Display for ServeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}: {}",
-            self.description(),
-            self.source().expect("ServeError must have source")
-        )
+        match *self {
+            ServeError::Http(_) => "error constructing HTTP response".fmt(f),
+            ServeError::Io(_) => "error writing metrics".fmt(f),
+        }
     }
 }
 
 impl Error for ServeError {
-    fn description(&self) -> &str {
-        match *self {
-            ServeError::Http(_) => "error constructing HTTP response",
-            ServeError::Io(_) => "error writing metrics",
-        }
-    }
 
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match *self {
