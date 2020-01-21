@@ -118,7 +118,6 @@ impl fmt::Display for ServeError {
 }
 
 impl Error for ServeError {
-
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match *self {
             ServeError::Http(ref source) => Some(source),
