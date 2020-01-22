@@ -27,7 +27,7 @@ pub struct Lock<S, E = Poisoned> {
     locked: Option<lock::LockGuard<State<S, E>>>,
 }
 
-/// The lock holds either an inner srvice or, if it failed, an error salvaged
+/// The lock holds either an inner service or, if it failed, an error salvaged
 /// from the failure.
 enum State<S, E> {
     Service(S),
