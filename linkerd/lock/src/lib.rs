@@ -304,6 +304,43 @@ mod test {
         }));
     }
 
+    #[test]
+    fn dropping_releases_access() {
+        use tower::util::ServiceExt;
+
+        current_thread::run(future::lazy(|| {
+            let ready = Arc::new(AtomicBool::new(false));
+            let mut svc0 = Layer::default().layer(Decr::new(2, ready.clone()));
+
+            // svc0 grabs the lock, but the inner service isn't ready.
+            assert!(svc0.poll_ready().expect("must not fail").is_not_ready());
+
+            // Cloning a locked service does not preserve the lock.
+            let mut svc1 = svc0.clone();
+
+            // svc1 can't grab the lock.
+            assert!(svc1.poll_ready().expect("must not fail").is_not_ready());
+
+            // svc0 holds the lock and becomes ready with the inner service.
+            ready.store(true, Ordering::SeqCst);
+            assert!(svc0.poll_ready().expect("must not fail").is_ready());
+
+            // svc1 still can't grab the lock.
+            assert!(svc1.poll_ready().expect("must not fail").is_not_ready());
+
+            let mut fut = svc1.oneshot(1);
+
+            assert!(fut.poll().expect("must not fail").is_not_ready());
+
+            drop(svc0);
+
+            // svc1 grabs the lock and is immediately ready.
+            assert_eq!(fut.poll().expect("must not fail"), Async::Ready(1));
+
+            Ok(().into())
+        }));
+    }
+
     #[derive(Debug, Default)]
     struct Decr {
         value: usize,
