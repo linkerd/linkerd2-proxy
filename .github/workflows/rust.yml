@@ -13,7 +13,8 @@ jobs:
     - uses: actions/checkout@722adc6 # v2
     - uses: hecrj/setup-rust-action@e0938ba # v1
       with:
-        components: cargo,rustfmt
+        rust-version: 1.39.0
+        components: rustfmt
     - run: make check-fmt
 
   lib:
@@ -21,6 +22,8 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - uses: hecrj/setup-rust-action@e0938ba # v1
+      with:
+        rust-version: 1.39.0
     - run: make test-lib
 
   integration:
@@ -30,6 +33,8 @@ jobs:
 
     - if: github.event.pull_request.head.repo.fork
       uses: hecrj/setup-rust-action@e0938ba # v1
+      with:
+        rust-version: 1.39.0
 
     # Forks run in GitHub actions, as they don't have access to secrets.
     - name: Test (Fork)
