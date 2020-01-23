@@ -1,7 +1,9 @@
 use http;
 use linkerd2_error::Error;
-pub use linkerd2_proxy_http::metrics::classify::{self, layer, CanClassify};
-use linkerd2_proxy_http::{profiles, timeout, HasH2Reason};
+use linkerd2_http_classify as classify;
+pub use linkerd2_http_classify::{CanClassify, Layer};
+use linkerd2_proxy_http::profiles;
+use linkerd2_proxy_http::{timeout, HasH2Reason};
 use std::borrow::Cow;
 use tower_grpc::{self as grpc};
 use tracing::trace;
@@ -223,8 +225,8 @@ impl Class {
 #[cfg(test)]
 mod tests {
     use super::{Class, SuccessOrFailure};
-    use crate::proxy::http::metrics::classify::{ClassifyEos as _CE, ClassifyResponse as _CR};
     use http::{HeaderMap, Response, StatusCode};
+    use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
 
     #[test]
     fn http_response_status_ok() {

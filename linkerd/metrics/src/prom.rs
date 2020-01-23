@@ -65,16 +65,16 @@ pub trait FmtMetric {
 /// Describes a metric statically.
 ///
 /// Formats help messages and metric values for prometheus output.
-pub struct Metric<'a, M: FmtMetric> {
-    pub name: &'a str,
+pub struct Metric<'a, N: fmt::Display, M: FmtMetric> {
+    pub name: N,
     pub help: &'a str,
     pub _p: PhantomData<M>,
 }
 
 // ===== impl Metric =====
 
-impl<'a, M: FmtMetric> Metric<'a, M> {
-    pub fn new(name: &'a str, help: &'a str) -> Self {
+impl<'a, N: fmt::Display, M: FmtMetric> Metric<'a, N, M> {
+    pub fn new(name: N, help: &'a str) -> Self {
         Self {
             name,
             help,
@@ -91,7 +91,7 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
 
     /// Formats a single metric without labels.
     pub fn fmt_metric(&self, f: &mut fmt::Formatter<'_>, metric: M) -> fmt::Result {
-        metric.fmt_metric(f, self.name)
+        metric.fmt_metric(f, &self.name)
     }
 
     /// Formats a single metric across labeled scopes.
@@ -107,7 +107,7 @@ impl<'a, M: FmtMetric> Metric<'a, M> {
         F: Fn(&S) -> &M,
     {
         for (labels, scope) in scopes {
-            to_metric(scope).fmt_metric_labeled(f, self.name, labels)?;
+            to_metric(scope).fmt_metric_labeled(f, &self.name, labels)?;
         }
 
         Ok(())

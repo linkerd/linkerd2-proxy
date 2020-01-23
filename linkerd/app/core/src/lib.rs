@@ -14,6 +14,7 @@ pub use linkerd2_conditional::Conditional;
 pub use linkerd2_drain as drain;
 pub use linkerd2_error::{Error, Never, Recover};
 pub use linkerd2_exp_backoff as exp_backoff;
+pub use linkerd2_http_metrics as http_metrics;
 pub use linkerd2_metrics as metrics;
 pub use linkerd2_opencensus as opencensus;
 pub use linkerd2_reconnect as reconnect;
@@ -33,6 +34,7 @@ pub mod handle_time;
 pub mod metric_labels;
 pub mod profiles;
 pub mod proxy;
+pub mod retry;
 pub mod serve;
 pub mod spans;
 pub mod svc;
@@ -51,7 +53,7 @@ const DEFAULT_PORT: u16 = 80;
 
 pub fn http_request_l5d_override_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
     proxy::http::authority_from_header(req, DST_OVERRIDE_HEADER)
-        .ok_or(addr::Error::InvalidHost)
+        .ok_or_else(|| addr::Error::InvalidHost)
         .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
 }
 
@@ -93,20 +95,21 @@ impl DispatchDeadline {
     }
 }
 
-pub type ControlHttpMetricsRegistry =
-    proxy::http::metrics::SharedRegistry<metric_labels::ControlLabels, classify::Class>;
+pub type ControlHttpMetrics = http_metrics::Requests<metric_labels::ControlLabels, classify::Class>;
 
-pub type HttpEndpointMetricsRegistry =
-    proxy::http::metrics::SharedRegistry<metric_labels::EndpointLabels, classify::Class>;
+pub type HttpEndpointMetrics =
+    http_metrics::Requests<metric_labels::EndpointLabels, classify::Class>;
 
-pub type HttpRouteMetricsRegistry =
-    proxy::http::metrics::SharedRegistry<metric_labels::RouteLabels, classify::Class>;
+pub type HttpRouteMetrics = http_metrics::Requests<metric_labels::RouteLabels, classify::Class>;
+
+pub type HttpRouteRetry = http_metrics::Retries<metric_labels::RouteLabels>;
 
 #[derive(Clone)]
 pub struct ProxyMetrics {
-    pub http_handle_time: proxy::http::metrics::handle_time::Scope,
-    pub http_route: HttpRouteMetricsRegistry,
-    pub http_route_retry: HttpRouteMetricsRegistry,
-    pub http_endpoint: HttpEndpointMetricsRegistry,
-    pub transport: transport::MetricsRegistry,
+    pub http_handle_time: handle_time::Scope,
+    pub http_route: HttpRouteMetrics,
+    pub http_route_actual: HttpRouteMetrics,
+    pub http_route_retry: HttpRouteRetry,
+    pub http_endpoint: HttpEndpointMetrics,
+    pub transport: transport::Metrics,
 }

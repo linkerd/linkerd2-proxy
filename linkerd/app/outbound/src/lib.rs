@@ -18,7 +18,7 @@ use linkerd2_app_core::{
         self, core::resolve::Resolve, discover, fallback, http, identity, resolve::map_endpoint,
         tap, tcp, Server,
     },
-    reconnect, router, serve,
+    reconnect, retry, router, serve,
     spans::SpanConverter,
     svc, trace, trace_context,
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
@@ -156,9 +156,9 @@ impl<A: OrigDstAddr> Config<A> {
                 //.push(add_server_id_on_rsp::layer())
                 .push(orig_proto_upgrade::layer())
                 .push(tap_layer.clone())
-                .push(http::metrics::layer::<_, classify::Response>(
-                    metrics.http_endpoint,
-                ))
+                .push(
+                    metrics.http_endpoint.into_layer::<classify::Response>()
+                )
                 .push(require_identity_on_endpoint::layer())
                 .push(trace::layer(|endpoint: &Endpoint| {
                     info_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
@@ -178,15 +178,11 @@ impl<A: OrigDstAddr> Config<A> {
             //    is retryable.
             let dst_route_layer = svc::layers()
                 .push(http::insert::target::layer())
-                .push(http::metrics::layer::<_, classify::Response>(
-                    metrics.http_route_retry.clone(),
-                ))
-                .push(http::retry::layer(metrics.http_route_retry))
+                .push(metrics.http_route_actual.into_layer::<classify::Response>())
+                .push(retry::layer(metrics.http_route_retry))
                 .push(http::timeout::layer())
-                .push(http::metrics::layer::<_, classify::Response>(
-                    metrics.http_route,
-                ))
-                .push(classify::layer())
+                .push(metrics.http_route.into_layer::<classify::Response>())
+                .push(classify::Layer::new())
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract);
 
             // Routes requests to their original destination endpoints. Used as

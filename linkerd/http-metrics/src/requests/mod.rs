@@ -1,55 +1,32 @@
+use super::{LastUpdate, Registry, Report};
 use http;
 use indexmap::IndexMap;
-use linkerd2_metrics::{latency, Counter, FmtLabels, Histogram};
+use linkerd2_http_classify::ClassifyResponse;
+use linkerd2_metrics::{latency, Counter, FmtMetrics, Histogram};
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio_timer::clock;
 
-pub mod classify;
-pub mod handle_time;
+mod layer;
 mod report;
-mod service;
 
-pub use self::{report::Report, service::layer};
-
-pub type SharedRegistry<T, C> = Arc<Mutex<Registry<T, C>>>;
-
-pub fn new<T, C>(retain_idle: Duration) -> (SharedRegistry<T, C>, Report<T, C>)
-where
-    T: FmtLabels + Clone + Hash + Eq,
-    C: FmtLabels + Hash + Eq,
-{
-    let registry = Arc::new(Mutex::new(Registry::default()));
-    (registry.clone(), Report::new(retain_idle, registry))
-}
+type SharedRegistry<T, C> = Arc<Mutex<Registry<T, Metrics<C>>>>;
 
 #[derive(Debug)]
-pub struct Registry<T, C>
+pub struct Requests<T, C>(SharedRegistry<T, C>)
 where
     T: Hash + Eq,
-    C: Hash + Eq,
-{
-    by_target: IndexMap<T, Arc<Mutex<RequestMetrics<C>>>>,
-}
-
-pub trait Scoped<T> {
-    type Scope: Stats;
-    fn scoped(&self, index: T) -> Self::Scope;
-}
-
-pub trait Stats {
-    fn incr_retry_skipped_budget(&self);
-}
+    C: Hash + Eq;
 
 #[derive(Debug)]
-pub struct RequestMetrics<C>
+pub struct Metrics<C>
 where
     C: Hash + Eq,
 {
     last_update: Instant,
     total: Counter,
-    by_retry_skipped: IndexMap<RetrySkipped, Counter>,
     by_status: IndexMap<Option<http::StatusCode>, StatusMetrics<C>>,
 }
 
@@ -67,89 +44,51 @@ pub struct ClassMetrics {
     total: Counter,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
-enum RetrySkipped {
-    Budget,
-}
+// === impl Requests ===
 
-impl<T, C> Default for Registry<T, C>
-where
-    T: Hash + Eq,
-    C: Hash + Eq,
-{
+impl<T: Hash + Eq, C: Hash + Eq> Default for Requests<T, C> {
     fn default() -> Self {
-        Self {
-            by_target: IndexMap::default(),
-        }
+        Requests(Arc::new(Mutex::new(Registry::default())))
     }
 }
 
-impl<T, C> Registry<T, C>
-where
-    T: Hash + Eq,
-    C: Hash + Eq,
-{
-    /// Retains metrics for all targets that (1) no longer have an active
-    /// reference to the `RequestMetrics` structure and (2) have not been updated since `epoch`.
-    fn retain_since(&mut self, epoch: Instant) {
-        self.by_target.retain(|_, m| {
-            Arc::strong_count(&m) > 1 || m.lock().map(|m| m.last_update >= epoch).unwrap_or(false)
-        })
+impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
+    pub fn into_report(self, retain_idle: Duration) -> Report<T, Metrics<C>>
+    where
+        Report<T, Metrics<C>>: FmtMetrics,
+    {
+        Report::new(retain_idle, self.0)
+    }
+
+    pub fn into_layer<L>(self) -> layer::Layer<T, L>
+    where
+        L: ClassifyResponse<Class = C> + Send + Sync + 'static,
+    {
+        layer::Layer::new(self.0)
     }
 }
 
-impl<T, C> Scoped<T> for Arc<Mutex<Registry<T, C>>>
-where
-    T: Hash + Eq,
-    C: Hash + Eq,
-{
-    type Scope = Arc<Mutex<RequestMetrics<C>>>;
-
-    fn scoped(&self, target: T) -> Self::Scope {
-        self.lock()
-            .expect("metrics Registry lock")
-            .by_target
-            .entry(target)
-            .or_insert_with(|| Arc::new(Mutex::new(RequestMetrics::default())))
-            .clone()
+impl<T: Hash + Eq, C: Hash + Eq> Clone for Requests<T, C> {
+    fn clone(&self) -> Self {
+        Requests(self.0.clone())
     }
 }
 
-impl<C> RequestMetrics<C>
-where
-    C: Hash + Eq,
-{
-    fn incr_retry_skipped(&mut self, reason: RetrySkipped) {
-        self.by_retry_skipped
-            .entry(reason)
-            .or_insert_with(Counter::default)
-            .incr();
-    }
-}
+// === impl Metrics ===
 
-impl<C> Default for RequestMetrics<C>
-where
-    C: Hash + Eq,
-{
+impl<C: Hash + Eq> Default for Metrics<C> {
     fn default() -> Self {
         Self {
             last_update: clock::now(),
             total: Counter::default(),
-            by_retry_skipped: IndexMap::default(),
             by_status: IndexMap::default(),
         }
     }
 }
 
-impl<C> Stats for Arc<Mutex<RequestMetrics<C>>>
-where
-    C: Hash + Eq,
-{
-    fn incr_retry_skipped_budget(&self) {
-        if let Ok(mut metrics) = self.lock() {
-            metrics.last_update = clock::now();
-            metrics.incr_retry_skipped(RetrySkipped::Budget);
-        }
+impl<C: Hash + Eq> LastUpdate for Metrics<C> {
+    fn last_update(&self) -> Instant {
+        self.last_update
     }
 }
 
@@ -169,7 +108,7 @@ where
 mod tests {
     #[test]
     fn expiry() {
-        use crate::metrics::FmtLabels;
+        use linkerd2_metrics::FmtLabels;
         use std::fmt;
         use std::time::Duration;
         use tokio_timer::clock;
@@ -199,8 +138,9 @@ mod tests {
         }
 
         let retain_idle_for = Duration::from_secs(1);
-        let (r, report) = super::new::<Target, Class>(retain_idle_for);
-        let mut registry = r.lock().unwrap();
+        let r = super::Requests::<Target, Class>::default();
+        let report = r.clone().into_report(retain_idle_for);
+        let mut registry = r.0.lock().unwrap();
 
         let before_update = clock::now();
         let metrics = registry

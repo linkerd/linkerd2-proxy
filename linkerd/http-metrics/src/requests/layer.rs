@@ -1,17 +1,15 @@
-use super::super::retry::TryClone;
-use super::classify::{ClassifyEos, ClassifyResponse};
-use super::{ClassMetrics, Registry, RequestMetrics, StatusMetrics};
+use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
 use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper::body::Payload;
 use linkerd2_error::Error;
+use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio_timer::clock;
-use tracing::trace;
 
 /// A stack module that wraps services to record metrics.
 #[derive(Debug)]
@@ -21,7 +19,7 @@ where
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    registry: Arc<Mutex<Registry<K, C::Class>>>,
+    registry: SharedRegistry<K, C::Class>,
     _p: PhantomData<fn() -> C>,
 }
 
@@ -33,18 +31,8 @@ where
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    registry: Arc<Mutex<Registry<K, C::Class>>>,
+    registry: SharedRegistry<K, C::Class>,
     inner: M,
-    _p: PhantomData<fn() -> C>,
-}
-
-pub struct MakeFuture<F, C>
-where
-    C: ClassifyResponse,
-    C::Class: Hash + Eq,
-{
-    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
-    inner: F,
     _p: PhantomData<fn() -> C>,
 }
 
@@ -55,7 +43,7 @@ where
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     inner: S,
     _p: PhantomData<fn() -> C>,
 }
@@ -66,7 +54,7 @@ where
     C::Class: Hash + Eq,
 {
     classify: Option<C>,
-    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     stream_open_at: Instant,
     inner: F,
 }
@@ -77,7 +65,7 @@ where
     B: Payload,
     C: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<RequestMetrics<C>>>>,
+    metrics: Option<Arc<Mutex<Metrics<C>>>>,
     inner: B,
 }
 
@@ -90,7 +78,7 @@ where
 {
     status: http::StatusCode,
     classify: Option<C>,
-    metrics: Option<Arc<Mutex<RequestMetrics<C::Class>>>>,
+    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     stream_open_at: Instant,
     latency_recorded: bool,
     inner: B,
@@ -98,15 +86,17 @@ where
 
 // === impl Layer ===
 
-pub fn layer<K, C>(registry: Arc<Mutex<Registry<K, C::Class>>>) -> Layer<K, C>
+impl<K, C> Layer<K, C>
 where
-    K: Clone + Hash + Eq,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    K: Hash + Eq,
+    C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    Layer {
-        registry,
-        _p: PhantomData,
+    pub(super) fn new(registry: SharedRegistry<K, C::Class>) -> Self {
+        Layer {
+            registry,
+            _p: PhantomData,
+        }
     }
 }
 
@@ -169,41 +159,37 @@ where
 {
     type Response = Service<M::Response, C>;
     type Error = M::Error;
-    type Future = MakeFuture<M::Future, C>;
+    type Future = Service<M::Future, C>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        trace!("make: target={:?}", target);
         let metrics = match self.registry.lock() {
             Ok(mut r) => Some(
                 r.by_target
                     .entry(target.clone().into())
-                    .or_insert_with(|| Arc::new(Mutex::new(RequestMetrics::default())))
+                    .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
                     .clone(),
             ),
             Err(_) => None,
         };
-        trace!("make: metrics={}", metrics.is_some());
 
         let inner = self.inner.call(target);
 
-        MakeFuture {
-            metrics,
+        Self::Future {
             inner,
+            metrics,
             _p: PhantomData,
         }
     }
 }
 
-// === impl MakeFuture ===
-
-impl<C, F> Future for MakeFuture<F, C>
+impl<F, C> Future for Service<F, C>
 where
     F: Future,
-    C: ClassifyResponse + Send + Sync + 'static,
+    C: ClassifyResponse + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     type Item = Service<F::Item, C>;
@@ -211,16 +197,16 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
-        Ok(Service {
+        let service = Service {
             inner,
             metrics: self.metrics.clone(),
-            _p: PhantomData,
-        }
-        .into())
+            _p: self._p,
+        };
+        Ok(service.into())
     }
 }
 
-// === impl Service ===
+// === impl Metrics ===
 
 impl<S, C> Clone for Service<S, C>
 where
@@ -387,16 +373,16 @@ where
     }
 }
 
-impl<B, C> TryClone for RequestBody<B, C>
+impl<B, C> Default for RequestBody<B, C>
 where
-    B: Payload + TryClone,
-    C: Eq + Hash,
+    B: Payload + Default,
+    C: Hash + Eq,
 {
-    fn try_clone(&self) -> Option<Self> {
-        self.inner.try_clone().map(|inner| RequestBody {
-            inner,
-            metrics: self.metrics.clone(),
-        })
+    fn default() -> Self {
+        Self {
+            metrics: None,
+            inner: B::default(),
+        }
     }
 }
 
@@ -463,7 +449,7 @@ where
 }
 
 fn measure_class<C: Hash + Eq>(
-    lock: &Arc<Mutex<RequestMetrics<C>>>,
+    lock: &Arc<Mutex<Metrics<C>>>,
     class: C,
     status: Option<http::StatusCode>,
 ) {

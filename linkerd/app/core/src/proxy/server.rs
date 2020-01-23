@@ -91,7 +91,7 @@ where
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
     transport_labels: L,
-    transport_metrics: transport::MetricsRegistry,
+    transport_metrics: transport::Metrics,
     forward_tcp: F,
     make_http: H,
     drain: drain::Watch,
@@ -112,7 +112,7 @@ where
     /// Creates a new `Server`.
     pub fn new(
         transport_labels: L,
-        transport_metrics: transport::MetricsRegistry,
+        transport_metrics: transport::Metrics,
         forward_tcp: F,
         make_http: H,
         h2_settings: H2Settings,

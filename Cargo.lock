@@ -631,6 +631,8 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-exp-backoff",
  "linkerd2-fallback",
+ "linkerd2-http-classify",
+ "linkerd2-http-metrics",
  "linkerd2-metrics",
  "linkerd2-opencensus",
  "linkerd2-proxy-api",
@@ -646,6 +648,7 @@ dependencies = [
  "linkerd2-proxy-transport",
  "linkerd2-reconnect",
  "linkerd2-request-filter",
+ "linkerd2-retry",
  "linkerd2-router",
  "linkerd2-stack",
  "linkerd2-test-util",
@@ -800,6 +803,37 @@ dependencies = [
  "futures",
  "linkerd2-error",
  "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd2-http-classify"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "linkerd2-error",
+ "tower",
+]
+
+[[package]]
+name = "linkerd2-http-metrics"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "h2",
+ "http",
+ "http-body",
+ "hyper",
+ "indexmap",
+ "linkerd2-error",
+ "linkerd2-http-classify",
+ "linkerd2-metrics",
+ "tokio",
+ "tokio-timer",
+ "tower",
+ "tower-util",
  "tracing",
 ]
 
@@ -961,7 +995,6 @@ dependencies = [
  "linkerd2-drain",
  "linkerd2-duplex",
  "linkerd2-error",
- "linkerd2-fallback",
  "linkerd2-identity",
  "linkerd2-metrics",
  "linkerd2-proxy-transport",
@@ -1049,7 +1082,6 @@ dependencies = [
  "linkerd2-error",
  "tokio",
  "tower",
- "tower-load",
 ]
 
 [[package]]
@@ -1095,6 +1127,17 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd2-retry"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "tower",
+ "tower-util",
  "tracing",
 ]
 

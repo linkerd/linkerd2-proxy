@@ -1,5 +1,5 @@
 use crate::dns;
-use crate::proxy::http::{profiles, retry::Budget};
+use crate::proxy::http::profiles;
 use futures::{Async, Future, Poll, Stream};
 use http;
 use linkerd2_addr::NameAddr;
@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{oneshot, watch};
 use tokio_timer::{clock, Delay};
+use tower::retry::budget::Budget;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::{debug, error, trace, warn};
 use tracing_futures::Instrument;
