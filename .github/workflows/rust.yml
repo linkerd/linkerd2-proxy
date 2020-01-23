@@ -9,25 +9,27 @@ on:
 jobs:
   fmt:
     runs-on: ubuntu-18.04
-    container:
-      image: docker://rust:1.39.0-buster
     steps:
-    - uses: actions/checkout@v1
-    - run: rustup component add rustfmt
+    - uses: actions/checkout@722adc6 # v2
+    - uses: hecrj/setup-rust-action@e0938ba # v1
+      with:
+        components: rustfmt
     - run: make check-fmt
 
   lib:
     runs-on: ubuntu-18.04
-    container:
-      image: docker://rust:1.39.0-buster
     steps:
     - uses: actions/checkout@v1
+    - uses: hecrj/setup-rust-action@e0938ba # v1
     - run: make test-lib
 
   integration:
     runs-on: ubuntu-18.04
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@722adc6 # v2
+
+    - if: github.event.pull_request.head.repo.fork
+      uses: hecrj/setup-rust-action@e0938ba # v1
 
     # Forks run in GitHub actions, as they don't have access to secrets.
     - name: Test (Fork)

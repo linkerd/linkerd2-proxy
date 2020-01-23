@@ -10,9 +10,8 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: hecrj/setup-rust-action@e0938ba # v1
-      - name: setup
-        run: cargo install cargo-audit
-      - uses: actions/checkout@722adc6 # v2
-      - name: audit
-        run: cargo audit
+    - uses: hecrj/setup-rust-action@e0938ba # v1
+    - run: cargo install cargo-audit
+    - uses: actions/checkout@722adc6 # v2
+    - name: audit
+      run: cargo audit
