@@ -8,7 +8,7 @@
 # runtime performance.
 
 # rather than updating this manually, run update-rust-version.sh
-ARG RUST_IMAGE=rust:1.39.0-buster
+ARG RUST_IMAGE=rust:1.40.0-buster
 ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.10.2
 ARG PROXY_UNOPTIMIZED
 
