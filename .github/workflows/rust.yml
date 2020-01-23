@@ -13,7 +13,7 @@ jobs:
     - uses: actions/checkout@722adc6 # v2
     - uses: hecrj/setup-rust-action@e0938ba # v1
       with:
-        components: rustfmt
+        components: cargo,rustfmt
     - run: make check-fmt
 
   lib:
