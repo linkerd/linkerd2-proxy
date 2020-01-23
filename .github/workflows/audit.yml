@@ -1,0 +1,20 @@
+name: Security audit
+
+on:
+  schedule:
+    # 5AM Pacific
+    - cron: '0 13 * * *'
+  push:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+  pull_request:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@722adc6 # v2
+      - uses: actions-rs/audit-check@c878fe3 # v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
