@@ -4,17 +4,13 @@ on:
   schedule:
     # 5AM Pacific
     - cron: '0 13 * * *'
-  push:
-    paths:
-      - '**/Cargo.toml'
-      - '**/Cargo.lock'
   pull_request:
 
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
+      - uses: hecrj/setup-rust-action@ e0938ba # v1
       - uses: actions/checkout@722adc6 # v2
-      - uses: actions-rs/audit-check@c878fe3 # v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: audit
+        run: cargo audit
