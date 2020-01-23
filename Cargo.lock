@@ -1480,10 +1480,8 @@ dependencies = [
 [[package]]
 name = "prost"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96d14b1c185652833d24aaad41c5832b0be5616a590227c1fbff57c616754b23"
+source = "git+https://github.com/linkerd/prost?branch=v0.5.x#8875bb9404ed50de20ef51c61bd2eaff5812fb1e"
 dependencies = [
- "byteorder",
  "bytes",
  "prost-derive",
 ]
@@ -1509,8 +1507,7 @@ dependencies = [
 [[package]]
 name = "prost-derive"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e7dc378b94ac374644181a2247cebf59a6ec1c88b49ac77f3a94b86b79d0e11"
+source = "git+https://github.com/linkerd/prost?branch=v0.5.x#8875bb9404ed50de20ef51c61bd2eaff5812fb1e"
 dependencies = [
  "failure",
  "itertools",
