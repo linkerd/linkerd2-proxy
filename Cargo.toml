@@ -19,6 +19,7 @@ members = [
     "linkerd/http-metrics",
     "linkerd/identity",
     "linkerd/io",
+    "linkerd/lock",
     "linkerd/metrics",
     "linkerd/opencensus",
     "linkerd/proxy/api-resolve",
