@@ -1,4 +1,3 @@
-//use super::super::retry::TryClone;
 use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
 use futures::{try_ready, Async, Future, Poll};
 use http;

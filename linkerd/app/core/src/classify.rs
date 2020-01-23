@@ -226,7 +226,7 @@ impl Class {
 mod tests {
     use super::{Class, SuccessOrFailure};
     use http::{HeaderMap, Response, StatusCode};
-    use linkerd2_http_classify::{ClassifyEos as _CE, ClassifyResponse as _CR};
+    use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
 
     #[test]
     fn http_response_status_ok() {

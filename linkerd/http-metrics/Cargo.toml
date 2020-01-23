@@ -11,13 +11,11 @@ futures = "0.1"
 h2 = "0.1"
 http = "0.1"
 http-body = "0.1"
-httparse = "1.2"
 hyper = "0.12.3"
 indexmap = "1.0"
 linkerd2-error = { path  = "../error" }
 linkerd2-http-classify = { path  = "../http-classify" }
 linkerd2-metrics = { path  = "../metrics" }
-rand = "0.7"
 tokio = "0.1"
 tokio-timer = "0.2"   # for tokio_timer::clock
 tower = "0.1"
