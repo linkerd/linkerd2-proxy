@@ -42,6 +42,19 @@ dep_fortio() {
   which fortio &> /dev/null || ( echo "fortio not found: Add the bin folder of your GOPATH to your PATH" ; exit 1 )
 }
 
+fortio_load() {
+  docker run fortio/fortio load \
+    --rm -it \
+    --mount src="$(pwd)",target=/out,type=bind \
+    -- \
+    "$@" \
+    -resolve 127.0.0.1 \
+    -c="$CONNECTIONS" \
+    -t="$DURATION" \ \
+    -keepalive=false \
+    -H 'Host: transparency.test.svc.cluster.local' "localhost:$PROXY_PORT"
+}
+
 # install_iperf() {
 #   case "$OSTYPE" of
 #     darwin*) brew install iperf ;;

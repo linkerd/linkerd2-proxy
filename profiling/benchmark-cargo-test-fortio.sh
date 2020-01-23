@@ -11,7 +11,7 @@ echo "File marker $RUN_NAME"
 
 cd "$PROFDIR"
 
-dep_fortio || exit 1
+# dep_fortio || exit 1
 
 # Cleanup background processes when script is canceled
 trap '{ killall iperf fortio >& /dev/null; }' EXIT
@@ -61,7 +61,7 @@ single_benchmark_run () {
         S=0
         for i in $(seq $ITERATIONS); do
           echo "$MODE $DIRECTION Iteration: $i RPS: $r REQ_BODY_LEN: $l"
-          fortio load $XARG -resolve 127.0.0.1 -c="$CONNECTIONS" -qps="$r" -t="$DURATION" -payload-size="$l" -labels="$RUN_NAME" -r 0.00001 -json="$NAME-$r-rps.$ID.json" -keepalive=false -H 'Host: transparency.test.svc.cluster.local' "localhost:$PROXY_PORT" &> "$LOG"
+          fortio_load $XARG -payload-size="$l" -qps="$r" -labels="$RUN_NAME" -json="out/$NAME-$r-rps.$ID.json" &> "$LOG"
           T=$(rev "$NAME-$r-rps.$ID.json" | grep -m 1 Value | cut  -d':' -f2)
           if [ -z "$T" ]; then
             echo "No last percentile value found"
