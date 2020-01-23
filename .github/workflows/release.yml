@@ -8,9 +8,11 @@ on:
 jobs:
   package:
     runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.40.0-buster
     steps:
-    - uses: actions/checkout@722adc6 # v2
-    - uses: hecrj/setup-rust-action@e0938ba # v1
+    - name: git co
+      uses: actions/checkout@v1
     - name: meta
       id: release-tag-meta
       uses: ./.github/actions/release-tag-meta
