@@ -3,7 +3,7 @@
 use linkerd2_app_integration::*;
 use std::env;
 use std::io::Read;
-use std::net::TcpListener;
+use std::net::{TcpListener, ToSocketAddrs};
 
 fn main() {
     let srv_addr = match env::var_os("PROFILING_SUPPORT_SERVER") {
@@ -14,11 +14,14 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let addr: SocketAddr = srv_addr
+    let addr = srv_addr
         .to_str()
         .expect("PROFILING_SUPPORT_SERVER not a string")
-        .parse()
-        .expect("could not parse PROFILE_SUPPORT_SERVER (expects, eg., 127.0.0.1:8000)");
+        .to_socket_addrs()
+        .expect("could not parse/resolve PROFILING_SUPPORT_SERVER")
+        .into_iter()
+        .next()
+        .expect("PROFILING_SUPPORT_SERVER resolved to no addrs!");
 
     let srv = server::mock_listening(addr.clone());
     let srv2 = server::mock_listening(addr.clone());
