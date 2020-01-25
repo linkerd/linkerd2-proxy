@@ -28,20 +28,6 @@ BRANCH_NAME=${BRANCH_NAME:-HEAD}
 BRANCH_NAME=$(echo $BRANCH_NAME | sed -e 's/\//-/g')
 export RUN_NAME="$BRANCH_NAME $ID Iter: $ITERATIONS Dur: $DURATION Conns: $CONNECTIONS Streams: $GRPC_STREAMS"
 
-case "$OSTYPE" in
-  darwin*) NETSTAT="netstat -ptcp -an ";;
-  *) NETSTAT="netstat -tan" ;;
-esac
-
-port_open() {
-  $NETSTAT | grep "$1.*LISTEN" &> "$LOG"
-}
-
-dep_fortio() {
-  which fortio &> /dev/null || go get fortio.org/fortio
-  which fortio &> /dev/null || ( echo "fortio not found: Add the bin folder of your GOPATH to your PATH" ; exit 1 )
-}
-
 fortio_load() {
   docker run fortio/fortio load \
     --rm -it \

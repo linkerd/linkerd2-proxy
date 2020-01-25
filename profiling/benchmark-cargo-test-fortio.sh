@@ -14,41 +14,25 @@ cd "$PROFDIR"
 # dep_fortio || exit 1
 
 # Cleanup background processes when script is canceled
-trap '{ killall iperf fortio >& /dev/null; }' EXIT
+trap '{ docker-compose down -t 5; }' EXIT
 
 # Summary table header
 echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "summary.$RUN_NAME.txt"
 
 single_benchmark_run () {
   # run benchmark utilities in background, only proxy runs in foreground
-  (
-  # spawn test server in background
-  SERVER="fortio server -ui-path ''"
-  if [ "$MODE" = "TCP" ]; then
-    SERVER="iperf -s -p $SERVER_PORT"
-  fi
-  $SERVER &> "$LOG" &
-  SPID=$!
-  # wait for service to start
-  until ( port_open "$SERVER_PORT" )
-  do
-    sleep 1
-  done
-  # wait for proxy to start
-  until ( port_open "$PROXY_PORT" )
-  do
-    sleep 1
-  done
   # run client
   if [ "$MODE" = "TCP" ]; then
+    export SERVER="iperf:$SERVER_PORT" && docker-compose up -d
     echo "TCP $DIRECTION"
-    ( iperf -t 6 -p "$PROXY_PORT" -c 127.0.0.1 || ( echo "iperf client failed" > /dev/stderr; true ) ) | tee "$NAME.$ID.txt" &> "$LOG"
+    ( iperf -t 6 -p "$PROXY_PORT" -c 127.0.0.1 || ( echo "iperf client failed" > /dev/stderr; true ) ) | tee "ou$NAME.$ID.txt" &> "$LOG"
     T=$(grep "/sec" "$NAME.$ID.txt" | cut -d' ' -f12)
     if [ -z "$T" ]; then
       T="0"
     fi
     echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "summary.$RUN_NAME.txt"
   else
+    export SERVER="fortio:$SERVER_PORT" && docker-compose up -d
     RPS="$HTTP_RPS"
     XARG=""
     if [ "$MODE" = "gRPC" ]; then
@@ -61,8 +45,24 @@ single_benchmark_run () {
         S=0
         for i in $(seq $ITERATIONS); do
           echo "$MODE $DIRECTION Iteration: $i RPS: $r REQ_BODY_LEN: $l"
-          fortio_load $XARG -payload-size="$l" -qps="$r" -labels="$RUN_NAME" -json="out/$NAME-$r-rps.$ID.json" &> "$LOG"
-          T=$(rev "$NAME-$r-rps.$ID.json" | grep -m 1 Value | cut  -d':' -f2)
+
+          (docker-compose exec fortio \
+            /linkerd-await \
+            --uri="http://proxy:4191/ready" \
+            -- \
+            /fortio load $XARG \
+            -resolve proxy \
+            -c="$CONNECTIONS" \
+            -t="$DURATION" \
+            -keepalive=false \
+            -payload-size="$l" \
+            -qps="$r" \
+            -labels="$RUN_NAME" \
+            -json="out/$NAME-$r-rps.$ID.json" \
+            -H "Host: transparency.test.svc.cluster.local" \
+            "http://proxy:${PROXY_PORT}") &> "$LOG"
+
+          T=$(grep Value "$NAME-$r-rps.$ID.json" | tail -1 | cut  -d':' -f2)
           if [ -z "$T" ]; then
             echo "No last percentile value found"
             exit 1
@@ -73,23 +73,6 @@ single_benchmark_run () {
       done
     done
   fi
-  # kill server
-  kill $SPID || ( echo "test server failed"; true )
-  # signal that proxy can terminate now
-  (echo F | nc 127.0.0.1 7777 &> /dev/null) || true
-  # wait for proxy to terminate
-  while ( port_open "$PROXY_PORT" )
-  do
-    sleep 1
-  done
-  # wait for service to terminate
-  while ( port_open "$SERVER_PORT" )
-  do
-    sleep 1
-  done
-  ) &
-  # run proxy in foreground
-  PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT" cargo run --release --bin profile &> "$LOG" || echo "proxy failed"
 }
 
 
@@ -110,3 +93,4 @@ ls ./*$ID*.txt
 echo SUMMARY:
 cat "summary.$RUN_NAME.txt"
 echo "Run 'fortio report' and open http://localhost:8080/ to display the HTTP/gRPC graphs"
+docker-compose down -t 5

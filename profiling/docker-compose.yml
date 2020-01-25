@@ -1,4 +1,4 @@
-version: "3"
+version: "3.7"
 services:
   iperf:
     image: phlak/iperf
@@ -11,43 +11,26 @@ services:
       args:
         - PROFILE=true
     environment:
-      PROFILING_SUPPORT_SERVER: "iperf:5001"
+      PROFILING_SUPPORT_SERVER: "${SERVER}"
+      # LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
+    entrypoint: ["/usr/lib/linkerd/linkerd2-proxy"]
     depends_on:
       - iperf
+      - fortio
     ports:
       - "4191:4191"
       - "4140:4140"
       - "4143:4143"
+
   fortio:
     build:
       context: .
       dockerfile: Dockerfile-fortio
-    command:
-      [
-        # before running fortio, wait for the proxy to be ready.
-        "/linkerd-await",
-        "--uri http://proxy:4191/ready",
-    #     "--",
-    #     "/fortio",
-    #     "load",
-    #     "$COMMAND",
-    #     "-keepalive=false",
-    #     "-H 'Host: transparency.test.svc.cluster.local'",
-    #     "-payload-size=$PAYLOAD_SIZE",
-    #     "-c=$CONNECTIONS",
-    #     "-t=$DURATION",
-    #     "-qps=$QPS",
-    #     "-labels=$RUN_NAME",
-    #     "-json=out/$NAME-$QPS-rps.$ID.json",
-    #     "proxy:$PROXY_PORT",
-      ]
-    # environment:
-    #   - PAYLOAD_SIZE
-    #   - QPS
-    #   - RUN_NAME
-    #   - CONNECTIONS
-    #   - DURATION
-    #   - COMMAND
-    #   - PROXY_PORT
-    depends_on:
-      - proxy
+    command: ["/fortio", "server"]
+    ports:
+      - "8080:8080"
+      - "8079:8079"
+    volumes:
+      - type: bind
+        source: "."
+        target: "/out"

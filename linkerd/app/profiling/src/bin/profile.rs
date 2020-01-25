@@ -28,7 +28,13 @@ fn main() {
     let ctrl = controller::new()
         .destination_and_close("transparency.test.svc.cluster.local", srv.addr)
         .run();
-    let env = TestEnv::new();
+    let mut env = TestEnv::new();
+    env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "0.0.0.0:4143".to_owned());
+    env.put(
+        app::env::ENV_OUTBOUND_LISTEN_ADDR,
+        "0.0.0.0:4140".to_owned(),
+    );
+    env.put(app::env::ENV_ADMIN_LISTEN_ADDR, "0.0.0.0:4191".to_owned());
     let _proxy = proxy::new()
         .controller(ctrl)
         .outbound(srv)
