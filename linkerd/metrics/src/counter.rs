@@ -18,6 +18,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Default)]
 pub struct Counter(AtomicU64);
 
+/// Largest `u64` that can fit without loss of precision in `f64` (2^53).
+///
+/// Wrapping is based on the fact that Prometheus models counters as f64 (52-bits
+/// mantissa), thus integer values over 2^53 are not guaranteed to be correctly
+/// exposed.
+pub(crate) const MAX_PRECISE_COUNTER: u64 = 0x20_0000_0000_0000;
+
 // ===== impl Counter =====
 
 impl Counter {
@@ -29,9 +36,11 @@ impl Counter {
         self.0.fetch_add(n, Ordering::SeqCst);
     }
 
-    /// Return current counter value.
+    /// Return current counter value, wrapped to be safe for use with Prometheus.
     pub fn value(&self) -> u64 {
-        self.0.load(Ordering::Acquire)
+        self.0
+            .load(Ordering::Acquire)
+            .wrapping_rem(MAX_PRECISE_COUNTER + 1)
     }
 }
 
@@ -115,20 +124,19 @@ mod tests {
 
     #[test]
     fn count_wrapping() {
-        let cnt = Counter::from(std::u64::MAX - 1);
-        assert_eq!(cnt.value(), std::u64::MAX - 1);
+        let cnt = Counter::from(MAX_PRECISE_COUNTER - 1);
+        assert_eq!(cnt.value(), MAX_PRECISE_COUNTER - 1);
         cnt.incr();
-        assert_eq!(cnt.value(), std::u64::MAX);
+        assert_eq!(cnt.value(), MAX_PRECISE_COUNTER);
         cnt.incr();
         assert_eq!(cnt.value(), 0);
         cnt.incr();
         assert_eq!(cnt.value(), 1);
 
-        let max = Counter::from(std::u64::MAX);
-        assert_eq!(max.value(), std::u64::MAX);
-        max.incr();
-        assert_eq!(cnt.value(), 0);
-        max.incr();
-        assert_eq!(cnt.value(), 1);
+        let max = Counter::from(MAX_PRECISE_COUNTER);
+        assert_eq!(max.value(), MAX_PRECISE_COUNTER);
+
+        let over = Counter::from(MAX_PRECISE_COUNTER + 1);
+        assert_eq!(over.value(), 0);
     }
 }
