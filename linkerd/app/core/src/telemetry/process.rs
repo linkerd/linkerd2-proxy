@@ -1,6 +1,7 @@
 use self::system::System;
 use linkerd2_metrics::{metrics, FmtMetrics, Gauge};
 use std::fmt;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
 
@@ -12,7 +13,7 @@ metrics! {
 
 #[derive(Clone, Debug, Default)]
 pub struct Report {
-    start_time: Gauge,
+    start_time: Arc<Gauge>,
     system: Option<System>,
 }
 
@@ -31,7 +32,7 @@ impl Report {
             }
         };
         Self {
-            start_time: t0.into(),
+            start_time: Arc::new(t0.into()),
             system,
         }
     }
@@ -40,7 +41,7 @@ impl Report {
 impl FmtMetrics for Report {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         process_start_time_seconds.fmt_help(f)?;
-        process_start_time_seconds.fmt_metric(f, self.start_time)?;
+        process_start_time_seconds.fmt_metric(f, self.start_time.as_ref())?;
 
         if let Some(ref sys) = self.system {
             sys.fmt_metrics(f)?;
@@ -129,14 +130,14 @@ mod system {
             };
 
             let clock_ticks = stat.utime as u64 + stat.stime as u64;
+            let cpu = Counter::from(clock_ticks / self.clock_ticks_per_sec);
             process_cpu_seconds_total.fmt_help(f)?;
-            process_cpu_seconds_total
-                .fmt_metric(f, Counter::from(clock_ticks / self.clock_ticks_per_sec))?;
+            process_cpu_seconds_total.fmt_metric(f, &cpu)?;
 
             match Self::open_fds(stat.pid) {
                 Ok(open_fds) => {
                     process_open_fds.fmt_help(f)?;
-                    process_open_fds.fmt_metric(f, open_fds)?;
+                    process_open_fds.fmt_metric(f, &open_fds)?;
                 }
                 Err(err) => {
                     warn!("could not determine process_open_fds: {}", err);
@@ -148,7 +149,7 @@ mod system {
                 Ok(None) => {}
                 Ok(Some(ref max_fds)) => {
                     process_max_fds.fmt_help(f)?;
-                    process_max_fds.fmt_metric(f, *max_fds)?;
+                    process_max_fds.fmt_metric(f, max_fds)?;
                 }
                 Err(err) => {
                     warn!("could not determine process_max_fds: {}", err);
@@ -157,11 +158,12 @@ mod system {
             }
 
             process_virtual_memory_bytes.fmt_help(f)?;
-            process_virtual_memory_bytes.fmt_metric(f, Gauge::from(stat.vsize as u64))?;
+            let vsz = Gauge::from(stat.vsize as u64);
+            process_virtual_memory_bytes.fmt_metric(f, &vsz)?;
 
             process_resident_memory_bytes.fmt_help(f)?;
-            process_resident_memory_bytes
-                .fmt_metric(f, Gauge::from(stat.rss as u64 * self.page_size))
+            let rss = Gauge::from(stat.rss as u64 * self.page_size);
+            process_resident_memory_bytes.fmt_metric(f, &rss)
         }
     }
 }

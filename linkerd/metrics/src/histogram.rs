@@ -5,7 +5,7 @@ use std::{cmp, iter, slice};
 use super::{Counter, FmtLabels, FmtMetric};
 
 /// A series of latency values and counts.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Histogram<V: Into<u64>> {
     bounds: &'static Bounds,
     buckets: Box<[Counter]>,
@@ -94,9 +94,9 @@ impl<V: Into<u64>> Histogram<V> {
 impl<V: Into<u64>> Histogram<V> {
     /// Assert the bucket containing `le` has a count of at least `at_least`.
     pub fn assert_bucket_at_least(&self, le: u64, at_least: u64) {
-        for (&bucket, &count) in self {
+        for (&bucket, ref count) in self {
             if bucket >= le {
-                let count: u64 = count.into();
+                let count = count.value();
                 assert!(count >= at_least, "le={:?}; bucket={:?};", le, bucket);
                 break;
             }
@@ -105,9 +105,9 @@ impl<V: Into<u64>> Histogram<V> {
 
     /// Assert the bucket containing `le` has a count of exactly `exactly`.
     pub fn assert_bucket_exactly(&self, le: u64, exactly: u64) -> &Self {
-        for (&bucket, &count) in self {
+        for (&bucket, ref count) in self {
             if bucket >= le {
-                let count: u64 = count.into();
+                let count = count.value();
                 assert_eq!(
                     count, exactly,
                     "le={:?}; bucket={:?}; buckets={:#?};",
@@ -137,7 +137,7 @@ impl<V: Into<u64>> Histogram<V> {
                 break;
             }
 
-            let count: u64 = self.buckets[i].into();
+            let count: u64 = self.buckets[i].value();
             assert_eq!(count, exactly, "bucket={:?}; value={:?};", bucket, value,);
         }
         self
@@ -149,7 +149,7 @@ impl<V: Into<u64>> Histogram<V> {
         // We set this to true after we've iterated past the first bucket
         // whose upper bound is >= `value`.
         let mut past_le = false;
-        for (&bucket, &count) in self {
+        for (&bucket, ref count) in self {
             if bucket < value {
                 continue;
             }
@@ -160,8 +160,13 @@ impl<V: Into<u64>> Histogram<V> {
             }
 
             if past_le {
-                let count: u64 = count.into();
-                assert_eq!(count, exactly, "bucket={:?}; value={:?};", bucket, value,);
+                assert_eq!(
+                    count.value(),
+                    exactly,
+                    "bucket={:?}; value={:?};",
+                    bucket,
+                    value,
+                );
             }
         }
         self
@@ -183,7 +188,7 @@ impl<V: Into<u64>> FmtMetric for Histogram<V> {
     fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
         let mut total = Counter::default();
         for (le, count) in self {
-            total += *count;
+            total += count.value();
             total.fmt_metric_labeled(f, Key(&name, "bucket"), Label("le", le))?;
         }
         total.fmt_metric(f, Key(&name, "count"))?;
@@ -204,7 +209,7 @@ impl<V: Into<u64>> FmtMetric for Histogram<V> {
     {
         let mut total = Counter::default();
         for (le, count) in self {
-            total += *count;
+            total += count.value();
             total.fmt_metric_labeled(f, Key(&name, "bucket"), (&labels, Label("le", le)))?;
         }
         total.fmt_metric_labeled(f, Key(&name, "count"), &labels)?;
@@ -362,7 +367,7 @@ mod tests {
                 hist.add(obs);
             }
 
-            hist.sum == expected_sum
+            hist.sum.value() == expected_sum.value()
         }
 
         fn count_equals_number_of_observations(observations: Vec<u64>) -> bool {
@@ -372,11 +377,8 @@ mod tests {
                 hist.add(*obs);
             }
 
-            let count: u64 = hist.buckets.iter().map(|&c| {
-                let count: u64 = c.into();
-                count
-            }).sum();
-            count as usize == observations.len()
+            let count = hist.buckets.iter().map(|ref c| c.value()).sum::<u64>() as usize;
+            count == observations.len()
         }
 
         fn multiple_observations_increment_buckets(observations: Vec<u64>) -> bool {
@@ -398,7 +400,7 @@ mod tests {
             }
 
             for (i, count) in hist.buckets.iter().enumerate() {
-                let count: u64 = (*count).into();
+                let count = count.value();
                 assert_eq!(buckets_and_counts.get(&i).unwrap_or(&0), &count);
             }
             true

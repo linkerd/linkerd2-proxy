@@ -1,7 +1,7 @@
+use super::prom::{FmtLabels, FmtMetric};
 use std::fmt::{self, Display};
 use std::ops;
-
-use super::prom::{FmtLabels, FmtMetric};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A Prometheus counter is represented by a `Wrapping` unsigned 52-bit integer.
 ///
@@ -15,67 +15,62 @@ use super::prom::{FmtLabels, FmtMetric};
 /// [`rate()`]: https://prometheus.io/docs/prometheus/latest/querying/functions/#rate()
 /// [`irate()`]: https://prometheus.io/docs/prometheus/latest/querying/functions/#irate()
 /// [`resets()`]: https://prometheus.io/docs/prometheus/latest/querying/functions/#resets
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct Counter(u64);
-
-/// Largest `u64` that can fit without loss of precision in `f64` (2^53).
-pub(crate) const MAX_PRECISE_COUNTER: u64 = 0x20_0000_0000_0000;
+#[derive(Debug, Default)]
+pub struct Counter(AtomicU64);
 
 // ===== impl Counter =====
 
 impl Counter {
-    /// Increment the counter by one.
-    ///
-    /// This function wraps on 52-bit overflows.
-    pub fn incr(&mut self) {
-        *self += 1;
+    pub fn incr(&self) {
+        self.add(1)
+    }
+
+    pub fn add(&self, n: u64) {
+        self.0.fetch_add(n, Ordering::SeqCst);
     }
 
     /// Return current counter value.
     pub fn value(&self) -> u64 {
-        self.0
+        self.0.load(Ordering::Acquire)
     }
 }
 
 impl Into<u64> for Counter {
     fn into(self) -> u64 {
-        self.0
+        self.value()
     }
 }
 
 impl From<u64> for Counter {
     fn from(value: u64) -> Self {
-        Counter(0) + value
+        Counter(value.into())
     }
 }
 
 impl ops::Add<u64> for Counter {
     type Output = Self;
     fn add(self, rhs: u64) -> Self::Output {
-        let wrapped = self
-            .0
-            .wrapping_add(rhs)
-            .wrapping_rem(MAX_PRECISE_COUNTER + 1);
-        Counter(wrapped)
+        self.0.fetch_add(rhs, Ordering::SeqCst);
+        self
     }
 }
 
 impl ops::Add<Self> for Counter {
     type Output = Self;
-    fn add(self, Counter(rhs): Self) -> Self::Output {
-        self + rhs
+    fn add(self, rhs: Self) -> Self::Output {
+        self + rhs.value()
     }
 }
 
 impl ops::AddAssign<u64> for Counter {
     fn add_assign(&mut self, rhs: u64) {
-        *self = *self + rhs
+        self.0.fetch_add(rhs, Ordering::SeqCst);
     }
 }
 
 impl ops::AddAssign<Self> for Counter {
-    fn add_assign(&mut self, Counter(rhs): Self) {
-        *self += rhs
+    fn add_assign(&mut self, rhs: Self) {
+        *self += rhs.value();
     }
 }
 
@@ -83,7 +78,7 @@ impl FmtMetric for Counter {
     const KIND: &'static str = "counter";
 
     fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        writeln!(f, "{} {}", name, self.0)
+        writeln!(f, "{} {}", name, self.value())
     }
 
     fn fmt_metric_labeled<N, L>(
@@ -98,7 +93,7 @@ impl FmtMetric for Counter {
     {
         write!(f, "{}{{", name)?;
         labels.fmt_labels(f)?;
-        writeln!(f, "}} {}", self.0)
+        writeln!(f, "}} {}", self.value())
     }
 }
 
@@ -120,18 +115,20 @@ mod tests {
 
     #[test]
     fn count_wrapping() {
-        let mut cnt = Counter::from(MAX_PRECISE_COUNTER - 1);
-        assert_eq!(cnt.value(), MAX_PRECISE_COUNTER - 1);
+        let cnt = Counter::from(std::u64::MAX - 1);
+        assert_eq!(cnt.value(), std::u64::MAX - 1);
         cnt.incr();
-        assert_eq!(cnt.value(), MAX_PRECISE_COUNTER);
-        assert_eq!(cnt + 1, Counter::from(0));
+        assert_eq!(cnt.value(), std::u64::MAX);
         cnt.incr();
         assert_eq!(cnt.value(), 0);
+        cnt.incr();
+        assert_eq!(cnt.value(), 1);
 
-        let max = Counter::from(MAX_PRECISE_COUNTER);
-        assert_eq!(max.value(), MAX_PRECISE_COUNTER);
-
-        let over = Counter::from(MAX_PRECISE_COUNTER + 1);
-        assert_eq!(over.value(), 0);
+        let max = Counter::from(std::u64::MAX);
+        assert_eq!(max.value(), std::u64::MAX);
+        max.incr();
+        assert_eq!(cnt.value(), 0);
+        max.incr();
+        assert_eq!(cnt.value(), 1);
     }
 }
