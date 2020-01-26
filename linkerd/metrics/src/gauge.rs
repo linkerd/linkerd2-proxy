@@ -20,7 +20,7 @@ impl Gauge {
     pub fn value(&self) -> u64 {
         self.0
             .load(Ordering::Acquire)
-            .wrapping_rem(MAX_PRECISE_VALUE)
+            .wrapping_rem(MAX_PRECISE_VALUE + 1)
     }
 }
 

@@ -33,7 +33,7 @@ impl Counter {
     pub fn value(&self) -> u64 {
         self.0
             .load(Ordering::Acquire)
-            .wrapping_rem(MAX_PRECISE_VALUE)
+            .wrapping_rem(MAX_PRECISE_VALUE + 1)
     }
 }
 
@@ -113,5 +113,23 @@ mod tests {
         assert_eq!(cnt.value(), 42);
         cnt += 0;
         assert_eq!(cnt.value(), 42);
+    }
+
+    #[test]
+    fn count_wrapping() {
+        let cnt = Counter::from(MAX_PRECISE_VALUE - 1);
+        assert_eq!(cnt.value(), MAX_PRECISE_VALUE - 1);
+        cnt.incr();
+        assert_eq!(cnt.value(), MAX_PRECISE_VALUE);
+        cnt.incr();
+        assert_eq!(cnt.value(), 0);
+        cnt.incr();
+        assert_eq!(cnt.value(), 1);
+
+        let max = Counter::from(MAX_PRECISE_VALUE);
+        assert_eq!(max.value(), MAX_PRECISE_VALUE);
+
+        let over = Counter::from(MAX_PRECISE_VALUE + 1);
+        assert_eq!(over.value(), 0);
     }
 }
