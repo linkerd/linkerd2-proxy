@@ -1,4 +1,4 @@
-use super::prom::{FmtLabels, FmtMetric};
+use super::prom::{FmtLabels, FmtMetric, MAX_PRECISE_VALUE};
 use std::fmt::{self, Display};
 use std::ops;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,13 +18,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Default)]
 pub struct Counter(AtomicU64);
 
-/// Largest `u64` that can fit without loss of precision in `f64` (2^53).
-///
-/// Wrapping is based on the fact that Prometheus models counters as f64 (52-bits
-/// mantissa), thus integer values over 2^53 are not guaranteed to be correctly
-/// exposed.
-pub(crate) const MAX_PRECISE_COUNTER: u64 = 0x20_0000_0000_0000;
-
 // ===== impl Counter =====
 
 impl Counter {
@@ -40,7 +33,6 @@ impl Counter {
     pub fn value(&self) -> u64 {
         self.0
             .load(Ordering::Acquire)
-            .wrapping_rem(MAX_PRECISE_COUNTER + 1)
     }
 }
 
@@ -87,7 +79,7 @@ impl FmtMetric for Counter {
     const KIND: &'static str = "counter";
 
     fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        writeln!(f, "{} {}", name, self.value())
+        writeln!(f, "{} {}", name, self.value().wrapping_rem(MAX_PRECISE_VALUE))
     }
 
     fn fmt_metric_labeled<N, L>(
@@ -102,7 +94,7 @@ impl FmtMetric for Counter {
     {
         write!(f, "{}{{", name)?;
         labels.fmt_labels(f)?;
-        writeln!(f, "}} {}", self.value())
+        writeln!(f, "}} {}", self.value().wrapping_rem(MAX_PRECISE_VALUE))
     }
 }
 
@@ -120,23 +112,5 @@ mod tests {
         assert_eq!(cnt.value(), 42);
         cnt += 0;
         assert_eq!(cnt.value(), 42);
-    }
-
-    #[test]
-    fn count_wrapping() {
-        let cnt = Counter::from(MAX_PRECISE_COUNTER - 1);
-        assert_eq!(cnt.value(), MAX_PRECISE_COUNTER - 1);
-        cnt.incr();
-        assert_eq!(cnt.value(), MAX_PRECISE_COUNTER);
-        cnt.incr();
-        assert_eq!(cnt.value(), 0);
-        cnt.incr();
-        assert_eq!(cnt.value(), 1);
-
-        let max = Counter::from(MAX_PRECISE_COUNTER);
-        assert_eq!(max.value(), MAX_PRECISE_COUNTER);
-
-        let over = Counter::from(MAX_PRECISE_COUNTER + 1);
-        assert_eq!(over.value(), 0);
     }
 }

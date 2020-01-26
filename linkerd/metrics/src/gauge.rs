@@ -1,4 +1,4 @@
-use super::{FmtLabels, FmtMetric};
+use super::prom::{FmtLabels, FmtMetric, MAX_PRECISE_VALUE};
 use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -38,7 +38,7 @@ impl FmtMetric for Gauge {
     const KIND: &'static str = "gauge";
 
     fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        writeln!(f, "{} {}", name, self.value())
+        writeln!(f, "{} {}", name, self.value().wrapping_rem(MAX_PRECISE_VALUE))
     }
 
     fn fmt_metric_labeled<N, L>(
@@ -53,6 +53,6 @@ impl FmtMetric for Gauge {
     {
         write!(f, "{}{{", name)?;
         labels.fmt_labels(f)?;
-        writeln!(f, "}} {}", self.value())
+        writeln!(f, "}} {}", self.value().wrapping_rem(MAX_PRECISE_VALUE))
     }
 }

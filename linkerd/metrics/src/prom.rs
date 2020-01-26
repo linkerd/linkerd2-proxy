@@ -1,6 +1,13 @@
 use std::fmt;
 use std::marker::{PhantomData, Sized};
 
+/// Largest `u64` that can fit without loss of precision in `f64` (2^53).
+///
+/// Wrapping is based on the fact that Prometheus models values as f64 (52-bits
+/// mantissa), thus integer values over 2^53 are not guaranteed to be correctly
+/// exposed.
+pub(crate) const MAX_PRECISE_VALUE: u64 = 0x20_0000_0000_0000;
+
 /// Writes a block of metrics in prometheus-formatted output.
 pub trait FmtMetrics {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
