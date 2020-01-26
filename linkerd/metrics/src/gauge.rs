@@ -9,16 +9,18 @@ pub struct Gauge(AtomicU64);
 impl Gauge {
     /// Increment the gauge by one.
     pub fn incr(&self) {
-        self.0.fetch_add(1, Ordering::SeqCst);
+        self.0.fetch_add(1, Ordering::Release);
     }
 
     /// Decrement the gauge by one.
     pub fn decr(&self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
+        self.0.fetch_sub(1, Ordering::Release);
     }
 
     pub fn value(&self) -> u64 {
-        self.0.load(Ordering::Acquire)
+        self.0
+            .load(Ordering::Acquire)
+            .wrapping_rem(MAX_PRECISE_VALUE)
     }
 }
 
@@ -38,7 +40,7 @@ impl FmtMetric for Gauge {
     const KIND: &'static str = "gauge";
 
     fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        writeln!(f, "{} {}", name, self.value().wrapping_rem(MAX_PRECISE_VALUE))
+        writeln!(f, "{} {}", name, self.value())
     }
 
     fn fmt_metric_labeled<N, L>(
@@ -53,6 +55,6 @@ impl FmtMetric for Gauge {
     {
         write!(f, "{}{{", name)?;
         labels.fmt_labels(f)?;
-        writeln!(f, "}} {}", self.value().wrapping_rem(MAX_PRECISE_VALUE))
+        writeln!(f, "}} {}", self.value())
     }
 }

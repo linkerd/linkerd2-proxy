@@ -26,13 +26,14 @@ impl Counter {
     }
 
     pub fn add(&self, n: u64) {
-        self.0.fetch_add(n, Ordering::SeqCst);
+        self.0.fetch_add(n, Ordering::Release);
     }
 
     /// Return current counter value, wrapped to be safe for use with Prometheus.
     pub fn value(&self) -> u64 {
         self.0
             .load(Ordering::Acquire)
+            .wrapping_rem(MAX_PRECISE_VALUE)
     }
 }
 
@@ -79,7 +80,7 @@ impl FmtMetric for Counter {
     const KIND: &'static str = "counter";
 
     fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        writeln!(f, "{} {}", name, self.value().wrapping_rem(MAX_PRECISE_VALUE))
+        writeln!(f, "{} {}", name, self.value())
     }
 
     fn fmt_metric_labeled<N, L>(
@@ -94,7 +95,7 @@ impl FmtMetric for Counter {
     {
         write!(f, "{}{{", name)?;
         labels.fmt_labels(f)?;
-        writeln!(f, "}} {}", self.value().wrapping_rem(MAX_PRECISE_VALUE))
+        writeln!(f, "}} {}", self.value())
     }
 }
 
