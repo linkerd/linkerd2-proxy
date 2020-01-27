@@ -1,0 +1,6 @@
+ARG LINKERD_AWAIT_VERSION=v0.1.2
+FROM olix0r/linkerd-await:v0.1.1 as await
+
+FROM phlak/iperf
+COPY --from=await /linkerd-await /usr/bin/linkerd-await
+ENV PATH="/usr/bin:${PATH}"

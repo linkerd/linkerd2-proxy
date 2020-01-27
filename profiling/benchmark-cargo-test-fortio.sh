@@ -25,7 +25,11 @@ single_benchmark_run () {
   if [ "$MODE" = "TCP" ]; then
     export SERVER="iperf:$SERVER_PORT" && docker-compose up -d
     echo "TCP $DIRECTION"
-    ( iperf -t 6 -p "$PROXY_PORT" -c 127.0.0.1 || ( echo "iperf client failed" > /dev/stderr; true ) ) | tee "ou$NAME.$ID.txt" &> "$LOG"
+    (docker-compose exec iperf \
+      linkerd-await \
+      --uri="http://proxy:4191/ready" \
+      -- \
+      iperf -t 6 -p "$PROXY_PORT" -c proxy) | tee "$NAME.$ID.txt" &> "$LOG"
     T=$(grep "/sec" "$NAME.$ID.txt" | cut -d' ' -f12)
     if [ -z "$T" ]; then
       T="0"
@@ -47,10 +51,10 @@ single_benchmark_run () {
           echo "$MODE $DIRECTION Iteration: $i RPS: $r REQ_BODY_LEN: $l"
 
           (docker-compose exec fortio \
-            /linkerd-await \
+            linkerd-await \
             --uri="http://proxy:4191/ready" \
             -- \
-            /fortio load $XARG \
+            fortio load $XARG \
             -resolve proxy \
             -c="$CONNECTIONS" \
             -t="$DURATION" \

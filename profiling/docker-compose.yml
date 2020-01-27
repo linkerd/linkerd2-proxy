@@ -1,9 +1,13 @@
 version: "3.7"
 services:
   iperf:
-    image: phlak/iperf
+    build:
+      context: .
+      dockerfile: Dockerfile-iperf
+    command: ["iperf", "-s", "-p 5001"]
     ports:
       - "5001:5001"
+
   proxy:
     build:
       context: ..
@@ -12,7 +16,7 @@ services:
         - PROFILE=true
     environment:
       PROFILING_SUPPORT_SERVER: "${SERVER}"
-      # LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
+      LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
     entrypoint: ["/usr/lib/linkerd/linkerd2-proxy"]
     depends_on:
       - iperf
@@ -26,7 +30,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile-fortio
-    command: ["/fortio", "server"]
+    command: ["fortio", "server"]
     ports:
       - "8080:8080"
       - "8079:8079"

@@ -1,8 +1,9 @@
 ARG LINKERD_AWAIT_VERSION=v0.1.2
 
-FROM fortio/fortio as build
-
 FROM olix0r/linkerd-await:v0.1.1 as await
+FROM fortio/fortio as fortio
 FROM ubuntu:latest
-COPY --from=build /usr/bin/fortio /usr/bin/fortio
 COPY --from=await /linkerd-await /usr/bin/linkerd-await
+COPY --from=fortio /usr/bin/fortio /usr/bin/fortio
+COPY --from=fortio /usr/share/fortio /usr/share/fortio
+ENV PATH="/usr/bin/:${PATH}"
