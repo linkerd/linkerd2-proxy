@@ -1,6 +1,5 @@
 use super::prom::{FmtLabels, FmtMetric, MAX_PRECISE_VALUE};
 use std::fmt::{self, Display};
-use std::ops;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A Prometheus counter is represented by a `Wrapping` unsigned 52-bit integer.
@@ -49,33 +48,6 @@ impl From<u64> for Counter {
     }
 }
 
-impl ops::Add<u64> for Counter {
-    type Output = Self;
-    fn add(self, rhs: u64) -> Self::Output {
-        self.0.fetch_add(rhs, Ordering::SeqCst);
-        self
-    }
-}
-
-impl ops::Add<Self> for Counter {
-    type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        self + rhs.value()
-    }
-}
-
-impl ops::AddAssign<u64> for Counter {
-    fn add_assign(&mut self, rhs: u64) {
-        self.0.fetch_add(rhs, Ordering::SeqCst);
-    }
-}
-
-impl ops::AddAssign<Self> for Counter {
-    fn add_assign(&mut self, rhs: Self) {
-        *self += rhs.value();
-    }
-}
-
 impl FmtMetric for Counter {
     const KIND: &'static str = "counter";
 
@@ -105,13 +77,13 @@ mod tests {
 
     #[test]
     fn count_simple() {
-        let mut cnt = Counter::from(0);
+        let cnt = Counter::from(0);
         assert_eq!(cnt.value(), 0);
         cnt.incr();
         assert_eq!(cnt.value(), 1);
-        cnt += 41;
+        cnt.add(41);
         assert_eq!(cnt.value(), 42);
-        cnt += 0;
+        cnt.add(0);
         assert_eq!(cnt.value(), 42);
     }
 

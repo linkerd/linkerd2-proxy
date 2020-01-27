@@ -71,7 +71,7 @@ impl<V: Into<u64>> Histogram<V> {
         }
     }
 
-    pub fn add<U: Into<V>>(&mut self, u: U) {
+    pub fn add<U: Into<V>>(&self, u: U) {
         let v: V = u.into();
         let value: u64 = v.into();
 
@@ -86,7 +86,7 @@ impl<V: Into<u64>> Histogram<V> {
             .expect("all values must fit into a bucket");
 
         self.buckets[idx].incr();
-        self.sum += value;
+        self.sum.add(value);
     }
 }
 
@@ -186,9 +186,9 @@ impl<V: Into<u64>> FmtMetric for Histogram<V> {
     const KIND: &'static str = "histogram";
 
     fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        let mut total = Counter::default();
+        let total = Counter::default();
         for (le, count) in self {
-            total += count.value();
+            total.add(count.value());
             total.fmt_metric_labeled(f, Key(&name, "bucket"), Label("le", le))?;
         }
         total.fmt_metric(f, Key(&name, "count"))?;
@@ -207,9 +207,9 @@ impl<V: Into<u64>> FmtMetric for Histogram<V> {
         N: fmt::Display,
         L: FmtLabels,
     {
-        let mut total = Counter::default();
+        let total = Counter::default();
         for (le, count) in self {
-            total += count.value();
+            total.add(count.value());
             total.fmt_metric_labeled(f, Key(&name, "bucket"), (&labels, Label("le", le)))?;
         }
         total.fmt_metric_labeled(f, Key(&name, "count"), &labels)?;
@@ -345,7 +345,7 @@ mod tests {
 
     quickcheck! {
         fn bucket_incremented(obs: u64) -> bool {
-            let mut hist = Histogram::<u64>::new(&BOUNDS);
+            let hist = Histogram::<u64>::new(&BOUNDS);
             hist.add(obs);
             // The bucket containing `obs` must have count 1.
             hist.assert_bucket_exactly(obs, 1)
@@ -359,11 +359,11 @@ mod tests {
         }
 
         fn sum_equals_total_of_observations(observations: Vec<u64>) -> bool {
-            let mut hist = Histogram::<u64>::new(&BOUNDS);
+            let hist = Histogram::<u64>::new(&BOUNDS);
 
-            let mut expected_sum = Counter::default();
+            let expected_sum = Counter::default();
             for obs in observations {
-                expected_sum += obs;
+                expected_sum.add(obs);
                 hist.add(obs);
             }
 
@@ -371,7 +371,7 @@ mod tests {
         }
 
         fn count_equals_number_of_observations(observations: Vec<u64>) -> bool {
-            let mut hist = Histogram::<u64>::new(&BOUNDS);
+            let hist = Histogram::<u64>::new(&BOUNDS);
 
             for obs in &observations {
                 hist.add(*obs);
@@ -383,7 +383,7 @@ mod tests {
 
         fn multiple_observations_increment_buckets(observations: Vec<u64>) -> bool {
             let mut buckets_and_counts: HashMap<usize, u64> = HashMap::new();
-            let mut hist = Histogram::<u64>::new(&BOUNDS);
+            let hist = Histogram::<u64>::new(&BOUNDS);
 
             for obs in observations {
                 let incremented_bucket = &BOUNDS.0.iter()
