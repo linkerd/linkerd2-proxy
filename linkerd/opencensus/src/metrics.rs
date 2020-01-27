@@ -1,7 +1,6 @@
 use linkerd2_metrics::{metrics, Counter, FmtMetrics};
 use std::fmt;
-use std::sync::{Arc, Mutex};
-use tracing::error;
+use std::sync::Arc;
 
 metrics! {
     opencensus_span_export_streams: Counter { "Total count of opened span export streams" },
@@ -16,10 +15,10 @@ struct Metrics {
 }
 
 #[derive(Clone)]
-pub struct Registry(Arc<Mutex<Metrics>>);
+pub struct Registry(Arc<Metrics>);
 
 #[derive(Clone)]
-pub struct Report(Arc<Mutex<Metrics>>);
+pub struct Report(Arc<Metrics>);
 
 pub fn new() -> (Registry, Report) {
     let metrics = Metrics {
@@ -27,44 +26,31 @@ pub fn new() -> (Registry, Report) {
         requests: Counter::default(),
         spans: Counter::default(),
     };
-    let shared = Arc::new(Mutex::new(metrics));
+    let shared = Arc::new(metrics);
     (Registry(shared.clone()), Report(shared))
 }
 
 impl Registry {
     pub fn start_stream(&mut self) {
-        match self.0.lock() {
-            Ok(mut metrics) => metrics.streams.incr(),
-            Err(e) => error!(message="failed to lock metrics", %e),
-        }
+        self.0.streams.incr()
     }
 
     pub fn send(&mut self, spans: u64) {
-        match self.0.lock() {
-            Ok(mut metrics) => {
-                metrics.requests.incr();
-                metrics.spans += spans;
-            }
-            Err(e) => error!(message="failed to lock metrics", %e),
-        }
+        self.0.requests.incr();
+        self.0.spans.add(spans);
     }
 }
 
 impl FmtMetrics for Report {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let metrics = match self.0.lock() {
-            Err(_) => return Ok(()),
-            Ok(lock) => lock,
-        };
-
         opencensus_span_export_streams.fmt_help(f)?;
-        opencensus_span_export_streams.fmt_metric(f, metrics.streams)?;
+        opencensus_span_export_streams.fmt_metric(f, &self.0.streams)?;
 
         opencensus_span_export_requests.fmt_help(f)?;
-        opencensus_span_export_requests.fmt_metric(f, metrics.requests)?;
+        opencensus_span_export_requests.fmt_metric(f, &self.0.requests)?;
 
         opencensus_span_exports.fmt_help(f)?;
-        opencensus_span_exports.fmt_metric(f, metrics.spans)?;
+        opencensus_span_exports.fmt_metric(f, &self.0.spans)?;
 
         Ok(())
     }

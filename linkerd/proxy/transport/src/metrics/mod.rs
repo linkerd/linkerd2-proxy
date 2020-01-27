@@ -7,7 +7,7 @@ use linkerd2_metrics::{
 use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
@@ -76,7 +76,7 @@ struct Metrics {
     write_bytes_total: Counter,
     read_bytes_total: Counter,
 
-    by_eos: IndexMap<Eos, EosMetrics>,
+    by_eos: Arc<Mutex<IndexMap<Eos, EosMetrics>>>,
 }
 
 /// Describes a classtransport end.
@@ -97,17 +97,17 @@ struct EosMetrics {
 /// Tracks the state of a single instance of `Io` throughout its lifetime.
 #[derive(Debug)]
 struct Sensor {
-    metrics: Option<Arc<Mutex<Metrics>>>,
+    metrics: Option<Arc<Metrics>>,
     opened_at: Instant,
 }
 
 /// Lazily builds instances of `Sensor`.
 #[derive(Clone, Debug)]
-struct NewSensor(Arc<Mutex<Metrics>>);
+struct NewSensor(Arc<Metrics>);
 
 /// Shares state between `Report` and `Registry`.
 #[derive(Debug)]
-struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Mutex<Metrics>>>);
+struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Metrics>>);
 
 // ===== impl Inner =====
 
@@ -122,10 +122,8 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
         self.0.is_empty()
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&K, MutexGuard<'_, Metrics>)> {
-        self.0
-            .iter()
-            .filter_map(|(k, l)| l.lock().ok().map(move |m| (k, m)))
+    fn iter(&self) -> impl Iterator<Item = (&K, &Arc<Metrics>)> {
+        self.0.iter()
     }
 
     /// Formats a metric across all instances of `Metrics` in the registry.
@@ -160,15 +158,17 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
         M: FmtMetric,
     {
         for (key, metrics) in self.iter() {
-            for (eos, m) in (*metrics).by_eos.iter() {
-                get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
+            if let Ok(by_eos) = (*metrics).by_eos.lock() {
+                for (eos, m) in by_eos.iter() {
+                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
+                }
             }
         }
 
         Ok(())
     }
 
-    fn get_or_default(&mut self, k: K) -> &Arc<Mutex<Metrics>> {
+    fn get_or_default(&mut self, k: K) -> &Arc<Metrics> {
         self.0.entry(k).or_insert_with(|| Default::default())
     }
 }
@@ -337,12 +337,9 @@ impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
 // ===== impl Sensor =====
 
 impl Sensor {
-    pub fn open(metrics: Arc<Mutex<Metrics>>) -> Self {
-        {
-            let mut m = metrics.lock().expect("metrics registry poisoned");
-            m.open_total.incr();
-            m.open_connections.incr();
-        }
+    pub fn open(metrics: Arc<Metrics>) -> Self {
+        metrics.open_total.incr();
+        metrics.open_connections.incr();
         Self {
             metrics: Some(metrics),
             opened_at: Instant::now(),
@@ -351,15 +348,13 @@ impl Sensor {
 
     pub fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
-            let mut m = m.lock().expect("metrics registry poisoned");
-            m.read_bytes_total += sz as u64;
+            m.read_bytes_total.add(sz as u64);
         }
     }
 
     pub fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
-            let mut m = m.lock().expect("metrics registry poisoned");
-            m.write_bytes_total += sz as u64;
+            m.write_bytes_total.add(sz as u64);
         }
     }
 
@@ -369,10 +364,10 @@ impl Sensor {
         // updates can occur (i.e. so that an additional close won't be recorded
         // on Drop).
         if let Some(m) = self.metrics.take() {
-            let mut m = m.lock().expect("metrics registry poisoned");
             m.open_connections.decr();
 
-            let class = m.by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
+            let mut by_eos = m.by_eos.lock().expect("transport eos metrics lock");
+            let class = by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
             class.close_total.incr();
             class.connection_duration.add(duration);
         }

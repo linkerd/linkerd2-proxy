@@ -259,7 +259,7 @@ impl Shared {
         if counter.clones.fetch_sub(1, Ordering::Release) == 1 {
             let elapsed = t0.elapsed();
 
-            let mut hist = match self.histogram.lock() {
+            let hist = match self.histogram.lock() {
                 Ok(lock) => lock,
                 // Avoid double panicking in drop.
                 Err(_) if panicking => return,
