@@ -44,7 +44,16 @@ fi
 
 # Build the plot script docker image. If it hasn't changed, this should build it
 # from cache.
-(cd plot && docker build -t "$PLOT_IMAGE" .)
+docker build -t "$PLOT_IMAGE" -f- . <<EOF
+FROM python:3
+
+ADD requirements.txt /
+RUN pip install -r requirements.txt
+
+ADD plot.py /
+ENTRYPOINT ["python", "plot.py"]
+EOF
+
 # Run the python script in the docker image we just built, mounting the current
 # working dir so the script can read the input data and write the plot images.
 #
