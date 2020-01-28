@@ -6,7 +6,7 @@ use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_router::error as router;
 use tower::load_shed::error as shed;
 use tower_grpc::{self as grpc, Code};
-use tracing::debug;
+use tracing::{debug, warn};
 
 pub fn layer<B: Default>() -> respond::RespondLayer<NewRespond<B>> {
     respond::RespondLayer::new(NewRespond(std::marker::PhantomData))
@@ -49,7 +49,7 @@ impl<B: Default> respond::Respond for Respond<B> {
     type Response = http::Response<B>;
 
     fn respond(&self, error: Error) -> Result<Self::Response, Error> {
-        tracing::warn!("Failed to proxy request: {}", error);
+        warn!("Failed to proxy request: {}", error);
 
         if let Respond::Http2 { is_grpc } = self {
             if let Some(reset) = error.h2_reason() {
@@ -58,23 +58,23 @@ impl<B: Default> respond::Respond for Respond<B> {
             }
 
             if *is_grpc {
-                debug!("Handling error with gRPC status code");
                 let mut rsp = http::Response::builder()
                     .header(http::header::CONTENT_LENGTH, "0")
                     .body(B::default())
                     .expect("app::errors response is valid");
-                set_grpc_status(error, rsp.headers_mut());
+                let code = set_grpc_status(error, rsp.headers_mut());
+                debug!(?code, "Handling error with gRPC status");
                 return Ok(rsp);
             }
         }
 
         let status = http_status(error);
         debug!(%status, "Handling error with HTTP response");
-        return Ok(http::Response::builder()
+        Ok(http::Response::builder()
             .status(status)
             .header(http::header::CONTENT_LENGTH, "0")
             .body(B::default())
-            .expect("error response must be valid"));
+            .expect("error response must be valid"))
     }
 }
 
@@ -92,38 +92,48 @@ fn http_status(error: Error) -> StatusCode {
     }
 }
 
-fn set_grpc_status(error: Error, headers: &mut http::HeaderMap) {
+fn set_grpc_status(error: Error, headers: &mut http::HeaderMap) -> Code {
     const GRPC_STATUS: &'static str = "grpc-status";
     const GRPC_MESSAGE: &'static str = "grpc-message";
 
     if error.is::<router::NoCapacity>() {
-        headers.insert(GRPC_STATUS, code_header(Code::Unavailable));
+        let code = Code::Unavailable;
+        headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(
             GRPC_MESSAGE,
             HeaderValue::from_static("proxy router cache exhausted"),
         );
+        code
     } else if error.is::<shed::Overloaded>() {
-        headers.insert(GRPC_STATUS, code_header(Code::Unavailable));
+        let code = Code::Unavailable;
+        headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(
             GRPC_MESSAGE,
             HeaderValue::from_static("proxy max-concurrency exhausted"),
         );
+        code
     } else if error.is::<buffer::Aborted>() {
-        headers.insert(GRPC_STATUS, code_header(Code::Unavailable));
+        let code = Code::Unavailable;
+        headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(
             GRPC_MESSAGE,
             HeaderValue::from_static("proxy dispatch timed out"),
         );
+        code
     } else if error.is::<IdentityRequired>() {
-        headers.insert(GRPC_STATUS, code_header(Code::FailedPrecondition));
+        let code = Code::FailedPrecondition;
+        headers.insert(GRPC_STATUS, code_header(code));
         if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
             headers.insert(GRPC_MESSAGE, msg);
         }
+        code
     } else {
-        headers.insert(GRPC_STATUS, code_header(Code::Internal));
+        let code = Code::Internal;
+        headers.insert(GRPC_STATUS, code_header(code));
         if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
             headers.insert(GRPC_MESSAGE, msg);
         }
+        code
     }
 }
 
