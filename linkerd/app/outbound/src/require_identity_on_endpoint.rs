@@ -4,7 +4,7 @@ use futures::{
     try_ready, Async, Future, Poll,
 };
 use linkerd2_app_core::{
-    errors,
+    errors::IdentityRequired,
     proxy::http::identity_from_header,
     svc,
     transport::tls::{self, HasPeerIdentity},
@@ -152,23 +152,17 @@ where
             match self.peer_identity {
                 Conditional::Some(ref peer_identity) => {
                     if require_identity != *peer_identity {
-                        let message = format!(
-                            "require identity check failed; require={:?} found={:?}",
-                            require_identity, peer_identity
-                        );
-                        let e = errors::StatusError {
-                            message,
-                            status: http::StatusCode::FORBIDDEN,
+                        let e = IdentityRequired {
+                            required: require_identity,
+                            found: Some(peer_identity.clone()),
                         };
                         return Either::A(future::err(e.into()));
                     }
                 }
                 Conditional::None(_) => {
-                    let message =
-                        "require identity check failed; no peer_identity found".to_string();
-                    let e = errors::StatusError {
-                        message,
-                        status: http::StatusCode::FORBIDDEN,
+                    let e = IdentityRequired {
+                        required: require_identity,
+                        found: None,
                     };
                     return Either::A(future::err(e.into()));
                 }
