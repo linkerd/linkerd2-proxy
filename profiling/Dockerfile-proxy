@@ -1,0 +1,28 @@
+ARG RUST_IMAGE=rust:1.39.0-buster
+ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:latest
+## Builds the proxy as incrementally as possible.
+FROM $RUST_IMAGE as build
+
+RUN cargo install inferno
+
+WORKDIR /usr/src/linkerd2-proxy
+
+COPY .. .
+
+RUN cargo fetch --locked
+RUN cargo build -p linkerd2-app-profiling --bin profile --frozen --release && \
+    mv target/release/profile target/linkerd2-proxy
+
+## Install the proxy binary into the base runtime image.
+FROM $RUNTIME_IMAGE as runtime
+
+RUN apt-get install -y linux-perf linux-base
+
+WORKDIR /linkerd
+COPY --from=build /usr/local/cargo/bin/inferno-collapse-perf /usr/bin/inferno-collapse-perf
+COPY --from=build /usr/local/cargo/bin/inferno-collapse-perf /usr/bin/inferno-flamegraph
+COPY --from=build /usr/src/linkerd2-proxy/target/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
+COPY --from=build /.cargo/bin/ /usr/lib/linkerd/linkerd2-proxy
+ENV PATH="/usr/bin/:${PATH}"
+
+ENV LINKERD2_PROXY_LOG=warn,linkerd2_proxy=info

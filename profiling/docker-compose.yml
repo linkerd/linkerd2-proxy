@@ -10,14 +10,13 @@ services:
 
   proxy:
     build:
-      context: ..
-      dockerfile: Dockerfile
-      args:
-        - PROFILE=true
+      context: .
+      dockerfile: Dockerfile-proxy
     environment:
       PROFILING_SUPPORT_SERVER: "${SERVER}"
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
-    entrypoint: ["/usr/lib/linkerd/linkerd2-proxy"]
+      PRECMD:
+    entrypoint: ["${PRECMD}", "/usr/lib/linkerd/linkerd2-proxy"]
     depends_on:
       - iperf
       - fortio
