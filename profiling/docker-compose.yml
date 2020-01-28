@@ -10,8 +10,8 @@ services:
 
   proxy:
     build:
-      context: .
-      dockerfile: Dockerfile-proxy
+      context: ..
+      dockerfile: profiling/Dockerfile-proxy
     environment:
       PROFILING_SUPPORT_SERVER: "${SERVER}"
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"

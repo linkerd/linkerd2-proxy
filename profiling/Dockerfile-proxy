@@ -7,7 +7,7 @@ RUN cargo install inferno
 
 WORKDIR /usr/src/linkerd2-proxy
 
-COPY .. .
+COPY . .
 
 RUN cargo fetch --locked
 RUN cargo build -p linkerd2-app-profiling --bin profile --frozen --release && \
