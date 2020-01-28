@@ -20,6 +20,7 @@ trap '{ docker-compose down -t 5; }' EXIT
 echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "summary.$RUN_NAME.txt"
 
 single_benchmark_run () {
+  export PRECMD="perf record -F 2000 --call-graph dwarf"
   # run benchmark utilities in background, only proxy runs in foreground
   # run client
   if [ "$MODE" = "TCP" ]; then
@@ -36,7 +37,7 @@ single_benchmark_run () {
     fi
     echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "summary.$RUN_NAME.txt"
   else
-    export SERVER="fortio:$SERVER_PORT" && PRECMD="perf record docker-compose up -d
+    export SERVER="fortio:$SERVER_PORT" && docker-compose up -d
     RPS="$HTTP_RPS"
     XARG=""
     if [ "$MODE" = "gRPC" ]; then
@@ -77,6 +78,7 @@ single_benchmark_run () {
       done
     done
   fi
+  (docker-compose exec proxy perf script | inferno-collapse-perf) > "out_$NAME.$ID.folded"
 }
 
 
