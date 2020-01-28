@@ -1,5 +1,5 @@
 ARG RUST_IMAGE=rust:1.39.0-buster
-ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.10.2
+ARG RUNTIME_IMAGE=debian:bullseye-slim
 ## Builds the proxy as incrementally as possible.
 FROM $RUST_IMAGE as build
 
