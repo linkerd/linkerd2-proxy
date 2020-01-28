@@ -1,4 +1,4 @@
-use crate::proxy::identity;
+use crate::proxy::{buffer, identity};
 use http::{header::HeaderValue, StatusCode};
 use linkerd2_error::Error;
 use linkerd2_error_respond as respond;
@@ -83,7 +83,7 @@ fn http_status(error: Error) -> StatusCode {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<shed::Overloaded>() {
         http::StatusCode::SERVICE_UNAVAILABLE
-    } else if error.is::<tower::timeout::error::Elapsed>() {
+    } else if error.is::<buffer::Aborted>() {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<IdentityRequired>() {
         http::StatusCode::FORBIDDEN
@@ -108,7 +108,7 @@ fn set_grpc_status(error: Error, headers: &mut http::HeaderMap) {
             GRPC_MESSAGE,
             HeaderValue::from_static("proxy max-concurrency exhausted"),
         );
-    } else if error.is::<tower::timeout::error::Elapsed>() {
+    } else if error.is::<buffer::Aborted>() {
         headers.insert(GRPC_STATUS, code_header(Code::Unavailable));
         headers.insert(
             GRPC_MESSAGE,
