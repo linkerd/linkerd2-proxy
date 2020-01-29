@@ -33,11 +33,10 @@ services:
       context: .
       dockerfile: Dockerfile-fortio
     command: ["fortio", "server"]
-    ports:
-      - "8080:8080"
-      - "8079:8079"
+    # ports:
+    #   - "8080:8080"
+    #   - "8079:8079"
     volumes:
       - type: bind
         source: "."
         target: "/out"
-    network_mode: "bridge"
