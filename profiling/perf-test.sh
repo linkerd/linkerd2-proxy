@@ -21,7 +21,7 @@ trap '{ docker-compose down -t 5; }' EXIT
 echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "summary.$RUN_NAME.txt"
 
 single_perf_run () {
-  single_benchmark_run "perf record -F 2000 -g " &&
+  single_benchmark_run "perf record -F 2000 -g " "> perf.data" &&
   docker-compose exec proxy bash -c "perf report"
   # inferno-flamegraph --width 4000 "out_$NAME.$ID.folded" > "flamegraph_$NAME.$ID.svg"
 }
