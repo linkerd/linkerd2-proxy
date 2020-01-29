@@ -27,4 +27,5 @@ COPY --from=build /usr/local/cargo/bin/inferno-collapse-perf /usr/bin/inferno-fl
 COPY --from=build /usr/src/linkerd2-proxy/target/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
 ENV PATH="/usr/bin/:${PATH}"
 
+ENTRYPOINT []
 ENV LINKERD2_PROXY_LOG=warn,linkerd2_proxy=info
