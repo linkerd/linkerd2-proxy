@@ -21,6 +21,10 @@ services:
       - fortio
     security_opt:
       - seccomp:./seccomp-perf.json
+    volumes:
+      - type: bind
+        source: "."
+        target: "/out"
 
   fortio:
     build:
