@@ -25,12 +25,7 @@ services:
       - "4191:4191"
       - "4140:4140"
       - "4143:4143"
-    cap_add:
-      # Ideally there would be a seccomp profile that adds _just_ the
-      # `perf_event_open` syscall so we don't have to give the proxy container
-      # other privelieges. Unfortunately, compose doesn't let you pass seccomp
-      # args AFAICT.
-      - CAP_SYS_ADMIN
+    security_opt: ./seccomp-perf.json
 
   fortio:
     build:
