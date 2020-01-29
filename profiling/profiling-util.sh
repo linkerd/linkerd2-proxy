@@ -32,7 +32,7 @@ single_benchmark_run () {
   # run benchmark utilities in background, only proxy runs in foreground
   # run client
   if [ "$MODE" = "TCP" ]; then
-    export SERVER="iperf:$SERVER_PORT" && export PRECMD=$* && docker-compose up -d
+    export SERVER="iperf:$SERVER_PORT" && export PRECMD="$*" && docker-compose up -d
     echo "TCP $DIRECTION"
     (docker-compose exec iperf \
       linkerd-await \
