@@ -45,7 +45,7 @@ single_benchmark_run () {
     fi
     echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "summary.$RUN_NAME.txt"
   else
-    export SERVER="iperf:$SERVER_PORT" && export PRECMD=$* && docker-compose up -d
+    export SERVER="fortio:$SERVER_PORT" && export PRECMD=$* && docker-compose up -d
     RPS="$HTTP_RPS"
     XARG=""
     if [ "$MODE" = "gRPC" ]; then
