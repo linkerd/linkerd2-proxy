@@ -5,8 +5,6 @@ services:
       context: .
       dockerfile: Dockerfile-iperf
     command: ["iperf", "-s", "-p 5001"]
-    ports:
-      - "5001:5001"
 
   proxy:
     build:
@@ -21,10 +19,6 @@ services:
     depends_on:
       - iperf
       - fortio
-    ports:
-      - "4191:4191"
-      - "4140:4140"
-      - "4143:4143"
     security_opt:
       - seccomp:./seccomp-perf.json
 
@@ -33,9 +27,6 @@ services:
       context: .
       dockerfile: Dockerfile-fortio
     command: ["fortio", "server"]
-    # ports:
-    #   - "8080:8080"
-    #   - "8079:8079"
     volumes:
       - type: bind
         source: "."
