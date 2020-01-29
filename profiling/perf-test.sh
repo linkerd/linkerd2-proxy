@@ -20,7 +20,7 @@ trap '{ docker-compose down -t 5; }' EXIT
 echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "summary.$RUN_NAME.txt"
 
 single_benchmark_run () {
-  export PRECMD=(perf record -F 2000 --call-graph dwarf)
+  export PRECMD="perf record -F 2000 --call-graph dwarf"
   # run benchmark utilities in background, only proxy runs in foreground
   # run client
   if [ "$MODE" = "TCP" ]; then
