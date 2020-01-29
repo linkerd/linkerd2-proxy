@@ -17,6 +17,7 @@ services:
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
       PRECMD:
     entrypoint: bash -c $PRECMD /usr/lib/linkerd/linkerd2-proxy
+    command: bash -c $PRECMD /usr/lib/linkerd/linkerd2-proxy
     depends_on:
       - iperf
       - fortio
