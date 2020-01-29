@@ -16,8 +16,8 @@ services:
       PROFILING_SUPPORT_SERVER: "${SERVER}"
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
       PRECMD:
-    entrypoint: bash -c set -x ; $PRECMD /usr/lib/linkerd/linkerd2-proxy
-    command: bash -c set -x ; $PRECMD /usr/lib/linkerd/linkerd2-proxy
+    entrypoint: bash -c "set -x ; $PRECMD /usr/lib/linkerd/linkerd2-proxy"
+    command: bash -c "set -x ; $PRECMD /usr/lib/linkerd/linkerd2-proxy"
     depends_on:
       - iperf
       - fortio
