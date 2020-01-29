@@ -16,7 +16,7 @@ services:
       PROFILING_SUPPORT_SERVER: "${SERVER}"
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
       PRECMD:
-    entrypoint: ["eval $PRECMD", "/usr/lib/linkerd/linkerd2-proxy"]
+    entrypoint: $PRECMD /usr/lib/linkerd/linkerd2-proxy
     depends_on:
       - iperf
       - fortio
