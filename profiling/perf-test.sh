@@ -22,7 +22,7 @@ echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "summary
 
 single_perf_run () {
   single_benchmark_run "perf record -F 2000 -g --" &&
-  (docker-compose exec proxy perf script | inferno-collapse-perf > "out/out_$NAME.$ID.folded")
+  docker-compose exec proxy (perf script | inferno-collapse-perf > "out/out_$NAME.$ID.folded")
 }
 
 if [ "$TCP" -eq "1" ]; then
