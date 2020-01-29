@@ -40,5 +40,4 @@ services:
       - type: bind
         source: "."
         target: "/out"
-networks:
-  network_mode: "bridge"
+    network_mode: "bridge"
