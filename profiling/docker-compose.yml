@@ -26,7 +26,7 @@ services:
       - "4140:4140"
       - "4143:4143"
     security_opt:
-      - seccomp: ./seccomp-perf.json
+      - seccomp:./seccomp-perf.json
 
   fortio:
     build:
