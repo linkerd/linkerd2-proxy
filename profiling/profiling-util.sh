@@ -28,25 +28,63 @@ BRANCH_NAME=${BRANCH_NAME:-HEAD}
 BRANCH_NAME=$(echo $BRANCH_NAME | sed -e 's/\//-/g')
 export RUN_NAME="$BRANCH_NAME $ID Iter: $ITERATIONS Dur: $DURATION Conns: $CONNECTIONS Streams: $GRPC_STREAMS"
 
-fortio_load() {
-  docker run fortio/fortio load \
-    --rm -it \
-    --mount src="$(pwd)",target=/out,type=bind \
-    -- \
-    "$@" \
-    -resolve 127.0.0.1 \
-    -c="$CONNECTIONS" \
-    -t="$DURATION" \ \
-    -keepalive=false \
-    -H 'Host: transparency.test.svc.cluster.local' "localhost:$PROXY_PORT"
+single_benchmark_run () {
+  # run benchmark utilities in background, only proxy runs in foreground
+  # run client
+  if [ "$MODE" = "TCP" ]; then
+    export SERVER="iperf:$SERVER_PORT" && docker-compose up -d
+    echo "TCP $DIRECTION"
+    (docker-compose exec iperf \
+      linkerd-await \
+      --uri="http://proxy:4191/ready" \
+      -- \
+      iperf -t 6 -p "$PROXY_PORT" -c proxy) | tee "$NAME.$ID.txt" &> "$LOG"
+    T=$(grep "/sec" "$NAME.$ID.txt" | cut -d' ' -f12)
+    if [ -z "$T" ]; then
+      T="0"
+    fi
+    echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "summary.$RUN_NAME.txt"
+  else
+    export SERVER="fortio:$SERVER_PORT" && docker-compose up -d
+    RPS="$HTTP_RPS"
+    XARG=""
+    if [ "$MODE" = "gRPC" ]; then
+      RPS="$GRPC_RPS"
+      XARG="-grpc -s $GRPC_STREAMS"
+    fi
+    for l in $REQ_BODY_LEN; do
+      for r in $RPS; do
+        # Store maximum p999 latency of multiple iterations here
+        S=0
+        for i in $(seq $ITERATIONS); do
+          echo "$MODE $DIRECTION Iteration: $i RPS: $r REQ_BODY_LEN: $l"
+
+          (docker-compose exec fortio \
+            linkerd-await \
+            --uri="http://proxy:4191/ready" \
+            -- \
+            fortio load $XARG \
+            -resolve proxy \
+            -c="$CONNECTIONS" \
+            -t="$DURATION" \
+            -keepalive=false \
+            -payload-size="$l" \
+            -qps="$r" \
+            -labels="$RUN_NAME" \
+            -json="out/$NAME-$r-rps.$ID.json" \
+            -H "Host: transparency.test.svc.cluster.local" \
+            "http://proxy:${PROXY_PORT}") &> "$LOG"
+
+          T=$(grep Value "$NAME-$r-rps.$ID.json" | tail -1 | cut  -d':' -f2)
+          if [ -z "$T" ]; then
+            echo "No last percentile value found"
+            exit 1
+          fi
+          S=$(python -c "print(max($S, $T*1000.0))")
+        done
+        echo "$MODE $DIRECTION, $r, $l, $RUN_NAME, $S, 0" >> "summary.$RUN_NAME.txt"
+      done
+    done
+  fi
+  $@
 }
-
-# install_iperf() {
-#   case "$OSTYPE" of
-#     darwin*) brew install iperf ;;
-
-# }
-
-# dep_iperf() {
-#   if [which fortio &> /dev/null || go get fortio.org/fortio
-# }
