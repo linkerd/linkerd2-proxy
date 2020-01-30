@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y linux-perf linux-base netcat && \
 WORKDIR /linkerd
 
 COPY --from=build /usr/local/cargo/bin/inferno-collapse-perf /usr/bin/inferno-collapse-perf
-COPY --from=build /usr/local/cargo/bin/inferno-collapse-perf /usr/bin/inferno-flamegraph
+COPY --from=build /usr/local/cargo/bin/inferno-flamegraph /usr/bin/inferno-flamegraph
 COPY --from=build /usr/src/linkerd2-proxy/target/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
 COPY ./profiling/run-proxy.sh /usr/bin/run-proxy
 
