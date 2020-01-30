@@ -32,7 +32,7 @@ single_benchmark_run () {
   # run benchmark utilities in background, only proxy runs in foreground
   # run client
   if [ "$MODE" = "TCP" ]; then
-    export SERVER="iperf:$SERVER_PORT" && export PRECMD="$1" && export POSTCMD="$2" && docker-compose up -d
+    export SERVER="iperf:$SERVER_PORT" && docker-compose up -d
     echo "TCP $DIRECTION"
     (docker-compose exec iperf \
       linkerd-await \
@@ -45,7 +45,7 @@ single_benchmark_run () {
     fi
     echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "summary.$RUN_NAME.txt"
   else
-    export SERVER="fortio:$SERVER_PORT" && export PRECMD="$1" && export POSTCMD="$2"  && docker-compose up -d
+    export SERVER="fortio:$SERVER_PORT" && docker-compose up -d
     RPS="$HTTP_RPS"
     XARG=""
     if [ "$MODE" = "gRPC" ]; then
@@ -86,4 +86,5 @@ single_benchmark_run () {
       done
     done
   fi
+  docker-compose exec proxy bash -c 'echo F | netcat 127.0.0.1 7777'
 }

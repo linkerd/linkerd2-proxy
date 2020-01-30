@@ -13,10 +13,10 @@ services:
     environment:
       PROFILING_SUPPORT_SERVER: "${SERVER}"
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
-      PRECMD:
-      POSTCMD:
-    entrypoint: bash -c "set -x ; $PRECMD /usr/lib/linkerd/linkerd2-proxy $POSTCMD"
-    command: bash -c "set -x ; $PRECMD /usr/lib/linkerd/linkerd2-proxy $POSTCMD"
+      PROXY_PERF:
+      NAME:
+      ID:
+    command: run-proxy
     depends_on:
       - iperf
       - fortio
