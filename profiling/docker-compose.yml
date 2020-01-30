@@ -5,35 +5,33 @@ services:
       context: .
       dockerfile: Dockerfile-iperf
     command: ["iperf", "-s", "-p 5001"]
-    ports:
-      - "5001:5001"
 
   proxy:
     build:
       context: ..
-      dockerfile: Dockerfile
-      args:
-        - PROFILE=true
+      dockerfile: profiling/Dockerfile-proxy
     environment:
       PROFILING_SUPPORT_SERVER: "${SERVER}"
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
-    entrypoint: ["/usr/lib/linkerd/linkerd2-proxy"]
+      PROXY_PERF:
+      NAME:
+      ID:
+    command: /usr/bin/run-proxy
     depends_on:
       - iperf
       - fortio
-    ports:
-      - "4191:4191"
-      - "4140:4140"
-      - "4143:4143"
+    security_opt:
+      - seccomp:./seccomp-perf.json
+    volumes:
+      - type: bind
+        source: "."
+        target: "/out"
 
   fortio:
     build:
       context: .
       dockerfile: Dockerfile-fortio
     command: ["fortio", "server"]
-    ports:
-      - "8080:8080"
-      - "8079:8079"
     volumes:
       - type: bind
         source: "."
