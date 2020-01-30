@@ -16,7 +16,7 @@ services:
       PROXY_PERF:
       NAME:
       ID:
-    command: run-proxy
+    command: /usr/bin/run-proxy
     depends_on:
       - iperf
       - fortio
