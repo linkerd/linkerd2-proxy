@@ -5,7 +5,7 @@ pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::convert::TryFrom;
 use std::time::Instant;
 use std::{fmt, net};
-use tracing::{info_span, trace};
+use tracing::{debug_span, trace};
 use tracing_futures::Instrument;
 pub use trust_dns_resolver::config::ResolverOpts;
 pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
@@ -75,7 +75,7 @@ impl Resolver {
         let f = self
             .resolver
             .lookup_ip(name.as_ref())
-            .instrument(info_span!("resolve_one_ip", %name));
+            .instrument(debug_span!("resolve_one_ip", %name));
         IpAddrFuture(Box::new(f))
     }
 
@@ -91,7 +91,7 @@ impl Resolver {
         let f = self
             .resolver
             .lookup_ip(name.as_ref())
-            .instrument(info_span!("refine", %name));
+            .instrument(debug_span!("refine", %name));
         RefineFuture(Box::new(f))
     }
 }

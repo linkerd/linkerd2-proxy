@@ -152,7 +152,7 @@ pub mod resolve {
     use linkerd2_dns as dns;
     use std::net::SocketAddr;
     use std::{error, fmt};
-    use tracing::info_span;
+    use tracing::debug_span;
     use tracing_futures::{Instrument, Instrumented};
 
     #[derive(Clone, Debug)]
@@ -270,7 +270,7 @@ pub mod resolve {
                 server_name: dst.identity.clone(),
             };
 
-            info_span!("control", peer.addr = %addr, peer.identity = ?dst.identity)
+            debug_span!("control", peer.addr = %addr, peer.identity = ?dst.identity)
                 .in_scope(move || State::Inner(mk_svc.call(target).in_current_span()))
         }
     }

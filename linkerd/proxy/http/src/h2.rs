@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, info_span};
+use tracing::{debug, debug_span};
 use tracing_futures::Instrument;
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -114,7 +114,7 @@ where
                     let (tx, conn) = try_ready!(hs.poll());
 
                     DefaultExecutor::current()
-                        .instrument(info_span!("h2", peer_addr=%self.peer_addr))
+                        .instrument(debug_span!("h2", peer_addr=%self.peer_addr))
                         .spawn(Box::new(conn.map_err(|error| debug!(%error, "failed"))))
                         .map_err(Error::from)?;
 
@@ -123,7 +123,7 @@ where
             };
 
             let exec =
-                DefaultExecutor::current().instrument(info_span!("h2", peer_addr=%self.peer_addr));
+                DefaultExecutor::current().instrument(debug_span!("h2", peer_addr=%self.peer_addr));
             let hs = conn::Builder::new()
                 .executor(exec)
                 .http2_only(true)

@@ -30,7 +30,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::{debug, info_span};
+use tracing::{debug, debug_span};
 
 #[allow(dead_code)] // TODO #2597
 mod add_remote_ip_on_rsp;
@@ -161,7 +161,7 @@ impl<A: OrigDstAddr> Config<A> {
                 )
                 .push(require_identity_on_endpoint::layer())
                 .push(trace::layer(|endpoint: &Endpoint| {
-                    info_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
+                    debug_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
                 }))
                 .serves::<Endpoint>();
 
@@ -219,7 +219,7 @@ impl<A: OrigDstAddr> Config<A> {
                     orig_dst_router_layer.boxed(),
                 ))
                 .push(trace::layer(
-                    |dst: &DstAddr| info_span!("concrete", dst.concrete = %dst.dst_concrete()),
+                    |dst: &DstAddr| debug_span!("concrete", dst.concrete = %dst.dst_concrete()),
                 ));
 
             // A per-`DstAddr` stack that does the following:
@@ -245,7 +245,7 @@ impl<A: OrigDstAddr> Config<A> {
             // canonicalize to the same DstAddr use the same dst-stack service.
             let dst_router = dst_stack
                 .push(trace::layer(
-                    |dst: &DstAddr| info_span!("logical", dst.logical = %dst.dst_logical()),
+                    |dst: &DstAddr| debug_span!("logical", dst.logical = %dst.dst_logical()),
                 ))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .push(router::Layer::new(
@@ -285,7 +285,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(http::strip_header::request::layer(L5D_CLIENT_ID))
                 .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                 .push(http::insert::target::layer())
-                .push(trace::layer(|addr: &Addr| info_span!("addr", %addr)))
+                .push(trace::layer(|addr: &Addr| debug_span!("addr", %addr)))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .push(router::Layer::new(
                     router::Config::new(router_capacity, router_max_idle_age),
@@ -320,7 +320,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(http::insert::target::layer())
                 .push_per_make(errors::layer())
                 .push(trace::layer(
-                    |src: &tls::accept::Meta| info_span!("source", target.addr = %src.addrs.target_addr()),
+                    |src: &tls::accept::Meta| debug_span!("source", target.addr = %src.addrs.target_addr()),
                 ))
                 .push(trace_context::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())

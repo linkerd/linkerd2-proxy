@@ -12,7 +12,7 @@ use linkerd2_proxy_transport::connect;
 use std::fmt;
 use std::marker::PhantomData;
 use tower::ServiceExt;
-use tracing::{debug, info_span, trace};
+use tracing::{debug, debug_span, trace};
 use tracing_futures::Instrument;
 
 /// Configurs an HTTP client that uses a `C`-typed connector
@@ -137,7 +137,7 @@ where
                 was_absolute_form,
             } => {
                 let exec = tokio::executor::DefaultExecutor::current()
-                    .instrument(info_span!("http1", %peer_addr));
+                    .instrument(debug_span!("http1", %peer_addr));
                 let h1 = hyper::Client::builder()
                     .executor(exec)
                     .keep_alive(keep_alive)

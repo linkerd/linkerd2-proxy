@@ -18,7 +18,7 @@ use http;
 use hyper;
 use indexmap::IndexSet;
 use std::sync::Arc;
-use tracing::{info_span, trace};
+use tracing::{debug_span, trace};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -201,7 +201,7 @@ where
                 // Enable support for HTTP upgrades (CONNECT and websockets).
                 let svc = upgrade::Service::new(http_svc, drain.clone());
                 let exec =
-                    tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
+                    tokio::executor::DefaultExecutor::current().instrument(debug_span!("http1"));
                 let conn = http
                     .with_executor(exec)
                     .http1_only(true)
@@ -216,7 +216,7 @@ where
             }
 
             HttpVersion::H2 => {
-                let exec = tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
+                let exec = tokio::executor::DefaultExecutor::current().instrument(debug_span!("h2"));
                 let conn = http
                     .with_executor(exec)
                     .http2_only(true)

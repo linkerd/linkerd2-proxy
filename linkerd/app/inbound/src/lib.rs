@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tower_grpc::{self as grpc, generic::client::GrpcService};
-use tracing::{debug, info, info_span};
+use tracing::{debug, info, debug_span};
 
 mod endpoint;
 mod orig_proto_downgrade;
@@ -129,7 +129,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(metrics.http_endpoint.into_layer::<classify::Response>())
                 .serves::<Endpoint>()
                 .push(trace::layer(
-                    |endpoint: &Endpoint| info_span!("endpoint", peer.addr = %endpoint.addr),
+                    |endpoint: &Endpoint| debug_span!("endpoint", peer.addr = %endpoint.addr),
                 ))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .makes::<Endpoint>()
@@ -164,7 +164,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(profiles::router::layer(profiles_client, dst_route_layer))
                 .push(strip_header::request::layer(DST_OVERRIDE_HEADER))
                 .push(trace::layer(
-                    |dst: &DstAddr| info_span!("logical", dst = %dst.dst_logical()),
+                    |dst: &DstAddr| debug_span!("logical", dst = %dst.dst_logical()),
                 ));
 
             // Routes requests to a `DstAddr`.
@@ -249,7 +249,7 @@ impl<A: OrigDstAddr> Config<A> {
                 }))
                 .push_per_make(errors::layer())
                 .push(trace::layer(|src: &tls::accept::Meta| {
-                    info_span!(
+                    debug_span!(
                         "source",
                         peer.id = ?src.peer_identity,
                         target.addr = %src.addrs.target_addr(),

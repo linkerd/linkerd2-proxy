@@ -3,7 +3,7 @@ use futures::{Future, Poll};
 use linkerd2_error::{Error, Never};
 use std::marker::PhantomData;
 use std::time::Duration;
-use tracing::{info_span, trace};
+use tracing::{debug_span, trace};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -114,7 +114,7 @@ where
         tokio::spawn(
             purge
                 .map_err(|e| match e {})
-                .instrument(info_span!("router.purge")),
+                .instrument(debug_span!("router.purge")),
         );
         Service { inner }
     }

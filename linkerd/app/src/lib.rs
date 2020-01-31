@@ -22,7 +22,7 @@ use linkerd2_app_core::{
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
-use tracing::{debug, error, info, info_span};
+use tracing::{debug, error, info, debug_span};
 use tracing_futures::Instrument;
 
 /// Spawns a sidecar proxy.
@@ -100,14 +100,14 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
-        let dns = info_span!("dns").in_scope(|| dns.build())?;
+        let dns = debug_span!("dns").in_scope(|| dns.build())?;
 
-        let identity = info_span!("identity")
+        let identity = debug_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
+        let tap = debug_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
 
         let dst = {
             use linkerd2_app_core::{
@@ -120,7 +120,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
 
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| {
+            debug_span!("dst").in_scope(|| {
                 // XXX This is unfortunate. But we don't daemonize the service into a
                 // task in the build, so we'd have to name the motherfucker. And that's
                 // not happening today. Really, we should daemonize the whole client
@@ -151,13 +151,13 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
             let identity = identity.local();
             let dns = dns.resolver.clone();
             let metrics = metrics.opencensus;
-            info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
+            debug_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
         }?;
 
         let admin = {
             let identity = identity.local();
             let drain = drain_rx.clone();
-            info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
+            debug_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
         };
 
         let dst_addr = dst.addr.clone();
@@ -169,7 +169,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
             let metrics = metrics.inbound;
             let oc = oc_collector.span_sink();
             let drain = drain_rx.clone();
-            info_span!("inbound")
+            debug_span!("inbound")
                 .in_scope(move || inbound.build(identity, profiles, tap, metrics, oc, drain))?
         };
         let outbound = {
@@ -178,7 +178,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
             let tap = tap.layer();
             let metrics = metrics.outbound;
             let oc = oc_collector.span_sink();
-            info_span!("outbound").in_scope(move || {
+            debug_span!("outbound").in_scope(move || {
                 outbound.build(
                     identity,
                     dst.resolve,
@@ -287,7 +287,7 @@ impl App {
                                     .serve
                                     .map_err(|e| panic!("admin server died: {}", e))
                                     .instrument(
-                                        info_span!("admin", listen.addr = %admin.listen_addr),
+                                        debug_span!("admin", listen.addr = %admin.listen_addr),
                                     ),
                             );
 
@@ -297,7 +297,7 @@ impl App {
                                     task.map_err(|e| {
                                         panic!("identity task failed: {}", e);
                                     })
-                                    .instrument(info_span!("identity")),
+                                    .instrument(debug_span!("identity")),
                                 );
 
                                 let latch = admin.latch;
@@ -312,7 +312,7 @@ impl App {
                                             // The daemon task was lost?!
                                             panic!("Failed to certify identity!");
                                         })
-                                        .instrument(info_span!("identity")),
+                                        .instrument(debug_span!("identity")),
                                 );
                             } else {
                                 admin.latch.release()
@@ -322,25 +322,25 @@ impl App {
                                 tokio::spawn(
                                     daemon
                                         .map_err(|never| match never {})
-                                        .instrument(info_span!("tap")),
+                                        .instrument(debug_span!("tap")),
                                 );
                                 tokio::spawn(
                                     serve
                                         .map_err(|error| error!(%error, "server died"))
-                                        .instrument(info_span!("tap")),
+                                        .instrument(debug_span!("tap")),
                                 );
                             }
 
                             if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
                                 tokio::spawn(
                                     task.map_err(|error| error!(%error, "client died"))
-                                        .instrument(info_span!("opencensus")),
+                                        .instrument(debug_span!("opencensus")),
                                 );
                             }
 
                             admin_shutdown_rx.map_err(|_| ())
                         })
-                        .instrument(info_span!("daemon")),
+                        .instrument(debug_span!("daemon")),
                     )
                     .ok()
             })
@@ -350,13 +350,13 @@ impl App {
             outbound
                 .serve
                 .map_err(|e| panic!("outbound died: {}", e))
-                .instrument(info_span!("outbound")),
+                .instrument(debug_span!("outbound")),
         );
         tokio::spawn(
             inbound
                 .serve
                 .map_err(|e| panic!("inbound died: {}", e))
-                .instrument(info_span!("inbound")),
+                .instrument(debug_span!("inbound")),
         );
 
         drain

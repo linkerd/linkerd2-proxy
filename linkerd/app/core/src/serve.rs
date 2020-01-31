@@ -4,7 +4,7 @@ use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::listen::{Accept, Listen, Serve};
 use linkerd2_proxy_transport::listen::Addrs;
-use tracing::{debug, info_span, Span};
+use tracing::{debug, debug_span, Span};
 use tracing_futures::{Instrument, Instrumented};
 
 pub type Task = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
@@ -107,7 +107,7 @@ impl<C: HasSpan, A: Accept<C>> tower::Service<C> for TraceAccept<A> {
 impl<C> HasSpan for (Addrs, C) {
     fn span(&self) -> Span {
         // The local addr should be instrumented from the listener's context.
-        info_span!(
+        debug_span!(
             "accept",
             peer.addr = %self.0.peer(),
         )
