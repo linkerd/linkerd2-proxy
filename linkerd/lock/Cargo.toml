@@ -1,14 +1,16 @@
 [package]
-name = "linkerd2-proxy-tcp"
+name = "linkerd2-lock"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
 publish = false
-
+description = """
+A middleware that provides mutual exclusion.
+"""
 
 [dependencies]
 futures = "0.1"
-linkerd2-duplex = { path = "../../duplex" }
-linkerd2-error = { path = "../../error" }
-tokio = "0.1.14"
+linkerd2-error = { path = "../error" }
+tokio = "0.1"
 tower = "0.1"
+tracing = "0.1"

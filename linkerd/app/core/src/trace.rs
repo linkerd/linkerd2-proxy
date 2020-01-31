@@ -3,15 +3,13 @@ const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
-use tracing::{Dispatch, Event, Level};
+use tracing::Dispatch;
 use tracing_subscriber::{
-    filter,
-    fmt::{format, Builder, Context, Formatter},
+    fmt::{format, Formatter},
     reload, EnvFilter, FmtSubscriber,
 };
 
-type SubscriberBuilder = Builder<format::NewRecorder, Format, filter::LevelFilter>;
-type Subscriber = Formatter<format::NewRecorder, Format>;
+type Subscriber = Formatter<format::DefaultFields, format::Format<format::Full, Uptime>>;
 
 #[derive(Clone)]
 pub struct LevelHandle {
@@ -39,7 +37,9 @@ pub fn with_filter(filter: impl AsRef<str>) -> (Dispatch, LevelHandle) {
     let filter = filter.as_ref();
 
     // Set up the subscriber
-    let builder = subscriber_builder()
+    let start_time = clock::now();
+    let builder = FmtSubscriber::builder()
+        .with_timer(Uptime { start_time })
         .with_env_filter(filter)
         .with_filter_reloading();
     let handle = LevelHandle {
@@ -50,54 +50,14 @@ pub fn with_filter(filter: impl AsRef<str>) -> (Dispatch, LevelHandle) {
     (dispatch, handle)
 }
 
-/// Returns a builder that constructs a `FmtSubscriber` that logs trace events.
-fn subscriber_builder() -> SubscriberBuilder {
-    let start_time = clock::now();
-    FmtSubscriber::builder().on_event(Format { start_time })
-}
-
-struct Format {
+struct Uptime {
     start_time: Instant,
 }
 
-impl<N> tracing_subscriber::fmt::FormatEvent<N> for Format
-where
-    N: for<'a> tracing_subscriber::fmt::NewVisitor<'a>,
-{
-    fn format_event(
-        &self,
-        span_ctx: &Context<'_, N>,
-        f: &mut dyn fmt::Write,
-        event: &Event<'_>,
-    ) -> fmt::Result {
-        use tracing_log::NormalizeEvent;
-        // If the event was converted from a `log` record, use the
-        // normalized tracing metadata for that log record.
-        let norm_meta = event.normalized_metadata();
-        let meta = norm_meta.as_ref().unwrap_or_else(|| event.metadata());
-
-        let level = match meta.level() {
-            &Level::TRACE => "TRCE",
-            &Level::DEBUG => "DBUG",
-            &Level::INFO => "INFO",
-            &Level::WARN => "WARN",
-            &Level::ERROR => "ERR!",
-        };
+impl tracing_subscriber::fmt::time::FormatTime for Uptime {
+    fn format_time(&self, w: &mut dyn fmt::Write) -> fmt::Result {
         let uptime = clock::now() - self.start_time;
-        write!(
-            f,
-            "{} [{:>6}.{:06}s] {}{} ",
-            level,
-            uptime.as_secs(),
-            uptime.subsec_micros(),
-            SpanContext(&span_ctx),
-            meta.target()
-        )?;
-        {
-            let mut recorder = span_ctx.new_visitor(f, true);
-            event.record(&mut recorder);
-        }
-        writeln!(f)
+        write!(w, "[{:>6}.{:06}s]", uptime.as_secs(), uptime.subsec_nanos())
     }
 }
 
@@ -107,11 +67,8 @@ impl LevelHandle {
     /// This will do nothing, but is required for admin endpoint tests which
     /// do not exercise the `proxy-log-level` endpoint.
     pub fn dangling() -> Self {
-        let builder = subscriber_builder()
-            .with_env_filter(EnvFilter::default())
-            .with_filter_reloading();
-        let inner = builder.reload_handle();
-        LevelHandle { inner }
+        let (_, handle) = with_filter("");
+        handle
     }
 
     pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
@@ -142,29 +99,6 @@ impl fmt::Debug for LevelHandle {
                     .field("current", &format_args!("{}", e))
                     .finish()
             })
-    }
-}
-
-/// Implements `fmt::Display` for a `tokio-trace-fmt` span context.
-struct SpanContext<'a, N>(&'a Context<'a, N>);
-
-impl<'a, N> fmt::Display for SpanContext<'a, N> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut seen = false;
-        self.0.visit_spans(|_, span| {
-            write!(f, "{}", span.name())?;
-            seen = true;
-
-            let fields = span.fields();
-            if !fields.is_empty() {
-                write!(f, "{{{}}}", fields)?;
-            }
-            ":".fmt(f)
-        })?;
-        if seen {
-            f.pad(" ")?;
-        }
-        Ok(())
     }
 }
 

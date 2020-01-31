@@ -1,14 +1,12 @@
 [package]
-name = "linkerd2-proxy-tcp"
+name = "linkerd2-http-classify"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
 publish = false
 
-
 [dependencies]
 futures = "0.1"
-linkerd2-duplex = { path = "../../duplex" }
-linkerd2-error = { path = "../../error" }
-tokio = "0.1.14"
+http = "0.1"
+linkerd2-error = { path  = "../error" }
 tower = "0.1"

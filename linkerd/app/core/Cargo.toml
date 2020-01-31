@@ -23,8 +23,11 @@ linkerd2-dns = { path = "../../dns" }
 linkerd2-drain = { path = "../../drain" }
 linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
+linkerd2-error-respond = { path = "../../error-respond" }
 linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-fallback = { path = "../../fallback" }
+linkerd2-http-classify = { path = "../../http-classify" }
+linkerd2-http-metrics = { path = "../../http-metrics" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
@@ -40,6 +43,7 @@ linkerd2-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd2-proxy-transport = { path = "../../proxy/transport" }
 linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-request-filter = { path = "../../request-filter" }
+linkerd2-retry = { path = "../../retry" }
 linkerd2-router = { path = "../../router" }
 linkerd2-stack = { path = "../../stack" }
 linkerd2-timeout = { path = "../../timeout" }
@@ -59,7 +63,7 @@ tracing-futures = "0.1"
 tracing-log = "0.1"
 
 [dependencies.tracing-subscriber]
-version = "0.1.4"
+version = "0.2.0-alpha.4"
 # we don't need ANSI colors or `chrono` time formatting
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log"]

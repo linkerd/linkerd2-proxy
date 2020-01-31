@@ -16,8 +16,11 @@ members = [
     "linkerd/error",
     "linkerd/exp-backoff",
     "linkerd/fallback",
+    "linkerd/http-classify",
+    "linkerd/http-metrics",
     "linkerd/identity",
     "linkerd/io",
+    "linkerd/lock",
     "linkerd/metrics",
     "linkerd/opencensus",
     "linkerd/proxy/api-resolve",
@@ -32,6 +35,7 @@ members = [
     "linkerd/proxy/transport",
     "linkerd/request-filter",
     "linkerd/reconnect",
+    "linkerd/retry",
     "linkerd/router",
     "linkerd/signal",
     "linkerd/stack",
@@ -50,3 +54,5 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names-0.21" }
+# backport danburkert/prost#268 to `prost` 0.5 temporarily.
+prost = { git = "https://github.com/linkerd/prost", branch = "v0.5.x" }

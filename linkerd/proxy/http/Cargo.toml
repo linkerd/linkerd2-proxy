@@ -1,4 +1,3 @@
-
 [package]
 name = "linkerd2-proxy-http"
 version = "0.1.0"
@@ -26,7 +25,6 @@ linkerd2-dns = { path  = "../../dns" }
 linkerd2-drain = { path  = "../../drain" }
 linkerd2-duplex = { path  = "../../duplex" }
 linkerd2-error = { path  = "../../error" }
-linkerd2-fallback = { path  = "../../fallback" }
 linkerd2-identity = { path  = "../../identity" }
 linkerd2-router = { path  = "../../router" }
 linkerd2-metrics = { path  = "../../metrics" }

@@ -167,7 +167,7 @@ fn retry_uses_budget() {
         with_metrics: |metrics: client::Client| {
             assert_eventually_contains!(
                 metrics.get("/metrics"),
-                "route_actual_retry_skipped_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",skipped=\"budget\"} 1"
+                "route_retryable_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",skipped=\"no_budget\"} 1"
             );
         }
     }

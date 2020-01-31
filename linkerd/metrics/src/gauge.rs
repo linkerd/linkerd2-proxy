@@ -1,42 +1,38 @@
+use super::prom::{FmtLabels, FmtMetric, MAX_PRECISE_VALUE};
 use std::fmt::{self, Display};
-
-use tracing::warn;
-
-use super::{FmtLabels, FmtMetric};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// An instaneous metric value.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct Gauge(u64);
+#[derive(Debug, Default)]
+pub struct Gauge(AtomicU64);
 
 impl Gauge {
     /// Increment the gauge by one.
-    pub fn incr(&mut self) {
-        if let Some(new_value) = self.0.checked_add(1) {
-            (*self).0 = new_value;
-        } else {
-            warn!("Gauge overflow");
-        }
+    pub fn incr(&self) {
+        self.0.fetch_add(1, Ordering::Release);
     }
 
     /// Decrement the gauge by one.
-    pub fn decr(&mut self) {
-        if let Some(new_value) = self.0.checked_sub(1) {
-            (*self).0 = new_value;
-        } else {
-            warn!("Gauge underflow");
-        }
+    pub fn decr(&self) {
+        self.0.fetch_sub(1, Ordering::Release);
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0
+            .load(Ordering::Acquire)
+            .wrapping_rem(MAX_PRECISE_VALUE + 1)
     }
 }
 
 impl From<u64> for Gauge {
     fn from(n: u64) -> Self {
-        Gauge(n)
+        Gauge(n.into())
     }
 }
 
 impl Into<u64> for Gauge {
     fn into(self) -> u64 {
-        self.0
+        self.value()
     }
 }
 
@@ -44,7 +40,7 @@ impl FmtMetric for Gauge {
     const KIND: &'static str = "gauge";
 
     fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        writeln!(f, "{} {}", name, self.0)
+        writeln!(f, "{} {}", name, self.value())
     }
 
     fn fmt_metric_labeled<N, L>(
@@ -59,6 +55,6 @@ impl FmtMetric for Gauge {
     {
         write!(f, "{}{{", name)?;
         labels.fmt_labels(f)?;
-        writeln!(f, "}} {}", self.0)
+        writeln!(f, "}} {}", self.value())
     }
 }

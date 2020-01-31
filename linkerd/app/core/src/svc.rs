@@ -97,6 +97,10 @@ impl<S> Stack<S> {
         self.push_pending().push(buffer::layer(bound, d))
     }
 
+    pub fn push_per_make<L: Clone>(self, layer: L) -> Stack<stack::per_make::PerMake<L, S>> {
+        self.push(stack::per_make::layer(layer))
+    }
+
     pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
         self.push(SpawnReadyLayer::new())
     }
