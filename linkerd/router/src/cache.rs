@@ -58,7 +58,7 @@ where
         Self {
             capacity,
             expires,
-            expirations: DelayQueue::with_capacity(capacity),
+            expirations: DelayQueue::with_capacity(1),
             values: IndexMap::default(),
             purge_task: None,
         }
