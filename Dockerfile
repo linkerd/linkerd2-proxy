@@ -11,7 +11,6 @@
 ARG RUST_IMAGE=rust:1.40.0-buster
 ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-19.10.2
 ARG PROXY_UNOPTIMIZED
-ARG PROFILE
 
 ## Builds the proxy as incrementally as possible.
 FROM $RUST_IMAGE as build
@@ -24,10 +23,6 @@ RUN if [ -n "$PROXY_UNOPTIMIZED" ]; \
     then \
     cargo build -p linkerd2-proxy --bin linkerd2-proxy --frozen && \
     mv target/debug/linkerd2-proxy target/linkerd2-proxy ; \
-    elif [ -n "PROFILE" ]; \
-    then \
-    cargo build -p linkerd2-app-profiling --bin profile --frozen --release && \
-    mv target/release/profile target/linkerd2-proxy ; \
     else \
     cargo build -p linkerd2-proxy --bin linkerd2-proxy --frozen --release && \
     mv target/release/linkerd2-proxy target/linkerd2-proxy ; \
