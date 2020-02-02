@@ -17,7 +17,7 @@ pub struct NewRespond<B>(std::marker::PhantomData<fn() -> B>);
 
 #[derive(Copy, Clone, Debug)]
 pub enum Respond<B> {
-    Http1(std::marker::PhantomData<fn() -> B>),
+    Http1(http::Version, std::marker::PhantomData<fn() -> B>),
     Http2 { is_grpc: bool },
 }
 
@@ -26,15 +26,16 @@ impl<A, B: Default> respond::NewRespond<http::Request<A>> for NewRespond<B> {
     type Respond = Respond<B>;
 
     fn new_respond(&self, req: &http::Request<A>) -> Self::Respond {
-        if req.version() == http::Version::HTTP_2 {
-            let is_grpc = req
-                .headers()
-                .get(http::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok().map(|s| s.starts_with("application/grpc")))
-                .unwrap_or(false);
-            Respond::Http2 { is_grpc }
-        } else {
-            Respond::Http1(self.0)
+        match req.version() {
+            http::Version::HTTP_2 => {
+                let is_grpc = req
+                    .headers()
+                    .get(http::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok().map(|s| s.starts_with("application/grpc")))
+                    .unwrap_or(false);
+                Respond::Http2 { is_grpc }
+            }
+            version => Respond::Http1(version, self.0),
         }
     }
 }
@@ -51,26 +52,33 @@ impl<B: Default> respond::Respond for Respond<B> {
     fn respond(&self, error: Error) -> Result<Self::Response, Error> {
         warn!("Failed to proxy request: {}", error);
 
-        if let Respond::Http2 { is_grpc } = self {
-            if let Some(reset) = error.h2_reason() {
-                debug!(%reset, "Propagating HTTP2 reset");
-                return Err(error);
-            }
+        let version = match self {
+            Respond::Http1(ref version, _) => version.clone(),
+            Respond::Http2 { is_grpc } => {
+                if let Some(reset) = error.h2_reason() {
+                    debug!(%reset, "Propagating HTTP2 reset");
+                    return Err(error);
+                }
 
-            if *is_grpc {
-                let mut rsp = http::Response::builder()
-                    .header(http::header::CONTENT_LENGTH, "0")
-                    .body(B::default())
-                    .expect("app::errors response is valid");
-                let code = set_grpc_status(error, rsp.headers_mut());
-                debug!(?code, "Handling error with gRPC status");
-                return Ok(rsp);
+                if *is_grpc {
+                    let mut rsp = http::Response::builder()
+                        .version(http::Version::HTTP_2)
+                        .header(http::header::CONTENT_LENGTH, "0")
+                        .body(B::default())
+                        .expect("app::errors response is valid");
+                    let code = set_grpc_status(error, rsp.headers_mut());
+                    debug!(?code, "Handling error with gRPC status");
+                    return Ok(rsp);
+                }
+
+                http::Version::HTTP_2
             }
-        }
+        };
 
         let status = http_status(error);
         debug!(%status, "Handling error with HTTP response");
         Ok(http::Response::builder()
+            .version(version)
             .status(status)
             .header(http::header::CONTENT_LENGTH, "0")
             .body(B::default())
