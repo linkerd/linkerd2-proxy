@@ -107,7 +107,7 @@ where
                 } else if orig_proto == "HTTP/1.0" {
                     Some(http::Version::HTTP_10)
                 } else {
-                    debug!(%orig_proto, "Malformed header value");
+                    debug!(value = ?orig_proto, "Malformed header value");
                     None
                 }
             })
