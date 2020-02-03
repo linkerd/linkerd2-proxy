@@ -2565,9 +2565,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.0-alpha.5"
+version = "0.2.0-alpha.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4055f329d81a5948a02fb203bc51ab3579541cdca746631b0a3a8a7204d9ec96"
+checksum = "8178ab65c2ae72cd431fcdb51e7317fb0b48d64599e66d52c7b64cd86ee5b482"
 dependencies = [
  "ansi_term",
  "chrono",
