@@ -41,7 +41,8 @@ pub fn with_filter(filter: impl AsRef<str>) -> (Dispatch, LevelHandle) {
     let builder = FmtSubscriber::builder()
         .with_timer(Uptime { start_time })
         .with_env_filter(filter)
-        .with_filter_reloading();
+        .with_filter_reloading()
+        .with_ansi(cfg!(test));
     let handle = LevelHandle {
         inner: builder.reload_handle(),
     };
