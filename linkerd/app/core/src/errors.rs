@@ -52,27 +52,27 @@ impl<B: Default> respond::Respond for Respond<B> {
     fn respond(&self, error: Error) -> Result<Self::Response, Error> {
         warn!("Failed to proxy request: {}", error);
 
+        if let Respond::Http2 { is_grpc } = self {
+            if let Some(reset) = error.h2_reason() {
+                debug!(%reset, "Propagating HTTP2 reset");
+                return Err(error);
+            }
+
+            if *is_grpc {
+                let mut rsp = http::Response::builder()
+                    .version(http::Version::HTTP_2)
+                    .header(http::header::CONTENT_LENGTH, "0")
+                    .body(B::default())
+                    .expect("app::errors response is valid");
+                let code = set_grpc_status(error, rsp.headers_mut());
+                debug!(?code, "Handling error with gRPC status");
+                return Ok(rsp);
+            }
+        };
+
         let version = match self {
             Respond::Http1(ref version, _) => version.clone(),
-            Respond::Http2 { is_grpc } => {
-                if let Some(reset) = error.h2_reason() {
-                    debug!(%reset, "Propagating HTTP2 reset");
-                    return Err(error);
-                }
-
-                if *is_grpc {
-                    let mut rsp = http::Response::builder()
-                        .version(http::Version::HTTP_2)
-                        .header(http::header::CONTENT_LENGTH, "0")
-                        .body(B::default())
-                        .expect("app::errors response is valid");
-                    let code = set_grpc_status(error, rsp.headers_mut());
-                    debug!(?code, "Handling error with gRPC status");
-                    return Ok(rsp);
-                }
-
-                http::Version::HTTP_2
-            }
+            Respond::Http2 { .. } => http::Version::HTTP_2,
         };
 
         let status = http_status(error);
