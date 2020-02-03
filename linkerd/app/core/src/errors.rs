@@ -76,7 +76,7 @@ impl<B: Default> respond::Respond for Respond<B> {
         };
 
         let status = http_status(error);
-        debug!(%status, "Handling error with HTTP response");
+        debug!(%status, ?version, "Handling error with HTTP response");
         Ok(http::Response::builder()
             .version(version)
             .status(status)
