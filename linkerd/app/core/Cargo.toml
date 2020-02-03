@@ -64,9 +64,9 @@ tracing-log = "0.1"
 
 [dependencies.tracing-subscriber]
 version = "0.2.0-alpha.5"
-# we don't need ANSI colors or `chrono` time formatting
+# we don't need `chrono` time formatting
 default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log"]
+features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
