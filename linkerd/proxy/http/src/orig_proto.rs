@@ -1,5 +1,5 @@
 use super::h1;
-use futures::{future, Future, Poll};
+use futures::{future, try_ready, Future, Poll};
 use http;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
 use tracing::{debug, warn};
@@ -36,7 +36,7 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = future::Map<S::Future, fn(S::Response) -> S::Response>;
+    type Future = UpgradeFuture<S::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
@@ -48,7 +48,7 @@ where
             "illegal request routed to orig-proto Upgrade",
         );
 
-        debug!("upgrading {:?} to HTTP2 with orig-proto", req.version());
+        let version = req.version();
 
         // absolute-form is far less common, origin-form is the usual,
         // so only encode the extra information if it's different than
@@ -61,13 +61,14 @@ where
             h1::normalize_our_view_of_uri(&mut req);
         }
 
-        let val = match (req.version(), was_absolute_form) {
+        let val = match (version, was_absolute_form) {
             (http::Version::HTTP_11, false) => "HTTP/1.1",
             (http::Version::HTTP_11, true) => "HTTP/1.1; absolute-form",
             (http::Version::HTTP_10, false) => "HTTP/1.0",
             (http::Version::HTTP_10, true) => "HTTP/1.0; absolute-form",
             (v, _) => unreachable!("bad orig-proto version: {:?}", v),
         };
+        debug!("Upgrading request to HTTP2 from {}", val);
         req.headers_mut()
             .insert(L5D_ORIG_PROTO, HeaderValue::from_static(val));
 
@@ -76,24 +77,44 @@ where
 
         *req.version_mut() = http::Version::HTTP_2;
 
-        self.inner.call(req).map(|mut res| {
-            debug_assert_eq!(res.version(), http::Version::HTTP_2);
-            let version = if let Some(orig_proto) = res.headers_mut().remove(L5D_ORIG_PROTO) {
-                debug!("downgrading {} response: {:?}", L5D_ORIG_PROTO, orig_proto);
+        UpgradeFuture {
+            version,
+            inner: self.inner.call(req),
+        }
+    }
+}
+
+pub struct UpgradeFuture<F> {
+    version: http::Version,
+    inner: F,
+}
+
+impl<F, B> Future for UpgradeFuture<F>
+where
+    F: Future<Item = http::Response<B>>,
+{
+    type Item = F::Item;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let mut res = try_ready!(self.inner.poll());
+        let version = res
+            .headers_mut()
+            .remove(L5D_ORIG_PROTO)
+            .and_then(|orig_proto| {
                 if orig_proto == "HTTP/1.1" {
-                    http::Version::HTTP_11
+                    Some(http::Version::HTTP_11)
                 } else if orig_proto == "HTTP/1.0" {
-                    http::Version::HTTP_10
+                    Some(http::Version::HTTP_10)
                 } else {
-                    warn!("unknown {} header value: {:?}", L5D_ORIG_PROTO, orig_proto);
-                    res.version()
+                    debug!(value = ?orig_proto, "Malformed header value");
+                    None
                 }
-            } else {
-                res.version()
-            };
-            *res.version_mut() = version;
-            res
-        })
+            })
+            .unwrap_or(self.version);
+        debug!("Downgrading response to {:?}", version);
+        *res.version_mut() = version;
+        Ok(res.into())
     }
 }
 
