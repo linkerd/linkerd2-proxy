@@ -28,8 +28,7 @@ BRANCH_NAME=${BRANCH_NAME:-HEAD}
 BRANCH_NAME=$(echo $BRANCH_NAME | sed -e 's/\//-/g')
 export RUN_NAME="$BRANCH_NAME $ID Iter: $ITERATIONS Dur: $DURATION Conns: $CONNECTIONS Streams: $GRPC_STREAMS"
 
-OUT_DIR="$(abspath ..)/target/profile/$ID"
-export OUTDIR
+export OUT_DIR="../target/profile/$ID"
 
 mkdir -p "$OUT_DIR"
 
