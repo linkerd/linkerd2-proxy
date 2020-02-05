@@ -13,7 +13,7 @@ else
     LD_PRELOAD=/usr/lib/libmemory_profiler.so /usr/lib/linkerd/linkerd2-proxy
     mv memory-profiling_*.dat "/out/${NAME}_heap.dat"
 
-    memory-profiler-cli server "${NAME}_heap.dat" &
+    memory-profiler-cli server "/out/${NAME}_heap.dat" &
     MPID=$!
     # wait for memory-profiler-cli server
     until ( ss -tan | grep "LISTEN.*:8080" &> /dev/null)
