@@ -22,22 +22,49 @@ else
   export LOG=/dev/stdout
 fi
 
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+BLUE=$(tput setaf 4)
+BOLD=$(tput bold)
+SGR0=$(tput sgr0)
+WIDTH=12
+
+err() {
+    printf "${RED}${BOLD}error${SGR0}${BOLD}: %s${SGR0}\n" "$1" 1>&2
+    if [ "$#" -gt 1 ]; then
+      echo "$2" | sed "s/^/  ${BLUE}|${SGR0} /" 1>&2
+      printf "\n" 1>&2
+    fi
+}
+
+status() {
+    printf "${GREEN}${BOLD}%${WIDTH}s${SGR0} %s\n" "$1" "$2"
+}
+
 BRANCH_NAME=$(git symbolic-ref -q HEAD)
 BRANCH_NAME=${BRANCH_NAME##refs/heads/}
 BRANCH_NAME=${BRANCH_NAME:-HEAD}
 BRANCH_NAME=$(echo $BRANCH_NAME | sed -e 's/\//-/g')
 export RUN_NAME="$BRANCH_NAME $ID Iter: $ITERATIONS Dur: $DURATION Conns: $CONNECTIONS Streams: $GRPC_STREAMS"
 
-export OUT_DIR="../target/release/profile/$ID"
+export OUT_DIR="../target/profile/$ID"
+status "Creating" "$OUT_DIR"
 
 mkdir -p "$OUT_DIR"
+
+finish_run() {
+    docker-compose exec proxy bash -c 'echo F | netcat 127.0.0.1 7777'
+    if [ "$(docker wait profiling_proxy_1)" -gt 0 ]; then
+      err "proxy failed! log output:" "$(docker logs profiling_proxy_1 2>&1)"
+    fi
+}
 
 single_benchmark_run () {
   # run benchmark utilities in background, only proxy runs in foreground
   # run client
   if [ "$MODE" = "TCP" ]; then
-    export SERVER="iperf:$SERVER_PORT" && docker-compose up -d
-    echo "TCP $DIRECTION"
+    export SERVER="iperf:$SERVER_PORT" && docker-compose up -d &> "$LOG"
+    status "Running" "TCP $DIRECTION"
     (docker-compose exec iperf \
       linkerd-await \
       --uri="http://proxy:4191/ready" \
@@ -47,9 +74,10 @@ single_benchmark_run () {
     if [ -z "$T" ]; then
       T="0"
     fi
+    finish_run
     echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "$OUT_DIR/summary.txt"
   else
-    export SERVER="fortio:$SERVER_PORT" && docker-compose up -d
+    export SERVER="fortio:$SERVER_PORT" && docker-compose up -d &> "$LOG"
     RPS="$HTTP_RPS"
     XARG=""
     if [ "$MODE" = "gRPC" ]; then
@@ -61,7 +89,7 @@ single_benchmark_run () {
         # Store maximum p999 latency of multiple iterations here
         S=0
         for i in $(seq $ITERATIONS); do
-          echo "$MODE $DIRECTION Iteration: $i RPS: $r REQ_BODY_LEN: $l"
+          status "Running" "$MODE $DIRECTION Iteration: $i RPS: $r REQ_BODY_LEN: $l"
 
           (docker-compose exec fortio \
             linkerd-await \
@@ -81,14 +109,18 @@ single_benchmark_run () {
 
           T=$(grep Value "$OUT_DIR/${NAME}_$r-rps.json" | tail -1 | cut  -d':' -f2)
           if [ -z "$T" ]; then
-            echo "No last percentile value found"
+            err "No last percentile value found"
             exit 1
           fi
           S=$(python -c "print(max($S, $T*1000.0))")
         done
+        finish_run
         echo "$MODE $DIRECTION, $r, $l, $RUN_NAME, $S, 0" >> "$OUT_DIR/summary.txt"
       done
     done
   fi
-  docker-compose exec proxy bash -c 'echo F | netcat 127.0.0.1 7777'
+}
+
+teardown() {
+  (docker-compose down -t 5 > "$LOG") || err "teardown failed"
 }
