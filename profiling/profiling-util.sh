@@ -52,13 +52,6 @@ status "Creating" "$OUT_DIR"
 
 mkdir -p "$OUT_DIR"
 
-finish_run() {
-    docker-compose exec proxy bash -c 'echo F | netcat 127.0.0.1 7777'
-    if [ "$(docker wait profiling_proxy_1)" -gt 0 ]; then
-      err "proxy failed! log output:" "$(docker logs profiling_proxy_1 2>&1)"
-    fi
-}
-
 single_benchmark_run () {
   # run benchmark utilities in background, only proxy runs in foreground
   # run client
@@ -74,7 +67,6 @@ single_benchmark_run () {
     if [ -z "$T" ]; then
       T="0"
     fi
-    finish_run
     echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "$OUT_DIR/summary.txt"
   else
     export SERVER="fortio:$SERVER_PORT" && docker-compose up -d &> "$LOG"
@@ -114,10 +106,14 @@ single_benchmark_run () {
           fi
           S=$(python -c "print(max($S, $T*1000.0))")
         done
-        finish_run
         echo "$MODE $DIRECTION, $r, $l, $RUN_NAME, $S, 0" >> "$OUT_DIR/summary.txt"
       done
     done
+  fi
+
+  docker-compose exec proxy bash -c 'echo F | netcat 127.0.0.1 7777'
+  if [ "$(docker wait profiling_proxy_1)" -gt 0 ]; then
+    err "proxy failed! log output:" "$(docker logs profiling_proxy_1 2>&1)"
   fi
 }
 
