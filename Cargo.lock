@@ -138,11 +138,10 @@ checksum = "b486ce3ccf7ffd79fdeb678eac06a9e6c09fc88d33836340becb8fffe87c5e33"
 
 [[package]]
 name = "chrono"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8493056968583b0193c1bb04d6f7684586f3726992d6c573261941a895dbd68"
+checksum = "31850b4a4d6bae316f7a09e691c944c28299298837edc0a03f755618c23cbc01"
 dependencies = [
- "libc",
  "num-integer",
  "num-traits 0.2.6",
  "time",
@@ -1907,9 +1906,9 @@ dependencies = [
 
 [[package]]
 name = "sharded-slab"
-version = "0.0.7"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73ee8b66dea1777ef2c5f33ffeb90fd54afe43bb5c97bdaf82b521ad7c90a395"
+checksum = "ae75d0445b5d3778c9da3d1f840faa16d0627c8607f78a74daf69e5b988c39a1"
 dependencies = [
  "lazy_static",
 ]
@@ -1925,6 +1924,12 @@ name = "smallvec"
 version = "0.6.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab606a9c5e214920bb66c458cd7be8ef094f813f20fe77a54cc7dbfff220d4b7"
+
+[[package]]
+name = "smallvec"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c2fb2ec9bcd216a5b0d0ccf31ab17b5ed1d627960edff65bbe95d3ce221cefc"
 
 [[package]]
 name = "socket2"
@@ -2567,9 +2572,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.0-alpha.4"
+version = "0.2.0-alpha.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51ec8cdf2ebadeefbb5a0fac5f3d54757415cdcc46f40542eaa0be56cd6d6361"
+checksum = "8178ab65c2ae72cd431fcdb51e7317fb0b48d64599e66d52c7b64cd86ee5b482"
 dependencies = [
  "ansi_term",
  "chrono",
@@ -2579,7 +2584,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sharded-slab",
- "smallvec",
+ "smallvec 1.2.0",
  "tracing-core",
  "tracing-log",
  "tracing-serde",
@@ -2597,7 +2602,7 @@ dependencies = [
  "lazy_static",
  "log",
  "rand 0.6.5",
- "smallvec",
+ "smallvec 0.6.10",
  "socket2",
  "tokio-executor",
  "tokio-io",
@@ -2621,7 +2626,7 @@ dependencies = [
  "log",
  "lru-cache",
  "resolv-conf",
- "smallvec",
+ "smallvec 0.6.10",
  "tokio",
  "trust-dns-proto",
 ]
