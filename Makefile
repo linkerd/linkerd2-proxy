@@ -101,6 +101,8 @@ clean-package:
 .PHONY: clean-profile
 clean-profile:
 	rm -rf $(TARGET)/release/profile*
+	rm -rf $(TARGET)/profile/*
+
 
 .PHONY: docker
 docker: Dockerfile Cargo.lock
