@@ -28,6 +28,11 @@ BRANCH_NAME=${BRANCH_NAME:-HEAD}
 BRANCH_NAME=$(echo $BRANCH_NAME | sed -e 's/\//-/g')
 export RUN_NAME="$BRANCH_NAME $ID Iter: $ITERATIONS Dur: $DURATION Conns: $CONNECTIONS Streams: $GRPC_STREAMS"
 
+OUT_DIR="$(abspath ..)/target/profile/$ID"
+export OUTDIR
+
+mkdir -p "$OUT_DIR"
+
 single_benchmark_run () {
   # run benchmark utilities in background, only proxy runs in foreground
   # run client
@@ -38,12 +43,12 @@ single_benchmark_run () {
       linkerd-await \
       --uri="http://proxy:4191/ready" \
       -- \
-      iperf -t 6 -p "$PROXY_PORT" -c proxy) | tee "$NAME.$ID.txt" &> "$LOG"
-    T=$(grep "/sec" "$NAME.$ID.txt" | cut -d' ' -f12)
+      iperf -t 6 -p "$PROXY_PORT" -c proxy) | tee "$OUT_DIR/$NAME.txt" &> "$LOG"
+    T=$(grep "/sec" "$OUT_DIR/$NAME.txt" | cut -d' ' -f12)
     if [ -z "$T" ]; then
       T="0"
     fi
-    echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "summary.$RUN_NAME.txt"
+    echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "$OUT_DIR/summary.txt"
   else
     export SERVER="fortio:$SERVER_PORT" && docker-compose up -d
     RPS="$HTTP_RPS"
@@ -71,18 +76,18 @@ single_benchmark_run () {
             -payload-size="$l" \
             -qps="$r" \
             -labels="$RUN_NAME" \
-            -json="out/$NAME-$r-rps.$ID.json" \
+            -json="out/${NAME}_$r-rps.json" \
             -H "Host: transparency.test.svc.cluster.local" \
             "http://proxy:${PROXY_PORT}") &> "$LOG"
 
-          T=$(grep Value "$NAME-$r-rps.$ID.json" | tail -1 | cut  -d':' -f2)
+          T=$(grep Value "$OUT_DIR/${NAME}_$r-rps.json" | tail -1 | cut  -d':' -f2)
           if [ -z "$T" ]; then
             echo "No last percentile value found"
             exit 1
           fi
           S=$(python -c "print(max($S, $T*1000.0))")
         done
-        echo "$MODE $DIRECTION, $r, $l, $RUN_NAME, $S, 0" >> "summary.$RUN_NAME.txt"
+        echo "$MODE $DIRECTION, $r, $l, $RUN_NAME, $S, 0" >> "$OUT_DIR/summary.txt"
       done
     done
   fi

@@ -17,7 +17,7 @@ cd "$PROFDIR"
 trap '{ docker-compose down -t 5; }' EXIT
 
 # Summary table header
-echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "summary.$RUN_NAME.txt"
+echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "$OUT_DIR/summary.txt"
 
 if [ "$TCP" -eq "1" ]; then
   MODE=TCP DIRECTION=outbound NAME=tcpoutbound_bench PROXY_PORT=$PROXY_PORT_OUTBOUND SERVER_PORT=5001 single_benchmark_run
@@ -32,8 +32,8 @@ if [ "$GRPC" -eq "1" ]; then
   MODE=gRPC DIRECTION=inbound NAME=grpcinbound_bench PROXY_PORT=$PROXY_PORT_INBOUND SERVER_PORT=8079 single_benchmark_run
 fi
 echo "Benchmark results (display with 'head -vn-0 *$ID.txt *$ID.json | less' or compare them with ./plot.py):"
-ls ./*$ID*.txt
+ls "$OUT_DIR"
 echo SUMMARY:
-cat "summary.$RUN_NAME.txt"
+cat "$OUT_DIR/summary.txt"
 echo "Run 'fortio report' and open http://localhost:8080/ to display the HTTP/gRPC graphs"
 docker-compose down -t 5

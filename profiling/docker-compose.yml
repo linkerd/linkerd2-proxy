@@ -15,7 +15,6 @@ services:
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
       PROXY_PERF:
       NAME:
-      ID:
     command: /usr/bin/run-proxy
     depends_on:
       - iperf
@@ -24,7 +23,7 @@ services:
       - seccomp:./seccomp-perf.json
     volumes:
       - type: bind
-        source: "."
+        source: "${OUT_DIR}"
         target: "/out"
 
   fortio:
@@ -34,5 +33,5 @@ services:
     command: ["fortio", "server"]
     volumes:
       - type: bind
-        source: "."
+        source: "${OUT_DIR}"
         target: "/out"

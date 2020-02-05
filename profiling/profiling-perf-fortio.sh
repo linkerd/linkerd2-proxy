@@ -15,7 +15,7 @@ cd "$PROFDIR"
 trap '{ docker-compose down -t 5; }' EXIT
 
 # Summary table header
-echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "summary.$RUN_NAME.txt"
+echo "Test, target req/s, req len, branch, p999 latency (ms), GBit/s" > "$OUT_DIR/summary.txt"
 
 export PROXY_PERF=1;
 
@@ -34,9 +34,9 @@ fi
 docker-compose down -t 5
 
 echo "Log files (display with 'head -vn-0 *$ID.txt *$ID.json | less'):"
-ls ./*$ID*.txt
+ls "$OUT_DIR/*.txt" "$OUT_DIR/*.json"
 echo SUMMARY:
-cat "summary.$RUN_NAME.txt"
+cat "$OUT_DIR/summary.txt"
 echo "Finished, inspect flamegraphs in browser:"
-ls *$ID*.svg
+ls "$OUT_DIR/*.svg"
 
