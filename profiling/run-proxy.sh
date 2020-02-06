@@ -8,8 +8,6 @@ if [[ ! -z "$PROXY_PERF" ]]; then
     (perf script | inferno-collapse-perf) > "/out/${NAME}.folded"
     inferno-flamegraph --width 4000 "/out/${NAME}.folded" > "/out/${NAME}_flamegraph.svg"
 elif [[ ! -z "$PROXY_HEAP" ]]; then
-    /usr/lib/linkerd/linkerd2-proxy
-else
     LD_PRELOAD=/usr/lib/libmemory_profiler.so /usr/lib/linkerd/linkerd2-proxy
     mv memory-profiling_*.dat "/out/${NAME}_heap.dat"
 
@@ -27,4 +25,6 @@ else
     memory-profiler-cli export-heaptrack \
         "/out/${NAME}_heap.dat" \
         --output "/out/${NAME}_heaptrack.dat"
+else
+    /usr/lib/linkerd/linkerd2-proxy
 fi
