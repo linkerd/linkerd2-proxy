@@ -1,7 +1,7 @@
 #!/bin/bash
 set -o errexit
 set -o pipefail
-set +x
+set -x
 
 if [[ ! -z "$PROXY_PERF" ]]; then
     (perf record -F 2000 -g /usr/lib/linkerd/linkerd2-proxy) > perf.data
