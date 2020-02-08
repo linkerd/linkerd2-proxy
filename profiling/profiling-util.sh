@@ -48,15 +48,19 @@ BRANCH_NAME=$(echo $BRANCH_NAME | sed -e 's/\//-/g')
 export RUN_NAME="$BRANCH_NAME $ID Iter: $ITERATIONS Dur: $DURATION Conns: $CONNECTIONS Streams: $GRPC_STREAMS"
 
 export OUT_DIR="../target/profile/$ID"
+export TEST_KEY_DIR="/tmp/$ID/ssh"
 status "Creating" "$OUT_DIR"
 
 mkdir -p "$OUT_DIR"
+mkdir -p "$TEST_KEY_DIR"
+ssh-keygen -f "$TEST_KEY_DIR/id_ecdsa" -t ecdsa -b 521 -N '' -q
+cat "$TEST_KEY_DIR/id_ecdsa.pub" > "$TEST_KEY_DIR/authorized_keys"
 
 single_benchmark_run () {
   # run benchmark utilities in background, only proxy runs in foreground
   # run client
   if [ "$MODE" = "TCP" ]; then
-    export SERVER="iperf:$SERVER_PORT" && docker-compose up -d &> "$LOG"
+    SERVER="iperf" docker-compose up -d &> "$LOG"
     status "Running" "TCP $DIRECTION"
     IPERF=$(((docker-compose exec iperf \
         linkerd-await \
@@ -75,7 +79,7 @@ single_benchmark_run () {
     fi
     echo "TCP $DIRECTION, 0, 0, $RUN_NAME, 0, $T" >> "$OUT_DIR/summary.txt"
   else
-    export SERVER="fortio:$SERVER_PORT" && docker-compose up -d &> "$LOG"
+    SERVER="fortio" docker-compose up -d &> "$LOG"
     docker-compose kill iperf &> "$LOG"
     RPS="$HTTP_RPS"
     XARG=""

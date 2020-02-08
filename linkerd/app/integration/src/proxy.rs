@@ -156,10 +156,10 @@ impl app::core::transport::OrigDstAddr for MockOriginalDst {
         info_span!("mock original dst").in_scope(|| {
             sock.local_addr().ok().and_then(|local| {
                 let inner = self.0.lock().unwrap();
-                if inner.inbound_local_addr.map(SocketAddr::port) == Some(local.port()) {
+                if inner.inbound_local_addr.map(|addr| addr.port()) == Some(local.port()) {
                     debug!(local = %local, mock = ?inner.inbound_orig_addr, "inbound");
                     inner.inbound_orig_addr
-                } else if inner.outbound_local_addr.map(SocketAddr::port) == Some(local.port()) {
+                } else if inner.outbound_local_addr.map(|addr| addr.port()) == Some(local.port()) {
                     debug!(local = %local, mock = ?inner.outbound_orig_addr, "outbound");
                     inner.outbound_orig_addr
                 } else {

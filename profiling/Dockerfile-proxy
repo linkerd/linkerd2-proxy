@@ -19,7 +19,8 @@ RUN RUSTFLAGS="-C debuginfo=2 -C lto=off" cargo build \
 ## Install the proxy binary into the base runtime image.
 FROM $RUNTIME_IMAGE as runtime
 
-RUN apt-get update && apt-get install -y linux-perf linux-base netcat curl iproute2 && \
+RUN apt-get update && \
+    apt-get install -y linux-perf linux-base netcat curl iproute2 openssh-client && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/ && \
     mv /usr/bin/perf_* /usr/bin/perf
 

@@ -11,7 +11,8 @@ services:
       context: ..
       dockerfile: profiling/Dockerfile-proxy
     environment:
-      PROFILING_SUPPORT_SERVER: "${SERVER}"
+      SERVER:
+      SERVER_PORT:
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
       PROXY_PERF:
       NAME:
@@ -25,13 +26,25 @@ services:
       - type: bind
         source: "${OUT_DIR}"
         target: "/out"
+    secrets:
+      - source: proxy_key
+        target: /root/.ssh/id_ecdsa
 
   fortio:
     build:
       context: .
       dockerfile: Dockerfile-fortio
-    command: ["fortio", "server"]
     volumes:
       - type: bind
         source: "${OUT_DIR}"
         target: "/out"
+    secrets:
+      - source: authorized_keys
+        target: /root/.ssh/authorized_keys
+        # mode: 600
+
+secrets:
+  authorized_keys:
+    file: "${TEST_KEY_DIR}/authorized_keys"
+  proxy_key:
+    file: "${TEST_KEY_DIR}/id_ecdsa"

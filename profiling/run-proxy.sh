@@ -3,6 +3,19 @@ set -o errexit
 set -o pipefail
 set -x
 
+export PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT"
+
+while ! nc -z "$SERVER" "$SERVER_PORT"; do
+  sleep 0.1
+done
+
+# FIXME(eliza): this is a terrible hack to work around how the inbound proxy
+# rewrites all addresses to localhost...
+ssh -o "StrictHostKeyChecking=no" \
+    -v -f -N -4 \
+    -L "$SERVER_PORT:127.0.0.1:$SERVER_PORT" \
+    "$SERVER" &
+
 if [[ ! -z "$PROXY_PERF" ]]; then
     (perf record -F 2000 -g /usr/lib/linkerd/linkerd2-proxy) > perf.data
     (perf script | inferno-collapse-perf) > "/out/${NAME}.folded"
