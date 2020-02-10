@@ -17,8 +17,8 @@ services:
       SERVER_PORT:
       LINKERD2_PROXY_LOG: "${LINKERD2_PROXY_LOG}"
       PROXY_PERF:
+      PROXY_HEAP:
       NAME:
-    command: /usr/bin/run-proxy
     depends_on:
       - iperf
       - fortio
