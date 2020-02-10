@@ -20,6 +20,6 @@ RUN sed 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so
 
 EXPOSE 22
 
-CMD bash -c 'service ssh restart && fortio server'
+ENTRYPOINT bash -c 'service ssh restart && fortio server'
 
 ENV PATH="/usr/bin/:${PATH}"
