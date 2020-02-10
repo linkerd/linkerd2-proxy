@@ -41,4 +41,3 @@ COPY ./profiling/run-proxy.sh /usr/bin/run-proxy
 ENV PATH="/usr/bin/:${PATH}"
 
 ENTRYPOINT []
-ENV LINKERD2_PROXY_LOG=warn,linkerd2_proxy=info
