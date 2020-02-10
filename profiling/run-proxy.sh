@@ -9,10 +9,12 @@ while ! nc -z "$SERVER" "$SERVER_PORT"; do
   sleep 0.1
 done
 
-# FIXME(eliza): this is a terrible hack to work around how the inbound proxy
-# rewrites all addresses to localhost...
+# this is a terrible hack to work around how the inbound proxy
+# rewrites all addresses to localhost, since docker-compose assigns IP addresses
+# to all containers running on its network: we open a SSH tunnel to the server's
+# container to port-forward the target port for the test to localhost.
 ssh -o "StrictHostKeyChecking=no" \
-    -v -f -N -4 \
+    -f -N -4 \
     -L "$SERVER_PORT:127.0.0.1:$SERVER_PORT" \
     "$SERVER" &
 
