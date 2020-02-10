@@ -4,7 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile-iperf
-    command: ["iperf", "-s", "-p 5001"]
+    secrets:
+      - source: authorized_keys
+        target: /root/.ssh/authorized_keys
 
   proxy:
     build:
@@ -41,7 +43,6 @@ services:
     secrets:
       - source: authorized_keys
         target: /root/.ssh/authorized_keys
-        # mode: 600
 
 secrets:
   authorized_keys:
