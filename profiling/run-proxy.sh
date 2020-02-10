@@ -5,8 +5,8 @@ set -x
 
 export PROFILING_SUPPORT_SERVER="127.0.0.1:$SERVER_PORT"
 
-while ! nc -z "$SERVER" "$SERVER_PORT"; do
-  sleep 0.1
+until ( nc -z "$SERVER" "$SERVER_PORT" ); do
+  sleep 1
 done
 
 # this is a terrible hack to work around how the inbound proxy
