@@ -62,7 +62,7 @@ single_benchmark_run () {
   if [ "$MODE" = "TCP" ]; then
     SERVER="iperf" docker-compose up -d &> "$LOG"
     status "Running" "TCP $DIRECTION"
-    IPERF=$(((docker-compose exec iperf \
+    IPERF=$( ( (docker-compose exec iperf \
         linkerd-await \
         --uri="http://proxy:4191/ready" \
         -- \
@@ -94,7 +94,7 @@ single_benchmark_run () {
         for i in $(seq $ITERATIONS); do
           status "Running" "$MODE $DIRECTION Iteration: $i RPS: $r REQ_BODY_LEN: $l"
 
-          FORTIO=$((docker-compose exec fortio \
+          FORTIO=$( (docker-compose exec fortio \
             linkerd-await \
             --uri="http://proxy:4191/ready" \
             -- \
