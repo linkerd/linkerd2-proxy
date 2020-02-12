@@ -1,5 +1,6 @@
 ARG RUST_IMAGE=rust:1.40.0-buster
 ARG RUNTIME_IMAGE=debian:bullseye-slim
+ARG RUSTFLAGS="-C debuginfo=2 -C lto=off"
 ## Builds the proxy as incrementally as possible.
 FROM $RUST_IMAGE as build
 
@@ -10,7 +11,7 @@ WORKDIR /usr/src/linkerd2-proxy
 COPY . .
 
 RUN cargo fetch --locked
-RUN RUSTFLAGS="-C debuginfo=2 -C lto=off" cargo build \
+RUN RUSTFLAGS=$RUSTFLAGS cargo build \
     --frozen --release \
     -p linkerd2-app-profiling \
     --bin profile && \
