@@ -4,11 +4,11 @@ set -o pipefail
 
 PROFDIR=$(dirname "$0")
 
-source "$PROFDIR/profiling-util.sh"
+cd "$PROFDIR"
+
+source "profiling-util.sh"
 
 status "Starting" "Benchmark ${RUN_NAME}"
-
-cd "$PROFDIR"
 
 # Cleanup background processes when script is canceled
 trap '{ teardown; }' EXIT
