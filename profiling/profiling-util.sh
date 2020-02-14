@@ -55,6 +55,7 @@ mkdir -p "$OUT_DIR"
 mkdir -p "$TEST_KEY_DIR"
 ssh-keygen -f "$TEST_KEY_DIR/id_ecdsa" -t ecdsa -b 521 -N '' -q
 cat "$TEST_KEY_DIR/id_ecdsa.pub" > "$TEST_KEY_DIR/authorized_keys"
+chmod 644 "$TEST_KEY_DIR/authorized_keys"
 
 single_benchmark_run () {
   # run benchmark utilities in background, only proxy runs in foreground
