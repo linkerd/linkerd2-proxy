@@ -18,8 +18,11 @@ RUN mkdir /var/run/sshd
 # SSH login fix. Otherwise user is kicked off after login
 RUN sed 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so@g' -i /etc/pam.d/sshd
 
+COPY ./start-sshd.sh /usr/bin/start-sshd
+
 EXPOSE 22
 
-ENTRYPOINT bash -c 'mkdir -p /root/.ssh/ && cat /root/authorized_keys > /root/.ssh/authorized_keys && service ssh restart && fortio server'
-
 ENV PATH="/usr/bin/:${PATH}"
+
+ENTRYPOINT bash -c 'start-sshd && fortio server'
+

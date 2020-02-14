@@ -15,6 +15,7 @@ RUN sed 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so
 EXPOSE 22
 
 COPY --from=await /linkerd-await /usr/bin/linkerd-await
+COPY ./start-sshd.sh /usr/bin/start-sshd
 
 ENV PATH="/usr/bin:${PATH}"
-CMD bash -c 'service ssh restart && iperf -s -p 5001'
+CMD bash -c 'start-sshd && iperf -s -p 5001'
