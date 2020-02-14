@@ -44,7 +44,7 @@ services:
         target: "/out"
     secrets:
       - source: authorized_keys
-        target: /root/.ssh/authorized_keys
+        target: /root/authorized_keys
 
 secrets:
   authorized_keys:
