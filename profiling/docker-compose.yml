@@ -31,6 +31,8 @@ services:
     secrets:
       - source: proxy_key
         target: /root/.ssh/id_ecdsa
+      - source: proxy_pubkey
+        target: /root/.ssh/id_ecdsa.pub
 
   fortio:
     build:
@@ -49,3 +51,5 @@ secrets:
     file: "${TEST_KEY_DIR}/authorized_keys"
   proxy_key:
     file: "${TEST_KEY_DIR}/id_ecdsa"
+  proxy_pubkey:
+    file: "${TEST_KEY_DIR}/id_ecdsa.pub"
