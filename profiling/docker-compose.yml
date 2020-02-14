@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile-iperf
     secrets:
       - source: authorized_keys
-        target: /root/.ssh/authorized_keys
+        target: /root/authorized_keys
 
   proxy:
     build:
