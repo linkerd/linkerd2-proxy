@@ -40,6 +40,8 @@ impl<T> Shared<T> {
     }
 
     /// Try to claim a value without registering a waiter.
+    ///
+    /// Once a value is acquired it **must** be returned via `release_and_notify`.
     pub fn try_acquire(&mut self) -> Result<Option<T>, Arc<Error>> {
         match std::mem::replace(&mut self.state, State::Claimed) {
             // This lock has acquired the value.
@@ -60,6 +62,12 @@ impl<T> Shared<T> {
 
     /// Try to acquire a value or register the given waiter to be notified when
     /// the lock is available.
+    ///
+    /// Once a value is acquired it **must** be returned via `release_and_notify`.
+    ///
+    /// If `Async::NotReady` is returned, the polling task, once notified, **must** either call
+    /// `poll_acquire` again to obtain a value, or the waiter **must** be returned via
+    /// `release_waiter`.
     pub fn poll_acquire(&mut self, wait: &Wait) -> Poll<T, Arc<Error>> {
         match self.try_acquire() {
             Ok(Some(svc)) => Ok(Async::Ready(svc)),
