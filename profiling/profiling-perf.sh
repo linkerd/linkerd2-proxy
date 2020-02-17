@@ -32,10 +32,10 @@ if [ "$GRPC" -eq "1" ]; then
 fi
 teardown
 
-status "Completed" "Log files (display with 'head -vn-0 *$ID.txt *$ID.json | less'):"
-ls "$OUT_DIR/*.txt" "$OUT_DIR/*.json"
+status "Completed" "Log files (display with 'head -vn-0 $OUT_DIR/*.txt $OUT_DIR/*.json | less'):"
+ls "$OUT_DIR"/*.txt "$OUT_DIR"/*.json
 echo SUMMARY:
-cat "$OUT_DIR/summary.txt"
+cat "$OUT_DIR"/summary.txt
 status "Completed" "inspect flamegraphs in browser:"
-ls "$OUT_DIR/*.svg"
+ls "$OUT_DIR"/*.svg
 

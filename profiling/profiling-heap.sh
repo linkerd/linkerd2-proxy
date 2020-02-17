@@ -32,13 +32,13 @@ if [ "$GRPC" -eq "1" ]; then
 fi
 teardown
 
-status "Completed" "Log files (display with 'head -vn-0 *$ID.txt *$ID.json | less'):"
-ls "$OUT_DIR/*.txt" "$OUT_DIR/*.json"
+status "Completed" "Log files (display with 'head -vn-0 $OUT_DIR/*.txt $OUT_DIR/*.json | less'):"
+ls "$OUT_DIR"/*.txt "$OUT_DIR"/*.json
 echo SUMMARY:
-cat "$OUT_DIR/summary.txt"
+cat "$OUT_DIR"/summary.txt
 
 echo "a) Inspect the memory allocation flamegraphs in the browser:"
-ls "$OUT_DIR/*heap_flamegraph.svg"
+ls "$OUT_DIR"/*heap_flamegraph.svg
 echo "b) Run './memory-profiler-cli server $OUT_DIR/CHANGEME.heap.dat' and open http://localhost:8080/ to browse the memory graphs"
 echo "c) Run 'heaptrack -a $OUT_DIR/.heaptrack.dat' to open the heaptrack files for a detailed view."
 echo "(Replace CHANGEME with http1inbound, http1outbound, grpcinbound, grpcoutbound, tcpinbound, tcpoutbound.)"
