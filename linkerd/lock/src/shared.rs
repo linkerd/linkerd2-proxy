@@ -12,8 +12,7 @@ use tracing::trace;
 ///
 /// N.B. Waiters capacity is released lazily as waiters are notified and, i.e., not when a waiter is
 /// dropped. In high-load scenarios where the lock _always_ has new waiters, this could potentially
-/// manifest as unbounded memory growth. This situation is not expected toarise in normal operation,
-/// however.
+/// manifest as unbounded memory growth. This situation is not expected to arise in normal operation.
 pub(crate) struct Shared<T> {
     state: State<T>,
     waiters: Vec<Notify>,
