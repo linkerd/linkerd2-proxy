@@ -7,6 +7,25 @@ PROFDIR=$(dirname "$0")
 cd "$PROFDIR"
 
 source "profiling-util.sh"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  err "you are trying to run perf on a mac" "This is not guaranteed to work in Docker for Mac.
+If you're lucky, it might, so I will continue running the test."
+else
+  PARANOIA=$(cat /proc/sys/kernel/perf_event_paranoid)
+  if [ "$PARANOIA" -eq "-1" ]; then
+    err "you may not have permission to collect stats" "Consider tweaking /proc/sys/kernel/perf_event_paranoid:
+ -1 - Not paranoid at all
+  0 - Disallow raw tracepoint access for unpriv
+  1 - Disallow cpu events for unpriv
+  2 - Disallow kernel profiling for unpriv
+
+You can adjust this value with:
+  echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid
+
+Current value is $PARANOIA"
+    exit 1
+  fi
+fi
 
 status "Starting" "perf profile ${RUN_NAME}"
 
@@ -32,7 +51,7 @@ if [ "$GRPC" -eq "1" ]; then
 fi
 teardown
 
-status "Completed" "Log files (display with 'head -vn-0 $OUT_DIR/*.txt $OUT_DIR/*.json | less'):"
+status "Completed" "Log files (display with 'head -vn-0 $OUT_DIR/.txt $OUT_DIR/*.json | less'):"
 ls "$OUT_DIR"/*.txt "$OUT_DIR"/*.json
 echo SUMMARY:
 cat "$OUT_DIR"/summary.txt
