@@ -874,9 +874,13 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd2-error",
+ "rand 0.7.2",
  "tokio",
  "tower",
  "tracing",
+ "tracing-futures",
+ "tracing-log",
+ "tracing-subscriber",
 ]
 
 [[package]]
