@@ -4,7 +4,7 @@ use futures::{future, Async, Future, Poll};
 use std::sync::{Arc, Mutex};
 use tracing::trace;
 
-/// Guards access to an inner service with a `tokio::sync::lock::Lock`.
+/// A middlware that safely shares an inner service among clones.
 ///
 /// As the service is polled to readiness, the lock is acquired and the inner
 /// service is polled. If the sevice is cloned, the service's lock state is not
@@ -86,7 +86,7 @@ where
                 // This instance has not registered interest in the lock.
                 State::Released => match self.shared.lock() {
                     Err(_) => return Err(Poisoned::new().into()),
-                    // First, try to acquire the lock withotu creating a waiter.
+                    // First, try to acquire the lock without creating a waiter.
                     // If the lock isn't available, create a waiter and try
                     // again, registering interest>
                     Ok(mut shared) => match shared.try_acquire() {
@@ -149,13 +149,9 @@ impl<S> Drop for Lock<S> {
                 }
             }
 
-            // If this lock is waiting but the waiter isn't registered, it must
-            // have been notified. Notify the next waiter to prevent deadlock.
             State::Waiting(wait) => {
                 if let Ok(mut shared) = self.shared.lock() {
-                    if wait.is_not_waiting() {
-                        shared.notify_next_waiter();
-                    }
+                    shared.release_waiter(wait);
                 }
             }
 
@@ -170,7 +166,7 @@ impl<S> std::fmt::Debug for State<S> {
         match self {
             State::Released => write!(f, "Released"),
             State::Acquired(_) => write!(f, "Acquired(..)"),
-            State::Waiting(ref w) => write!(f, "Waiting(pending={})", w.is_waiting()),
+            State::Waiting(ref w) => write!(f, "Waiting({:?})", w),
             State::Failed(ref e) => write!(f, "Failed({:?})", e),
         }
     }

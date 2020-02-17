@@ -67,7 +67,7 @@ impl<T> Shared<T> {
                     trace!("Registering waiter");
                     self.waiters.push(notify);
                 }
-                debug_assert!(wait.is_waiting());
+                debug_assert!(wait.has_notify());
                 Ok(Async::NotReady)
             }
             Err(error) => Err(error),
@@ -76,7 +76,7 @@ impl<T> Shared<T> {
 
     pub fn release_and_notify(&mut self, value: T) {
         trace!(waiters = self.waiters.len(), "Releasing");
-        debug_assert!(match self.state {
+        assert!(match self.state {
             State::Claimed => true,
             _ => false,
         });
@@ -84,7 +84,17 @@ impl<T> Shared<T> {
         self.notify_next_waiter();
     }
 
-    pub fn notify_next_waiter(&mut self) {
+    pub fn release_waiter(&mut self, wait: Wait) {
+        // If a waiter is being released and it does not have a notify, then it must be being
+        // relased after being notified. Notify the next waiter to prevent deadlock.
+        if let State::Unclaimed(_) = self.state {
+            if !wait.has_notify() {
+                self.notify_next_waiter();
+            }
+        }
+    }
+
+    fn notify_next_waiter(&mut self) {
         while let Some(waiter) = self.waiters.pop() {
             if waiter.notify() {
                 trace!("Notified waiter");
@@ -95,7 +105,7 @@ impl<T> Shared<T> {
 
     pub fn fail(&mut self, error: Arc<Error>) {
         trace!(waiters = self.waiters.len(), %error, "Failing");
-        debug_assert!(match self.state {
+        assert!(match self.state {
             State::Claimed => true,
             _ => false,
         });
@@ -125,9 +135,9 @@ mod waiter {
         /// If a `Notify` handle does not currently exist for this waiter, create
         /// a new one.
         pub(super) fn get_notify(&self) -> Option<Notify> {
-            if self.is_not_waiting() {
+            if !self.has_notify() {
                 let n = Notify(Arc::downgrade(&self.0));
-                debug_assert!(self.is_waiting());
+                debug_assert!(self.has_notify());
                 Some(n)
             } else {
                 None
@@ -140,13 +150,19 @@ mod waiter {
         }
 
         /// Returns true iff there is currently a `Notify` handle for this waiter.
-        pub fn is_waiting(&self) -> bool {
-            Arc::weak_count(&self.0) == 1
+        pub(super) fn has_notify(&self) -> bool {
+            let weaks = Arc::weak_count(&self.0);
+            debug_assert!(
+                weaks == 0 || weaks == 1,
+                "There must only be at most one Notify per Wait"
+            );
+            weaks == 1
         }
+    }
 
-        /// Returns true iff there is not currently a `Notify` handle for this waiter.
-        pub fn is_not_waiting(&self) -> bool {
-            Arc::weak_count(&self.0) == 0
+    impl std::fmt::Debug for Wait {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Wait(notify={})", self.has_notify())
         }
     }
 

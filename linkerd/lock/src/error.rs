@@ -7,7 +7,7 @@ pub struct Poisoned(());
 #[derive(Debug)]
 pub struct ServiceError(Arc<Error>);
 
-// === impl POisoned ===
+// === impl Poisoned ===
 
 impl Poisoned {
     pub fn new() -> Self {
