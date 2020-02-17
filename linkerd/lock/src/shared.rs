@@ -7,8 +7,13 @@ use tracing::trace;
 
 /// The shared state between one or more Lock instances.
 ///
-/// When multiple lock instances are contending for the inner value, waiters are
-/// stored in a LIFO stack. This is done to bias for latency instead of fairness
+/// When multiple lock instances are contending for the inner value, waiters are stored in a LIFO
+/// stack. This is done to bias for latency instead of fairness
+///
+/// N.B. Waiters capacity is released lazily as waiters are notified and, i.e., not when a waiter is
+/// dropped. In high-load scenarios where the lock _always_ has new waiters, this could potentially
+/// manifest as unbounded memory growth. This situation is not expected toarise in normal operation,
+/// however.
 pub(crate) struct Shared<T> {
     state: State<T>,
     waiters: Vec<Notify>,
@@ -45,8 +50,8 @@ impl<T> Shared<T> {
             }
             // The value is already claimed by a lock.
             State::Claimed => Ok(None),
-            // The locks failed, so reset the state immediately so that all
-            // instances may be notified.
+            // The lock has failed, so reset the state immediately so that all instances may be
+            // notified.
             State::Failed(error) => {
                 self.state = State::Failed(error.clone());
                 Err(error)
@@ -86,7 +91,7 @@ impl<T> Shared<T> {
 
     pub fn release_waiter(&mut self, wait: Wait) {
         // If a waiter is being released and it does not have a notify, then it must be being
-        // relased after being notified. Notify the next waiter to prevent deadlock.
+        // released after being notified. Notify the next waiter to prevent deadlock.
         if let State::Unclaimed(_) = self.state {
             if !wait.has_notify() {
                 self.notify_next_waiter();
@@ -127,13 +132,11 @@ mod waiter {
 
     /// A handle held by shared lock state to notify a waiting Lock.
     ///
-    /// There may be at most one `Notify` instance per `Wait` instance at any one
-    /// time.
+    /// There may be at most one `Notify` instance per `Wait` instance at any one time.
     pub(super) struct Notify(Weak<AtomicTask>);
 
     impl Wait {
-        /// If a `Notify` handle does not currently exist for this waiter, create
-        /// a new one.
+        /// If a `Notify` handle does not currently exist for this waiter, create a new one.
         pub(super) fn get_notify(&self) -> Option<Notify> {
             if !self.has_notify() {
                 let n = Notify(Arc::downgrade(&self.0));

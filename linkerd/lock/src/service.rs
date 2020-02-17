@@ -4,11 +4,10 @@ use futures::{future, Async, Future, Poll};
 use std::sync::{Arc, Mutex};
 use tracing::trace;
 
-/// A middlware that safely shares an inner service among clones.
+/// A middleware that safely shares an inner service among clones.
 ///
-/// As the service is polled to readiness, the lock is acquired and the inner
-/// service is polled. If the sevice is cloned, the service's lock state is not
-/// retained by the clone.
+/// As the service is polled to readiness, the lock is acquired and the inner service is polled. If
+/// the service is cloned, the service's lock state isnot retained by the clone.
 pub struct Lock<S> {
     state: State<S>,
     shared: Arc<Mutex<Shared<S>>>,
@@ -63,17 +62,16 @@ where
         loop {
             trace!(state = ?self.state, "Polling");
             self.state = match self.state {
-                // This instance has exlcusive access to the inner service.
+                // This instance has exclusive access to the inner service.
                 State::Acquired(ref mut svc) => match svc.poll_ready() {
                     Ok(ok) => {
                         trace!(ready = ok.is_ready());
                         return Ok(ok);
                     }
                     Err(inner) => {
-                        // If the inner service fails to become ready, share
-                        // that error with all other consumers and update this
-                        // lock's state to prevent trying to acquire the shared
-                        // state again.
+                        // If the inner service fails to become ready, share that error with all
+                        // other consumers and update this lock's state to prevent tryingto acquire
+                        // the shared state again.
                         let error = Arc::new(inner.into());
                         trace!(%error);
                         if let Ok(mut shared) = self.shared.lock() {
@@ -86,9 +84,8 @@ where
                 // This instance has not registered interest in the lock.
                 State::Released => match self.shared.lock() {
                     Err(_) => return Err(Poisoned::new().into()),
-                    // First, try to acquire the lock without creating a waiter.
-                    // If the lock isn't available, create a waiter and try
-                    // again, registering interest>
+                    // First, try to acquire the lock without creating a waiter. If the lock isn't
+                    // available, create a waiter and try again, registering interest.
                     Ok(mut shared) => match shared.try_acquire() {
                         Ok(None) => State::Waiting(Wait::default()),
                         Ok(Some(svc)) => State::Acquired(svc),
@@ -124,8 +121,8 @@ where
 
         // Return the service to the shared state, notifying waiters as needed.
         //
-        // The service is dropped if the inner mutex has been poisoned, and
-        // subsequent calsl to poll_ready will return a Poisioned error.
+        // The service is dropped if the inner mutex has been poisoned, and subsequent calls to
+        // poll_ready will return a Poisoned error.
         if let Ok(mut shared) = self.shared.lock() {
             trace!("Releasing acquired lock after use");
             shared.release_and_notify(svc);
@@ -141,8 +138,8 @@ impl<S> Drop for Lock<S> {
         let state = std::mem::replace(&mut self.state, State::Released);
         trace!(?state, "Dropping");
         match state {
-            // If this lock was holding the service, return it back back to the
-            // shared state so another lock may acquire it. Waiters are notified.
+            // If this lock was holding the service, return it back to the shared state so another
+            // lock may acquire it. Waiters are notified.
             State::Acquired(service) => {
                 if let Ok(mut shared) = self.shared.lock() {
                     shared.release_and_notify(service);
