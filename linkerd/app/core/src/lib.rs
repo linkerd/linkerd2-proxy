@@ -114,6 +114,7 @@ pub struct ProxyMetrics {
     pub http_route_actual: HttpRouteMetrics,
     pub http_route_retry: HttpRouteRetry,
     pub http_endpoint: HttpEndpointMetrics,
+    pub http_errors: errors::MetricsLayer,
     pub stack: StackMetrics,
     pub transport: transport::Metrics,
 }

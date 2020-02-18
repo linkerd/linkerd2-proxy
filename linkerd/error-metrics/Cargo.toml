@@ -1,0 +1,14 @@
+[package]
+name = "linkerd2-error-metrics"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+
+[dependencies]
+futures = "0.1"
+indexmap = "1.0"
+linkerd2-error = { path = "../error" }
+linkerd2-metrics = { path = "../metrics" }
+tower = "0.1"

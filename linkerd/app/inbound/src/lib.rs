@@ -250,6 +250,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(insert::layer(move || {
                     DispatchDeadline::after(buffer.dispatch_timeout)
                 }))
+                .push_per_make(metrics.http_errors)
                 .push_per_make(errors::layer())
                 .push_per_make(metrics.stack.layer(stack_labels("source")))
                 .push(trace::layer(|src: &tls::accept::Meta| {
