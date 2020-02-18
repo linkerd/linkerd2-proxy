@@ -1,5 +1,6 @@
 use crate::proxy::{buffer, http, pending};
 use crate::Error;
+pub use linkerd2_box as boxed;
 pub use linkerd2_router::Make;
 pub use linkerd2_stack::{self as stack, layer, map_target, Layer, LayerExt, Shared};
 pub use linkerd2_timeout::stack as timeout;
@@ -55,12 +56,27 @@ impl<L> Layers<L> {
         self.push(SpawnReadyLayer::new())
     }
 
-    pub fn boxed<A, B>(self) -> Layers<Pair<L, http::boxed::Layer<A, B>>>
+    pub fn push_per_make<U: Clone>(self, layer: U) -> Layers<Pair<L, stack::per_make::Layer<U>>> {
+        self.push(stack::per_make::layer(layer))
+    }
+
+    pub fn boxed<A, B>(self) -> Layers<Pair<L, boxed::Layer<A, B>>>
     where
         A: 'static,
+        B: 'static,
+    {
+        self.push(boxed::Layer::new())
+    }
+
+    pub fn box_http_request<B>(self) -> Layers<Pair<L, http::boxed::request::Layer<B>>>
+    where
         B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
     {
-        self.push(http::boxed::Layer::new())
+        self.push(http::boxed::request::Layer::new())
+    }
+
+    pub fn box_http_response(self) -> Layers<Pair<L, http::boxed::response::Layer>> {
+        self.push(http::boxed::response::Layer::new())
     }
 }
 
@@ -117,15 +133,31 @@ impl<S> Stack<S> {
         self.push(TimeoutLayer::new(timeout))
     }
 
-    pub fn boxed<T, A, B>(self) -> Stack<http::boxed::Make<S, A, B>>
+    pub fn boxed<A>(self) -> Stack<boxed::BoxService<A, S::Response>>
     where
         A: 'static,
-        S: tower::MakeService<T, http::Request<A>, Response = http::Response<B>>,
-        B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
+        S: tower::Service<A> + Send + 'static,
+        S::Response: 'static,
+        S::Future: Send + 'static,
+        S::Error: Into<Error> + 'static,
     {
-        self.push(http::boxed::Layer::new())
+        self.push(boxed::Layer::new())
     }
 
+    pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
+    where
+        B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
+        S: tower::Service<http::Request<http::boxed::Payload>> + Send + 'static,
+        S::Response: 'static,
+        S::Future: Send + 'static,
+        S::Error: Into<Error> + 'static,
+    {
+        self.push(http::boxed::request::Layer::new())
+    }
+
+    pub fn box_http_response(self) -> Stack<http::boxed::BoxResponse<S>> {
+        self.push(http::boxed::response::Layer::new())
+    }
     /// Validates that this stack serves T-typed targets.
     pub fn makes<T>(self) -> Self
     where
