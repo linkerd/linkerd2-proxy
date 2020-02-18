@@ -1,6 +1,7 @@
 use crate::proxy::{buffer, identity};
 use http::{header::HeaderValue, StatusCode};
 use linkerd2_error::Error;
+use linkerd2_error_metrics as metrics;
 use linkerd2_error_respond as respond;
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_router::error as router;
@@ -10,6 +11,26 @@ use tracing::{debug, warn};
 
 pub fn layer<B: Default>() -> respond::RespondLayer<NewRespond<B>> {
     respond::RespondLayer::new(NewRespond(std::marker::PhantomData))
+}
+
+#[derive(Clone, Default)]
+pub struct Metrics(metrics::Registry<Label>);
+
+pub type MetricsLayer = metrics::RecordErrorLayer<LabelError, Label>;
+
+/// Error metric labels.
+#[derive(Copy, Clone, Debug)]
+pub struct LabelError(super::metric_labels::Direction);
+
+pub type Label = (super::metric_labels::Direction, Reason);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Reason {
+    CacheFull,
+    DispatchTimeout,
+    IdentityRequired,
+    LoadShed,
+    Unexpected,
 }
 
 #[derive(Debug)]
@@ -68,7 +89,7 @@ impl<B: Default> respond::Respond for Respond<B> {
                 debug!(?code, "Handling error with gRPC status");
                 return Ok(rsp);
             }
-        };
+        }
 
         let version = match self {
             Respond::Http1(ref version, _) => version.clone(),
@@ -193,3 +214,55 @@ impl std::fmt::Display for IdentityRequired {
 }
 
 impl std::error::Error for IdentityRequired {}
+
+impl metrics::LabelError<Error> for LabelError {
+    type Labels = Label;
+
+    fn label_error(&self, err: &Error) -> Self::Labels {
+        let reason = if err.is::<router::NoCapacity>() {
+            Reason::CacheFull
+        } else if err.is::<shed::Overloaded>() {
+            Reason::LoadShed
+        } else if err.is::<buffer::Aborted>() {
+            Reason::DispatchTimeout
+        } else if err.is::<IdentityRequired>() {
+            Reason::IdentityRequired
+        } else {
+            Reason::Unexpected
+        };
+
+        (self.0, reason)
+    }
+}
+
+impl metrics::FmtLabels for Reason {
+    fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "message=\"{}\"",
+            match self {
+                Reason::CacheFull => "router full",
+                Reason::LoadShed => "load shed",
+                Reason::DispatchTimeout => "dispatch timeout",
+                Reason::IdentityRequired => "identity required",
+                Reason::Unexpected => "unexpected",
+            }
+        )
+    }
+}
+
+impl Metrics {
+    pub fn inbound(&self) -> MetricsLayer {
+        self.0
+            .layer(LabelError(super::metric_labels::Direction::In))
+    }
+
+    pub fn outbound(&self) -> MetricsLayer {
+        self.0
+            .layer(LabelError(super::metric_labels::Direction::Out))
+    }
+
+    pub fn report(&self) -> metrics::Registry<Label> {
+        self.0.clone()
+    }
+}

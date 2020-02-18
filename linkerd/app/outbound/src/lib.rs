@@ -318,6 +318,7 @@ impl<A: OrigDstAddr> Config<A> {
                     DispatchDeadline::after(buffer.dispatch_timeout)
                 }))
                 .push(http::insert::target::layer())
+                .push_per_make(metrics.http_errors)
                 .push_per_make(errors::layer())
                 .push(trace::layer(
                     |src: &tls::accept::Meta| info_span!("source", target.addr = %src.addrs.target_addr()),

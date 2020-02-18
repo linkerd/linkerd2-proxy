@@ -1,6 +1,6 @@
 pub use linkerd2_app_core::{
     classify::Class,
-    handle_time, http_metrics as metrics,
+    errors, handle_time, http_metrics as metrics,
     metric_labels::{ControlLabels, EndpointLabels, RouteLabels},
     metrics::FmtMetrics,
     opencensus, proxy, telemetry, transport, ControlHttpMetrics, ProxyMetrics,
@@ -51,6 +51,8 @@ impl Metrics {
             (m, r)
         };
 
+        let http_errors = errors::Metrics::default();
+
         let handle_time_report = handle_time::Metrics::new();
         let inbound_handle_time = handle_time_report.inbound();
         let outbound_handle_time = handle_time_report.outbound();
@@ -66,6 +68,7 @@ impl Metrics {
                 http_route: http_route.clone(),
                 http_route_actual: http_route_actual.clone(),
                 http_route_retry: http_route_retry.clone(),
+                http_errors: http_errors.inbound(),
                 transport: transport.clone(),
             },
             outbound: ProxyMetrics {
@@ -74,13 +77,15 @@ impl Metrics {
                 http_route,
                 http_route_retry,
                 http_route_actual,
+                http_errors: http_errors.outbound(),
                 transport,
             },
             control,
             opencensus,
         };
 
-        let report = endpoint_report
+        let report = (http_errors.report())
+            .and_then(endpoint_report)
             .and_then(route_report)
             .and_then(retry_report)
             .and_then(actual_report)
