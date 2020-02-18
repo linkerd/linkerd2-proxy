@@ -5,7 +5,7 @@ use linkerd2_metrics::{Counter, FmtLabels};
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 
-/// A middlware taht records errors.
+/// A middlware that records errors.
 pub struct RecordError<L, K: Hash + Eq, S> {
     label: L,
     errors: Arc<Mutex<IndexMap<K, Counter>>>,
