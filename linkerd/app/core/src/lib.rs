@@ -105,7 +105,7 @@ pub type HttpRouteMetrics = http_metrics::Requests<metric_labels::RouteLabels, c
 
 pub type HttpRouteRetry = http_metrics::Retries<metric_labels::RouteLabels>;
 
-pub type StackMetrics = stack_metrics::NewLayer<metric_labels::StackLabels>;
+pub type StackMetrics = stack_metrics::Registry<metric_labels::StackLabels>;
 
 #[derive(Clone)]
 pub struct ProxyMetrics {

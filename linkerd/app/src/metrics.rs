@@ -55,7 +55,7 @@ impl Metrics {
         let inbound_handle_time = handle_time_report.inbound();
         let outbound_handle_time = handle_time_report.outbound();
 
-        let stack = stack_metrics::NewLayer::default();
+        let stack = stack_metrics::Registry::default();
 
         let (transport, transport_report) = transport::metrics::new();
 
@@ -92,7 +92,7 @@ impl Metrics {
             .and_then(handle_time_report)
             .and_then(transport_report)
             .and_then(opencensus_report)
-            .and_then(stack.report())
+            .and_then(stack)
             .and_then(process);
 
         (metrics, report)

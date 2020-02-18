@@ -191,7 +191,7 @@ impl<A: OrigDstAddr> Config<A> {
             // If the `l5d-require-id` header is present, then that identity is
             // used as the server name when connecting to the endpoint.
             let orig_dst_router_layer = svc::layers()
-                .push_per_make(metrics.stack.new_layer(stack_labels("fallback.endpoint")))
+                .push_per_make(metrics.stack.layer(stack_labels("fallback.endpoint")))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .push(router::Layer::new(
                     router::Config::new(router_capacity, router_max_idle_age),
@@ -202,7 +202,7 @@ impl<A: OrigDstAddr> Config<A> {
             // over all endpoints returned from the destination service.
             const DISCOVER_UPDATE_BUFFER_CAPACITY: usize = 10;
             let balancer_layer = svc::layers()
-                .push_per_make(metrics.stack.new_layer(stack_labels("balance.endpoint")))
+                .push_per_make(metrics.stack.layer(stack_labels("balance.endpoint")))
                 .push_spawn_ready()
                 .push(discover::Layer::new(
                     DISCOVER_UPDATE_BUFFER_CAPACITY,
@@ -249,7 +249,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(trace::layer(
                     |dst: &DstAddr| info_span!("logical", dst.logical = %dst.dst_logical()),
                 ))
-                .push_per_make(metrics.stack.new_layer(stack_labels("logical.dst")))
+                .push_per_make(metrics.stack.layer(stack_labels("logical.dst")))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .push(router::Layer::new(
                     router::Config::new(router_capacity, router_max_idle_age),
@@ -289,7 +289,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                 .push(http::insert::target::layer())
                 .push(trace::layer(|addr: &Addr| info_span!("addr", %addr)))
-                .push_per_make(metrics.stack.new_layer(stack_labels("addr")))
+                .push_per_make(metrics.stack.layer(stack_labels("addr")))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .push(router::Layer::new(
                     router::Config::new(router_capacity, router_max_idle_age),
@@ -326,7 +326,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(trace::layer(
                     |src: &tls::accept::Meta| info_span!("source", target.addr = %src.addrs.target_addr()),
                 ))
-                .push_per_make(metrics.stack.new_layer(stack_labels("source")))
+                .push_per_make(metrics.stack.layer(stack_labels("source")))
                 .push(trace_context::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
