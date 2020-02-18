@@ -23,6 +23,7 @@ linkerd2-dns = { path = "../../dns" }
 linkerd2-drain = { path = "../../drain" }
 linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
+linkerd2-error-metrics = { path = "../../error-metrics" }
 linkerd2-error-respond = { path = "../../error-respond" }
 linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-fallback = { path = "../../fallback" }

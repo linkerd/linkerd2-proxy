@@ -628,6 +628,7 @@ dependencies = [
  "linkerd2-drain",
  "linkerd2-duplex",
  "linkerd2-error",
+ "linkerd2-error-metrics",
  "linkerd2-error-respond",
  "linkerd2-exp-backoff",
  "linkerd2-fallback",
@@ -784,6 +785,17 @@ name = "linkerd2-error"
 version = "0.1.0"
 dependencies = [
  "futures",
+]
+
+[[package]]
+name = "linkerd2-error-metrics"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "indexmap",
+ "linkerd2-error",
+ "linkerd2-metrics",
+ "tower",
 ]
 
 [[package]]
