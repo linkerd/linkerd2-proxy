@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use futures::{Future, Poll};
 use indexmap::IndexMap;
 pub use linkerd2_metrics::FmtLabels;
