@@ -51,6 +51,10 @@ impl<L> Layers<L> {
         self.push_pending().push(buffer::layer(bound, d))
     }
 
+    pub fn push_per_make<T: Clone>(self, layer: T) -> Layers<Pair<L, stack::per_make::Layer<T>>> {
+        self.push(stack::per_make::layer(layer))
+    }
+
     pub fn push_spawn_ready(self) -> Layers<Pair<L, SpawnReadyLayer>> {
         self.push(SpawnReadyLayer::new())
     }

@@ -46,6 +46,7 @@ linkerd2-request-filter = { path = "../../request-filter" }
 linkerd2-retry = { path = "../../retry" }
 linkerd2-router = { path = "../../router" }
 linkerd2-stack = { path = "../../stack" }
+linkerd2-stack-metrics = { path = "../../stack-metrics" }
 linkerd2-timeout = { path = "../../timeout" }
 linkerd2-trace-context = { path = "../../trace-context" }
 rand = { version = "0.7", features = ["small_rng"] }

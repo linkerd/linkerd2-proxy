@@ -651,6 +651,7 @@ dependencies = [
  "linkerd2-retry",
  "linkerd2-router",
  "linkerd2-stack",
+ "linkerd2-stack-metrics",
  "linkerd2-test-util",
  "linkerd2-timeout",
  "linkerd2-trace-context",
@@ -1187,6 +1188,22 @@ dependencies = [
  "linkerd2-error",
  "tower-layer",
  "tower-service",
+]
+
+[[package]]
+name = "linkerd2-stack-metrics"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "indexmap",
+ "linkerd2-error",
+ "linkerd2-metrics",
+ "linkerd2-stack",
+ "tokio",
+ "tokio-timer",
+ "tower",
+ "tower-util",
+ "tracing",
 ]
 
 [[package]]
