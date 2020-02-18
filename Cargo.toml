@@ -38,6 +38,7 @@ members = [
     "linkerd/router",
     "linkerd/signal",
     "linkerd/stack",
+    "linkerd/stack-metrics",
     "linkerd/test-util",
     "linkerd/timeout",
     "linkerd2-proxy",
