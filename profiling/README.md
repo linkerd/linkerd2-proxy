@@ -68,7 +68,7 @@ When not provided they default to the values as listed here.
 For example:
 
 ```console
-$ ITERATIONS=2 DURATION=2s CONNECTIONS=2 GRPC_STREAMS=2 HTTP_RPS="100" GRPC_RPS="100 1000" REQ_BODY_LEN="100 8000" ./benchmark-cargo-test-fortio.sh
+$ ITERATIONS=2 DURATION=2s CONNECTIONS=2 GRPC_STREAMS=2 HTTP_RPS="100" GRPC_RPS="100 1000" REQ_BODY_LEN="100 8000" ./benchmark.sh
 ```
 
 ### Test Output
