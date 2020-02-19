@@ -160,8 +160,8 @@ const ENV_INITIAL_CONNECTION_WINDOW_SIZE: &str =
 
 // Default values for various configuration fields
 const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";
-const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
-const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
+pub const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
+pub const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);

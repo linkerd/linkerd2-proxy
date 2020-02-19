@@ -8,6 +8,7 @@ ifndef PACKAGE_VERSION
 	PACKAGE_VERSION = $(shell git rev-parse --short HEAD)
 endif
 
+PROFILING = profiling
 TARGET_BIN = $(TARGET)/linkerd2-proxy
 PKG_ROOT = $(TARGET)/package
 PKG_NAME = linkerd2-proxy-$(PACKAGE_VERSION)
@@ -96,6 +97,11 @@ package: $(PKG_ROOT)/$(PKG)
 .PHONY: clean-package
 clean-package:
 	rm -rf $(PKG_ROOT)
+
+.PHONY: clean-profile
+clean-profile:
+	rm -rf target/release/profile*
+	rm -rf target/profile/*
 
 .PHONY: docker
 docker: Dockerfile Cargo.lock

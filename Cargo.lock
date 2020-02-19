@@ -743,6 +743,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-app-profiling"
+version = "0.1.0"
+dependencies = [
+ "linkerd2-app-integration",
+]
+
+[[package]]
 name = "linkerd2-box"
 version = "0.1.0"
 dependencies = [
