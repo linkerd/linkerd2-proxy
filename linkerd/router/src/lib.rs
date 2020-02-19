@@ -10,9 +10,9 @@ pub use self::layer::{Config, Layer};
 pub use self::purge::Purge;
 use futures::{Async, Future, Poll};
 use indexmap::IndexMap;
+use linkerd2_lock::Lock;
 use std::hash::Hash;
 use std::time::Duration;
-use tokio::sync::lock::Lock;
 pub use tower_load_shed::LoadShed;
 use tracing::{debug, trace};
 
@@ -300,7 +300,7 @@ where
                     ref mut cache,
                 } => {
                     // Aquire the lock for the router cache
-                    let mut cache = match cache.poll_lock() {
+                    let mut cache = match cache.poll_acquire() {
                         Async::Ready(aquired) => aquired,
                         Async::NotReady => return Ok(Async::NotReady),
                     };

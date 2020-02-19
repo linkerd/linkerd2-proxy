@@ -1,8 +1,6 @@
 use self::waiter::Notify;
 pub(crate) use self::waiter::Wait;
-use crate::error::Error;
-use futures::{Async, Poll};
-use std::sync::Arc;
+use futures::Async;
 use tracing::trace;
 
 /// The shared state between one or more Lock instances.
@@ -14,19 +12,11 @@ use tracing::trace;
 /// dropped. In high-load scenarios where the lock _always_ has new waiters, this could potentially
 /// manifest as unbounded memory growth. This situation is not expected to arise in normal operation.
 pub(crate) struct Shared<T> {
-    state: State<T>,
+    /// Set when the value is available to be acquired; None when the value is acquired.
+    value: Option<T>,
+
+    /// A LIFO stack of waiters to be notified when the value is available.
     waiters: Vec<Notify>,
-}
-
-enum State<T> {
-    /// A Lock is holding the value.
-    Claimed,
-
-    /// The inner value is available.
-    Unclaimed(T),
-
-    /// The lock has failed.
-    Failed(Arc<Error>),
 }
 
 // === impl Shared ===
@@ -35,29 +25,16 @@ impl<T> Shared<T> {
     pub fn new(value: T) -> Self {
         Self {
             waiters: Vec::new(),
-            state: State::Unclaimed(value),
+            value: Some(value),
         }
     }
 
     /// Try to claim a value without registering a waiter.
     ///
     /// Once a value is acquired it **must** be returned via `release_and_notify`.
-    pub fn try_acquire(&mut self) -> Result<Option<T>, Arc<Error>> {
-        match std::mem::replace(&mut self.state, State::Claimed) {
-            // This lock has acquired the value.
-            State::Unclaimed(v) => {
-                trace!("acquired");
-                Ok(Some(v))
-            }
-            // The value is already claimed by a lock.
-            State::Claimed => Ok(None),
-            // The lock has failed, so reset the state immediately so that all instances may be
-            // notified.
-            State::Failed(error) => {
-                self.state = State::Failed(error.clone());
-                Err(error)
-            }
-        }
+    pub fn acquire(&mut self) -> Option<T> {
+        trace!(acquired = %self.value.is_some());
+        self.value.take()
     }
 
     /// Try to acquire a value or register the given waiter to be notified when
@@ -68,38 +45,34 @@ impl<T> Shared<T> {
     /// If `Async::NotReady` is returned, the polling task, once notified, **must** either call
     /// `poll_acquire` again to obtain a value, or the waiter **must** be returned via
     /// `release_waiter`.
-    pub fn poll_acquire(&mut self, wait: &Wait) -> Poll<T, Arc<Error>> {
-        match self.try_acquire() {
-            Ok(Some(svc)) => Ok(Async::Ready(svc)),
-            Ok(None) => {
-                // Register the current task to be notified.
-                wait.register();
-                // Register the waiter's notify handle if one isn't already registered.
-                if let Some(notify) = wait.get_notify() {
-                    trace!("Registering waiter");
-                    self.waiters.push(notify);
-                }
-                debug_assert!(wait.has_notify());
-                Ok(Async::NotReady)
-            }
-            Err(error) => Err(error),
+    pub fn poll_acquire(&mut self, wait: &Wait) -> Async<T> {
+        if let Some(value) = self.acquire() {
+            return Async::Ready(value);
         }
+
+        // Register the current task to be notified.
+        wait.register();
+        // Register the waiter's notify handle if one isn't already registered.
+        if let Some(notify) = wait.get_notify() {
+            self.waiters.push(notify);
+        }
+        debug_assert!(wait.has_notify());
+
+        trace!(waiters = self.waiters.len(), "Waiting");
+        Async::NotReady
     }
 
     pub fn release_and_notify(&mut self, value: T) {
         trace!(waiters = self.waiters.len(), "Releasing");
-        assert!(match self.state {
-            State::Claimed => true,
-            _ => false,
-        });
-        self.state = State::Unclaimed(value);
+        assert!(self.value.is_none());
+        self.value = Some(value);
         self.notify_next_waiter();
     }
 
     pub fn release_waiter(&mut self, wait: Wait) {
         // If a waiter is being released and it does not have a notify, then it must be being
         // released after being notified. Notify the next waiter to prevent deadlock.
-        if let State::Unclaimed(_) = self.state {
+        if self.value.is_some() {
             if !wait.has_notify() {
                 self.notify_next_waiter();
             }
@@ -112,19 +85,6 @@ impl<T> Shared<T> {
                 trace!("Notified waiter");
                 return;
             }
-        }
-    }
-
-    pub fn fail(&mut self, error: Arc<Error>) {
-        trace!(waiters = self.waiters.len(), %error, "Failing");
-        assert!(match self.state {
-            State::Claimed => true,
-            _ => false,
-        });
-        self.state = State::Failed(error);
-
-        while let Some(waiter) = self.waiters.pop() {
-            waiter.notify();
         }
     }
 }

@@ -1216,6 +1216,7 @@ dependencies = [
  "futures",
  "indexmap",
  "linkerd2-error",
+ "linkerd2-lock",
  "tokio",
  "tokio-sync",
  "tokio-timer",
