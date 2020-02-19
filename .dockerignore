@@ -8,3 +8,4 @@
 Dockerfile*
 **/target
 target
+.cargo
