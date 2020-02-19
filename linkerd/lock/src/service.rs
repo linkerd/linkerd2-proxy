@@ -4,6 +4,10 @@ use futures::{future, Async, Future, Poll};
 use std::sync::Arc;
 use tracing::trace;
 
+/// A middleware that safely shares an inner service among clones.
+///
+/// As the service is polled to readiness, the lock is acquired and the inner service is polled. If
+/// the service is cloned, the service's lock state isnot retained by the clone.
 pub struct LockService<S> {
     lock: Lock<Result<S, ServiceError>>,
     guard: Option<Guard<Result<S, ServiceError>>>,

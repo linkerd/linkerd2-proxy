@@ -2,10 +2,10 @@ use crate::shared::{Shared, Wait};
 use futures::Async;
 use std::sync::{Arc, Mutex};
 
-/// A middleware that safely shares an inner service among clones.
+/// Provides mutually exclusive to a `T`-typed value, asynchronously.
 ///
-/// As the service is polled to readiness, the lock is acquired and the inner service is polled. If
-/// the service is cloned, the service's lock state isnot retained by the clone.
+/// Note that, when the lock is contested, waiters are notified in a LIFO
+/// fashion. This is done to minimize latency at the expense of unfairness.
 pub struct Lock<T> {
     /// Set when this Lock is interested in acquiring the value.
     waiting: Option<Wait>,
