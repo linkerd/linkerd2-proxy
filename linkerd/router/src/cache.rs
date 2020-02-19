@@ -132,8 +132,8 @@ mod tests {
     use super::*;
     use crate::Purge;
     use futures::{future, Async, Future};
+    use linkerd2_lock::Lock;
     use tokio::runtime::current_thread::{self, Runtime};
-    use tokio::sync::lock::Lock;
 
     #[test]
     fn check_capacity_and_insert() {
@@ -186,7 +186,7 @@ mod tests {
 
         // Fill the cache
         rt.block_on(future::lazy(|| {
-            let mut cache = match lock.poll_lock() {
+            let mut cache = match lock.poll_acquire() {
                 Async::Ready(cache) => cache,
                 _ => panic!("cache lock should be Ready"),
             };
@@ -203,7 +203,7 @@ mod tests {
         rt.block_on(tokio_timer::sleep(Duration::from_millis(100)))
             .unwrap();
 
-        let cache = match lock.poll_lock() {
+        let cache = match lock.poll_acquire() {
             Async::Ready(acquired) => acquired,
             _ => panic!("cache lock should be Ready"),
         };
@@ -222,7 +222,7 @@ mod tests {
 
         // Insert into the cache
         rt.block_on(future::lazy(|| {
-            let mut cache = match lock.poll_lock() {
+            let mut cache = match lock.poll_acquire() {
                 Async::Ready(cache) => cache,
                 _ => panic!("cache lock should be Ready"),
             };
@@ -240,7 +240,7 @@ mod tests {
 
         // Access the value that was inserted
         rt.block_on(future::lazy(|| {
-            let mut cache = match lock.poll_lock() {
+            let mut cache = match lock.poll_acquire() {
                 Async::Ready(cache) => cache,
                 _ => panic!("cache lock should be Ready"),
             };
@@ -257,7 +257,7 @@ mod tests {
         // If the access reset the value's expiration, it should still be
         // retrievable
         rt.block_on(future::lazy(|| {
-            let mut cache = match lock.poll_lock() {
+            let mut cache = match lock.poll_acquire() {
                 Async::Ready(acquired) => acquired,
                 _ => panic!("cache lock should be Ready"),
             };

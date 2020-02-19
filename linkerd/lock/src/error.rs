@@ -1,27 +1,8 @@
 pub use linkerd2_error::Error;
 use std::sync::Arc;
 
-#[derive(Debug)]
-pub struct Poisoned(());
-
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ServiceError(Arc<Error>);
-
-// === impl Poisoned ===
-
-impl Poisoned {
-    pub fn new() -> Self {
-        Poisoned(())
-    }
-}
-
-impl std::fmt::Display for Poisoned {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "poisoned")
-    }
-}
-
-impl std::error::Error for Poisoned {}
 
 // === impl ServiceError ===
 

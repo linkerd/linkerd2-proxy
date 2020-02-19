@@ -1,8 +1,8 @@
 use super::Cache;
 use futures::{Async, Future, Poll, Stream};
 use linkerd2_error::Never;
+use linkerd2_lock::Lock;
 use std::hash::Hash;
-use tokio::sync::lock::Lock;
 use tokio::sync::mpsc;
 
 /// A background future that eagerly removes expired cache values.
@@ -46,7 +46,7 @@ where
             Err(_) => unreachable!("purge hangup handle must not error"),
         };
 
-        if let Async::Ready(mut cache) = self.cache.poll_lock() {
+        if let Async::Ready(mut cache) = self.cache.poll_acquire() {
             cache.purge();
         }
 

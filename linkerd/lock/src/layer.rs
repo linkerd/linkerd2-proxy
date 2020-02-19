@@ -1,4 +1,4 @@
-use super::Lock;
+use super::LockService;
 
 #[derive(Clone, Debug, Default)]
 pub struct LockLayer(());
@@ -12,7 +12,7 @@ impl LockLayer {
 }
 
 impl<S> tower::layer::Layer<S> for LockLayer {
-    type Service = Lock<S>;
+    type Service = LockService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
         Self::Service::new(inner)

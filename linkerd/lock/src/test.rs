@@ -1,5 +1,5 @@
 use crate::error::ServiceError;
-use crate::Lock;
+use crate::LockService;
 use futures::{future, try_ready, Async, Future, Poll, Stream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use tracing_futures::Instrument;
 fn exclusive_access() {
     run(future::lazy(|| {
         let ready = Arc::new(AtomicBool::new(false));
-        let mut svc0 = Lock::new(Decr::new(2, ready.clone()));
+        let mut svc0 = LockService::new(Decr::new(2, ready.clone()));
 
         // svc0 grabs the lock, but the inner service isn't ready.
         assert!(svc0.poll_ready().expect("must not fail").is_not_ready());
@@ -49,7 +49,7 @@ fn exclusive_access() {
 #[test]
 fn propagates_errors() {
     run(future::lazy(|| {
-        let mut svc0 = Lock::new(Decr::from(1));
+        let mut svc0 = LockService::new(Decr::from(1));
 
         // svc0 grabs the lock and we decr the service so it will fail.
         assert!(svc0.poll_ready().expect("must not fail").is_ready());
@@ -83,7 +83,7 @@ fn propagates_errors() {
 fn dropping_releases_access() {
     use tower::util::ServiceExt;
     run(future::lazy(|| {
-        let mut svc0 = Lock::new(Decr::new(3, Arc::new(true.into())));
+        let mut svc0 = LockService::new(Decr::new(3, Arc::new(true.into())));
 
         // svc0 grabs the lock, but the inner service isn't ready.
         assert!(svc0.poll_ready().expect("must not fail").is_ready());
@@ -127,7 +127,7 @@ fn dropping_releases_access() {
         rx2.then(move |_| rx1).map_err(|_| ())
     }));
 
-    struct PollAndDrop(Lock<Decr>, oneshot::Receiver<()>);
+    struct PollAndDrop(LockService<Decr>, oneshot::Receiver<()>);
     impl Future for PollAndDrop {
         type Item = ();
         type Error = ();
@@ -147,7 +147,7 @@ fn fuzz() {
     const ITERS: usize = 100_000;
     for (concurrency, iterations) in &[(1, ITERS), (3, ITERS), (100, ITERS)] {
         tokio::run(future::lazy(move || {
-            let svc = Lock::new(Decr::new(*iterations, Arc::new(true.into())));
+            let svc = LockService::new(Decr::new(*iterations, Arc::new(true.into())));
             let (tx, rx) = mpsc::channel(1);
             for _ in 0..*concurrency {
                 tokio::spawn(Loop {
@@ -160,7 +160,7 @@ fn fuzz() {
     }
 
     struct Loop {
-        lock: Lock<Decr>,
+        lock: LockService<Decr>,
         _tx: mpsc::Sender<()>,
     }
     impl Future for Loop {
