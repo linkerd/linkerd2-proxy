@@ -623,11 +623,13 @@ dependencies = [
  "indexmap",
  "libc",
  "linkerd2-addr",
+ "linkerd2-concurrency-limit",
  "linkerd2-conditional",
  "linkerd2-dns",
  "linkerd2-drain",
  "linkerd2-duplex",
  "linkerd2-error",
+ "linkerd2-error-metrics",
  "linkerd2-error-respond",
  "linkerd2-exp-backoff",
  "linkerd2-fallback",
@@ -651,6 +653,7 @@ dependencies = [
  "linkerd2-retry",
  "linkerd2-router",
  "linkerd2-stack",
+ "linkerd2-stack-metrics",
  "linkerd2-test-util",
  "linkerd2-timeout",
  "linkerd2-trace-context",
@@ -746,6 +749,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-concurrency-limit"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd2-error",
+ "tokio-sync",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd2-conditional"
 version = "0.1.0"
 
@@ -791,6 +805,17 @@ name = "linkerd2-error"
 version = "0.1.0"
 dependencies = [
  "futures",
+]
+
+[[package]]
+name = "linkerd2-error-metrics"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "indexmap",
+ "linkerd2-error",
+ "linkerd2-metrics",
+ "tower",
 ]
 
 [[package]]
@@ -881,9 +906,13 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd2-error",
+ "rand 0.7.2",
  "tokio",
  "tower",
  "tracing",
+ "tracing-futures",
+ "tracing-log",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1190,6 +1219,22 @@ dependencies = [
  "linkerd2-error",
  "tower-layer",
  "tower-service",
+]
+
+[[package]]
+name = "linkerd2-stack-metrics"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "indexmap",
+ "linkerd2-error",
+ "linkerd2-metrics",
+ "linkerd2-stack",
+ "tokio",
+ "tokio-timer",
+ "tower",
+ "tower-util",
+ "tracing",
 ]
 
 [[package]]
@@ -2572,9 +2617,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.0-alpha.6"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8178ab65c2ae72cd431fcdb51e7317fb0b48d64599e66d52c7b64cd86ee5b482"
+checksum = "c6bbfcf5ab0799649189b0df4bd7f730f1929a3846d33ae56cb0ad6e0bbdad09"
 dependencies = [
  "ansi_term",
  "chrono",

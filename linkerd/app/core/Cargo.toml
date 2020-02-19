@@ -18,11 +18,13 @@ hyper = "0.12"
 futures = "0.1"
 indexmap = "1.0"
 linkerd2-addr = { path = "../../addr" }
+linkerd2-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns = { path = "../../dns" }
 linkerd2-drain = { path = "../../drain" }
 linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
+linkerd2-error-metrics = { path = "../../error-metrics" }
 linkerd2-error-respond = { path = "../../error-respond" }
 linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-fallback = { path = "../../fallback" }
@@ -46,6 +48,7 @@ linkerd2-request-filter = { path = "../../request-filter" }
 linkerd2-retry = { path = "../../retry" }
 linkerd2-router = { path = "../../router" }
 linkerd2-stack = { path = "../../stack" }
+linkerd2-stack-metrics = { path = "../../stack-metrics" }
 linkerd2-timeout = { path = "../../timeout" }
 linkerd2-trace-context = { path = "../../trace-context" }
 rand = { version = "0.7", features = ["small_rng"] }
@@ -63,7 +66,7 @@ tracing-futures = "0.1"
 tracing-log = "0.1"
 
 [dependencies.tracing-subscriber]
-version = "0.2.0-alpha.6"
+version = "0.2.1"
 # we don't need `chrono` time formatting
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi"]
