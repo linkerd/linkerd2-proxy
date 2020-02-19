@@ -623,6 +623,7 @@ dependencies = [
  "indexmap",
  "libc",
  "linkerd2-addr",
+ "linkerd2-concurrency-limit",
  "linkerd2-conditional",
  "linkerd2-dns",
  "linkerd2-drain",
@@ -737,6 +738,17 @@ dependencies = [
  "tokio",
  "tower",
  "tower-grpc",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd2-concurrency-limit"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd2-error",
+ "tokio-sync",
+ "tower",
  "tracing",
 ]
 
