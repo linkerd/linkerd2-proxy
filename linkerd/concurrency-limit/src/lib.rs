@@ -1,7 +1,8 @@
 //! A layer that limits the number of in-flight requests to inner service.
 //!
 //! Modified from tower-concurrency-limit so that the Layer holds a semaphore
-//! and, therefore, so that the limit applies across all services created by this layer..
+//! and, therefore, so that the limit applies across all services created by
+//! this layer.
 
 #![deny(warnings, rust_2018_idioms)]
 
