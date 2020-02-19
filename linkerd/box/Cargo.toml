@@ -1,0 +1,13 @@
+[package]
+name = "linkerd2-box"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = "0.1"
+linkerd2-error = { path = "../error" }
+tower = "0.1"

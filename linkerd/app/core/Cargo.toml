@@ -18,6 +18,7 @@ hyper = "0.12"
 futures = "0.1"
 indexmap = "1.0"
 linkerd2-addr = { path = "../../addr" }
+linkerd2-box = { path = "../../box" }
 linkerd2-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns = { path = "../../dns" }
