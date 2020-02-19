@@ -48,6 +48,10 @@ impl hyper::body::Payload for Payload {
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
         self.inner.poll_trailers()
     }
+
+    fn content_length(&self) -> Option<u64> {
+        self.inner.content_length()
+    }
 }
 
 impl bytes::Buf for Data {
@@ -86,6 +90,10 @@ where
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
         self.0.poll_trailers().map_err(Into::into)
+    }
+
+    fn content_length(&self) -> Option<u64> {
+        self.0.content_length()
     }
 }
 
