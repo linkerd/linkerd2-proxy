@@ -102,7 +102,7 @@ impl<T> std::ops::DerefMut for Guard<T> {
 
 impl<T: std::fmt::Debug> std::fmt::Debug for Guard<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Guard({:?}(", &**self)
+        write!(f, "Guard({:?})", &**self)
     }
 }
 
