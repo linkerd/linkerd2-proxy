@@ -198,9 +198,9 @@ impl<A: OrigDstAddr> Config<A> {
             // application-selected original destination.
             let distributor = balancer_stack
                 .serves::<DstAddr>()
-                .push_per_make(svc::layers().box_http_response().boxed())
+                .push_per_make(svc::layers().box_http_response())
                 .push_fallback(
-                    orig_dst_router_stack.push_per_make(svc::layers().box_http_response().boxed()),
+                    orig_dst_router_stack.push_per_make(svc::layers().box_http_response()),
                 )
                 .push(trace::layer(
                     |dst: &DstAddr| info_span!("concrete", dst.concrete = %dst.dst_concrete()),
