@@ -2,11 +2,13 @@ use crate::proxy::{buffer, http, pending};
 use crate::Error;
 pub use linkerd2_box as boxed;
 use linkerd2_concurrency_limit as concurrency_limit;
+pub use linkerd2_fallback as fallback;
 pub use linkerd2_router::Make;
-pub use linkerd2_stack::{self as stack, layer, map_target, Layer, LayerExt, Shared};
+pub use linkerd2_stack::{self as stack, layer, map_target, LayerExt, Shared};
 pub use linkerd2_timeout::stack as timeout;
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};
+pub use tower::layer::Layer;
 use tower::load_shed::LoadShedLayer;
 use tower::timeout::TimeoutLayer;
 pub use tower::util::{Either, Oneshot};
@@ -70,7 +72,7 @@ impl<L> Layers<L> {
 
     pub fn box_http_request<B>(self) -> Layers<Pair<L, http::boxed::request::Layer<B>>>
     where
-        B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
+        B: hyper::body::Payload + 'static,
     {
         self.push(http::boxed::request::Layer::new())
     }
@@ -136,6 +138,22 @@ impl<S> Stack<S> {
         self.push(TimeoutLayer::new(timeout))
     }
 
+    pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<fallback::Fallback<S, F>> {
+        self.push(fallback::FallbackLayer::new(fallback))
+    }
+
+    pub fn push_fallback_with_predicate<F, P>(
+        self,
+        fallback: F,
+        predicate: P,
+    ) -> Stack<fallback::Fallback<S, F, P>>
+    where
+        F: Clone,
+        P: Fn(&Error) -> bool + Clone,
+    {
+        self.push(fallback::FallbackLayer::new(fallback).with_predicate(predicate))
+    }
+
     pub fn boxed<A>(self) -> Stack<boxed::BoxService<A, S::Response>>
     where
         A: 'static,
@@ -158,6 +176,7 @@ impl<S> Stack<S> {
     pub fn box_http_response(self) -> Stack<http::boxed::BoxResponse<S>> {
         self.push(http::boxed::response::Layer::new())
     }
+
     /// Validates that this stack serves T-typed targets.
     pub fn makes<T>(self) -> Self
     where

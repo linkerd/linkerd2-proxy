@@ -15,8 +15,8 @@ use linkerd2_app_core::{
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, metric_labels,
     opencensus::proto::trace::v1 as oc,
     proxy::{
-        self, core::resolve::Resolve, discover, fallback, http, identity, resolve::map_endpoint,
-        tap, tcp, Server,
+        self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
+        Server,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
@@ -165,32 +165,13 @@ impl<A: OrigDstAddr> Config<A> {
                 }))
                 .serves::<Endpoint>();
 
-            // A per-`dst::Route` layer that uses profile data to configure
-            // a per-route layer.
-            //
-            // 1. The `classify` module installs a `classify::Response`
-            //    extension into each request so that all lower metrics
-            //    implementations can use the route-specific configuration.
-            // 2. A timeout is optionally enabled if the target `dst::Route`
-            //    specifies a timeout. This goes before `retry` to cap
-            //    retries.
-            // 3. Retries are optionally enabled depending on if the route
-            //    is retryable.
-            let dst_route_layer = svc::layers()
-                .push(http::insert::target::layer())
-                .push(metrics.http_route_actual.into_layer::<classify::Response>())
-                .push(retry::layer(metrics.http_route_retry))
-                .push(http::timeout::layer())
-                .push(metrics.http_route.into_layer::<classify::Response>())
-                .push(classify::Layer::new())
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract);
-
             // Routes requests to their original destination endpoints. Used as
             // a fallback when service discovery has no endpoints for a destination.
             //
             // If the `l5d-require-id` header is present, then that identity is
             // used as the server name when connecting to the endpoint.
-            let orig_dst_router_layer = svc::layers()
+            let orig_dst_router_stack = endpoint_stack
+                .clone()
                 .push_per_make(metrics.stack.layer(stack_labels("fallback.endpoint")))
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .push(router::Layer::new(
@@ -201,7 +182,8 @@ impl<A: OrigDstAddr> Config<A> {
             // Resolves the target via the control plane and balances requests
             // over all endpoints returned from the destination service.
             const DISCOVER_UPDATE_BUFFER_CAPACITY: usize = 10;
-            let balancer_layer = svc::layers()
+            let balancer_stack = endpoint_stack
+                .serves::<Endpoint>()
                 .push_per_make(metrics.stack.layer(stack_labels("balance.endpoint")))
                 .push_spawn_ready()
                 .push(discover::Layer::new(
@@ -214,12 +196,12 @@ impl<A: OrigDstAddr> Config<A> {
             // If the balancer fails to be created, i.e., because it is unresolvable,
             // fall back to using a router that dispatches request to the
             // application-selected original destination.
-            let distributor = endpoint_stack
-                .serves::<Endpoint>()
-                .push(fallback::layer(
-                    balancer_layer.push_per_make(svc::layers().box_http_response().boxed()),
-                    orig_dst_router_layer.push_per_make(svc::layers().box_http_response().boxed()),
-                ))
+            let distributor = balancer_stack
+                .serves::<DstAddr>()
+                .push_per_make(svc::layers().box_http_response().boxed())
+                .push_fallback(
+                    orig_dst_router_stack.push_per_make(svc::layers().box_http_response().boxed()),
+                )
                 .push(trace::layer(
                     |dst: &DstAddr| info_span!("concrete", dst.concrete = %dst.dst_concrete()),
                 ));
@@ -231,15 +213,37 @@ impl<A: OrigDstAddr> Config<A> {
             //    per-route policy.
             // 3. Creates a load balancer , configured by resolving the
             //   `DstAddr` with a resolver.
-            let dst_stack = distributor
-                .serves::<DstAddr>()
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .makes::<DstAddr>()
-                .push(http::profiles::router::layer(
-                    profiles_client,
-                    dst_route_layer,
-                ))
-                .push(http::header_from_target::layer(CANONICAL_DST_HEADER));
+            let dst_stack = {
+                // A per-`dst::Route` layer that uses profile data to configure
+                // a per-route layer.
+                //
+                // 1. The `classify` module installs a `classify::Response`
+                //    extension into each request so that all lower metrics
+                //    implementations can use the route-specific configuration.
+                // 2. A timeout is optionally enabled if the target `dst::Route`
+                //    specifies a timeout. This goes before `retry` to cap
+                //    retries.
+                // 3. Retries are optionally enabled depending on if the route
+                //    is retryable.
+                let dst_route_layer = svc::layers()
+                    .push(http::insert::target::layer())
+                    .push(metrics.http_route_actual.into_layer::<classify::Response>())
+                    .push(retry::layer(metrics.http_route_retry))
+                    .push(http::timeout::layer())
+                    .push(metrics.http_route.into_layer::<classify::Response>())
+                    .push(classify::Layer::new())
+                    .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract);
+
+                distributor
+                    .serves::<DstAddr>()
+                    .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
+                    .makes::<DstAddr>()
+                    .push(http::profiles::router::layer(
+                        profiles_client,
+                        dst_route_layer,
+                    ))
+                    .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+            };
 
             // Routes request using the `DstAddr` extension.
             //
