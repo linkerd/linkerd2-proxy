@@ -39,6 +39,7 @@ members = [
     "linkerd/request-filter",
     "linkerd/reconnect",
     "linkerd/retry",
+    "linkerd/service-profiles",
     "linkerd/router",
     "linkerd/signal",
     "linkerd/stack",
