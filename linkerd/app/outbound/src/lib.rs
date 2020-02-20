@@ -236,10 +236,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .serves::<DstAddr>()
                 .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
                 .makes::<DstAddr>()
-                .push(profiles::router::layer(
-                    profiles_client,
-                    dst_route_layer,
-                ))
+                .push(profiles::router::layer(profiles_client, dst_route_layer))
                 .push(http::header_from_target::layer(CANONICAL_DST_HEADER));
 
             // Routes request using the `DstAddr` extension.
