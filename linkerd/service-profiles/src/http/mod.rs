@@ -13,6 +13,7 @@ use std::time::Duration;
 use tower::retry::budget::Budget;
 
 pub mod recognize;
+
 /// A stack module that produces a Service that routes requests through alternate
 /// middleware configurations
 ///
