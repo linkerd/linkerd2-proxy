@@ -1,0 +1,35 @@
+[package]
+name = "linkerd2-service-profiles"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+description = """
+Implements client layers for Linkerd ServiceProfiles.
+"""
+
+[dependencies]
+bytes = "0.4"
+futures = "0.1"
+http = "0.1"
+indexmap = "1.0"
+linkerd2-addr = { path  = "../addr" }
+linkerd2-dns = { path  = "../dns" }
+linkerd2-error = { path  = "../error" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.11" }
+linkerd2-router = { path  = "../router" }
+linkerd2-stack = { path  = "../stack" }
+rand = { version = "0.7", features = ["small_rng"] }
+regex = "1.0.0"
+tokio = "0.1"
+tower = "0.1"
+tower-grpc = { version = "0.1", default-features = false }
+tower-util = "0.1"
+tracing = "0.1.9"
+tracing-futures = "0.1"
+
+[dev-dependencies]
+linkerd2-test-util = { path = "../test-util" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.11" }
+prost-types = "0.5.0"
+quickcheck = { version = "0.9", default-features = false }

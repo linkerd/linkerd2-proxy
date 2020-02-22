@@ -652,6 +652,7 @@ dependencies = [
  "linkerd2-request-filter",
  "linkerd2-retry",
  "linkerd2-router",
+ "linkerd2-service-profiles",
  "linkerd2-stack",
  "linkerd2-stack-metrics",
  "linkerd2-test-util",
@@ -821,7 +822,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "indexmap",
- "linkerd2-error",
  "linkerd2-metrics",
  "tower",
 ]
@@ -1054,11 +1054,9 @@ dependencies = [
  "linkerd2-identity",
  "linkerd2-metrics",
  "linkerd2-proxy-transport",
- "linkerd2-router",
  "linkerd2-stack",
  "linkerd2-timeout",
  "rand 0.7.2",
- "regex 1.0.0",
  "tokio",
  "tokio-connect",
  "tokio-timer",
@@ -1216,6 +1214,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-service-profiles"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "http",
+ "indexmap",
+ "linkerd2-addr",
+ "linkerd2-dns",
+ "linkerd2-error",
+ "linkerd2-proxy-api",
+ "linkerd2-router",
+ "linkerd2-stack",
+ "linkerd2-test-util",
+ "prost-types",
+ "quickcheck",
+ "rand 0.7.2",
+ "regex 1.0.0",
+ "tokio",
+ "tower",
+ "tower-grpc",
+ "tower-util",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
 name = "linkerd2-signal"
 version = "0.1.0"
 dependencies = [
@@ -1240,9 +1265,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "indexmap",
- "linkerd2-error",
  "linkerd2-metrics",
- "linkerd2-stack",
  "tokio",
  "tokio-timer",
  "tower",

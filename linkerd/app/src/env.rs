@@ -184,9 +184,10 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
 
-/// It's assumed that a typical proxy can serve inbound traffic for up to 100 pod-local
-/// HTTP services and may communicate with up to 10K external HTTP domains.
-const DEFAULT_INBOUND_ROUTER_CAPACITY: usize = 100;
+/// Inbound requests may use a wide variety of authorities. We size the inbound
+/// router capacity to accommodate this. It's assumed that a typical proxy may
+/// communicate with up to 10K external HTTP domains.
+const DEFAULT_INBOUND_ROUTER_CAPACITY: usize = 10_000;
 const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 10_000;
 
 const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);

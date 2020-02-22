@@ -11,12 +11,12 @@ A middleware that provides mutual exclusion.
 [dependencies]
 futures = "0.1"
 linkerd2-error = { path = "../error" }
-tokio = "0.1"
 tower = "0.1"
 tracing = "0.1"
 
 [dev-dependencies]
 rand = "0.7"
+tokio = "0.1"
 tracing-futures = "0.1"
 tracing-log = "0.1"
 tracing-subscriber = "0.2"

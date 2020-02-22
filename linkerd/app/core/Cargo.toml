@@ -47,6 +47,7 @@ linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-request-filter = { path = "../../request-filter" }
 linkerd2-retry = { path = "../../retry" }
 linkerd2-router = { path = "../../router" }
+linkerd2-service-profiles = { path = "../../service-profiles" }
 linkerd2-stack = { path = "../../stack" }
 linkerd2-stack-metrics = { path = "../../stack-metrics" }
 linkerd2-trace-context = { path = "../../trace-context" }

@@ -1,9 +1,10 @@
 use super::classify;
+use crate::profiles;
 use http;
 use indexmap::IndexMap;
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_http_classify::CanClassify;
-use linkerd2_proxy_http::{profiles, settings, timeout};
+use linkerd2_proxy_http::{settings, timeout};
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;

@@ -1,15 +1,15 @@
-use crate::dns;
-use crate::proxy::http::profiles;
+use crate::http as profiles;
 use futures::{Async, Future, Poll, Stream};
 use http;
 use linkerd2_addr::NameAddr;
+use linkerd2_dns as dns;
 use linkerd2_error::Never;
 use linkerd2_proxy_api::destination as api;
 use regex::Regex;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, watch};
-use tokio_timer::{clock, Delay};
+use tokio::timer::Delay;
 use tower::retry::budget::Budget;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::{debug, error, trace, warn};
@@ -224,7 +224,7 @@ where
                     }
                     Err(e) => {
                         warn!("error fetching profile: {:?}", e);
-                        State::Backoff(Delay::new(clock::now() + self.backoff))
+                        State::Backoff(Delay::new(Instant::now() + self.backoff))
                     }
                 },
                 State::Streaming(ref mut s) => {
@@ -232,7 +232,7 @@ where
                         Async::NotReady => return Ok(Async::NotReady),
                         Async::Ready(StreamState::SendLost) => return Ok(().into()),
                         Async::Ready(StreamState::RecvDone) => {
-                            State::Backoff(Delay::new(clock::now() + self.backoff))
+                            State::Backoff(Delay::new(Instant::now() + self.backoff))
                         }
                     }
                 }

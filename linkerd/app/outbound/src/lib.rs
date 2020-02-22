@@ -14,6 +14,7 @@ use linkerd2_app_core::{
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, metric_labels,
     opencensus::proto::trace::v1 as oc,
+    profiles,
     proxy::{
         self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
         Server,
@@ -248,10 +249,7 @@ impl<A: OrigDstAddr> Config<A> {
                         svc::layers().push_buffer(buffer.max_in_flight, DispatchDeadline::extract),
                     )
                     .check_new_service::<DstAddr>()
-                    .push(http::profiles::router::layer(
-                        profiles_client,
-                        dst_route_layer,
-                    ))
+                    .push(profiles::router::layer(profiles_client, dst_route_layer))
                     .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             };
 

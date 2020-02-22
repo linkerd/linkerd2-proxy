@@ -14,9 +14,10 @@ use linkerd2_app_core::{
     errors, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, http_request_orig_dst_addr, metric_labels,
     opencensus::proto::trace::v1 as oc,
+    profiles,
     proxy::{
         self,
-        http::{client, insert, normalize_uri, profiles, settings, strip_header},
+        http::{client, insert, normalize_uri, settings, strip_header},
         identity,
         server::{Protocol as ServerProtocol, Server},
         tap, tcp,
