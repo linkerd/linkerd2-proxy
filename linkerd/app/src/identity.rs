@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     classify,
     config::{ControlAddr, ControlConfig},
     control, dns, proxy, reconnect,
-    svc::{self, LayerExt},
+    svc::{self, NewService},
     transport::{connect, tls},
     ControlHttpMetrics as Metrics, Error, Never,
 };
@@ -54,14 +54,15 @@ impl Config {
                         move |_| Ok(backoff.stream())
                     }))
                     .push(metrics.into_layer::<classify::Response>())
-                    .push(proxy::grpc::req_body_as_payload::layer().per_make())
+                    .push_on_response(proxy::grpc::req_body_as_payload::layer())
                     .push(control::add_origin::layer())
-                    .push_buffer_pending(
+                    .into_new_service()
+                    .push_on_response(svc::layers().push_buffer(
                         control.buffer.max_in_flight,
                         control.buffer.dispatch_timeout,
-                    )
+                    ))
                     .into_inner()
-                    .make(addr.clone());
+                    .new_service(addr.clone());
 
                 // Save to be spawned on an auxiliary runtime.
                 let task = {

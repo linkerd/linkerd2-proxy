@@ -17,7 +17,6 @@ members = [
     "linkerd/duplex",
     "linkerd/error",
     "linkerd/exp-backoff",
-    "linkerd/fallback",
     "linkerd/http-box",
     "linkerd/http-classify",
     "linkerd/http-metrics",

@@ -1,9 +1,11 @@
+//! A middleware that may retry a request in a fallback service.
+
 use futures::{Future, Poll};
 use linkerd2_error::Error;
 use tower::util::{Either, Oneshot, ServiceExt};
 use tracing::debug;
 
-/// A fallback layer composing two services.
+/// A Layer that augments the underlying service with a fallback service.
 ///
 /// If the future returned by the primary service fails with an error matching a
 /// given predicate, the fallback service is called. The result is returned in an `Either`.

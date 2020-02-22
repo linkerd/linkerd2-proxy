@@ -1,11 +1,8 @@
-use crate::proxy::{buffer, http, pending};
+use crate::proxy::{buffer, http};
 use crate::Error;
 pub use linkerd2_box as boxed;
 use linkerd2_concurrency_limit as concurrency_limit;
-pub use linkerd2_fallback as fallback;
-pub use linkerd2_router::Make;
-pub use linkerd2_stack::{self as stack, layer, map_target, LayerExt, Shared};
-pub use linkerd2_timeout::stack as timeout;
+pub use linkerd2_stack::{self as stack, fallback, layer, new_service, NewService, Shared};
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::layer::Layer;
@@ -36,26 +33,22 @@ impl<L> Layers<L> {
         Layers(Pair::new(self.0, outer))
     }
 
-    /// Buffer requests when when the next layer is out of capacity.
-    pub fn push_pending(self) -> Layers<Pair<L, pending::Layer>> {
-        self.push(pending::layer())
+    /// Wraps an inner `MakeService` to be a `NewService`.
+    pub fn push_into_new_service(self) -> Layers<Pair<L, new_service::FromMakeServiceLayer>> {
+        self.push(new_service::FromMakeServiceLayer::default())
     }
 
-    /// Buffer requests when when the next layer is out of capacity.
-    pub fn push_buffer_pending<D, Req>(
-        self,
-        bound: usize,
-        d: D,
-    ) -> Layers<Pair<Pair<L, pending::Layer>, buffer::Layer<D, Req>>>
+    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
+    pub fn push_buffer<D, Req>(self, bound: usize, d: D) -> Layers<Pair<L, buffer::Layer<D, Req>>>
     where
         D: buffer::Deadline<Req>,
         Req: Send + 'static,
     {
-        self.push_pending().push(buffer::layer(bound, d))
+        self.push(buffer::layer(bound, d))
     }
 
-    pub fn push_per_make<T: Clone>(self, layer: T) -> Layers<Pair<L, stack::per_make::Layer<T>>> {
-        self.push(stack::per_make::layer(layer))
+    pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
+        self.push(stack::OnResponseLayer::new(layer))
     }
 
     pub fn push_spawn_ready(self) -> Layers<Pair<L, SpawnReadyLayer>> {
@@ -97,26 +90,27 @@ impl<S> Stack<S> {
         Stack(layer.layer(self.0))
     }
 
-    /// Buffer requests when when the next layer is out of capacity.
-    pub fn push_pending(self) -> Stack<pending::MakePending<S>> {
-        self.push(pending::layer())
+    /// Wraps an inner `MakeService` to be a `NewService`.
+    pub fn into_new_service(self) -> Stack<new_service::FromMakeService<S>> {
+        self.push(new_service::FromMakeServiceLayer::default())
     }
 
-    /// Buffer requests when when the next layer is out of capacity.
-    pub fn push_buffer_pending<D, Req>(
-        self,
-        bound: usize,
-        d: D,
-    ) -> Stack<buffer::Make<pending::MakePending<S>, D, Req>>
+    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
+    pub fn spawn_buffer<D, Req>(self, bound: usize, d: D) -> Stack<buffer::Enqueue<S, D, Req>>
     where
         D: buffer::Deadline<Req>,
         Req: Send + 'static,
+        S: tower::Service<Req> + Send + 'static,
+        S::Error: Into<Error>,
+        S::Future: Send,
     {
-        self.push_pending().push(buffer::layer(bound, d))
+        self.push(buffer::layer(bound, d))
     }
 
-    pub fn push_per_make<L: Clone>(self, layer: L) -> Stack<stack::per_make::PerMake<L, S>> {
-        self.push(stack::per_make::layer(layer))
+    /// Assuming `S` implements `NewService` or `MakeService`, applies the given
+    /// `L`-typed layer on each service produced by `S`.
+    pub fn push_on_response<L: Clone>(self, layer: L) -> Stack<stack::OnResponse<L, S>> {
+        self.push(stack::OnResponseLayer::new(layer))
     }
 
     pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
@@ -177,18 +171,30 @@ impl<S> Stack<S> {
         self.push(http::boxed::response::Layer::new())
     }
 
+    pub fn push_map_target<M: Clone>(self, map: M) -> Stack<stack::MapTargetService<S, M>> {
+        self.push(stack::MapTargetLayer::new(map))
+    }
+
     /// Validates that this stack serves T-typed targets.
-    pub fn makes<T>(self) -> Self
+    pub fn check_new_service<T>(self) -> Self
     where
-        S: Make<T>,
+        S: new_service::NewService<T>,
     {
         self
     }
 
     /// Validates that this stack serves T-typed targets.
-    pub fn serves<T>(self) -> Self
+    pub fn check_service<T>(self) -> Self
     where
         S: Service<T>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_make_service<T, Req>(self) -> Self
+    where
+        S: MakeService<T, Req>,
     {
         self
     }

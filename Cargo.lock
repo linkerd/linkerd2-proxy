@@ -633,7 +633,6 @@ dependencies = [
  "linkerd2-error-metrics",
  "linkerd2-error-respond",
  "linkerd2-exp-backoff",
- "linkerd2-fallback",
  "linkerd2-http-classify",
  "linkerd2-http-metrics",
  "linkerd2-metrics",
@@ -656,7 +655,6 @@ dependencies = [
  "linkerd2-stack",
  "linkerd2-stack-metrics",
  "linkerd2-test-util",
- "linkerd2-timeout",
  "linkerd2-trace-context",
  "procinfo",
  "prost-types",
@@ -845,16 +843,6 @@ dependencies = [
  "quickcheck",
  "rand 0.7.2",
  "tokio-timer",
-]
-
-[[package]]
-name = "linkerd2-fallback"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd2-error",
- "tower",
- "tracing",
 ]
 
 [[package]]
@@ -1217,6 +1205,7 @@ dependencies = [
  "indexmap",
  "linkerd2-error",
  "linkerd2-lock",
+ "linkerd2-stack",
  "tokio",
  "tokio-sync",
  "tokio-timer",
@@ -1241,8 +1230,8 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd2-error",
- "tower-layer",
- "tower-service",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -1274,10 +1263,9 @@ name = "linkerd2-timeout"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd2-stack",
  "tokio-connect",
  "tokio-timer",
- "tower-service",
+ "tower",
 ]
 
 [[package]]

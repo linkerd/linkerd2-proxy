@@ -64,7 +64,7 @@ where
     }
 }
 
-impl<M, L, V> layer::Layer<M> for Layer<L, V>
+impl<M, L, V> tower::layer::Layer<M> for Layer<L, V>
 where
     L: Lazy<V>,
     V: Send + Sync + 'static,
@@ -190,7 +190,7 @@ pub mod target {
 
     // === impl Layer ===
 
-    pub fn layer<M>() -> impl layer::Layer<M, Service = Make<M>> + Copy {
+    pub fn layer<M>() -> impl tower::layer::Layer<M, Service = Make<M>> + Copy {
         layer::mk(Make)
     }
 

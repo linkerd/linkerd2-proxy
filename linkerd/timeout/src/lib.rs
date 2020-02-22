@@ -4,10 +4,8 @@ use futures::{Future, Poll};
 use std::time::Duration;
 use tokio_connect::Connect;
 use tokio_timer as timer;
-use tower_service as svc;
 
 pub mod error;
-pub mod stack;
 
 use self::error::{Error, Timedout};
 
@@ -44,9 +42,9 @@ impl<T> Timeout<T> {
     }
 }
 
-impl<S, T, Req> svc::Service<Req> for Timeout<S>
+impl<S, T, Req> tower::Service<Req> for Timeout<S>
 where
-    S: svc::Service<Req, Response = T>,
+    S: tower::Service<Req, Response = T>,
     S::Error: Into<Error>,
 {
     type Response = T;
