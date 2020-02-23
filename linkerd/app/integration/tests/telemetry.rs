@@ -1,6 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "128"]
-#![type_length_limit = "1110183"]
 // The compiler cannot figure out that the `use linkerd2_app_integration::*`
 // import is actually used, and putting the allow attribute on that import in
 // particular appears to do nothing... T_T
@@ -34,7 +32,9 @@ impl Fixture {
     }
 
     fn inbound_with_server(srv: server::Listening) -> Self {
-        let proxy = proxy::new().inbound(srv).run();
+        let ctrl = controller::new();
+        ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        let proxy = proxy::new().controller(ctrl.run()).inbound(srv).run();
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
@@ -46,10 +46,11 @@ impl Fixture {
     }
 
     fn outbound_with_server(srv: server::Listening) -> Self {
-        let ctrl = controller::new()
-            .destination_and_close("tele.test.svc.cluster.local", srv.addr)
-            .run();
-        let proxy = proxy::new().controller(ctrl).outbound(srv).run();
+        let ctrl = controller::new();
+        ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        ctrl.destination_tx("tele.test.svc.cluster.local")
+            .send_addr(srv.addr);
+        let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
@@ -79,7 +80,12 @@ impl TcpFixture {
     }
 
     fn inbound() -> Self {
-        let proxy = proxy::new().inbound(TcpFixture::server()).run();
+        let ctrl = controller::new();
+        //ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        let proxy = proxy::new()
+            .controller(ctrl.run())
+            .inbound(TcpFixture::server())
+            .run();
 
         let client = client::tcp(proxy.inbound);
         let metrics = client::http1(proxy.metrics, "localhost");
@@ -91,7 +97,12 @@ impl TcpFixture {
     }
 
     fn outbound() -> Self {
-        let proxy = proxy::new().outbound(TcpFixture::server()).run();
+        let ctrl = controller::new();
+        //ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        let proxy = proxy::new()
+            .controller(ctrl.run())
+            .outbound(TcpFixture::server())
+            .run();
 
         let client = client::tcp(proxy.outbound);
         let metrics = client::http1(proxy.metrics, "localhost");
@@ -687,11 +698,12 @@ fn metrics_have_no_double_commas() {
     let inbound_srv = server::new().route("/hey", "hello").run();
     let outbound_srv = server::new().route("/hey", "hello").run();
 
-    let ctrl = controller::new()
-        .destination_and_close("tele.test.svc.cluster.local", outbound_srv.addr)
-        .run();
+    let ctrl = controller::new();
+    ctrl.profile_tx_default("tele.test.svc.cluster.local");
+    ctrl.destination_tx("tele.test.svc.cluster.local")
+        .send_addr(outbound_srv.addr);
     let proxy = proxy::new()
-        .controller(ctrl)
+        .controller(ctrl.run())
         .inbound(inbound_srv)
         .outbound(outbound_srv)
         .run();
