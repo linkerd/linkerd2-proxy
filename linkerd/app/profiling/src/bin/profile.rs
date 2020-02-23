@@ -25,9 +25,11 @@ fn main() {
 
     let srv = server::mock_listening(addr.clone());
     let srv2 = server::mock_listening(addr.clone());
-    let ctrl = controller::new()
-        .destination_and_close("transparency.test.svc.cluster.local", srv.addr)
-        .run();
+
+    let ctrl = controller::new();
+    let transparency_tx = ctrl.destination_tx("transparency.test.svc.cluster.local");
+    transparency_tx.send_addr(srv.addr);
+
     let mut env = TestEnv::new();
     env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "0.0.0.0:4143".to_owned());
     env.put(
@@ -36,7 +38,7 @@ fn main() {
     );
     env.put(app::env::ENV_ADMIN_LISTEN_ADDR, "0.0.0.0:4191".to_owned());
     let _proxy = proxy::new()
-        .controller(ctrl)
+        .controller(ctrl.run())
         .outbound(srv)
         .inbound(srv2)
         .run_with_test_env_and_keep_ports(env);
