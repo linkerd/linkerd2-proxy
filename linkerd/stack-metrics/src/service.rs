@@ -3,7 +3,7 @@ use futures::{Async, Poll};
 use std::sync::Arc;
 use std::time::Instant;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TrackService<S> {
     inner: S,
     metrics: Arc<Metrics>,
