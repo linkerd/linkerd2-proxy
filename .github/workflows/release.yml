@@ -9,7 +9,7 @@ jobs:
   package:
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.40.0-buster
+      image: docker://rust:1.41.0-buster
     steps:
     - name: git co
       uses: actions/checkout@v1
