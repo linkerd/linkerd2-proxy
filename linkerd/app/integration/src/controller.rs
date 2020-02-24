@@ -148,7 +148,6 @@ impl Controller {
     }
 
     pub fn run(self) -> Listening {
-        let _ = trace_init();
         run(
             pb::server::DestinationServer::new(self),
             "support destination service",
@@ -327,40 +326,43 @@ where
     let (listening_tx, listening_rx) = oneshot::channel();
     let mut listening_tx = Some(listening_tx);
 
-    ::std::thread::Builder::new()
+    let (trace, _) = trace_init();
+    std::thread::Builder::new()
         .name(name.into())
         .spawn(move || {
-            if let Some(delay) = delay {
-                let _ = listening_tx.take().unwrap().send(());
-                delay.wait().expect("support server delay wait");
-            }
-            let mut runtime = runtime::current_thread::Runtime::new().expect("support runtime");
+            tracing::dispatcher::with_default(&trace, move || {
+                if let Some(delay) = delay {
+                    let _ = listening_tx.take().unwrap().send(());
+                    delay.wait().expect("support server delay wait");
+                }
+                let mut runtime = runtime::current_thread::Runtime::new().expect("support runtime");
 
-            let listener = listener.listen(1024).expect("Tcp::listen");
-            let bind =
-                TcpListener::from_std(listener, &reactor::Handle::default()).expect("from_std");
+                let listener = listener.listen(1024).expect("Tcp::listen");
+                let bind =
+                    TcpListener::from_std(listener, &reactor::Handle::default()).expect("from_std");
 
-            if let Some(listening_tx) = listening_tx {
-                let _ = listening_tx.send(());
-            }
+                if let Some(listening_tx) = listening_tx {
+                    let _ = listening_tx.send(());
+                }
 
-            let name = name.clone();
-            let serve = hyper::Server::builder(bind.incoming())
-                .http2_only(true)
-                .serve(move || {
-                    let svc = Mutex::new(svc.clone());
-                    hyper::service::service_fn(move |req| {
-                        let req = req.map(|body| tower_grpc::BoxBody::map_from(body));
-                        svc.lock()
-                            .expect("svc lock")
-                            .call(req)
-                            .map(|res| res.map(GrpcToPayload))
+                let name = name.clone();
+                let serve = hyper::Server::builder(bind.incoming())
+                    .http2_only(true)
+                    .serve(move || {
+                        let svc = Mutex::new(svc.clone());
+                        hyper::service::service_fn(move |req| {
+                            let req = req.map(|body| tower_grpc::BoxBody::map_from(body));
+                            svc.lock()
+                                .expect("svc lock")
+                                .call(req)
+                                .map(|res| res.map(GrpcToPayload))
+                        })
                     })
-                })
-                .map_err(move |e| println!("{} error: {:?}", name, e));
+                    .map_err(move |e| println!("{} error: {:?}", name, e));
 
-            runtime.spawn(serve);
-            runtime.block_on(rx).expect(name);
+                runtime.spawn(serve);
+                runtime.block_on(rx).expect(name);
+            })
         })
         .unwrap();
 

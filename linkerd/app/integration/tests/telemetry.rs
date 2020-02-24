@@ -81,7 +81,6 @@ impl TcpFixture {
 
     fn inbound() -> Self {
         let ctrl = controller::new();
-        //ctrl.profile_tx_default("tele.test.svc.cluster.local");
         let proxy = proxy::new()
             .controller(ctrl.run())
             .inbound(TcpFixture::server())
@@ -98,7 +97,6 @@ impl TcpFixture {
 
     fn outbound() -> Self {
         let ctrl = controller::new();
-        //ctrl.profile_tx_default("tele.test.svc.cluster.local");
         let proxy = proxy::new()
             .controller(ctrl.run())
             .outbound(TcpFixture::server())

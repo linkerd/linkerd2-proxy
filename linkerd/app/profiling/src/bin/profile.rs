@@ -30,6 +30,8 @@ fn main() {
     let transparency_tx = ctrl.destination_tx("transparency.test.svc.cluster.local");
     transparency_tx.send_addr(srv.addr);
 
+    let _transparency_profile_tx = ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+
     let mut env = TestEnv::new();
     env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "0.0.0.0:4143".to_owned());
     env.put(
