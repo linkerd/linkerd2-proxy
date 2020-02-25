@@ -8,7 +8,7 @@ use futures::{try_ready, Future, Poll};
 #[derive(Clone, Debug)]
 pub struct OnResponseLayer<L>(L);
 
-/// Applies `L`-typed layers to the reresponses of an `S`-typed service.
+/// Applies `L`-typed layers to the responses of an `S`-typed service.
 #[derive(Clone, Debug)]
 pub struct OnResponse<L, S> {
     inner: S,
