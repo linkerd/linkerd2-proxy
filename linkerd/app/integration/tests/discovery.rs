@@ -465,8 +465,7 @@ macro_rules! generate_tests {
                             .label("load_profile", "bar"),
                     ], None, vec![]));
 
-                    ctrl
-                        .destination_tx(FOO).send_addr(foo.addr);
+                    ctrl.destination_tx(FOO).send_addr(foo.addr);
                     ctrl.destination_tx(BAR).send_addr(bar.addr);
 
                     Fixture {
