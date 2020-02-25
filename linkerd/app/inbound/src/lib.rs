@@ -24,10 +24,10 @@ use linkerd2_app_core::{
     },
     reconnect, router, serve,
     spans::SpanConverter,
-    svc, trace, trace_context,
+    svc, trace,
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
-    Addr, DispatchDeadline, Error, ProxyMetrics, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
-    L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_SERVER_ID,
+    Addr, DispatchDeadline, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
+    DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_SERVER_ID,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -118,9 +118,11 @@ impl<A: OrigDstAddr> Config<A> {
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
                 }))
-                .push(trace_context::layer(span_sink.clone().map(|span_sink| {
-                    SpanConverter::client(span_sink, trace_labels())
-                })))
+                .push_on_response(TraceContextLayer::new(
+                    span_sink
+                        .clone()
+                        .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
+                ))
                 .push(normalize_uri::layer());
 
             // A stack configured by `router::Config`, responsible for building
@@ -278,9 +280,9 @@ impl<A: OrigDstAddr> Config<A> {
                         target.addr = %src.addrs.target_addr(),
                     )
                 }))
-                .push(trace_context::layer(span_sink.map(|span_sink| {
-                    SpanConverter::server(span_sink, trace_labels())
-                })))
+                .push_on_response(TraceContextLayer::new(
+                    span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels())),
+                ))
                 .push(metrics.http_handle_time.layer())
                 .check_service::<tls::accept::Meta>();
 
