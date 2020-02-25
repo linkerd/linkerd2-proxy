@@ -1,6 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "128"]
-#![type_length_limit = "1110183"]
 
 use linkerd2_app_integration::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
