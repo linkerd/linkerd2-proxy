@@ -1,4 +1,4 @@
-//! Utiliteis for composing
+//! Utilities for composing Tower Services.
 
 #![deny(warnings, rust_2018_idioms)]
 
