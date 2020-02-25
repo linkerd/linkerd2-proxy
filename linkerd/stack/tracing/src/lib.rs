@@ -28,7 +28,7 @@ pub struct Instrument<S> {
     inner: S,
 }
 
-// === impl MInstrumentMakeLayer ===
+// === impl InstrumentMakeLayer ===
 
 impl<G> InstrumentMakeLayer<G> {
     pub fn new(get_span: G) -> Self {
@@ -39,12 +39,6 @@ impl<G> InstrumentMakeLayer<G> {
 impl InstrumentMakeLayer<()> {
     pub fn from_target() -> Self {
         Self::new(())
-    }
-}
-
-impl Default for InstrumentMakeLayer<Span> {
-    fn default() -> Self {
-        Self::new(Span::current())
     }
 }
 
@@ -59,7 +53,7 @@ impl<G: Clone, M> tower::layer::Layer<M> for InstrumentMakeLayer<G> {
     }
 }
 
-// === impl MInstrumentMake ===
+// === impl InstrumentMake ===
 
 impl<T, G, N> NewService<T> for InstrumentMake<G, N>
 where
