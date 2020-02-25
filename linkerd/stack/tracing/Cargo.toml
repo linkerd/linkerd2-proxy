@@ -1,0 +1,17 @@
+[package]
+name = "linkerd2-stack-tracing"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+description = """
+Utilities for composing Tower services.
+"""
+
+
+[dependencies]
+futures = "0.1"
+linkerd2-stack = { path = ".." }
+tower = "0.1"
+tracing = "0.1"
+tracing-futures = "0.1"

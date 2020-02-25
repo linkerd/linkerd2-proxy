@@ -3,6 +3,7 @@ use crate::Error;
 pub use linkerd2_box as boxed;
 use linkerd2_concurrency_limit as concurrency_limit;
 pub use linkerd2_stack::{self as stack, fallback, layer, new_service, NewService, Shared};
+pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::layer::Layer;
@@ -72,6 +73,10 @@ impl<L> Layers<L> {
 
     pub fn box_http_response(self) -> Layers<Pair<L, http::boxed::response::Layer>> {
         self.push(http::boxed::response::Layer::new())
+    }
+
+    pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, InstrumentMakeLayer<G>>> {
+        self.push(InstrumentMakeLayer::new(get_span))
     }
 }
 
@@ -173,6 +178,14 @@ impl<S> Stack<S> {
 
     pub fn push_map_target<M: Clone>(self, map: M) -> Stack<stack::MapTargetService<S, M>> {
         self.push(stack::MapTargetLayer::new(map))
+    }
+
+    pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
+        self.push(InstrumentMakeLayer::new(get_span))
+    }
+
+    pub fn instrument_from_target(self) -> Stack<InstrumentMake<(), S>> {
+        self.push(InstrumentMakeLayer::from_target())
     }
 
     /// Validates that this stack serves T-typed targets.

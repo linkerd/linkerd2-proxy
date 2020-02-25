@@ -24,7 +24,7 @@ use linkerd2_app_core::{
     },
     reconnect, router, serve,
     spans::SpanConverter,
-    svc, trace, trace_context,
+    svc, trace_context,
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, DispatchDeadline, Error, ProxyMetrics, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
     L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_SERVER_ID,
@@ -129,9 +129,9 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(tap_layer)
                 .push(metrics.http_endpoint.into_layer::<classify::Response>())
                 .check_service::<Endpoint>()
-                .push(trace::layer(
+                .instrument(
                     |endpoint: &Endpoint| info_span!("endpoint", peer.addr = %endpoint.addr),
-                ))
+                )
                 .into_new_service()
                 .push_on_response(
                     svc::layers()
@@ -178,9 +178,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(profiles::router::layer(profiles_client, dst_route_layer))
                 .push(strip_header::request::layer(DST_OVERRIDE_HEADER))
                 .push_on_response(metrics.stack.layer(stack_labels("logical")))
-                .push(trace::layer(
-                    |dst: &DstAddr| info_span!("logical", dst = %dst.dst_logical()),
-                ));
+                .instrument(|dst: &DstAddr| info_span!("logical", dst = %dst.dst_logical()));
 
             // Routes requests to a `DstAddr`.
             //
@@ -271,13 +269,13 @@ impl<A: OrigDstAddr> Config<A> {
                         .push(errors::layer())
                         .push(metrics.stack.layer(stack_labels("source"))),
                 )
-                .push(trace::layer(|src: &tls::accept::Meta| {
+                .instrument(|src: &tls::accept::Meta| {
                     info_span!(
                         "source",
                         peer.id = ?src.peer_identity,
                         target.addr = %src.addrs.target_addr(),
                     )
-                }))
+                })
                 .push(trace_context::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
