@@ -21,7 +21,7 @@ use linkerd2_app_core::{
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
-    svc, trace,
+    svc,
     transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, Conditional, DispatchDeadline, Error, ProxyMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID,
@@ -164,9 +164,9 @@ impl<A: OrigDstAddr> Config<A> {
                     metrics.http_endpoint.into_layer::<classify::Response>()
                 )
                 .push(require_identity_on_endpoint::layer())
-                .push(trace::layer(|endpoint: &Endpoint| {
+                .instrument(|endpoint: &Endpoint| {
                     info_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
-                }))
+                })
                 .check_service::<Endpoint>();
 
             // Routes requests to their original destination endpoints. Used as
@@ -210,9 +210,9 @@ impl<A: OrigDstAddr> Config<A> {
                 .push_fallback(
                     orig_dst_router_stack.push_on_response(svc::layers().box_http_response()),
                 )
-                .push(trace::layer(
+                .instrument(
                     |dst: &DstAddr| info_span!("concrete", dst.concrete = %dst.dst_concrete()),
-                ));
+                );
 
             // A per-`DstAddr` stack that does the following:
             //
@@ -261,9 +261,7 @@ impl<A: OrigDstAddr> Config<A> {
             // This is shared across addr-stacks so that multiple addrs that
             // canonicalize to the same DstAddr use the same dst-stack service.
             let dst_router = dst_stack
-                .push(trace::layer(
-                    |dst: &DstAddr| info_span!("logical", dst.logical = %dst.dst_logical()),
-                ))
+                .instrument(|dst: &DstAddr| info_span!("logical", dst.logical = %dst.dst_logical()))
                 .into_new_service()
                 .push_on_response(
                     svc::layers()
@@ -307,7 +305,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(http::strip_header::request::layer(L5D_CLIENT_ID))
                 .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                 .push(http::insert::target::layer())
-                .push(trace::layer(|addr: &Addr| info_span!("addr", %addr)))
+                .instrument(|addr: &Addr| info_span!("addr", %addr))
                 .into_new_service()
                 .push_on_response(
                     svc::layers()
@@ -351,9 +349,9 @@ impl<A: OrigDstAddr> Config<A> {
                         .push(errors::layer())
                         .push(metrics.stack.layer(stack_labels("source")))
                 )
-                .push(trace::layer(
+                .instrument(
                     |src: &tls::accept::Meta| info_span!("source", target.addr = %src.addrs.target_addr()),
-                ))
+                )
                 .push_on_response(TraceContextLayer::new(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
