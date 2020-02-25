@@ -122,8 +122,7 @@ impl<Req, Rec, N> Router<Req, Rec, N>
 where
     Rec: Recognize<Req>,
     N: NewService<Rec::Target>,
-    <N as NewService<Rec::Target>>::Service: Clone,
-    N::Service: tower::Service<Req>,
+    N::Service: tower::Service<Req> + Clone,
 {
     pub fn new(
         recognize: Rec,
