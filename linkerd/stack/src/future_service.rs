@@ -51,6 +51,6 @@ where
             return svc.call(req).map_err(Into::into);
         }
 
-        panic!("pending not ready yet");
+        panic!("Called before ready");
     }
 }
