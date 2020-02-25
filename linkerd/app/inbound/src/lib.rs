@@ -128,13 +128,17 @@ impl<A: OrigDstAddr> Config<A> {
             let endpoint_router = client_stack
                 .push(tap_layer)
                 .push(metrics.http_endpoint.into_layer::<classify::Response>())
-                .serves::<Endpoint>()
+                .check_service::<Endpoint>()
                 .push(trace::layer(
                     |endpoint: &Endpoint| info_span!("endpoint", peer.addr = %endpoint.addr),
                 ))
-                .push_per_make(metrics.stack.layer(stack_labels("endpoint")))
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
-                .makes::<Endpoint>()
+                .into_new_service()
+                .push_on_response(
+                    svc::layers()
+                        .push(metrics.stack.layer(stack_labels("endpoint")))
+                        .push_buffer(buffer.max_in_flight, DispatchDeadline::extract),
+                )
+                .check_new_service::<Endpoint>()
                 .push(router::Layer::new(
                     router::Config::new(router_capacity, router_max_idle_age),
                     RecognizeEndpoint::default(),
@@ -152,8 +156,12 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(insert::target::layer())
                 .push(metrics.http_route.into_layer::<classify::Response>())
                 .push(classify::Layer::new())
-                .push_per_make(metrics.stack.layer(stack_labels("route")))
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract);
+                .push_into_new_service()
+                .push_on_response(
+                    svc::layers()
+                        .push(metrics.stack.layer(stack_labels("route")))
+                        .push_buffer(buffer.max_in_flight, DispatchDeadline::extract),
+                );
 
             // A per-`DstAddr` stack that does the following:
             //
@@ -163,10 +171,13 @@ impl<A: OrigDstAddr> Config<A> {
             //    `RecognizeEndpoint` can use the value.
             let dst_stack = svc::stack(svc::Shared::new(endpoint_router))
                 .push(insert::target::layer())
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
+                .into_new_service()
+                .push_on_response(
+                    svc::layers().push_buffer(buffer.max_in_flight, DispatchDeadline::extract),
+                )
                 .push(profiles::router::layer(profiles_client, dst_route_layer))
                 .push(strip_header::request::layer(DST_OVERRIDE_HEADER))
-                .push_per_make(metrics.stack.layer(stack_labels("logical")))
+                .push_on_response(metrics.stack.layer(stack_labels("logical")))
                 .push(trace::layer(
                     |dst: &DstAddr| info_span!("logical", dst = %dst.dst_logical()),
                 ));
@@ -190,7 +201,10 @@ impl<A: OrigDstAddr> Config<A> {
             // 6. Finally, if the tls::accept::Meta had an SO_ORIGINAL_DST, this TCP
             // address is used.
             let dst_router = dst_stack
-                .push_buffer_pending(buffer.max_in_flight, DispatchDeadline::extract)
+                .into_new_service()
+                .push_on_response(
+                    svc::layers().push_buffer(buffer.max_in_flight, DispatchDeadline::extract),
+                )
                 .push(router::Layer::new(
                     router::Config::new(router_capacity, router_max_idle_age),
                     |req: &http::Request<_>| {
@@ -239,7 +253,7 @@ impl<A: OrigDstAddr> Config<A> {
             // `orig-proto` headers. This happens in the source stack so that
             // the router need not detect whether a request _will be_ downgraded.
             let source_stack = svc::stack(svc::Shared::new(admission_control))
-                .serves::<tls::accept::Meta>()
+                .check_service::<tls::accept::Meta>()
                 .push(orig_proto_downgrade::layer())
                 .push(insert::target::layer())
                 // disabled due to information leagkage
@@ -251,9 +265,12 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(insert::layer(move || {
                     DispatchDeadline::after(buffer.dispatch_timeout)
                 }))
-                .push_per_make(metrics.http_errors)
-                .push_per_make(errors::layer())
-                .push_per_make(metrics.stack.layer(stack_labels("source")))
+                .push_on_response(
+                    svc::layers()
+                        .push(metrics.http_errors)
+                        .push(errors::layer())
+                        .push(metrics.stack.layer(stack_labels("source"))),
+                )
                 .push(trace::layer(|src: &tls::accept::Meta| {
                     info_span!(
                         "source",
@@ -265,13 +282,13 @@ impl<A: OrigDstAddr> Config<A> {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
                 .push(metrics.http_handle_time.layer())
-                .serves::<tls::accept::Meta>();
+                .check_service::<tls::accept::Meta>();
 
             let forward_tcp = tcp::Forward::new(
                 svc::stack(connect_stack)
-                    .push(svc::map_target::layer(|meta: tls::accept::Meta| {
+                    .push_map_target(|meta: tls::accept::Meta| {
                         Endpoint::from(meta.addrs.target_addr())
-                    }))
+                    })
                     .into_inner(),
             );
 

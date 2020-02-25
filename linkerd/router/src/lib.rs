@@ -11,19 +11,20 @@ pub use self::purge::Purge;
 use futures::{Async, Future, Poll};
 use indexmap::IndexMap;
 use linkerd2_lock::Lock;
+use linkerd2_stack::NewService;
 use std::hash::Hash;
 use std::time::Duration;
 pub use tower_load_shed::LoadShed;
 use tracing::{debug, trace};
 
 /// Routes requests based on a configurable `Key`.
-pub struct Router<Req, Rec, Mk>
+pub struct Router<Req, Rec, N>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    Mk::Value: tower::Service<Req>,
+    N: NewService<Rec::Target>,
+    N::Service: tower::Service<Req>,
 {
-    inner: Inner<Req, Rec, Mk>,
+    inner: Inner<Req, Rec, N>,
     _hangup: purge::Handle,
 }
 
@@ -41,63 +42,46 @@ pub trait Recognize<Request> {
     fn recognize(&self, request: &Request) -> Option<Self::Target>;
 }
 
-pub trait Make<Target> {
-    type Value;
-
-    fn make(&self, target: &Target) -> Self::Value;
-}
-
-impl<F, Target, V> Make<Target> for F
-where
-    F: Fn(&Target) -> V,
-{
-    type Value = V;
-
-    fn make(&self, target: &Target) -> Self::Value {
-        (*self)(target)
-    }
-}
-
 /// A map of known routes and services used when creating a fixed router.
 #[derive(Clone, Debug)]
-pub struct FixedMake<T: Clone + Eq + Hash, Svc>(IndexMap<T, Svc>);
+pub struct FixedNewService<T: Clone + Eq + Hash, Svc>(IndexMap<T, Svc>);
 
-pub struct ResponseFuture<Req, Rec, Mk>
+pub struct ResponseFuture<Req, Rec, N>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    Mk::Value: tower::Service<Req>,
-    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
+    N: NewService<Rec::Target>,
+    N::Service: tower::Service<Req>,
+    <N::Service as tower::Service<Req>>::Error: Into<error::Error>,
 {
-    state: State<Req, Rec, Mk>,
+    state: State<Req, Rec, N>,
 }
 
-struct Inner<Req, Rec, Mk>
+struct Inner<Req, Rec, N>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    Mk::Value: tower::Service<Req>,
+    N: NewService<Rec::Target>,
+    N::Service: tower::Service<Req>,
 {
     recognize: Rec,
-    make: Mk,
-    cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+    new_service: N,
+    cache: Lock<Cache<Rec::Target, LoadShed<N::Service>>>,
 }
 
-enum State<Req, Rec, Mk>
+enum State<Req, Rec, N>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    Mk::Value: tower::Service<Req>,
-    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
+    N: NewService<Rec::Target>,
+    N::Service: tower::Service<Req>,
+    <N::Service as tower::Service<Req>>::Error: Into<error::Error>,
 {
     Acquire {
         request: Option<Req>,
         target: Option<Rec::Target>,
-        make: Option<Mk>,
-        cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+        new_service: Option<N>,
+        cache: Lock<Cache<Rec::Target, LoadShed<N::Service>>>,
     },
-    Call(Option<Req>, Option<LoadShed<Mk::Value>>),
-    Respond(<LoadShed<Mk::Value> as tower::Service<Req>>::Future),
+    Call(Option<Req>, Option<LoadShed<N::Service>>),
+    Respond(<LoadShed<N::Service> as tower::Service<Req>>::Future),
     Error(Option<error::Error>),
 }
 
@@ -115,18 +99,18 @@ where
     }
 }
 
-// ===== impl FixedMake =====
+// ===== impl FixedNewService =====
 
-impl<T, Svc> Make<T> for FixedMake<T, Svc>
+impl<T, Svc> NewService<T> for FixedNewService<T, Svc>
 where
     T: Clone + Eq + Hash,
     Svc: Clone,
 {
-    type Value = Svc;
+    type Service = Svc;
 
-    fn make(&self, target: &T) -> Self::Value {
+    fn new_service(&self, target: T) -> Self::Service {
         self.0
-            .get(target)
+            .get(&target)
             .cloned()
             .expect("target not found in fixed router")
     }
@@ -134,26 +118,25 @@ where
 
 // ===== impl Router =====
 
-impl<Req, Rec, Mk> Router<Req, Rec, Mk>
+impl<Req, Rec, N> Router<Req, Rec, N>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    <Mk as Make<Rec::Target>>::Value: Clone,
-    Mk::Value: tower::Service<Req>,
+    N: NewService<Rec::Target>,
+    N::Service: tower::Service<Req> + Clone,
 {
     pub fn new(
         recognize: Rec,
-        make: Mk,
+        new_service: N,
         capacity: usize,
         max_idle_age: Duration,
-    ) -> (Self, Purge<Rec::Target, LoadShed<Mk::Value>>) {
+    ) -> (Self, Purge<Rec::Target, LoadShed<N::Service>>) {
         let cache = Lock::new(Cache::new(capacity, max_idle_age));
         let (purge, _hangup) = Purge::new(cache.clone());
         let router = Self {
             _hangup,
             inner: Inner {
                 recognize,
-                make,
+                new_service,
                 cache,
             },
         };
@@ -162,7 +145,7 @@ where
     }
 }
 
-impl<Req, Rec, Svc> Router<Req, Rec, FixedMake<Rec::Target, Svc>>
+impl<Req, Rec, Svc> Router<Req, Rec, FixedNewService<Rec::Target, Svc>>
 where
     Rec: Recognize<Req>,
     Svc: tower::Service<Req> + Clone,
@@ -177,7 +160,7 @@ where
         let capacity = routes.len();
         let (router, _) = Self::new(
             recognize,
-            FixedMake(routes),
+            FixedNewService(routes),
             capacity,
             Duration::from_secs(1),
         );
@@ -185,21 +168,21 @@ where
         router
     }
 
-    pub fn into_make(self) -> IndexMap<Rec::Target, Svc> {
-        self.inner.make.0
+    pub fn into_new_service(self) -> IndexMap<Rec::Target, Svc> {
+        self.inner.new_service.0
     }
 }
 
-impl<Req, Rec, Mk> tower::Service<Req> for Router<Req, Rec, Mk>
+impl<Req, Rec, N> tower::Service<Req> for Router<Req, Rec, N>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target> + Clone,
-    Mk::Value: tower::Service<Req> + Clone,
-    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
+    N: NewService<Rec::Target> + Clone,
+    N::Service: tower::Service<Req> + Clone,
+    <N::Service as tower::Service<Req>>::Error: Into<error::Error>,
 {
-    type Response = <Mk::Value as tower::Service<Req>>::Response;
+    type Response = <N::Service as tower::Service<Req>>::Response;
     type Error = error::Error;
-    type Future = ResponseFuture<Req, Rec, Mk>;
+    type Future = ResponseFuture<Req, Rec, N>;
 
     /// Always ready to serve.
     ///
@@ -222,17 +205,17 @@ where
         ResponseFuture::new(
             request,
             target,
-            self.inner.make.clone(),
+            self.inner.new_service.clone(),
             self.inner.cache.clone(),
         )
     }
 }
 
-impl<Req, Rec, Mk> Clone for Router<Req, Rec, Mk>
+impl<Req, Rec, N> Clone for Router<Req, Rec, N>
 where
     Rec: Recognize<Req> + Clone,
-    Mk: Make<Rec::Target> + Clone,
-    Mk::Value: tower::Service<Req>,
+    N: NewService<Rec::Target> + Clone,
+    N::Service: tower::Service<Req>,
 {
     fn clone(&self) -> Self {
         Router {
@@ -244,24 +227,24 @@ where
 
 // ===== impl ResponseFuture =====
 
-impl<Req, Rec, Mk> ResponseFuture<Req, Rec, Mk>
+impl<Req, Rec, N> ResponseFuture<Req, Rec, N>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    Mk::Value: tower::Service<Req>,
-    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
+    N: NewService<Rec::Target>,
+    N::Service: tower::Service<Req>,
+    <N::Service as tower::Service<Req>>::Error: Into<error::Error>,
 {
     fn new(
         request: Req,
         target: Rec::Target,
-        make: Mk,
-        cache: Lock<Cache<Rec::Target, LoadShed<Mk::Value>>>,
+        new_service: N,
+        cache: Lock<Cache<Rec::Target, LoadShed<N::Service>>>,
     ) -> Self {
         ResponseFuture {
             state: State::Acquire {
                 request: Some(request),
                 target: Some(target),
-                make: Some(make),
+                new_service: Some(new_service),
                 cache: cache,
             },
         }
@@ -278,14 +261,14 @@ where
     }
 }
 
-impl<Req, Rec, Mk> Future for ResponseFuture<Req, Rec, Mk>
+impl<Req, Rec, N> Future for ResponseFuture<Req, Rec, N>
 where
     Rec: Recognize<Req>,
-    Mk: Make<Rec::Target>,
-    Mk::Value: tower::Service<Req> + Clone,
-    <Mk::Value as tower::Service<Req>>::Error: Into<error::Error>,
+    N: NewService<Rec::Target>,
+    N::Service: tower::Service<Req> + Clone,
+    <N::Service as tower::Service<Req>>::Error: Into<error::Error>,
 {
-    type Item = <LoadShed<Mk::Value> as tower::Service<Req>>::Response;
+    type Item = <LoadShed<N::Service> as tower::Service<Req>>::Response;
     type Error = error::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -296,7 +279,7 @@ where
                 State::Acquire {
                     ref mut request,
                     ref mut target,
-                    ref mut make,
+                    ref mut new_service,
                     ref mut cache,
                 } => {
                     // Aquire the lock for the router cache
@@ -323,8 +306,8 @@ where
                         }
 
                         // Make a new service for the target
-                        let make = make.take().expect("polled after ready");
-                        let service = LoadShed::new(make.make(&target));
+                        let new_service = new_service.take().expect("polled after ready");
+                        let service = LoadShed::new(new_service.new_service(target.clone()));
 
                         debug!("inserting new target into cache");
                         cache.insert(target, service.clone());
@@ -344,23 +327,23 @@ where
                 }
                 State::Respond(ref mut fut) => return fut.poll().map_err(Into::into),
                 State::Error(ref mut err) => return Err(err.take().expect("polled after ready")),
-            }
+            };
         }
     }
 }
 
 // ===== impl Inner =====
 
-impl<Req, Rec, Mk> Clone for Inner<Req, Rec, Mk>
+impl<Req, Rec, N> Clone for Inner<Req, Rec, N>
 where
     Rec: Recognize<Req> + Clone,
-    Mk: Make<Rec::Target> + Clone,
-    Mk::Value: tower::Service<Req>,
+    N: NewService<Rec::Target> + Clone,
+    N::Service: tower::Service<Req>,
 {
     fn clone(&self) -> Self {
         Inner {
             recognize: self.recognize.clone(),
-            make: self.make.clone(),
+            new_service: self.new_service.clone(),
             cache: self.cache.clone(),
         }
     }
@@ -368,8 +351,8 @@ where
 
 #[cfg(test)]
 mod test_util {
-    use super::Make;
     use futures::{future, Async, Poll};
+    use linkerd2_stack::NewService;
     use std::cell::Cell;
     use std::fmt;
     use std::rc::Rc;
@@ -406,10 +389,10 @@ mod test_util {
         }
     }
 
-    impl Make<usize> for Recognize {
-        type Value = MultiplyAndAssign;
+    impl NewService<usize> for Recognize {
+        type Service = MultiplyAndAssign;
 
-        fn make(&self, _: &usize) -> Self::Value {
+        fn new_service(&self, _: usize) -> Self::Service {
             MultiplyAndAssign::default()
         }
     }
@@ -432,10 +415,10 @@ mod test_util {
         }
     }
 
-    impl Make<usize> for MultiplyAndAssign {
-        type Value = MultiplyAndAssign;
+    impl NewService<usize> for MultiplyAndAssign {
+        type Service = MultiplyAndAssign;
 
-        fn make(&self, _: &usize) -> Self::Value {
+        fn new_service(&self, _: usize) -> Self::Service {
             // Don't use a clone, so that they don't affect the original Stack...
             MultiplyAndAssign(Rc::new(Cell::new(self.0.get())), self.1)
         }
@@ -491,19 +474,19 @@ mod test_util {
 
 #[cfg(test)]
 mod tests {
-    use super::Make;
     use super::{error, Router};
     use crate::test_util::*;
     use futures::Future;
+    use linkerd2_stack::NewService;
     use std::time::Duration;
     use std::usize;
     use tower::Service;
 
-    impl<Mk> Router<Request, Recognize, Mk>
+    impl<N> Router<Request, Recognize, N>
     where
-        Mk: Make<usize> + Clone,
-        Mk::Value: tower::Service<Request, Response = usize> + Clone,
-        <Mk::Value as tower::Service<Request>>::Error: Into<error::Error>,
+        N: NewService<usize> + Clone,
+        N::Service: tower::Service<Request, Response = usize> + Clone,
+        <N::Service as tower::Service<Request>>::Error: Into<error::Error>,
     {
         fn call_ok(&mut self, request: impl Into<Request>) -> usize {
             let request = request.into();

@@ -8,7 +8,7 @@ pub mod req_body_as_payload {
     #[derive(Debug)]
     pub struct Service<S>(S);
 
-    pub fn layer<S, B>() -> impl layer::Layer<S, Service = Service<S>> + Copy
+    pub fn layer<S, B>() -> impl tower::layer::Layer<S, Service = Service<S>> + Copy
     where
         GrpcBody<B>: Payload,
         S: tower::Service<http::Request<GrpcBody<B>>>,

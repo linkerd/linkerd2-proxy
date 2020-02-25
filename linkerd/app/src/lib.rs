@@ -114,7 +114,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
                 classify, control,
                 proxy::grpc,
                 reconnect,
-                svc::{self, LayerExt},
+                svc::{self, NewService},
                 transport::{connect, tls},
             };
 
@@ -135,14 +135,15 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
                         move |_| Ok(backoff.stream())
                     }))
                     .push(metrics.into_layer::<classify::Response>())
-                    .push(grpc::req_body_as_payload::layer().per_make())
+                    .push_on_response(grpc::req_body_as_payload::layer())
                     .push(control::add_origin::layer())
-                    .push_buffer_pending(
+                    .into_new_service()
+                    .push_on_response(svc::layers().push_buffer(
                         dst.control.buffer.max_in_flight,
                         dst.control.buffer.dispatch_timeout,
-                    )
+                    ))
                     .into_inner()
-                    .make(dst.control.addr.clone());
+                    .new_service(dst.control.addr.clone());
                 dst.build(svc)
             })
         }?;

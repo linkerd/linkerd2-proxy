@@ -1,9 +1,18 @@
+//! Utilities for composing Tower Services.
+
 #![deny(warnings, rust_2018_idioms)]
 
+pub mod fallback;
+mod future_service;
 pub mod layer;
 pub mod map_target;
-pub mod per_make;
-mod shared;
+pub mod new_service;
+pub mod on_response;
+pub mod shared;
 
-pub use self::layer::{Layer, LayerExt};
+pub use self::fallback::{Fallback, FallbackLayer};
+pub use self::future_service::FutureService;
+pub use self::map_target::{MapTarget, MapTargetLayer, MapTargetService};
+pub use self::new_service::NewService;
+pub use self::on_response::{OnResponse, OnResponseLayer};
 pub use self::shared::Shared;

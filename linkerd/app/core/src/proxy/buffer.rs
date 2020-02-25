@@ -1,7 +1,6 @@
 use crate::svc;
-use futures::{try_ready, Async, Future, Poll};
+use futures::{Async, Future, Poll};
 use linkerd2_error::Error;
-use linkerd2_router as rt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -20,15 +19,6 @@ pub trait Deadline<Req>: Clone {
 pub struct Layer<D, Req> {
     capacity: usize,
     deadline: D,
-    _marker: PhantomData<fn(Req)>,
-}
-
-/// Produces `MakeService`s where the output `Service` is wrapped with a `Buffer`
-#[derive(Debug)]
-pub struct Make<M, D, Req> {
-    capacity: usize,
-    deadline: D,
-    inner: M,
     _marker: PhantomData<fn(Req)>,
 }
 
@@ -60,13 +50,6 @@ pub enum DequeueFuture<F> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Aborted;
 
-pub struct MakeFuture<F, D, Req> {
-    capacity: usize,
-    deadline: D,
-    inner: F,
-    _marker: PhantomData<fn(Req)>,
-}
-
 // === impl Layer ===
 
 pub fn layer<D, Req>(capacity: usize, deadline: D) -> Layer<D, Req>
@@ -91,126 +74,18 @@ impl<D: Clone, Req> Clone for Layer<D, Req> {
     }
 }
 
-impl<M, D, Req> svc::Layer<M> for Layer<D, Req>
+impl<S, D, Req> svc::Layer<S> for Layer<D, Req>
 where
     D: Deadline<Req>,
-{
-    type Service = Make<M, D, Req>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        Self::Service {
-            capacity: self.capacity,
-            deadline: self.deadline.clone(),
-            inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-// === impl Make ===
-
-impl<M: Clone, D: Clone, Req> Clone for Make<M, D, Req> {
-    fn clone(&self) -> Self {
-        Self {
-            capacity: self.capacity,
-            deadline: self.deadline.clone(),
-            inner: self.inner.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T, M, D, Req> svc::Service<T> for Make<M, D, Req>
-where
-    T: fmt::Display + Clone + Send + Sync + 'static,
-    M: svc::Service<T>,
-    M::Response: svc::Service<Req> + Send + 'static,
-    M::Error: Into<Error>,
-    <M::Response as svc::Service<Req>>::Future: Send,
-    <M::Response as svc::Service<Req>>::Error: Into<Error>,
-    D: Deadline<Req>,
+    S: svc::Service<Req> + Send + 'static,
+    S::Error: Into<Error>,
+    S::Future: Send,
     Req: Send + 'static,
 {
-    type Response = Enqueue<M::Response, D, Req>;
-    type Error = Error;
-    type Future = MakeFuture<M::Future, D, Req>;
+    type Service = Enqueue<S, D, Req>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready().map_err(Into::into)
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let inner = self.inner.call(target);
-
-        Self::Future {
-            capacity: self.capacity,
-            deadline: self.deadline.clone(),
-            inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T, M, D, Req> rt::Make<T> for Make<M, D, Req>
-where
-    T: fmt::Display + Clone + Send + Sync + 'static,
-    M: rt::Make<T>,
-    M::Value: svc::Service<Req> + Send + 'static,
-    <M::Value as svc::Service<Req>>::Future: Send,
-    <M::Value as svc::Service<Req>>::Error: Into<Error>,
-    D: Deadline<Req>,
-    Req: Send + 'static,
-{
-    type Value = Enqueue<M::Value, D, Req>;
-
-    fn make(&self, target: &T) -> Self::Value {
-        Enqueue::new(
-            self.inner.make(target),
-            self.deadline.clone(),
-            self.capacity,
-        )
-    }
-}
-
-impl<M, D, Req> Make<M, D, Req> {
-    /// Creates a buffer immediately.
-    pub fn make<T>(&self, target: T) -> Enqueue<M::Value, D, Req>
-    where
-        T: fmt::Display + Clone + Send + Sync + 'static,
-        M: rt::Make<T>,
-        M::Value: svc::Service<Req> + Send + 'static,
-        <M::Value as svc::Service<Req>>::Future: Send,
-        <M::Value as svc::Service<Req>>::Error: Into<Error>,
-        Req: Send + 'static,
-        D: Deadline<Req> + Clone,
-    {
-        Enqueue::new(
-            self.inner.make(&target),
-            self.deadline.clone(),
-            self.capacity,
-        )
-    }
-}
-
-// === impl MakeFuture ===
-
-impl<F, D, Req, Svc> Future for MakeFuture<F, D, Req>
-where
-    F: Future<Item = Svc>,
-    F::Error: Into<Error>,
-    Svc: svc::Service<Req> + Send + 'static,
-    Svc::Future: Send,
-    Svc::Error: Into<Error>,
-    D: Deadline<Req>,
-    Req: Send + 'static,
-{
-    type Item = Enqueue<Svc, D, Req>;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let svc = try_ready!(self.inner.poll().map_err(Into::into));
-        let enq = Enqueue::new(svc, self.deadline.clone(), self.capacity);
-        Ok(enq.into())
+    fn layer(&self, inner: S) -> Self::Service {
+        Enqueue::new(inner, self.deadline.clone(), self.capacity)
     }
 }
 
@@ -227,7 +102,7 @@ where
     D: Deadline<Req>,
     Req: Send + 'static,
 {
-    pub fn new(svc: S, deadline: D, capacity: usize) -> Self {
+    fn new(svc: S, deadline: D, capacity: usize) -> Self {
         let mut exec = tokio::executor::DefaultExecutor::current().in_current_span();
         let inner = buffer::Buffer::with_executor(Dequeue(svc), capacity, &mut exec);
         Self { deadline, inner }

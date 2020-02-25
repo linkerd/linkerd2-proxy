@@ -1,6 +1,5 @@
 use futures::Poll;
 use linkerd2_error::Never;
-use tower_service as svc;
 
 /// Implements `Service<T>` for any `T` by cloning a `V`-typed value.
 #[derive(Clone, Debug)]
@@ -12,7 +11,7 @@ impl<V: Clone> Shared<V> {
     }
 }
 
-impl<T, V: Clone> svc::Service<T> for Shared<V> {
+impl<T, V: Clone> tower::Service<T> for Shared<V> {
     type Response = V;
     type Error = Never;
     type Future = futures::future::FutureResult<Self::Response, Self::Error>;
