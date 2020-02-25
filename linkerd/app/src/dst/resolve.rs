@@ -28,7 +28,7 @@ where
     <S::ResponseBody as Body>::Data: Send,
     S::Future: Send,
 {
-    request_filter::Service::new::<DstAddr>(
+    request_filter::Service::new(
         PermitConfiguredDsts::new(suffixes, nets),
         recover::Resolve::new::<DstAddr>(
             backoff.into(),
