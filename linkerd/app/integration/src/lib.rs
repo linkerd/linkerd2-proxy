@@ -1,7 +1,6 @@
 //! Shared infrastructure for integration tests
 
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1070525"]
 
 mod test_env;
 

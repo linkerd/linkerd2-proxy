@@ -1,5 +1,7 @@
 //! Layer to map service errors into responses.
 
+#![deny(warnings, rust_2018_idioms)]
+
 use futures::{Async, Future, Poll};
 use linkerd2_error::Error;
 
