@@ -1,3 +1,4 @@
+use crate::proxy::http::timeout::error as timeout;
 use crate::proxy::{buffer, identity};
 use http::{header::HeaderValue, StatusCode};
 use linkerd2_error::Error;
@@ -28,6 +29,7 @@ pub type Label = (super::metric_labels::Direction, Reason);
 pub enum Reason {
     CacheFull,
     DispatchTimeout,
+    ResponseTimeout,
     IdentityRequired,
     LoadShed,
     Unexpected,
@@ -108,7 +110,9 @@ impl<B: Default> respond::Respond for Respond<B> {
 }
 
 fn http_status(error: Error) -> StatusCode {
-    if error.is::<router::NoCapacity>() {
+    if error.is::<timeout::ResponseTimeout>() {
+        http::StatusCode::GATEWAY_TIMEOUT
+    } else if error.is::<router::NoCapacity>() {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<shed::Overloaded>() {
         http::StatusCode::SERVICE_UNAVAILABLE
@@ -125,7 +129,12 @@ fn set_grpc_status(error: Error, headers: &mut http::HeaderMap) -> Code {
     const GRPC_STATUS: &'static str = "grpc-status";
     const GRPC_MESSAGE: &'static str = "grpc-message";
 
-    if error.is::<router::NoCapacity>() {
+    if error.is::<timeout::ResponseTimeout>() {
+        let code = Code::DeadlineExceeded;
+        headers.insert(GRPC_STATUS, code_header(code));
+        headers.insert(GRPC_MESSAGE, HeaderValue::from_static("request timed out"));
+        code
+    } else if error.is::<router::NoCapacity>() {
         let code = Code::Unavailable;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(
@@ -219,7 +228,9 @@ impl metrics::LabelError<Error> for LabelError {
     type Labels = Label;
 
     fn label_error(&self, err: &Error) -> Self::Labels {
-        let reason = if err.is::<router::NoCapacity>() {
+        let reason = if err.is::<timeout::ResponseTimeout>() {
+            Reason::ResponseTimeout
+        } else if err.is::<router::NoCapacity>() {
             Reason::CacheFull
         } else if err.is::<shed::Overloaded>() {
             Reason::LoadShed
@@ -244,6 +255,7 @@ impl metrics::FmtLabels for Reason {
                 Reason::CacheFull => "router full",
                 Reason::LoadShed => "load shed",
                 Reason::DispatchTimeout => "dispatch timeout",
+                Reason::ResponseTimeout => "response timeout",
                 Reason::IdentityRequired => "identity required",
                 Reason::Unexpected => "unexpected",
             }

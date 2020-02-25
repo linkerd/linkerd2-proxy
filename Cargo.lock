@@ -1300,9 +1300,12 @@ name = "linkerd2-timeout"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "linkerd2-error",
+ "linkerd2-stack",
  "tokio-connect",
  "tokio-timer",
  "tower",
+ "tracing",
 ]
 
 [[package]]

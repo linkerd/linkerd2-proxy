@@ -127,10 +127,6 @@ impl classify::ClassifyResponse for Response {
     type ClassifyEos = Eos;
 
     fn start<B>(self, rsp: &http::Response<B>) -> Eos {
-        if rsp.extensions().get::<timeout::ProxyTimedOut>().is_some() {
-            return Eos::Error("timeout");
-        }
-
         match self {
             Response::Default => grpc_class(rsp.headers())
                 .map(|c| Eos::Grpc(GrpcEos::NoBody(c)))
@@ -149,7 +145,13 @@ impl classify::ClassifyResponse for Response {
     }
 
     fn error(self, err: &Error) -> Self::Class {
-        Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
+        let msg = if err.is::<timeout::error::ResponseTimeout>() {
+            "timeout".into()
+        } else {
+            h2_error(err).into()
+        };
+
+        Class::Stream(SuccessOrFailure::Failure, msg)
     }
 }
 

@@ -333,7 +333,7 @@ fn timeout() {
         with_metrics: |metrics: client::Client| {
             assert_eventually_contains!(
                 metrics.get("/metrics"),
-                "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",status_code=\"504\",classification=\"failure\",error=\"timeout\"} 1"
+                "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",classification=\"failure\",error=\"timeout\"} 1"
             );
         }
     }

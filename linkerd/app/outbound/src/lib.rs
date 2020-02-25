@@ -237,7 +237,7 @@ impl<A: OrigDstAddr> Config<A> {
                     .push(http::insert::target::layer())
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
                     .push(retry::layer(metrics.http_route_retry))
-                    .push(http::timeout::layer())
+                    .push(http::MakeTimeoutLayer::default())
                     .push(metrics.http_route.into_layer::<classify::Response>())
                     .push(classify::Layer::new())
                     .push_into_new_service()
