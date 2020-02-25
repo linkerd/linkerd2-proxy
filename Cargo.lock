@@ -1301,6 +1301,7 @@ dependencies = [
  "hex",
  "http",
  "linkerd2-error",
+ "linkerd2-stack",
  "rand 0.7.2",
  "tower",
  "tracing",
