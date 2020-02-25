@@ -12,7 +12,7 @@ use std::time::SystemTime;
 pub mod layer;
 mod propagation;
 
-pub use layer::layer;
+pub use layer::{TraceContext, TraceContextLayer};
 
 const SPAN_ID_LEN: usize = 8;
 
