@@ -21,7 +21,7 @@ pub trait Proxy<Req, S: tower::Service<Self::Request>> {
     fn proxy(&self, inner: &mut S, req: Req) -> Self::Future;
 
     /// Wraps an `S` typed service with the proxy.
-    fn into_service(self, inner: S) -> ProxyService<Self, S>
+    fn wrap_service(self, inner: S) -> ProxyService<Self, S>
     where
         Self: Sized,
         S: tower::Service<Self::Request>,
