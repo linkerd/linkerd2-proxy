@@ -181,6 +181,7 @@ impl Client {
                     .unwrap();
             };
         }
+        tracing::debug!(headers = ?req.headers(), "request");
         let (tx, rx) = oneshot::channel();
         let _ = self.tx.unbounded_send((req, tx));
         Box::new(rx.then(|oneshot_result| oneshot_result.expect("request canceled")))
