@@ -32,7 +32,7 @@ pub struct MakeClient<C, B> {
     _marker: PhantomData<fn() -> B>,
 }
 
-/// A `Future` returned from `Client::new_service()`.
+/// A `Future` returned from `MakeClient::new_service()`.
 pub enum MakeFuture<C, T, B>
 where
     B: hyper::body::Payload + 'static,
@@ -44,7 +44,7 @@ where
     Http2(::tower_util::Oneshot<h2::Connect<C, B>, T>),
 }
 
-/// The `Service` yielded by `Client::new_service()`.
+/// The `Service` yielded by `MakeClient::new_service()`.
 pub enum Client<C, T, B>
 where
     B: hyper::body::Payload + 'static,
