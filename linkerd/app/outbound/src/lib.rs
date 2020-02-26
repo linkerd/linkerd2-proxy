@@ -43,6 +43,7 @@ mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
 
 pub use self::endpoint::Endpoint;
+use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -158,7 +159,7 @@ impl<A: OrigDstAddr> Config<A> {
                 // disabled due to information leagkage
                 //.push(add_remote_ip_on_rsp::layer())
                 //.push(add_server_id_on_rsp::layer())
-                .push(orig_proto_upgrade::layer())
+                .push(OrigProtoUpgradeLayer::new())
                 .push(tap_layer.clone())
                 .push(
                     metrics.http_endpoint.into_layer::<classify::Response>()

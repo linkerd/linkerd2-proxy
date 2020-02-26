@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         self,
-        http::{client, insert, normalize_uri, settings, strip_header},
+        http::{client, insert, normalize_uri, orig_proto, settings, strip_header},
         identity,
         server::{Protocol as ServerProtocol, Server},
         tap, tcp,
@@ -36,7 +36,6 @@ use tower_grpc::{self as grpc, generic::client::GrpcService};
 use tracing::{debug, info, info_span};
 
 mod endpoint;
-mod orig_proto_downgrade;
 mod rewrite_loopback_addr;
 #[allow(dead_code)] // TODO #2597
 mod set_client_id_on_req;
@@ -254,7 +253,7 @@ impl<A: OrigDstAddr> Config<A> {
             // the router need not detect whether a request _will be_ downgraded.
             let source_stack = svc::stack(svc::Shared::new(admission_control))
                 .check_service::<tls::accept::Meta>()
-                .push(orig_proto_downgrade::layer())
+                .push_on_response(svc::layer::mk(orig_proto::Downgrade::new))
                 .push(insert::target::layer())
                 // disabled due to information leagkage
                 //.push(set_remote_ip_on_req::layer())
