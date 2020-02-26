@@ -185,6 +185,10 @@ impl<S> Stack<S> {
         self.push(stack::MapTargetLayer::new(map))
     }
 
+    pub fn push_map_response<M: Clone>(self, map: M) -> Stack<stack::MapResponse<S, M>> {
+        self.push(stack::MapResponseLayer::new(map))
+    }
+
     pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
         self.push(InstrumentMakeLayer::new(get_span))
     }
