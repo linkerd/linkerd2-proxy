@@ -80,10 +80,6 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         // After the inner service is made, we want to wrap that service
-        // with a filter that compares the target's `peer_identity` and
-        // `l5d_require_id` header if present
-
-        // After the inner service is made, we want to wrap that service
         // with a service that checks for the presence of the
         // `l5d-require-id` header. If is present then assert it is the
         // endpoint identity; otherwise fail the request.
