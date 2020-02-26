@@ -44,7 +44,7 @@ pub struct Report<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 
 #[derive(Debug)]
-pub struct LayerConnect<L, K: Eq + Hash + FmtLabels> {
+pub struct ConnectLayer<L, K: Eq + Hash + FmtLabels> {
     label: L,
     registry: Arc<Mutex<Inner<K>>>,
 }
@@ -172,8 +172,8 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
 // ===== impl Registry =====
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
-    pub fn layer_connect<L>(&self, label: L) -> LayerConnect<L, K> {
-        LayerConnect::new(label, self.0.clone())
+    pub fn layer_connect<L>(&self, label: L) -> ConnectLayer<L, K> {
+        ConnectLayer::new(label, self.0.clone())
     }
 
     pub fn wrap_server_transport<T: AsyncRead + AsyncWrite>(&self, labels: K, io: T) -> Io<T> {
@@ -187,19 +187,19 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
     }
 }
 
-impl<L, K: Eq + Hash + FmtLabels> LayerConnect<L, K> {
+impl<L, K: Eq + Hash + FmtLabels> ConnectLayer<L, K> {
     fn new(label: L, registry: Arc<Mutex<Inner<K>>>) -> Self {
         Self { label, registry }
     }
 }
 
-impl<L: Clone, K: Eq + Hash + FmtLabels> Clone for LayerConnect<L, K> {
+impl<L: Clone, K: Eq + Hash + FmtLabels> Clone for ConnectLayer<L, K> {
     fn clone(&self) -> Self {
         Self::new(self.label.clone(), self.registry.clone())
     }
 }
 
-impl<L: Clone, K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for LayerConnect<L, K> {
+impl<L: Clone, K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLayer<L, K> {
     type Service = Connect<L, K, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
