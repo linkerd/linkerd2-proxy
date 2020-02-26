@@ -10,69 +10,75 @@ use linkerd2_app_core::{
     transport::tls::{self, HasPeerIdentity},
     Conditional, Error, L5D_REQUIRE_ID,
 };
-use std::marker::PhantomData;
 use tracing::debug;
 
-pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
+#[derive(Clone, Debug, Default)]
+pub struct MakeRequireIdentityLayer(());
 
-pub struct MakeSvc<M, A, B> {
+#[derive(Clone, Debug)]
+pub struct MakeRequireIdentity<M> {
     inner: M,
-    _marker: PhantomData<fn(A) -> B>,
 }
 
-pub struct MakeFuture<F, A, B> {
+pub struct MakeFuture<F> {
     peer_identity: tls::PeerIdentity,
     inner: F,
-    _marker: PhantomData<fn(A) -> B>,
 }
 
-pub struct RequireIdentity<M, A, B> {
+#[derive(Clone, Debug)]
+pub struct RequireIdentity<M> {
     peer_identity: tls::PeerIdentity,
     inner: M,
-    _marker: PhantomData<fn(A) -> B>,
 }
 
-// ===== impl Layer =====
+// === impl MakeRequireIdentityLayer ===
 
-pub fn layer<A, B>() -> Layer<A, B> {
-    Layer(PhantomData)
+impl MakeRequireIdentityLayer {
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
-impl<M, A, B> svc::Layer<M> for Layer<A, B>
-where
-    M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
-{
-    type Service = MakeSvc<M, A, B>;
+impl<M> svc::Layer<M> for MakeRequireIdentityLayer {
+    type Service = MakeRequireIdentity<M>;
 
     fn layer(&self, inner: M) -> Self::Service {
-        MakeSvc {
+        MakeRequireIdentity { inner }
+    }
+}
+
+// === impl MakeRequireIdentity ===
+
+impl<M> svc::NewService<Endpoint> for MakeRequireIdentity<M>
+where
+    M: svc::NewService<Endpoint>,
+{
+    type Service = RequireIdentity<M::Service>;
+
+    fn new_service(&self, target: Endpoint) -> Self::Service {
+        let peer_identity = target.peer_identity().clone();
+        let inner = self.inner.new_service(target);
+        RequireIdentity {
+            peer_identity,
             inner,
-            _marker: PhantomData,
         }
     }
 }
 
-impl<A, B> Clone for Layer<A, B> {
-    fn clone(&self) -> Self {
-        Layer(PhantomData)
-    }
-}
-
-// ===== impl MakeSvc =====
-
-impl<M, A, B> svc::Service<Endpoint> for MakeSvc<M, A, B>
+impl<T, M> svc::Service<T> for MakeRequireIdentity<M>
 where
-    M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
+    T: tls::HasPeerIdentity,
+    M: svc::Service<T>,
 {
-    type Response = RequireIdentity<M::Service, A, B>;
-    type Error = M::MakeError;
-    type Future = MakeFuture<M::Future, A, B>;
+    type Response = RequireIdentity<M::Response>;
+    type Error = M::Error;
+    type Future = MakeFuture<M::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, target: Endpoint) -> Self::Future {
+    fn call(&mut self, target: T) -> Self::Future {
         // After the inner service is made, we want to wrap that service
         // with a filter that compares the target's `peer_identity` and
         // `l5d_require_id` header if present
@@ -82,22 +88,20 @@ where
         // `l5d-require-id` header. If is present then assert it is the
         // endpoint identity; otherwise fail the request.
         let peer_identity = target.peer_identity().clone();
-        let inner = self.inner.make_service(target);
+        let inner = self.inner.call(target);
 
         MakeFuture {
             peer_identity,
             inner,
-            _marker: PhantomData,
         }
     }
 }
 
-impl<F, A, B> Future for MakeFuture<F, A, B>
+impl<F> Future for MakeFuture<F>
 where
     F: Future,
-    F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>,
 {
-    type Item = RequireIdentity<F::Item, A, B>;
+    type Item = RequireIdentity<F::Item>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -109,27 +113,17 @@ where
         let svc = RequireIdentity {
             peer_identity: self.peer_identity.clone(),
             inner,
-            _marker: PhantomData,
         };
 
         Ok(Async::Ready(svc))
     }
 }
 
-impl<M: Clone, A, B> Clone for MakeSvc<M, A, B> {
-    fn clone(&self) -> Self {
-        MakeSvc {
-            inner: self.inner.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
+// === impl RequireIdentity ===
 
-// ===== impl RequireIdentity =====
-
-impl<M, A, B> svc::Service<http::Request<A>> for RequireIdentity<M, A, B>
+impl<M, A> svc::Service<http::Request<A>> for RequireIdentity<M>
 where
-    M: svc::Service<http::Request<A>, Response = http::Response<B>>,
+    M: svc::Service<http::Request<A>>,
     M::Error: Into<Error>,
 {
     type Response = M::Response;
