@@ -1,5 +1,5 @@
 use futures::{Async, Future, Poll};
-use linkerd2_stack::NewService;
+use linkerd2_stack::{NewService, Proxy};
 use tracing::{trace, Span};
 use tracing_futures::{Instrument as _, Instrumented};
 
@@ -14,14 +14,14 @@ pub struct InstrumentMakeLayer<G> {
     get_span: G,
 }
 
-/// instruments a `MakeService` or `NewService` stack.
+/// Instruments a `MakeService` or `NewService` stack.
 #[derive(Clone, Debug)]
 pub struct InstrumentMake<G, M> {
     get_span: G,
     make: M,
 }
 
-/// instruments a service produced by `InstrumentMake`.
+/// Instruments a service produced by `InstrumentMake`.
 #[derive(Clone, Debug)]
 pub struct Instrument<S> {
     span: Span,
@@ -123,6 +123,24 @@ where
                 Ok(svc.into())
             }
         }
+    }
+}
+
+impl<Req, S, P> Proxy<Req, S> for Instrument<P>
+where
+    Req: std::fmt::Debug,
+    P: Proxy<Req, S>,
+    S: tower::Service<P::Request>,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = Instrumented<P::Future>;
+
+    fn proxy(&self, svc: &mut S, request: Req) -> Self::Future {
+        let _enter = self.span.enter();
+        trace!(?request, "proxy");
+        self.inner.proxy(svc, request).instrument(self.span.clone())
     }
 }
 
