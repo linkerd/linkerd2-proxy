@@ -22,7 +22,7 @@ use linkerd2_app_core::{
     reconnect, retry, router, serve,
     spans::SpanConverter,
     svc,
-    transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
+    transport::{self, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, Conditional, DispatchDeadline, Error, ProxyMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID,
     L5D_SERVER_ID,
@@ -118,8 +118,8 @@ impl<A: OrigDstAddr> Config<A> {
         let serve = Box::new(future::lazy(move || {
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
-            let connect_stack = svc::stack(connect::svc(connect.keepalive))
-                .push(tls::client::layer(local_identity))
+            let connect_stack = svc::connect(connect.keepalive)
+                .push(tls::ConnectLayer::new(local_identity))
                 .push_timeout(connect.timeout)
                 .push(metrics.transport.layer_connect(TransportLabels));
 

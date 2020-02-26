@@ -113,8 +113,8 @@ impl tls::HasPeerIdentity for Endpoint {
     }
 }
 
-impl connect::HasPeerAddr for Endpoint {
-    fn peer_addr(&self) -> SocketAddr {
+impl connect::ConnectAddr for Endpoint {
+    fn connect_addr(&self) -> SocketAddr {
         self.addr
     }
 }

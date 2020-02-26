@@ -4,7 +4,7 @@ use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
     control, proxy, reconnect,
     svc::{self, NewService},
-    transport::{connect, tls},
+    transport::tls,
     Error,
 };
 use linkerd2_opencensus::{metrics, proto, SpanExporter};
@@ -48,8 +48,8 @@ impl Config {
             Config::Disabled => Ok(OcCollector::Disabled),
             Config::Enabled { control, hostname } => {
                 let addr = control.addr;
-                let svc = svc::stack(connect::svc(control.connect.keepalive))
-                    .push(tls::client::layer(identity))
+                let svc = svc::connect(control.connect.keepalive)
+                    .push(tls::ConnectLayer::new(identity))
                     .push_timeout(control.connect.timeout)
                     // TODO: perhaps rename from "control" to "grpc"
                     .push(control::client::layer())
