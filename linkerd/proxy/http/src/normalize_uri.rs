@@ -41,8 +41,6 @@ where
 
     fn new_service(&self, target: T) -> Self::Service {
         let authority = target.should_normalize_uri();
-        tracing::trace!(?authority, "new");
-
         let inner = self.inner.new_service(target);
         NormalizeUri { inner, authority }
     }
@@ -63,8 +61,6 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let authority = target.should_normalize_uri();
-        tracing::trace!(?authority, "make");
-
         MakeFuture {
             authority,
             inner: self.inner.call(target),
@@ -121,8 +117,6 @@ where
                 "normalize_uri must only be applied to HTTP/1"
             );
             h1::set_authority(request.uri_mut(), authority.clone());
-        } else {
-            trace!("Not normalizing URI");
         }
 
         self.inner.call(request)
