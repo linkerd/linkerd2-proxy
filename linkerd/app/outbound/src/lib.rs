@@ -357,7 +357,8 @@ impl<A: OrigDstAddr> Config<A> {
                 .push_on_response(TraceContextLayer::new(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
-                .push(metrics.http_handle_time.layer());
+                .push(metrics.http_handle_time.layer())
+                .into_new_service();
 
             let forward_tcp = tcp::Forward::new(
                 svc::stack(connect_stack)
