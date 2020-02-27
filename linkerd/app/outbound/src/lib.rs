@@ -43,6 +43,7 @@ mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
 
 pub use self::endpoint::Endpoint;
+use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -163,7 +164,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(
                     metrics.http_endpoint.into_layer::<classify::Response>()
                 )
-                .push(require_identity_on_endpoint::layer())
+                .push(MakeRequireIdentityLayer::new())
                 .instrument(|endpoint: &Endpoint| {
                     info_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
                 })
@@ -237,7 +238,7 @@ impl<A: OrigDstAddr> Config<A> {
                     .push(http::insert::target::layer())
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
                     .push(retry::layer(metrics.http_route_retry))
-                    .push(http::timeout::layer())
+                    .push(http::MakeTimeoutLayer::default())
                     .push(metrics.http_route.into_layer::<classify::Response>())
                     .push(classify::Layer::new())
                     .push_into_new_service()

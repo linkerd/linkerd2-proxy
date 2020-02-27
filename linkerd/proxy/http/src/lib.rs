@@ -27,6 +27,7 @@ pub use self::{
     client::Client,
     glue::{HttpBody as Body, HyperServerSvc},
     settings::Settings,
+    timeout::MakeTimeoutLayer,
     version::Version,
 };
 pub use http::{header, uri, Request, Response};
