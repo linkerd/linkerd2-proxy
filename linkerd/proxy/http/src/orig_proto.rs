@@ -10,7 +10,7 @@ pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 #[derive(Clone, Debug)]
 pub struct Upgrade<S> {
     inner: S,
-    pub absolute_form: bool,
+    absolute_form: bool,
 }
 
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
@@ -23,10 +23,10 @@ pub struct Downgrade<S> {
 // ==== impl Upgrade =====
 
 impl<S> Upgrade<S> {
-    pub fn new(inner: S) -> Self {
+    pub fn new(inner: S, absolute_form: bool) -> Self {
         Self {
             inner,
-            absolute_form: false,
+            absolute_form,
         }
     }
 }

@@ -1,6 +1,6 @@
-use crate::endpoint::Endpoint;
 use crate::proxy::http::{orig_proto, settings::Settings};
 use crate::svc::stack;
+use crate::Endpoint;
 use futures::{try_ready, Future, Poll};
 use tower::util::Either;
 use tracing::trace;
@@ -55,9 +55,8 @@ where
         );
         endpoint.http_settings = Settings::Http2;
 
-        let mut upgrade = orig_proto::Upgrade::new(self.inner.new_service(endpoint));
-        upgrade.absolute_form = was_absolute;
-        Either::A(upgrade)
+        let inner = self.inner.new_service(endpoint);
+        Either::A(orig_proto::Upgrade::new(inner, was_absolute))
     }
 }
 
@@ -108,8 +107,7 @@ where
         let inner = try_ready!(self.inner.poll());
 
         if self.can_upgrade {
-            let mut upgrade = orig_proto::Upgrade::new(inner);
-            upgrade.absolute_form = self.was_absolute;
+            let upgrade = orig_proto::Upgrade::new(inner, self.was_absolute);
             Ok(Either::A(upgrade).into())
         } else {
             Ok(Either::B(inner).into())
