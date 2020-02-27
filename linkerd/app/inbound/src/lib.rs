@@ -283,7 +283,8 @@ impl<A: OrigDstAddr> Config<A> {
                     span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels())),
                 ))
                 .push(metrics.http_handle_time.layer())
-                .check_service::<tls::accept::Meta>();
+                .check_service::<tls::accept::Meta>()
+                .into_new_service();
 
             let forward_tcp = tcp::Forward::new(
                 svc::stack(connect_stack)
