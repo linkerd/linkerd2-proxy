@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         self,
-        http::{client, insert, normalize_uri, settings, strip_header},
+        http::{self, insert, normalize_uri, settings, strip_header},
         identity,
         server::{Protocol as ServerProtocol, Server},
         tap, tcp,
@@ -116,7 +116,7 @@ impl<A: OrigDstAddr> Config<A> {
             // Instantiates an HTTP client for a `client::Config`
             let client_stack = connect_stack
                 .clone()
-                .push(client::layer(connect.h2_settings))
+                .push(http::MakeClientLayer::new(connect.h2_settings))
                 .push(reconnect::layer({
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())

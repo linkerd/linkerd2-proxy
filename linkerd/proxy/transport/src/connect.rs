@@ -52,7 +52,7 @@ impl Future for ConnectFuture {
         super::set_keepalive_or_warn(&io, self.keepalive);
         debug!(
             local.addr = %io.local_addr().expect("cannot load local addr"),
-            keepalve = ?self.keepalive,
+            keepalive = ?self.keepalive,
             "Connected",
         );
         Ok(io.into())

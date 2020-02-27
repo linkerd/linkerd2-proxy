@@ -8,17 +8,14 @@ use futures::{try_ready, Async, Future, Poll};
 use http;
 use hyper;
 use linkerd2_error::Error;
-use std::fmt;
 use std::marker::PhantomData;
 use tower::ServiceExt;
 use tracing::{debug, info_span, trace};
 use tracing_futures::Instrument;
 
 /// Configures an HTTP client that uses a `C`-typed connector
-///
-/// The `span` is used for diagnostics (logging, mostly).
 #[derive(Debug)]
-pub struct Layer<B> {
+pub struct MakeClientLayer<B> {
     h2_settings: crate::h2::Settings,
     _marker: PhantomData<fn() -> B>,
 }
@@ -63,19 +60,18 @@ pub enum ClientFuture {
     Http2(h2::ResponseFuture),
 }
 
-// === impl Layer ===
+// === impl MakeClientLayer ===
 
-pub fn layer<B>(h2_settings: crate::h2::Settings) -> Layer<B>
-where
-    B: hyper::body::Payload + Send + 'static,
-{
-    Layer {
-        h2_settings,
-        _marker: PhantomData,
+impl<B> MakeClientLayer<B> {
+    pub fn new(h2_settings: crate::h2::Settings) -> Self {
+        Self {
+            h2_settings,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl<B> Clone for Layer<B>
+impl<B> Clone for MakeClientLayer<B>
 where
     B: hyper::body::Payload + Send + 'static,
 {
@@ -87,7 +83,7 @@ where
     }
 }
 
-impl<C, B> tower::layer::Layer<C> for Layer<B>
+impl<C, B> tower::layer::Layer<C> for MakeClientLayer<B>
 where
     B: hyper::body::Payload + Send + 'static,
 {
@@ -102,7 +98,7 @@ where
     }
 }
 
-// === impl Client ===
+// === impl MakeClient ===
 
 impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
@@ -110,7 +106,7 @@ where
     C::Future: Send + 'static,
     <C::Future as Future>::Error: Into<Error>,
     C::Connection: Send + 'static,
-    T: HasSettings + fmt::Debug + Clone + Send + Sync,
+    T: HasSettings + Clone + Send + Sync,
     B: hyper::body::Payload + 'static,
 {
     type Response = Client<C, T, B>;

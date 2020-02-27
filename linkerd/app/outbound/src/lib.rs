@@ -127,7 +127,7 @@ impl<A: OrigDstAddr> Config<A> {
             // Instantiates an HTTP client for for a `client::Config`
             let client_stack = connect_stack
                 .clone()
-                .push(http::client::layer(connect.h2_settings))
+                .push(http::MakeClientLayer::new(connect.h2_settings))
                 .push(reconnect::layer({
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
