@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
     control, dns, proxy, reconnect,
     svc::{self, NewService},
-    transport::{connect, tls},
+    transport::tls,
     ControlHttpMetrics as Metrics, Error, Never,
 };
 use tracing::debug;
@@ -42,8 +42,8 @@ impl Config {
                 let (local, crt_store) = Local::new(&certify);
 
                 let addr = control.addr;
-                let svc = svc::stack(connect::svc(control.connect.keepalive))
-                    .push(tls::client::layer(tls::Conditional::Some(
+                let svc = svc::connect(control.connect.keepalive)
+                    .push(tls::ConnectLayer::new(tls::Conditional::Some(
                         certify.trust_anchors.clone(),
                     )))
                     .push_timeout(control.connect.timeout)

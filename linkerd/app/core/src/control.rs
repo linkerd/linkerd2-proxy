@@ -311,8 +311,8 @@ pub mod client {
 
     // === impl Target ===
 
-    impl connect::HasPeerAddr for Target {
-        fn peer_addr(&self) -> SocketAddr {
+    impl connect::ConnectAddr for Target {
+        fn connect_addr(&self) -> SocketAddr {
             self.addr
         }
     }

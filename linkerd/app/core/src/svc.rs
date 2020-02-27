@@ -1,4 +1,5 @@
 use crate::proxy::{buffer, http};
+use crate::transport::Connect;
 use crate::Error;
 pub use linkerd2_box as boxed;
 use linkerd2_concurrency_limit as concurrency_limit;
@@ -25,6 +26,10 @@ pub fn layers() -> Layers<Identity> {
 
 pub fn stack<S>(inner: S) -> Stack<S> {
     Stack(inner)
+}
+
+pub fn connect(keepalive: Option<Duration>) -> Stack<Connect> {
+    Stack(Connect::new(keepalive))
 }
 
 // Possibly unused, but useful during development.
@@ -178,6 +183,10 @@ impl<S> Stack<S> {
 
     pub fn push_map_target<M: Clone>(self, map: M) -> Stack<stack::MapTargetService<S, M>> {
         self.push(stack::MapTargetLayer::new(map))
+    }
+
+    pub fn push_map_response<M: Clone>(self, map: M) -> Stack<stack::MapResponse<S, M>> {
+        self.push(stack::MapResponseLayer::new(map))
     }
 
     pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
