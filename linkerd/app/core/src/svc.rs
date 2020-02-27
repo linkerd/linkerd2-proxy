@@ -3,6 +3,7 @@ use crate::transport::Connect;
 use crate::Error;
 pub use linkerd2_box as boxed;
 use linkerd2_concurrency_limit as concurrency_limit;
+use linkerd2_lock::LockLayer;
 pub use linkerd2_stack::{self as stack, fallback, layer, new_service, NewService, Shared};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 use std::time::Duration;
@@ -51,6 +52,11 @@ impl<L> Layers<L> {
         Req: Send + 'static,
     {
         self.push(buffer::layer(bound, d))
+    }
+
+    /// Makes the inner service shareable in a mutually-exclusive fashion.
+    pub fn push_lock(self) -> Layers<Pair<L, LockLayer>> {
+        self.push(LockLayer::new())
     }
 
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
@@ -223,6 +229,17 @@ impl<S> Stack<S> {
 
     pub fn into_inner(self) -> S {
         self.0
+    }
+}
+
+impl<T, N> NewService<T> for Stack<N>
+where
+    N: NewService<T>,
+{
+    type Service = N::Service;
+
+    fn new_service(&self, t: T) -> Self::Service {
+        self.0.new_service(t)
     }
 }
 

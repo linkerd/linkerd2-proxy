@@ -635,6 +635,7 @@ dependencies = [
  "linkerd2-exp-backoff",
  "linkerd2-http-classify",
  "linkerd2-http-metrics",
+ "linkerd2-lock",
  "linkerd2-metrics",
  "linkerd2-opencensus",
  "linkerd2-proxy-api",

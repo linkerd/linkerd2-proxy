@@ -64,11 +64,7 @@ impl Config {
                     .push_on_response(proxy::grpc::req_body_as_payload::layer())
                     .push(control::add_origin::layer())
                     .into_new_service()
-                    .push_on_response(svc::layers().push_buffer(
-                        control.buffer.max_in_flight,
-                        control.buffer.dispatch_timeout,
-                    ))
-                    .into_inner()
+                    .push_on_response(svc::layers().push_lock())
                     .new_service(addr.clone());
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
