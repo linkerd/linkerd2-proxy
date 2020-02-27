@@ -1,68 +1,72 @@
-use super::Endpoint;
 use crate::proxy::http::{orig_proto, settings::Settings};
-use crate::svc;
+use crate::svc::stack;
+use crate::Endpoint;
 use futures::{try_ready, Future, Poll};
-use http;
-use std::marker::PhantomData;
+use tower::util::Either;
 use tracing::trace;
 
-#[derive(Debug)]
-pub struct Layer<A, B>(PhantomData<fn(A) -> B>);
+#[derive(Clone, Debug, Default)]
+pub struct OrigProtoUpgradeLayer(());
 
-#[derive(Debug)]
-pub struct MakeSvc<M, A, B> {
+#[derive(Clone, Debug)]
+pub struct OrigProtoUpgrade<M> {
     inner: M,
-    _marker: PhantomData<fn(A) -> B>,
 }
 
-pub struct MakeFuture<F, A, B> {
+pub struct UpgradeFuture<F> {
     can_upgrade: bool,
     inner: F,
-    _marker: PhantomData<fn(A) -> B>,
+    was_absolute: bool,
 }
 
-pub fn layer<A, B>() -> Layer<A, B> {
-    Layer(PhantomData)
-}
-
-impl<A, B> Clone for Layer<A, B> {
-    fn clone(&self) -> Self {
-        Layer(PhantomData)
+impl OrigProtoUpgradeLayer {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
-impl<M, A, B> svc::Layer<M> for Layer<A, B>
-where
-    M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
-{
-    type Service = MakeSvc<M, A, B>;
+impl<M> tower::layer::Layer<M> for OrigProtoUpgradeLayer {
+    type Service = OrigProtoUpgrade<M>;
 
     fn layer(&self, inner: M) -> Self::Service {
-        MakeSvc {
-            inner,
-            _marker: PhantomData,
-        }
+        Self::Service { inner }
     }
 }
 
-// === impl MakeSvc ===
+// === impl OrigProtoUpgrade ===
 
-impl<M: Clone, A, B> Clone for MakeSvc<M, A, B> {
-    fn clone(&self) -> Self {
-        MakeSvc {
-            inner: self.inner.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<M, A, B> svc::Service<Endpoint> for MakeSvc<M, A, B>
+impl<N> stack::NewService<Endpoint> for OrigProtoUpgrade<N>
 where
-    M: svc::MakeService<Endpoint, http::Request<A>, Response = http::Response<B>>,
+    N: stack::NewService<Endpoint>,
 {
-    type Response = svc::Either<orig_proto::Upgrade<M::Service>, M::Service>;
-    type Error = M::MakeError;
-    type Future = MakeFuture<M::Future, A, B>;
+    type Service = Either<orig_proto::Upgrade<N::Service>, N::Service>;
+
+    fn new_service(&self, mut endpoint: Endpoint) -> Self::Service {
+        if !endpoint.can_use_orig_proto() {
+            trace!("Endpoint does not support transparent HTTP/2 upgrades");
+            return Either::B(self.inner.new_service(endpoint));
+        }
+
+        let was_absolute = endpoint.http_settings.was_absolute_form();
+        trace!(
+            header = %orig_proto::L5D_ORIG_PROTO,
+            was_absolute,
+            "Endpoint supports transparent HTTP/2 upgrades",
+        );
+        endpoint.http_settings = Settings::Http2;
+
+        let inner = self.inner.new_service(endpoint);
+        Either::A(orig_proto::Upgrade::new(inner, was_absolute))
+    }
+}
+
+impl<M> tower::Service<Endpoint> for OrigProtoUpgrade<M>
+where
+    M: tower::Service<Endpoint>,
+{
+    type Response = Either<orig_proto::Upgrade<M::Response>, M::Response>;
+    type Error = M::Error;
+    type Future = UpgradeFuture<M::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.inner.poll_ready()
@@ -71,41 +75,42 @@ where
     fn call(&mut self, mut endpoint: Endpoint) -> Self::Future {
         let can_upgrade = endpoint.can_use_orig_proto();
 
+        let was_absolute = endpoint.http_settings.was_absolute_form();
         if can_upgrade {
             trace!(
-                "supporting {} upgrades for endpoint={:?}",
-                orig_proto::L5D_ORIG_PROTO,
-                endpoint,
+                header = %orig_proto::L5D_ORIG_PROTO,
+                %was_absolute,
+                "Endpoint supports transparent HTTP/2 upgrades",
             );
             endpoint.http_settings = Settings::Http2;
         }
 
-        let inner = self.inner.make_service(endpoint);
-        MakeFuture {
+        let inner = self.inner.call(endpoint);
+        UpgradeFuture {
             can_upgrade,
             inner,
-            _marker: PhantomData,
+            was_absolute,
         }
     }
 }
 
-// === impl MakeFuture ===
+// === impl UpgradeFuture ===
 
-impl<F, A, B> Future for MakeFuture<F, A, B>
+impl<F> Future for UpgradeFuture<F>
 where
     F: Future,
-    F::Item: svc::Service<http::Request<A>, Response = http::Response<B>>,
 {
-    type Item = svc::Either<orig_proto::Upgrade<F::Item>, F::Item>;
+    type Item = Either<orig_proto::Upgrade<F::Item>, F::Item>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
 
         if self.can_upgrade {
-            Ok(svc::Either::A(orig_proto::Upgrade::new(inner)).into())
+            let upgrade = orig_proto::Upgrade::new(inner, self.was_absolute);
+            Ok(Either::A(upgrade).into())
         } else {
-            Ok(svc::Either::B(inner).into())
+            Ok(Either::B(inner).into())
         }
     }
 }
