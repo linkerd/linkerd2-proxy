@@ -25,7 +25,7 @@ use linkerd2_app_core::{
     reconnect, router, serve,
     spans::SpanConverter,
     svc,
-    transport::{self, tls, OrigDstAddr, SysOrigDstAddr},
+    transport::{self, io::BoxedIo, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, DispatchDeadline, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_SERVER_ID,
 };
@@ -105,10 +105,8 @@ impl<A: OrigDstAddr> Config<A> {
             // Establishes connections to the local application (for both
             // TCP forwarding and HTTP proxying).
             let connect_stack = svc::connect(connect.keepalive)
-                // XXX We shouldn't ever to attempt to actually establish TLS
-                // here, but we rely on the IO-boxing behavior to ensure that
-                // shutdown is propagated properly.
-                .push(tls::ConnectLayer::new(local_identity.clone()))
+                // Ensures that shutdown is propagated properly.
+                .push_map_response(BoxedIo::new)
                 .push_timeout(connect.timeout)
                 .push(metrics.transport.layer_connect(TransportLabels))
                 .push(rewrite_loopback_addr::layer());
