@@ -22,7 +22,7 @@ use linkerd2_app_core::{
     reconnect, retry, router, serve,
     spans::SpanConverter,
     svc,
-    transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
+    transport::{self, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, Conditional, DispatchDeadline, Error, ProxyMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID,
     L5D_SERVER_ID,
@@ -44,6 +44,7 @@ mod require_identity_on_endpoint;
 
 pub use self::endpoint::Endpoint;
 use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
+use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -119,15 +120,15 @@ impl<A: OrigDstAddr> Config<A> {
         let serve = Box::new(future::lazy(move || {
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
-            let connect_stack = svc::stack(connect::svc(connect.keepalive))
-                .push(tls::client::layer(local_identity))
+            let connect_stack = svc::connect(connect.keepalive)
+                .push(tls::ConnectLayer::new(local_identity))
                 .push_timeout(connect.timeout)
                 .push(metrics.transport.layer_connect(TransportLabels));
 
             // Instantiates an HTTP client for for a `client::Config`
             let client_stack = connect_stack
                 .clone()
-                .push(http::client::layer(connect.h2_settings))
+                .push(http::MakeClientLayer::new(connect.h2_settings))
                 .push(reconnect::layer({
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
@@ -164,7 +165,7 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(
                     metrics.http_endpoint.into_layer::<classify::Response>()
                 )
-                .push(require_identity_on_endpoint::layer())
+                .push(MakeRequireIdentityLayer::new())
                 .instrument(|endpoint: &Endpoint| {
                     info_span!("endpoint", peer.addr = %endpoint.addr, peer.id = ?endpoint.identity)
                 })
@@ -238,7 +239,7 @@ impl<A: OrigDstAddr> Config<A> {
                     .push(http::insert::target::layer())
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
                     .push(retry::layer(metrics.http_route_retry))
-                    .push(http::timeout::layer())
+                    .push(http::MakeTimeoutLayer::default())
                     .push(metrics.http_route.into_layer::<classify::Response>())
                     .push(classify::Layer::new())
                     .push_into_new_service()

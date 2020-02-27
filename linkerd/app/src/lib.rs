@@ -115,7 +115,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
                 proxy::grpc,
                 reconnect,
                 svc::{self, NewService},
-                transport::{connect, tls},
+                transport::tls,
             };
 
             let metrics = metrics.control.clone();
@@ -125,8 +125,8 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
                 // task in the build, so we'd have to name the motherfucker. And that's
                 // not happening today. Really, we should daemonize the whole client
                 // into a task so consumers can be ignorant.
-                let svc = svc::stack(connect::svc(dst.control.connect.keepalive))
-                    .push(tls::client::layer(identity.local()))
+                let svc = svc::connect(dst.control.connect.keepalive)
+                    .push(tls::ConnectLayer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns))

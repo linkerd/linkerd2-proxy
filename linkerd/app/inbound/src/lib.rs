@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         self,
-        http::{client, insert, normalize_uri, orig_proto, settings, strip_header},
+        http::{self, insert, normalize_uri, orig_proto, settings, strip_header},
         identity,
         server::{Protocol as ServerProtocol, Server},
         tap, tcp,
@@ -25,7 +25,7 @@ use linkerd2_app_core::{
     reconnect, router, serve,
     spans::SpanConverter,
     svc,
-    transport::{self, connect, tls, OrigDstAddr, SysOrigDstAddr},
+    transport::{self, io::BoxedIo, tls, OrigDstAddr, SysOrigDstAddr},
     Addr, DispatchDeadline, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_SERVER_ID,
 };
@@ -103,8 +103,9 @@ impl<A: OrigDstAddr> Config<A> {
         let serve = Box::new(future::lazy(move || {
             // Establishes connections to the local application (for both
             // TCP forwarding and HTTP proxying).
-            let connect_stack = svc::stack(connect::svc(connect.keepalive))
-                .push(tls::client::layer(local_identity.clone()))
+            let connect_stack = svc::connect(connect.keepalive)
+                // Ensures that shutdown is propagated properly.
+                .push_map_response(BoxedIo::new)
                 .push_timeout(connect.timeout)
                 .push(metrics.transport.layer_connect(TransportLabels))
                 .push(rewrite_loopback_addr::layer());
@@ -112,7 +113,7 @@ impl<A: OrigDstAddr> Config<A> {
             // Instantiates an HTTP client for a `client::Config`
             let client_stack = connect_stack
                 .clone()
-                .push(client::layer(connect.h2_settings))
+                .push(http::MakeClientLayer::new(connect.h2_settings))
                 .push(reconnect::layer({
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())

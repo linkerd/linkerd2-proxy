@@ -1,4 +1,3 @@
-use super::tls;
 use futures::{try_ready, Future, Poll};
 use indexmap::IndexMap;
 use linkerd2_metrics::{
@@ -6,7 +5,6 @@ use linkerd2_metrics::{
 };
 use std::fmt;
 use std::hash::Hash;
-use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -46,18 +44,16 @@ pub struct Report<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 
 #[derive(Debug)]
-pub struct LayerConnect<L: TransportLabels<T>, T, M> {
+pub struct ConnectLayer<L, K: Eq + Hash + FmtLabels> {
     label: L,
-    registry: Arc<Mutex<Inner<L::Labels>>>,
-    _p: PhantomData<fn() -> (T, M)>,
+    registry: Arc<Mutex<Inner<K>>>,
 }
 
 #[derive(Debug)]
-pub struct Connect<L: TransportLabels<T>, T, M> {
+pub struct Connect<L, K: Eq + Hash + FmtLabels, M> {
     label: L,
     inner: M,
-    registry: Arc<Mutex<Inner<L::Labels>>>,
-    _p: PhantomData<fn(T) -> ()>,
+    registry: Arc<Mutex<Inner<K>>>,
 }
 
 pub struct Connecting<F> {
@@ -176,12 +172,8 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
 // ===== impl Registry =====
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
-    pub fn layer_connect<T, L, M>(&self, label: L) -> LayerConnect<L, T, M>
-    where
-        L: TransportLabels<T, Labels = K>,
-        M: tower::MakeConnection<T>,
-    {
-        LayerConnect::new(label, self.0.clone())
+    pub fn layer_connect<L>(&self, label: L) -> ConnectLayer<L, K> {
+        ConnectLayer::new(label, self.0.clone())
     }
 
     pub fn wrap_server_transport<T: AsyncRead + AsyncWrite>(&self, labels: K, io: T) -> Io<T> {
@@ -195,47 +187,34 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
     }
 }
 
-impl<L: TransportLabels<T>, T, M> LayerConnect<L, T, M> {
-    fn new(label: L, registry: Arc<Mutex<Inner<L::Labels>>>) -> Self {
-        Self {
-            label,
-            registry,
-            _p: PhantomData,
-        }
+impl<L, K: Eq + Hash + FmtLabels> ConnectLayer<L, K> {
+    fn new(label: L, registry: Arc<Mutex<Inner<K>>>) -> Self {
+        Self { label, registry }
     }
 }
 
-impl<L, T, M> Clone for LayerConnect<L, T, M>
-where
-    L: TransportLabels<T> + Clone,
-    T: Clone,
-{
+impl<L: Clone, K: Eq + Hash + FmtLabels> Clone for ConnectLayer<L, K> {
     fn clone(&self) -> Self {
         Self::new(self.label.clone(), self.registry.clone())
     }
 }
 
-impl<L, T, M> tower::layer::Layer<M> for LayerConnect<L, T, M>
-where
-    L: TransportLabels<T> + Clone,
-    T: tls::HasPeerIdentity,
-    M: tower::MakeConnection<T>,
-{
-    type Service = Connect<L, T, M>;
+impl<L: Clone, K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLayer<L, K> {
+    type Service = Connect<L, K, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
         Connect {
             inner,
             label: self.label.clone(),
             registry: self.registry.clone(),
-            _p: PhantomData,
         }
     }
 }
 
-impl<L, T, M> Clone for Connect<L, T, M>
+impl<L, K, M> Clone for Connect<L, K, M>
 where
-    L: TransportLabels<T> + Clone,
+    L: Clone,
+    K: Eq + Hash + FmtLabels,
     M: Clone,
 {
     fn clone(&self) -> Self {
@@ -243,14 +222,13 @@ where
             inner: self.inner.clone(),
             label: self.label.clone(),
             registry: self.registry.clone(),
-            _p: PhantomData,
         }
     }
 }
 
-// === impl MakeConnection ===
+// === impl Connect ===
 
-impl<L, T, M> tower::Service<T> for Connect<L, T, M>
+impl<L, T, M> tower::Service<T> for Connect<L, L::Labels, M>
 where
     L: TransportLabels<T>,
     M: tower::MakeConnection<T>,

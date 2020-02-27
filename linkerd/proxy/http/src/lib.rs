@@ -24,9 +24,10 @@ pub mod upgrade;
 mod version;
 
 pub use self::{
-    client::Client,
+    client::MakeClientLayer,
     glue::{HttpBody as Body, HyperServerSvc},
     settings::Settings,
+    timeout::MakeTimeoutLayer,
     version::Version,
 };
 pub use http::{header, uri, Request, Response};

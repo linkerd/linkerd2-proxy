@@ -6,14 +6,14 @@ pub use rustls::ClientConfig as Config;
 use std::io;
 use std::sync::Arc;
 use tokio::net::TcpStream;
-use tracing::trace;
+use tracing::{debug, trace};
 
 pub trait HasConfig {
     fn tls_client_config(&self) -> Arc<Config>;
 }
 
 #[derive(Clone, Debug)]
-pub struct Layer<L>(super::Conditional<L>);
+pub struct ConnectLayer<L>(super::Conditional<L>);
 
 #[derive(Clone, Debug)]
 pub struct Connect<L, C> {
@@ -32,16 +32,15 @@ pub enum ConnectFuture<L, F: Future> {
     Handshake(tokio_rustls::Connect<F::Item>),
 }
 
-// === impl Layer ===
+// === impl ConnectLayer ===
 
-pub fn layer<L: HasConfig + Clone>(l: super::Conditional<L>) -> Layer<L> {
-    Layer(l)
+impl<L> ConnectLayer<L> {
+    pub fn new(l: super::Conditional<L>) -> ConnectLayer<L> {
+        ConnectLayer(l)
+    }
 }
 
-impl<L, C> tower::layer::Layer<C> for Layer<L>
-where
-    L: HasConfig + Clone,
-{
+impl<L: Clone, C> tower::layer::Layer<C> for ConnectLayer<L> {
     type Service = Connect<L, C>;
 
     fn layer(&self, inner: C) -> Self::Service {
@@ -55,11 +54,11 @@ where
 // === impl Connect ===
 
 /// impl MakeConnection
-impl<L, C, Target> tower::Service<Target> for Connect<L, C>
+impl<L, C, T> tower::Service<T> for Connect<L, C>
 where
-    Target: super::HasPeerIdentity,
+    T: super::HasPeerIdentity,
     L: HasConfig + Clone,
-    C: tower::MakeConnection<Target, Connection = TcpStream>,
+    C: tower::MakeConnection<T, Connection = TcpStream>,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,
     C::Error: From<io::Error>,
@@ -72,8 +71,9 @@ where
         self.inner.poll_ready()
     }
 
-    fn call(&mut self, target: Target) -> Self::Future {
+    fn call(&mut self, target: T) -> Self::Future {
         let peer_identity = target.peer_identity();
+        debug!(peer.identity = ?peer_identity);
         let tls = self
             .local
             .clone()
