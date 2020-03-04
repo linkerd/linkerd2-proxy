@@ -1303,9 +1303,11 @@ dependencies = [
  "futures",
  "linkerd2-error",
  "linkerd2-stack",
+ "tokio",
  "tokio-connect",
  "tokio-timer",
  "tower",
+ "tower-test",
  "tracing",
 ]
 
@@ -2578,6 +2580,17 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tower-util",
+]
+
+[[package]]
+name = "tower-test"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99a0b25036e2c58f681a04a5b312e9283d229445ad5e1221a1b7a4630df6fbdf"
+dependencies = [
+ "futures",
+ "tokio-sync",
+ "tower-service",
 ]
 
 [[package]]

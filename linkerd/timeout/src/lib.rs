@@ -8,6 +8,13 @@ use tokio_connect::Connect;
 use tokio_timer as timer;
 
 pub mod error;
+pub mod failfast;
+pub mod idle;
+
+pub use self::{
+    failfast::{FailFast, FailFastError, FailFastLayer},
+    idle::{Idle, IdleError, IdleLayer},
+};
 
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]
