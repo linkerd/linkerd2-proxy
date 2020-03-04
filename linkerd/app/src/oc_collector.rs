@@ -62,7 +62,7 @@ impl Config {
                         move |_| Ok(backoff.stream())
                     }))
                     .push_on_response(proxy::grpc::req_body_as_payload::layer())
-                    .push(control::add_origin::layer())
+                    .push(control::add_origin::Layer::new())
                     .into_new_service()
                     .new_service(addr.clone());
 

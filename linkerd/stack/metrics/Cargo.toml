@@ -8,9 +8,7 @@ publish = false
 [dependencies]
 futures = "0.1"
 indexmap = "1.0"
-linkerd2-error = { path  = "../../error" }
 linkerd2-metrics = { path  = "../../metrics" }
-linkerd2-stack = { path  = ".." }
 tokio = "0.1"
 tokio-timer = "0.2"   # for tokio_timer::clock
 tower = "0.1"

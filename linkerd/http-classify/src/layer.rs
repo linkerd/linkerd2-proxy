@@ -1,16 +1,16 @@
 use super::{CanClassify, Classify};
-use futures::{try_ready, Future, Poll};
+use linkerd2_stack as stack;
 
 #[derive(Debug, Clone)]
 pub struct Layer(());
 
 #[derive(Clone, Debug)]
-pub struct Make<N> {
+pub struct NewProxy<N> {
     inner: N,
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<C, P> {
+pub struct Proxy<C, P> {
     classify: C,
     inner: P,
 }
@@ -22,68 +22,41 @@ impl Layer {
 }
 
 impl<N> tower::layer::Layer<N> for Layer {
-    type Service = Make<N>;
+    type Service = NewProxy<N>;
 
     fn layer(&self, inner: N) -> Self::Service {
         Self::Service { inner }
     }
 }
 
-impl<T, N> tower::Service<T> for Make<N>
+impl<T, N> stack::NewService<T> for NewProxy<N>
 where
     T: CanClassify,
-    T::Classify: Clone,
-    N: tower::Service<T>,
+    N: stack::NewService<T>,
 {
-    type Response = Service<T::Classify, N::Response>;
-    type Error = N::Error;
-    type Future = Service<T::Classify, N::Future>;
+    type Service = Proxy<T::Classify, N::Service>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
+    fn new_service(&self, target: T) -> Self::Service {
         let classify = target.classify();
-        let inner = self.inner.call(target);
-        Self::Future { classify, inner }
+        let inner = self.inner.new_service(target);
+        Proxy { classify, inner }
     }
 }
 
-impl<C, F> Future for Service<C, F>
-where
-    C: Classify + Clone,
-    F: Future,
-{
-    type Item = Service<C, F::Item>;
-    type Error = F::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
-        let classify = Service {
-            inner,
-            classify: self.classify.clone(),
-        };
-        Ok(classify.into())
-    }
-}
-
-impl<C, S, B> tower::Service<http::Request<B>> for Service<C, S>
+impl<C, P, S, B> stack::Proxy<http::Request<B>, S> for Proxy<C, P>
 where
     C: Classify,
-    S: tower::Service<http::Request<B>>,
+    P: stack::Proxy<http::Request<B>, S>,
+    S: tower::Service<P::Request>,
 {
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = P::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
-
-    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+    fn proxy(&self, svc: &mut S, mut req: http::Request<B>) -> Self::Future {
         let classify_rsp = self.classify.classify(&req);
         let _ = req.extensions_mut().insert(classify_rsp);
-        self.inner.call(req)
+        self.inner.proxy(svc, req)
     }
 }

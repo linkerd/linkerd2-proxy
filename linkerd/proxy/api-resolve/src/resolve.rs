@@ -5,7 +5,7 @@ use crate::pb;
 use futures::{future, try_ready, Future, Poll, Stream};
 use tower::Service;
 use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 #[derive(Clone)]
 pub struct Resolve<S> {
@@ -27,10 +27,7 @@ where
     <S::ResponseBody as Body>::Data: Send,
     S::Future: Send,
 {
-    pub fn new<T>(svc: S) -> Self
-    where
-        Self: resolve::Resolve<T>,
-    {
+    pub fn new(svc: S) -> Self {
         Self {
             service: api::client::Destination::new(svc),
             scheme: "".into(),
@@ -74,7 +71,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let path = target.to_string();
-        trace!("resolve {:?}", path);
+        debug!(dst = %path, context=%self.context_token, "Resolving");
         self.service
             .get(grpc::Request::new(api::GetDestination {
                 path,
@@ -82,7 +79,7 @@ where
                 context_token: self.context_token.clone(),
             }))
             .map(|rsp| {
-                debug!(metadata = ?rsp.metadata());
+                trace!(metadata = ?rsp.metadata());
                 Resolution {
                     inner: rsp.into_inner(),
                 }
@@ -112,6 +109,7 @@ where
                             .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
                             .collect::<Vec<_>>();
                         if !addr_metas.is_empty() {
+                            debug!(endpoints = %addr_metas.len(), "Add");
                             return Ok(Update::Add(addr_metas).into());
                         }
                     }
@@ -122,11 +120,13 @@ where
                             .filter_map(pb::to_sock_addr)
                             .collect::<Vec<_>>();
                         if !sock_addrs.is_empty() {
+                            debug!(endpoints = %sock_addrs.len(), "Remove");
                             return Ok(Update::Remove(sock_addrs).into());
                         }
                     }
 
                     Some(api::update::Update::NoEndpoints(api::NoEndpoints { exists })) => {
+                        info!("No endpoints");
                         let update = if exists {
                             Update::Empty
                         } else {
@@ -137,7 +137,6 @@ where
 
                     None => {} // continue
                 },
-
                 None => return Err(grpc::Status::new(grpc::Code::Ok, "end of stream")),
             };
         }

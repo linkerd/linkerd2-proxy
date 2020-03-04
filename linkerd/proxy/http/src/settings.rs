@@ -17,14 +17,16 @@ pub enum Settings {
         was_absolute_form: bool,
     },
     Http2,
-
-    /// Used for types that need to hold a `Settings`, but **WON'T** configure
-    /// an HTTP client. Passing this variant to the `Client` will panic.
-    NotHttp,
 }
 
 pub trait HasSettings {
     fn http_settings(&self) -> &Settings;
+}
+
+impl HasSettings for Settings {
+    fn http_settings(&self) -> &Settings {
+        self
+    }
 }
 
 // ===== impl Settings =====
@@ -62,14 +64,14 @@ impl Settings {
             Settings::Http1 {
                 was_absolute_form, ..
             } => *was_absolute_form,
-            Settings::Http2 | Settings::NotHttp => false,
+            Settings::Http2 => false,
         }
     }
 
     pub fn is_http2(&self) -> bool {
         match self {
             Settings::Http2 => true,
-            Settings::Http1 { .. } | Settings::NotHttp => false,
+            Settings::Http1 { .. } => false,
         }
     }
 }

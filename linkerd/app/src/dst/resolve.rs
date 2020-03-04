@@ -1,11 +1,11 @@
 use ipnet::{Contains, IpNet};
 use linkerd2_app_core::{
     dns::Suffix,
-    dst::DstAddr,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     proxy::{api_resolve as api, resolve::recover},
-    request_filter, Addr, Error, Recover,
+    request_filter, Addr, DiscoveryRejected, Error, Recover,
 };
+use linkerd2_app_outbound::Target;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tower_grpc::{generic::client::GrpcService, Body, BoxBody, Code, Status};
@@ -30,9 +30,9 @@ where
 {
     request_filter::Service::new(
         PermitConfiguredDsts::new(suffixes, nets),
-        recover::Resolve::new::<DstAddr>(
+        recover::Resolve::new(
             backoff.into(),
-            api::Resolve::new::<DstAddr>(service).with_context_token(token),
+            api::Resolve::new(service).with_context_token(token),
         ),
     )
 }
@@ -45,9 +45,6 @@ pub struct PermitConfiguredDsts {
 
 #[derive(Clone, Debug, Default)]
 pub struct BackoffUnlessInvalidArgument(ExponentialBackoff);
-
-#[derive(Debug)]
-pub struct Unresolvable(());
 
 // === impl PermitConfiguredDsts ===
 
@@ -63,12 +60,12 @@ impl PermitConfiguredDsts {
     }
 }
 
-impl request_filter::RequestFilter<DstAddr> for PermitConfiguredDsts {
-    type Error = Unresolvable;
+impl<T> request_filter::RequestFilter<Target<T>> for PermitConfiguredDsts {
+    type Error = DiscoveryRejected;
 
-    fn filter(&self, dst: DstAddr) -> Result<DstAddr, Self::Error> {
-        let permitted = match dst.dst_concrete() {
-            Addr::Name(name) => self
+    fn filter(&self, t: Target<T>) -> Result<Target<T>, Self::Error> {
+        let permitted = match t.addr {
+            Addr::Name(ref name) => self
                 .name_suffixes
                 .iter()
                 .any(|suffix| suffix.contains(name.name())),
@@ -80,22 +77,12 @@ impl request_filter::RequestFilter<DstAddr> for PermitConfiguredDsts {
         };
 
         if permitted {
-            Ok(dst)
+            Ok(t)
         } else {
-            Err(Unresolvable(()))
+            Err(DiscoveryRejected::new())
         }
     }
 }
-
-// === impl Unresolvable ===
-
-impl std::fmt::Display for Unresolvable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unresolvable")
-    }
-}
-
-impl std::error::Error for Unresolvable {}
 
 // === impl BackoffUnlessInvalidArgument ===
 
@@ -113,10 +100,10 @@ impl Recover<Error> for BackoffUnlessInvalidArgument {
         match err.downcast::<Status>() {
             Ok(ref status) if status.code() == Code::InvalidArgument => {
                 tracing::debug!(message = "cannot recover", %status);
-                return Err(Unresolvable(()).into());
+                return Err(DiscoveryRejected::new().into());
             }
-            Ok(status) => tracing::debug!(message = "recovering", %status),
-            Err(error) => tracing::debug!(message = "recovering", %error),
+            Ok(status) => tracing::trace!(message = "recovering", %status),
+            Err(error) => tracing::trace!(message = "recovering", %error),
         }
 
         Ok(self.0.stream())
