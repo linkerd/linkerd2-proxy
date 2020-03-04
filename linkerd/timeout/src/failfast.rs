@@ -23,7 +23,7 @@ pub struct FailFastError(());
 #[derive(Debug)]
 enum State {
     Open,
-    Busy(Delay),
+    Waiting(Delay),
     FailFast,
 }
 
@@ -69,10 +69,12 @@ where
             Ok(Async::NotReady) => loop {
                 self.state = match self.state {
                     // The inner service just transitioned to NotReady, so initiate a new timeout.
-                    State::Open => State::Busy(Delay::new(Instant::now() + self.max_unavailable)),
+                    State::Open => {
+                        State::Waiting(Delay::new(Instant::now() + self.max_unavailable))
+                    }
 
                     // A timeout has been set, so wait for it to complete.
-                    State::Busy(ref mut fut) => {
+                    State::Waiting(ref mut fut) => {
                         let poll = fut.poll();
                         debug_assert!(poll.is_ok(), "timer must not fail");
                         if let Ok(Async::NotReady) = poll {
@@ -101,7 +103,7 @@ where
         match self.state {
             State::Open => ResponseFuture::Inner(self.inner.call(req)),
             State::FailFast => ResponseFuture::FailFast,
-            State::Busy(_) => panic!("poll_ready must be called"),
+            State::Waiting(_) => panic!("poll_ready must be called"),
         }
     }
 }
