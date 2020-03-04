@@ -139,7 +139,7 @@ impl<A: OrigDstAddr + Send + 'static> Config<A> {
                     .push_on_response(
                         svc::layers()
                             .push(grpc::req_body_as_payload::layer())
-                            .push_buffer(dst.control.buffer_capacity),
+                            .push_spawn_buffer(dst.control.buffer_capacity),
                     )
                     .new_service(dst.control.addr.clone());
                 dst.build(svc)

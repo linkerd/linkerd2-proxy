@@ -1,9 +1,10 @@
 // Possibly unused, but useful during development.
 
-pub use crate::proxy::{buffer, http};
+pub use crate::proxy::http;
 use crate::transport::Connect;
 use crate::{cache, Error};
 use linkerd2_box as boxed;
+pub use linkerd2_buffer as buffer;
 use linkerd2_concurrency_limit as concurrency_limit;
 pub use linkerd2_lock as lock;
 pub use linkerd2_stack::{self as stack, layer, NewService};
@@ -69,11 +70,14 @@ impl<L> Layers<L> {
     }
 
     /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
-    pub fn push_buffer<Req>(self, bound: usize) -> Layers<Pair<L, buffer::Layer<Req>>>
+    pub fn push_spawn_buffer<Req>(
+        self,
+        capacity: usize,
+    ) -> Layers<Pair<L, buffer::SpawnBufferLayer<Req>>>
     where
         Req: Send + 'static,
     {
-        self.push(buffer::Layer::new(bound))
+        self.push(buffer::SpawnBufferLayer::new(capacity))
     }
 
     /// Makes the inner service shareable in a mutually-exclusive fashion.
@@ -175,14 +179,15 @@ impl<S> Stack<S> {
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn push_buffer<Req>(self, bound: usize) -> Stack<buffer::Buffer<S, Req>>
+    pub fn spawn_buffer<Req>(self, capacity: usize) -> Stack<buffer::Buffer<Req, S::Response>>
     where
         Req: Send + 'static,
         S: Service<Req> + Send + 'static,
+        S::Response: Send + 'static,
         S::Error: Into<Error> + Send + Sync,
         S::Future: Send,
     {
-        self.push(buffer::Layer::new(bound))
+        self.push(buffer::SpawnBufferLayer::new(capacity))
     }
 
     /// Assuming `S` implements `NewService` or `MakeService`, applies the given

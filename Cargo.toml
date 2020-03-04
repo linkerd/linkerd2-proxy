@@ -10,6 +10,7 @@ members = [
     "linkerd/app",
     "linkerd/cache",
     "linkerd/box",
+    "linkerd/buffer",
     "linkerd/concurrency-limit",
     "linkerd/conditional",
     "linkerd/dns/name",
