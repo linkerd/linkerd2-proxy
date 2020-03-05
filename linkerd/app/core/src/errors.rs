@@ -1,14 +1,16 @@
 use crate::proxy::http::timeout::error as timeout;
-use crate::proxy::{buffer, identity};
+use crate::proxy::identity;
 use http::{header::HeaderValue, StatusCode};
+use linkerd2_cache::error as cache;
 use linkerd2_error::Error;
 use linkerd2_error_metrics as metrics;
 use linkerd2_error_respond as respond;
+pub use linkerd2_error_respond::RespondLayer;
+use linkerd2_lock as lock;
 use linkerd2_proxy_http::HasH2Reason;
-use linkerd2_router::error as router;
 use tower::load_shed::error as shed;
 use tower_grpc::{self as grpc, Code};
-use tracing::{debug, warn};
+use tracing::debug;
 
 pub fn layer<B: Default>() -> respond::RespondLayer<NewRespond<B>> {
     respond::RespondLayer::new(NewRespond(std::marker::PhantomData))
@@ -73,7 +75,7 @@ impl<B: Default> respond::Respond for Respond<B> {
     type Response = http::Response<B>;
 
     fn respond(&self, error: Error) -> Result<Self::Response, Error> {
-        warn!("Failed to proxy request: {}", error);
+        tracing::warn!("Failed to proxy request: {}", error);
 
         if let Respond::Http2 { is_grpc } = self {
             if let Some(reset) = error.h2_reason() {
@@ -87,7 +89,7 @@ impl<B: Default> respond::Respond for Respond<B> {
                     .header(http::header::CONTENT_LENGTH, "0")
                     .body(B::default())
                     .expect("app::errors response is valid");
-                let code = set_grpc_status(error, rsp.headers_mut());
+                let code = set_grpc_status(&error, rsp.headers_mut());
                 debug!(?code, "Handling error with gRPC status");
                 return Ok(rsp);
             }
@@ -98,7 +100,7 @@ impl<B: Default> respond::Respond for Respond<B> {
             Respond::Http2 { .. } => http::Version::HTTP_2,
         };
 
-        let status = http_status(error);
+        let status = http_status(&error);
         debug!(%status, ?version, "Handling error with HTTP response");
         Ok(http::Response::builder()
             .version(version)
@@ -109,23 +111,25 @@ impl<B: Default> respond::Respond for Respond<B> {
     }
 }
 
-fn http_status(error: Error) -> StatusCode {
+fn http_status(error: &Error) -> StatusCode {
     if error.is::<timeout::ResponseTimeout>() {
         http::StatusCode::GATEWAY_TIMEOUT
-    } else if error.is::<router::NoCapacity>() {
+    } else if error.is::<cache::NoCapacity>() {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<shed::Overloaded>() {
         http::StatusCode::SERVICE_UNAVAILABLE
-    } else if error.is::<buffer::Aborted>() {
+    } else if error.is::<tower::timeout::error::Elapsed>() {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<IdentityRequired>() {
         http::StatusCode::FORBIDDEN
+    } else if let Some(e) = error.downcast_ref::<lock::error::ServiceError>() {
+        http_status(e.inner())
     } else {
         http::StatusCode::BAD_GATEWAY
     }
 }
 
-fn set_grpc_status(error: Error, headers: &mut http::HeaderMap) -> Code {
+fn set_grpc_status(error: &Error, headers: &mut http::HeaderMap) -> grpc::Code {
     const GRPC_STATUS: &'static str = "grpc-status";
     const GRPC_MESSAGE: &'static str = "grpc-message";
 
@@ -134,7 +138,7 @@ fn set_grpc_status(error: Error, headers: &mut http::HeaderMap) -> Code {
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("request timed out"));
         code
-    } else if error.is::<router::NoCapacity>() {
+    } else if error.is::<cache::NoCapacity>() {
         let code = Code::Unavailable;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(
@@ -150,7 +154,7 @@ fn set_grpc_status(error: Error, headers: &mut http::HeaderMap) -> Code {
             HeaderValue::from_static("proxy max-concurrency exhausted"),
         );
         code
-    } else if error.is::<buffer::Aborted>() {
+    } else if error.is::<tower::timeout::error::Elapsed>() {
         let code = Code::Unavailable;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(
@@ -165,6 +169,8 @@ fn set_grpc_status(error: Error, headers: &mut http::HeaderMap) -> Code {
             headers.insert(GRPC_MESSAGE, msg);
         }
         code
+    } else if let Some(e) = error.downcast_ref::<lock::error::ServiceError>() {
+        set_grpc_status(e.inner(), headers)
     } else {
         let code = Code::Internal;
         headers.insert(GRPC_STATUS, code_header(code));
@@ -230,11 +236,11 @@ impl metrics::LabelError<Error> for LabelError {
     fn label_error(&self, err: &Error) -> Self::Labels {
         let reason = if err.is::<timeout::ResponseTimeout>() {
             Reason::ResponseTimeout
-        } else if err.is::<router::NoCapacity>() {
+        } else if err.is::<cache::NoCapacity>() {
             Reason::CacheFull
         } else if err.is::<shed::Overloaded>() {
             Reason::LoadShed
-        } else if err.is::<buffer::Aborted>() {
+        } else if err.is::<tower::timeout::error::Elapsed>() {
             Reason::DispatchTimeout
         } else if err.is::<IdentityRequired>() {
             Reason::IdentityRequired
@@ -252,7 +258,7 @@ impl metrics::FmtLabels for Reason {
             f,
             "message=\"{}\"",
             match self {
-                Reason::CacheFull => "router full",
+                Reason::CacheFull => "cache full",
                 Reason::LoadShed => "load shed",
                 Reason::DispatchTimeout => "dispatch timeout",
                 Reason::ResponseTimeout => "response timeout",

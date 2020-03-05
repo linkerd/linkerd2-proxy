@@ -1,16 +1,17 @@
-use crate::proxy::{buffer, http};
+// Possibly unused, but useful during development.
+
+pub use crate::proxy::{buffer, http};
 use crate::transport::Connect;
-use crate::Error;
-pub use linkerd2_box as boxed;
+use crate::{cache, Error};
+use linkerd2_box as boxed;
 use linkerd2_concurrency_limit as concurrency_limit;
-use linkerd2_lock::LockLayer;
-pub use linkerd2_stack::{self as stack, fallback, layer, new_service, NewService, Shared};
+pub use linkerd2_lock as lock;
+pub use linkerd2_stack::{self as stack, layer, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
+pub use linkerd2_timeout as timeout;
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::layer::Layer;
-use tower::load_shed::LoadShedLayer;
-use tower::timeout::TimeoutLayer;
 pub use tower::util::{Either, Oneshot};
 pub use tower::{service_fn as mk, MakeConnection, MakeService, Service, ServiceExt};
 use tower_spawn_ready::SpawnReadyLayer;
@@ -33,30 +34,51 @@ pub fn connect(keepalive: Option<Duration>) -> Stack<Connect> {
     Stack(Connect::new(keepalive))
 }
 
-// Possibly unused, but useful during development.
+pub fn proxies() -> Stack<IdentityProxy> {
+    Stack(IdentityProxy(()))
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct IdentityProxy(());
+
+impl<T> NewService<T> for IdentityProxy {
+    type Service = ();
+    fn new_service(&self, _: T) -> Self::Service {
+        ()
+    }
+}
+
 #[allow(dead_code)]
 impl<L> Layers<L> {
     pub fn push<O>(self, outer: O) -> Layers<Pair<L, O>> {
         Layers(Pair::new(self.0, outer))
     }
 
+    pub fn push_map_target<M: Clone>(
+        self,
+        map_target: M,
+    ) -> Layers<Pair<L, stack::MapTargetLayer<M>>> {
+        self.push(stack::MapTargetLayer::new(map_target))
+    }
+
     /// Wraps an inner `MakeService` to be a `NewService`.
-    pub fn push_into_new_service(self) -> Layers<Pair<L, new_service::FromMakeServiceLayer>> {
-        self.push(new_service::FromMakeServiceLayer::default())
+    pub fn push_into_new_service(
+        self,
+    ) -> Layers<Pair<L, stack::new_service::FromMakeServiceLayer>> {
+        self.push(stack::new_service::FromMakeServiceLayer::default())
     }
 
     /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
-    pub fn push_buffer<D, Req>(self, bound: usize, d: D) -> Layers<Pair<L, buffer::Layer<D, Req>>>
+    pub fn push_buffer<Req>(self, bound: usize) -> Layers<Pair<L, buffer::Layer<Req>>>
     where
-        D: buffer::Deadline<Req>,
         Req: Send + 'static,
     {
-        self.push(buffer::layer(bound, d))
+        self.push(buffer::Layer::new(bound))
     }
 
     /// Makes the inner service shareable in a mutually-exclusive fashion.
-    pub fn push_lock(self) -> Layers<Pair<L, LockLayer>> {
-        self.push(LockLayer::new())
+    pub fn push_lock(self) -> Layers<Pair<L, lock::LockLayer>> {
+        self.push(lock::LockLayer::new())
     }
 
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
@@ -65,6 +87,25 @@ impl<L> Layers<L> {
 
     pub fn push_spawn_ready(self) -> Layers<Pair<L, SpawnReadyLayer>> {
         self.push(SpawnReadyLayer::new())
+    }
+
+    pub fn push_concurrency_limit(self, max: usize) -> Layers<Pair<L, concurrency_limit::Layer>> {
+        self.push(concurrency_limit::Layer::new(max))
+    }
+
+    pub fn push_load_shed(self) -> Layers<Pair<L, load_shed::Layer>> {
+        self.push(load_shed::Layer)
+    }
+
+    pub fn push_make_ready<Req>(self) -> Layers<Pair<L, stack::MakeReadyLayer<Req>>> {
+        self.push(stack::MakeReadyLayer::new())
+    }
+
+    pub fn push_map_response<R: Clone>(
+        self,
+        map_response: R,
+    ) -> Layers<Pair<L, stack::MapResponseLayer<R>>> {
+        self.push(stack::MapResponseLayer::new(map_response))
     }
 
     pub fn boxed<A, B>(self) -> Layers<Pair<L, boxed::Layer<A, B>>>
@@ -86,6 +127,10 @@ impl<L> Layers<L> {
         self.push(http::boxed::response::Layer::new())
     }
 
+    pub fn push_oneshot(self) -> Layers<Pair<L, stack::OneshotLayer>> {
+        self.push(stack::OneshotLayer::new())
+    }
+
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, InstrumentMakeLayer<G>>> {
         self.push(InstrumentMakeLayer::new(get_span))
     }
@@ -99,28 +144,45 @@ impl<M, L: Layer<M>> Layer<M> for Layers<L> {
     }
 }
 
-// Possibly unused, but useful during development.
 #[allow(dead_code)]
 impl<S> Stack<S> {
     pub fn push<L: Layer<S>>(self, layer: L) -> Stack<L::Service> {
         Stack(layer.layer(self.0))
     }
 
-    /// Wraps an inner `MakeService` to be a `NewService`.
-    pub fn into_new_service(self) -> Stack<new_service::FromMakeService<S>> {
-        self.push(new_service::FromMakeServiceLayer::default())
+    pub fn push_map_target<M: Clone>(
+        self,
+        map_target: M,
+    ) -> Stack<stack::map_target::MapTargetService<S, M>> {
+        self.push(stack::map_target::MapTargetLayer::new(map_target))
     }
 
-    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
-    pub fn spawn_buffer<D, Req>(self, bound: usize, d: D) -> Stack<buffer::Enqueue<S, D, Req>>
+    pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
+        self.push(InstrumentMakeLayer::new(get_span))
+    }
+
+    pub fn instrument_from_target(self) -> Stack<InstrumentMake<(), S>> {
+        self.push(InstrumentMakeLayer::from_target())
+    }
+
+    /// Wraps an inner `MakeService` to be a `NewService`.
+    pub fn into_new_service(self) -> Stack<stack::new_service::FromMakeService<S>> {
+        self.push(stack::new_service::FromMakeServiceLayer::default())
+    }
+
+    pub fn push_make_ready<Req>(self) -> Stack<stack::MakeReady<S, Req>> {
+        self.push(stack::MakeReadyLayer::new())
+    }
+
+    /// Buffer requests when when the next layer is out of capacity.
+    pub fn push_buffer<Req>(self, bound: usize) -> Stack<buffer::Buffer<S, Req>>
     where
-        D: buffer::Deadline<Req>,
         Req: Send + 'static,
-        S: tower::Service<Req> + Send + 'static,
-        S::Error: Into<Error>,
+        S: Service<Req> + Send + 'static,
+        S::Error: Into<Error> + Send + Sync,
         S::Future: Send,
     {
-        self.push(buffer::layer(bound, d))
+        self.push(buffer::Layer::new(bound))
     }
 
     /// Assuming `S` implements `NewService` or `MakeService`, applies the given
@@ -140,28 +202,57 @@ impl<S> Stack<S> {
         self.push(concurrency_limit::Layer::new(max))
     }
 
-    pub fn push_load_shed(self) -> Stack<tower::load_shed::LoadShed<S>> {
-        self.push(LoadShedLayer::new())
+    pub fn push_load_shed(self) -> Stack<load_shed::LoadShed<S>> {
+        self.push(load_shed::Layer)
     }
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
-        self.push(TimeoutLayer::new(timeout))
+        self.push(tower::timeout::TimeoutLayer::new(timeout))
     }
 
-    pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<fallback::Fallback<S, F>> {
-        self.push(fallback::FallbackLayer::new(fallback))
+    pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
+        self.push(stack::OneshotLayer::new())
+    }
+
+    pub fn push_map_response<R: Clone>(self, map_response: R) -> Stack<stack::MapResponse<S, R>> {
+        self.push(stack::MapResponseLayer::new(map_response))
+    }
+
+    pub fn push_http_insert_target(self) -> Stack<http::insert::target::NewService<S>> {
+        self.push(http::insert::target::layer())
+    }
+
+    pub fn spawn_cache<T>(
+        self,
+        capacity: usize,
+        max_idle_age: Duration,
+    ) -> Stack<cache::Service<T, S>>
+    where
+        T: Clone + Eq + std::hash::Hash + Send + 'static,
+        S: NewService<T> + Send + 'static,
+        S::Service: Clone + Send + 'static,
+    {
+        Stack(
+            cache::Layer::new(capacity, max_idle_age)
+                .layer(self.0)
+                .spawn(),
+        )
+    }
+
+    pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<stack::Fallback<S, F>> {
+        self.push(stack::FallbackLayer::new(fallback))
     }
 
     pub fn push_fallback_with_predicate<F, P>(
         self,
         fallback: F,
         predicate: P,
-    ) -> Stack<fallback::Fallback<S, F, P>>
+    ) -> Stack<stack::Fallback<S, F, P>>
     where
         F: Clone,
         P: Fn(&Error) -> bool + Clone,
     {
-        self.push(fallback::FallbackLayer::new(fallback).with_predicate(predicate))
+        self.push(stack::FallbackLayer::new(fallback).with_predicate(predicate))
     }
 
     pub fn boxed<A>(self) -> Stack<boxed::BoxService<A, S::Response>>
@@ -187,26 +278,18 @@ impl<S> Stack<S> {
         self.push(http::boxed::response::Layer::new())
     }
 
-    pub fn push_map_target<M: Clone>(self, map: M) -> Stack<stack::MapTargetService<S, M>> {
-        self.push(stack::MapTargetLayer::new(map))
-    }
-
-    pub fn push_map_response<M: Clone>(self, map: M) -> Stack<stack::MapResponse<S, M>> {
-        self.push(stack::MapResponseLayer::new(map))
-    }
-
-    pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
-        self.push(InstrumentMakeLayer::new(get_span))
-    }
-
-    pub fn instrument_from_target(self) -> Stack<InstrumentMake<(), S>> {
-        self.push(InstrumentMakeLayer::from_target())
-    }
-
     /// Validates that this stack serves T-typed targets.
     pub fn check_new_service<T>(self) -> Self
     where
-        S: new_service::NewService<T>,
+        S: NewService<T>,
+    {
+        self
+    }
+
+    pub fn check_new_clone_service<T>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: Clone,
     {
         self
     }
@@ -219,10 +302,26 @@ impl<S> Stack<S> {
         self
     }
 
-    /// Validates that this stack serves T-typed targets.
-    pub fn check_make_service<T, Req>(self) -> Self
+    pub fn check_service_response<T, U>(self) -> Self
     where
-        S: MakeService<T, Req>,
+        S: Service<T, Response = U>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_new_service_routes<T, Req>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: Service<Req>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_make_service<T, U>(self) -> Self
+    where
+        S: MakeService<T, U>,
     {
         self
     }
@@ -257,5 +356,88 @@ where
 
     fn call(&mut self, t: T) -> Self::Future {
         self.0.call(t)
+    }
+}
+
+/// Proivdes a cloneable Layer, unlike tower::load_shed.
+pub mod load_shed {
+    pub use tower::load_shed::LoadShed;
+
+    #[derive(Copy, Clone, Debug)]
+    pub struct Layer;
+
+    impl<S> super::Layer<S> for Layer {
+        type Service = LoadShed<S>;
+
+        fn layer(&self, inner: S) -> Self::Service {
+            LoadShed::new(inner)
+        }
+    }
+}
+
+pub mod make_response {
+    use super::Oneshot;
+    use crate::Error;
+    use futures::{try_ready, Future, Poll};
+
+    #[derive(Copy, Clone, Debug)]
+    pub struct Layer;
+
+    #[derive(Clone, Debug)]
+    pub struct MakeResponse<M>(M);
+
+    pub enum ResponseFuture<F, S: tower::Service<()>> {
+        Make(F),
+        Respond(Oneshot<S, ()>),
+    }
+
+    impl<S> super::Layer<S> for Layer {
+        type Service = MakeResponse<S>;
+
+        fn layer(&self, inner: S) -> Self::Service {
+            MakeResponse(inner)
+        }
+    }
+
+    impl<T, M> tower::Service<T> for MakeResponse<M>
+    where
+        M: tower::MakeService<T, ()>,
+        M::MakeError: Into<Error>,
+        M::Error: Into<Error>,
+    {
+        type Response = M::Response;
+        type Error = Error;
+        type Future = ResponseFuture<M::Future, M::Service>;
+
+        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+            self.0.poll_ready().map_err(Into::into)
+        }
+
+        fn call(&mut self, req: T) -> Self::Future {
+            ResponseFuture::Make(self.0.make_service(req))
+        }
+    }
+
+    impl<F, S> Future for ResponseFuture<F, S>
+    where
+        F: Future<Item = S>,
+        F::Error: Into<Error>,
+        S: tower::Service<()>,
+        S::Error: Into<Error>,
+    {
+        type Item = S::Response;
+        type Error = Error;
+
+        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+            loop {
+                *self = match self {
+                    ResponseFuture::Make(ref mut fut) => {
+                        let svc = try_ready!(fut.poll().map_err(Into::into));
+                        ResponseFuture::Respond(Oneshot::new(svc, ()))
+                    }
+                    ResponseFuture::Respond(ref mut fut) => return fut.poll().map_err(Into::into),
+                }
+            }
+        }
     }
 }

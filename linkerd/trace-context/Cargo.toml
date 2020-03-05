@@ -12,7 +12,6 @@ futures = "0.1"
 hex = "0.3.2"
 http = "0.1"
 linkerd2-error = { path = "../error" }
-linkerd2-stack = { path = "../stack" }
 rand = { version = "0.7", features = ["small_rng"] }
 tower = "0.1"
 tracing = "0.1.2"

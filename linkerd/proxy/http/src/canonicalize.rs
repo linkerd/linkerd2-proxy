@@ -5,345 +5,156 @@
 //! resolv.conf(5) search path of `example.com example.net`. In such a case,
 //! this module may build its inner stack with either `web.example.com.:8080`,
 //! `web.example.net.:8080`, or `web:8080`, depending on the state of DNS.
-//!
-//! DNS TTLs are honored and the most recent value is added to each request's
-//! extensions.
 
-use futures::{try_ready, Async, Future, Poll, Stream};
-use http;
+use futures::{try_ready, Async, Future, Poll};
 use linkerd2_addr::{Addr, NameAddr};
-use linkerd2_dns as dns;
-use linkerd2_error::Never;
+use linkerd2_dns::Name;
+use linkerd2_error::Error;
 use std::time::Duration;
-use tokio;
-use tokio::sync::{mpsc, oneshot};
-use tokio_timer::{clock, Delay, Timeout};
-use tracing::{debug, trace, warn};
-use tracing_futures::Instrument;
+use tokio::timer::Timeout;
+use tracing::{debug, info};
 
-/// Duration to wait before polling DNS again after an error (or a NXDOMAIN
-/// response with no TTL).
-const DNS_ERROR_TTL: Duration = Duration::from_secs(3);
+pub trait Target {
+    fn addr(&self) -> &Addr;
+    fn addr_mut(&mut self) -> &mut Addr;
+}
 
+// FIXME the resolver should be abstracted to a trait so that this can be tested
+// without a real DNS service.
 #[derive(Debug, Clone)]
-pub struct Layer {
-    resolver: dns::Resolver,
+pub struct Layer<R> {
+    resolver: R,
     timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
-pub struct Stack<M> {
-    resolver: dns::Resolver,
+pub struct Canonicalize<R, M> {
     inner: M,
+    resolver: R,
     timeout: Duration,
 }
 
-pub struct MakeFuture<F> {
-    inner: F,
-    task: Option<(NameAddr, dns::Resolver, Duration)>,
-}
-
-pub struct Service<S> {
-    canonicalized: Option<Addr>,
-    inner: S,
-    rx: mpsc::Receiver<NameAddr>,
-    /// Notifies the daemon `Task` on drop.
-    _tx_stop: oneshot::Sender<Never>,
-}
-
-struct Task {
-    original: NameAddr,
-    resolved: Cache,
-    resolver: dns::Resolver,
-    state: State,
-    timeout: Duration,
-    tx: mpsc::Sender<NameAddr>,
-    rx_stop: oneshot::Receiver<Never>,
-}
-
-/// Tracks the state of the last resolution.
-#[derive(Debug, Clone, Eq, PartialEq)]
-enum Cache {
-    /// The service has not yet been notified of a value.
-    AwaitingInitial,
-
-    /// The service has been notified with the original value (i.e. due to an
-    /// error), and we do not yet have a resolved name.
-    Unresolved,
-
-    /// The service was last-notified with this name.
-    Resolved(NameAddr),
-}
-
-enum State {
-    Init,
-    Pending(Timeout<dns::RefineFuture>),
-    ValidUntil(Delay),
+pub enum MakeFuture<T, R, M: tower::Service<T>> {
+    Refine {
+        future: Timeout<R>,
+        make: Option<M>,
+        original: Option<T>,
+    },
+    NotReady(M, Option<T>),
+    Make(M::Future),
 }
 
 // === Layer ===
 
-// FIXME the resolver should be abstracted to a trait so that this can be tested
-// without a real DNS service.
-pub fn layer(resolver: dns::Resolver, timeout: Duration) -> Layer {
-    Layer { resolver, timeout }
+impl<R> Layer<R> {
+    pub fn new(resolver: R, timeout: Duration) -> Self {
+        Layer { resolver, timeout }
+    }
 }
 
-impl<M> tower::layer::Layer<M> for Layer
-where
-    M: tower::Service<Addr> + Clone,
-{
-    type Service = Stack<M>;
+impl<R: Clone, M> tower::layer::Layer<M> for Layer<R> {
+    type Service = Canonicalize<R, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
-        Stack {
+        Self::Service {
             inner,
-            resolver: self.resolver.clone(),
             timeout: self.timeout,
+            resolver: self.resolver.clone(),
         }
     }
 }
 
-// === impl Stack ===
+// === impl Canonicalize ===
 
-impl<M> tower::Service<Addr> for Stack<M>
+impl<T, R, M> tower::Service<T> for Canonicalize<R, M>
 where
-    M: tower::Service<Addr>,
+    T: Target + Clone,
+    R: tower::Service<Name, Response = Name> + Clone,
+    R::Error: Into<Error>,
+    M: tower::Service<T> + Clone,
+    M::Error: Into<Error>,
 {
-    type Response = tower::util::Either<Service<M::Response>, M::Response>;
-    type Error = M::Error;
-    type Future = MakeFuture<M::Future>;
+    type Response = M::Response;
+    type Error = Error;
+    type Future = MakeFuture<T, R::Future, M>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+        try_ready!(self.resolver.poll_ready().map_err(Into::into));
+        try_ready!(self.inner.poll_ready().map_err(Into::into));
+        Ok(().into())
     }
 
-    fn call(&mut self, addr: Addr) -> Self::Future {
-        let task = match addr {
-            Addr::Name(ref na) => Some((na.clone(), self.resolver.clone(), self.timeout)),
-            Addr::Socket(_) => None,
-        };
+    fn call(&mut self, target: T) -> Self::Future {
+        match target.addr().name_addr() {
+            None => {
+                self.resolver = self.resolver.clone();
+                MakeFuture::Make(self.inner.call(target))
+            }
+            Some(na) => {
+                let refine = self.resolver.call(na.name().clone());
 
-        let inner = self.inner.call(addr);
-        MakeFuture { inner, task }
+                let inner = self.inner.clone();
+                let make = std::mem::replace(&mut self.inner, inner);
+
+                MakeFuture::Refine {
+                    make: Some(make),
+                    original: Some(target.clone()),
+                    future: Timeout::new(refine, self.timeout),
+                }
+            }
+        }
     }
 }
 
 // === impl MakeFuture ===
 
-impl<F> Future for MakeFuture<F>
+impl<T, R, M> Future for MakeFuture<T, R, M>
 where
-    F: Future,
+    T: Target,
+    R: Future<Item = Name>,
+    R::Error: Into<Error>,
+    M: tower::Service<T> + Clone,
+    M::Error: Into<Error>,
 {
-    type Item = tower::util::Either<Service<F::Item>, F::Item>;
-    type Error = F::Error;
+    type Item = M::Response;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
-        let svc = if let Some((na, resolver, timeout)) = self.task.take() {
-            let (tx, rx) = mpsc::channel(1);
-            let (_tx_stop, rx_stop) = oneshot::channel();
-
-            tokio::spawn(Task::new(na, resolver, timeout, tx, rx_stop).in_current_span());
-
-            tower::util::Either::A(Service {
-                canonicalized: None,
-                inner,
-                rx,
-                _tx_stop,
-            })
-        } else {
-            tower::util::Either::B(inner)
-        };
-
-        Ok(svc.into())
-    }
-}
-
-// === impl Task ===
-
-impl Task {
-    fn new(
-        original: NameAddr,
-        resolver: dns::Resolver,
-        timeout: Duration,
-        tx: mpsc::Sender<NameAddr>,
-        rx_stop: oneshot::Receiver<Never>,
-    ) -> Self {
-        Self {
-            original,
-            resolved: Cache::AwaitingInitial,
-            resolver,
-            state: State::Init,
-            timeout,
-            tx,
-            rx_stop,
-        }
-    }
-}
-
-impl Future for Task {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<(), ()> {
         loop {
-            // If the receiver has been dropped, stop watching for updates.
-            match self.rx_stop.poll() {
-                Ok(Async::NotReady) => {}
-                _ => {
-                    trace!("task complete; name={:?}", self.original);
-                    return Ok(Async::Ready(()));
-                }
-            }
-
-            self.state = match self.state {
-                State::Init => {
-                    trace!("task init; name={:?}", self.original);
-                    let f = self.resolver.refine(self.original.name());
-                    State::Pending(Timeout::new(f, self.timeout))
-                }
-                State::Pending(ref mut fut) => {
-                    // Only poll the resolution for updates when the receiver is
-                    // ready to receive an update.
-                    match self.tx.poll_ready() {
-                        Ok(Async::Ready(())) => {}
-                        Ok(Async::NotReady) => {
-                            trace!("task awaiting capacity; name={:?}", self.original);
-                            return Ok(Async::NotReady);
+            *self = match self {
+                MakeFuture::Refine {
+                    ref mut future,
+                    ref mut make,
+                    ref mut original,
+                } => {
+                    let target = match future.poll() {
+                        Ok(Async::NotReady) => return Ok(Async::NotReady),
+                        Ok(Async::Ready(refined)) => {
+                            let mut target = original.take().expect("illegal state");
+                            let name = NameAddr::new(refined, target.addr().port());
+                            *target.addr_mut() = name.into();
+                            target
                         }
-                        Err(_) => {
-                            trace!("task complete; name={:?}", self.original);
-                            return Ok(Async::Ready(()));
+                        Err(error) => {
+                            if let Some(error) = error.into_inner().map(Into::into) {
+                                debug!(%error, "DNS refinement failed");
+                            } else {
+                                info!("DNS refinement timed out");
+                            }
+                            original.take().expect("illegal state")
                         }
                     };
 
-                    match fut.poll() {
-                        Ok(Async::NotReady) => {
-                            return Ok(Async::NotReady);
-                        }
-                        Ok(Async::Ready(refine)) => {
-                            trace!(
-                                "task update; name={:?} refined={:?}",
-                                self.original,
-                                refine.name
-                            );
-                            // If the resolved name is a new name, bind a
-                            // service with it and set a delay that will notify
-                            // when the resolver should be consulted again.
-                            let resolved = NameAddr::new(refine.name, self.original.port());
-                            if self.resolved.get() != Some(&resolved) {
-                                self.tx
-                                    .try_send(resolved.clone())
-                                    .expect("tx failed despite being ready");
-                                self.resolved = Cache::Resolved(resolved);
-                            }
-
-                            State::ValidUntil(Delay::new(refine.valid_until))
-                        }
-                        Err(e) => {
-                            trace!("task error; name={:?} err={:?}", self.original, e);
-
-                            if self.resolved == Cache::AwaitingInitial {
-                                // The service needs a value, so we need to
-                                // publish the original name so it can proceed.
-                                warn!(
-                                    "failed to refine {}: {}; using original name",
-                                    self.original.name(),
-                                    e,
-                                );
-                                self.tx
-                                    .try_send(self.original.clone())
-                                    .expect("tx failed despite being ready");
-
-                                // There's now no need to re-publish the
-                                // original name on subsequent failures.
-                                self.resolved = Cache::Unresolved;
-                            } else {
-                                debug!(
-                                    "failed to refresh {}: {}; cache={:?}",
-                                    self.original.name(),
-                                    e,
-                                    self.resolved,
-                                );
-                            }
-
-                            let valid_until = e
-                                .into_inner()
-                                .and_then(|e| match e.kind() {
-                                    dns::ResolveErrorKind::NoRecordsFound {
-                                        valid_until, ..
-                                    } => *valid_until,
-                                    _ => None,
-                                })
-                                .unwrap_or_else(|| clock::now() + DNS_ERROR_TTL);
-
-                            State::ValidUntil(Delay::new(valid_until))
-                        }
-                    }
+                    let make = make.take().expect("illegal state");
+                    MakeFuture::NotReady(make, Some(target))
                 }
-
-                State::ValidUntil(ref mut f) => {
-                    trace!("task idle; name={:?}", self.original);
-
-                    match f.poll().expect("timer must not fail") {
-                        Async::NotReady => return Ok(Async::NotReady),
-                        Async::Ready(()) => {
-                            // The last resolution's TTL expired, so issue a new DNS query.
-                            State::Init
-                        }
-                    }
+                MakeFuture::NotReady(ref mut svc, ref mut target) => {
+                    try_ready!(svc.poll_ready().map_err(Into::into));
+                    let target = target.take().expect("illegal state");
+                    MakeFuture::Make(svc.call(target))
                 }
+                MakeFuture::Make(ref mut fut) => return fut.poll().map_err(Into::into),
             };
         }
-    }
-}
-
-impl Cache {
-    fn get(&self) -> Option<&NameAddr> {
-        match self {
-            Cache::Resolved(ref r) => Some(&r),
-            _ => None,
-        }
-    }
-}
-
-// === impl Service ===
-
-impl<S, B> tower::Service<http::Request<B>> for Service<S>
-where
-    S: tower::Service<http::Request<B>>,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        try_ready!(self.inner.poll_ready());
-
-        while let Ok(Async::Ready(Some(addr))) = self.rx.poll() {
-            debug!("refined: {}", addr);
-            self.canonicalized = Some(addr.into());
-        }
-        if self.canonicalized.is_none() {
-            return Ok(Async::NotReady);
-        }
-
-        Ok(Async::Ready(()))
-    }
-
-    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        let addr = self
-            .canonicalized
-            .clone()
-            .expect("called before canonicalized address");
-        req.extensions_mut().insert(addr);
-        self.inner.call(req)
-    }
-}
-
-impl<S> Drop for Service<S> {
-    fn drop(&mut self) {
-        trace!("dropping service; name={:?}", self.canonicalized);
     }
 }

@@ -8,6 +8,8 @@ publish = false
 [dependencies]
 futures = "0.1"
 linkerd2-dns-name = { path = "./name" }
+linkerd2-stack = { path = "../stack" }
+tower = "0.1"
 # FIXME update to a release when available (>0.11)
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060", default-features = false }
 tracing = "0.1"

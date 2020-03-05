@@ -12,4 +12,3 @@ Utilities for composing Tower services.
 futures = "0.1"
 linkerd2-error = { path = "../error" }
 tower = "0.1"
-tracing = "0.1"

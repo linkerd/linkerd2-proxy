@@ -27,10 +27,8 @@ linkerd2-duplex = { path  = "../../duplex" }
 linkerd2-error = { path  = "../../error" }
 linkerd2-http-box = { path  = "../../http-box" }
 linkerd2-identity = { path  = "../../identity" }
-linkerd2-metrics = { path  = "../../metrics" }
 linkerd2-stack = { path  = "../../stack" }
 linkerd2-timeout = { path  = "../../timeout" }
-linkerd2-proxy-transport = { path  = "../transport" }
 rand = "0.7"
 tokio = "0.1"
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }

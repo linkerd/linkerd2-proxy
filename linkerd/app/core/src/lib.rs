@@ -10,6 +10,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};
+pub use linkerd2_cache as cache;
 pub use linkerd2_conditional::Conditional;
 pub use linkerd2_drain as drain;
 pub use linkerd2_error::{Error, Never, Recover};
@@ -22,6 +23,7 @@ pub use linkerd2_request_filter as request_filter;
 pub use linkerd2_router as router;
 pub use linkerd2_service_profiles as profiles;
 pub use linkerd2_stack_metrics as stack_metrics;
+pub use linkerd2_stack_tracing as stack_tracing;
 pub use linkerd2_trace_context::TraceContextLayer;
 
 pub mod accept_error;
@@ -54,7 +56,10 @@ const DEFAULT_PORT: u16 = 80;
 
 pub fn http_request_l5d_override_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
     proxy::http::authority_from_header(req, DST_OVERRIDE_HEADER)
-        .ok_or_else(|| addr::Error::InvalidHost)
+        .ok_or_else(|| {
+            tracing::trace!("{} not in request headers", DST_OVERRIDE_HEADER);
+            addr::Error::InvalidHost
+        })
         .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
 }
 
@@ -71,29 +76,6 @@ pub fn http_request_host_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::E
     h1::authority_from_host(req)
         .ok_or(addr::Error::InvalidHost)
         .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
-}
-
-pub fn http_request_orig_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
-    use crate::transport::tls;
-
-    req.extensions()
-        .get::<tls::accept::Meta>()
-        .and_then(|m| m.addrs.target_addr_if_not_local())
-        .map(Addr::Socket)
-        .ok_or(addr::Error::InvalidHost)
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct DispatchDeadline(std::time::Instant);
-
-impl DispatchDeadline {
-    pub fn after(allowance: std::time::Duration) -> DispatchDeadline {
-        DispatchDeadline(tokio_timer::clock::now() + allowance)
-    }
-
-    pub fn extract<A>(req: &http::Request<A>) -> Option<std::time::Instant> {
-        req.extensions().get::<DispatchDeadline>().map(|d| d.0)
-    }
 }
 
 pub type ControlHttpMetrics = http_metrics::Requests<metric_labels::ControlLabels, classify::Class>;
@@ -118,3 +100,20 @@ pub struct ProxyMetrics {
     pub stack: StackMetrics,
     pub transport: transport::Metrics,
 }
+
+#[derive(Clone, Debug)]
+pub struct DiscoveryRejected(());
+
+impl DiscoveryRejected {
+    pub fn new() -> Self {
+        DiscoveryRejected(())
+    }
+}
+
+impl std::fmt::Display for DiscoveryRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "discovery rejected")
+    }
+}
+
+impl std::error::Error for DiscoveryRejected {}

@@ -8,13 +8,13 @@ use crate::profiles;
 use futures::future;
 use hyper::body::Payload;
 use linkerd2_http_classify::{Classify, ClassifyEos, ClassifyResponse};
-use linkerd2_retry::Layer;
+use linkerd2_retry::NewRetryLayer;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tower::retry::budget::Budget;
 
-pub fn layer(metrics: HttpRouteRetry) -> Layer<NewRetry> {
-    Layer::new(NewRetry::new(metrics))
+pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
+    NewRetryLayer::new(NewRetry::new(metrics))
 }
 
 pub trait CloneRequest<Req> {

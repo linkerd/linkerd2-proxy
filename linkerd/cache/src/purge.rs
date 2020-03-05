@@ -4,6 +4,7 @@ use linkerd2_error::Never;
 use linkerd2_lock::Lock;
 use std::hash::Hash;
 use tokio::sync::mpsc;
+use tracing::trace;
 
 /// A background future that eagerly removes expired cache values.
 ///
@@ -33,7 +34,6 @@ where
 impl<K, V> Future for Purge<K, V>
 where
     K: Clone + Eq + Hash,
-    V: Clone,
 {
     type Item = ();
     type Error = Never;
@@ -41,13 +41,16 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self.hangup.poll() {
             Ok(Async::NotReady) => {}
-            Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
+            Ok(Async::Ready(None)) => {
+                trace!("Purge task complete");
+                return Ok(Async::Ready(()));
+            }
             Ok(Async::Ready(Some(never))) => match never {},
             Err(_) => unreachable!("purge hangup handle must not error"),
         };
 
         if let Async::Ready(mut cache) = self.cache.poll_acquire() {
-            cache.purge();
+            cache.poll_purge();
         }
 
         Ok(Async::NotReady)
@@ -76,7 +79,7 @@ pub mod tests {
                 type Error = ();
                 fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
                     match self.1.poll() {
-                        Err(n) => match n {},
+                        Err(_) => Err(()),
                         Ok(Async::Ready(())) => {
                             drop(self.0.take().unwrap());
                             Ok(Async::Ready(()))

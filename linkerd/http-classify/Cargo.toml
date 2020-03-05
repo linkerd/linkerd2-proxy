@@ -9,4 +9,5 @@ publish = false
 futures = "0.1"
 http = "0.1"
 linkerd2-error = { path  = "../error" }
+linkerd2-stack = { path  = "../stack" }
 tower = "0.1"
