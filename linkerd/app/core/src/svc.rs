@@ -81,6 +81,14 @@ impl<L> Layers<L> {
         self.push(lock::LockLayer::new())
     }
 
+    pub fn push_idle_timeout(self, timeout: Duration) -> Layers<Pair<L, timeout::IdleLayer>> {
+        self.push(timeout::IdleLayer::new(timeout))
+    }
+
+    pub fn push_failfast(self, timeout: Duration) -> Layers<Pair<L, timeout::FailFastLayer>> {
+        self.push(timeout::FailFastLayer::new(timeout))
+    }
+
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
         self.push(stack::OnResponseLayer::new(layer))
     }
@@ -208,6 +216,14 @@ impl<S> Stack<S> {
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
+    }
+
+    pub fn push_idle_timeout(self, timeout: Duration) -> Stack<timeout::Idle<S>> {
+        self.push(timeout::IdleLayer::new(timeout))
+    }
+
+    pub fn push_failfast(self, timeout: Duration) -> Stack<timeout::FailFast<S>> {
+        self.push(timeout::FailFastLayer::new(timeout))
     }
 
     pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
