@@ -45,14 +45,10 @@ where
     type Future = future::MapErr<S::Future, fn(S::Error) -> Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        match self.inner.poll_ready() {
-            Ok(ready) => {
-                self.probe.reset(Instant::now() + self.timeout);
-                self.probe.poll().expect("timer must succeed");
-                Ok(ready)
-            }
-            Err(e) => return Err(e.into()),
-        }
+        let ready = self.inner.poll_ready().map_err(Into::into)?;
+        self.probe.reset(Instant::now() + self.timeout);
+        self.probe.poll().expect("timer must succeed");
+        Ok(ready)
     }
 
     fn call(&mut self, req: T) -> Self::Future {
