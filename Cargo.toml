@@ -8,6 +8,7 @@ members = [
     "linkerd/app/outbound",
     "linkerd/app/profiling",
     "linkerd/app",
+    "linkerd/cache",
     "linkerd/box",
     "linkerd/concurrency-limit",
     "linkerd/conditional",

@@ -3,7 +3,6 @@
 use futures::{Future, Poll};
 use linkerd2_error::Error;
 use tower::util::{Either, Oneshot, ServiceExt};
-use tracing::debug;
 
 /// A Layer that augments the underlying service with a fallback service.
 ///
@@ -136,8 +135,6 @@ where
                         if !(predicate)(&error) {
                             return Err(error);
                         }
-
-                        debug!(%error, "Falling back");
                         MakeFuture::B(fallback.take().unwrap())
                     }
                 },

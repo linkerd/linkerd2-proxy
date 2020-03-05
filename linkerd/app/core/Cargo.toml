@@ -18,6 +18,7 @@ hyper = "0.12"
 futures = "0.1"
 indexmap = "1.0"
 linkerd2-addr = { path = "../../addr" }
+linkerd2-cache = { path = "../../cache" }
 linkerd2-box = { path = "../../box" }
 linkerd2-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd2-conditional = { path = "../../conditional" }
@@ -48,6 +49,7 @@ linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-request-filter = { path = "../../request-filter" }
 linkerd2-retry = { path = "../../retry" }
 linkerd2-router = { path = "../../router" }
+linkerd2-timeout = { path = "../../timeout" }
 linkerd2-service-profiles = { path = "../../service-profiles" }
 linkerd2-stack = { path = "../../stack" }
 linkerd2-stack-metrics = { path = "../../stack/metrics" }

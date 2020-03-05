@@ -141,7 +141,6 @@ where
                 let h2 = h2::Connect::new(connect, self.h2_settings.clone()).oneshot(target);
                 MakeFuture::Http2(h2)
             }
-            Settings::NotHttp => unreachable!("Client may only be used for HTTP endpoints"),
         }
     }
 }

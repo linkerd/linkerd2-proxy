@@ -1,5 +1,3 @@
-const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
-
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
@@ -8,6 +6,8 @@ use tracing_subscriber::{
     fmt::{format, Formatter},
     reload, EnvFilter, FmtSubscriber,
 };
+
+const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
 
 type Subscriber = Formatter<format::DefaultFields, format::Format<format::Full, Uptime>>;
 
@@ -100,24 +100,5 @@ impl fmt::Debug for LevelHandle {
                     .field("current", &format_args!("{}", e))
                     .finish()
             })
-    }
-}
-
-pub trait GetSpan<T> {
-    fn get_span(&self, target: &T) -> tracing::Span;
-}
-
-impl<T, F> GetSpan<T> for F
-where
-    F: Fn(&T) -> tracing::Span,
-{
-    fn get_span(&self, target: &T) -> tracing::Span {
-        (self)(target)
-    }
-}
-
-impl<T> GetSpan<T> for tracing::Span {
-    fn get_span(&self, _: &T) -> tracing::Span {
-        self.clone()
     }
 }

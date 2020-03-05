@@ -3,6 +3,7 @@ pub fn mk<F>(f: F) -> LayerFn<F> {
     LayerFn(f)
 }
 
+/// Make a `Layer` from a closure.
 #[derive(Clone, Copy, Debug)]
 pub struct LayerFn<F>(F);
 

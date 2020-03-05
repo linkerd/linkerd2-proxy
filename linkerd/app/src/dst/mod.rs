@@ -15,6 +15,7 @@ pub struct Config {
     pub get_suffixes: IndexSet<dns::Suffix>,
     pub get_networks: IndexSet<ipnet::IpNet>,
     pub profile_suffixes: IndexSet<dns::Suffix>,
+    pub initial_profile_timeout: Duration,
 }
 
 /// Handles to destination service clients.
@@ -22,7 +23,7 @@ pub struct Config {
 /// The addr is preserved for logging.
 pub struct Dst<S> {
     pub addr: ControlAddr,
-    pub profiles: profiles::Client<S>,
+    pub profiles: profiles::Client<S, resolve::BackoffUnlessInvalidArgument>,
     pub resolve: resolve::Resolve<S>,
 }
 
@@ -43,10 +44,10 @@ impl Config {
             self.control.connect.backoff,
         );
 
-        const DUMB_PROFILE_BACKOFF: Duration = Duration::from_secs(3);
         let profiles = profiles::Client::new(
             svc,
-            DUMB_PROFILE_BACKOFF,
+            resolve::BackoffUnlessInvalidArgument::from(self.control.connect.backoff),
+            self.initial_profile_timeout,
             self.context,
             self.profile_suffixes,
         );

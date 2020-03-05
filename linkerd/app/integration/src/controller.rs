@@ -262,7 +262,7 @@ impl pb::server::Destination for Controller {
             match calls.pop_front() {
                 Some(Dst::Call(dst, updates)) => {
                     if &dst == req.get_ref() {
-                        tracing::error!("found request={:?}", dst);
+                        tracing::debug!("found request={:?}", dst);
                         return future::result(updates.map(grpc::Response::new));
                     }
 

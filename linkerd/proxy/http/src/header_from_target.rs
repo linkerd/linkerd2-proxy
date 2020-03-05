@@ -1,6 +1,7 @@
 use futures::{try_ready, Future, Poll};
 use http;
 use http::header::{HeaderValue, IntoHeaderName};
+use linkerd2_stack::NewService;
 
 /// Wraps HTTP `Service`s  so that a displayable `T` is cloned into each request's
 /// extensions.
@@ -48,6 +49,27 @@ where
 }
 
 // === impl MakeSvc ===
+
+impl<H, T, M> NewService<T> for MakeSvc<H, M>
+where
+    H: IntoHeaderName + Clone,
+    T: Clone + Send + Sync + 'static,
+    HeaderValue: for<'t> From<&'t T>,
+    M: NewService<T>,
+{
+    type Service = Service<H, M::Service>;
+
+    fn new_service(&self, t: T) -> Self::Service {
+        let header = self.header.clone();
+        let value = (&t).into();
+        let inner = self.inner.new_service(t);
+        Service {
+            header,
+            inner,
+            value,
+        }
+    }
+}
 
 impl<H, T, M> tower::Service<T> for MakeSvc<H, M>
 where

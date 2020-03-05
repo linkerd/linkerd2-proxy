@@ -1,9 +1,10 @@
 #![deny(warnings, rust_2018_idioms)]
 
+mod refine;
+
+pub use self::refine::{MakeRefine, Refine};
 use futures::{prelude::*, try_ready};
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
-use std::convert::TryFrom;
-use std::time::Instant;
 use std::{fmt, net};
 use tracing::{info_span, trace};
 use tracing_futures::Instrument;
@@ -28,13 +29,6 @@ pub enum Error {
 }
 
 pub struct IpAddrFuture(Box<dyn Future<Item = LookupIp, Error = ResolveError> + Send + 'static>);
-
-pub struct RefineFuture(Box<dyn Future<Item = LookupIp, Error = ResolveError> + Send + 'static>);
-
-pub struct Refine {
-    pub name: Name,
-    pub valid_until: Instant,
-}
 
 pub type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
 
@@ -79,20 +73,9 @@ impl Resolver {
         IpAddrFuture(Box::new(f))
     }
 
-    /// Attempts to refine `name` to a fully-qualified name.
-    ///
-    /// This method does DNS resolution for `name` and ignores the IP address
-    /// result, instead returning the `Name` that was resolved.
-    ///
-    /// For example, a name like `web` may be refined to `web.example.com.`,
-    /// depending on the DNS search path.
-    pub fn refine(&self, name: &Name) -> RefineFuture {
-        let name = name.clone();
-        let f = self
-            .resolver
-            .lookup_ip(name.as_ref())
-            .instrument(info_span!("refine", %name));
-        RefineFuture(Box::new(f))
+    /// Creates a refining service.
+    pub fn into_make_refine(self) -> MakeRefine {
+        MakeRefine(self.resolver)
     }
 }
 
@@ -116,23 +99,6 @@ impl Future for IpAddrFuture {
             .next()
             .map(Async::Ready)
             .ok_or_else(|| Error::NoAddressesFound)
-    }
-}
-
-impl Future for RefineFuture {
-    type Item = Refine;
-    type Error = ResolveError;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let lookup = try_ready!(self.0.poll());
-        let valid_until = lookup.valid_until();
-
-        let n = lookup.query().name();
-        let name = Name::try_from(n.to_ascii().as_bytes())
-            .expect("Name returned from resolver must be valid");
-
-        let refine = Refine { name, valid_until };
-        Ok(Async::Ready(refine))
     }
 }
 

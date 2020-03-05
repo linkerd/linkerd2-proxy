@@ -39,17 +39,11 @@ pub trait HasH2Reason {
 
 impl<'a> HasH2Reason for &'a (dyn std::error::Error + 'static) {
     fn h2_reason(&self) -> Option<::h2::Reason> {
-        let mut cause = Some(*self);
-
-        while let Some(err) = cause {
-            if let Some(err) = err.downcast_ref::<::h2::Error>() {
-                return err.h2_reason();
-            }
-
-            cause = err.source();
+        if let Some(err) = self.downcast_ref::<::h2::Error>() {
+            return err.h2_reason();
         }
 
-        None
+        self.source().and_then(|e| e.h2_reason())
     }
 }
 
