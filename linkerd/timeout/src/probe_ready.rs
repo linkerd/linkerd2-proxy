@@ -1,41 +1,42 @@
-use futures::{future, Future, Poll};
+use futures::{Future, Poll};
 use linkerd2_error::Error;
 use std::time::{Duration, Instant};
 use tokio_timer::Delay;
 
 #[derive(Copy, Clone, Debug)]
-pub struct ProbeLayer(Duration);
+pub struct ProbeReadyLayer(Duration);
 
+/// Ensures that the inner service is polled at least once per `interval`.
 #[derive(Debug)]
-pub struct Probe<S> {
+pub struct ProbeReady<S> {
     inner: S,
     probe: Delay,
-    timeout: Duration,
+    interval: Duration,
 }
 
-// === impl ProbeLayer ===
+// === impl ProbeReadyLayer ===
 
-impl ProbeLayer {
-    pub fn new(timeout: Duration) -> Self {
-        ProbeLayer(timeout)
+impl ProbeReadyLayer {
+    pub fn new(interval: Duration) -> Self {
+        ProbeReadyLayer(interval)
     }
 }
 
-impl<S> tower::layer::Layer<S> for ProbeLayer {
-    type Service = Probe<S>;
+impl<S> tower::layer::Layer<S> for ProbeReadyLayer {
+    type Service = ProbeReady<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
         Self::Service {
             inner,
-            timeout: self.0,
+            interval: self.0,
             probe: Delay::new(Instant::now()),
         }
     }
 }
 
-// === impl Probe ===
+// === impl ProbeReady ===
 
-impl<S, T> tower::Service<T> for Probe<S>
+impl<S, T> tower::Service<T> for ProbeReady<S>
 where
     S: tower::Service<T>,
     S::Error: Into<Error>,
@@ -46,7 +47,7 @@ where
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         let ready = self.inner.poll_ready()?;
-        self.probe.reset(Instant::now() + self.timeout);
+        self.probe.reset(Instant::now() + self.interval);
         self.probe.poll().expect("timer must succeed");
         Ok(ready)
     }
@@ -58,7 +59,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::ProbeLayer;
+    use super::ProbeReadyLayer;
     use futures::{future, Async, Future, Poll};
     use linkerd2_error::Never;
     use std::sync::{
@@ -94,7 +95,7 @@ mod test {
             }
         }
 
-        struct Drive(super::Probe<Ready>, Weak<AtomicUsize>);
+        struct Drive(super::ProbeReady<Ready>, Weak<AtomicUsize>);
         impl Future for Drive {
             type Item = ();
             type Error = ();
@@ -110,11 +111,11 @@ mod test {
         }
 
         run(move || {
-            let timeout = Duration::from_millis(100);
+            let interval = Duration::from_millis(100);
             let count = Arc::new(AtomicUsize::new(0));
-            let service = ProbeLayer::new(timeout).layer(Ready);
+            let service = ProbeReadyLayer::new(interval).layer(Ready);
             tokio::spawn(Drive(service, Arc::downgrade(&count)));
-            let delay = (2 * timeout) + Duration::from_millis(3);
+            let delay = (2 * interval) + Duration::from_millis(3);
             tokio_timer::Delay::new(Instant::now() + delay)
                 .map_err(|_| ())
                 .map(move |_| {

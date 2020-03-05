@@ -10,12 +10,12 @@ use tokio_timer as timer;
 pub mod error;
 mod failfast;
 mod idle;
-mod probe;
+mod probe_ready;
 
 pub use self::{
     failfast::{FailFast, FailFastError, FailFastLayer},
     idle::{Idle, IdleError, IdleLayer},
-    probe::{Probe, ProbeLayer},
+    probe_ready::{ProbeReady, ProbeReadyLayer},
 };
 
 /// A timeout that wraps an underlying operation.

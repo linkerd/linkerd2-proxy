@@ -92,8 +92,8 @@ impl<L> Layers<L> {
     }
 
     // Polls the inner service at least once per interval.
-    pub fn push_probe(self, interval: Duration) -> Layers<Pair<L, timeout::ProbeLayer>> {
-        self.push(timeout::ProbeLayer::new(interval))
+    pub fn push_probe_ready(self, interval: Duration) -> Layers<Pair<L, timeout::ProbeReadyLayer>> {
+        self.push(timeout::ProbeReadyLayer::new(interval))
     }
 
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
@@ -236,8 +236,8 @@ impl<S> Stack<S> {
     }
 
     // Polls the inner service at least once per interval.
-    pub fn push_probe(self, interval: Duration) -> Stack<timeout::Probe<S>> {
-        self.push(timeout::ProbeLayer::new(interval))
+    pub fn push_probe_ready(self, interval: Duration) -> Stack<timeout::ProbeReady<S>> {
+        self.push(timeout::ProbeReadyLayer::new(interval))
     }
 
     pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
