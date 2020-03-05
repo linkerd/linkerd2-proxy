@@ -94,7 +94,7 @@ where
             // calls through to the service.
             ret => {
                 self.state = State::Open;
-                return ret.map_err(Into::into);
+                ret.map_err(Into::into)
             }
         }
     }
