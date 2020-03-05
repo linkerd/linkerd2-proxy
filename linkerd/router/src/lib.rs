@@ -6,39 +6,39 @@ use linkerd2_stack::NewService;
 use tower::util::{Oneshot, ServiceExt};
 use tracing::trace;
 
-pub trait Key<T> {
+pub trait Recognize<T> {
     type Key: Clone;
 
-    fn key(&self, t: &T) -> Self::Key;
+    fn recognize(&self, t: &T) -> Self::Key;
 }
 
-pub fn key<F>(f: F) -> KeyFn<F> {
-    KeyFn(f)
+pub fn recognize<F>(f: F) -> RecognizeFn<F> {
+    RecognizeFn(f)
 }
 
 #[derive(Clone, Debug)]
 pub struct Layer<T> {
-    make_key: T,
+    new_recgonize: T,
 }
 
 #[derive(Clone, Debug)]
 pub struct NewRouter<T, M> {
-    make_key: T,
+    new_recgonize: T,
     make_route: M,
 }
 
 #[derive(Clone, Debug)]
 pub struct Router<T, M> {
-    key: T,
+    recognize: T,
     make: M,
 }
 
 #[derive(Clone, Debug)]
-pub struct KeyFn<F>(F);
+pub struct RecognizeFn<F>(F);
 
 impl<K: Clone> Layer<K> {
-    pub fn new(make_key: K) -> Self {
-        Self { make_key }
+    pub fn new(new_recgonize: K) -> Self {
+        Self { new_recgonize }
     }
 }
 
@@ -48,7 +48,7 @@ impl<K: Clone, M> tower::layer::Layer<M> for Layer<K> {
     fn layer(&self, make_route: M) -> Self::Service {
         NewRouter {
             make_route,
-            make_key: self.make_key.clone(),
+            new_recgonize: self.new_recgonize.clone(),
         }
     }
 }
@@ -62,7 +62,7 @@ where
 
     fn new_service(&self, t: T) -> Self::Service {
         Router {
-            key: self.make_key.new_service(t),
+            recognize: self.new_recgonize.new_service(t),
             make: self.make_route.clone(),
         }
     }
@@ -71,7 +71,7 @@ where
 impl<U, S, K, M> tower::Service<U> for Router<K, M>
 where
     U: std::fmt::Debug,
-    K: Key<U>,
+    K: Recognize<U>,
     K::Key: std::fmt::Debug,
     M: tower::Service<K::Key, Response = S>,
     M::Error: Into<Error>,
@@ -87,7 +87,7 @@ where
     }
 
     fn call(&mut self, request: U) -> Self::Future {
-        let key = self.key.key(&request);
+        let key = self.recognize.recognize(&request);
         trace!(?key, ?request, "Routing");
         ResponseFuture::Make(self.make.call(key), Some(request))
     }
@@ -132,14 +132,14 @@ where
     }
 }
 
-impl<T, K, F> Key<T> for KeyFn<F>
+impl<T, K, F> Recognize<T> for RecognizeFn<F>
 where
     K: Clone,
     F: Fn(&T) -> K,
 {
     type Key = K;
 
-    fn key(&self, t: &T) -> Self::Key {
+    fn recognize(&self, t: &T) -> Self::Key {
         (self.0)(t)
     }
 }

@@ -341,10 +341,10 @@ impl From<tls::accept::Meta> for LogicalPerRequest {
     }
 }
 
-impl<B> router::Key<http::Request<B>> for LogicalPerRequest {
+impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
     type Key = Target<HttpEndpoint>;
 
-    fn key(&self, req: &http::Request<B>) -> Self::Key {
+    fn recognize(&self, req: &http::Request<B>) -> Self::Key {
         use linkerd2_app_core::{
             http_request_authority_addr, http_request_host_addr, http_request_l5d_override_dst_addr,
         };
@@ -395,10 +395,10 @@ impl<B> router::Key<http::Request<B>> for LogicalPerRequest {
 
 // === impl ProfilePerTarget ===
 
-impl<T> router::Key<Target<T>> for ProfilePerTarget {
+impl<T> router::Recognize<Target<T>> for ProfilePerTarget {
     type Key = Profile;
 
-    fn key(&self, t: &Target<T>) -> Self::Key {
+    fn recognize(&self, t: &Target<T>) -> Self::Key {
         Profile(t.addr.clone())
     }
 }
