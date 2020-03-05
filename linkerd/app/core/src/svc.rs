@@ -221,7 +221,6 @@ impl<S> Stack<S> {
         self.push(load_shed::Layer)
     }
 
-
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
     }
