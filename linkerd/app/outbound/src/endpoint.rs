@@ -271,7 +271,8 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
             });
 
         Target {
-            addr: concrete.addr.clone(),
+            // Use the logical addr for the target.
+            addr: concrete.inner.addr.clone(),
             inner: HttpEndpoint {
                 addr,
                 identity,
