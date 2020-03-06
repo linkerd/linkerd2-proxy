@@ -33,6 +33,21 @@ where
     }
 }
 
+macro_rules! return_ready {
+    () => {{
+        trace!("Complete");
+        return Ok(Async::Ready(()));
+    }};
+}
+
+macro_rules! return_ready_if {
+    ($cond:expr) => {{
+        if $cond {
+            return_ready!();
+        }
+    }};
+}
+
 impl<S, Req> Future for Dispatch<S, Req, S::Future>
 where
     S: tower::Service<Req>,
@@ -45,9 +60,7 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         // Complete the task when all services have dropped.
-        if self.ready.poll_close().expect("must not fail").is_ready() {
-            return Ok(Async::Ready(()));
-        }
+        return_ready_if!(self.ready.poll_close().expect("must not fail").is_ready());
 
         // Drive requests from the queue to the inner service.
         loop {
@@ -62,9 +75,8 @@ where
             match ready {
                 // If it's not ready, wait for it..
                 Ok(Async::NotReady) => {
-                    if self.ready.broadcast(Ok(Async::NotReady)).is_err() {
-                        return Ok(Async::Ready(()));
-                    }
+                    return_ready_if!(self.ready.broadcast(Ok(Async::NotReady)).is_err());
+
                     trace!("Waiting for inner service");
                     return Ok(Async::NotReady);
                 }
@@ -84,23 +96,19 @@ where
                         let _ = tx.send(Err(shared.clone().into()));
                     }
 
+                    // Drop the inner Service to free its resources. It won't be used again.
+                    self.inner = None;
+
                     // Ensure the task remains active until all services have observed the error.
-                    return if is_active {
-                        // Drop the inner Service to free its resources. It won't be used again.
-                        self.inner = None;
-                        // This is safe because ready.poll_close has returned NotReady.
-                        Ok(Async::NotReady)
-                    } else {
-                        // All of the services have dropped, so complete the task.
-                        Ok(Async::Ready(()))
-                    };
+                    return_ready_if!(!is_active);
+
+                    // This is safe because ready.poll_close has returned NotReady.
+                    return Ok(Async::NotReady);
                 }
 
                 // If inner service can receive requests, start polling the channel.
                 Ok(Async::Ready(())) => {
-                    if self.ready.broadcast(Ok(Async::Ready(()))).is_err() {
-                        return Ok(Async::Ready(()));
-                    }
+                    return_ready_if!(self.ready.broadcast(Ok(Async::Ready(()))).is_err());
                     trace!("Ready for requests");
                 }
             }
@@ -109,8 +117,8 @@ where
             match self.rx.poll() {
                 Ok(Async::NotReady) => return Ok(Async::NotReady),
 
-                // The sender has been dropped, complete.
-                Err(_) | Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
+                // All senders have been dropped, complete.
+                Err(_) | Ok(Async::Ready(None)) => return_ready!(),
 
                 // If a request was ready return it to the caller.
                 Ok(Async::Ready(Some(InFlight { request, tx }))) => {
