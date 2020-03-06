@@ -1332,9 +1332,11 @@ dependencies = [
  "futures",
  "linkerd2-error",
  "linkerd2-stack",
+ "tokio",
  "tokio-connect",
  "tokio-timer",
  "tower",
+ "tower-test",
  "tracing",
 ]
 

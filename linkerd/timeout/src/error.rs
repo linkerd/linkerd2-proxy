@@ -5,36 +5,11 @@ use std::time::Duration;
 
 /// An error representing that an operation timed out.
 #[derive(Debug)]
-pub struct ReadyTimeout(pub(crate) Duration);
-
-/// An error representing that an operation timed out.
-#[derive(Debug)]
 pub struct ResponseTimeout(pub(crate) Duration);
 
 /// A duration which pretty-prints as fractional seconds.
 #[derive(Copy, Clone, Debug)]
-struct HumanDuration<'a>(&'a Duration);
-
-// === impl ResponseTimeout ===
-
-impl ReadyTimeout {
-    /// Get the amount of time waited until this error was triggered.
-    pub fn duration(&self) -> Duration {
-        self.0
-    }
-}
-
-impl fmt::Display for ReadyTimeout {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "service did not become ready within {}",
-            HumanDuration(&self.0)
-        )
-    }
-}
-
-impl std::error::Error for ReadyTimeout {}
+pub(crate) struct HumanDuration<'a>(pub &'a Duration);
 
 // === impl ResponseTimeout ===
 
