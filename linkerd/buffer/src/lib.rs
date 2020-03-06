@@ -9,15 +9,15 @@ mod service;
 
 pub use self::{dispatch::Dispatch, layer::SpawnBufferLayer, service::Buffer};
 
-struct InFlight<Req, Rsp> {
+struct InFlight<Req, F> {
     request: Req,
-    tx: tokio::sync::oneshot::Sender<Result<Rsp, linkerd2_error::Error>>,
+    tx: tokio::sync::oneshot::Sender<Result<F, linkerd2_error::Error>>,
 }
 
 pub(crate) fn new<Req, S>(
     inner: S,
     capacity: usize,
-) -> (Buffer<Req, S::Response>, Dispatch<S, Req, S::Response>)
+) -> (Buffer<Req, S::Future>, Dispatch<S, Req, S::Future>)
 where
     Req: Send + 'static,
     S: tower::Service<Req> + Send + 'static,

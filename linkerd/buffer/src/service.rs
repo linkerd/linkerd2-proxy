@@ -4,7 +4,7 @@ use futures::{try_ready, Async, Future, Poll};
 use linkerd2_error::Error;
 use tokio::sync::{mpsc, oneshot, watch};
 
-pub struct Buffer<Req, Rsp> {
+pub struct Buffer<Req, F> {
     /// Updates with the readiness state of the inner service. This allows the buffer to reliably
     /// exert backpressure and propagate errors, especially before the inner service has been
     /// initialized.
@@ -14,18 +14,19 @@ pub struct Buffer<Req, Rsp> {
     ///
     /// Because the inner service's status is propagated via `ready` watch, this is here to
     /// accomodate for when multiple services race to send a requesto
-    tx: mpsc::Sender<InFlight<Req, Rsp>>,
+    tx: mpsc::Sender<InFlight<Req, F>>,
 }
 
-pub struct ResponseFuture<Rsp> {
-    rx: oneshot::Receiver<Result<Rsp, Error>>,
+pub enum ResponseFuture<F> {
+    Receive(oneshot::Receiver<Result<F, Error>>),
+    Respond(F),
 }
 
 // === impl Buffer ===
 
-impl<Req, Rsp> Buffer<Req, Rsp> {
+impl<Req, F> Buffer<Req, F> {
     pub(crate) fn new(
-        tx: mpsc::Sender<InFlight<Req, Rsp>>,
+        tx: mpsc::Sender<InFlight<Req, F>>,
         ready: watch::Receiver<Poll<(), ServiceError>>,
     ) -> Self {
         Self { tx, ready }
@@ -47,10 +48,14 @@ impl<Req, Rsp> Buffer<Req, Rsp> {
     }
 }
 
-impl<Req, Rsp> tower::Service<Req> for Buffer<Req, Rsp> {
-    type Response = Rsp;
+impl<Req, F> tower::Service<Req> for Buffer<Req, F>
+where
+    F: Future,
+    F::Error: Into<Error>,
+{
+    type Response = F::Item;
     type Error = Error;
-    type Future = ResponseFuture<Rsp>;
+    type Future = ResponseFuture<F>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match self.poll_inner() {
@@ -65,11 +70,11 @@ impl<Req, Rsp> tower::Service<Req> for Buffer<Req, Rsp> {
             .try_send(InFlight { request, tx })
             .ok()
             .expect("poll_ready must be called");
-        Self::Future { rx }
+        Self::Future::Receive(rx)
     }
 }
 
-impl<Req, Rsp> Clone for Buffer<Req, Rsp> {
+impl<Req, F> Clone for Buffer<Req, F> {
     fn clone(&self) -> Self {
         Self::new(self.tx.clone(), self.ready.clone())
     }
@@ -77,12 +82,23 @@ impl<Req, Rsp> Clone for Buffer<Req, Rsp> {
 
 // === impl ResponseFuture ===
 
-impl<Rsp> Future for ResponseFuture<Rsp> {
-    type Item = Rsp;
+impl<F> Future for ResponseFuture<F>
+where
+    F: Future,
+    F::Error: Into<Error>,
+{
+    type Item = F::Item;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let ret = try_ready!(self.rx.poll().map_err(|_| Error::from(Closed(()))));
-        ret.map(Async::Ready)
+        loop {
+            *self = match self {
+                ResponseFuture::Receive(ref mut rx) => {
+                    let fut = try_ready!(rx.poll().map_err(|_| Error::from(Closed(()))))?;
+                    ResponseFuture::Respond(fut)
+                }
+                ResponseFuture::Respond(ref mut fut) => return fut.poll().map_err(Into::into),
+            };
+        }
     }
 }

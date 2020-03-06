@@ -7,13 +7,13 @@ use tokio::sync::{mpsc, watch};
 use tracing::trace;
 
 /// A future that drives the inner service.
-pub struct Dispatch<S, Req, Rsp> {
+pub struct Dispatch<S, Req, F> {
     inner: Option<S>,
-    rx: mpsc::Receiver<InFlight<Req, Rsp>>,
+    rx: mpsc::Receiver<InFlight<Req, F>>,
     ready: watch::Sender<Poll<(), ServiceError>>,
 }
 
-impl<S, Req> Dispatch<S, Req, S::Response>
+impl<S, Req> Dispatch<S, Req, S::Future>
 where
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -22,7 +22,7 @@ where
 {
     pub(crate) fn new(
         inner: S,
-        rx: mpsc::Receiver<InFlight<Req, S::Response>>,
+        rx: mpsc::Receiver<InFlight<Req, S::Future>>,
         ready: watch::Sender<Poll<(), ServiceError>>,
     ) -> Self {
         Self {
@@ -33,7 +33,7 @@ where
     }
 }
 
-impl<S, Req> Future for Dispatch<S, Req, S::Response>
+impl<S, Req> Future for Dispatch<S, Req, S::Future>
 where
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -112,14 +112,15 @@ where
                 // The sender has been dropped, complete.
                 Err(_) | Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
 
-                // If a request was ready, spawn its response future.
+                // If a request was ready return it to the caller.
                 Ok(Async::Ready(Some(InFlight { request, tx }))) => {
                     trace!("Dispatching a request");
-                    let inner = self.inner.as_mut().expect("Service must not be dropped");
-                    tokio::spawn(inner.call(request).then(move |res| {
-                        let _ = tx.send(res.map_err(Into::into));
-                        Ok(())
-                    }));
+                    let fut = self
+                        .inner
+                        .as_mut()
+                        .expect("Service must not be dropped")
+                        .call(request);
+                    let _ = tx.send(Ok(fut));
                 }
             }
         }

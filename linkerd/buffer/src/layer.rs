@@ -34,7 +34,7 @@ where
     S::Response: Send + 'static,
     S::Future: Send + 'static,
 {
-    type Service = Buffer<Req, S::Response>;
+    type Service = Buffer<Req, S::Future>;
 
     fn layer(&self, inner: S) -> Self::Service {
         let (buffer, dispatch) = crate::new(inner, self.capacity);
