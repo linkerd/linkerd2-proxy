@@ -91,7 +91,7 @@ where
                     // being buffered.
                     let is_active = self.ready.broadcast(Err(shared.clone())).is_ok();
 
-                    // Propagate the error to all in-
+                    // Propagate the error to all in-flight requests.
                     while let Ok(Async::Ready(Some(InFlight { tx, .. }))) = self.rx.poll() {
                         let _ = tx.send(Err(shared.clone().into()));
                     }
@@ -102,7 +102,8 @@ where
                     // Ensure the task remains active until all services have observed the error.
                     return_ready_if!(!is_active);
 
-                    // This is safe because ready.poll_close has returned NotReady.
+                    // This is safe because ready.poll_close has returned NotReady. The task will
+                    // complete when all observes have dropped their interest in `ready`.
                     return Ok(Async::NotReady);
                 }
 

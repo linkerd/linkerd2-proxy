@@ -13,7 +13,7 @@ pub struct Buffer<Req, F> {
     /// The queue on which in-flight requests are sent to the inner service.
     ///
     /// Because the inner service's status is propagated via `ready` watch, this is here to
-    /// accomodate for when multiple services race to send a requesto
+    /// allow multiple services race to send a request.
     tx: mpsc::Sender<InFlight<Req, F>>,
 }
 
