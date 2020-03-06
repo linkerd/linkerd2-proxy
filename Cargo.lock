@@ -783,7 +783,6 @@ name = "linkerd2-cache"
 version = "0.1.0"
 dependencies = [
  "futures",
- "indexmap",
  "linkerd2-error",
  "linkerd2-lock",
  "linkerd2-stack",

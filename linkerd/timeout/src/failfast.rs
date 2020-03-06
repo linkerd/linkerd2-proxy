@@ -5,6 +5,7 @@ use super::timer::Delay;
 use futures::{Async, Future, Poll};
 use linkerd2_error::Error;
 use std::time::{Duration, Instant};
+use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug)]
 pub struct FailFastLayer(Duration);
@@ -78,6 +79,7 @@ where
                         let poll = fut.poll();
                         debug_assert!(poll.is_ok(), "timer must not fail");
                         if let Ok(Async::NotReady) = poll {
+                            trace!("Pending");
                             return Ok(Async::NotReady);
                         }
                         State::FailFast
@@ -85,6 +87,7 @@ where
 
                     // Admit requests and fail them immediately.
                     State::FailFast => {
+                        debug!("Failing");
                         return Ok(Async::Ready(()));
                     }
                 };
@@ -93,6 +96,10 @@ where
             // If the inner service is ready or has failed, then let subsequent
             // calls through to the service.
             ret => {
+                match self.state {
+                    State::Open => {}
+                    _ => debug!("Recovered"),
+                }
                 self.state = State::Open;
                 ret.map_err(Into::into)
             }

@@ -3,7 +3,8 @@ use http;
 use linkerd2_error::Error;
 use linkerd2_http_classify as classify;
 pub use linkerd2_http_classify::{CanClassify, Layer};
-use linkerd2_proxy_http::{timeout, HasH2Reason};
+use linkerd2_proxy_http::HasH2Reason;
+use linkerd2_timeout::error::ResponseTimeout;
 use std::borrow::Cow;
 use tower_grpc::{self as grpc};
 use tracing::trace;
@@ -145,7 +146,7 @@ impl classify::ClassifyResponse for Response {
     }
 
     fn error(self, err: &Error) -> Self::Class {
-        let msg = if err.is::<timeout::error::ResponseTimeout>() {
+        let msg = if err.is::<ResponseTimeout>() {
             "timeout".into()
         } else {
             h2_error(err).into()

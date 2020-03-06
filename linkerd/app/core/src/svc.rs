@@ -112,10 +112,6 @@ impl<L> Layers<L> {
         self.push(concurrency_limit::Layer::new(max))
     }
 
-    pub fn push_load_shed(self) -> Layers<Pair<L, load_shed::Layer>> {
-        self.push(load_shed::Layer)
-    }
-
     pub fn push_make_ready<Req>(self) -> Layers<Pair<L, stack::MakeReadyLayer<Req>>> {
         self.push(stack::MakeReadyLayer::new())
     }
@@ -222,10 +218,6 @@ impl<S> Stack<S> {
         self.push(concurrency_limit::Layer::new(max))
     }
 
-    pub fn push_load_shed(self) -> Stack<load_shed::LoadShed<S>> {
-        self.push(load_shed::Layer)
-    }
-
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
     }
@@ -257,21 +249,14 @@ impl<S> Stack<S> {
         self.push(http::insert::target::layer())
     }
 
-    pub fn spawn_cache<T>(
-        self,
-        capacity: usize,
-        max_idle_age: Duration,
-    ) -> Stack<cache::Service<T, S>>
+    pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
     where
-        T: Clone + Eq + std::hash::Hash + Send + 'static,
-        S: NewService<T> + Send + 'static,
-        S::Service: Clone + Send + 'static,
+        T: Eq + std::hash::Hash,
+        S: NewService<T> + Clone,
+        L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
+        L::Service: NewService<T, Service = U>,
     {
-        Stack(
-            cache::Layer::new(capacity, max_idle_age)
-                .layer(self.0)
-                .spawn(),
-        )
+        self.push(cache::CacheLayer::new(track))
     }
 
     pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<stack::Fallback<S, F>> {
@@ -391,22 +376,6 @@ where
 
     fn call(&mut self, t: T) -> Self::Future {
         self.0.call(t)
-    }
-}
-
-/// Proivdes a cloneable Layer, unlike tower::load_shed.
-pub mod load_shed {
-    pub use tower::load_shed::LoadShed;
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct Layer;
-
-    impl<S> super::Layer<S> for Layer {
-        type Service = LoadShed<S>;
-
-        fn layer(&self, inner: S) -> Self::Service {
-            LoadShed::new(inner)
-        }
     }
 }
 

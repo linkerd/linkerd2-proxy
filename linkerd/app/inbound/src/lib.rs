@@ -77,7 +77,7 @@ impl<A: OrigDstAddr> Config<A> {
                 ProxyConfig {
                     server: ServerConfig { bind, h2_settings },
                     connect,
-                    cache_capacity,
+                    buffer_capacity,
                     cache_max_idle_age,
                     disable_protocol_detection_for_ports,
                     dispatch_timeout,
@@ -115,12 +115,20 @@ impl<A: OrigDstAddr> Config<A> {
                     move |_| Ok(backoff.stream())
                 }))
                 .into_new_service()
-                .push_on_response(
-                    svc::layers()
-                        .push_lock()
-                        .push(metrics.stack.layer(stack_labels("endpoint"))),
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the service has been ready & unused for `cache_max_idle_age`,
+                            // fail it.
+                            .push_idle_timeout(cache_max_idle_age)
+                            // If the service has been unavailable for an extend time, eagerly
+                            // fail requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the service, ensuring discovery errors are propagated.
+                            .push_spawn_buffer(buffer_capacity)
+                            .push(metrics.stack.layer(stack_labels("endpoint"))),
+                    ),
                 )
-                .spawn_cache(cache_capacity, cache_max_idle_age)
                 .instrument(|ep: &HttpEndpoint| {
                     info_span!(
                         "endpoint",
@@ -159,14 +167,24 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(normalize_uri::layer())
                 .push(http_target_observability)
                 .into_new_service()
-                .push_on_response(
-                    svc::layers()
-                        .push_lock()
-                        .push(metrics.stack.layer(stack_labels("target"))),
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the service has been ready & unused for `cache_max_idle_age`,
+                            // fail it.
+                            .push_idle_timeout(cache_max_idle_age)
+                            // If the service has been unavailable for an extend time, eagerly
+                            // fail requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the service, ensuring discovery errors are propagated.
+                            .push_spawn_buffer(buffer_capacity)
+                            .push(metrics.stack.layer(stack_labels("target"))),
+                    ),
                 )
-                .check_new_clone_service::<Target>()
-                .spawn_cache(cache_capacity, cache_max_idle_age)
                 .instrument(|_: &Target| info_span!("target"))
+                // Prevent the cache's lock from being acquired in poll_ready, ensuring this happens
+                // in the response future. This prevents buffers from holding the cache's lock.
+                .push_oneshot()
                 .check_service::<Target>();
 
             // Routes targets to a Profile stack, i.e. so that profile
@@ -181,16 +199,26 @@ impl<A: OrigDstAddr> Config<A> {
                     http_profile_route_proxy.into_inner(),
                 ))
                 .into_new_service()
-                .push_on_response(
-                    svc::layers()
-                        .push_lock()
-                        .push(metrics.stack.layer(stack_labels("profile"))),
-                )
                 // Caches profile stacks.
-                .check_new_clone_service::<Profile>()
-                .spawn_cache(cache_capacity, cache_max_idle_age)
+                .check_new_service_routes::<Profile, Target>()
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the service has been ready & unused for `cache_max_idle_age`,
+                            // fail it.
+                            .push_idle_timeout(cache_max_idle_age)
+                            // If the service has been unavailable for an extend time, eagerly
+                            // fail requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the service, ensuring discovery errors are propagated.
+                            .push_spawn_buffer(buffer_capacity)
+                            .push(metrics.stack.layer(stack_labels("profile"))),
+                    ),
+                )
                 .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
-                .check_service::<Profile>()
+                .check_make_service::<Profile, Target>()
+                // Ensures that cache's lock isn't held in poll_ready.
+                .push_oneshot()
                 .push(router::Layer::new(|()| ProfileTarget))
                 .check_new_service_routes::<(), Target>()
                 .new_service(());
@@ -205,16 +233,10 @@ impl<A: OrigDstAddr> Config<A> {
             let http_admit_request = svc::layers()
                 // Downgrades the protocol if upgraded by an outbound proxy.
                 .push(svc::layer::mk(orig_proto::Downgrade::new))
-                // Ensures that load is not shed if the inner service is in-use.
-                .push_oneshot()
                 // Limits the number of in-flight requests.
                 .push_concurrency_limit(max_in_flight_requests)
-                // Sheds load if too many requests are in flight.
-                //
-                // XXX Can this be removed? Is it okay to just backpressure onto
-                // the client? Should we instead limit the number of active
-                // connections?
-                .push_load_shed()
+                // Eagerly fail requests when the proxy is out of capacity for some time period.
+                .push_failfast(dispatch_timeout)
                 .push(metrics.http_errors)
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer());
