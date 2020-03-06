@@ -11,7 +11,7 @@ pub struct ServiceError(pub(crate) Arc<Error>);
 
 impl std::fmt::Display for Closed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Closed")
+        write!(f, "closed")
     }
 }
 
