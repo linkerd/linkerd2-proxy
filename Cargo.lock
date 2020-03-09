@@ -991,7 +991,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.11"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.11#ddf72e619e654b4139f14801b517ba6ed98b5fe3"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=zd/auth_override#75a7b3b2059704ba81917bd1ccb0719d39ec5558"
 dependencies = [
  "bytes",
  "futures",
@@ -1011,6 +1011,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "indexmap",
+ "linkerd2-addr",
  "linkerd2-identity",
  "linkerd2-proxy-api",
  "linkerd2-proxy-core",

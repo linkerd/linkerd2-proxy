@@ -6,8 +6,8 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use self::endpoint::{
-    Concrete, HttpEndpoint, Logical, LogicalPerRequest, Profile, ProfilePerTarget, Target,
-    TcpEndpoint,
+    Concrete, ExtractAddr, ExtractAuthorityOverride, HttpEndpoint, Logical, LogicalPerRequest,
+    Profile, ProfilePerTarget, Target, TcpEndpoint,
 };
 use futures::future;
 use linkerd2_app_core::{
@@ -40,9 +40,9 @@ mod add_server_id_on_rsp;
 mod endpoint;
 mod orig_proto_upgrade;
 mod require_identity_on_endpoint;
-
 use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
 use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
+use ::http::header::HOST;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -207,6 +207,11 @@ impl<A: OrigDstAddr> Config<A> {
                 )
                 .push_spawn_ready()
                 .check_service::<Target<HttpEndpoint>>()
+                // Sets the host header to the authority override if present.
+                .push(http::header_from_target::layer(
+                    HOST,
+                    ExtractAuthorityOverride,
+                ))
                 .push(discover)
                 .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                 .into_new_service()
@@ -346,7 +351,10 @@ impl<A: OrigDstAddr> Config<A> {
                 )
                 .check_service::<Logical<HttpEndpoint>>()
                 // Sets the canonical-dst header on all outbound requests.
-                .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+                .push(http::header_from_target::layer(
+                    CANONICAL_DST_HEADER,
+                    ExtractAddr,
+                ))
                 // Strips headers that may be set by this proxy.
                 .push(http::canonicalize::Layer::new(
                     dns_refine_cache,

@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
+use linkerd2_addr as addr;
 use linkerd2_identity as identity;
 use linkerd2_proxy_api as api;
 use linkerd2_proxy_core as core;

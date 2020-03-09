@@ -3,46 +3,55 @@ use http;
 use http::header::{HeaderValue, IntoHeaderName};
 use linkerd2_stack::NewService;
 
+pub trait ExtractHeader<T> {
+    fn extract(&self, target: &T) -> Option<HeaderValue>;
+}
+
 /// Wraps HTTP `Service`s  so that a displayable `T` is cloned into each request's
 /// extensions.
 #[derive(Debug, Clone)]
-pub struct Layer<H> {
+pub struct Layer<H, E> {
     header: H,
+    extractor: E,
 }
 
 /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
 /// each request's headers.
 #[derive(Clone, Debug)]
-pub struct MakeSvc<H, M> {
+pub struct MakeSvc<H, E, M> {
     header: H,
+    extractor: E,
     inner: M,
 }
 
 #[derive(Clone, Debug)]
 pub struct Service<H, S> {
     header: H,
-    value: HeaderValue,
+    value: Option<HeaderValue>,
     inner: S,
 }
 
 // === impl Layer ===
 
-pub fn layer<H>(header: H) -> Layer<H>
+pub fn layer<H, E>(header: H, extractor: E) -> Layer<H, E>
 where
     H: IntoHeaderName + Clone,
+    E: Clone,
 {
-    Layer { header }
+    Layer { header, extractor }
 }
 
-impl<H, M> tower::layer::Layer<M> for Layer<H>
+impl<H, E, M> tower::layer::Layer<M> for Layer<H, E>
 where
     H: IntoHeaderName + Clone,
+    E: Clone,
 {
-    type Service = MakeSvc<H, M>;
+    type Service = MakeSvc<H, E, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
         MakeSvc {
             header: self.header.clone(),
+            extractor: self.extractor.clone(),
             inner,
         }
     }
@@ -50,18 +59,18 @@ where
 
 // === impl MakeSvc ===
 
-impl<H, T, M> NewService<T> for MakeSvc<H, M>
+impl<H, E, T, M> NewService<T> for MakeSvc<H, E, M>
 where
     H: IntoHeaderName + Clone,
     T: Clone + Send + Sync + 'static,
-    HeaderValue: for<'t> From<&'t T>,
     M: NewService<T>,
+    E: ExtractHeader<T>,
 {
     type Service = Service<H, M::Service>;
 
     fn new_service(&self, t: T) -> Self::Service {
         let header = self.header.clone();
-        let value = (&t).into();
+        let value = self.extractor.extract(&t);
         let inner = self.inner.new_service(t);
         Service {
             header,
@@ -71,16 +80,17 @@ where
     }
 }
 
-impl<H, T, M> tower::Service<T> for MakeSvc<H, M>
+impl<H, E, T, M> tower::Service<T> for MakeSvc<H, E, M>
 where
     H: IntoHeaderName + Clone,
     T: Clone + Send + Sync + 'static,
-    HeaderValue: for<'t> From<&'t T>,
     M: tower::Service<T>,
+    E: ExtractHeader<T>,
+    E: Clone,
 {
     type Response = Service<H, M::Response>;
     type Error = M::Error;
-    type Future = MakeSvc<(H, HeaderValue), M::Future>;
+    type Future = MakeSvc<(H, Option<HeaderValue>), E, M::Future>;
 
     fn poll_ready(&mut self) -> Poll<(), M::Error> {
         self.inner.poll_ready()
@@ -88,17 +98,19 @@ where
 
     fn call(&mut self, t: T) -> Self::Future {
         let header = self.header.clone();
-        let value = (&t).into();
+        let extractor = self.extractor.clone();
+        let value = extractor.extract(&t);
         let inner = self.inner.call(t);
 
         MakeSvc {
             header: (header, value),
+            extractor,
             inner,
         }
     }
 }
 
-impl<H, F> Future for MakeSvc<(H, HeaderValue), F>
+impl<H, E, F> Future for MakeSvc<(H, Option<HeaderValue>), E, F>
 where
     H: Clone,
     F: Future,
@@ -134,8 +146,20 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        req.headers_mut()
-            .insert(self.header.clone(), self.value.clone());
+        if let Some(header_value) = self.value.clone() {
+            req.headers_mut().insert(self.header.clone(), header_value);
+        }
         self.inner.call(req)
+    }
+}
+
+// === impl ExtractHeader ===
+
+impl<T, F> ExtractHeader<T> for F
+where
+    F: Fn(&T) -> Option<HeaderValue>,
+{
+    fn extract(&self, _target: &T) -> Option<HeaderValue> {
+        Option::None
     }
 }

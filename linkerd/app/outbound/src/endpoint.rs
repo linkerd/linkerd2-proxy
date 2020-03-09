@@ -1,3 +1,4 @@
+use ::http::header::HeaderValue;
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     dst, metric_labels,
@@ -5,6 +6,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
+        http::header_from_target::ExtractHeader,
         http::{self, identity_from_header},
         identity,
         resolve::map_endpoint::MapEndpoint,
@@ -16,6 +18,11 @@ use linkerd2_app_core::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+#[derive(Clone)]
+pub struct ExtractAddr;
+#[derive(Clone)]
+pub struct ExtractAuthorityOverride;
 
 #[derive(Copy, Clone, Debug)]
 pub struct FromMetadata;
@@ -80,10 +87,18 @@ impl<T> http::canonicalize::Target for Target<T> {
     }
 }
 
-impl<'t, T> From<&'t Target<T>> for ::http::header::HeaderValue {
-    fn from(target: &'t Target<T>) -> Self {
-        ::http::header::HeaderValue::from_str(&target.addr.to_string())
-            .expect("addr must be a valid header")
+impl<T> ExtractHeader<Target<T>> for ExtractAddr {
+    fn extract(&self, target: &Target<T>) -> Option<HeaderValue> {
+        Some(HeaderValue::from_str(&target.addr.to_string()).expect("addr must be a valid header"))
+    }
+}
+
+impl ExtractHeader<Target<HttpEndpoint>> for ExtractAuthorityOverride {
+    fn extract(&self, target: &Target<HttpEndpoint>) -> Option<HeaderValue> {
+        target.inner.metadata.authority_override().map(|add| {
+            HeaderValue::from_str(&add.clone().to_string())
+                .expect("authority override must be a valid header")
+        })
     }
 }
 
