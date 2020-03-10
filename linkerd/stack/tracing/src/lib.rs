@@ -91,7 +91,7 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         trace!(?target, "make_service");
         let span = self.get_span.get_span(&target);
-        let inner = self.make.call(target);
+        let inner = span.in_scope(|| self.make.call(target));
         Instrument { inner, span }
     }
 }

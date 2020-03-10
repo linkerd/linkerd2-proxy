@@ -96,7 +96,7 @@ impl<A: OrigDstAddr> Config<A> {
                 ProxyConfig {
                     server: ServerConfig { bind, h2_settings },
                     connect,
-                    cache_capacity,
+                    buffer_capacity,
                     cache_max_idle_age,
                     disable_protocol_detection_for_ports,
                     dispatch_timeout,
@@ -153,10 +153,9 @@ impl<A: OrigDstAddr> Config<A> {
 
                 tcp_connect
                     .clone()
-                    // Initiates an HTTP client on the underlying transport.
-                    // Prior-knowledge HTTP/2 is typically used (i.e. when
-                    // communicating with other proxies); though HTTP/1.x fallback
-                    // is supported as needed.
+                    // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
+                    // is typically used (i.e. when communicating with other proxies); though
+                    // HTTP/1.x fallback is supported as needed.
                     .push(http::MakeClientLayer::new(connect.h2_settings))
                     // Re-establishes a connection when the client fails.
                     .push(reconnect::layer({
@@ -167,11 +166,10 @@ impl<A: OrigDstAddr> Config<A> {
                     .push(identity_headers.clone())
                     // Ensures that the request's URI is in the proper form.
                     .push(http::normalize_uri::layer())
-                    // Upgrades HTTP/1 requests to be transported over HTTP/2
-                    // connections.
+                    // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
                     //
-                    // This sets headers so that the inbound proxy can downgrade the
-                    // request properly.
+                    // This sets headers so that the inbound proxy can downgrade the request
+                    // properly.
                     .push(OrigProtoUpgradeLayer::new())
                     .check_service::<Target<HttpEndpoint>>()
                     .instrument(|endpoint: &Target<HttpEndpoint>| {
@@ -179,22 +177,16 @@ impl<A: OrigDstAddr> Config<A> {
                     })
             };
 
-            // Resolves each target via the control plane on a background task,
-            // buffering results.
+            // Resolves each target via the control plane on a background task, buffering results.
             //
-            // This buffer controls how many discovery updates may be
-            // pending/unconsumed by the balancer before backpressure is applied
-            // on the resolution stream. If the buffer is full for
-            // `cache_max_idle_age`, then the resolution task fails.
+            // This buffer controls how many discovery updates may be pending/unconsumed by the
+            // balancer before backpressure is applied on the resolution stream. If the buffer is
+            // full for `cache_max_idle_age`, then the resolution task fails.
             let discover = {
                 const BUFFER_CAPACITY: usize = 1_000;
                 let resolve = map_endpoint::Resolve::new(endpoint::FromMetadata, resolve.clone());
                 discover::Layer::new(BUFFER_CAPACITY, cache_max_idle_age, resolve)
             };
-
-            // If the balancer fails to be created, i.e., because it is
-            // unresolvable, fall back to using a router that dispatches request
-            // to the application-selected original destination.
 
             // Builds a balancer for each concrete destination.
             let http_balancer = http_endpoint
@@ -210,38 +202,61 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(discover)
                 .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                 .into_new_service()
-                // Shares the balancer, ensuring discovery errors are propagated.
-                .push_on_response(
-                    svc::layers()
-                        .push_lock()
-                        .push(metrics.stack.layer(stack_labels("balance"))),
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the balancer has been ready & unused for `cache_max_idle_age`,
+                            // fail the balancer.
+                            .push_idle_timeout(cache_max_idle_age)
+                            // If the balancer has been empty/unavailable for 10s, eagerly fail
+                            // requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the balancer, ensuring discovery errors are propagated.
+                            .push_spawn_buffer(buffer_capacity)
+                            .push(metrics.stack.layer(stack_labels("balance"))),
+                    ),
                 )
-                .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr));
-            let http_balancer_cache = info_span!("balance")
-                .in_scope(|| http_balancer.spawn_cache(cache_capacity, cache_max_idle_age));
+                .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
+                // Ensure that buffers don't hold the cache's lock in poll_ready.
+                .push_oneshot();
 
             // Caches clients that bypass discovery/balancing.
             //
-            // This is effectively the same as the endpoint stack; but the
-            // client layer captures the requst body type (via PhantomData), so
-            // the stack cannot be shared directly.
-            let http_forward = http_endpoint
+            // This is effectively the same as the endpoint stack; but the client layer captures the
+            // requst body type (via PhantomData), so the stack cannot be shared directly.
+            let http_forward_cache = http_endpoint
                 .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
                 .into_new_service()
-                .push_on_response(svc::layers().box_http_request().push_lock())
-                .push_on_response(metrics.stack.layer(stack_labels("forward.endpoint")))
+                .cache(
+                    svc::layers()
+                        .push_on_response(
+                            svc::layers()
+                                // If the endpoint has been ready & unused for `cache_max_idle_age`,
+                                // fail it.
+                                .push_idle_timeout(cache_max_idle_age)
+                                // If the endpoint has been unavailable for an extend time, eagerly
+                                // fail requests.
+                                .push_failfast(dispatch_timeout)
+                                // Shares the balancer, ensuring discovery errors are propagated.
+                                .push_spawn_buffer(buffer_capacity)
+                                .box_http_request()
+                                .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
+                        ),
+                )
                 .instrument(|endpoint: &Target<HttpEndpoint>| {
                     info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.inner.identity)
-                });
-            let http_forward_cache = info_span!("forward")
-                .in_scope(|| http_forward.spawn_cache(cache_capacity, cache_max_idle_age))
+                })
                 .push_map_target(|t: Concrete<HttpEndpoint>| Target {
                     addr: t.addr.into(),
                     inner: t.inner.inner,
                 })
-                .check_service::<Concrete<HttpEndpoint>>();
+                .check_service::<Concrete<HttpEndpoint>>()
+                // Ensure that buffers don't hold the cache's lock in poll_ready.
+                .push_oneshot();
 
-            let http_concrete = http_balancer_cache
+            // If the balancer fails to be created, i.e., because it is unresolvable, fall back to
+            // using a router that dispatches request to the application-selected original destination.
+            let http_concrete = http_balancer
                 .push_map_target(|c: Concrete<HttpEndpoint>| c.map(|l| l.map(|e| e.settings)))
                 .check_service::<Concrete<HttpEndpoint>>()
                 .push_on_response(svc::layers().box_http_response())
@@ -270,10 +285,9 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(classify::Layer::new())
                 .check_new_clone_service::<dst::Route>();
 
-            // Routes `Logical` targets to a cached `Profile` stack, i.e. so
-            // that profile resolutions are shared even as the type of request
-            // may vary.
-            let http_profile = http_concrete
+            // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
+            // resolutions are shared even as the type of request may vary.
+            let http_logical_profile_cache = http_concrete
                 .clone()
                 .push_on_response(svc::layers().box_http_request())
                 .check_service::<Concrete<HttpEndpoint>>()
@@ -294,34 +308,49 @@ impl<A: OrigDstAddr> Config<A> {
                     }),
                 )
                 .into_new_service()
-                .push_on_response(
-                    svc::layers()
-                        .push_lock()
-                        .push(metrics.stack.layer(stack_labels("profile"))),
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the service has been ready & unused for `cache_max_idle_age`,
+                            // fail it.
+                            .push_idle_timeout(cache_max_idle_age)
+                            // If the service has been unavailable for an extend time, eagerly
+                            // fail requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the service, ensuring discovery errors are propagated.
+                            .push_spawn_buffer(buffer_capacity)
+                            .push(metrics.stack.layer(stack_labels("profile"))),
+                    ),
                 )
-                .instrument(|_: &Profile| info_span!("profile"));
-
-            let http_logical_profile_cache = info_span!("profile")
-                .in_scope(|| http_profile.spawn_cache(cache_capacity, cache_max_idle_age))
-                .check_service::<Profile>()
+                .instrument(|_: &Profile| info_span!("profile"))
+                // Ensures that the cache isn't locked when polling readiness.
+                .push_oneshot()
+                .check_make_service::<Profile, Logical<HttpEndpoint>>()
                 .push(router::Layer::new(|()| ProfilePerTarget))
                 .check_new_service_routes::<(), Logical<HttpEndpoint>>()
                 .new_service(());
 
             // Caches DNS refinements from relative names to canonical names.
             //
-            // For example, a client may send requests to `foo` or `foo.ns`; and
-            // the canonical form of these names is `foo.ns.svc.cluster.local
-            let dns_refine = svc::stack(dns_resolver.into_make_refine())
-                .push_on_response(
-                    svc::layers()
-                        .push_lock()
-                        .push(metrics.stack.layer(stack_labels("canonicalize"))),
+            // For example, a client may send requests to `foo` or `foo.ns`; and the canonical form
+            // of these names is `foo.ns.svc.cluster.local
+            let dns_refine_cache = svc::stack(dns_resolver.into_make_refine())
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the service has been ready & unused for `cache_max_idle_age`,
+                            // fail it.
+                            .push_idle_timeout(cache_max_idle_age)
+                            // If the service has been unavailable for an extend time, eagerly
+                            // fail requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the service, ensuring discovery errors are propagated.
+                            .push_spawn_buffer(buffer_capacity)
+                            .push(metrics.stack.layer(stack_labels("canonicalize"))),
+                    ),
                 )
-                .instrument(|name: &dns::Name| info_span!("canonicalize", %name));
-            let dns_refine_cache = info_span!("canonicalize")
-                .in_scope(|| dns_refine.spawn_cache(cache_capacity, cache_max_idle_age))
-                // Obtains the lock, advances the state of the resolution
+                .instrument(|name: &dns::Name| info_span!("canonicalize", %name))
+                // Obtains the service, advances the state of the resolution
                 .push(svc::make_response::Layer)
                 // Ensures that the cache isn't locked when polling readiness.
                 .push_oneshot()
@@ -362,18 +391,11 @@ impl<A: OrigDstAddr> Config<A> {
                 .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr));
 
             let http_admit_request = svc::layers()
-                // Ensures that load is not shed if the inner service is in-use.
-                .push_oneshot()
                 // Limits the number of in-flight requests.
                 .push_concurrency_limit(max_in_flight_requests)
-                // Sheds load if too many requests are in flight.
-                //
-                // XXX Can this be removed? Is it okay to just backpressure onto
-                // the client? Should we instead limit the number of active
-                // connections?
-                .push_load_shed()
-                // Synthesizes responses for proxy errors.
+                .push_failfast(dispatch_timeout)
                 .push(metrics.http_errors)
+                // Synthesizes responses for proxy errors.
                 .push(errors::layer())
                 // Initiates OpenCensus tracing.
                 .push(TraceContextLayer::new(span_sink.map(|span_sink| {
@@ -492,8 +514,11 @@ impl From<Error> for DiscoveryError {
 fn is_discovery_rejected(err: &Error) -> bool {
     tracing::trace!(?err, "is_discovery_rejected");
 
-    if let Some(lock) = err.downcast_ref::<svc::lock::error::ServiceError>() {
-        return is_discovery_rejected(lock.inner());
+    if let Some(e) = err.downcast_ref::<svc::buffer::error::ServiceError>() {
+        return is_discovery_rejected(e.inner());
+    }
+    if let Some(e) = err.downcast_ref::<svc::lock::error::ServiceError>() {
+        return is_discovery_rejected(e.inner());
     }
 
     err.is::<DiscoveryRejected>() || err.is::<profiles::InvalidProfileAddr>()

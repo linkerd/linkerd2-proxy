@@ -1,6 +1,5 @@
 use futures::{try_ready, Future, Poll};
 use linkerd2_stack::NewService;
-pub use linkerd2_timeout::error;
 use linkerd2_timeout::Timeout;
 use std::time::Duration;
 

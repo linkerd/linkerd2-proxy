@@ -1,14 +1,13 @@
-use crate::proxy::http::timeout::error as timeout;
 use crate::proxy::identity;
 use http::{header::HeaderValue, StatusCode};
-use linkerd2_cache::error as cache;
+use linkerd2_buffer as buffer;
 use linkerd2_error::Error;
 use linkerd2_error_metrics as metrics;
 use linkerd2_error_respond as respond;
 pub use linkerd2_error_respond::RespondLayer;
 use linkerd2_lock as lock;
 use linkerd2_proxy_http::HasH2Reason;
-use tower::load_shed::error as shed;
+use linkerd2_timeout::{error::ResponseTimeout, FailFastError};
 use tower_grpc::{self as grpc, Code};
 use tracing::debug;
 
@@ -29,11 +28,10 @@ pub type Label = (super::metric_labels::Direction, Reason);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Reason {
-    CacheFull,
     DispatchTimeout,
     ResponseTimeout,
     IdentityRequired,
-    LoadShed,
+    FailFast,
     Unexpected,
 }
 
@@ -112,17 +110,17 @@ impl<B: Default> respond::Respond for Respond<B> {
 }
 
 fn http_status(error: &Error) -> StatusCode {
-    if error.is::<timeout::ResponseTimeout>() {
+    if error.is::<ResponseTimeout>() {
         http::StatusCode::GATEWAY_TIMEOUT
-    } else if error.is::<cache::NoCapacity>() {
-        http::StatusCode::SERVICE_UNAVAILABLE
-    } else if error.is::<shed::Overloaded>() {
+    } else if error.is::<FailFastError>() {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<tower::timeout::error::Elapsed>() {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<IdentityRequired>() {
         http::StatusCode::FORBIDDEN
     } else if let Some(e) = error.downcast_ref::<lock::error::ServiceError>() {
+        http_status(e.inner())
+    } else if let Some(e) = error.downcast_ref::<buffer::error::ServiceError>() {
         http_status(e.inner())
     } else {
         http::StatusCode::BAD_GATEWAY
@@ -133,20 +131,12 @@ fn set_grpc_status(error: &Error, headers: &mut http::HeaderMap) -> grpc::Code {
     const GRPC_STATUS: &'static str = "grpc-status";
     const GRPC_MESSAGE: &'static str = "grpc-message";
 
-    if error.is::<timeout::ResponseTimeout>() {
+    if error.is::<ResponseTimeout>() {
         let code = Code::DeadlineExceeded;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("request timed out"));
         code
-    } else if error.is::<cache::NoCapacity>() {
-        let code = Code::Unavailable;
-        headers.insert(GRPC_STATUS, code_header(code));
-        headers.insert(
-            GRPC_MESSAGE,
-            HeaderValue::from_static("proxy router cache exhausted"),
-        );
-        code
-    } else if error.is::<shed::Overloaded>() {
+    } else if error.is::<FailFastError>() {
         let code = Code::Unavailable;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(
@@ -170,6 +160,8 @@ fn set_grpc_status(error: &Error, headers: &mut http::HeaderMap) -> grpc::Code {
         }
         code
     } else if let Some(e) = error.downcast_ref::<lock::error::ServiceError>() {
+        set_grpc_status(e.inner(), headers)
+    } else if let Some(e) = error.downcast_ref::<buffer::error::ServiceError>() {
         set_grpc_status(e.inner(), headers)
     } else {
         let code = Code::Internal;
@@ -234,12 +226,10 @@ impl metrics::LabelError<Error> for LabelError {
     type Labels = Label;
 
     fn label_error(&self, err: &Error) -> Self::Labels {
-        let reason = if err.is::<timeout::ResponseTimeout>() {
+        let reason = if err.is::<ResponseTimeout>() {
             Reason::ResponseTimeout
-        } else if err.is::<cache::NoCapacity>() {
-            Reason::CacheFull
-        } else if err.is::<shed::Overloaded>() {
-            Reason::LoadShed
+        } else if err.is::<FailFastError>() {
+            Reason::FailFast
         } else if err.is::<tower::timeout::error::Elapsed>() {
             Reason::DispatchTimeout
         } else if err.is::<IdentityRequired>() {
@@ -258,8 +248,7 @@ impl metrics::FmtLabels for Reason {
             f,
             "message=\"{}\"",
             match self {
-                Reason::CacheFull => "cache full",
-                Reason::LoadShed => "load shed",
+                Reason::FailFast => "failfast",
                 Reason::DispatchTimeout => "dispatch timeout",
                 Reason::ResponseTimeout => "response timeout",
                 Reason::IdentityRequired => "identity required",

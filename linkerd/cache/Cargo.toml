@@ -7,7 +7,6 @@ publish = false
 
 [dependencies]
 futures = "0.1"
-indexmap = "1.0"
 linkerd2-error = { path = "../error" }
 linkerd2-lock = { path = "../lock" }
 linkerd2-stack = { path = "../stack" }

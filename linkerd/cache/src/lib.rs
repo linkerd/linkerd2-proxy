@@ -1,113 +1,121 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use self::cache::Cache;
-pub use self::layer::Layer;
-pub use self::purge::Purge;
 use futures::{future, Async, Poll};
-use linkerd2_error::Error;
+use linkerd2_error::Never;
 use linkerd2_lock::{Guard, Lock};
 use linkerd2_stack::NewService;
+use std::collections::HashMap;
 use std::hash::Hash;
-use std::time::Duration;
-use tracing::{debug, trace, warn};
+use std::sync::{Arc, Weak};
+use tracing::{debug, trace};
 
-mod cache;
-pub mod error;
 pub mod layer;
-mod purge;
 
-pub struct Service<T, M>
+pub use self::layer::CacheLayer;
+
+pub struct Cache<T, N>
 where
-    T: Clone + Eq + Hash,
-    M: NewService<T>,
+    T: Eq + Hash,
+    N: NewService<(T, Handle)>,
 {
-    make: M,
-    cache: Lock<Cache<T, M::Service>>,
-    guard: Option<Guard<Cache<T, M::Service>>>,
-    _hangup: purge::Handle,
+    new_service: N,
+    lock: Lock<Services<T, N::Service>>,
+    guard: Option<Guard<Services<T, N::Service>>>,
 }
 
-// === impl Service ===
+/// A tracker inserted into each inner service that, when dropped, indicates the service may be
+/// removed from the cache.
+#[derive(Clone, Debug)]
+pub struct Handle(Arc<()>);
 
-impl<T, M> Service<T, M>
+type Services<T, S> = HashMap<T, (S, Weak<()>)>;
+
+// === impl Cache ===
+
+impl<T, N> Cache<T, N>
 where
-    T: Clone + Eq + Hash,
-    M: NewService<T>,
-    M::Service: Clone,
+    T: Eq + Hash,
+    N: NewService<(T, Handle)>,
 {
-    pub fn new(make: M, capacity: usize, max_idle_age: Duration) -> (Self, Purge<T, M::Service>) {
-        let cache = Lock::new(Cache::new(capacity, max_idle_age));
-        let (purge, _hangup) = Purge::new(cache.clone());
-        let router = Self {
-            cache,
-            make,
-            guard: None,
-            _hangup,
-        };
-
-        (router, purge)
-    }
-}
-
-impl<T, M> Clone for Service<T, M>
-where
-    T: Clone + Eq + Hash,
-    M: NewService<T> + Clone,
-    M::Service: Clone,
-{
-    fn clone(&self) -> Self {
+    pub fn new(new_service: N) -> Self {
         Self {
-            make: self.make.clone(),
-            cache: self.cache.clone(),
+            new_service,
             guard: None,
-            _hangup: self._hangup.clone(),
+            lock: Lock::new(Services::default()),
         }
     }
 }
 
-impl<T, M> tower::Service<T> for Service<T, M>
+impl<T, N> Clone for Cache<T, N>
 where
     T: Clone + Eq + Hash,
-    M: NewService<T>,
-    M::Service: Clone,
+    N: NewService<(T, Handle)> + Clone,
+    N::Service: Clone,
 {
-    type Response = M::Service;
-    type Error = Error;
+    fn clone(&self) -> Self {
+        Self {
+            new_service: self.new_service.clone(),
+            lock: self.lock.clone(),
+            guard: None,
+        }
+    }
+}
+
+impl<T, N> tower::Service<T> for Cache<T, N>
+where
+    T: Clone + Eq + Hash,
+    N: NewService<(T, Handle)>,
+    N::Service: Clone,
+{
+    type Response = N::Service;
+    type Error = Never;
     type Future = future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         if self.guard.is_none() {
-            match self.cache.poll_acquire() {
+            match self.lock.poll_acquire() {
                 Async::NotReady => return Ok(Async::NotReady),
-                Async::Ready(guard) => {
-                    self.guard = Some(guard);
+                Async::Ready(mut services) => {
+                    // Drop defunct services before interacting with the cache.
+                    let n = services.len();
+                    services.retain(|_, (_, weak)| {
+                        if weak.upgrade().is_some() {
+                            true
+                        } else {
+                            debug!("Dropping defunct service");
+                            false
+                        }
+                    });
+                    trace!(services = services.len(), dropped = n - services.len());
+
+                    self.guard = Some(services);
                 }
             }
         }
 
-        debug_assert!(self.guard.is_some());
+        debug_assert!(self.guard.is_some(), "guard must be acquired");
         Ok(Async::Ready(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let mut cache = self.guard.take().expect("poll_ready must be called");
+        let mut services = self.guard.take().expect("poll_ready must be called");
 
-        if let Some(service) = cache.access(&target) {
-            trace!("target already exists in cache");
-            return future::ok(service.clone().into());
-        }
-
-        let available = cache.available();
-        if available == 0 {
-            warn!(capacity = %cache.capacity(), "exhausted");
-            return future::err(error::NoCapacity(cache.capacity()).into());
+        if let Some((service, weak)) = services.get(&target) {
+            if weak.upgrade().is_some() {
+                trace!("Using cached service");
+                return future::ok(service.clone());
+            }
         }
 
         // Make a new service for the target
-        let service = self.make.new_service(target.clone());
+        let handle = Arc::new(());
+        let weak = Arc::downgrade(&handle);
+        let service = self
+            .new_service
+            .new_service((target.clone(), Handle(handle)));
 
-        debug!(%available, "inserting new target into cache");
-        cache.insert(target.clone(), service.clone());
+        debug!("Caching new service");
+        services.insert(target, (service.clone(), weak));
 
         future::ok(service.into())
     }

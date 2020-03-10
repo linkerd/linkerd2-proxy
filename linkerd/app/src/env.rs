@@ -63,11 +63,7 @@ const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEP
 const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEPALIVE";
 const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
 
-// Limits the number of HTTP routes that may be active in the proxy at any time. There is
-// an inbound route for each local port that receives connections. There is an outbound
-// route for each protocol and authority.
-pub const ENV_INBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_INBOUND_ROUTER_CAPACITY";
-pub const ENV_OUTBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_CAPACITY";
+pub const ENV_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_BUFFER_CAPACITY";
 
 pub const ENV_INBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_INBOUND_ROUTER_MAX_IDLE_AGE";
 pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_MAX_IDLE_AGE";
@@ -186,11 +182,10 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
 
-/// Inbound requests may use a wide variety of authorities. We size the inbound
-/// router capacity to accommodate this. It's assumed that a typical proxy may
-/// communicate with up to 10K external HTTP domains.
-const DEFAULT_INBOUND_ROUTER_CAPACITY: usize = 10_000;
-const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 10_000;
+// Because buffers propagate readiness, they should only need enough capacity to satisfy the
+// process's concurrency. This should probably be derived from the number of CPUs, but the num-cpus
+// crate does not support cgroups yet [seanmonstar/num_cpus#80].
+const DEFAULT_BUFFER_CAPACITY: usize = 10;
 
 const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
@@ -249,8 +244,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         parse_port_set,
     );
 
-    let inbound_cache_capacity = parse(strings, ENV_INBOUND_ROUTER_CAPACITY, parse_number);
-    let outbound_cache_capacity = parse(strings, ENV_OUTBOUND_ROUTER_CAPACITY, parse_number);
+    let buffer_capacity = parse(strings, ENV_BUFFER_CAPACITY, parse_number);
 
     let inbound_cache_max_idle_age =
         parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
@@ -322,6 +316,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         ),
     };
 
+    let buffer_capacity = buffer_capacity?.unwrap_or(DEFAULT_BUFFER_CAPACITY);
+
     let outbound = {
         let bind = listen::Bind::new(
             outbound_listener_addr?
@@ -353,8 +349,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .into(),
                 cache_max_idle_age: outbound_cache_max_idle_age?
                     .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
-                cache_capacity: outbound_cache_capacity?
-                    .unwrap_or(DEFAULT_OUTBOUND_ROUTER_CAPACITY),
+                buffer_capacity,
                 dispatch_timeout: outbound_dispatch_timeout?
                     .unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT),
                 max_in_flight_requests: outbound_max_in_flight?
@@ -392,7 +387,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .into(),
                 cache_max_idle_age: inbound_cache_max_idle_age?
                     .unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE),
-                cache_capacity: inbound_cache_capacity?.unwrap_or(DEFAULT_INBOUND_ROUTER_CAPACITY),
+                buffer_capacity,
                 dispatch_timeout: inbound_dispatch_timeout?
                     .unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT),
                 max_in_flight_requests: inbound_max_in_flight?
@@ -420,7 +415,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             control: ControlConfig {
                 addr,
                 connect,
-                buffer_capacity: 100,
+                buffer_capacity,
             },
         }
     };

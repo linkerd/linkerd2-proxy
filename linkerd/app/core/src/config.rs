@@ -24,7 +24,7 @@ pub struct ConnectConfig {
 pub struct ProxyConfig<A: OrigDstAddr = SysOrigDstAddr> {
     pub server: ServerConfig<A>,
     pub connect: ConnectConfig,
-    pub cache_capacity: usize,
+    pub buffer_capacity: usize,
     pub cache_max_idle_age: Duration,
     pub disable_protocol_detection_for_ports: Arc<IndexSet<u16>>,
     pub dispatch_timeout: Duration,
@@ -56,7 +56,7 @@ impl<A: OrigDstAddr> ProxyConfig<A> {
         ProxyConfig {
             server: self.server.with_orig_dst_addr(orig_dst_addrs),
             connect: self.connect,
-            cache_capacity: self.cache_capacity,
+            buffer_capacity: self.buffer_capacity,
             cache_max_idle_age: self.cache_max_idle_age,
             disable_protocol_detection_for_ports: self.disable_protocol_detection_for_ports,
             max_in_flight_requests: self.max_in_flight_requests,
