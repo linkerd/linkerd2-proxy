@@ -10,7 +10,7 @@ ca() {
   name=$1
   filename=$2
 
-  echo "{\"names\":[{\"CN\": \"${name}\",\"OU\":\"None\"}]}" \
+  echo "{\"names\":[{\"CN\": \"${name}\",\"OU\":\"None\"}], \"ca\": {\"expiry\": \"87600h\"}}" \
     | cfssl genkey -initca - \
     | cfssljson -bare "${filename}"
 
@@ -27,7 +27,7 @@ ee() {
 
   ee="${ee_name}-${ee_ns}-${ca_name}"
   echo '{}' \
-    | cfssl gencert -ca "${ca_name}.pem" -ca-key "${ca_name}-key.pem" -hostname "${hostname}" - \
+    | cfssl gencert -ca "${ca_name}.pem" -ca-key "${ca_name}-key.pem" -hostname "${hostname}" -config=ca-config.json - \
     | cfssljson -bare "${ee}"
   mkdir -p "${ee}"
 
