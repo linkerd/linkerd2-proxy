@@ -1,12 +1,11 @@
-extern crate bencher;
-
-use bencher::Bencher;
-use futures::future::Future;
-use futures::{future, Async, Poll};
-use linkerd2_cache::{Cache, Handle};
+use crate::{Cache, Handle};
+use futures::{future, Async, Future, Poll};
 use linkerd2_error::Never;
 use linkerd2_stack::NewService;
 use tower::Service;
+
+extern crate test;
+use test::Bencher;
 
 #[derive(Clone, Debug)]
 struct NeverEvict {
@@ -126,18 +125,17 @@ where
     });
 }
 
+#[bench]
 fn never_evict(b: &mut Bencher) {
     run_bench(100, NewNeverEvict, b)
 }
 
+#[bench]
 fn always_evict(b: &mut Bencher) {
     run_bench(100, NewAlwaysEvict, b)
 }
 
+#[bench]
 fn sometimes_evict(b: &mut Bencher) {
     run_bench(100, NewSometimesEvict, b)
 }
-
-bencher::benchmark_group!(evict, never_evict, always_evict, sometimes_evict);
-
-bencher::benchmark_main!(evict);

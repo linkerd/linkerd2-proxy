@@ -81,25 +81,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bencher"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dfdb4953a096c551ce9ace855a604d702e6e62d77fac690575ae347571717f5"
-
-[[package]]
-name = "benches"
-version = "0.0.0"
-dependencies = [
- "bencher",
- "futures",
- "linkerd2-cache",
- "linkerd2-error",
- "linkerd2-lock",
- "linkerd2-stack",
- "tower",
-]
-
-[[package]]
 name = "bitflags"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

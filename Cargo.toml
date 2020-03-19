@@ -52,7 +52,6 @@ members = [
     "linkerd/timeout",
     "linkerd2-proxy",
     "opencensus-proto",
-    "benches",
 ]
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
