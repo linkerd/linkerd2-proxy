@@ -1,5 +1,8 @@
-use crate::{Cache, Handle};
+#![feature(test)]
+
+extern crate linkerd2_cache;
 use futures::{future, Async, Future, Poll};
+use linkerd2_cache::{Cache, Handle};
 use linkerd2_error::Never;
 use linkerd2_stack::NewService;
 use tower::Service;

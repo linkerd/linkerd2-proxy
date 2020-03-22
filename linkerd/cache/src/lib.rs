@@ -1,5 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-#![cfg_attr(feature = "unstable", feature(test))]
 
 use futures::{future, Async, Poll};
 use linkerd2_error::Never;
@@ -10,8 +9,6 @@ use std::hash::Hash;
 use std::sync::{Arc, Weak};
 use tracing::{debug, trace};
 
-#[cfg(all(feature = "unstable", test))]
-mod benches;
 pub mod layer;
 
 pub use self::layer::CacheLayer;
