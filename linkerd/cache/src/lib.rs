@@ -79,7 +79,7 @@ where
                     // Drop defunct services before interacting with the cache.
                     let n = services.len();
                     services.retain(|_, (_, weak)| {
-                        if weak.upgrade().is_some() {
+                        if weak.strong_count() > 0 {
                             true
                         } else {
                             debug!("Dropping defunct service");
