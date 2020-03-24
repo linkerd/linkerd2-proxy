@@ -26,7 +26,7 @@ linkerd2-app = { path = ".." }
 linkerd2-app-core = { path = "../core" }
 linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
 linkerd2-test-util = { path = "../../test-util" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.11" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], branch = "zd/auth_override" }
 regex = "0.1"
 net2 = "0.2"
 quickcheck = { version = "0.9", default-features = false }
