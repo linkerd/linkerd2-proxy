@@ -17,9 +17,10 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         self,
+        detect::DetectProtocolLayer,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
-        server::{Protocol as ServerProtocol, Server},
+        server::{Protocol as ServerProtocol, ProtocolDetect, Server},
         tap, tcp,
     },
     reconnect, router, serve,
@@ -82,6 +83,7 @@ impl<A: OrigDstAddr> Config<A> {
                     disable_protocol_detection_for_ports,
                     dispatch_timeout,
                     max_in_flight_requests,
+                    detect_protocol_timeout,
                 },
         } = self;
 
@@ -290,11 +292,16 @@ impl<A: OrigDstAddr> Config<A> {
                 http_server.into_inner(),
                 h2_settings,
                 drain.clone(),
-                disable_protocol_detection_for_ports.clone(),
             );
 
+            let svc = svc::stack(tcp_server)
+                .push(DetectProtocolLayer::new(ProtocolDetect::new(
+                    disable_protocol_detection_for_ports.clone(),
+                )))
+                .push_timeout(detect_protocol_timeout);
+
             // Terminate inbound mTLS from other outbound proxies.
-            let accept = tls::AcceptTls::new(local_identity, tcp_server)
+            let accept = tls::AcceptTls::new(local_identity, svc.into_inner())
                 .with_skip_ports(disable_protocol_detection_for_ports);
 
             info!(listen.addr = %listen.listen_addr(), "Serving");

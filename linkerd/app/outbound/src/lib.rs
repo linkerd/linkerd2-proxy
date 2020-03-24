@@ -17,13 +17,13 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
-        Server,
+        self, core::resolve::Resolve, detect::DetectProtocolLayer, discover, http, identity,
+        resolve::map_endpoint, server::ProtocolDetect, tap, tcp, Server,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, tls, OrigDstAddr, SysOrigDstAddr},
+    transport::{self, io::BoxedIo, tls, OrigDstAddr, SysOrigDstAddr},
     Conditional, DiscoveryRejected, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
@@ -101,6 +101,7 @@ impl<A: OrigDstAddr> Config<A> {
                     disable_protocol_detection_for_ports,
                     dispatch_timeout,
                     max_in_flight_requests,
+                    detect_protocol_timeout,
                 },
         } = self;
 
@@ -427,13 +428,19 @@ impl<A: OrigDstAddr> Config<A> {
                 http_server.into_inner(),
                 h2_settings,
                 drain.clone(),
-                disable_protocol_detection_for_ports.clone(),
             );
+
+            let svc = svc::stack(tcp_server)
+                .push(DetectProtocolLayer::new(ProtocolDetect::new(
+                    disable_protocol_detection_for_ports.clone(),
+                )))
+                .push_timeout(detect_protocol_timeout)
+                .check_service_response::<(tls::accept::Meta, BoxedIo), ()>();
 
             // The local application does not establish mTLS with the proxy.
             let no_tls: tls::Conditional<identity::Local> =
                 Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
-            let accept = tls::AcceptTls::new(no_tls, tcp_server)
+            let accept = tls::AcceptTls::new(no_tls, svc.into_inner())
                 .with_skip_ports(disable_protocol_detection_for_ports);
 
             serve::serve(listen, accept, drain)

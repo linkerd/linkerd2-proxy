@@ -59,6 +59,9 @@ const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOU
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
 const ENV_INBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_ACCEPT_KEEPALIVE";
 const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEPALIVE";
+const ENV_INBOUND_DETECT_PROTOCOL_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DETECT_PROTOCOL_TIMEOUT";
+const ENV_OUTBOUND_DETECT_PROTOCOL_TIMEOUT: &str =
+    "LINKERD2_PROXY_OUTBOUND_DETECT_PROTOCOL_TIMEOUT";
 
 const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEPALIVE";
 const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
@@ -171,6 +174,7 @@ const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
 };
 const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
+const DEFAULT_PROTOCOL_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
     min: Duration::from_millis(100),
     max: Duration::from_millis(500),
@@ -232,6 +236,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
     let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
+
+    let inbound_detect_protocol_timeout =
+        parse(strings, ENV_INBOUND_DETECT_PROTOCOL_TIMEOUT, parse_duration);
+    let outbound_detect_protocol_timeout = parse(
+        strings,
+        ENV_OUTBOUND_DETECT_PROTOCOL_TIMEOUT,
+        parse_duration,
+    );
 
     let inbound_disable_ports = parse(
         strings,
@@ -354,6 +366,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT),
                 max_in_flight_requests: outbound_max_in_flight?
                     .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
+                detect_protocol_timeout: outbound_detect_protocol_timeout?
+                    .unwrap_or(DEFAULT_PROTOCOL_DETECT_TIMEOUT),
             },
         }
     };
@@ -392,6 +406,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT),
                 max_in_flight_requests: inbound_max_in_flight?
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
+                detect_protocol_timeout: inbound_detect_protocol_timeout?
+                    .unwrap_or(DEFAULT_PROTOCOL_DETECT_TIMEOUT),
             },
         }
     };

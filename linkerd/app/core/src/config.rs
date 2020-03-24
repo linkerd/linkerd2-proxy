@@ -29,6 +29,7 @@ pub struct ProxyConfig<A: OrigDstAddr = SysOrigDstAddr> {
     pub disable_protocol_detection_for_ports: Arc<IndexSet<u16>>,
     pub dispatch_timeout: Duration,
     pub max_in_flight_requests: usize,
+    pub detect_protocol_timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +62,7 @@ impl<A: OrigDstAddr> ProxyConfig<A> {
             disable_protocol_detection_for_ports: self.disable_protocol_detection_for_ports,
             max_in_flight_requests: self.max_in_flight_requests,
             dispatch_timeout: self.dispatch_timeout,
+            detect_protocol_timeout: self.detect_protocol_timeout,
         }
     }
 }
