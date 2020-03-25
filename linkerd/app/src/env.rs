@@ -284,7 +284,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let hostname = strings.get(ENV_HOSTNAME);
 
     let f = fs::read_to_string(LABELS_FILE_PATH);
-    let labels = convert_string_to_map(f.unwrap_or_default());
+    let labels = convert_labels_to_map(f.unwrap_or_default());
 
     let trace_collector_addr = if id_disabled {
         parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
@@ -507,16 +507,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     })
 }
 
-fn convert_string_to_map(labels: String) -> HashMap<String, String> {
-    let mut labels_map: HashMap<String, String> = HashMap::new();
-    for line in labels.lines() {
-        let label = line.split("=").collect::<Vec<&str>>();
-        labels_map.insert(
-            label[0].to_string(),
-            label[1][1..label[1].len() - 1].to_string(),
-        );
-    }
-    labels_map
+fn convert_labels_to_map(labels: String) -> HashMap<String, String> {
+    let map = labels
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(2, "=").collect::<Vec<&str>>();
+            parts.pop().and_then(move |val| {
+                parts.pop().map(move |key|
+                // Trim double quotes in value, present by default when attached through k8s downwardAPI
+                (key.to_string(), val.trim_matches('"').to_string()))
+            })
+        })
+        .collect::<HashMap<String, String>>();
+    map
 }
 
 fn default_disable_ports_protocol_detection() -> IndexSet<u16> {
@@ -1015,6 +1018,24 @@ mod tests {
     #[test]
     fn parse_duration_number_without_unit_is_invalid() {
         assert_eq!(parse_duration("1"), Err(ParseError::NotADuration));
+    }
+
+    #[test]
+    fn convert_labels_to_map_different_values() {
+        let labels_string = "cluster=\"test-cluster1\"\nrack=\"rack-22\nzone=us-est-coast\n
+        "
+        .to_string();
+
+        let expected = [
+            ("cluster".to_string(), "test-cluster1".to_string()),
+            ("rack".to_string(), "rack-22".to_string()),
+            ("zone".to_string(), "us-est-coast".to_string()),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+
+        assert_eq!(convert_labels_to_map(labels_string), expected);
     }
 
     #[test]
