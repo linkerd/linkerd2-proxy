@@ -29,7 +29,7 @@ mod imp {
             // Do everything lazily to prevent `Signal::new()` from calling
             // `Handle::default()` and starting the background reactor when
             // we haven't initialized the runtime yet.
-            Ok([SIGINT, SIGTERM].into_iter())
+            Ok([SIGINT, SIGTERM].iter())
         })
         .and_then(|signals| {
             let signals = signals.map(|&sig| {

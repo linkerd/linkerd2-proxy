@@ -86,7 +86,13 @@ impl Controller {
         DstSender(tx)
     }
 
-    pub fn destination_fail(self, dest: &str, status: grpc::Status) -> Self {
+    pub fn destination_tx_err(&self, dest: &str, err: grpc::Code) -> DstSender {
+        let tx = self.destination_tx(dest);
+        tx.send_err(grpc::Status::new(err, "unit test controller fake error"));
+        tx
+    }
+
+    pub fn destination_fail(&self, dest: &str, status: grpc::Status) {
         let path = if dest.contains(":") {
             dest.to_owned()
         } else {
@@ -100,28 +106,10 @@ impl Controller {
             .lock()
             .unwrap()
             .push_back(Dst::Call(dst, Err(status)));
-        self
     }
 
-    pub fn destination_err(self, dest: &str, err: grpc::Code) -> Self {
-        self.destination_tx(dest)
-            .send_err(grpc::Status::new(err, "unit test controller fake error"));
-        self
-    }
-
-    pub fn destination_and_close(self, dest: &str, addr: SocketAddr) -> Self {
-        self.destination_tx(dest).send_addr(addr);
-        self
-    }
-
-    pub fn destination_close(self, dest: &str) -> Self {
-        drop(self.destination_tx(dest));
-        self
-    }
-
-    pub fn no_more_destinations(self) -> Self {
+    pub fn no_more_destinations(&self) {
         self.expect_dst_calls.lock().unwrap().push_back(Dst::Done);
-        self
     }
 
     pub fn delay_listen<F>(self, f: F) -> Listening
@@ -133,6 +121,12 @@ impl Controller {
             "support destination service",
             Some(Box::new(f.then(|_| Ok(())))),
         )
+    }
+
+    pub fn profile_tx_default(&self, dest: &str) -> ProfileSender {
+        let tx = self.profile_tx(dest);
+        tx.send(pb::DestinationProfile::default());
+        tx
     }
 
     pub fn profile_tx(&self, dest: &str) -> ProfileSender {
@@ -216,6 +210,10 @@ impl DstSender {
     pub fn send_h2_hinted(&self, addr: SocketAddr) {
         self.send(destination_add_hinted(addr, Hint::H2));
     }
+
+    pub fn send_no_endpoints(&self) {
+        self.send(destination_exists_with_no_endpoints())
+    }
 }
 
 impl Stream for ProfileReceiver {
@@ -240,40 +238,45 @@ impl pb::server::Destination for Controller {
         if let Ok(mut calls) = self.expect_dst_calls.lock() {
             if self.unordered {
                 let mut calls_next: VecDeque<Dst> = VecDeque::new();
-                let mut ret = future::err(grpc_unexpected_request());
-                while let Some(call) = calls.pop_front() {
-                    match call {
-                        Dst::Call(dst, updates) => {
-                            if &dst == req.get_ref() {
-                                ret = future::result(updates.map(grpc::Response::new));
-                            } else {
-                                calls_next.push_back(Dst::Call(dst, updates));
-                            }
-                        }
-                        Dst::Done => {}
-                    }
+                if calls.is_empty() {
+                    tracing::warn!("exhausted request={:?}", req.get_ref());
                 }
-                *calls.deref_mut() = calls_next;
-                return ret;
-            } else {
-                match calls.pop_front() {
-                    Some(Dst::Call(dst, updates)) => {
+                while let Some(call) = calls.pop_front() {
+                    if let Dst::Call(dst, updates) = call {
                         if &dst == req.get_ref() {
+                            tracing::info!("found request={:?}", dst);
+                            calls_next.extend(calls.drain(..));
+                            *calls.deref_mut() = calls_next;
                             return future::result(updates.map(grpc::Response::new));
                         }
 
-                        let msg = format!(
-                            "expected get call for {:?} but got get call for {:?}",
-                            dst, req
-                        );
-                        calls.push_front(Dst::Call(dst, updates));
-                        return future::err(grpc::Status::new(grpc::Code::Unavailable, msg));
+                        calls_next.push_back(Dst::Call(dst, updates));
                     }
-                    Some(Dst::Done) => {
-                        panic!("unit test controller expects no more Destination.Get calls")
-                    }
-                    _ => {}
                 }
+
+                tracing::warn!("missed request={:?} remaining={:?}", req, calls_next.len());
+                *calls.deref_mut() = calls_next;
+                return future::err(grpc_unexpected_request());
+            }
+
+            match calls.pop_front() {
+                Some(Dst::Call(dst, updates)) => {
+                    if &dst == req.get_ref() {
+                        tracing::debug!("found request={:?}", dst);
+                        return future::result(updates.map(grpc::Response::new));
+                    }
+
+                    let msg = format!(
+                        "expected get call for {:?} but got get call for {:?}",
+                        dst, req
+                    );
+                    calls.push_front(Dst::Call(dst, updates));
+                    return future::err(grpc::Status::new(grpc::Code::Unavailable, msg));
+                }
+                Some(Dst::Done) => {
+                    panic!("unit test controller expects no more Destination.Get calls")
+                }
+                _ => {}
             }
         }
 
@@ -323,40 +326,43 @@ where
     let (listening_tx, listening_rx) = oneshot::channel();
     let mut listening_tx = Some(listening_tx);
 
-    ::std::thread::Builder::new()
+    let (trace, _) = trace_init();
+    std::thread::Builder::new()
         .name(name.into())
         .spawn(move || {
-            if let Some(delay) = delay {
-                let _ = listening_tx.take().unwrap().send(());
-                delay.wait().expect("support server delay wait");
-            }
-            let mut runtime = runtime::current_thread::Runtime::new().expect("support runtime");
+            tracing::dispatcher::with_default(&trace, move || {
+                if let Some(delay) = delay {
+                    let _ = listening_tx.take().unwrap().send(());
+                    delay.wait().expect("support server delay wait");
+                }
+                let mut runtime = runtime::current_thread::Runtime::new().expect("support runtime");
 
-            let listener = listener.listen(1024).expect("Tcp::listen");
-            let bind =
-                TcpListener::from_std(listener, &reactor::Handle::default()).expect("from_std");
+                let listener = listener.listen(1024).expect("Tcp::listen");
+                let bind =
+                    TcpListener::from_std(listener, &reactor::Handle::default()).expect("from_std");
 
-            if let Some(listening_tx) = listening_tx {
-                let _ = listening_tx.send(());
-            }
+                if let Some(listening_tx) = listening_tx {
+                    let _ = listening_tx.send(());
+                }
 
-            let name = name.clone();
-            let serve = hyper::Server::builder(bind.incoming())
-                .http2_only(true)
-                .serve(move || {
-                    let svc = Mutex::new(svc.clone());
-                    hyper::service::service_fn(move |req| {
-                        let req = req.map(|body| tower_grpc::BoxBody::map_from(body));
-                        svc.lock()
-                            .expect("svc lock")
-                            .call(req)
-                            .map(|res| res.map(GrpcToPayload))
+                let name = name.clone();
+                let serve = hyper::Server::builder(bind.incoming())
+                    .http2_only(true)
+                    .serve(move || {
+                        let svc = Mutex::new(svc.clone());
+                        hyper::service::service_fn(move |req| {
+                            let req = req.map(|body| tower_grpc::BoxBody::map_from(body));
+                            svc.lock()
+                                .expect("svc lock")
+                                .call(req)
+                                .map(|res| res.map(GrpcToPayload))
+                        })
                     })
-                })
-                .map_err(move |e| println!("{} error: {:?}", name, e));
+                    .map_err(move |e| println!("{} error: {:?}", name, e));
 
-            runtime.spawn(serve);
-            runtime.block_on(rx).expect(name);
+                runtime.spawn(serve);
+                runtime.block_on(rx).expect(name);
+            })
         })
         .unwrap();
 

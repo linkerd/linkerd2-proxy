@@ -6,9 +6,7 @@ use hyper::{
     client::conn::{self, Handshake, SendRequest},
 };
 use linkerd2_error::Error;
-use linkerd2_proxy_transport::connect;
 use std::marker::PhantomData;
-use std::net::SocketAddr;
 use tokio::executor::{DefaultExecutor, Executor};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, info_span};
@@ -34,7 +32,6 @@ pub struct Connection<B> {
 
 pub struct ConnectFuture<F: Future, B> {
     state: ConnectState<F, B>,
-    peer_addr: SocketAddr,
     h2_settings: Settings,
 }
 
@@ -71,7 +68,6 @@ impl<C: Clone, B> Clone for Connect<C, B> {
 
 impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
-    T: connect::HasPeerAddr,
     C: tower::MakeConnection<T>,
     C::Connection: Send + 'static,
     C::Error: Into<Error>,
@@ -87,7 +83,6 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         ConnectFuture {
-            peer_addr: target.peer_addr(),
             state: ConnectState::Connect(self.connect.make_connection(target)),
             h2_settings: self.h2_settings,
         }
@@ -108,31 +103,33 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            let io = match self.state {
-                ConnectState::Connect(ref mut fut) => try_ready!(fut.poll().map_err(Into::into)),
+            self.state = match self.state {
+                ConnectState::Connect(ref mut fut) => {
+                    let io = try_ready!(fut.poll().map_err(Into::into));
+                    let hs = conn::Builder::new()
+                        .executor(DefaultExecutor::current().instrument(info_span!("h2")))
+                        .http2_only(true)
+                        .http2_initial_stream_window_size(
+                            self.h2_settings.initial_stream_window_size,
+                        )
+                        .http2_initial_connection_window_size(
+                            self.h2_settings.initial_connection_window_size,
+                        )
+                        .handshake(io);
+
+                    ConnectState::Handshake(hs)
+                }
                 ConnectState::Handshake(ref mut hs) => {
                     let (tx, conn) = try_ready!(hs.poll());
 
                     DefaultExecutor::current()
-                        .instrument(info_span!("h2", peer_addr=%self.peer_addr))
+                        .instrument(info_span!("h2"))
                         .spawn(Box::new(conn.map_err(|error| debug!(%error, "failed"))))
                         .map_err(Error::from)?;
 
                     return Ok(Connection { tx }.into());
                 }
             };
-
-            let exec =
-                DefaultExecutor::current().instrument(info_span!("h2", peer_addr=%self.peer_addr));
-            let hs = conn::Builder::new()
-                .executor(exec)
-                .http2_only(true)
-                .http2_initial_stream_window_size(self.h2_settings.initial_stream_window_size)
-                .http2_initial_connection_window_size(
-                    self.h2_settings.initial_connection_window_size,
-                )
-                .handshake(io);
-            self.state = ConnectState::Handshake(hs);
         }
     }
 }

@@ -1,0 +1,16 @@
+[package]
+name = "linkerd2-stack-metrics"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.1"
+indexmap = "1.0"
+linkerd2-metrics = { path  = "../../metrics" }
+tokio = "0.1"
+tokio-timer = "0.2"   # for tokio_timer::clock
+tower = "0.1"
+tower-util = "0.1"
+tracing = "0.1.9"

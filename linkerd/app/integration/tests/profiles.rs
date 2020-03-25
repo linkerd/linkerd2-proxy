@@ -1,6 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "128"]
-#![type_length_limit = "1110183"]
 
 use linkerd2_app_integration::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -167,7 +165,7 @@ fn retry_uses_budget() {
         with_metrics: |metrics: client::Client| {
             assert_eventually_contains!(
                 metrics.get("/metrics"),
-                "route_actual_retry_skipped_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",skipped=\"budget\"} 1"
+                "route_retryable_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",skipped=\"no_budget\"} 1"
             );
         }
     }
@@ -335,7 +333,7 @@ fn timeout() {
         with_metrics: |metrics: client::Client| {
             assert_eventually_contains!(
                 metrics.get("/metrics"),
-                "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",status_code=\"504\",classification=\"failure\",error=\"timeout\"} 1"
+                "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",classification=\"failure\",error=\"timeout\"} 1"
             );
         }
     }

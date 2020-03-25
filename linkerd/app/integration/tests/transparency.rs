@@ -1,6 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "128"]
-#![type_length_limit = "1110183"]
 
 use linkerd2_app_integration::*;
 use std::error::Error as _;
@@ -11,10 +9,11 @@ fn outbound_http1() {
     let _ = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run();
-    let ctrl = controller::new()
-        .destination_and_close("transparency.test.svc.cluster.local", srv.addr)
-        .run();
-    let proxy = proxy::new().controller(ctrl).outbound(srv).run();
+    let ctrl = controller::new();
+    ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+    ctrl.destination_tx("transparency.test.svc.cluster.local")
+        .send_addr(srv.addr);
+    let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
     let client = client::http1(proxy.outbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/"), "hello h1");
@@ -25,7 +24,12 @@ fn inbound_http1() {
     let _ = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run();
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+    let ctrl = controller::new();
+    ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+    let proxy = proxy::new()
+        .controller(ctrl.run())
+        .inbound_fuzz_addr(srv)
+        .run();
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/"), "hello h1");
@@ -196,7 +200,6 @@ fn tcp_connections_close_if_client_closes() {
             tokio_io::io::read(sock, vec![0; 1024])
                 .and_then(move |(sock, vec, n)| {
                     assert_eq!(&vec[..n], msg1.as_bytes());
-
                     tokio_io::io::write_all(sock, msg2.as_bytes())
                 })
                 .and_then(|(sock, _)| {
@@ -890,7 +893,11 @@ macro_rules! http1_tests {
 mod one_proxy {
     use linkerd2_app_integration::*;
 
-    http1_tests! { proxy: |srv| proxy::new().inbound(srv).run() }
+    http1_tests! { proxy: |srv| {
+        let ctrl = controller::new();
+        ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+        proxy::new().inbound(srv).controller(ctrl.run()).run()
+    }}
 }
 
 mod proxy_to_proxy {
@@ -906,9 +913,12 @@ mod proxy_to_proxy {
     }
 
     http1_tests! { proxy: |srv| {
-        let inbound = proxy::new().inbound(srv).run();
+        let ctrl = controller::new();
+        ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+        let inbound = proxy::new().controller(ctrl.run()).inbound(srv).run();
 
         let ctrl = controller::new();
+        ctrl.profile_tx_default("transparency.test.svc.cluster.local");
         let dst = ctrl.destination_tx("transparency.test.svc.cluster.local");
         dst.send_h2_hinted(inbound.inbound);
 
@@ -1091,118 +1101,6 @@ fn retry_reconnect_errors() {
     drop(tx); // start `listen` now
     let res = fut.wait().expect("response");
     assert_eq!(res.status(), http::StatusCode::OK);
-}
-
-mod max_in_flight {
-    use super::*;
-
-    #[test]
-    fn inbound_http1() {
-        run_max_in_flight(Ver::Http1, Dir::In);
-    }
-
-    #[test]
-    fn inbound_http2() {
-        run_max_in_flight(Ver::Http2, Dir::In);
-    }
-
-    #[test]
-    fn outbound_http1() {
-        run_max_in_flight(Ver::Http1, Dir::Out);
-    }
-
-    #[test]
-    fn outbound_http2() {
-        run_max_in_flight(Ver::Http2, Dir::Out);
-    }
-
-    enum Ver {
-        Http1,
-        Http2,
-    }
-
-    enum Dir {
-        In,
-        Out,
-    }
-
-    fn run_max_in_flight(ver: Ver, dir: Dir) {
-        let _ = trace_init();
-
-        let host = "transparency.test.svc.cluster.local";
-        let srv = match ver {
-            Ver::Http1 => server::http1(),
-            Ver::Http2 => server::http2(),
-        }
-        .route_fn("/slow", move |_req| {
-            ::std::thread::sleep(Duration::from_millis(100));
-            Response::builder()
-                .status(200)
-                .body("slept".into())
-                .unwrap()
-        })
-        .run();
-
-        // Only allow 1 in-flight request at a time...
-        let mut env = TestEnv::new();
-        let prop = match dir {
-            Dir::In => app::env::ENV_INBOUND_MAX_IN_FLIGHT,
-            Dir::Out => app::env::ENV_OUTBOUND_MAX_IN_FLIGHT,
-        };
-        env.put(prop, "1".into());
-        let proxy = match dir {
-            Dir::In => proxy::new().inbound(srv),
-            Dir::Out => {
-                let ctrl = controller::new()
-                    .destination_and_close(host, srv.addr)
-                    .run();
-                proxy::new().outbound(srv).controller(ctrl)
-            }
-        }
-        .run_with_test_env(env);
-
-        let dst = match dir {
-            Dir::In => proxy.inbound,
-            Dir::Out => proxy.outbound,
-        };
-
-        let (res1, res2) = match ver {
-            Ver::Http1 => {
-                // Gotta use 2 http1 clients since it enforces only 1 connection at a time.
-                let client1 = client::http1(dst, host);
-                let client2 = client::http1(dst, host);
-                // But then try to make 2 concurrent requests!
-                let fut1 = client1.request_async(&mut client1.request_builder("/slow"));
-                let fut2 = client2.request_async(&mut client2.request_builder("/slow"));
-
-                let (res1, res2) = fut1.join(fut2).wait().expect("responses");
-
-                // Since there are two clients with their own threads, we cannot know which
-                // order will reach the proxy first...
-                //
-                // *One* should be OK and another should be UNAVAILABLE.
-
-                if res1.status() == http::StatusCode::OK {
-                    (res1, res2)
-                } else {
-                    (res2, res1)
-                }
-            }
-            Ver::Http2 => {
-                let client = client::http2(dst, host);
-                let fut1 = client.request_async(&mut client.request_builder("/slow"));
-                let fut2 = client.request_async(&mut client.request_builder("/slow"));
-
-                fut1.join(fut2).wait().expect("responses")
-            }
-        };
-
-        // First is fine...
-        assert_eq!(res1.status(), http::StatusCode::OK);
-
-        // Second req should have been over the limit...
-        assert_eq!(res2.status(), http::StatusCode::SERVICE_UNAVAILABLE);
-    }
 }
 
 #[test]

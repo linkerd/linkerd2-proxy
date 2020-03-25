@@ -1,9 +1,7 @@
-use futures::{future, try_ready, Future, Poll};
-use http::{Request, Response, StatusCode};
-use linkerd2_error::Error;
-use linkerd2_timeout::{error, Timeout};
+use futures::{try_ready, Future, Poll};
+use linkerd2_stack::NewService;
+use linkerd2_timeout::Timeout;
 use std::time::Duration;
-use tracing::{debug, error};
 
 /// Implement on targets to determine if a service has a timeout.
 pub trait HasTimeout {
@@ -17,15 +15,11 @@ pub trait HasTimeout {
 ///
 /// Timeout errors are translated into `http::Response`s with appropiate
 /// status codes.
-pub fn layer() -> Layer {
-    Layer
-}
+#[derive(Clone, Debug, Default)]
+pub struct MakeTimeoutLayer(());
 
 #[derive(Clone, Debug)]
-pub struct Layer;
-
-#[derive(Clone, Debug)]
-pub struct Stack<M> {
+pub struct MakeTimeout<M> {
     inner: M,
 }
 
@@ -34,28 +28,35 @@ pub struct MakeFuture<F> {
     timeout: Option<Duration>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Service<S>(Timeout<S>);
-
-/// A marker set in `http::Response::extensions` that *this* process triggered
-/// the request timeout.
-#[derive(Debug)]
-pub struct ProxyTimedOut(());
-
-impl<M> tower::layer::Layer<M> for Layer {
-    type Service = Stack<M>;
+impl<M> tower::layer::Layer<M> for MakeTimeoutLayer {
+    type Service = MakeTimeout<M>;
 
     fn layer(&self, inner: M) -> Self::Service {
-        Stack { inner }
+        MakeTimeout { inner }
     }
 }
 
-impl<T, M> tower::Service<T> for Stack<M>
+impl<T, M> NewService<T> for MakeTimeout<M>
+where
+    M: NewService<T>,
+    T: HasTimeout,
+{
+    type Service = Timeout<M::Service>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        match target.timeout() {
+            Some(t) => Timeout::new(self.inner.new_service(target), t),
+            None => Timeout::passthru(self.inner.new_service(target)),
+        }
+    }
+}
+
+impl<T, M> tower::Service<T> for MakeTimeout<M>
 where
     M: tower::Service<T>,
     T: HasTimeout,
 {
-    type Response = tower::util::Either<Service<M::Response>, M::Response>;
+    type Response = Timeout<M::Response>;
     type Error = M::Error;
     type Future = MakeFuture<M::Future>;
 
@@ -72,57 +73,17 @@ where
 }
 
 impl<F: Future> Future for MakeFuture<F> {
-    type Item = tower::util::Either<Service<F::Item>, F::Item>;
+    type Item = Timeout<F::Item>;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let inner = try_ready!(self.inner.poll());
 
-        let svc = if let Some(timeout) = self.timeout {
-            tower::util::Either::A(Service(Timeout::new(inner, timeout)))
-        } else {
-            tower::util::Either::B(inner)
+        let svc = match self.timeout {
+            Some(t) => Timeout::new(inner, t),
+            None => Timeout::passthru(inner),
         };
+
         Ok(svc.into())
-    }
-}
-
-impl<S, B1, B2> tower::Service<Request<B1>> for Service<S>
-where
-    S: tower::Service<Request<B1>, Response = Response<B2>>,
-    S::Error: Into<Error>,
-    B2: Default,
-{
-    type Response = S::Response;
-    type Error = Error;
-    type Future = future::OrElse<
-        <Timeout<S> as tower::Service<Request<B1>>>::Future,
-        Result<Response<B2>, Error>,
-        fn(Error) -> Result<Response<B2>, Error>,
-    >;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
-    }
-
-    fn call(&mut self, req: Request<B1>) -> Self::Future {
-        self.0.call(req).or_else(|err| {
-            if let Some(err) = err.downcast_ref::<error::Timedout>() {
-                debug!("request timed out after {:?}", err.duration());
-                let mut res = Response::default();
-                *res.status_mut() = StatusCode::GATEWAY_TIMEOUT;
-                res.extensions_mut().insert(ProxyTimedOut(()));
-                return Ok(res);
-            } else if let Some(err) = err.downcast_ref::<error::Timer>() {
-                // These are unexpected, and mean the runtime is in a bad place.
-                error!("unexpected runtime timer error: {}", err);
-                let mut res = Response::default();
-                *res.status_mut() = StatusCode::BAD_GATEWAY;
-                return Ok(res);
-            }
-
-            // else
-            Err(err)
-        })
     }
 }

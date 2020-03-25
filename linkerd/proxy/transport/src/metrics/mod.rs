@@ -1,4 +1,3 @@
-use super::tls;
 use futures::{try_ready, Future, Poll};
 use indexmap::IndexMap;
 use linkerd2_metrics::{
@@ -6,8 +5,7 @@ use linkerd2_metrics::{
 };
 use std::fmt;
 use std::hash::Hash;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
@@ -46,18 +44,16 @@ pub struct Report<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 
 #[derive(Debug)]
-pub struct LayerConnect<L: TransportLabels<T>, T, M> {
+pub struct ConnectLayer<L, K: Eq + Hash + FmtLabels> {
     label: L,
-    registry: Arc<Mutex<Inner<L::Labels>>>,
-    _p: PhantomData<fn() -> (T, M)>,
+    registry: Arc<Mutex<Inner<K>>>,
 }
 
 #[derive(Debug)]
-pub struct Connect<L: TransportLabels<T>, T, M> {
+pub struct Connect<L, K: Eq + Hash + FmtLabels, M> {
     label: L,
     inner: M,
-    registry: Arc<Mutex<Inner<L::Labels>>>,
-    _p: PhantomData<fn(T) -> ()>,
+    registry: Arc<Mutex<Inner<K>>>,
 }
 
 pub struct Connecting<F> {
@@ -76,7 +72,7 @@ struct Metrics {
     write_bytes_total: Counter,
     read_bytes_total: Counter,
 
-    by_eos: IndexMap<Eos, EosMetrics>,
+    by_eos: Arc<Mutex<IndexMap<Eos, EosMetrics>>>,
 }
 
 /// Describes a classtransport end.
@@ -97,17 +93,17 @@ struct EosMetrics {
 /// Tracks the state of a single instance of `Io` throughout its lifetime.
 #[derive(Debug)]
 struct Sensor {
-    metrics: Option<Arc<Mutex<Metrics>>>,
+    metrics: Option<Arc<Metrics>>,
     opened_at: Instant,
 }
 
 /// Lazily builds instances of `Sensor`.
 #[derive(Clone, Debug)]
-struct NewSensor(Arc<Mutex<Metrics>>);
+struct NewSensor(Arc<Metrics>);
 
 /// Shares state between `Report` and `Registry`.
 #[derive(Debug)]
-struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Mutex<Metrics>>>);
+struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Metrics>>);
 
 // ===== impl Inner =====
 
@@ -122,51 +118,53 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
         self.0.is_empty()
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&K, MutexGuard<'_, Metrics>)> {
-        self.0
-            .iter()
-            .filter_map(|(k, l)| l.lock().ok().map(move |m| (k, m)))
+    fn iter(&self) -> impl Iterator<Item = (&K, &Arc<Metrics>)> {
+        self.0.iter()
     }
 
     /// Formats a metric across all instances of `Metrics` in the registry.
-    fn fmt_by<F, M>(
+    fn fmt_by<F, N, M>(
         &self,
         f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, M>,
+        metric: Metric<'_, N, M>,
         get_metric: F,
     ) -> fmt::Result
     where
         F: Fn(&Metrics) -> &M,
+        N: fmt::Display,
         M: FmtMetric,
     {
         for (key, m) in self.iter() {
-            get_metric(&*m).fmt_metric_labeled(f, metric.name, key)?;
+            get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
         }
 
         Ok(())
     }
 
     /// Formats a metric across all instances of `EosMetrics` in the registry.
-    fn fmt_eos_by<F, M>(
+    fn fmt_eos_by<F, N, M>(
         &self,
         f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, M>,
+        metric: Metric<'_, N, M>,
         get_metric: F,
     ) -> fmt::Result
     where
         F: Fn(&EosMetrics) -> &M,
+        N: fmt::Display,
         M: FmtMetric,
     {
         for (key, metrics) in self.iter() {
-            for (eos, m) in (*metrics).by_eos.iter() {
-                get_metric(&*m).fmt_metric_labeled(f, metric.name, (key, eos))?;
+            if let Ok(by_eos) = (*metrics).by_eos.lock() {
+                for (eos, m) in by_eos.iter() {
+                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
+                }
             }
         }
 
         Ok(())
     }
 
-    fn get_or_default(&mut self, k: K) -> &Arc<Mutex<Metrics>> {
+    fn get_or_default(&mut self, k: K) -> &Arc<Metrics> {
         self.0.entry(k).or_insert_with(|| Default::default())
     }
 }
@@ -174,12 +172,8 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
 // ===== impl Registry =====
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
-    pub fn layer_connect<T, L, M>(&self, label: L) -> LayerConnect<L, T, M>
-    where
-        L: TransportLabels<T, Labels = K>,
-        M: tower::MakeConnection<T>,
-    {
-        LayerConnect::new(label, self.0.clone())
+    pub fn layer_connect<L>(&self, label: L) -> ConnectLayer<L, K> {
+        ConnectLayer::new(label, self.0.clone())
     }
 
     pub fn wrap_server_transport<T: AsyncRead + AsyncWrite>(&self, labels: K, io: T) -> Io<T> {
@@ -193,47 +187,34 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
     }
 }
 
-impl<L: TransportLabels<T>, T, M> LayerConnect<L, T, M> {
-    fn new(label: L, registry: Arc<Mutex<Inner<L::Labels>>>) -> Self {
-        Self {
-            label,
-            registry,
-            _p: PhantomData,
-        }
+impl<L, K: Eq + Hash + FmtLabels> ConnectLayer<L, K> {
+    fn new(label: L, registry: Arc<Mutex<Inner<K>>>) -> Self {
+        Self { label, registry }
     }
 }
 
-impl<L, T, M> Clone for LayerConnect<L, T, M>
-where
-    L: TransportLabels<T> + Clone,
-    T: Clone,
-{
+impl<L: Clone, K: Eq + Hash + FmtLabels> Clone for ConnectLayer<L, K> {
     fn clone(&self) -> Self {
         Self::new(self.label.clone(), self.registry.clone())
     }
 }
 
-impl<L, T, M> tower::layer::Layer<M> for LayerConnect<L, T, M>
-where
-    L: TransportLabels<T> + Clone,
-    T: tls::HasPeerIdentity,
-    M: tower::MakeConnection<T>,
-{
-    type Service = Connect<L, T, M>;
+impl<L: Clone, K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLayer<L, K> {
+    type Service = Connect<L, K, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
         Connect {
             inner,
             label: self.label.clone(),
             registry: self.registry.clone(),
-            _p: PhantomData,
         }
     }
 }
 
-impl<L, T, M> Clone for Connect<L, T, M>
+impl<L, K, M> Clone for Connect<L, K, M>
 where
-    L: TransportLabels<T> + Clone,
+    L: Clone,
+    K: Eq + Hash + FmtLabels,
     M: Clone,
 {
     fn clone(&self) -> Self {
@@ -241,14 +222,13 @@ where
             inner: self.inner.clone(),
             label: self.label.clone(),
             registry: self.registry.clone(),
-            _p: PhantomData,
         }
     }
 }
 
-// === impl MakeConnection ===
+// === impl Connect ===
 
-impl<L, T, M> tower::Service<T> for Connect<L, T, M>
+impl<L, T, M> tower::Service<T> for Connect<L, L::Labels, M>
 where
     L: TransportLabels<T>,
     M: tower::MakeConnection<T>,
@@ -335,12 +315,9 @@ impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
 // ===== impl Sensor =====
 
 impl Sensor {
-    pub fn open(metrics: Arc<Mutex<Metrics>>) -> Self {
-        {
-            let mut m = metrics.lock().expect("metrics registry poisoned");
-            m.open_total.incr();
-            m.open_connections.incr();
-        }
+    pub fn open(metrics: Arc<Metrics>) -> Self {
+        metrics.open_total.incr();
+        metrics.open_connections.incr();
         Self {
             metrics: Some(metrics),
             opened_at: Instant::now(),
@@ -349,15 +326,13 @@ impl Sensor {
 
     pub fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
-            let mut m = m.lock().expect("metrics registry poisoned");
-            m.read_bytes_total += sz as u64;
+            m.read_bytes_total.add(sz as u64);
         }
     }
 
     pub fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
-            let mut m = m.lock().expect("metrics registry poisoned");
-            m.write_bytes_total += sz as u64;
+            m.write_bytes_total.add(sz as u64);
         }
     }
 
@@ -367,10 +342,10 @@ impl Sensor {
         // updates can occur (i.e. so that an additional close won't be recorded
         // on Drop).
         if let Some(m) = self.metrics.take() {
-            let mut m = m.lock().expect("metrics registry poisoned");
             m.open_connections.decr();
 
-            let class = m.by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
+            let mut by_eos = m.by_eos.lock().expect("transport eos metrics lock");
+            let class = by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
             class.close_total.incr();
             class.connection_duration.add(duration);
         }

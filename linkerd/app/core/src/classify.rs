@@ -1,7 +1,10 @@
+use crate::profiles;
 use http;
 use linkerd2_error::Error;
-pub use linkerd2_proxy_http::metrics::classify::{self, layer, CanClassify};
-use linkerd2_proxy_http::{profiles, timeout, HasH2Reason};
+use linkerd2_http_classify as classify;
+pub use linkerd2_http_classify::{CanClassify, Layer};
+use linkerd2_proxy_http::HasH2Reason;
+use linkerd2_timeout::error::ResponseTimeout;
 use std::borrow::Cow;
 use tower_grpc::{self as grpc};
 use tracing::trace;
@@ -125,10 +128,6 @@ impl classify::ClassifyResponse for Response {
     type ClassifyEos = Eos;
 
     fn start<B>(self, rsp: &http::Response<B>) -> Eos {
-        if rsp.extensions().get::<timeout::ProxyTimedOut>().is_some() {
-            return Eos::Error("timeout");
-        }
-
         match self {
             Response::Default => grpc_class(rsp.headers())
                 .map(|c| Eos::Grpc(GrpcEos::NoBody(c)))
@@ -147,7 +146,13 @@ impl classify::ClassifyResponse for Response {
     }
 
     fn error(self, err: &Error) -> Self::Class {
-        Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
+        let msg = if err.is::<ResponseTimeout>() {
+            "timeout".into()
+        } else {
+            h2_error(err).into()
+        };
+
+        Class::Stream(SuccessOrFailure::Failure, msg)
     }
 }
 
@@ -223,8 +228,8 @@ impl Class {
 #[cfg(test)]
 mod tests {
     use super::{Class, SuccessOrFailure};
-    use crate::proxy::http::metrics::classify::{ClassifyEos as _CE, ClassifyResponse as _CR};
     use http::{HeaderMap, Response, StatusCode};
+    use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
 
     #[test]
     fn http_response_status_ok() {

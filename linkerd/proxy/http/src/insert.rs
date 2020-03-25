@@ -1,6 +1,6 @@
 use futures::{try_ready, Future, Poll};
 use http;
-use linkerd2_stack::layer;
+use linkerd2_stack::{layer, Proxy};
 use std::marker::PhantomData;
 
 pub trait Lazy<V>: Clone {
@@ -15,21 +15,7 @@ pub struct Layer<L, V> {
     _marker: PhantomData<fn() -> V>,
 }
 
-#[derive(Clone)]
-pub struct Make<M, L, V> {
-    inner: M,
-    lazy: L,
-    _marker: PhantomData<fn() -> V>,
-}
-
-pub struct MakeFuture<F, L, V> {
-    inner: F,
-    lazy: L,
-    _marker: PhantomData<fn() -> V>,
-}
-
-#[derive(Clone)]
-pub struct Service<S, L, V> {
+pub struct Insert<S, L, V> {
     inner: S,
     lazy: L,
     _marker: PhantomData<fn() -> V>,
@@ -64,68 +50,21 @@ where
     }
 }
 
-impl<M, L, V> layer::Layer<M> for Layer<L, V>
+impl<S, L, V> tower::layer::Layer<S> for Layer<L, V>
 where
     L: Lazy<V>,
     V: Send + Sync + 'static,
 {
-    type Service = Make<M, L, V>;
+    type Service = Insert<S, L, V>;
 
-    fn layer(&self, inner: M) -> Self::Service {
-        Self::Service {
-            inner,
-            lazy: self.lazy.clone(),
-            _marker: PhantomData,
-        }
+    fn layer(&self, inner: S) -> Self::Service {
+        Insert::new(inner, self.lazy.clone())
     }
 }
 
-// === impl Make ===
+// === impl Insert ===
 
-impl<T, M, L, V> tower::Service<T> for Make<M, L, V>
-where
-    M: tower::Service<T>,
-    L: Lazy<V>,
-    V: Send + Sync + 'static,
-{
-    type Response = Service<M::Response, L, V>;
-    type Error = M::Error;
-    type Future = MakeFuture<M::Future, L, V>;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
-
-    fn call(&mut self, t: T) -> Self::Future {
-        Self::Future {
-            inner: self.inner.call(t),
-            lazy: self.lazy.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-// === impl MakeFuture ===
-
-impl<F, L, V> Future for MakeFuture<F, L, V>
-where
-    F: Future,
-    L: Lazy<V>,
-    V: Send + Sync + 'static,
-{
-    type Item = Service<F::Item, L, V>;
-    type Error = F::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
-        let svc = Service::new(inner, self.lazy.clone());
-        Ok(svc.into())
-    }
-}
-
-// === impl Service ===
-
-impl<S, L, V> Service<S, L, V> {
+impl<S, L, V> Insert<S, L, V> {
     fn new(inner: S, lazy: L) -> Self {
         Self {
             inner,
@@ -135,7 +74,25 @@ impl<S, L, V> Service<S, L, V> {
     }
 }
 
-impl<S, L, V, B> tower::Service<http::Request<B>> for Service<S, L, V>
+impl<P, S, L, V, B> Proxy<http::Request<B>, S> for Insert<P, L, V>
+where
+    P: Proxy<http::Request<B>, S>,
+    S: tower::Service<P::Request>,
+    L: Lazy<V>,
+    V: Clone + Send + Sync + 'static,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = P::Future;
+
+    fn proxy(&self, svc: &mut S, mut req: http::Request<B>) -> Self::Future {
+        req.extensions_mut().insert(self.lazy.value());
+        self.inner.proxy(svc, req)
+    }
+}
+
+impl<S, L, V, B> tower::Service<http::Request<B>> for Insert<S, L, V>
 where
     S: tower::Service<http::Request<B>>,
     L: Lazy<V>,
@@ -152,6 +109,16 @@ where
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         req.extensions_mut().insert(self.lazy.value());
         self.inner.call(req)
+    }
+}
+
+impl<S: Clone, L: Clone, V> Clone for Insert<S, L, V> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            lazy: self.lazy.clone(),
+            _marker: self._marker,
+        }
     }
 }
 
@@ -177,11 +144,12 @@ where
 
 pub mod target {
     use super::*;
+    use linkerd2_stack as stack;
 
     /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
     /// each request's extensions.
     #[derive(Clone, Debug)]
-    pub struct Make<M>(M);
+    pub struct NewService<M>(M);
 
     pub struct MakeFuture<F, T> {
         inner: F,
@@ -190,18 +158,31 @@ pub mod target {
 
     // === impl Layer ===
 
-    pub fn layer<M>() -> impl layer::Layer<M, Service = Make<M>> + Copy {
-        layer::mk(Make)
+    pub fn layer<M>() -> impl tower::layer::Layer<M, Service = NewService<M>> + Copy {
+        layer::mk(NewService)
     }
 
     // === impl Stack ===
 
-    impl<T, M> tower::Service<T> for Make<M>
+    impl<T, M> stack::NewService<T> for NewService<M>
+    where
+        T: Clone + Send + Sync + 'static,
+        M: stack::NewService<T>,
+    {
+        type Service = Insert<M::Service, super::ValLazy<T>, T>;
+
+        fn new_service(&self, target: T) -> Self::Service {
+            let inner = self.0.new_service(target.clone());
+            super::Insert::new(inner, super::ValLazy(target))
+        }
+    }
+
+    impl<T, M> tower::Service<T> for NewService<M>
     where
         T: Clone + Send + Sync + 'static,
         M: tower::Service<T>,
     {
-        type Response = super::Service<M::Response, super::ValLazy<T>, T>;
+        type Response = Insert<M::Response, super::ValLazy<T>, T>;
         type Error = M::Error;
         type Future = MakeFuture<M::Future, T>;
 
@@ -209,9 +190,8 @@ pub mod target {
             self.0.poll_ready()
         }
 
-        fn call(&mut self, t: T) -> Self::Future {
-            let target = t.clone();
-            let inner = self.0.call(t);
+        fn call(&mut self, target: T) -> Self::Future {
+            let inner = self.0.call(target.clone());
             MakeFuture { inner, target }
         }
     }
@@ -223,12 +203,12 @@ pub mod target {
         F: Future,
         T: Clone,
     {
-        type Item = super::Service<F::Item, ValLazy<T>, T>;
+        type Item = Insert<F::Item, ValLazy<T>, T>;
         type Error = F::Error;
 
         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
             let inner = try_ready!(self.inner.poll());
-            let svc = super::Service::new(inner, super::ValLazy(self.target.clone()));
+            let svc = Insert::new(inner, super::ValLazy(self.target.clone()));
             Ok(svc.into())
         }
     }

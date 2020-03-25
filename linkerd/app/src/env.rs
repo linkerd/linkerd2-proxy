@@ -63,11 +63,7 @@ const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEP
 const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEPALIVE";
 const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
 
-// Limits the number of HTTP routes that may be active in the proxy at any time. There is
-// an inbound route for each local port that receives connections. There is an outbound
-// route for each protocol and authority.
-pub const ENV_INBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_INBOUND_ROUTER_CAPACITY";
-pub const ENV_OUTBOUND_ROUTER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_CAPACITY";
+pub const ENV_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_BUFFER_CAPACITY";
 
 pub const ENV_INBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_INBOUND_ROUTER_MAX_IDLE_AGE";
 pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_MAX_IDLE_AGE";
@@ -133,6 +129,8 @@ pub const ENV_HOSTNAME: &str = "HOSTNAME";
 pub const ENV_TRACE_COLLECTOR_SVC_BASE: &str = "LINKERD2_PROXY_TRACE_COLLECTOR_SVC";
 
 pub const ENV_DESTINATION_CONTEXT: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT";
+pub const ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT: &str =
+    "LINKERD2_PROXY_DESTINATION_PROFILE_INITIAL_TIMEOUT";
 
 pub const ENV_TAP_DISABLED: &str = "LINKERD2_PROXY_TAP_DISABLED";
 pub const ENV_TAP_SVC_NAME: &str = "LINKERD2_PROXY_TAP_SVC_NAME";
@@ -160,8 +158,8 @@ const ENV_INITIAL_CONNECTION_WINDOW_SIZE: &str =
 
 // Default values for various configuration fields
 const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";
-const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
-const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
+pub const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
+pub const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
@@ -184,10 +182,10 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
 
-/// It's assumed that a typical proxy can serve inbound traffic for up to 100 pod-local
-/// HTTP services and may communicate with up to 10K external HTTP domains.
-const DEFAULT_INBOUND_ROUTER_CAPACITY: usize = 100;
-const DEFAULT_OUTBOUND_ROUTER_CAPACITY: usize = 10_000;
+// Because buffers propagate readiness, they should only need enough capacity to satisfy the
+// process's concurrency. This should probably be derived from the number of CPUs, but the num-cpus
+// crate does not support cgroups yet [seanmonstar/num_cpus#80].
+const DEFAULT_BUFFER_CAPACITY: usize = 10;
 
 const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
@@ -198,6 +196,7 @@ const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 10_000;
 
 const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
+const DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT: Duration = Duration::from_millis(500);
 
 const DEFAULT_IDENTITY_MIN_REFRESH: Duration = Duration::from_secs(10);
 const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24);
@@ -245,12 +244,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         parse_port_set,
     );
 
-    let inbound_router_capacity = parse(strings, ENV_INBOUND_ROUTER_CAPACITY, parse_number);
-    let outbound_router_capacity = parse(strings, ENV_OUTBOUND_ROUTER_CAPACITY, parse_number);
+    let buffer_capacity = parse(strings, ENV_BUFFER_CAPACITY, parse_number);
 
-    let inbound_router_max_idle_age =
+    let inbound_cache_max_idle_age =
         parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
-    let outbound_router_max_idle_age =
+    let outbound_cache_max_idle_age =
         parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
 
     let inbound_max_in_flight = parse(strings, ENV_INBOUND_MAX_IN_FLIGHT, parse_number);
@@ -292,6 +290,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let dst_get_suffixes = parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
     let dst_get_networks = parse(strings, ENV_DESTINATION_GET_NETWORKS, parse_networks);
+    let dst_profile_initial_timeout = parse(
+        strings,
+        ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT,
+        parse_duration,
+    );
     let dst_profile_suffixes = parse(
         strings,
         ENV_DESTINATION_PROFILE_SUFFIXES,
@@ -313,6 +316,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         ),
     };
 
+    let buffer_capacity = buffer_capacity?.unwrap_or(DEFAULT_BUFFER_CAPACITY);
+
     let outbound = {
         let bind = listen::Bind::new(
             outbound_listener_addr?
@@ -321,11 +326,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         );
         let server = ServerConfig {
             bind: bind.with_sys_orig_dst_addr(),
-            buffer: BufferConfig {
-                dispatch_timeout: outbound_dispatch_timeout?
-                    .unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT),
-                max_in_flight: outbound_max_in_flight?.unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
-            },
             h2_settings,
         };
         let connect = ConnectConfig {
@@ -347,10 +347,13 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 disable_protocol_detection_for_ports: outbound_disable_ports?
                     .unwrap_or_else(|| default_disable_ports_protocol_detection())
                     .into(),
-                router_max_idle_age: outbound_router_max_idle_age?
+                cache_max_idle_age: outbound_cache_max_idle_age?
                     .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
-                router_capacity: outbound_router_capacity?
-                    .unwrap_or(DEFAULT_OUTBOUND_ROUTER_CAPACITY),
+                buffer_capacity,
+                dispatch_timeout: outbound_dispatch_timeout?
+                    .unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT),
+                max_in_flight_requests: outbound_max_in_flight?
+                    .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
             },
         }
     };
@@ -363,11 +366,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         );
         let server = ServerConfig {
             bind: bind.with_sys_orig_dst_addr(),
-            buffer: BufferConfig {
-                dispatch_timeout: inbound_dispatch_timeout?
-                    .unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT),
-                max_in_flight: inbound_max_in_flight?.unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
-            },
             h2_settings,
         };
         let connect = ConnectConfig {
@@ -387,10 +385,13 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 disable_protocol_detection_for_ports: inbound_disable_ports?
                     .unwrap_or_else(|| default_disable_ports_protocol_detection())
                     .into(),
-                router_max_idle_age: inbound_router_max_idle_age?
+                cache_max_idle_age: inbound_cache_max_idle_age?
                     .unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE),
-                router_capacity: inbound_router_capacity?
-                    .unwrap_or(DEFAULT_INBOUND_ROUTER_CAPACITY),
+                buffer_capacity,
+                dispatch_timeout: inbound_dispatch_timeout?
+                    .unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT),
+                max_in_flight_requests: inbound_max_in_flight?
+                    .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
             },
         }
     };
@@ -402,11 +403,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         } else {
             outbound.proxy.connect.clone()
         };
-        let buffer = if addr.addr.is_loopback() {
-            inbound.proxy.server.buffer
-        } else {
-            outbound.proxy.server.buffer
-        };
         super::dst::Config {
             context: dst_token?.unwrap_or_default(),
             get_suffixes: dst_get_suffixes?
@@ -414,10 +410,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             get_networks: dst_get_networks?.unwrap_or_default(),
             profile_suffixes: dst_profile_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
+            initial_profile_timeout: dst_profile_initial_timeout?
+                .unwrap_or(DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT),
             control: ControlConfig {
                 addr,
                 connect,
-                buffer,
+                buffer_capacity,
             },
         }
     };
@@ -430,7 +428,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
                 inbound.proxy.server.bind.keepalive(),
             ),
-            buffer: inbound.proxy.server.buffer,
             h2_settings,
         },
     };
@@ -446,17 +443,17 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let oc_collector = match trace_collector_addr? {
         None => oc_collector::Config::Disabled,
         Some(addr) => {
-            let (connect, buffer) = if addr.addr.is_loopback() {
-                (inbound.proxy.connect.clone(), inbound.proxy.server.buffer)
+            let connect = if addr.addr.is_loopback() {
+                inbound.proxy.connect.clone()
             } else {
-                (outbound.proxy.connect.clone(), outbound.proxy.server.buffer)
+                outbound.proxy.connect.clone()
             };
             oc_collector::Config::Enabled {
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
-                    buffer,
                     connect,
+                    buffer_capacity: 10,
                 },
             }
         }
@@ -467,7 +464,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             permitted_peer_identities: ids,
             server: ServerConfig {
                 bind: listen::Bind::new(addr, inbound.proxy.server.bind.keepalive()),
-                buffer: inbound.proxy.server.buffer,
                 h2_settings,
             },
         })
@@ -481,17 +477,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 outbound.proxy.connect.clone()
             };
-            let buffer = if addr.identity.is_none() {
-                inbound.proxy.server.buffer
-            } else {
-                outbound.proxy.server.buffer
-            };
             identity::Config::Enabled {
                 certify,
                 control: ControlConfig {
                     addr,
                     connect,
-                    buffer,
+                    buffer_capacity: 1,
                 },
             }
         })

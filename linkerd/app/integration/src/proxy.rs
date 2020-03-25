@@ -132,7 +132,11 @@ impl Proxy {
     }
 
     pub fn run_with_test_env(self, env: TestEnv) -> Listening {
-        run(self, env)
+        run(self, env, true)
+    }
+
+    pub fn run_with_test_env_and_keep_ports(self, env: TestEnv) -> Listening {
+        run(self, env, false)
     }
 }
 
@@ -149,17 +153,17 @@ struct DstInner {
 
 impl app::core::transport::OrigDstAddr for MockOriginalDst {
     fn orig_dst_addr(&self, sock: &tokio::net::TcpStream) -> Option<SocketAddr> {
-        info_span!("mock original dst").in_scope(|| {
+        info_span!("mock-original-dst").in_scope(|| {
             sock.local_addr().ok().and_then(|local| {
                 let inner = self.0.lock().unwrap();
-                if inner.inbound_local_addr == Some(local) {
+                if inner.inbound_local_addr.as_ref().map(SocketAddr::port) == Some(local.port()) {
                     debug!(local = %local, mock = ?inner.inbound_orig_addr, "inbound");
                     inner.inbound_orig_addr
-                } else if inner.outbound_local_addr == Some(local) {
+                } else if inner.outbound_local_addr.as_ref().map(SocketAddr::port) == Some(local.port()) {
                     debug!(local = %local, mock = ?inner.outbound_orig_addr, "outbound");
                     inner.outbound_orig_addr
                 } else {
-                    debug!(local = %local, "failed");
+                    debug!(local = %local, outbound = ?inner.outbound_local_addr, inbound = ?inner.inbound_local_addr, "failed");
                     None
                 }
             })
@@ -167,7 +171,9 @@ impl app::core::transport::OrigDstAddr for MockOriginalDst {
     }
 }
 
-fn run(proxy: Proxy, mut env: TestEnv) -> Listening {
+fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
+    use app::env::Strings;
+
     let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
@@ -178,14 +184,29 @@ fn run(proxy: Proxy, mut env: TestEnv) -> Listening {
         "LINKERD2_PROXY_DESTINATION_SVC_ADDR",
         format!("{}", controller.addr),
     );
-    env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+    if random_ports {
+        env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+    }
 
     mock_orig_dst.inbound_orig_addr = inbound;
     mock_orig_dst.outbound_orig_addr = outbound;
 
-    env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
-    env.put(app::env::ENV_CONTROL_LISTEN_ADDR, "127.0.0.1:0".to_owned());
-    env.put(app::env::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+    if random_ports {
+        env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+        env.put(app::env::ENV_CONTROL_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+        env.put(app::env::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+    } else {
+        let local_inbound = env
+            .get(app::env::ENV_INBOUND_LISTEN_ADDR)
+            .unwrap_or(None)
+            .unwrap_or_else(|| app::env::DEFAULT_INBOUND_LISTEN_ADDR.to_owned());
+        env.put(app::env::ENV_INBOUND_LISTEN_ADDR, local_inbound);
+        let local_control = env
+            .get(app::env::ENV_CONTROL_LISTEN_ADDR)
+            .unwrap_or(None)
+            .unwrap_or_else(|| app::env::DEFAULT_CONTROL_LISTEN_ADDR.to_owned());
+        env.put(app::env::ENV_CONTROL_LISTEN_ADDR, local_control);
+    }
 
     static IDENTITY_SVC_NAME: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_NAME";
     static IDENTITY_SVC_ADDR: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_ADDR";
@@ -279,7 +300,6 @@ fn run(proxy: Proxy, mut env: TestEnv) -> Listening {
                         );
                         let mut running = Some((running_tx, addrs));
                         let on_shutdown = future::poll_fn(move || {
-                            debug!("polling shutdown");
                             if let Some((tx, addrs)) = running.take() {
                                 let _ = tx.send(addrs);
                             }

@@ -12,4 +12,3 @@ linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
 tokio = "0.1.14"
 tower = "0.1"
-tower-load = { git = "https://github.com/tower-rs/tower" }

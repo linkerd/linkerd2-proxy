@@ -7,7 +7,6 @@ use linkerd2_identity as identity;
 
 pub mod add_header;
 pub mod balance;
-pub mod boxed;
 pub mod canonicalize;
 pub mod client;
 pub mod glue;
@@ -16,11 +15,8 @@ pub mod h1;
 pub mod h2;
 pub mod header_from_target;
 pub mod insert;
-pub mod metrics;
 pub mod normalize_uri;
 pub mod orig_proto;
-pub mod profiles;
-pub mod retry;
 pub mod settings;
 pub mod strip_header;
 pub mod timeout;
@@ -28,12 +24,14 @@ pub mod upgrade;
 mod version;
 
 pub use self::{
-    client::Client,
+    client::MakeClientLayer,
     glue::{HttpBody as Body, HyperServerSvc},
     settings::Settings,
+    timeout::MakeTimeoutLayer,
     version::Version,
 };
 pub use http::{header, uri, Request, Response};
+pub use linkerd2_http_box as boxed;
 
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
@@ -41,17 +39,11 @@ pub trait HasH2Reason {
 
 impl<'a> HasH2Reason for &'a (dyn std::error::Error + 'static) {
     fn h2_reason(&self) -> Option<::h2::Reason> {
-        let mut cause = Some(*self);
-
-        while let Some(err) = cause {
-            if let Some(err) = err.downcast_ref::<::h2::Error>() {
-                return err.h2_reason();
-            }
-
-            cause = err.source();
+        if let Some(err) = self.downcast_ref::<::h2::Error>() {
+            return err.h2_reason();
         }
 
-        None
+        self.source().and_then(|e| e.h2_reason())
     }
 }
 

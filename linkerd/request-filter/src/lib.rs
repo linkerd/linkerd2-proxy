@@ -28,10 +28,7 @@ pub enum ResponseFuture<F> {
 // === impl Service ===
 
 impl<I, S> Service<I, S> {
-    pub fn new<T>(filter: I, service: S) -> Self
-    where
-        Self: tower::Service<T>,
-    {
+    pub fn new(filter: I, service: S) -> Self {
         Self { filter, service }
     }
 }

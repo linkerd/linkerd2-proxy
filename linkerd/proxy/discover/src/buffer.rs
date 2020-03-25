@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tokio::timer::Delay;
 use tower::discover;
+use tracing::warn;
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -141,9 +142,9 @@ where
                         .take()
                         .unwrap_or_else(|| Delay::new(Instant::now() + self.watchdog_timeout));
                     if watchdog.poll().expect("timer must not fail").is_ready() {
-                        tracing::warn!(
+                        warn!(
                             timeout = ?self.watchdog_timeout,
-                            "dropping resolution due to watchdog",
+                            "Dropping resolution due to watchdog",
                         );
                         return Err(());
                     }
@@ -153,8 +154,8 @@ where
             }
 
             let up = try_ready!(self.discover.poll().map_err(|e| {
-                let e: Error = e.into();
-                tracing::debug!("resoution lost: {}", e);
+                let error: Error = e.into();
+                warn!(%error, "Discovery task failed");
             }));
 
             self.tx.try_send(up).ok().expect("sender must be ready");

@@ -9,7 +9,6 @@ use std::time::Duration;
 #[derive(Clone, Debug)]
 pub struct ServerConfig<A: OrigDstAddr = NoOrigDstAddr> {
     pub bind: Bind<A>,
-    pub buffer: BufferConfig,
     pub h2_settings: h2::Settings,
 }
 
@@ -25,22 +24,18 @@ pub struct ConnectConfig {
 pub struct ProxyConfig<A: OrigDstAddr = SysOrigDstAddr> {
     pub server: ServerConfig<A>,
     pub connect: ConnectConfig,
-    pub router_capacity: usize,
-    pub router_max_idle_age: Duration,
+    pub buffer_capacity: usize,
+    pub cache_max_idle_age: Duration,
     pub disable_protocol_detection_for_ports: Arc<IndexSet<u16>>,
+    pub dispatch_timeout: Duration,
+    pub max_in_flight_requests: usize,
 }
 
 #[derive(Clone, Debug)]
 pub struct ControlConfig {
     pub addr: ControlAddr,
     pub connect: ConnectConfig,
-    pub buffer: BufferConfig,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct BufferConfig {
-    pub dispatch_timeout: Duration,
-    pub max_in_flight: usize,
+    pub buffer_capacity: usize,
 }
 
 // === impl ServerConfig ===
@@ -49,7 +44,6 @@ impl<A: OrigDstAddr> ServerConfig<A> {
     pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addrs: B) -> ServerConfig<B> {
         ServerConfig {
             bind: self.bind.with_orig_dst_addr(orig_dst_addrs),
-            buffer: self.buffer,
             h2_settings: self.h2_settings,
         }
     }
@@ -62,9 +56,11 @@ impl<A: OrigDstAddr> ProxyConfig<A> {
         ProxyConfig {
             server: self.server.with_orig_dst_addr(orig_dst_addrs),
             connect: self.connect,
-            router_capacity: self.router_capacity,
-            router_max_idle_age: self.router_max_idle_age,
+            buffer_capacity: self.buffer_capacity,
+            cache_max_idle_age: self.cache_max_idle_age,
             disable_protocol_detection_for_ports: self.disable_protocol_detection_for_ports,
+            max_in_flight_requests: self.max_in_flight_requests,
+            dispatch_timeout: self.dispatch_timeout,
         }
     }
 }

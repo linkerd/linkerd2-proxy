@@ -1,6 +1,6 @@
 use crate::proxy::identity;
 use crate::transport::{labels::TlsStatus, tls};
-use linkerd2_addr::{Addr, NameAddr};
+use linkerd2_addr::Addr;
 use linkerd2_conditional::Conditional;
 use linkerd2_metrics::FmtLabels;
 use std::fmt::{self, Write};
@@ -17,14 +17,20 @@ pub struct ControlLabels {
 pub struct EndpointLabels {
     pub direction: Direction,
     pub tls_id: Conditional<TlsId, tls::ReasonForNoIdentity>,
-    pub dst_logical: Option<NameAddr>,
-    pub dst_concrete: Option<NameAddr>,
+    pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct StackLabels {
+    pub direction: Direction,
+    pub name: &'static str,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RouteLabels {
-    dst: dst::DstAddr,
+    direction: Direction,
+    target: Addr,
     labels: Option<String>,
 }
 
@@ -41,7 +47,7 @@ pub enum TlsId {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Authority<'a>(&'a NameAddr);
+struct Authority<'a>(&'a http::uri::Authority);
 
 // === impl CtlLabels ===
 
@@ -67,8 +73,9 @@ impl FmtLabels for ControlLabels {
 
 impl From<dst::Route> for RouteLabels {
     fn from(r: dst::Route) -> Self {
-        RouteLabels {
-            dst: r.dst_addr,
+        Self {
+            target: r.target,
+            direction: r.direction,
             labels: prefix_labels("rt", r.route.labels().as_ref().into_iter()),
         }
     }
@@ -76,7 +83,8 @@ impl From<dst::Route> for RouteLabels {
 
 impl FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.dst.fmt_labels(f)?;
+        self.direction.fmt_labels(f)?;
+        write!(f, ",dst=\"{}\"", self.target)?;
 
         if let Some(labels) = self.labels.as_ref() {
             write!(f, ",{}", labels)?;
@@ -90,7 +98,7 @@ impl FmtLabels for RouteLabels {
 
 impl FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let authority = self.dst_logical.as_ref().map(Authority);
+        let authority = self.authority.as_ref().map(Authority);
         (authority, &self.direction).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
@@ -120,22 +128,7 @@ impl FmtLabels for Direction {
 
 impl<'a> FmtLabels for Authority<'a> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.0.port() == 80 {
-            write!(f, "authority=\"{}\"", self.0.name().without_trailing_dot())
-        } else {
-            write!(f, "authority=\"{}\"", self.0)
-        }
-    }
-}
-
-impl FmtLabels for dst::DstAddr {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.direction() {
-            dst::Direction::In => Direction::In.fmt_labels(f)?,
-            dst::Direction::Out => Direction::Out.fmt_labels(f)?,
-        }
-
-        write!(f, ",dst=\"{}\"", self.as_ref())
+        write!(f, "authority=\"{}\"", self.0)
     }
 }
 
@@ -185,4 +178,29 @@ where
         write!(out, ",{}_{}=\"{}\"", prefix, k, v).expect("label concat must succeed");
     }
     Some(out)
+}
+
+// === impl StackLabels ===
+
+impl StackLabels {
+    pub fn inbound(name: &'static str) -> Self {
+        Self {
+            direction: Direction::In,
+            name,
+        }
+    }
+
+    pub fn outbound(name: &'static str) -> Self {
+        Self {
+            direction: Direction::Out,
+            name,
+        }
+    }
+}
+
+impl FmtLabels for StackLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.direction.fmt_labels(f)?;
+        write!(f, ",name=\"{}\"", self.name)
+    }
 }

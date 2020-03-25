@@ -1,0 +1,9 @@
+flamegraph*
+*folded
+*txt
+*dat
+*json
+*png
+memory-profiler-*
+libmemory_profiler.so
+perf.data

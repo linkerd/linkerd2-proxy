@@ -139,7 +139,7 @@ impl tls::accept::HasConfig for Local {
 
 impl<T> Daemon<T>
 where
-    T: GrpcService<BoxBody> + Clone,
+    T: GrpcService<BoxBody>,
 {
     pub fn new(config: Config, crt_key: CrtKeySender, client: T) -> Self {
         Self {
@@ -154,7 +154,7 @@ where
 
 impl<T> Future for Daemon<T>
 where
-    T: GrpcService<BoxBody> + Clone,
+    T: GrpcService<BoxBody>,
 {
     type Item = ();
     type Error = Never;
