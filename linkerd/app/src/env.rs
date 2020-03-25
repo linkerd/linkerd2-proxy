@@ -284,7 +284,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let hostname = strings.get(ENV_HOSTNAME);
 
     let f = fs::read_to_string(LABELS_FILE_PATH);
-    let labels = convert_labels_to_map(f.unwrap_or_default());
+    let labels = f.ok().map(convert_labels_to_map);
 
     let trace_collector_addr = if id_disabled {
         parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
@@ -455,7 +455,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.proxy.connect.clone()
             };
             oc_collector::Config::Enabled {
-                labels: Some(labels),
+                labels: labels.unwrap_or_default(),
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,

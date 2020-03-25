@@ -17,7 +17,7 @@ pub enum Config {
     Disabled,
     Enabled {
         control: ControlConfig,
-        labels: Option<HashMap<String, String>>,
+        labels: HashMap<String, String>,
         hostname: Option<String>,
     },
 }
@@ -85,7 +85,7 @@ impl Config {
                         service_info: Some(oc::ServiceInfo {
                             name: Self::SERVICE_NAME.to_string(),
                         }),
-                        attributes: labels.unwrap_or_default(),
+                        attributes: labels,
                         ..oc::Node::default()
                     };
 
