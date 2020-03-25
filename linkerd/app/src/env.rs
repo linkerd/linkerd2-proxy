@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn convert_labels_to_map_different_values() {
-        let labels_string = "cluster=\"test-cluster1\"\nrack=\"rack-22\nzone=us-est-coast\n
+        let labels_string = "cluster=\"test-cluster1\"\nrack=\"rack-22\nzone=us-est-coast\nlinkerd.io/control-plane-component=\"controller\"\nlinkerd.io/proxy-deployment=\"linkerd-controller\"\nworkload=\nkind=\"\"\n
         "
         .to_string();
 
@@ -1030,6 +1030,16 @@ mod tests {
             ("cluster".to_string(), "test-cluster1".to_string()),
             ("rack".to_string(), "rack-22".to_string()),
             ("zone".to_string(), "us-est-coast".to_string()),
+            (
+                "linkerd.io/control-plane-component".to_string(),
+                "controller".to_string(),
+            ),
+            (
+                "linkerd.io/proxy-deployment".to_string(),
+                "linkerd-controller".to_string(),
+            ),
+            ("workload".to_string(), "".to_string()),
+            ("kind".to_string(), "".to_string()),
         ]
         .iter()
         .cloned()
