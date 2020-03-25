@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 use std::{fmt, fs};
+use std::collections::HashMap;
 use tracing::{error, warn};
 
 /// The strings used to build a configuration.
@@ -70,6 +71,8 @@ pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUT
 
 pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
 pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
+
+pub const LABELS_FILE_PATH: &str = "/var/run/linkerd/podinfo/labels";
 
 /// Constrains which destination names are resolved through the destination
 /// service.
@@ -280,6 +283,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let hostname = strings.get(ENV_HOSTNAME);
 
+    let f = fs::read_to_string(LABELS_FILE_PATH);
+    let labels = convert_string_to_map(f.unwrap_or_default());
+
     let trace_collector_addr = if id_disabled {
         parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
     } else {
@@ -449,6 +455,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.proxy.connect.clone()
             };
             oc_collector::Config::Enabled {
+                labels: Some(labels),
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
@@ -498,6 +505,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         outbound,
         inbound,
     })
+}
+
+fn convert_string_to_map(labels :String) -> HashMap<String, String> {
+    let mut labels_map: HashMap<String,String> = HashMap::new();
+    for line in labels.lines() {
+        let label = line.split("=").collect::<Vec<&str>>();
+        labels_map.insert(label[0].to_string(), label[1][1..label[1].len()-1].to_string());
+    }
+    labels_map
 }
 
 fn default_disable_ports_protocol_detection() -> IndexSet<u16> {
