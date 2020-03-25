@@ -16,7 +16,7 @@ indexmap = "1.0"
 linkerd2-addr = { path  = "../addr" }
 linkerd2-dns = { path  = "../dns" }
 linkerd2-error = { path  = "../error" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "zd/auth_override" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.12" }
 linkerd2-stack = { path  = "../stack" }
 rand = { version = "0.7", features = ["small_rng"] }
 regex = "1.0.0"
@@ -29,6 +29,6 @@ tracing-futures = "0.1"
 
 [dev-dependencies]
 linkerd2-test-util = { path = "../test-util" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], branch = "zd/auth_override" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
 prost-types = "0.5.0"
 quickcheck = { version = "0.9", default-features = false }

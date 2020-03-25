@@ -64,7 +64,7 @@ pub(in crate) fn to_authority(o: AuthorityOverride) -> Option<Authority> {
     match o.authority_override.parse() {
         Ok(name) => Some(name),
         Err(_) => {
-            tracing::warn!(
+            tracing::debug!(
                 "Ignoring invalid authority override: {}",
                 o.authority_override
             );
