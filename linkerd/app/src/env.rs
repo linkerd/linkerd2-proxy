@@ -1026,7 +1026,7 @@ mod tests {
 
     #[test]
     fn convert_labels_to_map_different_values() {
-        let labels_string = "cluster=\"test-cluster1\"\nrack=\"rack-22\nzone=us-est-coast\nlinkerd.io/control-plane-component=\"controller\"\nlinkerd.io/proxy-deployment=\"linkerd-controller\"\nworkload=\nkind=\"\"\n
+        let labels_string = "cluster=\"test-cluster1\"\nrack=\"rack-22\nzone=us-est-coast\nlinkerd.io/control-plane-component=\"controller\"\nlinkerd.io/proxy-deployment=\"linkerd-controller\"\nworkload=\nkind=\"\"\nkey1=\"=\"\nkey2==value2\nkey3\n=key4\n
         "
         .to_string();
 
@@ -1044,6 +1044,9 @@ mod tests {
             ),
             ("workload".to_string(), "".to_string()),
             ("kind".to_string(), "".to_string()),
+            ("key1".to_string(), "=".to_string()),
+            ("key2".to_string(), "=value2".to_string()),
+            ("".to_string(), "key4".to_string()),
         ]
         .iter()
         .cloned()
