@@ -72,7 +72,7 @@ pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUT
 pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
 pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
 
-pub const LABELS_FILE_PATH: &str = "/var/run/linkerd/podinfo/labels";
+pub const ENV_LABELS_FILE_PATH: &str = "LINKERD2_PROXY_LABELS_FILE_PATH";
 
 /// Constrains which destination names are resolved through the destination
 /// service.
@@ -283,8 +283,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let hostname = strings.get(ENV_HOSTNAME);
 
-    let f = fs::read_to_string(LABELS_FILE_PATH);
-    let labels = f.ok().map(convert_labels_to_map);
+    let labels = strings.get(ENV_LABELS_FILE_PATH).map(|path_option| {
+        path_option
+            .map(fs::read_to_string)
+            .and_then(|label_string| label_string.ok().map(convert_labels_to_map))
+            .unwrap_or_default()
+    });
 
     let trace_collector_addr = if id_disabled {
         parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
@@ -455,7 +459,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.proxy.connect.clone()
             };
             oc_collector::Config::Enabled {
-                labels: labels.unwrap_or_default(),
+                labels: labels?,
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
