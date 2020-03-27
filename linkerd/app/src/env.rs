@@ -459,7 +459,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.proxy.connect.clone()
             };
             oc_collector::Config::Enabled {
-                labels: labels?,
+                labels: labels.unwrap_or_default(),
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
