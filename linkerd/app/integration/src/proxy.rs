@@ -157,7 +157,10 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
 
     // If there is no inbond server or no outboudn server, use the admin server just to make sure
     // things can start up.
-    env.put(app::env::ENV_INBOUND_ORIG_DST_ADDR, inbound.unwrap_or(controller.addr).to_string());
+    env.put(
+        app::env::ENV_INBOUND_ORIG_DST_ADDR,
+        inbound.unwrap_or(controller.addr).to_string(),
+    );
     env.put(
         app::env::ENV_OUTBOUND_ORIG_DST_ADDR,
         outbound.unwrap_or(controller.addr).to_string(),
