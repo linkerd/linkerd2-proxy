@@ -9,7 +9,7 @@ set -euox pipefail
 ca() {
   cn=$1
   name=$2
-  echo "{\"names\":[{\"CN\": \"${cn}\",\"OU\":\"None\"}]}" \
+  echo "{\"names\":[{\"CN\": \"${cn}\",\"OU\":\"None\"}], \"ca\": {\"expiry\": \"87600h\"}}" \
     | cfssl genkey -initca - \
     | cfssljson -bare "${name}"
 
@@ -29,7 +29,7 @@ ee() {
   mkdir -p "${dir_name}"
 
   echo '{}' \
-    | cfssl gencert -ca "${ca_name}.pem" -ca-key "${ca_name}-key.pem" -hostname="${hostname}" - \
+    | cfssl gencert -ca "${ca_name}.pem" -ca-key "${ca_name}-key.pem" -hostname="${hostname}" -config=ca-config.json - \
     | cfssljson -bare "${ee_name}"
 
   openssl pkcs8 -topk8 -nocrypt -inform pem -outform der \
