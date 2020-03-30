@@ -354,8 +354,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     );
 
     #[cfg(not(feature = "mock-orig-dst"))]
-    let (inbound_orig_dst, outbound_orig_dst) =
-        (DefaultOrigDstAddr::default(), DefaultOrigDstAddr::default());
+    let (inbound_orig_dst, outbound_orig_dst): (DefaultOrigDstAddr, DefaultOrigDstAddr) =
+        Default::default();
 
     let outbound = {
         let bind = listen::Bind::new(

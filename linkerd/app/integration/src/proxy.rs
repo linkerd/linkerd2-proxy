@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::{Arc, Mutex};
 
 pub fn new() -> Proxy {
     Proxy::new()
@@ -140,37 +139,6 @@ impl Proxy {
     }
 }
 
-#[derive(Clone, Debug)]
-struct MockOriginalDst(Arc<Mutex<DstInner>>);
-
-#[derive(Debug, Default)]
-struct DstInner {
-    inbound_orig_addr: Option<SocketAddr>,
-    inbound_local_addr: Option<SocketAddr>,
-    outbound_orig_addr: Option<SocketAddr>,
-    outbound_local_addr: Option<SocketAddr>,
-}
-
-impl app::core::transport::OrigDstAddr for MockOriginalDst {
-    fn orig_dst_addr(&self, sock: &tokio::net::TcpStream) -> Option<SocketAddr> {
-        info_span!("mock-original-dst").in_scope(|| {
-            sock.local_addr().ok().and_then(|local| {
-                let inner = self.0.lock().unwrap();
-                if inner.inbound_local_addr.as_ref().map(SocketAddr::port) == Some(local.port()) {
-                    debug!(local = %local, mock = ?inner.inbound_orig_addr, "inbound");
-                    inner.inbound_orig_addr
-                } else if inner.outbound_local_addr.as_ref().map(SocketAddr::port) == Some(local.port()) {
-                    debug!(local = %local, mock = ?inner.outbound_orig_addr, "outbound");
-                    inner.outbound_orig_addr
-                } else {
-                    debug!(local = %local, outbound = ?inner.outbound_local_addr, inbound = ?inner.inbound_local_addr, "failed");
-                    None
-                }
-            })
-        })
-    }
-}
-
 fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     use app::env::Strings;
 
@@ -178,18 +146,22 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
     let identity = proxy.identity;
-    let mut mock_orig_dst = DstInner::default();
 
     env.put(
         "LINKERD2_PROXY_DESTINATION_SVC_ADDR",
-        format!("{}", controller.addr),
+        controller.addr.to_string(),
     );
     if random_ports {
         env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
     }
 
-    mock_orig_dst.inbound_orig_addr = inbound;
-    mock_orig_dst.outbound_orig_addr = outbound;
+    // If there is no inbond server or no outboudn server, use the admin server just to make sure
+    // things can start up.
+    env.put(app::env::ENV_INBOUND_ORIG_DST_ADDR, inbound.unwrap_or(controller.addr).to_string());
+    env.put(
+        app::env::ENV_OUTBOUND_ORIG_DST_ADDR,
+        outbound.unwrap_or(controller.addr).to_string(),
+    );
 
     if random_ports {
         env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
@@ -276,17 +248,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                 tokio::runtime::current_thread::Runtime::new()
                     .expect("proxy")
                     .block_on(future::lazy(move || {
-                        let mock_orig_dst = MockOriginalDst(Arc::new(Mutex::new(mock_orig_dst)));
-                        let main = config
-                            .with_orig_dst_addr(mock_orig_dst.clone())
-                            .build(trace_handle)
-                            .expect("config");
-
-                        {
-                            let mut inner = mock_orig_dst.0.lock().unwrap();
-                            inner.inbound_local_addr = Some(main.inbound_addr());
-                            inner.outbound_local_addr = Some(main.outbound_addr());
-                        }
+                        let main = config.build(trace_handle).expect("config");
 
                         // slip the running tx into the shutdown future, since the first time
                         // the shutdown future is polled, that means all of the proxy is now
