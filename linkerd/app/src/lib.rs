@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
     svc::{self, NewService},
-    transport::{OrigDstAddr, SysOrigDstAddr},
+    transport::{DefaultOrigDstAddr, OrigDstAddr},
     Error,
 };
 use linkerd2_app_inbound as inbound;
@@ -39,7 +39,7 @@ use tracing_futures::Instrument;
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
 #[derive(Clone, Debug)]
-pub struct Config<A: OrigDstAddr = SysOrigDstAddr> {
+pub struct Config<A: OrigDstAddr = DefaultOrigDstAddr> {
     pub outbound: outbound::Config<A>,
     pub inbound: inbound::Config<A>,
 
@@ -63,7 +63,7 @@ pub struct App {
     tap: tap::Tap,
 }
 
-impl Config<SysOrigDstAddr> {
+impl Config<DefaultOrigDstAddr> {
     pub fn try_from_env() -> Result<Self, env::EnvError> {
         env::Env.try_config()
     }

@@ -10,6 +10,9 @@ Configures and executes the proxy
 This is used by tests and the executable.
 """
 
+[features]
+mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
+
 [dependencies]
 futures = "0.1"
 indexmap = "1.0"
@@ -31,7 +34,7 @@ http = "0.1"
 http-body = "0.1"
 hyper = "0.12"
 linkerd2-metrics = { path = "../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.11" }
 net2 = "0.2"
 quickcheck = { version = "0.9", default-features = false }
 ring = "0.16"

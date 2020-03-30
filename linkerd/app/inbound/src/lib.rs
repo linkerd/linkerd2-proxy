@@ -25,7 +25,7 @@ use linkerd2_app_core::{
     reconnect, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, io::BoxedIo, tls, OrigDstAddr, SysOrigDstAddr},
+    transport::{self, io::BoxedIo, tls, DefaultOrigDstAddr, OrigDstAddr},
     Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
     L5D_SERVER_ID,
 };
@@ -41,7 +41,7 @@ mod set_client_id_on_req;
 mod set_remote_ip_on_req;
 
 #[derive(Clone, Debug)]
-pub struct Config<A: OrigDstAddr = SysOrigDstAddr> {
+pub struct Config<A: OrigDstAddr = DefaultOrigDstAddr> {
     pub proxy: ProxyConfig<A>,
 }
 

@@ -23,7 +23,7 @@ use linkerd2_app_core::{
     reconnect, retry, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, tls, OrigDstAddr, SysOrigDstAddr},
+    transport::{self, tls, DefaultOrigDstAddr, OrigDstAddr},
     Conditional, DiscoveryRejected, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
@@ -48,7 +48,7 @@ const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
-pub struct Config<A: OrigDstAddr = SysOrigDstAddr> {
+pub struct Config<A: OrigDstAddr = DefaultOrigDstAddr> {
     pub proxy: ProxyConfig<A>,
     pub canonicalize_timeout: Duration,
 }

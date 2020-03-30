@@ -1,7 +1,7 @@
 pub use super::control::ControlAddr;
 pub use crate::exp_backoff::ExponentialBackoff;
 pub use crate::proxy::http::h2;
-pub use crate::transport::{Bind, Listen, NoOrigDstAddr, OrigDstAddr, SysOrigDstAddr};
+pub use crate::transport::{Bind, DefaultOrigDstAddr, Listen, NoOrigDstAddr, OrigDstAddr};
 use indexmap::IndexSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,7 +21,7 @@ pub struct ConnectConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ProxyConfig<A: OrigDstAddr = SysOrigDstAddr> {
+pub struct ProxyConfig<A: OrigDstAddr = DefaultOrigDstAddr> {
     pub server: ServerConfig<A>,
     pub connect: ConnectConfig,
     pub buffer_capacity: usize,

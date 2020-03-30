@@ -1,10 +1,7 @@
-use crate::api::destination::{
-    protocol_hint::Protocol, AuthorityOverride, TlsIdentity, WeightedAddr,
-};
+use crate::api::destination::{protocol_hint::Protocol, TlsIdentity, WeightedAddr};
 use crate::api::net::TcpAddress;
 use crate::identity;
 use crate::metadata::{Metadata, ProtocolHint};
-use http::uri::Authority;
 use indexmap::IndexMap;
 use std::{collections::HashMap, net::SocketAddr};
 
@@ -13,7 +10,6 @@ pub(in crate) fn to_addr_meta(
     pb: WeightedAddr,
     set_labels: &HashMap<String, String>,
 ) -> Option<(SocketAddr, Metadata)> {
-    let authority_override = pb.authority_override.and_then(to_authority);
     let addr = pb.addr.and_then(to_sock_addr)?;
 
     let meta = {
@@ -43,7 +39,7 @@ pub(in crate) fn to_addr_meta(
     }
 
     let tls_id = pb.tls_identity.and_then(to_id);
-    let meta = Metadata::new(meta, proto_hint, tls_id, pb.weight, authority_override);
+    let meta = Metadata::new(meta, proto_hint, tls_id, pb.weight);
     Some((addr, meta))
 }
 
@@ -55,19 +51,6 @@ fn to_id(pb: TlsIdentity) -> Option<identity::Name> {
         Ok(i) => Some(i),
         Err(_) => {
             tracing::warn!("Ignoring invalid identity: {}", i.name);
-            None
-        }
-    }
-}
-
-pub(in crate) fn to_authority(o: AuthorityOverride) -> Option<Authority> {
-    match o.authority_override.parse() {
-        Ok(name) => Some(name),
-        Err(_) => {
-            tracing::debug!(
-                "Ignoring invalid authority override: {}",
-                o.authority_override
-            );
             None
         }
     }

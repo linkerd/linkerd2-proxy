@@ -6,6 +6,9 @@ edition = "2018"
 publish = false
 description = "The main proxy executable"
 
+[features]
+mock-orig-dst  = ["linkerd2-app/mock-orig-dst"]
+
 [dependencies]
 futures = "0.1"
 linkerd2-app = { path = "../linkerd/app" }

@@ -1,5 +1,4 @@
 use crate::identity;
-use http::uri::Authority;
 use indexmap::IndexMap;
 
 /// Metadata describing an endpoint.
@@ -25,9 +24,6 @@ pub struct Metadata {
 
     /// How to verify TLS for the endpoint.
     identity: Option<identity::Name>,
-
-    /// Used to override the the authority if needed
-    authority_override: Option<Authority>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,7 +44,6 @@ impl Metadata {
             protocol_hint: ProtocolHint::Unknown,
             identity: None,
             weight: 10_000,
-            authority_override: None,
         }
     }
 
@@ -57,14 +52,12 @@ impl Metadata {
         protocol_hint: ProtocolHint,
         identity: Option<identity::Name>,
         weight: u32,
-        authority_override: Option<Authority>,
     ) -> Self {
         Self {
             labels,
             protocol_hint,
             identity,
             weight,
-            authority_override,
         }
     }
 
@@ -79,9 +72,5 @@ impl Metadata {
 
     pub fn identity(&self) -> Option<&identity::Name> {
         self.identity.as_ref()
-    }
-
-    pub fn authority_override(&self) -> Option<&Authority> {
-        self.authority_override.as_ref()
     }
 }
