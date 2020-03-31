@@ -44,11 +44,11 @@ pub struct NoOrigDstAddr(());
 #[cfg(not(feature = "mock-orig-dst"))]
 pub use self::sys::SysOrigDstAddr;
 
-#[cfg(not(feature = "mock-orig-dst"))]
-pub type DefaultOrigDstAddr = SysOrigDstAddr;
-
 #[cfg(feature = "mock-orig-dst")]
 pub use self::mock::MockOrigDstAddr;
+
+#[cfg(not(feature = "mock-orig-dst"))]
+pub type DefaultOrigDstAddr = SysOrigDstAddr;
 
 #[cfg(feature = "mock-orig-dst")]
 pub type DefaultOrigDstAddr = MockOrigDstAddr;
