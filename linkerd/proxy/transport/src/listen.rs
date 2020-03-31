@@ -42,16 +42,10 @@ pub struct NoOrigDstAddr(());
 // replaces it with one that must be configured.
 
 #[cfg(not(feature = "mock-orig-dst"))]
-pub use self::sys::SysOrigDstAddr;
+pub use self::sys::SysOrigDstAddr as DefaultOrigDstAddr;
 
 #[cfg(feature = "mock-orig-dst")]
-pub use self::mock::MockOrigDstAddr;
-
-#[cfg(not(feature = "mock-orig-dst"))]
-pub type DefaultOrigDstAddr = SysOrigDstAddr;
-
-#[cfg(feature = "mock-orig-dst")]
-pub type DefaultOrigDstAddr = MockOrigDstAddr;
+pub use self::mock::MockOrigDstAddr as DefaultOrigDstAddr;
 
 #[derive(Debug)]
 enum State {
