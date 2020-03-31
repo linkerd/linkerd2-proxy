@@ -70,22 +70,6 @@ impl Config<DefaultOrigDstAddr> {
 }
 
 impl<A: OrigDstAddr + Send + 'static> Config<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr + Send + Sync + 'static>(
-        self,
-        orig_dst: B,
-    ) -> Config<B> {
-        Config {
-            outbound: self.outbound.with_orig_dst_addr(orig_dst.clone()),
-            inbound: self.inbound.with_orig_dst_addr(orig_dst),
-            dns: self.dns,
-            identity: self.identity,
-            dst: self.dst,
-            admin: self.admin,
-            tap: self.tap,
-            oc_collector: self.oc_collector,
-        }
-    }
-
     /// Build an application.
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
