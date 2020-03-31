@@ -17,7 +17,6 @@ use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
     svc::{self, NewService},
-    transport::{DefaultOrigDstAddr, OrigDstAddr},
     Error,
 };
 use linkerd2_app_inbound as inbound;
@@ -39,9 +38,9 @@ use tracing_futures::Instrument;
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
 #[derive(Clone, Debug)]
-pub struct Config<A: OrigDstAddr = DefaultOrigDstAddr> {
-    pub outbound: outbound::Config<A>,
-    pub inbound: inbound::Config<A>,
+pub struct Config {
+    pub outbound: outbound::Config,
+    pub inbound: inbound::Config,
 
     pub dns: dns::Config,
     pub identity: identity::Config,
@@ -63,13 +62,11 @@ pub struct App {
     tap: tap::Tap,
 }
 
-impl Config<DefaultOrigDstAddr> {
+impl Config {
     pub fn try_from_env() -> Result<Self, env::EnvError> {
         env::Env.try_config()
     }
-}
 
-impl<A: OrigDstAddr + Send + 'static> Config<A> {
     /// Build an application.
     ///
     /// It is currently required that this be run on a Tokio runtime, since some

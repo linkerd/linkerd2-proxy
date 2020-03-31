@@ -25,7 +25,7 @@ use linkerd2_app_core::{
     reconnect, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, io::BoxedIo, tls, DefaultOrigDstAddr, OrigDstAddr},
+    transport::{self, io::BoxedIo, tls},
     Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
     L5D_SERVER_ID,
 };
@@ -41,8 +41,8 @@ mod set_client_id_on_req;
 mod set_remote_ip_on_req;
 
 #[derive(Clone, Debug)]
-pub struct Config<A: OrigDstAddr = DefaultOrigDstAddr> {
-    pub proxy: ProxyConfig<A>,
+pub struct Config {
+    pub proxy: ProxyConfig,
 }
 
 pub struct Inbound {
@@ -50,13 +50,7 @@ pub struct Inbound {
     pub serve: serve::Task,
 }
 
-impl<A: OrigDstAddr> Config<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addr: B) -> Config<B> {
-        Config {
-            proxy: self.proxy.with_orig_dst_addr(orig_dst_addr),
-        }
-    }
-
+impl Config {
     pub fn build<P>(
         self,
         local_identity: tls::Conditional<identity::Local>,
@@ -67,7 +61,6 @@ impl<A: OrigDstAddr> Config<A> {
         drain: drain::Watch,
     ) -> Result<Inbound, Error>
     where
-        A: Send + 'static,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {

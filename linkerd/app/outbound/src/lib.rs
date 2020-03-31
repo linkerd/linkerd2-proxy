@@ -23,7 +23,7 @@ use linkerd2_app_core::{
     reconnect, retry, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, tls, DefaultOrigDstAddr, OrigDstAddr},
+    transport::{self, tls},
     Conditional, DiscoveryRejected, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
@@ -48,8 +48,8 @@ const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
-pub struct Config<A: OrigDstAddr = DefaultOrigDstAddr> {
-    pub proxy: ProxyConfig<A>,
+pub struct Config {
+    pub proxy: ProxyConfig,
     pub canonicalize_timeout: Duration,
 }
 
@@ -58,14 +58,7 @@ pub struct Outbound {
     pub serve: serve::Task,
 }
 
-impl<A: OrigDstAddr> Config<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addr: B) -> Config<B> {
-        Config {
-            proxy: self.proxy.with_orig_dst_addr(orig_dst_addr),
-            canonicalize_timeout: self.canonicalize_timeout,
-        }
-    }
-
+impl Config {
     pub fn build<R, P>(
         self,
         local_identity: tls::Conditional<identity::Local>,
@@ -78,7 +71,6 @@ impl<A: OrigDstAddr> Config<A> {
         drain: drain::Watch,
     ) -> Result<Outbound, Error>
     where
-        A: Send + 'static,
         R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
             + Clone
             + Send
