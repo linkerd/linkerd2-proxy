@@ -126,6 +126,7 @@ where
     L: TransportLabels<Protocol, Labels = TransportKey>,
     F: Accept<(tls::accept::Meta, transport::metrics::Io<BoxedIo>)> + Clone + Send + 'static,
     F::Future: Send + 'static,
+    F::ConnectionFuture: Send + 'static,
     H: NewService<tls::accept::Meta> + Send + 'static,
     H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>, Error = Error>
         + Send
@@ -133,9 +134,9 @@ where
     <H::Service as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
 {
-    type Response = ();
+    type Response = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
     type Error = Error;
-    type Future = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Error> + Send + 'static>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into())
@@ -163,8 +164,15 @@ where
                     .forward_tcp
                     .clone()
                     .into_service()
-                    .oneshot((proto.tls, io));
-                return Box::new(drain.watch(fwd.map_err(Into::into), |_| {}));
+                    .oneshot((proto.tls, io))
+                    .map(|connect_future| {
+                        let connect_future = drain
+                            .watch(connect_future.map_err(Into::into), |_| {})
+                            .map_err(Into::into);
+                        Box::new(connect_future) as Self::Response
+                    });
+
+                return Box::new(fwd.map_err(Into::into));
             }
         };
 
@@ -173,41 +181,44 @@ where
         let builder = self.http.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
-        Box::new(match http_version {
-            HttpVersion::Http1 => {
-                // Enable support for HTTP upgrades (CONNECT and websockets).
-                let svc = upgrade::Service::new(http_svc, drain.clone());
-                let exec =
-                    tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
-                let conn = builder
-                    .with_executor(exec)
-                    .http1_only(true)
-                    .serve_connection(io, HyperServerSvc::new(svc))
-                    .with_upgrades();
-                Either::A(
-                    drain
-                        .watch(conn, |conn| conn.graceful_shutdown())
-                        .map(|_| ())
-                        .map_err(Into::into),
-                )
-            }
+        Box::new(futures::future::ok::<Self::Response, Error>(Box::new(
+            match http_version {
+                HttpVersion::Http1 => {
+                    // Enable support for HTTP upgrades (CONNECT and websockets).
+                    let svc = upgrade::Service::new(http_svc, drain.clone());
+                    let exec =
+                        tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
+                    let conn = builder
+                        .with_executor(exec)
+                        .http1_only(true)
+                        .serve_connection(io, HyperServerSvc::new(svc))
+                        .with_upgrades();
+                    Either::A(
+                        drain
+                            .watch(conn, |conn| conn.graceful_shutdown())
+                            .map(|_| ())
+                            .map_err(Into::into),
+                    )
+                }
 
-            HttpVersion::H2 => {
-                let exec = tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
-                let conn = builder
-                    .with_executor(exec)
-                    .http2_only(true)
-                    .http2_initial_stream_window_size(initial_stream_window_size)
-                    .http2_initial_connection_window_size(initial_conn_window_size)
-                    .serve_connection(io, HyperServerSvc::new(http_svc));
-                Either::B(
-                    drain
-                        .watch(conn, |conn| conn.graceful_shutdown())
-                        .map(|_| ())
-                        .map_err(Into::into),
-                )
-            }
-        })
+                HttpVersion::H2 => {
+                    let exec =
+                        tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
+                    let conn = builder
+                        .with_executor(exec)
+                        .http2_only(true)
+                        .http2_initial_stream_window_size(initial_stream_window_size)
+                        .http2_initial_connection_window_size(initial_conn_window_size)
+                        .serve_connection(io, HyperServerSvc::new(http_svc));
+                    Either::B(
+                        drain
+                            .watch(conn, |conn| conn.graceful_shutdown())
+                            .map(|_| ())
+                            .map_err(Into::into),
+                    )
+                }
+            },
+        )))
     }
 }
 

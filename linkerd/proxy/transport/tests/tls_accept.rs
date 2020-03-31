@@ -140,24 +140,27 @@ where
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
         let listen = Bind::new(addr, None).bind().expect("must bind");
         let listen_addr = listen.listen_addr();
+        type ConnectionFuture = Box<dyn Future<Item = (), Error = Never> + Send + 'static>;
 
-        let accept = AcceptTls::new(
-            server_tls,
-            service_fn(move |(meta, conn): ServerConnection| {
-                let sender = sender.clone();
-                let peer_identity = Some(meta.peer_identity.clone());
-                server((meta, conn)).then(move |result| {
-                    sender
-                        .send(Transported {
-                            peer_identity,
-                            result,
-                        })
-                        .expect("send result");
-                    let ok: Result<(), Never> = Ok(());
-                    ok
-                })
-            }),
-        );
+        let sender = service_fn(move |(meta, conn): ServerConnection| {
+            let sender = sender.clone();
+            let peer_identity = Some(meta.peer_identity.clone());
+
+            let server: ConnectionFuture = Box::new(server((meta, conn)).then(move |result| {
+                sender
+                    .send(Transported {
+                        peer_identity,
+                        result,
+                    })
+                    .expect("send result");
+
+                Box::new(future::ok::<(), Never>(()))
+            }));
+
+            Box::new(future::ok::<ConnectionFuture, Never>(server))
+        });
+
+        let accept = AcceptTls::new(server_tls, sender);
         let server = Server::Init { listen, accept };
 
         (server, listen_addr, receiver)
@@ -256,7 +259,8 @@ where
         listen: Listen,
         accept: AcceptTls<A, CrtKey>,
     },
-    Serving(<AcceptTls<A, CrtKey> as Accept<<Listen as CoreListen>::Connection>>::Future),
+    Accepting(<AcceptTls<A, CrtKey> as Accept<<Listen as CoreListen>::Connection>>::Future),
+    Serving(<AcceptTls<A, CrtKey> as Accept<<Listen as CoreListen>::Connection>>::ConnectionFuture),
 }
 
 #[derive(Clone)]
@@ -286,8 +290,14 @@ impl<A: Accept<ServerConnection> + Clone> Future for Server<A> {
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
                         Err(_) => panic!("listener failed"),
                     };
-                    Server::Serving(accept.accept(conn))
+                    Server::Accepting(accept.accept(conn))
                 }
+                Server::Accepting(ref mut fut) => match fut.poll() {
+                    Ok(Async::Ready(conn_future)) => Server::Serving(conn_future),
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err(_) => panic!("accepting failed"),
+                },
+
                 Server::Serving(ref mut fut) => match fut.poll() {
                     Ok(ready) => return Ok(ready),
                     Err(_) => panic!("connection failed"),

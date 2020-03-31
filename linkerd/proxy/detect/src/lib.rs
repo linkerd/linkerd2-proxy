@@ -66,8 +66,9 @@ impl<T, D, A> tower::Service<(T, BoxedIo)> for Accept<D, A>
 where
     D: Detect<T>,
     A: core::listen::Accept<(D::Target, BoxedIo)> + Clone,
+    D::Target: std::fmt::Debug,
 {
-    type Response = ();
+    type Response = A::ConnectionFuture;
     type Error = Error;
     type Future = AcceptFuture<T, D, A>;
 
@@ -93,9 +94,10 @@ where
 impl<T, D, A> Future for AcceptFuture<T, D, A>
 where
     D: Detect<T>,
+    D::Target: std::fmt::Debug,
     A: core::listen::Accept<(D::Target, BoxedIo)>,
 {
-    type Item = ();
+    type Item = A::ConnectionFuture;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {

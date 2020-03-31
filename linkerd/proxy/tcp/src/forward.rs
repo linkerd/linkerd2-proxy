@@ -27,23 +27,27 @@ impl<C> Forward<C> {
 impl<C, T, I> Service<(T, I)> for Forward<C>
 where
     C: Service<T>,
+    C::Response: Send + 'static,
+    C::Future: Send + 'static,
     C::Error: Into<Error>,
     C::Response: AsyncRead + AsyncWrite,
-    I: AsyncRead + AsyncWrite,
+    I: AsyncRead + AsyncWrite + Send + 'static,
 {
-    type Response = ();
+    type Response = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
     type Error = Error;
-    type Future = ForwardFuture<I, C::Future>;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Error> + Send + 'static>;
 
     fn poll_ready(&mut self) -> Poll<(), self::Error> {
         self.connect.poll_ready().map_err(Into::into)
     }
 
     fn call(&mut self, (meta, io): (T, I)) -> Self::Future {
-        ForwardFuture::Connect {
+        let forward_future = Box::new(ForwardFuture::Connect {
             io: Some(io),
             connect: self.connect.call(meta),
-        }
+        });
+
+        Box::new(futures::future::ok::<Self::Response, Error>(forward_future))
     }
 }
 

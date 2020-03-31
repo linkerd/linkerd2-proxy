@@ -1,4 +1,4 @@
-use futures::{Future, Poll};
+use futures::{future, Future, Poll};
 use indexmap::IndexSet;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
@@ -58,9 +58,9 @@ impl AcceptPermittedClients {
 }
 
 impl Service<Connection> for AcceptPermittedClients {
-    type Response = ();
+    type Response = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
     type Error = Error;
-    type Future = ServeFuture;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into())
@@ -70,15 +70,23 @@ impl Service<Connection> for AcceptPermittedClients {
         match meta.peer_identity {
             Conditional::Some(ref peer) => {
                 if self.permitted_client_ids.contains(peer) {
-                    self.serve_authenticated(io)
+                    Box::new(future::ok::<Self::Response, Error>(Box::new(
+                        self.serve_authenticated(io),
+                    )))
                 } else {
-                    self.serve_unauthenticated(io, format!("Unauthorized peer: {}", peer))
+                    Box::new(future::ok::<Self::Response, Error>(Box::new(
+                        self.serve_unauthenticated(io, format!("Unauthorized peer: {}", peer)),
+                    )))
                 }
             }
             Conditional::None(ReasonForNoIdentity::NoPeerName(ReasonForNoPeerName::Loopback)) => {
-                self.serve_authenticated(io)
+                Box::new(future::ok::<Self::Response, Error>(Box::new(
+                    self.serve_authenticated(io),
+                )))
             }
-            Conditional::None(reason) => self.serve_unauthenticated(io, reason.to_string()),
+            Conditional::None(reason) => Box::new(future::ok::<Self::Response, Error>(Box::new(
+                self.serve_unauthenticated(io, reason.to_string()),
+            ))),
         }
     }
 }

@@ -87,7 +87,7 @@ where
     A: Accept<Connection> + Clone,
     T: HasConfig + Send + 'static,
 {
-    type Response = ();
+    type Response = A::ConnectionFuture;
     type Error = Error;
     type Future = AcceptFuture<A>;
 
@@ -144,7 +144,7 @@ where
 }
 
 impl<A: Accept<Connection>> Future for AcceptFuture<A> {
-    type Item = ();
+    type Item = A::ConnectionFuture;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {

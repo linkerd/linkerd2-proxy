@@ -1,4 +1,4 @@
-use futures::{future, Future, Poll};
+use futures::{Future, Poll};
 use linkerd2_error::{Error, Never};
 use linkerd2_proxy_core::listen::Accept;
 use tracing;
@@ -17,11 +17,12 @@ impl<A> AcceptError<A> {
 impl<T, A> tower::Service<T> for AcceptError<A>
 where
     A: Accept<T>,
+    A::ConnectionFuture: Send + 'static,
+    A::Future: Send + 'static,
 {
-    type Response = ();
-    type Error = Never;
-    type Future =
-        future::Then<A::Future, Result<(), Never>, fn(Result<(), A::Error>) -> Result<(), Never>>;
+    type Response = Box<dyn Future<Item = (), Error = Never> + Send + 'static>;
+    type Error = A::Error;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(self
@@ -32,12 +33,14 @@ where
     }
 
     fn call(&mut self, sock: T) -> Self::Future {
-        self.0.accept(sock).then(|v| {
-            if let Err(e) = v {
-                let error: Error = e.into();
-                tracing::debug!(%error, "Connection failed");
-            }
-            Ok(())
-        })
+        Box::new(self.0.accept(sock).map(|connection_future| {
+            Box::new(connection_future.then(|v| {
+                if let Err(e) = v {
+                    let error: Error = e.into();
+                    tracing::debug!(%error, "Connection failed");
+                }
+                Ok(())
+            })) as Self::Response
+        })) as Self::Future
     }
 }
