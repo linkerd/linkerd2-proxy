@@ -14,6 +14,7 @@ linkerd2-identity = { path = "../../identity" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.12" }
 linkerd2-proxy-core = { path = "../core" }
 prost = "0.5.0"
+http = "0.1"
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 indexmap = "1.0"
 tokio-sync = "0.1"

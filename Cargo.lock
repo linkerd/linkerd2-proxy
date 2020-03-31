@@ -1023,6 +1023,7 @@ name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "http",
  "indexmap",
  "linkerd2-identity",
  "linkerd2-proxy-api",
