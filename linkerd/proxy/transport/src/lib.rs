@@ -12,7 +12,7 @@ pub mod tls;
 pub use self::{
     connect::Connect,
     io::BoxedIo,
-    listen::{Bind, Listen, NoOrigDstAddr, OrigDstAddr, SysOrigDstAddr},
+    listen::{Bind, DefaultOrigDstAddr, Listen, NoOrigDstAddr, OrigDstAddr},
 };
 
 // Misc.

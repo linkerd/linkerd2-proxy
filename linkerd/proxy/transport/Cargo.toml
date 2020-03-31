@@ -10,6 +10,9 @@ Transport-level implementations that rely on core proxy infrastructure
 This should probably be decomposed into smaller, decoupled crates.
 """
 
+[features]
+mock-orig-dst  = []
+
 [dependencies]
 bytes = "0.4"
 futures = "0.1"

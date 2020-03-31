@@ -17,7 +17,6 @@ use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
     svc::{self, NewService},
-    transport::{OrigDstAddr, SysOrigDstAddr},
     Error,
 };
 use linkerd2_app_inbound as inbound;
@@ -39,9 +38,9 @@ use tracing_futures::Instrument;
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
 #[derive(Clone, Debug)]
-pub struct Config<A: OrigDstAddr = SysOrigDstAddr> {
-    pub outbound: outbound::Config<A>,
-    pub inbound: inbound::Config<A>,
+pub struct Config {
+    pub outbound: outbound::Config,
+    pub inbound: inbound::Config,
 
     pub dns: dns::Config,
     pub identity: identity::Config,
@@ -63,27 +62,9 @@ pub struct App {
     tap: tap::Tap,
 }
 
-impl Config<SysOrigDstAddr> {
+impl Config {
     pub fn try_from_env() -> Result<Self, env::EnvError> {
         env::Env.try_config()
-    }
-}
-
-impl<A: OrigDstAddr + Send + 'static> Config<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr + Send + Sync + 'static>(
-        self,
-        orig_dst: B,
-    ) -> Config<B> {
-        Config {
-            outbound: self.outbound.with_orig_dst_addr(orig_dst.clone()),
-            inbound: self.inbound.with_orig_dst_addr(orig_dst),
-            dns: self.dns,
-            identity: self.identity,
-            dst: self.dst,
-            admin: self.admin,
-            tap: self.tap,
-            oc_collector: self.oc_collector,
-        }
     }
 
     /// Build an application.

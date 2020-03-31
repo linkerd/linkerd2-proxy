@@ -10,6 +10,9 @@ Configures and executes the proxy
 This is used by tests and the executable.
 """
 
+[features]
+mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
+
 [dependencies]
 futures = "0.1"
 indexmap = "1.0"

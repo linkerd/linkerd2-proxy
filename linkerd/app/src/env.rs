@@ -52,11 +52,24 @@ pub const ENV_OUTBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_LISTEN_ADDR"
 pub const ENV_INBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_INBOUND_LISTEN_ADDR";
 pub const ENV_CONTROL_LISTEN_ADDR: &str = "LINKERD2_PROXY_CONTROL_LISTEN_ADDR";
 pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
+
+// When compiled with the `mock-orig-dst` flag, these environment variables are required to
+// configure the proxy's behavior.
+
+#[cfg(feature = "mock-orig-dst")]
+pub const ENV_INBOUND_ORIG_DST_ADDR: &str = "LINKERD2_PROXY_INBOUND_ORIG_DST_ADDR";
+
+#[cfg(feature = "mock-orig-dst")]
+pub const ENV_OUTBOUND_ORIG_DST_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_ORIG_DST_ADDR";
+
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
+
 const ENV_INBOUND_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DISPATCH_TIMEOUT";
 const ENV_OUTBOUND_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_DISPATCH_TIMEOUT";
+
 const ENV_INBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_TIMEOUT";
 const ENV_OUTBOUND_CONNECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_TIMEOUT";
+
 const ENV_INBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_ACCEPT_KEEPALIVE";
 const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEPALIVE";
 
@@ -233,6 +246,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
     let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
 
+    #[cfg(feature = "mock-orig-dst")]
+    let (inbound_mock_orig_dst, outbound_mock_orig_dst) = (
+        parse(strings, ENV_INBOUND_ORIG_DST_ADDR, parse_socket_addr),
+        parse(strings, ENV_OUTBOUND_ORIG_DST_ADDR, parse_socket_addr),
+    );
+
     let inbound_disable_ports = parse(
         strings,
         ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
@@ -318,6 +337,26 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let buffer_capacity = buffer_capacity?.unwrap_or(DEFAULT_BUFFER_CAPACITY);
 
+    #[cfg(feature = "mock-orig-dst")]
+    let (inbound_orig_dst, outbound_orig_dst) = (
+        inbound_mock_orig_dst?
+            .map(DefaultOrigDstAddr::from)
+            .ok_or_else(|| {
+                error!("{} must be specified", ENV_INBOUND_ORIG_DST_ADDR);
+                EnvError::NoDestinationAddress
+            })?,
+        outbound_mock_orig_dst?
+            .map(DefaultOrigDstAddr::from)
+            .ok_or_else(|| {
+                error!("{} must be specified", ENV_OUTBOUND_ORIG_DST_ADDR);
+                EnvError::NoDestinationAddress
+            })?,
+    );
+
+    #[cfg(not(feature = "mock-orig-dst"))]
+    let (inbound_orig_dst, outbound_orig_dst): (DefaultOrigDstAddr, DefaultOrigDstAddr) =
+        Default::default();
+
     let outbound = {
         let bind = listen::Bind::new(
             outbound_listener_addr?
@@ -325,7 +364,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_accept_keepalive?,
         );
         let server = ServerConfig {
-            bind: bind.with_sys_orig_dst_addr(),
+            bind: bind.with_orig_dst_addr(outbound_orig_dst),
             h2_settings,
         };
         let connect = ConnectConfig {
@@ -365,7 +404,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             inbound_accept_keepalive?,
         );
         let server = ServerConfig {
-            bind: bind.with_sys_orig_dst_addr(),
+            bind: bind.with_orig_dst_addr(inbound_orig_dst),
             h2_settings,
         };
         let connect = ConnectConfig {

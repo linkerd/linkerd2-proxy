@@ -1,7 +1,7 @@
 pub use super::control::ControlAddr;
 pub use crate::exp_backoff::ExponentialBackoff;
 pub use crate::proxy::http::h2;
-pub use crate::transport::{Bind, Listen, NoOrigDstAddr, OrigDstAddr, SysOrigDstAddr};
+pub use crate::transport::{Bind, DefaultOrigDstAddr, Listen, NoOrigDstAddr, OrigDstAddr};
 use indexmap::IndexSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,8 +21,8 @@ pub struct ConnectConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ProxyConfig<A: OrigDstAddr = SysOrigDstAddr> {
-    pub server: ServerConfig<A>,
+pub struct ProxyConfig {
+    pub server: ServerConfig<DefaultOrigDstAddr>,
     pub connect: ConnectConfig,
     pub buffer_capacity: usize,
     pub cache_max_idle_age: Duration,
@@ -45,22 +45,6 @@ impl<A: OrigDstAddr> ServerConfig<A> {
         ServerConfig {
             bind: self.bind.with_orig_dst_addr(orig_dst_addrs),
             h2_settings: self.h2_settings,
-        }
-    }
-}
-
-// === impl ProxyConfig ===
-
-impl<A: OrigDstAddr> ProxyConfig<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addrs: B) -> ProxyConfig<B> {
-        ProxyConfig {
-            server: self.server.with_orig_dst_addr(orig_dst_addrs),
-            connect: self.connect,
-            buffer_capacity: self.buffer_capacity,
-            cache_max_idle_age: self.cache_max_idle_age,
-            disable_protocol_detection_for_ports: self.disable_protocol_detection_for_ports,
-            max_in_flight_requests: self.max_in_flight_requests,
-            dispatch_timeout: self.dispatch_timeout,
         }
     }
 }
