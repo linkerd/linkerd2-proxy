@@ -48,7 +48,7 @@ impl Metrics {
                 .clone()
                 .into_report(retain_idle)
                 .with_prefix("route_actual");
-            (m, r)
+            (m, r.without_latencies())
         };
 
         let http_errors = errors::Metrics::default();

@@ -263,6 +263,7 @@ impl Config {
 
             let http_profile_route_proxy = svc::proxies()
                 .check_new_clone_service::<dst::Route>()
+                .push(metrics.http_route_actual.into_layer::<classify::Response>())
                 // Sets an optional retry policy.
                 .push(retry::layer(metrics.http_route_retry))
                 .check_new_clone_service::<dst::Route>()
