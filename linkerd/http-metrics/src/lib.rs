@@ -26,12 +26,16 @@ where
 {
     prefix: &'static str,
     registry: Arc<Mutex<Registry<T, M>>>,
+    /// The amount time metrics with no updates should be retained for reports
     retain_idle: Duration,
+    /// Whether latencies should be reported.
+    include_latencies: bool,
 }
 
 impl<T: Hash + Eq, M> Clone for Report<T, M> {
     fn clone(&self) -> Self {
         Self {
+            include_latencies: self.include_latencies,
             prefix: self.prefix.clone(),
             registry: self.registry.clone(),
             retain_idle: self.retain_idle,
@@ -82,6 +86,7 @@ where
             prefix: "",
             registry,
             retain_idle,
+            include_latencies: true,
         }
     }
 
@@ -91,6 +96,13 @@ where
         }
 
         Self { prefix, ..self }
+    }
+
+    pub fn without_latencies(self) -> Self {
+        Self {
+            include_latencies: false,
+            ..self
+        }
     }
 
     fn prefix_key<N: fmt::Display>(&self, name: N) -> Prefixed<'_, N> {
