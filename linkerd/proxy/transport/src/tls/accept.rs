@@ -9,6 +9,7 @@ use linkerd2_dns_name as dns;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
 use linkerd2_proxy_core::listen::Accept;
+use linkerd2_stack::layer;
 pub use rustls::ServerConfig as Config;
 use std::sync::Arc;
 use tokio::net::TcpStream;
@@ -79,6 +80,18 @@ impl<A: Accept<Connection>, T: HasConfig> AcceptTls<A, T> {
     pub fn with_skip_ports(mut self, skip_ports: Arc<IndexSet<u16>>) -> Self {
         self.skip_ports = skip_ports;
         self
+    }
+
+    pub fn layer(
+        tls: super::Conditional<T>,
+        skip_ports: Arc<IndexSet<u16>>,
+    ) -> impl tower::layer::Layer<A, Service = AcceptTls<A, T>>
+    where
+        T: Clone,
+    {
+        layer::mk(move |accept| {
+            AcceptTls::new(tls.clone(), accept).with_skip_ports(skip_ports.clone())
+        })
     }
 }
 

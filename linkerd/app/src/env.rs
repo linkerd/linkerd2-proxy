@@ -377,6 +377,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             )?,
             h2_settings,
         };
+
+        let dispatch_timeout =
+            outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
+
         outbound::Config {
             canonicalize_timeout: dns_canonicalize_timeout?
                 .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT),
@@ -389,10 +393,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 cache_max_idle_age: outbound_cache_max_idle_age?
                     .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
                 buffer_capacity,
-                dispatch_timeout: outbound_dispatch_timeout?
-                    .unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT),
+                dispatch_timeout,
                 max_in_flight_requests: outbound_max_in_flight?
                     .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
+                detect_protocol_timeout: dispatch_timeout,
             },
         }
     };
@@ -417,6 +421,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             )?,
             h2_settings,
         };
+
+        let dispatch_timeout =
+            inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
+
         inbound::Config {
             proxy: ProxyConfig {
                 server,
@@ -427,10 +435,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 cache_max_idle_age: inbound_cache_max_idle_age?
                     .unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE),
                 buffer_capacity,
-                dispatch_timeout: inbound_dispatch_timeout?
-                    .unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT),
+                dispatch_timeout,
                 max_in_flight_requests: inbound_max_in_flight?
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
+                detect_protocol_timeout: dispatch_timeout,
             },
         }
     };

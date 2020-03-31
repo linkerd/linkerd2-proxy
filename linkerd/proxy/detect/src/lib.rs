@@ -18,21 +18,27 @@ pub trait Detect<T>: Clone {
 }
 
 #[derive(Debug, Clone)]
-pub struct Accept<D, A> {
+pub struct DetectProtocolLayer<D> {
+    detect: D,
+    peek_capacity: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct DetectProtocol<D, A> {
     detect: D,
     accept: A,
     peek_capacity: usize,
 }
 
-pub enum AcceptFuture<T, D, A>
+pub enum DetectProtocolFuture<T, D, A>
 where
-    D: Detect<T>,
     A: core::listen::Accept<(D::Target, BoxedIo)>,
+    D: Detect<T>,
 {
-    Accept(A::Future),
-    Detect {
-        detect: D,
+    Detected(A::Future),
+    Detecting {
         accept: A,
+        detect: D,
         inner: PeekAndDetect<T, D>,
     },
 }
@@ -44,25 +50,30 @@ pub enum PeekAndDetect<T, D: Detect<T>> {
     Peek(Option<T>, Peek<BoxedIo>),
 }
 
-impl<D, A> Accept<D, A> {
+impl<D> DetectProtocolLayer<D> {
     const DEFAULT_CAPACITY: usize = 8192;
 
-    /// Creates a new `Detect`.
-    pub fn new(detect: D, accept: A) -> Self {
-        Self {
+    pub fn new(detect: D) -> DetectProtocolLayer<D> {
+        DetectProtocolLayer {
             detect,
-            accept,
             peek_capacity: Self::DEFAULT_CAPACITY,
         }
     }
+}
 
-    pub fn with_capacity(mut self, capacity: usize) -> Self {
-        self.peek_capacity = capacity;
-        self
+impl<D: Clone, A> tower::layer::Layer<A> for DetectProtocolLayer<D> {
+    type Service = DetectProtocol<D, A>;
+
+    fn layer(&self, accept: A) -> Self::Service {
+        DetectProtocol {
+            detect: self.detect.clone(),
+            peek_capacity: self.peek_capacity,
+            accept,
+        }
     }
 }
 
-impl<T, D, A> tower::Service<(T, BoxedIo)> for Accept<D, A>
+impl<T, D, A> tower::Service<(T, BoxedIo)> for DetectProtocol<D, A>
 where
     D: Detect<T>,
     A: core::listen::Accept<(D::Target, BoxedIo)> + Clone,
@@ -70,7 +81,7 @@ where
 {
     type Response = A::ConnectionFuture;
     type Error = Error;
-    type Future = AcceptFuture<T, D, A>;
+    type Future = DetectProtocolFuture<T, D, A>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         self.accept.poll_ready().map_err(Into::into)
@@ -78,8 +89,8 @@ where
 
     fn call(&mut self, (target, io): (T, BoxedIo)) -> Self::Future {
         match self.detect.detect_before_peek(target) {
-            Ok(detected) => AcceptFuture::Accept(self.accept.accept((detected, io))),
-            Err(target) => AcceptFuture::Detect {
+            Ok(detected) => DetectProtocolFuture::Detected(self.accept.accept((detected, io))),
+            Err(target) => DetectProtocolFuture::Detecting {
                 detect: self.detect.clone(),
                 accept: self.accept.clone(),
                 inner: PeekAndDetect::Peek(
@@ -91,7 +102,7 @@ where
     }
 }
 
-impl<T, D, A> Future for AcceptFuture<T, D, A>
+impl<T, D, A> Future for DetectProtocolFuture<T, D, A>
 where
     D: Detect<T>,
     D::Target: std::fmt::Debug,
@@ -103,8 +114,10 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             match self {
-                AcceptFuture::Accept(ref mut fut) => return fut.poll().map_err(Into::into),
-                AcceptFuture::Detect {
+                DetectProtocolFuture::Detected(ref mut fut) => {
+                    return fut.poll().map_err(Into::into)
+                }
+                DetectProtocolFuture::Detecting {
                     ref detect,
                     ref mut accept,
                     ref mut inner,
@@ -115,12 +128,15 @@ where
                             target.take().expect("polled after complete"),
                             io.prefix().as_ref(),
                         );
-                        *inner = PeekAndDetect::Detected(Some((target, BoxedIo::new(io))));
+                        let inner_fut = accept.accept((target, BoxedIo::new(io)));
+                        *self = DetectProtocolFuture::Detected(inner_fut);
                     }
+
                     PeekAndDetect::Detected(ref mut io) => {
                         try_ready!(accept.poll_ready().map_err(Into::into));
                         let io = io.take().expect("polled after complete");
-                        *self = AcceptFuture::Accept(accept.accept(io));
+                        let inner_fut = accept.accept(io);
+                        *self = DetectProtocolFuture::Detected(inner_fut);
                     }
                 },
             }

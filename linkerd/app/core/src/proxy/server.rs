@@ -34,6 +34,12 @@ pub struct ProtocolDetect {
     skip_ports: Arc<IndexSet<u16>>,
 }
 
+impl ProtocolDetect {
+    pub fn new(skip_ports: Arc<IndexSet<u16>>) -> Self {
+        ProtocolDetect { skip_ports }
+    }
+}
+
 impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
     type Target = Protocol;
 
@@ -104,20 +110,16 @@ where
         make_http: H,
         h2_settings: H2Settings,
         drain: drain::Watch,
-        skip_ports: Arc<IndexSet<u16>>,
-    ) -> detect::Accept<ProtocolDetect, Self> {
-        detect::Accept::new(
-            ProtocolDetect { skip_ports },
-            Self {
-                http: hyper::server::conn::Http::new(),
-                h2_settings,
-                transport_labels,
-                transport_metrics,
-                forward_tcp,
-                make_http,
-                drain,
-            },
-        )
+    ) -> Self {
+        Self {
+            http: hyper::server::conn::Http::new(),
+            h2_settings,
+            transport_labels,
+            transport_metrics,
+            forward_tcp,
+            make_http,
+            drain,
+        }
     }
 }
 
