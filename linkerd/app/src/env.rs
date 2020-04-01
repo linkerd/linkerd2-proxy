@@ -283,12 +283,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let hostname = strings.get(ENV_HOSTNAME);
 
-    let labels = strings.get(ENV_LABELS_FILE_PATH).map(|path_option| {
-        path_option
-            .map(fs::read_to_string)
-            .and_then(|label_string| label_string.ok().map(convert_labels_to_map))
-            .unwrap_or_default()
-    });
+    let oc_labels_file_path = strings.get(ENV_LABELS_FILE_PATH);
 
     let trace_collector_addr = if id_disabled {
         parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
@@ -459,7 +454,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.proxy.connect.clone()
             };
             oc_collector::Config::Enabled {
-                labels: labels.unwrap_or_default(),
+                labels: oc_trace_labels(oc_labels_file_path),
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
@@ -509,6 +504,36 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         outbound,
         inbound,
     })
+}
+
+fn oc_trace_labels(oc_file_path: Result<Option<String>, EnvError>) -> HashMap<String, String> {
+    let oc_labels = match oc_file_path {
+        Ok(path_option) => match path_option {
+            Some(path) => match fs::read_to_string(path.clone()) {
+                Ok(label_string) => convert_labels_to_map(label_string),
+                Err(err) => {
+                    warn!(
+                        "could not read OC trace labels file at path {}: {}",
+                        path, err
+                    );
+                    HashMap::<String, String>::new()
+                }
+            },
+            None => {
+                warn!("env variable {} not present", ENV_LABELS_FILE_PATH);
+                HashMap::<String, String>::new()
+            }
+        },
+        Err(err) => {
+            warn!(
+                "could not read env variable {}: {}",
+                ENV_LABELS_FILE_PATH, err
+            );
+            HashMap::<String, String>::new()
+        }
+    };
+
+    oc_labels
 }
 
 fn convert_labels_to_map(labels: String) -> HashMap<String, String> {
