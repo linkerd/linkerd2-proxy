@@ -81,7 +81,7 @@ impl<M: FmtMetrics> Service for Admin<M> {
 impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
     type Response = Box<dyn Future<Item = (), Error = hyper::error::Error> + Send + 'static>;
     type Error = Error;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
+    type Future = future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into())
@@ -99,7 +99,7 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
         });
 
         let connection_future: Self::Response = Box::new(self.1.serve_connection(io, svc));
-        Box::new(future::ok(connection_future))
+        future::ok(connection_future)
     }
 }
 

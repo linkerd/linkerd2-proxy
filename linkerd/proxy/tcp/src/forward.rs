@@ -33,21 +33,19 @@ where
     C::Response: AsyncRead + AsyncWrite,
     I: AsyncRead + AsyncWrite + Send + 'static,
 {
-    type Response = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
+    type Response = ForwardFuture<I, C::Future>;
     type Error = Error;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Error> + Send + 'static>;
+    type Future = futures::future::FutureResult<Self::Response, Error>;
 
     fn poll_ready(&mut self) -> Poll<(), self::Error> {
         self.connect.poll_ready().map_err(Into::into)
     }
 
     fn call(&mut self, (meta, io): (T, I)) -> Self::Future {
-        let forward_future = Box::new(ForwardFuture::Connect {
+        futures::future::ok::<Self::Response, Error>(ForwardFuture::Connect {
             io: Some(io),
             connect: self.connect.call(meta),
-        });
-
-        Box::new(futures::future::ok::<Self::Response, Error>(forward_future))
+        })
     }
 }
 

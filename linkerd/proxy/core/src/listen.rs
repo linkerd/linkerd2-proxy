@@ -115,8 +115,7 @@ where
 impl<L, A, E> Future for Serve<L, A, E>
 where
     L: Listen,
-    A: Accept<L::Connection>,
-    A::Error: Into<Error>,
+    A: Accept<L::Connection, Error = Never, ConnectionError = Never>,
     A::ConnectionFuture: Send + 'static,
     A::ConnectionError: Into<Error>,
     A::Future: Send + 'static,
@@ -127,12 +126,12 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            try_ready!(self.accept.poll_ready().map_err(Into::into));
+            try_ready!(self.accept.poll_ready());
             let conn = try_ready!(self.listen.poll_accept().map_err(Into::into));
-            let accept = self.accept.accept(conn).map_err(|_| {});
+            let accept = self.accept.accept(conn).map_err(|e| match e {});
             self.executor
                 .spawn(Box::new(
-                    accept.and_then(|conn_future| conn_future.map_err(|_| {})),
+                    accept.and_then(|conn_future| conn_future.map_err(|e| match e {})),
                 ))
                 .map_err(Error::from)?;
         }

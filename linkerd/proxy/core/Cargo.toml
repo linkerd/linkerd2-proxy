@@ -13,4 +13,3 @@ futures = "0.1"
 linkerd2-error = { path = "../../error" }
 tokio = "0.1"
 tower = "0.1"
-tracing = "0.1"

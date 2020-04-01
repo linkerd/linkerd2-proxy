@@ -1043,7 +1043,6 @@ dependencies = [
  "linkerd2-error",
  "tokio",
  "tower",
- "tracing",
 ]
 
 [[package]]

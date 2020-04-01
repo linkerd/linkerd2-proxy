@@ -140,13 +140,12 @@ where
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
         let listen = Bind::new(addr, None).bind().expect("must bind");
         let listen_addr = listen.listen_addr();
-        type ConnectionFuture = Box<dyn Future<Item = (), Error = Never> + Send + 'static>;
 
         let sender = service_fn(move |(meta, conn): ServerConnection| {
             let sender = sender.clone();
             let peer_identity = Some(meta.peer_identity.clone());
 
-            let server: ConnectionFuture = Box::new(server((meta, conn)).then(move |result| {
+            let server = Box::new(server((meta, conn)).then(move |result| {
                 sender
                     .send(Transported {
                         peer_identity,
@@ -154,10 +153,10 @@ where
                     })
                     .expect("send result");
 
-                Box::new(future::ok::<(), Never>(()))
+                future::ok::<(), Never>(())
             }));
 
-            Box::new(future::ok::<ConnectionFuture, Never>(server))
+            Box::new(future::ok::<_, Never>(server))
         });
 
         let accept = AcceptTls::new(server_tls, sender);
