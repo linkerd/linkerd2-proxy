@@ -11,6 +11,9 @@ This crate conglomerates proxy configuration, runtime administration, etc,
 independently of the inbound and outbound proxy logic.
 """
 
+[features]
+mock-orig-dst  = ["linkerd2-proxy-transport/mock-orig-dst"]
+
 [dependencies]
 bytes = "0.4"
 http = "0.1"
@@ -36,7 +39,7 @@ linkerd2-lock = { path = "../../lock" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.11" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.12" }
 linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd2-proxy-detect = { path = "../../proxy/detect" }
 linkerd2-proxy-discover = { path = "../../proxy/discover" }
@@ -83,6 +86,6 @@ procinfo = "0.4.2"
 
 [dev-dependencies]
 linkerd2-test-util = { path = "../../test-util" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.11" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
 prost-types = "0.5.0"
 quickcheck = { version = "0.9", default-features = false }

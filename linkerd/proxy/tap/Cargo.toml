@@ -16,7 +16,7 @@ linkerd2-conditional = { path = "../../conditional" }
 linkerd2-error = { path = "../../error" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-proxy-core = { path = "../core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.11" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.12" }
 linkerd2-proxy-http = { path = "../http" }
 linkerd2-proxy-transport = { path = "../transport" }
 linkerd2-stack = { path = "../../stack" }
@@ -29,6 +29,6 @@ tracing = "0.1.9"
 tracing-futures = "0.1"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.11" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
 prost-types = "0.5.0"
 quickcheck = { version = "0.9", default-features = false }

@@ -165,26 +165,6 @@ fn tcp_server_first_tls() {
 }
 
 #[test]
-fn tcp_with_no_orig_dst() {
-    let _ = trace_init();
-
-    let srv = server::tcp().accept(move |_| "don't read me").run();
-    let proxy = proxy::new().inbound(srv).run();
-
-    // no outbound configured for proxy
-    let client = client::tcp(proxy.outbound);
-
-    let tcp_client = client.connect();
-    tcp_client.write("custom tcp hello");
-
-    let read = tcp_client
-        .try_read()
-        // This read might be an error, or an empty vec
-        .unwrap_or_else(|_| Vec::new());
-    assert_eq!(read, b"");
-}
-
-#[test]
 fn tcp_connections_close_if_client_closes() {
     use std::sync::mpsc;
 

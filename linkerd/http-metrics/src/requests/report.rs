@@ -49,8 +49,9 @@ where
             Ok(r) => r,
         };
         trace!(
-            prfefix = %self.prefix,
-            targets = %registry.by_target.len(),
+            prefix = self.prefix,
+            targets = registry.by_target.len(),
+            include_latencies = self.include_latencies,
             "Formatting HTTP request metrics",
         );
 
@@ -62,9 +63,11 @@ where
         metric.fmt_help(f)?;
         registry.fmt_by_target(f, metric, |s| &s.total)?;
 
-        let metric = self.response_latency_ms();
-        metric.fmt_help(f)?;
-        registry.fmt_by_status(f, metric, |s| &s.latency)?;
+        if self.include_latencies {
+            let metric = self.response_latency_ms();
+            metric.fmt_help(f)?;
+            registry.fmt_by_status(f, metric, |s| &s.latency)?;
+        }
 
         let metric = self.response_total();
         metric.fmt_help(f)?;

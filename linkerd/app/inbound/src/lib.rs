@@ -25,7 +25,7 @@ use linkerd2_app_core::{
     reconnect, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, io::BoxedIo, tls, OrigDstAddr, SysOrigDstAddr},
+    transport::{self, io::BoxedIo, tls},
     Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
     L5D_SERVER_ID,
 };
@@ -41,8 +41,8 @@ mod set_client_id_on_req;
 mod set_remote_ip_on_req;
 
 #[derive(Clone, Debug)]
-pub struct Config<A: OrigDstAddr = SysOrigDstAddr> {
-    pub proxy: ProxyConfig<A>,
+pub struct Config {
+    pub proxy: ProxyConfig,
 }
 
 pub struct Inbound {
@@ -50,13 +50,7 @@ pub struct Inbound {
     pub serve: serve::Task,
 }
 
-impl<A: OrigDstAddr> Config<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addr: B) -> Config<B> {
-        Config {
-            proxy: self.proxy.with_orig_dst_addr(orig_dst_addr),
-        }
-    }
-
+impl Config {
     pub fn build<P>(
         self,
         local_identity: tls::Conditional<identity::Local>,
@@ -67,7 +61,6 @@ impl<A: OrigDstAddr> Config<A> {
         drain: drain::Watch,
     ) -> Result<Inbound, Error>
     where
-        A: Send + 'static,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
@@ -107,35 +100,24 @@ impl<A: OrigDstAddr> Config<A> {
                 })
                 .push(svc::layer::mk(tcp::Forward::new));
 
-            // Caches HTTP clients for each inbound port & HTTP settings.
-            let http_endpoint_cache = tcp_connect
+            // Creates HTTP clients for each inbound port & HTTP settings.
+            let http_endpoint = tcp_connect
                 .push(http::MakeClientLayer::new(connect.h2_settings))
                 .push(reconnect::layer({
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
                 }))
-                .into_new_service()
-                .cache(
-                    svc::layers().push_on_response(
-                        svc::layers()
-                            // If the service has been ready & unused for `cache_max_idle_age`,
-                            // fail it.
-                            .push_idle_timeout(cache_max_idle_age)
-                            // If the service has been unavailable for an extend time, eagerly
-                            // fail requests.
-                            .push_failfast(dispatch_timeout)
-                            // Shares the service, ensuring discovery errors are propagated.
-                            .push_spawn_buffer(buffer_capacity)
-                            .push(metrics.stack.layer(stack_labels("endpoint"))),
-                    ),
+                .push_on_response(
+                    svc::layers()
+                        // If the service has been ready & unused for `cache_max_idle_age`,
+                        // fail it.
+                        .push_idle_timeout(cache_max_idle_age)
+                        // If the service has been unavailable for an extend time, eagerly
+                        // fail requests.
+                        .push_failfast(dispatch_timeout)
+                        // Shares the service, ensuring discovery errors are propagated.
+                        .push_spawn_buffer(buffer_capacity),
                 )
-                .instrument(|ep: &HttpEndpoint| {
-                    info_span!(
-                        "endpoint",
-                        port = %ep.port,
-                        http = ?ep.settings,
-                    )
-                })
                 .check_service::<HttpEndpoint>();
 
             let http_target_observability = svc::layers()
@@ -160,7 +142,8 @@ impl<A: OrigDstAddr> Config<A> {
                 .push(classify::Layer::new())
                 .check_new_clone_service::<dst::Route>();
 
-            let http_target_cache = http_endpoint_cache
+            // An HTTP client is created for each target via the endpoint stack.
+            let http_target_cache = http_endpoint
                 .push_map_target(HttpEndpoint::from)
                 // Normalizes the URI, i.e. if it was originally in
                 // absolute-form on the outbound side.
