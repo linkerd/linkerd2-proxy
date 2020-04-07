@@ -13,7 +13,7 @@ use crate::{
     transport::{self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls},
     Error,
 };
-use futures::{future::Either, Future, Poll};
+use futures::{Future, Poll};
 use http;
 use hyper;
 use indexmap::IndexSet;
@@ -183,7 +183,7 @@ where
         let builder = self.http.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
-        Box::new(futures::future::ok::<Self::Response, Error>(Box::new(
+        Box::new(futures::future::ok::<Self::Response, Error>(
             match http_version {
                 HttpVersion::Http1 => {
                     // Enable support for HTTP upgrades (CONNECT and websockets).
@@ -195,14 +195,13 @@ where
                         .http1_only(true)
                         .serve_connection(io, HyperServerSvc::new(svc))
                         .with_upgrades();
-                    Either::A(
+                    Box::new(
                         drain
                             .watch(conn, |conn| conn.graceful_shutdown())
                             .map(|_| ())
                             .map_err(Into::into),
                     )
                 }
-
                 HttpVersion::H2 => {
                     let exec =
                         tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
@@ -212,7 +211,7 @@ where
                         .http2_initial_stream_window_size(initial_stream_window_size)
                         .http2_initial_connection_window_size(initial_conn_window_size)
                         .serve_connection(io, HyperServerSvc::new(http_svc));
-                    Either::B(
+                    Box::new(
                         drain
                             .watch(conn, |conn| conn.graceful_shutdown())
                             .map(|_| ())
@@ -220,7 +219,7 @@ where
                     )
                 }
             },
-        )))
+        ))
     }
 }
 
