@@ -1,3 +1,4 @@
+use crate::http::uri::Authority;
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     dst, metric_labels,
@@ -5,6 +6,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
+        http::overwrite_authority::{ExtractAuthority, ForceAbsForm},
         http::{self, identity_from_header},
         identity,
         resolve::map_endpoint::MapEndpoint,
@@ -112,6 +114,12 @@ impl<T: http::settings::HasSettings> http::settings::HasSettings for Target<T> {
     }
 }
 
+impl<T: ForceAbsForm> ForceAbsForm for Target<T> {
+    fn is_abs_form(&self) -> bool {
+        self.inner.is_abs_form()
+    }
+}
+
 impl<T: tls::HasPeerIdentity> tls::HasPeerIdentity for Target<T> {
     fn peer_identity(&self) -> tls::PeerIdentity {
         self.inner.peer_identity()
@@ -212,6 +220,12 @@ impl http::settings::HasSettings for HttpEndpoint {
     }
 }
 
+impl ForceAbsForm for HttpEndpoint {
+    fn is_abs_form(&self) -> bool {
+        self.metadata.authority_override().is_some()
+    }
+}
+
 impl tap::Inspect for HttpEndpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
         req.extensions()
@@ -280,6 +294,12 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
                 settings: concrete.inner.inner,
             },
         }
+    }
+}
+
+impl ExtractAuthority<Target<HttpEndpoint>> for FromMetadata {
+    fn extract(&self, target: &Target<HttpEndpoint>) -> Option<Authority> {
+        target.inner.metadata.authority_override().cloned()
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::proxy::http::overwrite_authority::ForceAbsForm;
 use crate::proxy::http::{orig_proto, settings::Settings};
 use crate::svc::stack;
 use crate::{HttpEndpoint, Target};
@@ -47,7 +48,8 @@ where
             return Either::B(self.inner.new_service(endpoint));
         }
 
-        let was_absolute = endpoint.inner.settings.was_absolute_form();
+        let was_absolute = endpoint.is_abs_form() || endpoint.inner.settings.was_absolute_form();
+
         trace!(
             header = %orig_proto::L5D_ORIG_PROTO,
             was_absolute,
@@ -75,7 +77,8 @@ where
     fn call(&mut self, mut endpoint: Target<HttpEndpoint>) -> Self::Future {
         let can_upgrade = endpoint.inner.can_use_orig_proto();
 
-        let was_absolute = endpoint.inner.settings.was_absolute_form();
+        let was_absolute = endpoint.is_abs_form() || endpoint.inner.settings.was_absolute_form();
+
         if can_upgrade {
             trace!(
                 header = %orig_proto::L5D_ORIG_PROTO,

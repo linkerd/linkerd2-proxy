@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, metric_labels, profiles,
+    proxy::http::overwrite_authority::ForceAbsForm,
     proxy::{http, identity, tap},
     router, stack_tracing,
     transport::{connect, tls},
@@ -47,6 +48,12 @@ pub struct ProfileTarget;
 impl connect::ConnectAddr for HttpEndpoint {
     fn connect_addr(&self) -> SocketAddr {
         ([127, 0, 0, 1], self.port).into()
+    }
+}
+
+impl ForceAbsForm for HttpEndpoint {
+    fn is_abs_form(&self) -> bool {
+        false
     }
 }
 
