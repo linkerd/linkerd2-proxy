@@ -70,19 +70,19 @@ impl Service<Connection> for AcceptPermittedClients {
         match meta.peer_identity {
             Conditional::Some(ref peer) => {
                 if self.permitted_client_ids.contains(peer) {
-                    future::ok::<Self::Response, Self::Error>(self.serve_authenticated(io))
+                    future::ok(self.serve_authenticated(io))
                 } else {
-                    future::ok::<Self::Response, Self::Error>(
+                    future::ok(
                         self.serve_unauthenticated(io, format!("Unauthorized peer: {}", peer)),
                     )
                 }
             }
             Conditional::None(ReasonForNoIdentity::NoPeerName(ReasonForNoPeerName::Loopback)) => {
-                future::ok::<Self::Response, Self::Error>(self.serve_authenticated(io))
+                future::ok(self.serve_authenticated(io))
             }
-            Conditional::None(reason) => future::ok::<Self::Response, Self::Error>(
-                self.serve_unauthenticated(io, reason.to_string()),
-            ),
+            Conditional::None(reason) => {
+                future::ok(self.serve_unauthenticated(io, reason.to_string()))
+            }
         }
     }
 }

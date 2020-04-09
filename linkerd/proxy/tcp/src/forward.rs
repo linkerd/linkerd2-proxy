@@ -42,7 +42,7 @@ where
     }
 
     fn call(&mut self, (meta, io): (T, I)) -> Self::Future {
-        futures::future::ok::<Self::Response, Error>(ForwardFuture::Connect {
+        futures::future::ok(ForwardFuture::Connect {
             io: Some(io),
             connect: self.connect.call(meta),
         })

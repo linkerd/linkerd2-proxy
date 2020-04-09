@@ -98,7 +98,7 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
             svc.call(req)
         });
 
-        let connection_future: Self::Response = Box::new(self.1.serve_connection(io, svc));
+        let connection_future = Box::new(self.1.serve_connection(io, svc));
         future::ok(connection_future)
     }
 }
