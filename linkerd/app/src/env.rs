@@ -453,8 +453,25 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 outbound.proxy.connect.clone()
             };
+
+            let labels = oc_labels_file_path
+                .map(|path| match path {
+                    Some(path) => oc_trace_labels(path),
+                    None => {
+                        warn!("env variable {} not present", ENV_LABELS_FILE_PATH);
+                        HashMap::new()
+                    }
+                })
+                .unwrap_or_else(|err| {
+                    warn!(
+                        "could not read env variable {}: {}",
+                        ENV_LABELS_FILE_PATH, err
+                    );
+                    HashMap::new()
+                });
+
             oc_collector::Config::Enabled {
-                labels: oc_trace_labels(oc_labels_file_path),
+                labels,
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
@@ -506,49 +523,31 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     })
 }
 
-fn oc_trace_labels(oc_file_path: Result<Option<String>, EnvError>) -> HashMap<String, String> {
-    let oc_labels = match oc_file_path {
-        Ok(path_option) => match path_option {
-            Some(path) => match fs::read_to_string(path.clone()) {
-                Ok(label_string) => convert_labels_to_map(label_string),
-                Err(err) => {
-                    warn!(
-                        "could not read OC trace labels file at path {}: {}",
-                        path, err
-                    );
-                    HashMap::<String, String>::new()
-                }
-            },
-            None => {
-                warn!("env variable {} not present", ENV_LABELS_FILE_PATH);
-                HashMap::<String, String>::new()
-            }
-        },
+fn oc_trace_labels(oc_file_path: String) -> HashMap<String, String> {
+    match fs::read_to_string(oc_file_path.clone()) {
+        Ok(label_string) => convert_labels_to_map(label_string),
         Err(err) => {
             warn!(
-                "could not read env variable {}: {}",
-                ENV_LABELS_FILE_PATH, err
+                "could not read OC trace labels file at path {}: {}",
+                oc_file_path, err
             );
-            HashMap::<String, String>::new()
+            HashMap::new()
         }
-    };
-
-    oc_labels
+    }
 }
 
 fn convert_labels_to_map(labels: String) -> HashMap<String, String> {
-    let map = labels
+    labels
         .lines()
         .filter_map(|line| {
-            let mut parts = line.splitn(2, "=").collect::<Vec<&str>>();
-            parts.pop().and_then(move |val| {
-                parts.pop().map(move |key|
+            let mut parts = line.splitn(2, "=");
+            parts.next().and_then(move |key| {
+                parts.next().map(move |val|
                 // Trim double quotes in value, present by default when attached through k8s downwardAPI
                 (key.to_string(), val.trim_matches('"').to_string()))
             })
         })
-        .collect::<HashMap<String, String>>();
-    map
+        .collect()
 }
 
 fn default_disable_ports_protocol_detection() -> IndexSet<u16> {
@@ -1051,8 +1050,19 @@ mod tests {
 
     #[test]
     fn convert_labels_to_map_different_values() {
-        let labels_string = "cluster=\"test-cluster1\"\nrack=\"rack-22\nzone=us-est-coast\nlinkerd.io/control-plane-component=\"controller\"\nlinkerd.io/proxy-deployment=\"linkerd-controller\"\nworkload=\nkind=\"\"\nkey1=\"=\"\nkey2==value2\nkey3\n=key4\n
-        "
+        let labels_string = "\
+            cluster=\"test-cluster1\"\n\
+            rack=\"rack-22\"\n\
+            zone=us-est-coast\n\
+            linkerd.io/control-plane-component=\"controller\"\n\
+            linkerd.io/proxy-deployment=\"linkerd-controller\"\n\
+            workload=\n\
+            kind=\"\"\n\
+            key1=\"=\"\n\
+            key2==value2\n\
+            key3\n\
+            =key4\n\
+            "
         .to_string();
 
         let expected = [
