@@ -10,8 +10,8 @@ pub trait ExtractAuthority<T> {
     fn extract(&self, target: &T) -> Option<Authority>;
 }
 
-pub trait ForceAbsForm {
-    fn is_abs_form(&self) -> bool;
+pub trait ShouldOverwriteAuthority {
+    fn should_overwrite_authority(&self) -> bool;
 }
 
 #[derive(Debug, Clone)]

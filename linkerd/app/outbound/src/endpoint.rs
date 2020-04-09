@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::overwrite_authority::{ExtractAuthority, ForceAbsForm},
+        http::overwrite_authority::{ExtractAuthority, ShouldOverwriteAuthority},
         http::{self, identity_from_header},
         identity,
         resolve::map_endpoint::MapEndpoint,
@@ -114,9 +114,9 @@ impl<T: http::settings::HasSettings> http::settings::HasSettings for Target<T> {
     }
 }
 
-impl<T: ForceAbsForm> ForceAbsForm for Target<T> {
-    fn is_abs_form(&self) -> bool {
-        self.inner.is_abs_form()
+impl<T: ShouldOverwriteAuthority> ShouldOverwriteAuthority for Target<T> {
+    fn should_overwrite_authority(&self) -> bool {
+        self.inner.should_overwrite_authority()
     }
 }
 
@@ -220,8 +220,8 @@ impl http::settings::HasSettings for HttpEndpoint {
     }
 }
 
-impl ForceAbsForm for HttpEndpoint {
-    fn is_abs_form(&self) -> bool {
+impl ShouldOverwriteAuthority for HttpEndpoint {
+    fn should_overwrite_authority(&self) -> bool {
         self.metadata.authority_override().is_some()
     }
 }

@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, metric_labels, profiles,
-    proxy::http::overwrite_authority::ForceAbsForm,
+    proxy::http::overwrite_authority::ShouldOverwriteAuthority,
     proxy::{http, identity, tap},
     router, stack_tracing,
     transport::{connect, tls},
@@ -51,8 +51,8 @@ impl connect::ConnectAddr for HttpEndpoint {
     }
 }
 
-impl ForceAbsForm for HttpEndpoint {
-    fn is_abs_form(&self) -> bool {
+impl ShouldOverwriteAuthority for HttpEndpoint {
+    fn should_overwrite_authority(&self) -> bool {
         false
     }
 }

@@ -2,7 +2,7 @@ use super::glue::{HttpBody, HyperConnect};
 use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{
     h1, h2,
-    overwrite_authority::ForceAbsForm,
+    overwrite_authority::ShouldOverwriteAuthority,
     settings::{HasSettings, Settings},
 };
 use futures::{try_ready, Async, Future, Poll};
@@ -108,7 +108,7 @@ where
     <C::Future as Future>::Error: Into<Error>,
     C::Connection: Send + 'static,
     T: HasSettings + Clone + Send + Sync,
-    T: ForceAbsForm,
+    T: ShouldOverwriteAuthority,
     B: hyper::body::Payload + 'static,
 {
     type Response = Client<C, T, B>;
@@ -131,7 +131,7 @@ where
                 let exec =
                     tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
 
-                let abs_from = if target.is_abs_form() {
+                let abs_from = if target.should_overwrite_authority() {
                     true
                 } else {
                     was_absolute_form
