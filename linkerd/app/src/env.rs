@@ -462,13 +462,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         HashMap::new()
                     }
                 })
-                .unwrap_or_else(|err| {
-                    warn!(
-                        "could not read env variable {}: {}",
-                        ENV_LABELS_FILE_PATH, err
-                    );
-                    HashMap::new()
-                });
+                .unwrap_or_default();
 
             oc_collector::Config::Enabled {
                 labels,
