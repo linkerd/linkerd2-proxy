@@ -128,7 +128,6 @@ pub const ENV_IDENTITY_SVC_BASE: &str = "LINKERD2_PROXY_IDENTITY_SVC";
 pub const ENV_DESTINATION_SVC_BASE: &str = "LINKERD2_PROXY_DESTINATION_SVC";
 
 pub const ENV_HOSTNAME: &str = "HOSTNAME";
-pub const ENV_NAMESPACE: &str = "_pod_ns";
 
 pub const ENV_TRACE_COLLECTOR_SVC_BASE: &str = "LINKERD2_PROXY_TRACE_COLLECTOR_SVC";
 
@@ -283,7 +282,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let hostname = strings.get(ENV_HOSTNAME);
-    let namespace = strings.get(ENV_NAMESPACE);
 
     let oc_labels_file_path = strings.get(ENV_LABELS_FILE_PATH);
 
@@ -455,20 +453,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 outbound.proxy.connect.clone()
             };
-
-            // Add any extra Labels, that are not present in the labels file
-            let mut labels: HashMap<String, String> = [(
-                "namespace".to_string(),
-                namespace.unwrap_or_default().unwrap_or_default(),
-            )]
-            .iter()
-            .cloned()
-            .collect();
-
-            labels.extend(oc_trace_labels(oc_labels_file_path));
-
             oc_collector::Config::Enabled {
-                labels: labels,
+                labels: oc_trace_labels(oc_labels_file_path),
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
