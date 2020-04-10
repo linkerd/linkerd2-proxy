@@ -49,6 +49,7 @@ where
     A: Accept<L::Connection>,
     A::Error: 'static,
     A::Future: Send + 'static,
+    A::ConnectionError: 'static,
     A::ConnectionFuture: Send + 'static,
 {
     fn new(listen: L, accept: A) -> Self {
@@ -72,7 +73,8 @@ where
     L::Connection: HasSpan,
     A: Accept<L::Connection>,
     A::Future: Send + 'static,
-    A::Error: Into<Error> + Send + 'static,
+    A::Error: Send + 'static,
+    A::ConnectionError: 'static,
     A::ConnectionFuture: Send + 'static,
 {
     type Item = ();

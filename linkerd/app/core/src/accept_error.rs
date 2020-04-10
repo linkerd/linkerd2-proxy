@@ -17,10 +17,18 @@ impl<A> AcceptError<A> {
 impl<T, A> tower::Service<T> for AcceptError<A>
 where
     A: Accept<T>,
+    A::ConnectionError: 'static,
     A::ConnectionFuture: Send + 'static,
     A::Future: Send + 'static,
 {
-    type Response = Box<dyn Future<Item = (), Error = Never> + Send + 'static>;
+    type Response = future::Either<
+        future::OrElse<
+            A::ConnectionFuture,
+            Result<(), Never>,
+            fn(A::ConnectionError) -> Result<(), Never>,
+        >,
+        future::FutureResult<(), Never>,
+    >;
     type Error = Never;
     type Future = future::Then<
         A::Future,
@@ -37,18 +45,16 @@ where
     }
 
     fn call(&mut self, sock: T) -> Self::Future {
-        self.0.accept(sock).then(|x| match x {
-            Ok(connection_future) => Ok(Box::new(connection_future.then(|v| {
-                if let Err(e) = v {
-                    let error: Error = e.into();
-                    tracing::debug!(%error, "Connection failed");
-                }
+        self.0.accept(sock).then(|f| match f {
+            Ok(connection_future) => Ok(future::Either::A(connection_future.or_else(|e| {
+                let error: Error = e.into();
+                tracing::debug!(%error, "Connection failed");
                 Ok(())
             }))),
             Err(e) => {
                 let error: Error = e.into();
                 tracing::debug!(%error, "Accept failed");
-                Ok(Box::new(future::ok(())))
+                Ok(future::Either::B(future::ok(())))
             }
         })
     }
