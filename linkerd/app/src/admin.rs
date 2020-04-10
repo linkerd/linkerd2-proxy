@@ -4,6 +4,7 @@ use linkerd2_app_core::{
     transport::tls, Error,
 };
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -15,7 +16,7 @@ pub struct Config {
 pub struct Admin {
     pub listen_addr: SocketAddr,
     pub latch: admin::Latch,
-    pub serve: serve::Task,
+    pub serve: Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'static>>,
 }
 
 impl Config {
@@ -37,7 +38,7 @@ impl Config {
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, log_level);
         let accept = tls::AcceptTls::new(identity, admin.into_accept());
-        let serve = serve::serve(listen, accept, drain);
+        let serve = Box::pin(serve::serve(listen, accept, drain));
         Ok(Admin {
             listen_addr,
             latch,

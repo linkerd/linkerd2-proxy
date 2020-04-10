@@ -28,7 +28,9 @@ use linkerd2_app_core::{
     DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::info_span;
@@ -55,7 +57,7 @@ pub struct Config {
 
 pub struct Outbound {
     pub listen_addr: SocketAddr,
-    pub serve: serve::Task,
+    pub serve: Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>,
 }
 
 impl Config {
@@ -102,7 +104,7 @@ impl Config {
         // The stack is served lazily since caching layers spawn tasks from
         // their constructor. This helps to ensure that tasks are spawned on the
         // same runtime as the proxy.
-        let serve = Box::new(future::lazy(move || {
+        let serve = Box::pin(async move {
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
             let tcp_connect = svc::connect(connect.keepalive)
@@ -435,8 +437,8 @@ impl Config {
             let accept = tls::AcceptTls::new(no_tls, tcp_server)
                 .with_skip_ports(disable_protocol_detection_for_ports);
 
-            serve::serve(listen, accept, drain)
-        }));
+            serve::serve(listen, accept, drain).await
+        });
 
         Ok(Outbound { listen_addr, serve })
     }

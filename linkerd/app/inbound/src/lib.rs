@@ -30,7 +30,9 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
@@ -47,7 +49,7 @@ pub struct Config {
 
 pub struct Inbound {
     pub listen_addr: SocketAddr,
-    pub serve: serve::Task,
+    pub serve: Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>,
 }
 
 impl Config {
@@ -84,7 +86,7 @@ impl Config {
         // The stack is served lazily since some layers (notably buffer) spawn
         // tasks from their constructor. This helps to ensure that tasks are
         // spawned on the same runtime as the proxy.
-        let serve = Box::new(future::lazy(move || {
+        let serve = Box::pin(async move {
             // Establishes connections to the local application (for both
             // TCP forwarding and HTTP proxying).
             let tcp_connect = svc::connect(connect.keepalive)
@@ -286,8 +288,8 @@ impl Config {
                 .with_skip_ports(disable_protocol_detection_for_ports);
 
             info!(listen.addr = %listen.listen_addr(), "Serving");
-            serve::serve(listen, accept, drain)
-        }));
+            serve::serve(listen, accept, drain).await
+        });
 
         Ok(Inbound { listen_addr, serve })
     }

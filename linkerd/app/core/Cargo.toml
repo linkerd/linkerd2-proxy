@@ -73,7 +73,7 @@ tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"
 tracing = "0.1.9"
 tracing-futures = "0.1"
 tracing-log = "0.1"
-
+futures_03 = { package = "futures", version = "0.3", features = ["compat"] }
 [dependencies.tracing-subscriber]
 version = "0.2.1"
 # we don't need `chrono` time formatting
