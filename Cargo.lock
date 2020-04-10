@@ -413,7 +413,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a5081aa3de1f7542a794a397cde100ed903b0630152d0973479018fd85423a7"
 dependencies = [
  "proc-macro-hack",
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
 ]
@@ -718,7 +718,7 @@ dependencies = [
  "ring",
  "rustls",
  "tokio 0.1.22",
- "tokio 0.2.13",
+ "tokio 0.2.17",
  "tokio-compat",
  "tokio-connect",
  "tokio-current-thread",
@@ -954,8 +954,11 @@ dependencies = [
 name = "linkerd2-drain"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
+ "pin-project",
+ "tokio 0.2.17",
+ "tokio-test",
 ]
 
 [[package]]
@@ -1750,7 +1753,7 @@ version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "385322a45f2ecf3410c68d2a549a4a2685e8051d0f278e39743ff4e451cb9b3f"
 dependencies = [
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
 ]
@@ -1796,9 +1799,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.1"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c5c2380ae88876faae57698be9e9775e3544decad214599c3a6266cca6ac802"
+checksum = "df246d292ff63439fea9bc8c0a270bed0e390d5ebd4db4ba15aba81111b5abe3"
 dependencies = [
  "unicode-xid 0.2.0",
 ]
@@ -1895,7 +1898,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053a8c8bcc71fcce321828dc897a98ab9760bef03a4fc36693c231e5b3216cfe"
 dependencies = [
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
 ]
 
 [[package]]
@@ -2311,7 +2314,7 @@ version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66850e97125af79138385e9b88339cbcd037e3f28ceab8c5ad98e64f0f1f80bf"
 dependencies = [
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "unicode-xid 0.2.0",
 ]
@@ -2408,9 +2411,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.2.13"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fa5e81d6bc4e67fe889d5783bd2a128ab2e0cfa487e0be16b6a8d177b101616"
+checksum = "39fb9142eb6e9cc37f4f29144e62618440b149a138eee01a7bbe9b9226aaf17c"
 dependencies = [
  "bytes 0.5.3",
  "fnv",
@@ -2420,6 +2423,7 @@ dependencies = [
  "num_cpus",
  "pin-project-lite",
  "slab",
+ "tokio-macros",
 ]
 
 [[package]]
@@ -2454,7 +2458,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "pin-project-lite",
- "tokio 0.2.13",
+ "tokio 0.2.17",
  "tokio-current-thread",
  "tokio-executor",
  "tokio-reactor",
@@ -2510,6 +2514,17 @@ dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
  "log",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0c3acc6aa564495a0f2e1d59fab677cd7f81a19994cfc7f3ad0e64301560389"
+dependencies = [
+ "proc-macro2 1.0.10",
+ "quote 1.0.2",
+ "syn 1.0.5",
 ]
 
 [[package]]
@@ -2583,6 +2598,17 @@ dependencies = [
  "mio",
  "tokio-io",
  "tokio-reactor",
+]
+
+[[package]]
+name = "tokio-test"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cf9705471976fa5fc6817d3fbc9c4ff9696a6647af0e5c1870c81ca7445b05"
+dependencies = [
+ "bytes 0.5.3",
+ "futures-core",
+ "tokio 0.2.17",
 ]
 
 [[package]]
@@ -3128,7 +3154,7 @@ dependencies = [
  "bumpalo",
  "lazy_static",
  "log",
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
  "wasm-bindgen-shared",
@@ -3150,7 +3176,7 @@ version = "0.2.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a433d89ecdb9f77d46fcf00c8cf9f3467b7de9954d8710c175f61e2e245bb0e"
 dependencies = [
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
  "wasm-bindgen-backend",
@@ -3172,7 +3198,7 @@ dependencies = [
  "failure",
  "heck",
  "log",
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
  "wasm-bindgen-backend",
