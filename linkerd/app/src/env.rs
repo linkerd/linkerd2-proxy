@@ -72,7 +72,7 @@ pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUT
 pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
 pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
 
-pub const ENV_LABELS_FILE_PATH: &str = "LINKERD2_PROXY_LABELS_FILE_PATH";
+pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
 /// Constrains which destination names are resolved through the destination
 /// service.
@@ -283,7 +283,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let hostname = strings.get(ENV_HOSTNAME);
 
-    let oc_labels_file_path = strings.get(ENV_LABELS_FILE_PATH);
+    let oc_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
 
     let trace_collector_addr = if id_disabled {
         parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
@@ -454,15 +454,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.proxy.connect.clone()
             };
 
-            let labels = oc_labels_file_path
+            let attributes = oc_attributes_file_path
                 .map(|path| match path {
-                    Some(path) => oc_trace_labels(path),
+                    Some(path) => oc_trace_attributes(path),
                     None => HashMap::new(),
                 })
                 .unwrap_or_default();
 
             oc_collector::Config::Enabled {
-                labels,
+                attributes,
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
@@ -514,21 +514,21 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     })
 }
 
-fn oc_trace_labels(oc_file_path: String) -> HashMap<String, String> {
-    match fs::read_to_string(oc_file_path.clone()) {
-        Ok(label_string) => convert_labels_to_map(label_string),
+fn oc_trace_attributes(oc_attributes_file_path: String) -> HashMap<String, String> {
+    match fs::read_to_string(oc_attributes_file_path.clone()) {
+        Ok(attributes_string) => convert_attributes_string_to_map(attributes_string),
         Err(err) => {
             warn!(
-                "could not read OC trace labels file at path {}: {}",
-                oc_file_path, err
+                "could not read OC trace attributes file at {}: {}",
+                oc_attributes_file_path, err
             );
             HashMap::new()
         }
     }
 }
 
-fn convert_labels_to_map(labels: String) -> HashMap<String, String> {
-    labels
+fn convert_attributes_string_to_map(attributes: String) -> HashMap<String, String> {
+    attributes
         .lines()
         .filter_map(|line| {
             let mut parts = line.splitn(2, "=");
@@ -1040,8 +1040,8 @@ mod tests {
     }
 
     #[test]
-    fn convert_labels_to_map_different_values() {
-        let labels_string = "\
+    fn convert_attributes_string_to_map_different_values() {
+        let attributes_string = "\
             cluster=\"test-cluster1\"\n\
             rack=\"rack-22\"\n\
             zone=us-est-coast\n\
@@ -1078,7 +1078,10 @@ mod tests {
         .cloned()
         .collect();
 
-        assert_eq!(convert_labels_to_map(labels_string), expected);
+        assert_eq!(
+            convert_attributes_string_to_map(attributes_string),
+            expected
+        );
     }
 
     #[test]

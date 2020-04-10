@@ -17,7 +17,7 @@ pub enum Config {
     Disabled,
     Enabled {
         control: ControlConfig,
-        labels: HashMap<String, String>,
+        attributes: HashMap<String, String>,
         hostname: Option<String>,
     },
 }
@@ -50,7 +50,7 @@ impl Config {
             Config::Enabled {
                 control,
                 hostname,
-                labels,
+                attributes,
             } => {
                 let addr = control.addr;
                 let svc = svc::connect(control.connect.keepalive)
@@ -85,7 +85,7 @@ impl Config {
                         service_info: Some(oc::ServiceInfo {
                             name: Self::SERVICE_NAME.to_string(),
                         }),
-                        attributes: labels,
+                        attributes,
                         ..oc::Node::default()
                     };
 
