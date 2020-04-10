@@ -457,10 +457,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             let labels = oc_labels_file_path
                 .map(|path| match path {
                     Some(path) => oc_trace_labels(path),
-                    None => {
-                        warn!("env variable {} not present", ENV_LABELS_FILE_PATH);
-                        HashMap::new()
-                    }
+                    None => HashMap::new(),
                 })
                 .unwrap_or_default();
 
