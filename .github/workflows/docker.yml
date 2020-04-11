@@ -3,17 +3,19 @@
 # The resulting Docker image is discarded.
 name: Docker
 
-on:
-  push:
-    branches:
-    - master
-    paths:
-    - 'Cargo.lock'
-    - 'Dockerfile'
-  pull_request:
-    paths:
-    - 'Cargo.lock'
-    - 'Dockerfile'
+# This workflow is temporarily disabled, as the current Dockerfile requires
+# experimental features.
+on: {}
+#   push:
+#     branches:
+#     - master
+#     paths:
+#     - 'Cargo.lock'
+#     - 'Dockerfile'
+#   pull_request:
+#     paths:
+#     - 'Cargo.lock'
+#     - 'Dockerfile'
 
 env:
   DOCKER_UNOPTIMIZED: "1"
