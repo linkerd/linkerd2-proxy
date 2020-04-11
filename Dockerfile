@@ -23,6 +23,11 @@ ARG RUST_IMAGE=rust:1.41.0-buster
 # identity-initializing wrapper.
 ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-20.4.1
 
+# Build the proxy, leveraging (new, experimental) cache mounting.
+#
+# See: https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md#run---mounttypecache
+FROM $RUST_IMAGE as build
+
 # When set, causes the proxy to be compiled in development mode.
 ARG PROXY_UNOPTIMIZED
 
@@ -30,10 +35,6 @@ ARG PROXY_UNOPTIMIZED
 # may be set to `mock-orig-dst` for profiling builds.
 ARG PROXY_FEATURES
 
-# Build the proxy, leveraging (new, experimental) cache mounting.
-#
-# See: https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md#run---mounttypecache
-FROM $RUST_IMAGE as build
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
 RUN --mount=type=cache,target=target \
@@ -52,3 +53,4 @@ FROM $RUNTIME_IMAGE as runtime
 WORKDIR /linkerd
 COPY --from=build /out/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
 ENV LINKERD2_PROXY_LOG=warn,linkerd=info
+# Inherits the ENTRYPOINT from the runtime image.
