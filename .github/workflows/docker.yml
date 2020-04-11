@@ -21,5 +21,4 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - name: Docker
-        if: github.event.pull_request.head.repo.fork
         run: DOCKER_UNOPTIMIZED=1 make docker
