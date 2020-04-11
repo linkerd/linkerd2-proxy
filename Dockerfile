@@ -51,4 +51,4 @@ RUN --mount=type=cache,target=target \
 FROM $RUNTIME_IMAGE as runtime
 WORKDIR /linkerd
 COPY --from=build /out/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
-ENV LINKERD2_PROXY_LOG=warn,linkerd2_proxy=info
+ENV LINKERD2_PROXY_LOG=warn,linkerd=info
