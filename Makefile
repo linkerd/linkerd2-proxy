@@ -105,7 +105,7 @@ clean-profile:
 
 .PHONY: docker
 docker: Dockerfile Cargo.lock
-	$(DOCKER_BUILD) .
+	DOCKER_BUILDKIT=1 $(DOCKER_BUILD) .
 
 .PHONY: all
 all: build test
