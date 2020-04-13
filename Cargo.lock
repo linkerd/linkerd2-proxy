@@ -1203,6 +1203,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
+ "futures 0.3.4",
  "h2",
  "http",
  "http-body",
@@ -1221,6 +1222,7 @@ dependencies = [
  "linkerd2-timeout",
  "rand 0.7.2",
  "tokio 0.1.22",
+ "tokio 0.2.17",
  "tokio-connect",
  "tokio-timer",
  "tower",

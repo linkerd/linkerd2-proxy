@@ -4,6 +4,7 @@ use futures::{
     future::{self, Either},
     Future, Poll,
 };
+use futures_03::compat::Future01CompatExt;
 use hyper::upgrade::OnUpgrade;
 use linkerd2_drain as drain;
 use linkerd2_duplex::Duplex;
@@ -148,11 +149,11 @@ impl Drop for Inner {
             // There's nothing to do when drain is signaled, we just have to hope
             // the sockets finish soon. However, the drain signal still needs to
             // 'watch' the TCP future so that the process doesn't close early.
-            tokio::spawn(
+            tokio_02::spawn(
                 self.upgrade_drain_signal
                     .take()
                     .expect("only taken in drop")
-                    .watch(both_upgrades, |_| ())
+                    .watch(both_upgrades.compat(), |_| ())
                     .in_current_span(),
             );
         } else {
