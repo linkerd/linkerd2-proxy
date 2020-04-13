@@ -1,8 +1,7 @@
 use super::h1;
 use futures::{try_ready, Future, Poll};
 use http;
-use http::header::HOST;
-use http::header::{HeaderValue, IntoHeaderName};
+use http::header::AsHeaderName;
 use http::uri::Authority;
 use tracing::trace;
 
@@ -17,53 +16,53 @@ pub trait ShouldOverwriteAuthority {
 #[derive(Debug, Clone)]
 pub struct Layer<E, H> {
     extractor: E,
-    canonical_dst_header: H,
+    headers_to_strip: Vec<H>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MakeSvc<E, H, M> {
     extractor: E,
-    canonical_dst_header: H,
+    headers_to_strip: Vec<H>,
     inner: M,
 }
 
 pub struct MakeSvcFut<M, H> {
     authority: Option<Authority>,
-    canonical_dst_header: H,
+    headers_to_strip: Vec<H>,
     inner: M,
 }
 
 #[derive(Clone, Debug)]
 pub struct Service<S, H> {
     authority: Option<Authority>,
-    canonical_dst_header: H,
+    headers_to_strip: Vec<H>,
     inner: S,
 }
 
 // === impl Layer ===
 
-pub fn layer<E, H>(extractor: E, canonical_dst_header: H) -> Layer<E, H>
+pub fn layer<E, H>(extractor: E, headers_to_strip: Vec<H>) -> Layer<E, H>
 where
     E: Clone,
-    H: IntoHeaderName + Clone,
+    H: AsHeaderName + Clone,
 {
     Layer {
         extractor,
-        canonical_dst_header,
+        headers_to_strip,
     }
 }
 
 impl<E, H, M> tower::layer::Layer<M> for Layer<E, H>
 where
     E: Clone,
-    H: IntoHeaderName + Clone,
+    H: AsHeaderName + Clone,
 {
     type Service = MakeSvc<E, H, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
         MakeSvc {
             extractor: self.extractor.clone(),
-            canonical_dst_header: self.canonical_dst_header.clone(),
+            headers_to_strip: self.headers_to_strip.clone(),
             inner,
         }
     }
@@ -75,7 +74,7 @@ where
     M: tower::Service<T>,
     E: ExtractAuthority<T>,
     E: Clone,
-    H: IntoHeaderName + Clone,
+    H: AsHeaderName + Clone,
 {
     type Response = Service<M::Response, H>;
     type Error = M::Error;
@@ -90,7 +89,7 @@ where
         let inner = self.inner.call(t);
         MakeSvcFut {
             authority,
-            canonical_dst_header: self.canonical_dst_header.clone(),
+            headers_to_strip: self.headers_to_strip.clone(),
             inner,
         }
     }
@@ -99,7 +98,7 @@ where
 impl<F, H> Future for MakeSvcFut<F, H>
 where
     F: Future,
-    H: IntoHeaderName + Clone,
+    H: AsHeaderName + Clone,
 {
     type Item = Service<F::Item, H>;
     type Error = F::Error;
@@ -108,7 +107,7 @@ where
         let inner = try_ready!(self.inner.poll());
         Ok(Service {
             authority: self.authority.clone(),
-            canonical_dst_header: self.canonical_dst_header.clone(),
+            headers_to_strip: self.headers_to_strip.clone(),
             inner,
         }
         .into())
@@ -120,7 +119,7 @@ where
 impl<S, H, B> tower::Service<http::Request<B>> for Service<S, H>
 where
     S: tower::Service<http::Request<B>>,
-    H: IntoHeaderName + Clone,
+    H: AsHeaderName + Clone,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -132,26 +131,20 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         if let Some(new_authority) = self.authority.clone() {
+            for h in self.headers_to_strip.iter() {
+                if let Some(orig_header_val) = req.headers_mut().remove(h.clone()) {
+                    trace!(
+                        "Removed original {:?} header {:?}",
+                        h.as_str(),
+                        orig_header_val
+                    );
+                };
+            }
+
             trace!(%new_authority, "Overwriting authority");
             h1::set_authority(req.uri_mut(), new_authority.clone());
-
-            if let Ok(auth_val) = HeaderValue::from_str(new_authority.as_str()) {
-                trace!(new_canonical_dst = %new_authority, "Overwriting canonical destination");
-                if let Some(was_absolute) = req
-                    .headers_mut()
-                    .insert(self.canonical_dst_header.clone(), auth_val.clone())
-                {
-                    trace!(
-                        "Removed original l5d-dst-canonical header {:?}",
-                        was_absolute
-                    );
-                }
-
-                if let Some(original_host) = req.headers_mut().insert(HOST, auth_val) {
-                    trace!("Removed original host header {:?}", original_host);
-                }
-            }
         }
+
         self.inner.call(req)
     }
 }

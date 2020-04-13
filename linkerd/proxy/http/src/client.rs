@@ -131,19 +131,15 @@ where
                 let exec =
                     tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
 
-                let abs_from = if target.should_overwrite_authority() {
-                    true
-                } else {
-                    was_absolute_form
-                };
+                let abs_form = target.should_overwrite_authority() || was_absolute_form;
 
                 let h1 = hyper::Client::builder()
                     .executor(exec)
                     .keep_alive(keep_alive)
-                    // hyper should never try to automatically set the Host
-                    // header, instead always just passing whatever we received.
-                    .set_host(false)
-                    .build(HyperConnect::new(connect, target, abs_from));
+                    // hyper should should only try to automatically
+                    // set the host if the request was in absolute_form
+                    .set_host(abs_form)
+                    .build(HyperConnect::new(connect, target, abs_form));
                 MakeFuture::Http1(Some(h1))
             }
             Settings::Http2 => {
