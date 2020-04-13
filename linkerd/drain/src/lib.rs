@@ -93,6 +93,23 @@ impl Watch {
             }
         }
     }
+
+    /// Wrap a future to count it against the completion of the `Drained`
+    /// future that corresponds to this `Watch`.
+    ///
+    /// Unlike `Watch::watch`, this method does not take a callback that is
+    /// triggered on drain; the wrapped future will simply be allowed to
+    /// complete. However, like `Watch::watch`, the `Drained` future returned
+    /// by calling `drain` on the corresponding `Signal` will not complete until
+    /// the wrapped future finishes.
+    pub async fn with<A>(self, future: A) -> A::Output
+    where
+        A: Future,
+    {
+        let res = future.await;
+        drop(self);
+        res
+    }
 }
 
 // ===== impl Drained =====
