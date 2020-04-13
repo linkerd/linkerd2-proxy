@@ -27,7 +27,7 @@ mod imp {
         // to output nicer signal names.
         let on_any_signal = future::lazy(|| {
             // Do everything lazily to prevent `Signal::new()` from calling
-            // `Handle::current()` and starting the background reactor when
+            // `Handle::default()` and starting the background reactor when
             // we haven't initialized the runtime yet.
             Ok([SIGINT, SIGTERM].iter())
         })

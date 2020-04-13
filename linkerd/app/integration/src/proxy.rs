@@ -247,7 +247,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                 let _c = controller;
                 let _i = identity;
 
-                tokio::runtime::current_thread::Runtime::new()
+                tokio_compat::runtime::current_thread::Runtime::new()
                     .expect("proxy")
                     .block_on(future::lazy(move || {
                         let main = config.build(trace_handle).expect("config");

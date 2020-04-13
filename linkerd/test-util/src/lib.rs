@@ -1,7 +1,7 @@
 use futures::Future;
 use std::time::Duration;
-use tokio::runtime::current_thread::Runtime;
 use tokio::timer::Timeout;
+use tokio_compat::runtime::current_thread::Runtime;
 
 /// A trait that allows an executor to execute a future for up to a given
 /// time limit, and then panics if the future has not finished.

@@ -8,3 +8,4 @@ publish = false
 [dependencies]
 futures = "0.1"
 tokio = "0.1.7"
+tokio-compat = "0.1"

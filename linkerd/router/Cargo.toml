@@ -11,3 +11,7 @@ linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 tower = "0.1"
 tracing = "0.1.2"
+tracing-futures = "0.1"
+
+[dev-dependencies]
+tokio-compat = "0.1"

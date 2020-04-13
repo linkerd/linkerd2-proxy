@@ -119,7 +119,7 @@ mod tests {
     use http::method::Method;
     use linkerd2_test_util::BlockOnFor;
     use std::time::Duration;
-    use tokio::runtime::current_thread::Runtime;
+    use tokio_compat::runtime::current_thread::Runtime;
 
     const TIMEOUT: Duration = Duration::from_secs(1);
 
