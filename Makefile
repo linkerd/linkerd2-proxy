@@ -51,7 +51,7 @@ ifdef CARGO_DEBUG
 		chmod 644 $(PKG_BASE)/linkerd2-proxy.obj ; \
 	fi
 endif
-	./checksec.sh $(PKG_BASE)/bin/linkerd2-proxy >$(PKG_CHECKSEC)
+	./checksec.sh $(PKG_BASE)/bin/linkerd2-proxy >$(PKG_CHECKSEC) || true
 	cd $(PKG_ROOT) && \
 		tar -czvf $(PKG) $(PKG_NAME) && \
 		($(SHASUM) $(PKG) >$(PKG_NAME).txt) && \
