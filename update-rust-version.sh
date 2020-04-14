@@ -14,7 +14,7 @@ if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' ; then
 fi
 
 echo "$VERSION" > rust-toolchain
-sed -i'' -Ee "s/rust:[0-9]+\.[0-9]+\.[0-9]+/rust:$VERSION/" Dockerfile
-
-find .github -name \*.yml -or -name Dockerfile\* \
+find . -name Dockerfile\* \
+    -exec sed -i'' -Ee "s|rust:[0-9]+\.[0-9]+\.[0-9]+|rust:$VERSION|" '{}' \;
+find .github -name \*.yml \
     -exec sed -i'' -Ee "s|rust:[0-9]+\.[0-9]+\.[0-9]+|rust:$VERSION|" '{}' \;
