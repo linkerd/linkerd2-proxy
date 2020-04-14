@@ -16,5 +16,5 @@ fi
 echo "$VERSION" > rust-toolchain
 sed -i'' -Ee "s/rust:[0-9]+\.[0-9]+\.[0-9]+/rust:$VERSION/" Dockerfile
 
-find .github -name \*.yml \
-    -exec sed -i'' -Ee "s|docker://rust:[0-9]+\.[0-9]+\.[0-9]+|docker://rust:$VERSION|" '{}' \;
+find .github -name \*.yml -or -name Dockerfile\* \
+    -exec sed -i'' -Ee "s|rust:[0-9]+\.[0-9]+\.[0-9]+|rust:$VERSION|" '{}' \;

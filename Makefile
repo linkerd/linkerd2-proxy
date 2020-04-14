@@ -13,6 +13,7 @@ TARGET_BIN = $(TARGET)/linkerd2-proxy
 PKG_ROOT = $(TARGET)/package
 PKG_NAME = linkerd2-proxy-$(PACKAGE_VERSION)
 PKG_BASE = $(PKG_ROOT)/$(PKG_NAME)
+PKG_CHECKSEC = $(PKG_BASE)-checksec.json
 PKG = $(PKG_NAME).tar.gz
 
 SHASUM = shasum -a 256
@@ -39,7 +40,7 @@ endif
 $(TARGET_BIN): fetch
 	$(CARGO_BUILD) -p linkerd2-proxy
 
-$(PKG_ROOT)/$(PKG): $(TARGET_BIN)
+$(PKG_ROOT)/$(PKG) $(PKG_CHECKSEC): $(TARGET_BIN)
 	mkdir -p $(PKG_BASE)/bin
 	cp LICENSE $(PKG_BASE)
 	cp $(TARGET_BIN) $(PKG_BASE)/bin/linkerd2-proxy
@@ -50,6 +51,7 @@ ifdef CARGO_DEBUG
 		chmod 644 $(PKG_BASE)/linkerd2-proxy.obj ; \
 	fi
 endif
+	./checksec.sh $(PKG_BASE)/bin/linkerd2-proxy >$(PKG_CHECKSEC)
 	cd $(PKG_ROOT) && \
 		tar -czvf $(PKG) $(PKG_NAME) && \
 		($(SHASUM) $(PKG) >$(PKG_NAME).txt) && \

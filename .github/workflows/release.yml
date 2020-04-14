@@ -3,31 +3,41 @@ name: release
 on:
   push:
     tags:
-    - 'release/*'
+      - "release/*"
 
 jobs:
   package:
     runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.41.0-buster
     steps:
-    - name: git co
-      uses: actions/checkout@v1
-    - name: meta
-      id: release-tag-meta
-      uses: ./.github/actions/release-tag-meta
-      with:
-        git-ref: ${{ github.ref }}
-    #- run: echo "${{ toJSON(steps.release-tag-meta) }}"
-    - name: make package
-      env:
-        CARGO_RELEASE: "1"
-        PACKAGE_VERSION: ${{ steps.release-tag-meta.outputs.name }}
-      run: make package
-    - name: release
-      uses: softprops/action-gh-release@b21b43d
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        name: ${{ steps.release-tag-meta.outputs.name }}
-        files: target/release/package/*
+      - name: git co
+        uses: actions/checkout@v1
+
+      - name: meta
+        id: release-tag-meta
+        uses: ./.github/actions/release-tag-meta
+        with:
+          git-ref: ${{ github.ref }}
+      #- run: echo "${{ toJSON(steps.release-tag-meta) }}"
+
+      - name: package
+        env:
+          CARGO_RELEASE: "1"
+          PACKAGE_VERSION: test-0.0.0 # ${{ steps.release-tag-meta.outputs.name }}
+        uses: ./.github/actions/package
+        with:
+          entrypoint: make
+          args: package
+
+      - name: checksec
+        uses: ./.github/actions/package
+        with:
+          entrypoint: /linkerd/validate-checksec.sh
+          args: /linkerd/expected-checksec.json "target/release/package/linkerd2-proxy-${{ steps.release-tag-meta.outputs.name }}-checksec.json"
+
+      - name: release
+        uses: softprops/action-gh-release@b21b43d
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: ${{ steps.release-tag-meta.outputs.name }}
+          files: target/release/package/*
