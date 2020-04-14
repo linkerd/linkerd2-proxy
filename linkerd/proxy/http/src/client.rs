@@ -2,7 +2,6 @@ use super::glue::{HttpBody, HyperConnect};
 use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{
     h1, h2,
-    overwrite_authority::ShouldOverwriteAuthority,
     settings::{HasSettings, Settings},
 };
 use futures::{try_ready, Async, Future, Poll};
@@ -108,7 +107,6 @@ where
     <C::Future as Future>::Error: Into<Error>,
     C::Connection: Send + 'static,
     T: HasSettings + Clone + Send + Sync,
-    T: ShouldOverwriteAuthority,
     B: hyper::body::Payload + 'static,
 {
     type Response = Client<C, T, B>;
@@ -131,15 +129,13 @@ where
                 let exec =
                     tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
 
-                let abs_form = target.should_overwrite_authority() || was_absolute_form;
-
                 let h1 = hyper::Client::builder()
                     .executor(exec)
                     .keep_alive(keep_alive)
-                    // hyper should should only try to automatically
+                    // hyper should only try to automatically
                     // set the host if the request was in absolute_form
-                    .set_host(abs_form)
-                    .build(HyperConnect::new(connect, target, abs_form));
+                    .set_host(was_absolute_form)
+                    .build(HyperConnect::new(connect, target, was_absolute_form));
                 MakeFuture::Http1(Some(h1))
             }
             Settings::Http2 => {

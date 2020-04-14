@@ -6,8 +6,8 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::overwrite_authority::{ExtractAuthority, ShouldOverwriteAuthority},
-        http::{self, identity_from_header},
+        http::overwrite_authority::{ExtractAuthority, IntoAbsForm},
+        http::{self, identity_from_header, Settings},
         identity,
         resolve::map_endpoint::MapEndpoint,
         tap,
@@ -114,12 +114,6 @@ impl<T: http::settings::HasSettings> http::settings::HasSettings for Target<T> {
     }
 }
 
-impl<T: ShouldOverwriteAuthority> ShouldOverwriteAuthority for Target<T> {
-    fn should_overwrite_authority(&self) -> bool {
-        self.inner.should_overwrite_authority()
-    }
-}
-
 impl<T: tls::HasPeerIdentity> tls::HasPeerIdentity for Target<T> {
     fn peer_identity(&self) -> tls::PeerIdentity {
         self.inner.peer_identity()
@@ -220,12 +214,6 @@ impl http::settings::HasSettings for HttpEndpoint {
     }
 }
 
-impl ShouldOverwriteAuthority for HttpEndpoint {
-    fn should_overwrite_authority(&self) -> bool {
-        self.metadata.authority_override().is_some()
-    }
-}
-
 impl tap::Inspect for HttpEndpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
         req.extensions()
@@ -300,6 +288,26 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
 impl ExtractAuthority<Target<HttpEndpoint>> for FromMetadata {
     fn extract(&self, target: &Target<HttpEndpoint>) -> Option<Authority> {
         target.inner.metadata.authority_override().cloned()
+    }
+}
+
+impl IntoAbsForm for Target<HttpEndpoint> {
+    fn into_abs_form(self) -> Self {
+        self.map(|inner| HttpEndpoint {
+            settings: match inner.settings {
+                Settings::Http1 {
+                    keep_alive,
+                    wants_h1_upgrade,
+                    ..
+                } => Settings::Http1 {
+                    keep_alive,
+                    wants_h1_upgrade,
+                    was_absolute_form: true,
+                },
+                http::Settings::Http2 => http::Settings::Http2,
+            },
+            ..inner
+        })
     }
 }
 
