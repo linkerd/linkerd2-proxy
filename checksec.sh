@@ -9,6 +9,7 @@ require_from() {
     fi
 }
 
+require_from readelf     binutils
 require_from checksec    https://github.com/slimm609/checksec.sh
 require_from jq          https://stedolan.github.io/jq/
 
