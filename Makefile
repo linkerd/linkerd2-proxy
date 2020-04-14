@@ -8,6 +8,7 @@ ifndef PACKAGE_VERSION
 	PACKAGE_VERSION = $(shell git rev-parse --short HEAD)
 endif
 
+STRIP ?= strip
 PROFILING = profiling
 TARGET_BIN = $(TARGET)/linkerd2-proxy
 PKG_ROOT = $(TARGET)/package
@@ -43,7 +44,7 @@ $(PKG_ROOT)/$(PKG): $(TARGET_BIN)
 	mkdir -p $(PKG_BASE)/bin
 	cp LICENSE $(PKG_BASE)
 	cp $(TARGET_BIN) $(PKG_BASE)/bin/linkerd2-proxy
-	strip $(PKG_BASE)/bin/linkerd2-proxy
+	$(STRIP) $(PKG_BASE)/bin/linkerd2-proxy
 ifdef CARGO_DEBUG
 	if which objcopy >/dev/null ; then \
 		objcopy $(TARGET_BIN) $(PKG_BASE)/linkerd2-proxy.obj ; \
