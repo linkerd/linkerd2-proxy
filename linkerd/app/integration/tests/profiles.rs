@@ -132,6 +132,7 @@ macro_rules! profile_test {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn retry_if_profile_allows() {
     profile_test! {
         routes: [
@@ -148,6 +149,7 @@ fn retry_if_profile_allows() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn retry_uses_budget() {
     profile_test! {
         routes: [
@@ -172,6 +174,7 @@ fn retry_uses_budget() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn does_not_retry_if_request_does_not_match() {
     profile_test! {
         routes: [
@@ -189,6 +192,7 @@ fn does_not_retry_if_request_does_not_match() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn does_not_retry_if_earlier_response_class_is_success() {
     profile_test! {
         routes: [
@@ -208,6 +212,7 @@ fn does_not_retry_if_earlier_response_class_is_success() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn does_not_retry_if_request_has_body() {
     profile_test! {
         routes: [
@@ -229,6 +234,7 @@ fn does_not_retry_if_request_has_body() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn does_not_retry_if_missing_retry_budget() {
     profile_test! {
         routes: [
@@ -246,6 +252,7 @@ fn does_not_retry_if_missing_retry_budget() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn ignores_invalid_retry_budget_ttl() {
     profile_test! {
         routes: [
@@ -263,6 +270,7 @@ fn ignores_invalid_retry_budget_ttl() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn ignores_invalid_retry_budget_ratio() {
     profile_test! {
         routes: [
@@ -280,6 +288,7 @@ fn ignores_invalid_retry_budget_ratio() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn ignores_invalid_retry_budget_negative_ratio() {
     profile_test! {
         routes: [
@@ -297,6 +306,7 @@ fn ignores_invalid_retry_budget_negative_ratio() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn http2_failures_dont_leak_connection_window() {
     profile_test! {
         http: http2,
@@ -318,6 +328,7 @@ fn http2_failures_dont_leak_connection_window() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn timeout() {
     profile_test! {
         routes: [

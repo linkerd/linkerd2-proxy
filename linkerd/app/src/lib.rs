@@ -12,6 +12,7 @@ pub mod tap;
 
 use self::metrics::Metrics;
 use futures::{future, Async, Future};
+use futures_03::TryFutureExt;
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
@@ -254,7 +255,7 @@ impl App {
         std::thread::Builder::new()
             .name("admin".into())
             .spawn(move || {
-                tokio::runtime::current_thread::Runtime::new()
+                tokio_compat::runtime::current_thread::Runtime::new()
                     .expect("admin runtime")
                     .block_on(
                         future::lazy(move || {
@@ -262,7 +263,7 @@ impl App {
                             tokio::spawn(dns);
 
                             // Start the admin server to serve the readiness endpoint.
-                            tokio::spawn(
+                            tokio_02::task::spawn(
                                 admin
                                     .serve
                                     .map_err(|e| panic!("admin server died: {}", e))
@@ -304,7 +305,7 @@ impl App {
                                         .map_err(|never| match never {})
                                         .instrument(info_span!("tap")),
                                 );
-                                tokio::spawn(
+                                tokio_02::task::spawn_local(
                                     serve
                                         .map_err(|error| error!(%error, "server died"))
                                         .instrument(info_span!("tap")),
@@ -326,13 +327,13 @@ impl App {
             })
             .expect("admin");
 
-        tokio::spawn(
+        tokio_02::task::spawn_local(
             outbound
                 .serve
                 .map_err(|e| panic!("outbound died: {}", e))
                 .instrument(info_span!("outbound")),
         );
-        tokio::spawn(
+        tokio_02::task::spawn_local(
             inbound
                 .serve
                 .map_err(|e| panic!("inbound died: {}", e))

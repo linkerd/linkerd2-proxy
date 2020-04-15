@@ -4,10 +4,9 @@ use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::listen::{Accept, Listen, Serve};
 use linkerd2_proxy_transport::listen::Addrs;
+use tokio_compat::prelude::*;
 use tracing::{debug, info_span, Span};
 use tracing_futures::{Instrument, Instrumented};
-
-pub type Task = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
 
 pub trait HasSpan {
     fn span(&self) -> Span;
@@ -17,7 +16,7 @@ pub trait HasSpan {
 /// connection-accepting service.
 ///
 /// The task is driven until the provided `drain` is notified.
-pub fn serve<L, A>(listen: L, accept: A, drain: drain::Watch) -> Task
+pub async fn serve<L, A>(listen: L, accept: A, drain: drain::Watch) -> Result<(), Error>
 where
     L: Listen + Send + 'static,
     L::Connection: HasSpan,
@@ -28,12 +27,13 @@ where
 {
     // As soon as we get a shutdown signal, the listener task completes and
     // stops accepting new connections.
-    Box::new(future::lazy(move || {
-        debug!(listen.addr = %listen.listen_addr(), "serving");
-        drain.watch(ServeAndSpawnUntilCancel::new(listen, accept), |s| {
+    debug!(listen.addr = %listen.listen_addr(), "serving");
+    drain
+        .watch(ServeAndSpawnUntilCancel::new(listen, accept), |s| {
             s.cancel()
         })
-    }))
+        .compat()
+        .await
 }
 
 struct ServeAndSpawnUntilCancel<L: Listen, A: Accept<L::Connection>>(
