@@ -163,21 +163,12 @@ where
             None => {
                 trace!("did not detect protocol; forwarding TCP");
 
-                // The compiler has trouble with the double Box-dyn, but this
-                // helper clarifies enough for the compiler to know what's
-                // expected.
-                fn box_rsp<F: Future<Item = (), Error = Error> + Send + 'static>(
-                    rsp: F,
-                ) -> Box<dyn Future<Item = (), Error = Error> + Send + 'static> {
-                    Box::new(rsp)
-                }
-
                 let fwd = self
                     .forward_tcp
                     .clone()
                     .into_service()
                     .oneshot((proto.tls, io))
-                    .map(|conn| box_rsp(drain.watch(conn, |_| {}).map_err(Into::into)));
+                    .map(|conn| Box::new(drain.watch(conn, |_| {}).map_err(Into::into)) as Self::Response);
 
                 return Box::new(fwd.map_err(Into::into));
             }
