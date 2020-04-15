@@ -17,8 +17,8 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
-        Server,
+        self, core::resolve::Resolve, detect::DetectProtocolLayer, discover, http, identity,
+        resolve::map_endpoint, server::ProtocolDetect, tap, tcp, Server,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
@@ -93,6 +93,7 @@ impl Config {
                     disable_protocol_detection_for_ports,
                     dispatch_timeout,
                     max_in_flight_requests,
+                    detect_protocol_timeout,
                 },
         } = self;
 
@@ -420,16 +421,26 @@ impl Config {
                 http_server.into_inner(),
                 h2_settings,
                 drain.clone(),
-                disable_protocol_detection_for_ports.clone(),
             );
 
-            // The local application does not establish mTLS with the proxy.
             let no_tls: tls::Conditional<identity::Local> =
                 Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
-            let accept = tls::AcceptTls::new(no_tls, tcp_server)
-                .with_skip_ports(disable_protocol_detection_for_ports);
 
-            serve::serve(listen, accept, drain)
+            let tcp_detect = svc::stack(tcp_server)
+                .push(DetectProtocolLayer::new(ProtocolDetect::new(
+                    disable_protocol_detection_for_ports.clone(),
+                )))
+                // The local application never establishes mTLS with the proxy, so don't try to
+                // terminate TLS, just annotate with the connection with the reason.
+                .push(tls::AcceptTls::layer(
+                    no_tls,
+                    disable_protocol_detection_for_ports,
+                ))
+                // Limits the amount of time that the TCP server spends waiting for protocol
+                // detection. Ensures that connections that never emit data are dropped eventually.
+                .push_timeout(detect_protocol_timeout);
+
+            serve::serve(listen, tcp_detect.into_inner(), drain)
         }));
 
         Ok(Outbound { listen_addr, serve })

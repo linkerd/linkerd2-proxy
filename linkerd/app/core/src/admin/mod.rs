@@ -8,6 +8,7 @@ use futures::{future, Future, Poll};
 use http::StatusCode;
 use hyper::service::{service_fn, Service};
 use hyper::{Body, Request, Response};
+use linkerd2_error::Error;
 use linkerd2_metrics::{self as metrics, FmtMetrics};
 use std::io;
 
@@ -86,9 +87,9 @@ impl<M: FmtMetrics> Service for Admin<M> {
 }
 
 impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
-    type Response = ();
-    type Error = hyper::error::Error;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
+    type Response = Box<dyn Future<Item = (), Error = hyper::error::Error> + Send + 'static>;
+    type Error = Error;
+    type Future = future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into())
@@ -104,7 +105,9 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
             req.extensions_mut().insert(ClientAddr(peer));
             svc.call(req)
         });
-        Box::new(self.1.serve_connection(io, svc))
+
+        let connection_future = Box::new(self.1.serve_connection(io, svc));
+        future::ok(connection_future)
     }
 }
 

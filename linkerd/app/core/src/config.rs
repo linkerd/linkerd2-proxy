@@ -29,6 +29,7 @@ pub struct ProxyConfig {
     pub disable_protocol_detection_for_ports: Arc<IndexSet<u16>>,
     pub dispatch_timeout: Duration,
     pub max_in_flight_requests: usize,
+    pub detect_protocol_timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
