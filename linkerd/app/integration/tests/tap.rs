@@ -5,6 +5,7 @@ use linkerd2_app_integration::*;
 use std::time::SystemTime;
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn tap_enabled_when_identity_enabled() {
     let _ = trace_init();
 
@@ -19,6 +20,7 @@ fn tap_enabled_when_identity_enabled() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn tap_disabled_when_identity_disabled() {
     let _ = trace_init();
     let proxy = proxy::new().disable_identity().run();
@@ -27,6 +29,7 @@ fn tap_disabled_when_identity_disabled() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn can_disable_tap() {
     let _ = trace_init();
     let mut env = TestEnv::new();
@@ -38,6 +41,7 @@ fn can_disable_tap() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn rejects_incorrect_identity_when_identity_is_expected() {
     let _ = trace_init();
 
@@ -73,7 +77,7 @@ fn rejects_incorrect_identity_when_identity_is_expected() {
 // Flaky: sometimes the admin thread hasn't had a chance to register
 // the Taps before the `client.get` is called.
 #[test]
-#[cfg_attr(not(feature = "flaky_tests"), ignore)]
+#[cfg_attr(all(not(feature = "nyi"), not(feature = "flaky_tests")), ignore)]
 fn inbound_http1() {
     let _ = trace_init();
 
@@ -143,6 +147,7 @@ fn inbound_http1() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn grpc_headers_end() {
     let _ = trace_init();
 

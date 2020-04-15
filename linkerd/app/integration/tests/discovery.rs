@@ -7,7 +7,7 @@ macro_rules! generate_tests {
         use linkerd2_proxy_api as pb;
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_asks_controller_api() {
             let _ = trace_init();
             let srv = $make_server().route("/", "hello").route("/bye", "bye").run();
@@ -24,7 +24,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_reconnects_if_controller_stream_ends() {
             let _ = trace_init();
 
@@ -42,13 +42,13 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_fails_fast_when_destination_has_no_endpoints() {
             outbound_fails_fast(controller::destination_exists_with_no_endpoints())
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_fails_fast_when_destination_does_not_exist() {
             outbound_fails_fast(controller::destination_does_not_exist())
         }
@@ -87,7 +87,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_falls_back_to_orig_dst_when_outside_search_path() {
             let _ = trace_init();
 
@@ -106,7 +106,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_falls_back_to_orig_dst_after_invalid_argument() {
             let _ = trace_init();
 
@@ -132,7 +132,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_destinations_reset_on_reconnect_followed_by_empty() {
             outbound_destinations_reset_on_reconnect(
                 controller::destination_exists_with_no_endpoints()
@@ -140,7 +140,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_destinations_reset_on_reconnect_followed_by_dne() {
             outbound_destinations_reset_on_reconnect(
                 controller::destination_does_not_exist()
@@ -207,7 +207,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_asks_controller_without_orig_dst() {
             let _ = TestEnv::new();
 
@@ -232,7 +232,7 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[ignore] // Not yet implemented
+        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_error_reconnects_after_backoff() {
             let env = TestEnv::new();
 
@@ -278,7 +278,7 @@ macro_rules! generate_tests {
             const IP_2: &'static str = "127.0.0.1";
 
             #[test]
-            #[ignore] // Not yet implemented
+            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn outbound_should_strip() {
                 let _ = trace_init();
                 let header = HeaderValue::from_static(IP_1);
@@ -299,7 +299,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            #[ignore] // Not yet implemented
+            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn inbound_should_strip() {
                 let _ = trace_init();
                 let header = HeaderValue::from_static(IP_1);
@@ -462,7 +462,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            #[ignore] // Not yet implemented
+            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn outbound_honors_override_header() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy().run();
@@ -493,7 +493,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            #[ignore] // Not yet implemented
+            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn outbound_overrides_profile() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy().run();
@@ -513,7 +513,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            #[ignore] // Not yet implemented
+            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn outbound_honors_override_header_with_orig_dst() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
@@ -546,7 +546,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            #[ignore] // Not yet implemented
+            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn inbound_overrides_profile() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
@@ -567,7 +567,7 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            #[ignore] // Not yet implemented
+            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn inbound_still_routes_to_orig_dst() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
@@ -609,7 +609,7 @@ mod http2 {
     generate_tests! { server: server::new, client: client::new }
 
     #[test]
-    #[ignore] // Not yet implemented
+    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_balancer_waits_for_ready_endpoint() {
         // See https://github.com/linkerd/linkerd2/issues/2550
         let _ = trace_init();
@@ -683,7 +683,7 @@ mod proxy_to_proxy {
     use super::*;
 
     #[test]
-    #[ignore] // Not yet implemented
+    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_http1() {
         let _ = trace_init();
 
@@ -713,7 +713,7 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[ignore] // Not yet implemented
+    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_http1() {
         let _ = trace_init();
 
@@ -746,7 +746,7 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[ignore] // Not yet implemented
+    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_should_strip_l5d_client_id() {
         let _ = trace_init();
 
@@ -773,7 +773,7 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[ignore] // Not yet implemented
+    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_should_strip_l5d_client_id() {
         let _ = trace_init();
 
@@ -801,7 +801,7 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[ignore] // Not yet implemented
+    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_should_strip_l5d_server_id() {
         let _ = trace_init();
 
@@ -831,7 +831,7 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[ignore] // Not yet implemented
+    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_should_strip_l5d_server_id() {
         let _ = trace_init();
 

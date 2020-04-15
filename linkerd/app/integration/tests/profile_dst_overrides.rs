@@ -62,6 +62,7 @@ fn wait_for_profile_stage(client: &client::Client, metrics: &client::Client, sta
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn add_a_dst_override() {
     let _ = trace_init();
     let ctrl = controller::new_unordered();
@@ -107,6 +108,7 @@ fn add_a_dst_override() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn add_multiple_dst_overrides() {
     let _ = trace_init();
     let ctrl = controller::new_unordered();
@@ -163,6 +165,7 @@ fn add_multiple_dst_overrides() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn set_a_dst_override_weight_to_zero() {
     let _ = trace_init();
     let ctrl = controller::new_unordered();
@@ -228,6 +231,7 @@ fn set_a_dst_override_weight_to_zero() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn set_all_dst_override_weights_to_zero() {
     let _ = trace_init();
     let ctrl = controller::new_unordered();
@@ -295,6 +299,7 @@ fn set_all_dst_override_weights_to_zero() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn remove_a_dst_override() {
     let _ = trace_init();
 

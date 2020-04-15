@@ -3,6 +3,7 @@
 use linkerd2_app_integration::*;
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn h2_goaways_connections() {
     let _ = trace_init();
 
@@ -20,6 +21,7 @@ fn h2_goaways_connections() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn h2_exercise_goaways_connections() {
     let _ = trace_init();
 
@@ -65,6 +67,7 @@ fn h2_exercise_goaways_connections() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "nyi"), ignore)]
 fn http1_closes_idle_connections() {
     use std::cell::RefCell;
     let _ = trace_init();
