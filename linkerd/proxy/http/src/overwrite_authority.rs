@@ -9,10 +9,6 @@ pub trait ExtractAuthority<T> {
     fn extract(&self, target: &T) -> Option<Authority>;
 }
 
-pub trait IntoAbsForm {
-    fn into_abs_form(self) -> Self;
-}
-
 #[derive(Debug, Clone)]
 pub struct Layer<E, H> {
     extractor: E,
@@ -71,7 +67,6 @@ where
 impl<E, H, T, M> tower::Service<T> for MakeSvc<E, H, M>
 where
     T: Clone + Send + Sync + 'static,
-    T: IntoAbsForm,
     M: tower::Service<T>,
     E: ExtractAuthority<T>,
     E: Clone,
@@ -87,12 +82,7 @@ where
 
     fn call(&mut self, t: T) -> Self::Future {
         let authority = self.extractor.extract(&t);
-
-        let inner = if authority.is_some() {
-            self.inner.call(t.into_abs_form())
-        } else {
-            self.inner.call(t)
-        };
+        let inner = self.inner.call(t);
         MakeSvcFut {
             authority,
             headers_to_strip: self.headers_to_strip.clone(),

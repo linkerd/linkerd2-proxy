@@ -51,8 +51,8 @@ impl connect::ConnectAddr for HttpEndpoint {
 }
 
 impl http::settings::HasSettings for HttpEndpoint {
-    fn http_settings(&self) -> &http::Settings {
-        &self.settings
+    fn http_settings(&self) -> http::Settings {
+        self.settings
     }
 }
 
@@ -149,8 +149,8 @@ impl http::normalize_uri::ShouldNormalizeUri for Target {
 }
 
 impl http::settings::HasSettings for Target {
-    fn http_settings(&self) -> &http::Settings {
-        &self.http_settings
+    fn http_settings(&self) -> http::Settings {
+        self.http_settings
     }
 }
 

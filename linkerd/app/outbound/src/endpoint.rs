@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::overwrite_authority::{ExtractAuthority, IntoAbsForm},
+        http::overwrite_authority::ExtractAuthority,
         http::{self, identity_from_header, Settings},
         identity,
         resolve::map_endpoint::MapEndpoint,
@@ -109,7 +109,7 @@ impl<T> profiles::OverrideDestination for Target<T> {
 }
 
 impl<T: http::settings::HasSettings> http::settings::HasSettings for Target<T> {
-    fn http_settings(&self) -> &http::Settings {
+    fn http_settings(&self) -> http::Settings {
         self.inner.http_settings()
     }
 }
@@ -170,12 +170,11 @@ impl HttpEndpoint {
             return false;
         }
 
+        // Look at the original settings, ignoring any authority overrides.
         match self.settings {
             http::Settings::Http2 => false,
             http::Settings::Http1 {
-                keep_alive: _,
-                wants_h1_upgrade,
-                was_absolute_form: _,
+                wants_h1_upgrade, ..
             } => !wants_h1_upgrade,
         }
     }
@@ -191,7 +190,7 @@ impl std::hash::Hash for HttpEndpoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.addr.hash(state);
         self.identity.hash(state);
-        self.settings.hash(state);
+        http::settings::HasSettings::http_settings(self).hash(state);
         // Ignore metadata.
     }
 }
@@ -209,8 +208,21 @@ impl connect::ConnectAddr for HttpEndpoint {
 }
 
 impl http::settings::HasSettings for HttpEndpoint {
-    fn http_settings(&self) -> &http::Settings {
-        &self.settings
+    fn http_settings(&self) -> http::Settings {
+        match self.settings {
+            Settings::Http1 {
+                keep_alive,
+                wants_h1_upgrade,
+                was_absolute_form,
+            } => Settings::Http1 {
+                keep_alive,
+                wants_h1_upgrade,
+                // Always use absolute form when an onverride is present.
+                was_absolute_form: self.metadata.authority_override().is_some()
+                    || was_absolute_form,
+            },
+            settings => settings,
+        }
     }
 }
 
@@ -288,26 +300,6 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
 impl ExtractAuthority<Target<HttpEndpoint>> for FromMetadata {
     fn extract(&self, target: &Target<HttpEndpoint>) -> Option<Authority> {
         target.inner.metadata.authority_override().cloned()
-    }
-}
-
-impl IntoAbsForm for Target<HttpEndpoint> {
-    fn into_abs_form(self) -> Self {
-        self.map(|inner| HttpEndpoint {
-            settings: match inner.settings {
-                Settings::Http1 {
-                    keep_alive,
-                    wants_h1_upgrade,
-                    ..
-                } => Settings::Http1 {
-                    keep_alive,
-                    wants_h1_upgrade,
-                    was_absolute_form: true,
-                },
-                http::Settings::Http2 => http::Settings::Http2,
-            },
-            ..inner
-        })
     }
 }
 
