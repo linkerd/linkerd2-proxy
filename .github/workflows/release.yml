@@ -22,7 +22,7 @@ jobs:
       - name: package
         env:
           CARGO_RELEASE: "1"
-          PACKAGE_VERSION: test-0.0.0 # ${{ steps.release-tag-meta.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.release-tag-meta.outputs.name }}
         uses: ./.github/actions/package
         with:
           entrypoint: make
