@@ -281,11 +281,14 @@ impl Config {
                 .push(DetectProtocolLayer::new(ProtocolDetect::new(
                     disable_protocol_detection_for_ports.clone(),
                 )))
-                // Terminate inbound mTLS from other outbound proxies.
+                // Terminates inbound mTLS from other outbound proxies.
                 .push(tls::AcceptTls::layer(
                     local_identity,
                     disable_protocol_detection_for_ports,
                 ))
+                // Limits the amount of time that the TCP server spends waiting for TLS handshake &
+                // protocol detection. Ensures that connections that never emit data are dropped
+                // eventually.
                 .push_timeout(detect_protocol_timeout);
 
             info!(listen.addr = %listen.listen_addr(), "Serving");
