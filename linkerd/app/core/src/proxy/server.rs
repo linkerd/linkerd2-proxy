@@ -168,7 +168,9 @@ where
                     .clone()
                     .into_service()
                     .oneshot((proto.tls, io))
-                    .map(|conn| Box::new(drain.watch(conn, |_| {}).map_err(Into::into)) as Self::Response);
+                    .map(|conn| {
+                        Box::new(drain.watch(conn, |_| {}).map_err(Into::into)) as Self::Response
+                    });
 
                 return Box::new(fwd.map_err(Into::into));
             }
