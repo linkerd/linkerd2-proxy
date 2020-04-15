@@ -60,6 +60,13 @@ impl<M: FmtMetrics> Admin<M> {
                 .expect("builder with known status code must not fail")
         }
     }
+
+    fn live_rsp(&self) -> Response<Body> {
+        Response::builder()
+            .status(StatusCode::OK)
+            .body("live\n".into())
+            .expect("builder with known status code must not fail")
+    }
 }
 
 impl<M: FmtMetrics> Service for Admin<M> {
@@ -73,6 +80,7 @@ impl<M: FmtMetrics> Service for Admin<M> {
             "/metrics" => Box::new(self.metrics.call(req)),
             "/proxy-log-level" => self.trace_level.call(req),
             "/ready" => Box::new(future::ok(self.ready_rsp())),
+            "/live" => Box::new(future::ok(self.live_rsp())),
             _ => Box::new(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
     }

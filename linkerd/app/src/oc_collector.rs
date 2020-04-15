@@ -8,7 +8,7 @@ use linkerd2_app_core::{
     Error,
 };
 use linkerd2_opencensus::{metrics, proto, SpanExporter};
-use std::time::SystemTime;
+use std::{collections::HashMap, time::SystemTime};
 use tokio::sync::mpsc;
 use tracing::debug;
 
@@ -17,6 +17,7 @@ pub enum Config {
     Disabled,
     Enabled {
         control: ControlConfig,
+        attributes: HashMap<String, String>,
         hostname: Option<String>,
     },
 }
@@ -46,7 +47,11 @@ impl Config {
     ) -> Result<OcCollector, Error> {
         match self {
             Config::Disabled => Ok(OcCollector::Disabled),
-            Config::Enabled { control, hostname } => {
+            Config::Enabled {
+                control,
+                hostname,
+                attributes,
+            } => {
                 let addr = control.addr;
                 let svc = svc::connect(control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity))
@@ -80,6 +85,7 @@ impl Config {
                         service_info: Some(oc::ServiceInfo {
                             name: Self::SERVICE_NAME.to_string(),
                         }),
+                        attributes,
                         ..oc::Node::default()
                     };
 

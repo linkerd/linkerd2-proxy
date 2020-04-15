@@ -102,35 +102,24 @@ impl Config {
                 })
                 .push(svc::layer::mk(tcp::Forward::new));
 
-            // Caches HTTP clients for each inbound port & HTTP settings.
-            let http_endpoint_cache = tcp_connect
+            // Creates HTTP clients for each inbound port & HTTP settings.
+            let http_endpoint = tcp_connect
                 .push(http::MakeClientLayer::new(connect.h2_settings))
                 .push(reconnect::layer({
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
                 }))
-                .into_new_service()
-                .cache(
-                    svc::layers().push_on_response(
-                        svc::layers()
-                            // If the service has been ready & unused for `cache_max_idle_age`,
-                            // fail it.
-                            .push_idle_timeout(cache_max_idle_age)
-                            // If the service has been unavailable for an extend time, eagerly
-                            // fail requests.
-                            .push_failfast(dispatch_timeout)
-                            // Shares the service, ensuring discovery errors are propagated.
-                            .push_spawn_buffer(buffer_capacity)
-                            .push(metrics.stack.layer(stack_labels("endpoint"))),
-                    ),
+                .push_on_response(
+                    svc::layers()
+                        // If the service has been ready & unused for `cache_max_idle_age`,
+                        // fail it.
+                        .push_idle_timeout(cache_max_idle_age)
+                        // If the service has been unavailable for an extend time, eagerly
+                        // fail requests.
+                        .push_failfast(dispatch_timeout)
+                        // Shares the service, ensuring discovery errors are propagated.
+                        .push_spawn_buffer(buffer_capacity),
                 )
-                .instrument(|ep: &HttpEndpoint| {
-                    info_span!(
-                        "endpoint",
-                        port = %ep.port,
-                        http = ?ep.settings,
-                    )
-                })
                 .check_service::<HttpEndpoint>();
 
             let http_target_observability = svc::layers()
@@ -155,7 +144,8 @@ impl Config {
                 .push(classify::Layer::new())
                 .check_new_clone_service::<dst::Route>();
 
-            let http_target_cache = http_endpoint_cache
+            // An HTTP client is created for each target via the endpoint stack.
+            let http_target_cache = http_endpoint
                 .push_map_target(HttpEndpoint::from)
                 // Normalizes the URI, i.e. if it was originally in
                 // absolute-form on the outbound side.

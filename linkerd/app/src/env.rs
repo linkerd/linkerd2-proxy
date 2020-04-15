@@ -7,6 +7,7 @@ use crate::core::{
 };
 use crate::{dns, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
@@ -83,6 +84,8 @@ pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUT
 
 pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
 pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
+
+pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
 /// Constrains which destination names are resolved through the destination
 /// service.
@@ -299,6 +302,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let hostname = strings.get(ENV_HOSTNAME);
 
+    let oc_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
+
     let trace_collector_addr = if id_disabled {
         parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
     } else {
@@ -495,7 +500,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 outbound.proxy.connect.clone()
             };
+
+            let attributes = oc_attributes_file_path
+                .map(|path| match path {
+                    Some(path) => oc_trace_attributes(path),
+                    None => HashMap::new(),
+                })
+                .unwrap_or_default();
+
             oc_collector::Config::Enabled {
+                attributes,
                 hostname: hostname?,
                 control: ControlConfig {
                     addr,
@@ -545,6 +559,33 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         outbound,
         inbound,
     })
+}
+
+fn oc_trace_attributes(oc_attributes_file_path: String) -> HashMap<String, String> {
+    match fs::read_to_string(oc_attributes_file_path.clone()) {
+        Ok(attributes_string) => convert_attributes_string_to_map(attributes_string),
+        Err(err) => {
+            warn!(
+                "could not read OC trace attributes file at {}: {}",
+                oc_attributes_file_path, err
+            );
+            HashMap::new()
+        }
+    }
+}
+
+fn convert_attributes_string_to_map(attributes: String) -> HashMap<String, String> {
+    attributes
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(2, "=");
+            parts.next().and_then(move |key| {
+                parts.next().map(move |val|
+                // Trim double quotes in value, present by default when attached through k8s downwardAPI
+                (key.to_string(), val.trim_matches('"').to_string()))
+            })
+        })
+        .collect()
 }
 
 fn default_disable_ports_protocol_detection() -> IndexSet<u16> {
@@ -1043,6 +1084,51 @@ mod tests {
     #[test]
     fn parse_duration_number_without_unit_is_invalid() {
         assert_eq!(parse_duration("1"), Err(ParseError::NotADuration));
+    }
+
+    #[test]
+    fn convert_attributes_string_to_map_different_values() {
+        let attributes_string = "\
+            cluster=\"test-cluster1\"\n\
+            rack=\"rack-22\"\n\
+            zone=us-est-coast\n\
+            linkerd.io/control-plane-component=\"controller\"\n\
+            linkerd.io/proxy-deployment=\"linkerd-controller\"\n\
+            workload=\n\
+            kind=\"\"\n\
+            key1=\"=\"\n\
+            key2==value2\n\
+            key3\n\
+            =key4\n\
+            "
+        .to_string();
+
+        let expected = [
+            ("cluster".to_string(), "test-cluster1".to_string()),
+            ("rack".to_string(), "rack-22".to_string()),
+            ("zone".to_string(), "us-est-coast".to_string()),
+            (
+                "linkerd.io/control-plane-component".to_string(),
+                "controller".to_string(),
+            ),
+            (
+                "linkerd.io/proxy-deployment".to_string(),
+                "linkerd-controller".to_string(),
+            ),
+            ("workload".to_string(), "".to_string()),
+            ("kind".to_string(), "".to_string()),
+            ("key1".to_string(), "=".to_string()),
+            ("key2".to_string(), "=value2".to_string()),
+            ("".to_string(), "key4".to_string()),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+
+        assert_eq!(
+            convert_attributes_string_to_map(attributes_string),
+            expected
+        );
     }
 
     #[test]

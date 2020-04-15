@@ -7,10 +7,14 @@ if [ $# -ne 1 ]; then
     exit 64
 fi
 
-VERSION=$1
+VERSION="$1"
+if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' ; then
+    echo "Expected M.N.P; got '$VERSION'" >&2
+    exit 64
+fi
 
 echo "$VERSION" > rust-toolchain
-sed -i'' -e "s/RUST_IMAGE=.*/RUST_IMAGE=rust:$VERSION-buster/" Dockerfile
+sed -i'' -Ee "s/rust:[0-9]+\.[0-9]+\.[0-9]+/rust:$VERSION/" Dockerfile
 
-find .github -name \*.yml \
-    -exec sed -i'' -e "s|docker://rust:.*|docker://rust:$VERSION-buster|" '{}' \;
+find .github -name \*.yml -or -name Dockerfile\* \
+    -exec sed -i'' -Ee "s|rust:[0-9]+\.[0-9]+\.[0-9]+|rust:$VERSION|" '{}' \;
