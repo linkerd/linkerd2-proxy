@@ -2,15 +2,19 @@ use super::{conditional_accept, ReasonForNoPeerName};
 use crate::io::{BoxedIo, PrefixedIo};
 use crate::listen::{self, Addrs};
 use bytes::BytesMut;
-use futures::{try_ready, Future, Poll};
+use futures_03::compat::{Compat01As03, Future01CompatExt};
 use indexmap::IndexSet;
 use linkerd2_conditional::Conditional;
 use linkerd2_dns_name as dns;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
 use linkerd2_proxy_core::listen::Accept;
+use pin_project::{pin_project, project};
 pub use rustls::ServerConfig as Config;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use tokio::net::TcpStream;
 use tracing::{debug, trace};
 
@@ -40,14 +44,21 @@ pub struct AcceptTls<A: Accept<Connection>, T> {
     skip_ports: Arc<IndexSet<u16>>,
 }
 
-pub enum AcceptFuture<A: Accept<Connection>> {
+#[pin_project]
+pub struct AcceptFuture<A: Accept<Connection>> {
+    #[pin]
+    state: AcceptState<A>,
+}
+
+#[pin_project]
+enum AcceptState<A: Accept<Connection>> {
     TryTls(Option<TryTls<A>>),
     TerminateTls(
-        tokio_rustls::Accept<PrefixedIo<TcpStream>>,
+        #[pin] Compat01As03<tokio_rustls::Accept<PrefixedIo<TcpStream>>>,
         Option<AcceptMeta<A>>,
     ),
     ReadyAccept(A, Option<Connection>),
-    Accept(A::Future),
+    Accept(#[pin] A::Future),
 }
 
 pub struct TryTls<A: Accept<Connection>> {
@@ -91,8 +102,10 @@ where
     type Error = Error;
     type Future = AcceptFuture<A>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.accept.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.accept
+            .poll_ready(cx)
+            .map(|poll| poll.map_err(Into::into))
     }
 
     fn call(&mut self, (addrs, socket): listen::Connection) -> Self::Future {
@@ -109,7 +122,7 @@ where
                     peer_identity: Conditional::None(*reason),
                 };
                 let conn = (meta, BoxedIo::new(socket));
-                AcceptFuture::Accept(self.accept.accept(conn))
+                AcceptFuture::accept(self.accept.accept(conn))
             }
 
             // Tls is enabled. Try to accept a Tls handshake.
@@ -123,43 +136,59 @@ where
                         addrs,
                     };
                     let conn = (meta, BoxedIo::new(socket));
-                    AcceptFuture::Accept(self.accept.accept(conn))
+                    AcceptFuture::accept(self.accept.accept(conn))
                 } else {
                     debug!("attempting TLS handshake");
                     let meta = AcceptMeta {
                         accept: self.accept.clone(),
                         addrs,
                     };
-                    AcceptFuture::TryTls(Some(TryTls {
+                    AcceptFuture::try_tls(TryTls {
                         meta,
                         socket,
                         peek_buf: BytesMut::with_capacity(Self::PEEK_CAPACITY),
                         config: tls.tls_server_config(),
                         server_name: tls.tls_server_name(),
-                    }))
+                    })
                 }
             }
         }
     }
 }
 
-impl<A: Accept<Connection>> Future for AcceptFuture<A> {
-    type Item = ();
-    type Error = Error;
+impl<A: Accept<Connection>> AcceptFuture<A> {
+    fn accept(f: A::Future) -> Self {
+        Self {
+            state: AcceptState::Accept(f),
+        }
+    }
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn try_tls(try_tls: TryTls<A>) -> Self {
+        Self {
+            state: AcceptState::TryTls(Some(try_tls)),
+        }
+    }
+}
+
+impl<A: Accept<Connection>> Future for AcceptFuture<A> {
+    type Output = Result<(), Error>;
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
         loop {
-            *self = match self {
-                AcceptFuture::Accept(ref mut future) => return future.poll().map_err(Into::into),
-                AcceptFuture::ReadyAccept(ref mut accept, ref mut conn) => {
-                    try_ready!(accept.poll_ready().map_err(Into::into));
-                    AcceptFuture::Accept(accept.accept(conn.take().expect("polled after complete")))
+            #[project]
+            match this.state.as_mut().project() {
+                AcceptState::Accept(future) => return future.poll(cx).map_err(Into::into),
+                AcceptState::ReadyAccept(accept, conn) => {
+                    futures_03::ready!(accept.poll_ready(cx).map_err(Into::into))?;
+                    let conn = accept.accept(conn.take().expect("polled after complete"));
+                    this.state.set(AcceptState::Accept(conn))
                 }
-                AcceptFuture::TryTls(ref mut try_tls) => {
-                    let match_ = try_ready!(try_tls
+                AcceptState::TryTls(ref mut try_tls) => {
+                    let match_ = futures_03::ready!(try_tls
                         .as_mut()
                         .expect("polled after complete")
-                        .poll_match_client_hello());
+                        .poll_match_client_hello(cx))?;
                     match match_ {
                         conditional_accept::Match::Matched => {
                             trace!("upgrading accepted connection to TLS");
@@ -171,10 +200,10 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                                 ..
                             } = try_tls.take().expect("polled after complete");
                             let io = PrefixedIo::new(peek_buf.freeze(), socket);
-                            AcceptFuture::TerminateTls(
-                                tokio_rustls::TlsAcceptor::from(config).accept(io),
+                            this.state.set(AcceptState::TerminateTls(
+                                tokio_rustls::TlsAcceptor::from(config).accept(io).compat(),
                                 Some(meta),
-                            )
+                            ));
                         }
 
                         conditional_accept::Match::NotMatched => {
@@ -195,7 +224,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                                 meta,
                                 BoxedIo::new(PrefixedIo::new(peek_buf.freeze(), socket)),
                             );
-                            AcceptFuture::ReadyAccept(accept, Some(conn))
+                            this.state.set(AcceptState::ReadyAccept(accept, Some(conn)))
                         }
 
                         conditional_accept::Match::Incomplete => {
@@ -203,8 +232,8 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                         }
                     }
                 }
-                AcceptFuture::TerminateTls(ref mut future, ref mut meta) => {
-                    let io = try_ready!(future.poll());
+                AcceptState::TerminateTls(future, meta) => {
+                    let io = futures_03::ready!(future.poll(cx))?;
                     let peer_identity =
                         client_identity(&io)
                             .map(Conditional::Some)
@@ -222,7 +251,10 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                         addrs,
                         peer_identity,
                     };
-                    AcceptFuture::ReadyAccept(accept, Some((meta, BoxedIo::new(io))))
+                    this.state.set(AcceptState::ReadyAccept(
+                        accept,
+                        Some((meta, BoxedIo::new(io))),
+                    ));
                 }
             }
         }
@@ -235,25 +267,30 @@ impl<A: Accept<Connection>> TryTls<A> {
     /// The buffer is matched for a Tls client hello message.
     ///
     /// `NotMatched` is returned if the underlying socket has closed.
-    fn poll_match_client_hello(&mut self) -> Poll<conditional_accept::Match, Error> {
+    fn poll_match_client_hello(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<conditional_accept::Match, Error>> {
         use crate::io::AsyncRead;
 
-        let sz = try_ready!(self
-            .socket
-            .read_buf(&mut self.peek_buf)
-            .map_err(Error::from));
+        let poll = task_compat::with_notify(cx, || {
+            self.socket
+                .read_buf(&mut self.peek_buf)
+                .map_err(Error::from)
+        });
+        let sz = futures_03::ready!(task_compat::poll_01_to_03(poll))?;
         trace!(%sz, "read");
         if sz == 0 {
             // XXX: It is ambiguous whether this is the start of a Tls handshake or not.
             // For now, resolve the ambiguity in favor of plaintext. TODO: revisit this
             // when we add support for Tls policy.
-            return Ok(conditional_accept::Match::NotMatched.into());
+            return Poll::Ready(Ok(conditional_accept::Match::NotMatched.into()));
         }
 
         let buf = self.peek_buf.as_ref();
         let m = conditional_accept::match_client_hello(buf, &self.server_name);
         trace!(sni = %self.server_name, r#match = ?m, "conditional_accept");
-        Ok(m.into())
+        Poll::Ready(Ok(m.into()))
     }
 }
 

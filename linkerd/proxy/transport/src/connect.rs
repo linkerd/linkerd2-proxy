@@ -1,5 +1,6 @@
-use futures::{try_ready, Future, Poll};
-use std::{io, net::SocketAddr, time::Duration};
+use futures_03::compat::{Compat01As03, Future01CompatExt};
+use std::task::{Context, Poll};
+use std::{future::Future, io, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::net::{tcp, TcpStream};
 use tracing::debug;
 
@@ -12,10 +13,12 @@ pub struct Connect {
     keepalive: Option<Duration>,
 }
 
+#[pin_project::pin_project]
 #[derive(Debug)]
 pub struct ConnectFuture {
     keepalive: Option<Duration>,
-    future: tcp::ConnectFuture,
+    #[pin]
+    future: Compat01As03<tcp::ConnectFuture>,
 }
 
 impl Connect {
@@ -29,32 +32,33 @@ impl<C: ConnectAddr> tower::Service<C> for Connect {
     type Error = io::Error;
     type Future = ConnectFuture;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, c: C) -> Self::Future {
         let keepalive = self.keepalive;
         let addr = c.connect_addr();
         debug!(peer.addr = %addr, "Connecting");
-        let future = TcpStream::connect(&addr);
+        let future = TcpStream::connect(&addr).compat();
         ConnectFuture { future, keepalive }
     }
 }
 
 impl Future for ConnectFuture {
-    type Item = TcpStream;
-    type Error = io::Error;
+    type Output = Result<TcpStream, io::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let io = try_ready!(self.future.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let io = futures_03::ready!(this.future.poll(cx))?;
+        let keepalive = this.keepalive.take();
         super::set_nodelay_or_warn(&io);
-        super::set_keepalive_or_warn(&io, self.keepalive);
+        super::set_keepalive_or_warn(&io, keepalive);
         debug!(
             local.addr = %io.local_addr().expect("cannot load local addr"),
-            keepalive = ?self.keepalive,
+            ?keepalive,
             "Connected",
         );
-        Ok(io.into())
+        Poll::Ready(Ok(io.into()))
     }
 }

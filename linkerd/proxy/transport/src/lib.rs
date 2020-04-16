@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+// #![deny(warnings, rust_2018_idioms)]
 
 use std::time::Duration;
 use tokio::net::TcpStream;

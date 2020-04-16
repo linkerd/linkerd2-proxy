@@ -34,26 +34,26 @@ impl<R> FromResolve<R> {
     }
 }
 
-impl<T, R> tower::Service<T> for FromResolve<R>
-where
-    R: Resolve<T> + Clone,
-{
-    type Response = Discover<R::Resolution>;
-    type Error = R::Error;
-    type Future = DiscoverFuture<R::Future>;
+// impl<T, R> tower::Service<T> for FromResolve<R>
+// where
+//     R: Resolve<T> + Clone,
+// {
+//     type Response = Discover<R::Resolution>;
+//     type Error = R::Error;
+//     type Future = DiscoverFuture<R::Future>;
 
-    #[inline]
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.resolve.poll_ready()
-    }
+//     #[inline]
+//     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+//         self.resolve.poll_ready()
+//     }
 
-    #[inline]
-    fn call(&mut self, target: T) -> Self::Future {
-        Self::Future {
-            future: self.resolve.resolve(target),
-        }
-    }
-}
+//     #[inline]
+//     fn call(&mut self, target: T) -> Self::Future {
+//         Self::Future {
+//             future: self.resolve.resolve(target),
+//         }
+//     }
+// }
 
 // === impl DiscoverFuture ===
 
@@ -83,36 +83,36 @@ impl<R: Resolution> Discover<R> {
     }
 }
 
-impl<R: Resolution> tower::discover::Discover for Discover<R> {
-    type Key = SocketAddr;
-    type Service = R::Endpoint;
-    type Error = R::Error;
+// impl<R: Resolution> tower::discover::Discover for Discover<R> {
+//     type Key = SocketAddr;
+//     type Service = R::Endpoint;
+//     type Error = R::Error;
 
-    fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
-        loop {
-            if let Some(change) = self.pending.pop_front() {
-                return Ok(change.into());
-            }
+//     fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
+//         loop {
+//             if let Some(change) = self.pending.pop_front() {
+//                 return Ok(change.into());
+//             }
 
-            match try_ready!(self.resolution.poll()) {
-                Update::Add(endpoints) => {
-                    for (addr, endpoint) in endpoints.into_iter() {
-                        self.active.insert(addr);
-                        self.pending.push_back(Change::Insert(addr, endpoint));
-                    }
-                }
-                Update::Remove(addrs) => {
-                    for addr in addrs.into_iter() {
-                        if self.active.remove(&addr) {
-                            self.pending.push_back(Change::Remove(addr));
-                        }
-                    }
-                }
-                Update::DoesNotExist | Update::Empty => {
-                    self.pending
-                        .extend(self.active.drain(..).map(Change::Remove));
-                }
-            }
-        }
-    }
-}
+//             match try_ready!(self.resolution.poll()) {
+//                 Update::Add(endpoints) => {
+//                     for (addr, endpoint) in endpoints.into_iter() {
+//                         self.active.insert(addr);
+//                         self.pending.push_back(Change::Insert(addr, endpoint));
+//                     }
+//                 }
+//                 Update::Remove(addrs) => {
+//                     for addr in addrs.into_iter() {
+//                         if self.active.remove(&addr) {
+//                             self.pending.push_back(Change::Remove(addr));
+//                         }
+//                     }
+//                 }
+//                 Update::DoesNotExist | Update::Empty => {
+//                     self.pending
+//                         .extend(self.active.drain(..).map(Change::Remove));
+//                 }
+//             }
+//         }
+//     }
+// }

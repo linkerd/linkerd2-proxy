@@ -88,7 +88,7 @@ where
 }
 
 // === impl ResolveFuture ===
-
+/*
 impl<S> resolve::Resolution for Resolution<S>
 where
     S: GrpcService<BoxBody>,
@@ -142,3 +142,4 @@ where
         }
     }
 }
+*/

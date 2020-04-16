@@ -54,11 +54,11 @@ impl<L: Clone, C> tower::layer::Layer<C> for ConnectLayer<L> {
 // === impl Connect ===
 
 /// impl MakeConnection
-impl<L, C, T> tower::Service<T> for Connect<L, C>
+impl<L, C, T> tower_01::Service<T> for Connect<L, C>
 where
     T: super::HasPeerIdentity,
     L: HasConfig + Clone,
-    C: tower::MakeConnection<T, Connection = TcpStream>,
+    C: tower_01::MakeConnection<T, Connection = TcpStream>,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,
     C::Error: From<io::Error>,

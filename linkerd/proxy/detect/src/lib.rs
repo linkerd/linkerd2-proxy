@@ -1,4 +1,4 @@
-use futures::{try_ready, Future, Poll};
+/* use futures::{try_ready, Future, Poll}; */
 use linkerd2_error::Error;
 use linkerd2_io::{BoxedIo, Peek};
 use linkerd2_proxy_core as core;
@@ -61,7 +61,7 @@ impl<D, A> Accept<D, A> {
         self
     }
 }
-
+/*
 impl<T, D, A> tower::Service<(T, BoxedIo)> for Accept<D, A>
 where
     D: Detect<T>,
@@ -125,3 +125,4 @@ where
         }
     }
 }
+*/

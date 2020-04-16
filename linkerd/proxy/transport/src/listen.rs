@@ -1,6 +1,6 @@
-use futures::{try_ready, Poll};
 use linkerd2_proxy_core::listen;
 use std::net::SocketAddr;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::reactor;
@@ -108,7 +108,7 @@ where
         self.listen_addr
     }
 
-    fn poll_accept(&mut self) -> Poll<Self::Connection, Self::Error> {
+    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<Result<Self::Connection, Self::Error>> {
         loop {
             self.state = match self.state {
                 State::Init(ref mut std) => {
@@ -125,7 +125,8 @@ where
                     State::Bound(listener)
                 }
                 State::Bound(ref mut listener) => {
-                    let (tcp, peer_addr) = try_ready!(listener.poll_accept());
+                    let poll = task_compat::with_notify(cx, || listener.poll_accept());
+                    let (tcp, peer_addr) = futures_03::ready!(task_compat::poll_01_to_03(poll))?;
                     let orig_dst = self.orig_dst_addr.orig_dst_addr(&tcp);
                     trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "accepted");
                     // TODO: On Linux and most other platforms it would be better
@@ -139,7 +140,7 @@ where
 
                     let addrs = Addrs::new(tcp.local_addr()?, peer_addr, orig_dst);
 
-                    return Ok((addrs, tcp).into());
+                    return Poll::Ready(Ok((addrs, tcp)));
                 }
             };
         }
