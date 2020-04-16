@@ -5,6 +5,8 @@
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
 
+use futures::future::Future as _;
+use futures_03::{compat::Future01CompatExt, FutureExt};
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
 use linkerd2_proxy_core::listen::{Accept, Bind as _Bind, Listen as CoreListen};
@@ -15,18 +17,23 @@ use linkerd2_proxy_transport::tls::{
     Conditional,
 };
 use linkerd2_proxy_transport::{connect, Bind, Listen};
+use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
-use tokio::{self, io, prelude::*};
-use tower::{layer::Layer, ServiceExt};
+use tokio::{
+    self,
+    io::{self, AsyncRead, AsyncWrite},
+};
+use tower::layer::Layer;
+use tower::ServiceExt;
 use tower_util::service_fn;
 
 #[test]
 fn plaintext() {
     let (client_result, server_result) = run_test(
         Conditional::None(tls::ReasonForNoIdentity::Disabled),
-        |conn| write_then_read(conn, PING),
+        |conn| write_then_read(conn, PING).compat(),
         Conditional::None(tls::ReasonForNoIdentity::Disabled),
-        |(_, conn)| read_then_write(conn, PING.len(), PONG),
+        |(_, conn)| read_then_write(conn, PING.len(), PONG).compat(),
     );
     assert_eq!(client_result.is_tls(), false);
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -40,9 +47,9 @@ fn proxy_to_proxy_tls_works() {
     let client_tls = test_util::BAR_NS1.validate().unwrap();
     let (client_result, server_result) = run_test(
         Conditional::Some((client_tls, server_tls.tls_server_name())),
-        |conn| write_then_read(conn, PING),
+        |conn| write_then_read(conn, PING).compat(),
         Conditional::Some(server_tls),
-        |(_, conn)| read_then_write(conn, PING.len(), PONG),
+        |(_, conn)| read_then_write(conn, PING.len(), PONG).compat(),
     );
     assert_eq!(client_result.is_tls(), true);
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -61,9 +68,9 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
 
     let (client_result, server_result) = run_test(
         Conditional::Some((client_tls, client_target)),
-        |conn| write_then_read(conn, PING),
+        |conn| write_then_read(conn, PING).compat(),
         Conditional::Some(server_tls),
-        |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
+        |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG).compat(),
     );
 
     // The server's connection will succeed with the TLS client hello passed
@@ -105,11 +112,11 @@ fn run_test<C, CF, CR, S, SF, SR>(
 where
     // Client
     C: FnOnce(ClientConnection) -> CF + Clone + Send + 'static,
-    CF: Future<Item = CR, Error = io::Error> + Send + 'static,
+    CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
     S: Fn(ServerConnection) -> SF + Clone + Send + 'static,
-    SF: Future<Item = SR, Error = io::Error> + Send + 'static,
+    SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
     {
@@ -138,15 +145,16 @@ where
         // tests to run at once, which wouldn't work if they all were bound on
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-        let listen = Bind::new(addr, None).bind().expect("must bind");
+        let mut listen = Bind::new(addr, None).bind().expect("must bind");
         let listen_addr = listen.listen_addr();
-
-        let accept = AcceptTls::new(
+        let mut accept = AcceptTls::new(
             server_tls,
             service_fn(move |(meta, conn): ServerConnection| {
+                let server = server.clone();
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());
-                server((meta, conn)).then(move |result| {
+                async move {
+                    let result = server((meta, conn)).await;
                     sender
                         .send(Transported {
                             peer_identity,
@@ -155,11 +163,16 @@ where
                         .expect("send result");
                     let ok: Result<(), Never> = Ok(());
                     ok
-                })
+                }
             }),
         );
-        let server = Server::Init { listen, accept };
-
+        let server = async move {
+            let accept = accept.ready_and().await.expect("accept failed");
+            let conn = futures_03::future::poll_fn(|cx| listen.poll_accept(cx))
+                .await
+                .expect("listen failed");
+            accept.accept(conn).await.expect("connection failed")
+        };
         (server, listen_addr, receiver)
     };
 
@@ -172,34 +185,38 @@ where
         let sender_clone = sender.clone();
 
         let peer_identity = Some(client_target_name.clone());
-        let client = tls::ConnectLayer::new(client_tls)
-            .layer(connect::Connect::new(None))
-            .oneshot(Target(server_addr, client_target_name))
-            .map_err(move |e| {
-                sender_clone
-                    .send(Transported {
-                        peer_identity: None,
-                        result: Err(e),
-                    })
-                    .expect("send result");
-                ()
-            })
-            .and_then(move |conn| {
-                client(conn).then(move |result| {
+        let client = async move {
+            let conn = tls::ConnectLayer::new(client_tls)
+                .layer(connect::Connect::new(None))
+                .oneshot(Target(server_addr, client_target_name))
+                .await;
+            match conn {
+                Err(e) => {
+                    sender_clone
+                        .send(Transported {
+                            peer_identity: None,
+                            result: Err(e),
+                        })
+                        .expect("send result");
+                }
+                Ok(conn) => {
+                    let result = client(conn).await;
                     sender
                         .send(Transported {
                             peer_identity,
                             result,
                         })
                         .expect("send result");
-                    Ok(())
-                })
-            });
+                }
+            };
+        };
 
         (client, receiver)
     };
 
-    tokio::run(server.join(client).map(|_| ()));
+    tokio_compat::runtime::current_thread::run_std(
+        futures_03::future::join(server, client).map(|_| ()),
+    );
 
     let client_result = client_result.try_recv().expect("client complete");
 
@@ -216,7 +233,7 @@ where
 fn write_then_read(
     conn: impl AsyncRead + AsyncWrite,
     to_write: &'static [u8],
-) -> impl Future<Item = Vec<u8>, Error = io::Error> {
+) -> impl futures::future::Future<Item = Vec<u8>, Error = io::Error> {
     write_and_shutdown(conn, to_write)
         .and_then(|conn| io::read_to_end(conn, Vec::new()))
         .map(|(_conn, r)| r)
@@ -228,7 +245,7 @@ fn read_then_write(
     conn: impl AsyncRead + AsyncWrite,
     read_prefix_len: usize,
     to_write: &'static [u8],
-) -> impl Future<Item = Vec<u8>, Error = io::Error> {
+) -> impl futures::future::Future<Item = Vec<u8>, Error = io::Error> {
     io::read_exact(conn, vec![0; read_prefix_len])
         .and_then(move |(conn, r)| write_and_shutdown(conn, to_write).map(|_conn| r))
 }
@@ -237,7 +254,7 @@ fn read_then_write(
 fn write_and_shutdown<T: AsyncRead + AsyncWrite>(
     conn: T,
     to_write: &'static [u8],
-) -> impl Future<Item = T, Error = io::Error> {
+) -> impl futures::future::Future<Item = T, Error = io::Error> {
     io::write_all(conn, to_write).and_then(|(mut conn, _)| {
         conn.shutdown()?;
         Ok(conn)
@@ -264,38 +281,6 @@ struct Target(SocketAddr, Conditional<Name>);
 
 #[derive(Clone)]
 struct ClientTls(CrtKey);
-
-impl<A: Accept<ServerConnection> + Clone> Future for Server<A> {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            *self = match self {
-                Server::Init {
-                    ref mut listen,
-                    ref mut accept,
-                } => {
-                    match Accept::poll_ready(accept) {
-                        Ok(Async::Ready(())) => {}
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Err(_) => panic!("accept failed"),
-                    }
-                    let conn = match listen.poll_accept() {
-                        Ok(Async::Ready(conn)) => conn,
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Err(_) => panic!("listener failed"),
-                    };
-                    Server::Serving(accept.accept(conn))
-                }
-                Server::Serving(ref mut fut) => match fut.poll() {
-                    Ok(ready) => return Ok(ready),
-                    Err(_) => panic!("connection failed"),
-                },
-            }
-        }
-    }
-}
 
 impl connect::ConnectAddr for Target {
     fn connect_addr(&self) -> SocketAddr {

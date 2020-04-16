@@ -40,31 +40,31 @@ impl<M, R> Resolve<M, R> {
     }
 }
 
-impl<T, M, R> tower::Service<T> for Resolve<M, R>
-where
-    T: Clone,
-    R: resolve::Resolve<T>,
-    M: MapEndpoint<T, R::Endpoint> + Clone,
-{
-    type Response = Resolution<T, M, R::Resolution>;
-    type Error = R::Error;
-    type Future = ResolveFuture<T, R::Future, M>;
+// impl<T, M, R> tower::Service<T> for Resolve<M, R>
+// where
+//     T: Clone,
+//     R: resolve::Resolve<T>,
+//     M: MapEndpoint<T, R::Endpoint> + Clone,
+// {
+//     type Response = Resolution<T, M, R::Resolution>;
+//     type Error = R::Error;
+//     type Future = ResolveFuture<T, R::Future, M>;
 
-    #[inline]
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.resolve.poll_ready()
-    }
+//     #[inline]
+//     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+//         self.resolve.poll_ready()
+//     }
 
-    #[inline]
-    fn call(&mut self, target: T) -> Self::Future {
-        let future = self.resolve.resolve(target.clone());
-        Self::Future {
-            future,
-            target: Some(target),
-            map: Some(self.map.clone()),
-        }
-    }
-}
+//     #[inline]
+//     fn call(&mut self, target: T) -> Self::Future {
+//         let future = self.resolve.resolve(target.clone());
+//         Self::Future {
+//             future,
+//             target: Some(target),
+//             map: Some(self.map.clone()),
+//         }
+//     }
+// }
 
 // === impl ResolveFuture ===
 
