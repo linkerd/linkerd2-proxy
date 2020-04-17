@@ -1,6 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{future::Shared, FutureExt, TryFutureExt};
+use futures::{future::Shared, FutureExt};
 use linkerd2_error::Never;
 use pin_project::pin_project;
 use std::future::Future;
@@ -15,13 +15,15 @@ use tokio::sync::{mpsc, oneshot};
 pub fn channel() -> (Signal, Watch) {
     let (tx, rx) = oneshot::channel();
     let (drained_tx, drained_rx) = mpsc::channel(0);
-    (
-        Signal { drained_rx, tx },
-        Watch {
-            drained_tx,
-            rx: rx.map_err((|_| ()) as fn(_) -> _).shared(),
-        },
-    )
+
+    // Since `FutureExt::shared` requires the future's `Output` type to
+    // implement `Clone`, and `oneshot::RecvError` does not, just map the
+    // `Output` to `()`. The behavior is the same regardless of whether the
+    // drain is explicitly signalled or the `Signal` type is thrown away, so
+    // we don't care whether this is an error or not.
+    let rx = rx.map((|_| ()) as fn(_) -> _).shared();
+
+    (Signal { drained_rx, tx }, Watch { drained_tx, rx })
 }
 
 /// Send a drain command to all watchers.
@@ -43,9 +45,9 @@ pub struct Watch {
     #[pin]
     drained_tx: mpsc::Sender<Never>,
     rx: Shared<
-        futures::future::MapErr<
+        futures::future::Map<
             oneshot::Receiver<()>,
-            fn(tokio::sync::oneshot::error::RecvError) -> (),
+            fn(Result<(), tokio::sync::oneshot::error::RecvError>) -> (),
         >,
     >,
 }
@@ -102,7 +104,7 @@ impl Watch {
     /// complete. However, like `Watch::watch`, the `Drained` future returned
     /// by calling `drain` on the corresponding `Signal` will not complete until
     /// the wrapped future finishes.
-    pub async fn with<A>(self, future: A) -> A::Output
+    pub async fn after<A>(self, future: A) -> A::Output
     where
         A: Future,
     {
