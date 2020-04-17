@@ -265,17 +265,6 @@ const PING: &[u8] = b"ping";
 const PONG: &[u8] = b"pong";
 const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 
-enum Server<A: Accept<ServerConnection>>
-where
-    AcceptTls<A, CrtKey>: Accept<<Listen as CoreListen>::Connection>,
-{
-    Init {
-        listen: Listen,
-        accept: AcceptTls<A, CrtKey>,
-    },
-    Serving(<AcceptTls<A, CrtKey> as Accept<<Listen as CoreListen>::Connection>>::Future),
-}
-
 #[derive(Clone)]
 struct Target(SocketAddr, Conditional<Name>);
 

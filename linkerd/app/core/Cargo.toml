@@ -64,14 +64,14 @@ regex = "1.0.0"
 tokio = "0.1.14"
 tokio-timer = "0.2"
 tokio-compat = "0.1"
-tower = "0.1"
+tower = { version = "0.3", features = ["full"] }
 tower-balance = { git = "https://github.com/tower-rs/tower" }
 tower-load = { git = "https://github.com/tower-rs/tower" }
 tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
 tower-spawn-ready = { git = "https://github.com/tower-rs/tower" }
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 tracing = "0.1.9"
-tracing-futures = "0.1"
+tracing-futures = { version = "0.2", features = ["futures-01"] }
 tracing-log = "0.1"
 futures_03 = { package = "futures", version = "0.3", features = ["compat"] }
 [dependencies.tracing-subscriber]

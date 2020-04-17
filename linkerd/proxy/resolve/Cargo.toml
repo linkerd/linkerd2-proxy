@@ -14,5 +14,6 @@ linkerd2-error = { path = "../../error" }
 linkerd2-proxy-core = { path = "../core" }
 indexmap = "1.0"
 tokio = "0.1"
-tower = "0.1"
+tower = "0.3"
 tracing = "0.1"
+pin-project = "0.4"

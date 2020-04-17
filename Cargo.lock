@@ -791,14 +791,14 @@ dependencies = [
  "tokio 0.1.22",
  "tokio-compat",
  "tokio-timer",
- "tower 0.1.1",
+ "tower 0.3.1",
  "tower-balance",
  "tower-grpc",
  "tower-load 0.1.0",
  "tower-request-modifier",
  "tower-spawn-ready",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.3",
  "tracing-log",
  "tracing-subscriber",
 ]
@@ -1263,8 +1263,9 @@ dependencies = [
  "indexmap",
  "linkerd2-error",
  "linkerd2-proxy-core",
+ "pin-project",
  "tokio 0.1.22",
- "tower 0.1.1",
+ "tower 0.3.1",
  "tracing",
 ]
 
@@ -3122,6 +3123,7 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58b0b7fd92dc7b71f29623cc6836dd7200f32161a2313dd78be233a8405694f6"
 dependencies = [
+ "futures 0.1.26",
  "pin-project",
  "tracing",
 ]
