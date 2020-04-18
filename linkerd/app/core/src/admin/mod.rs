@@ -4,12 +4,15 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{svc, transport::tls::accept::Connection};
-use futures::{future, Future, Poll};
+use futures::{future, Future};
+use futures_03::{compat::Future01CompatExt, FutureExt};
 use http::StatusCode;
 use hyper::service::{service_fn, Service};
 use hyper::{Body, Request, Response};
 use linkerd2_metrics::{self as metrics, FmtMetrics};
 use std::io;
+use std::pin::Pin;
+use std::task::{self, Context};
 
 mod readiness;
 mod trace_level;
@@ -69,7 +72,7 @@ impl<M: FmtMetrics> Service for Admin<M> {
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         match req.uri().path() {
-            "/metrics" => Box::new(self.metrics.call(req)),
+            "/metrics" => Box::new(self.metrics.call(req).compat()),
             "/proxy-log-level" => self.trace_level.call(req),
             "/ready" => Box::new(future::ok(self.ready_rsp())),
             _ => Box::new(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
@@ -80,9 +83,11 @@ impl<M: FmtMetrics> Service for Admin<M> {
 impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
     type Response = ();
     type Error = hyper::error::Error;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
+    type Future = Pin<
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>,
+    >;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> task::Poll<Result<(), Self::Error>> {
         Ok(().into())
     }
 
@@ -94,7 +99,7 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
         let mut svc = self.0.clone();
         let svc = service_fn(move |mut req| {
             req.extensions_mut().insert(ClientAddr(peer));
-            svc.call(req)
+            svc.call(req).compat()
         });
         Box::new(self.1.serve_connection(io, svc))
     }

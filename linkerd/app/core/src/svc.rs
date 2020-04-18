@@ -11,10 +11,11 @@ pub use linkerd2_stack::{self as stack, layer, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;
 use std::time::Duration;
-use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::layer::Layer;
+use tower::layer::{Identity, Stack as Pair};
 pub use tower::util::{Either, Oneshot};
-pub use tower::{service_fn as mk, MakeConnection, MakeService, Service, ServiceExt};
+pub use tower::{service_fn as mk, Service, ServiceExt};
+pub use tower_make::MakeService;
 use tower_spawn_ready::SpawnReadyLayer;
 
 #[derive(Clone, Debug)]
@@ -249,15 +250,15 @@ impl<S> Stack<S> {
         self.push(http::insert::target::layer())
     }
 
-    pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
-    where
-        T: Eq + std::hash::Hash,
-        S: NewService<T> + Clone,
-        L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
-        L::Service: NewService<T, Service = U>,
-    {
-        self.push(cache::CacheLayer::new(track))
-    }
+    // pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
+    // where
+    //     T: Eq + std::hash::Hash,
+    //     S: NewService<T> + Clone,
+    //     L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
+    //     L::Service: NewService<T, Service = U>,
+    // {
+    //     self.push(cache::CacheLayer::new(track))
+    // }
 
     pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<stack::Fallback<S, F>> {
         self.push(stack::FallbackLayer::new(fallback))
@@ -382,17 +383,27 @@ where
 pub mod make_response {
     use super::Oneshot;
     use crate::Error;
-    use futures::{try_ready, Future, Poll};
-
+    use futures_03::TryFuture;
+    use pin_project::{pin_project, project};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
     #[derive(Copy, Clone, Debug)]
     pub struct Layer;
 
     #[derive(Clone, Debug)]
     pub struct MakeResponse<M>(M);
 
-    pub enum ResponseFuture<F, S: tower::Service<()>> {
-        Make(F),
-        Respond(Oneshot<S, ()>),
+    #[pin_project]
+    pub struct ResponseFuture<F, S: tower::Service<()>> {
+        #[pin]
+        state: State<F, S>,
+    }
+
+    #[pin_project]
+    enum State<F, S: tower::Service<()>> {
+        Make(#[pin] F),
+        Respond(#[pin] Oneshot<S, ()>),
     }
 
     impl<S> super::Layer<S> for Layer {
@@ -405,7 +416,7 @@ pub mod make_response {
 
     impl<T, M> tower::Service<T> for MakeResponse<M>
     where
-        M: tower::MakeService<T, ()>,
+        M: tower_make::MakeService<T, ()>,
         M::MakeError: Into<Error>,
         M::Error: Into<Error>,
     {
@@ -413,8 +424,8 @@ pub mod make_response {
         type Error = Error;
         type Future = ResponseFuture<M::Future, M::Service>;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.0.poll_ready().map_err(Into::into)
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.0.poll_ready(cx).map_err(Into::into)
         }
 
         fn call(&mut self, req: T) -> Self::Future {
@@ -424,22 +435,24 @@ pub mod make_response {
 
     impl<F, S> Future for ResponseFuture<F, S>
     where
-        F: Future<Item = S>,
+        F: TryFuture<Ok = S>,
         F::Error: Into<Error>,
         S: tower::Service<()>,
         S::Error: Into<Error>,
     {
-        type Item = S::Response;
-        type Error = Error;
+        type Output = Result<S::Response, Error>;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        #[project]
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let this = self.project();
             loop {
-                *self = match self {
-                    ResponseFuture::Make(ref mut fut) => {
-                        let svc = try_ready!(fut.poll().map_err(Into::into));
-                        ResponseFuture::Respond(Oneshot::new(svc, ()))
+                #[project]
+                match this.state.as_mut().project() {
+                    State::Make(fut) => {
+                        let svc = futures_03::ready!(fut.poll(cx).map_err(Into::into))?;
+                        this.state.set(State::Respond(Oneshot::new(svc, ())))
                     }
-                    ResponseFuture::Respond(ref mut fut) => return fut.poll().map_err(Into::into),
+                    State::Respond(fut) => return fut.poll(cx).map_err(Into::into),
                 }
             }
         }

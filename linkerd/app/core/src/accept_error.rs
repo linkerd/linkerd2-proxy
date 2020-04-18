@@ -1,6 +1,7 @@
-use futures::{future, Future, Poll};
+use futures_03::{future, FutureExt};
 use linkerd2_error::{Error, Never};
 use linkerd2_proxy_core::listen::Accept;
+use std::task::{Context, Poll};
 use tracing;
 
 pub struct AcceptError<A>(A);
@@ -20,19 +21,18 @@ where
 {
     type Response = ();
     type Error = Never;
-    type Future =
-        future::Then<A::Future, Result<(), Never>, fn(Result<(), A::Error>) -> Result<(), Never>>;
+    type Future = future::Map<A::Future, fn(Result<(), A::Error>) -> Result<(), Never>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Ok(self
             .0
-            .poll_ready()
+            .poll_ready(cx)
             .map_err(Into::into)
             .expect("poll_ready must never fail on accept"))
     }
 
     fn call(&mut self, sock: T) -> Self::Future {
-        self.0.accept(sock).then(|v| {
+        self.0.accept(sock).map(|v| {
             if let Err(e) = v {
                 let error: Error = e.into();
                 tracing::debug!(%error, "Connection failed");

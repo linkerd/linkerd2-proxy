@@ -135,7 +135,7 @@ where
 {
     type Response = ();
     type Error = Error;
-    type Future = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
+    type Future = Pin<Box<dyn Future<Item = (), Error = Error> + Send + 'static>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into())

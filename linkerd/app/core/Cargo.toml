@@ -65,6 +65,7 @@ tokio = "0.1.14"
 tokio-timer = "0.2"
 tokio-compat = "0.1"
 tower = { version = "0.3", features = ["full"] }
+tower-make = "0.3"
 tower-balance = { git = "https://github.com/tower-rs/tower" }
 tower-load = { git = "https://github.com/tower-rs/tower" }
 tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
@@ -74,6 +75,7 @@ tracing = "0.1.9"
 tracing-futures = { version = "0.2", features = ["futures-01"] }
 tracing-log = "0.1"
 futures_03 = { package = "futures", version = "0.3", features = ["compat"] }
+pin-project = "0.4"
 [dependencies.tracing-subscriber]
 version = "0.2.1"
 # we don't need `chrono` time formatting

@@ -783,6 +783,7 @@ dependencies = [
  "linkerd2-test-util",
  "linkerd2-timeout",
  "linkerd2-trace-context",
+ "pin-project",
  "procinfo",
  "prost-types",
  "quickcheck",
@@ -795,6 +796,7 @@ dependencies = [
  "tower-balance",
  "tower-grpc",
  "tower-load 0.1.0",
+ "tower-make",
  "tower-request-modifier",
  "tower-spawn-ready",
  "tracing",
@@ -2934,6 +2936,15 @@ dependencies = [
  "futures-core",
  "pin-project",
  "tower-layer 0.3.0",
+ "tower-service 0.3.0",
+]
+
+[[package]]
+name = "tower-make"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce50370d644a0364bf4877ffd4f76404156a248d104e2cc234cd391ea5cdc965"
+dependencies = [
  "tower-service 0.3.0",
 ]
 
