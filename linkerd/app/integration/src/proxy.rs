@@ -264,20 +264,20 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
-                        let on_shutdown = futures::poll_fn(move || {
+                        let on_shutdown = futures::future::poll_fn::<(), (), _>(move || {
                             if let Some((tx, addrs)) = running.take() {
                                 let _ = tx.send(addrs);
                             }
 
-                            try_ready!(rx.poll());
+                            try_ready!(rx.poll().map_err(|_| ()));
                             debug!("shutdown");
                             Ok(().into())
                         });
 
                         let drain = main.spawn();
-                        on_shutdown.and_then(move |()| drain.drain()).compat().await
-                    })
-                    .expect("proxy");
+                        on_shutdown.compat().await.expect("proxy");
+                        drain.drain().await;
+                    });
             })
         })
         .expect("spawn");
