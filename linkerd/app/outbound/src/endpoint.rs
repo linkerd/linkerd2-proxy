@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::overwrite_authority::ExtractAuthority,
+        http::overwrite_authority::CanOverrideAuthority,
         http::{self, identity_from_header, Settings},
         identity,
         resolve::map_endpoint::MapEndpoint,
@@ -297,9 +297,9 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
     }
 }
 
-impl ExtractAuthority<Target<HttpEndpoint>> for FromMetadata {
-    fn extract(&self, target: &Target<HttpEndpoint>) -> Option<Authority> {
-        target.inner.metadata.authority_override().cloned()
+impl CanOverrideAuthority for Target<HttpEndpoint> {
+    fn override_authority(&self) -> Option<Authority> {
+        self.inner.metadata.authority_override().cloned()
     }
 }
 
