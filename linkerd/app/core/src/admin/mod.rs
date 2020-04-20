@@ -72,7 +72,7 @@ impl<M: FmtMetrics> Service for Admin<M> {
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         match req.uri().path() {
-            "/metrics" => Box::new(self.metrics.call(req).compat()),
+            "/metrics" => Box::new(self.metrics.call(req)),
             "/proxy-log-level" => self.trace_level.call(req),
             "/ready" => Box::new(future::ok(self.ready_rsp())),
             _ => Box::new(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
@@ -88,7 +88,7 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
     >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> task::Poll<Result<(), Self::Error>> {
-        Ok(().into())
+        task::Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, (meta, io): Connection) -> Self::Future {
@@ -99,9 +99,9 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
         let mut svc = self.0.clone();
         let svc = service_fn(move |mut req| {
             req.extensions_mut().insert(ClientAddr(peer));
-            svc.call(req).compat()
+            svc.call(req)
         });
-        Box::new(self.1.serve_connection(io, svc))
+        Box::pin(self.1.serve_connection(io, svc).compat())
     }
 }
 

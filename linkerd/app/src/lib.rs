@@ -1,16 +1,16 @@
 //! Configures and executes the proxy
 
-#![deny(warnings, rust_2018_idioms)]
+// #![deny(warnings, rust_2018_idioms)]
 
 pub mod admin;
-pub mod dst;
+// pub mod dst;
 pub mod env;
-pub mod identity;
-pub mod metrics;
-pub mod oc_collector;
+// pub mod identity;
+// pub mod metrics;
+// pub mod oc_collector;
 pub mod tap;
 
-use self::metrics::Metrics;
+// use self::metrics::Metrics;
 use futures::{future, Async, Future};
 use futures_03::TryFutureExt;
 pub use linkerd2_app_core::{self as core, trace};
@@ -45,10 +45,10 @@ pub struct Config {
 
     pub dns: dns::Config,
     pub identity: identity::Config,
-    pub dst: dst::Config,
+    // pub dst: dst::Config,
     pub admin: admin::Config,
     pub tap: tap::Config,
-    pub oc_collector: oc_collector::Config,
+    // pub oc_collector: oc_collector::Config,
 }
 
 pub struct App {
@@ -56,9 +56,9 @@ pub struct App {
     dns: dns::Task,
     drain: drain::Signal,
     dst: ControlAddr,
-    identity: identity::Identity,
+    // identity: identity::Identity,
     inbound: inbound::Inbound,
-    oc_collector: oc_collector::OcCollector,
+    // oc_collector: oc_collector::OcCollector,
     outbound: outbound::Outbound,
     tap: tap::Tap,
 }
@@ -76,15 +76,15 @@ impl Config {
         let Config {
             admin,
             dns,
-            dst,
+            // dst,
             identity,
             inbound,
-            oc_collector,
+            // oc_collector,
             outbound,
             tap,
         } = self;
         debug!("building app");
-        let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
+        // let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
         let dns = info_span!("dns").in_scope(|| dns.build())?;
 
@@ -96,62 +96,73 @@ impl Config {
         let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
 
         let dst = {
-            use linkerd2_app_core::{classify, control, proxy::grpc, reconnect, transport::tls};
+            use linkerd2_app_core::{
+                // classify,
+                control,
+                // proxy::grpc,
+                reconnect,
+                transport::tls,
+            };
 
             let metrics = metrics.control.clone();
-            let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| {
-                // XXX This is unfortunate. But we don't daemonize the service into a
-                // task in the build, so we'd have to name it. And that's not
-                // happening today. Really, we should daemonize the whole client
-                // into a task so consumers can be ignorant. This would also
-                // probably enable the use of a lock.
-                let svc = svc::connect(dst.control.connect.keepalive)
-                    .push(tls::ConnectLayer::new(identity.local()))
-                    .push_timeout(dst.control.connect.timeout)
-                    .push(control::client::layer())
-                    .push(control::resolve::layer(dns))
-                    .push(reconnect::layer({
-                        let backoff = dst.control.connect.backoff;
-                        move |_| Ok(backoff.stream())
-                    }))
-                    .push(metrics.into_layer::<classify::Response>())
-                    .push(control::add_origin::Layer::new())
-                    .into_new_service()
-                    .push_on_response(
-                        svc::layers()
-                            .push(grpc::req_body_as_payload::layer())
-                            .push_spawn_buffer(dst.control.buffer_capacity),
-                    )
-                    .new_service(dst.control.addr.clone());
-                dst.build(svc)
-            })
-        }?;
+        //     let dns = dns.resolver.clone();
+        //     info_span!("dst").in_scope(|| {
+        //         // XXX This is unfortunate. But we don't daemonize the service into a
+        //         // task in the build, so we'd have to name it. And that's not
+        //         // happening today. Really, we should daemonize the whole client
+        //         // into a task so consumers can be ignorant. This would also
+        //         // probably enable the use of a lock.
+        //         let svc = svc::connect(dst.control.connect.keepalive)
+        //             .push(tls::ConnectLayer::new(identity.local()))
+        //             .push_timeout(dst.control.connect.timeout)
+        //             .push(control::client::layer())
+        //             .push(control::resolve::layer(dns))
+        //             .push(reconnect::layer({
+        //                 let backoff = dst.control.connect.backoff;
+        //                 move |_| Ok(backoff.stream())
+        //             }))
+        //             .push(metrics.into_layer::<classify::Response>())
+        //             .push(control::add_origin::Layer::new())
+        //             .into_new_service()
+        //             .push_on_response(
+        //                 svc::layers()
+        //                     .push(grpc::req_body_as_payload::layer())
+        //                     .push_spawn_buffer(dst.control.buffer_capacity),
+        //             )
+        //             .new_service(dst.control.addr.clone());
+        //         dst.build(svc)
+        //     })
+        // }?;
 
-        let oc_collector = {
-            let identity = identity.local();
-            let dns = dns.resolver.clone();
-            let metrics = metrics.opencensus;
-            info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
-        }?;
+        // let oc_collector = {
+        //     let identity = identity.local();
+        //     let dns = dns.resolver.clone();
+        //     let metrics = metrics.opencensus;
+        //     info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
+        // }?;
 
-        let admin = {
-            let identity = identity.local();
-            let drain = drain_rx.clone();
-            info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
-        };
+        // let admin = {
+        //     let identity = identity.local();
+        //     let drain = drain_rx.clone();
+        //     info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
+        // };
 
         let dst_addr = dst.addr.clone();
         let inbound = {
             let inbound = inbound;
             let identity = identity.local();
-            let profiles = dst.profiles.clone();
+            // let profiles = dst.profiles.clone();
             let tap = tap.layer();
             let metrics = metrics.inbound;
-            let oc = oc_collector.span_sink();
+            // let oc = oc_collector.span_sink();
             let drain = drain_rx.clone();
             info_span!("inbound")
-                .in_scope(move || inbound.build(identity, profiles, tap, metrics, oc, drain))?
+                .in_scope(move || inbound.build(identity, 
+                    (), // profiles, 
+                    // tap, 
+                    // metrics, 
+                    None, // oc, 
+                    drain))?
         };
         let outbound = {
             let identity = identity.local();

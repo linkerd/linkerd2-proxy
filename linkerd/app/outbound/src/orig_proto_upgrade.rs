@@ -60,57 +60,57 @@ where
     }
 }
 
-impl<M> tower::Service<Target<HttpEndpoint>> for OrigProtoUpgrade<M>
-where
-    M: tower::Service<Target<HttpEndpoint>>,
-{
-    type Response = Either<orig_proto::Upgrade<M::Response>, M::Response>;
-    type Error = M::Error;
-    type Future = UpgradeFuture<M::Future>;
+// impl<M> tower::Service<Target<HttpEndpoint>> for OrigProtoUpgrade<M>
+// where
+//     M: tower::Service<Target<HttpEndpoint>>,
+// {
+//     type Response = Either<orig_proto::Upgrade<M::Response>, M::Response>;
+//     type Error = M::Error;
+//     type Future = UpgradeFuture<M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
-    }
+//     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+//         self.inner.poll_ready()
+//     }
 
-    fn call(&mut self, mut endpoint: Target<HttpEndpoint>) -> Self::Future {
-        let can_upgrade = endpoint.inner.can_use_orig_proto();
+//     fn call(&mut self, mut endpoint: Target<HttpEndpoint>) -> Self::Future {
+//         let can_upgrade = endpoint.inner.can_use_orig_proto();
 
-        let was_absolute = endpoint.inner.settings.was_absolute_form();
-        if can_upgrade {
-            trace!(
-                header = %orig_proto::L5D_ORIG_PROTO,
-                %was_absolute,
-                "Endpoint supports transparent HTTP/2 upgrades",
-            );
-            endpoint.inner.settings = Settings::Http2;
-        }
+//         let was_absolute = endpoint.inner.settings.was_absolute_form();
+//         if can_upgrade {
+//             trace!(
+//                 header = %orig_proto::L5D_ORIG_PROTO,
+//                 %was_absolute,
+//                 "Endpoint supports transparent HTTP/2 upgrades",
+//             );
+//             endpoint.inner.settings = Settings::Http2;
+//         }
 
-        let inner = self.inner.call(endpoint);
-        UpgradeFuture {
-            can_upgrade,
-            inner,
-            was_absolute,
-        }
-    }
-}
+//         let inner = self.inner.call(endpoint);
+//         UpgradeFuture {
+//             can_upgrade,
+//             inner,
+//             was_absolute,
+//         }
+//     }
+// }
 
-// === impl UpgradeFuture ===
+// // === impl UpgradeFuture ===
 
-impl<F> Future for UpgradeFuture<F>
-where
-    F: Future,
-{
-    type Item = Either<orig_proto::Upgrade<F::Item>, F::Item>;
-    type Error = F::Error;
+// impl<F> Future for UpgradeFuture<F>
+// where
+//     F: Future,
+// {
+//     type Item = Either<orig_proto::Upgrade<F::Item>, F::Item>;
+//     type Error = F::Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
+//     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+//         let inner = try_ready!(self.inner.poll());
 
-        if self.can_upgrade {
-            let upgrade = orig_proto::Upgrade::new(inner, self.was_absolute);
-            Ok(Either::A(upgrade).into())
-        } else {
-            Ok(Either::B(inner).into())
-        }
-    }
-}
+//         if self.can_upgrade {
+//             let upgrade = orig_proto::Upgrade::new(inner, self.was_absolute);
+//             Ok(Either::A(upgrade).into())
+//         } else {
+//             Ok(Either::B(inner).into())
+//         }
+//     }
+// }

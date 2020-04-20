@@ -1,5 +1,9 @@
-use futures::{Async, Future, Poll};
+use futures::TryFuture;
 use linkerd2_stack::{NewService, Proxy};
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tracing::{trace, Span};
 use tracing_futures::{Instrument as _, Instrumented};
 
@@ -22,9 +26,11 @@ pub struct InstrumentMake<G, M> {
 }
 
 /// Instruments a service produced by `InstrumentMake`.
+#[pin_project]
 #[derive(Clone, Debug)]
 pub struct Instrument<S> {
     span: Span,
+    #[pin]
     inner: S,
 }
 
@@ -81,11 +87,11 @@ where
     type Error = M::Error;
     type Future = Instrument<M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         trace!("poll_ready");
-        let ready = self.make.poll_ready()?;
+        let ready = self.make.poll_ready(cx);
         trace!(ready = ready.is_ready());
-        Ok(ready)
+        ready
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -100,27 +106,27 @@ where
 
 impl<F> Future for Instrument<F>
 where
-    F: Future,
+    F: TryFuture,
 {
-    type Item = Instrument<F::Item>;
-    type Error = F::Error;
+    type Output = Result<Instrument<F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let _enter = self.span.enter();
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let _enter = this.span.enter();
 
         trace!("making");
-        match self.inner.poll()? {
-            Async::NotReady => {
+        match this.inner.try_poll(cx)? {
+            Poll::Pending => {
                 trace!(ready = false);
-                Ok(Async::NotReady)
+                Poll::Pending
             }
-            Async::Ready(inner) => {
+            Poll::Ready(inner) => {
                 trace!(ready = true);
                 let svc = Instrument {
                     inner,
-                    span: self.span.clone(),
+                    span: this.span.clone(),
                 };
-                Ok(svc.into())
+                Poll::Ready(Ok(svc))
             }
         }
     }
@@ -153,13 +159,13 @@ where
     type Error = S::Error;
     type Future = Instrumented<S::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let _enter = self.span.enter();
 
         trace!("poll ready");
-        let ready = self.inner.poll_ready()?;
+        let ready = self.inner.poll_ready(cx);
         trace!(ready = ready.is_ready());
-        Ok(ready)
+        ready
     }
 
     fn call(&mut self, request: Req) -> Self::Future {

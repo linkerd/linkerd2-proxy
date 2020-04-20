@@ -1,4 +1,3 @@
-use futures::TryFutureExt;
 use linkerd2_error::{Error, Never};
 use std::future::Future;
 use std::pin::Pin;
@@ -104,10 +103,7 @@ where
         loop {
             futures::ready!(this.accept.poll_ready(cx))?;
             let conn = futures::ready!(this.listen.poll_accept(cx).map_err(Into::into))?;
-            let accept = (this.accept)
-                .accept(conn)
-                .in_current_span()
-                .map_err(|e| match e {});
+            let accept = (this.accept).accept(conn).in_current_span();
             tokio::spawn(accept);
         }
     }

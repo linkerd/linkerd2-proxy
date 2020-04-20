@@ -6,7 +6,7 @@
 //! - Admin interfaces
 //! - Tap
 //! - Metric labeling
-
+#![type_length_limit = "1586225"]
 // #![deny(warnings, rust_2018_idioms)]
 
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};
@@ -28,16 +28,16 @@ pub use linkerd2_trace_context::TraceContextLayer;
 
 pub mod accept_error;
 pub mod admin;
-pub mod classify;
+// pub mod classify;
 pub mod config;
 pub mod control;
 pub mod dns;
-pub mod dst;
-pub mod errors;
-pub mod handle_time;
-pub mod metric_labels;
+// pub mod dst;
+// pub mod errors;
+// pub mod handle_time;
+// pub mod metric_labels;
 pub mod proxy;
-pub mod retry;
+// pub mod retry;
 pub mod serve;
 pub mod spans;
 pub mod svc;
@@ -78,28 +78,28 @@ pub fn http_request_host_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::E
         .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
 }
 
-pub type ControlHttpMetrics = http_metrics::Requests<metric_labels::ControlLabels, classify::Class>;
+// pub type ControlHttpMetrics = http_metrics::Requests<metric_labels::ControlLabels, classify::Class>;
 
-pub type HttpEndpointMetrics =
-    http_metrics::Requests<metric_labels::EndpointLabels, classify::Class>;
+// pub type HttpEndpointMetrics =
+//     http_metrics::Requests<metric_labels::EndpointLabels, classify::Class>;
 
-pub type HttpRouteMetrics = http_metrics::Requests<metric_labels::RouteLabels, classify::Class>;
+// pub type HttpRouteMetrics = http_metrics::Requests<metric_labels::RouteLabels, classify::Class>;
 
-pub type HttpRouteRetry = http_metrics::Retries<metric_labels::RouteLabels>;
+// pub type HttpRouteRetry = http_metrics::Retries<metric_labels::RouteLabels>;
 
-pub type StackMetrics = stack_metrics::Registry<metric_labels::StackLabels>;
+// pub type StackMetrics = stack_metrics::Registry<metric_labels::StackLabels>;
 
-#[derive(Clone)]
-pub struct ProxyMetrics {
-    pub http_handle_time: handle_time::Scope,
-    pub http_route: HttpRouteMetrics,
-    pub http_route_actual: HttpRouteMetrics,
-    pub http_route_retry: HttpRouteRetry,
-    pub http_endpoint: HttpEndpointMetrics,
-    pub http_errors: errors::MetricsLayer,
-    pub stack: StackMetrics,
-    pub transport: transport::Metrics,
-}
+// #[derive(Clone)]
+// pub struct ProxyMetrics {
+//     pub http_handle_time: handle_time::Scope,
+//     pub http_route: HttpRouteMetrics,
+//     pub http_route_actual: HttpRouteMetrics,
+//     pub http_route_retry: HttpRouteRetry,
+//     pub http_endpoint: HttpEndpointMetrics,
+//     pub http_errors: errors::MetricsLayer,
+//     pub stack: StackMetrics,
+//     pub transport: transport::Metrics,
+// }
 
 #[derive(Clone, Debug)]
 pub struct DiscoveryRejected(());

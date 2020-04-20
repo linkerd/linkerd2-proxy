@@ -13,11 +13,14 @@ use crate::{
     transport::{self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls},
     Error,
 };
-use futures::{future::Either, Future, Poll};
+use futures_03::{compat::Future01CompatExt, TryFutureExt};
 use http;
 use hyper;
 use indexmap::IndexSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use tracing::{info_span, trace};
 use tracing_futures::Instrument;
 
@@ -83,7 +86,7 @@ where
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
     transport_labels: L,
-    transport_metrics: transport::Metrics,
+    // transport_metrics: transport::Metrics,
     forward_tcp: F,
     make_http: H,
     drain: drain::Watch,
@@ -99,7 +102,7 @@ where
     /// Creates a new `Server`.
     pub fn new(
         transport_labels: L,
-        transport_metrics: transport::Metrics,
+        // transport_metrics: transport::Metrics,
         forward_tcp: F,
         make_http: H,
         h2_settings: H2Settings,
@@ -112,7 +115,7 @@ where
                 http: hyper::server::conn::Http::new(),
                 h2_settings,
                 transport_labels,
-                transport_metrics,
+                // transport_metrics,
                 forward_tcp,
                 make_http,
                 drain,
@@ -124,7 +127,9 @@ where
 impl<L, F, H, B> Service<Connection> for Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey>,
-    F: Accept<(tls::accept::Meta, transport::metrics::Io<BoxedIo>)> + Clone + Send + 'static,
+    // F: Accept<(tls::accept::Meta, transport::metrics::Io<BoxedIo>)> + Clone +
+    // Send + 'static,
+    F: Accept<(tls::accept::Meta, BoxedIo)> + Clone + Send + 'static,
     F::Future: Send + 'static,
     H: NewService<tls::accept::Meta> + Send + 'static,
     H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>, Error = Error>
@@ -135,10 +140,10 @@ where
 {
     type Response = ();
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Item = (), Error = Error> + Send + 'static>>;
+    type Future = Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(().into()))
     }
 
     /// Handle a new connection.
@@ -150,8 +155,9 @@ where
     fn call(&mut self, (proto, io): Connection) -> Self::Future {
         // TODO move this into a distinct Accept?
         let io = {
-            let labels = self.transport_labels.transport_labels(&proto);
-            self.transport_metrics.wrap_server_transport(labels, io)
+            // let labels = self.transport_labels.transport_labels(&proto);
+            // self.transport_metrics.wrap_server_transport(labels, io)
+            io
         };
 
         let drain = self.drain.clone();
@@ -164,7 +170,11 @@ where
                     .clone()
                     .into_service()
                     .oneshot((proto.tls, io));
-                return Box::new(drain.watch(fwd.map_err(Into::into), |_| {}));
+                return Box::pin(async move {
+                    tokio_02::pin!(fwd);
+                    drain.watch(fwd.map_err(Into::into), |_| {}).await;
+                    Ok(())
+                });
             }
         };
 
@@ -173,10 +183,11 @@ where
         let builder = self.http.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
-        Box::new(match http_version {
+        match http_version {
             HttpVersion::Http1 => {
                 // Enable support for HTTP upgrades (CONNECT and websockets).
-                let svc = upgrade::Service::new(http_svc, drain.clone());
+                // TODO(eliza): port upgrades!
+                let svc = /* upgrade::Service::new(http_svc, drain.clone()) */ http_svc;
                 let exec =
                     tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
                 let conn = builder
@@ -184,12 +195,18 @@ where
                     .http1_only(true)
                     .serve_connection(io, HyperServerSvc::new(svc))
                     .with_upgrades();
-                Either::A(
+
+                Box::pin(async move {
                     drain
-                        .watch(conn, |conn| conn.graceful_shutdown())
-                        .map(|_| ())
-                        .map_err(Into::into),
-                )
+                        .watch(conn.compat(), |conn| {
+                            // XXX(eliza): `compat` prevents us from calling
+                            // `graceful_shutdown` because it wraps the future!
+                            // conn.graceful_shutdown()
+                            ()
+                        })
+                        .await?;
+                    Ok(())
+                })
             }
 
             HttpVersion::H2 => {
@@ -200,14 +217,19 @@ where
                     .http2_initial_stream_window_size(initial_stream_window_size)
                     .http2_initial_connection_window_size(initial_conn_window_size)
                     .serve_connection(io, HyperServerSvc::new(http_svc));
-                Either::B(
+                Box::pin(async move {
                     drain
-                        .watch(conn, |conn| conn.graceful_shutdown())
-                        .map(|_| ())
-                        .map_err(Into::into),
-                )
+                        .watch(conn.compat(), |conn| {
+                            // XXX(eliza): `compat` prevents us from calling
+                            // `graceful_shutdown` because it wraps the future!
+                            // conn.graceful_shutdown()
+                            ()
+                        })
+                        .await?;
+                    Ok(())
+                })
             }
-        })
+        }
     }
 }
 
@@ -224,7 +246,7 @@ where
             http: self.http.clone(),
             h2_settings: self.h2_settings.clone(),
             transport_labels: self.transport_labels.clone(),
-            transport_metrics: self.transport_metrics.clone(),
+            // transport_metrics: self.transport_metrics.clone(),
             forward_tcp: self.forward_tcp.clone(),
             make_http: self.make_http.clone(),
             drain: self.drain.clone(),

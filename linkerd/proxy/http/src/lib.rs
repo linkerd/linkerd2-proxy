@@ -1,5 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-
 use http::header::AsHeaderName;
 use http::uri::Authority;
 use linkerd2_error::Error;
@@ -10,16 +9,16 @@ pub mod balance;
 pub mod canonicalize;
 pub mod client;
 pub mod glue;
-pub mod grpc;
+// pub mod grpc;
 pub mod h1;
 pub mod h2;
 pub mod header_from_target;
-pub mod insert;
-pub mod normalize_uri;
+// pub mod insert;
+// pub mod normalize_uri;
 pub mod orig_proto;
 pub mod settings;
-pub mod strip_header;
-pub mod timeout;
+// pub mod strip_header;
+// pub mod timeout;
 pub mod upgrade;
 mod version;
 
@@ -27,7 +26,7 @@ pub use self::{
     client::MakeClientLayer,
     glue::{HttpBody as Body, HyperServerSvc},
     settings::Settings,
-    timeout::MakeTimeoutLayer,
+    // timeout::MakeTimeoutLayer,
     version::Version,
 };
 pub use http::{header, uri, Request, Response};

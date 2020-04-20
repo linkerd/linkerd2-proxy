@@ -1,5 +1,7 @@
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture, TryFutureExt};
 use linkerd2_error::Error;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Implements a `Service` from a `Future` that produces a `Service`.
 #[derive(Debug)]
@@ -25,7 +27,7 @@ impl<F, S> FutureService<F, S> {
 
 impl<F, S, Req> tower::Service<Req> for FutureService<F, S>
 where
-    F: Future<Item = S>,
+    F: TryFuture<Ok = S> + Unpin,
     F::Error: Into<Error>,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -34,14 +36,15 @@ where
     type Error = Error;
     type Future = futures::future::MapErr<S::Future, fn(S::Error) -> Error>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
             self.inner = match self.inner {
                 Inner::Future(ref mut fut) => {
-                    let svc = try_ready!(fut.poll().map_err(Into::into));
+                    let fut = Pin::new(fut);
+                    let svc = ready!(fut.try_poll(cx).map_err(Into::into)?);
                     Inner::Service(svc)
                 }
-                Inner::Service(ref mut svc) => return svc.poll_ready().map_err(Into::into),
+                Inner::Service(ref mut svc) => return svc.poll_ready(cx).map_err(Into::into),
             };
         }
     }

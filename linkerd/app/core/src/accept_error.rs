@@ -24,11 +24,9 @@ where
     type Future = future::Map<A::Future, fn(Result<(), A::Error>) -> Result<(), Never>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Ok(self
-            .0
-            .poll_ready(cx)
+        Poll::Ready(Ok(futures_03::ready!(self.0.poll_ready(cx))
             .map_err(Into::into)
-            .expect("poll_ready must never fail on accept"))
+            .expect("poll_ready must never fail on accept")))
     }
 
     fn call(&mut self, sock: T) -> Self::Future {

@@ -1,4 +1,4 @@
-use crate::identity::LocalIdentity;
+// use crate::identity::LocalIdentity;
 use linkerd2_app_core::{
     admin, config::ServerConfig, drain, metrics::FmtMetrics, serve, trace::LevelHandle,
     transport::tls, Error,
@@ -22,7 +22,7 @@ pub struct Admin {
 impl Config {
     pub fn build<R>(
         self,
-        identity: LocalIdentity,
+        // identity: LocalIdentity,
         report: R,
         log_level: LevelHandle,
         drain: drain::Watch,

@@ -10,23 +10,33 @@ pub use self::endpoint::{
 };
 use futures::future;
 use linkerd2_app_core::{
-    classify,
+    // classify,
     config::{ProxyConfig, ServerConfig},
-    drain, dst, errors, metric_labels,
+    drain,
+    // dst,
+    // errors,
+    // metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
         self,
-        http::{self, normalize_uri, orig_proto, strip_header},
+        http::{self /*, normalize_uri, orig_proto, strip_header*/},
         identity,
         server::{Protocol as ServerProtocol, Server},
         tap, tcp,
     },
-    reconnect, router, serve,
+    reconnect,
+    router,
+    serve,
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, io::BoxedIo, tls},
-    Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
+    Error,
+    // ProxyMetrics,
+    TraceContextLayer,
+    DST_OVERRIDE_HEADER,
+    L5D_CLIENT_ID,
+    L5D_REMOTE_IP,
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
@@ -57,14 +67,14 @@ impl Config {
         self,
         local_identity: tls::Conditional<identity::Local>,
         profiles_client: P,
-        tap_layer: tap::Layer,
-        metrics: ProxyMetrics,
+        // tap_layer: tap::Layer,
+        // metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Result<Inbound, Error>
-    where
-        P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
-        P::Future: Send,
+// where
+    //     P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
+    //     P::Future: Send,
     {
         use proxy::core::listen::{Bind, Listen};
         let Config {
@@ -92,7 +102,8 @@ impl Config {
             let tcp_connect = svc::connect(connect.keepalive)
                 .push_map_response(BoxedIo::new) // Ensures the transport propagates shutdown properly.
                 .push_timeout(connect.timeout)
-                .push(metrics.transport.layer_connect(TransportLabels));
+                // .push(metrics.transport.layer_connect(TransportLabels))
+                ;
 
             // Forwards TCP streams that cannot be decoded as HTTP.
             let tcp_forward = tcp_connect
@@ -268,14 +279,14 @@ impl Config {
             //         )
             //     });
             let http_server = |_| {
-                tower::service_fn(move |_: http::Request<_>| {
-                    future::ok(http::Response::new(http::Body::default()))
+                tower::service_fn(move |_: http::Request<_>| async {
+                    Ok(http::Response::new(http::Body::default()))
                 })
             };
 
             let tcp_server = Server::new(
                 TransportLabels,
-                metrics.transport,
+                // metrics.transport,
                 tcp_forward.into_inner(),
                 http_server, /* .into_inner() */
                 h2_settings,
@@ -284,8 +295,8 @@ impl Config {
             );
 
             // Terminate inbound mTLS from other outbound proxies.
-            let accept = tls::AcceptTls::new(local_identity, tcp_server)
-                .with_skip_ports(disable_protocol_detection_for_ports);
+            let accept = tls::AcceptTls::new(local_identity, tcp_server);
+            // .with_skip_ports(disable_protocol_detection_for_ports);
 
             info!(listen.addr = %listen.listen_addr(), "Serving");
             serve::serve(listen, accept, drain).await
@@ -334,6 +345,6 @@ pub fn trace_labels() -> HashMap<String, String> {
     l
 }
 
-fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
-    metric_labels::StackLabels::inbound(name)
-}
+// fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
+//     metric_labels::StackLabels::inbound(name)
+// }

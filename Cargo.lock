@@ -790,6 +790,7 @@ dependencies = [
  "rand 0.7.2",
  "regex 1.0.0",
  "tokio 0.1.22",
+ "tokio 0.2.17",
  "tokio-compat",
  "tokio-timer",
  "tower 0.3.1",
@@ -817,7 +818,7 @@ dependencies = [
  "linkerd2-retry",
  "quickcheck",
  "tokio 0.1.22",
- "tower 0.1.1",
+ "tower 0.3.1",
  "tower-grpc",
  "tracing",
 ]
@@ -869,7 +870,7 @@ dependencies = [
  "linkerd2-retry",
  "quickcheck",
  "tokio 0.1.22",
- "tower 0.1.1",
+ "tower 0.3.1",
  "tower-grpc",
  "tracing",
 ]
@@ -1227,11 +1228,13 @@ dependencies = [
  "linkerd2-stack",
  "linkerd2-timeout",
  "rand 0.7.2",
+ "task-compat",
  "tokio 0.1.22",
  "tokio 0.2.17",
  "tokio-connect",
  "tokio-timer",
  "tower 0.1.1",
+ "tower 0.3.1",
  "tower-balance",
  "tower-discover 0.1.0",
  "tower-grpc",
@@ -1304,11 +1307,12 @@ dependencies = [
 name = "linkerd2-proxy-tcp"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-duplex",
  "linkerd2-error",
+ "pin-project",
  "tokio 0.1.22",
- "tower 0.1.1",
+ "tower 0.3.1",
 ]
 
 [[package]]
@@ -1428,9 +1432,11 @@ dependencies = [
 name = "linkerd2-stack"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
- "tower 0.1.1",
+ "pin-project",
+ "tokio 0.2.17",
+ "tower 0.3.1",
 ]
 
 [[package]]
@@ -1451,10 +1457,11 @@ dependencies = [
 name = "linkerd2-stack-tracing"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
  "linkerd2-stack",
- "tower 0.1.1",
+ "pin-project",
+ "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
 ]

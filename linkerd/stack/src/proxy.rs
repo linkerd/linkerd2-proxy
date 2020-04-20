@@ -1,5 +1,7 @@
-use futures::{future, Future, Poll};
+use futures::{future, TryFutureExt};
 use linkerd2_error::Error;
+use std::future::Future;
+use std::task::{Context, Poll};
 
 /// A middleware type that cannot exert backpressure.
 ///
@@ -15,7 +17,7 @@ pub trait Proxy<Req, S: tower::Service<Self::Request>> {
     type Error: Into<Error>;
 
     /// The Future type returned to callers.
-    type Future: Future<Item = Self::Response, Error = Self::Error>;
+    type Future: Future<Output = Result<Self::Response, Self::Error>>;
 
     /// Usually invokes `S::call`, potentially modifying requests or responses.
     fn proxy(&self, inner: &mut S, req: Req) -> Self::Future;
@@ -77,8 +79,8 @@ where
     type Error = Error;
     type Future = future::MapErr<P::Future, fn(P::Error) -> Error>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, req: Req) -> Self::Future {

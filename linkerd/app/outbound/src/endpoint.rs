@@ -1,18 +1,21 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
-    dst, metric_labels,
-    metric_labels::{prefix_labels, EndpointLabels},
+    // dst,
+    // metric_labels,
+    // metric_labels::{prefix_labels, EndpointLabels},
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
         http::{self, identity_from_header},
         identity,
-        resolve::map_endpoint::MapEndpoint,
+        // resolve::map_endpoint::MapEndpoint,
         tap,
     },
     router,
     transport::{connect, tls},
-    Addr, Conditional, L5D_REQUIRE_ID,
+    Addr,
+    Conditional,
+    L5D_REQUIRE_ID,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -87,24 +90,24 @@ impl<'t, T> From<&'t Target<T>> for ::http::header::HeaderValue {
     }
 }
 
-impl<T: http::settings::HasSettings> http::normalize_uri::ShouldNormalizeUri for Target<T> {
-    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
-        if let http::Settings::Http1 {
-            was_absolute_form: false,
-            ..
-        } = self.inner.http_settings()
-        {
-            return Some(self.addr.to_http_authority());
-        }
-        None
-    }
-}
+// impl<T: http::settings::HasSettings> http::normalize_uri::ShouldNormalizeUri for Target<T> {
+//     fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
+//         if let http::Settings::Http1 {
+//             was_absolute_form: false,
+//             ..
+//         } = self.inner.http_settings()
+//         {
+//             return Some(self.addr.to_http_authority());
+//         }
+//         None
+//     }
+// }
 
-impl<T> profiles::OverrideDestination for Target<T> {
-    fn dst_mut(&mut self) -> &mut Addr {
-        &mut self.addr
-    }
-}
+// impl<T> profiles::OverrideDestination for Target<T> {
+//     fn dst_mut(&mut self) -> &mut Addr {
+//         &mut self.addr
+//     }
+// }
 
 impl<T: http::settings::HasSettings> http::settings::HasSettings for Target<T> {
     fn http_settings(&self) -> &http::Settings {
@@ -118,41 +121,41 @@ impl<T: tls::HasPeerIdentity> tls::HasPeerIdentity for Target<T> {
     }
 }
 
-impl<T: tap::Inspect> tap::Inspect for Target<T> {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        self.inner.src_addr(req)
-    }
+// impl<T: tap::Inspect> tap::Inspect for Target<T> {
+//     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+//         self.inner.src_addr(req)
+//     }
 
-    fn src_tls<'a, B>(
-        &self,
-        req: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
-        self.inner.src_tls(req)
-    }
+//     fn src_tls<'a, B>(
+//         &self,
+//         req: &'a http::Request<B>,
+//     ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
+//         self.inner.src_tls(req)
+//     }
 
-    fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        self.inner.dst_addr(req)
-    }
+//     fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+//         self.inner.dst_addr(req)
+//     }
 
-    fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<&IndexMap<String, String>> {
-        self.inner.dst_labels(req)
-    }
+//     fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<&IndexMap<String, String>> {
+//         self.inner.dst_labels(req)
+//     }
 
-    fn dst_tls<B>(
-        &self,
-        req: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
-        self.inner.dst_tls(req)
-    }
+//     fn dst_tls<B>(
+//         &self,
+//         req: &http::Request<B>,
+//     ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+//         self.inner.dst_tls(req)
+//     }
 
-    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
-        self.inner.route_labels(req)
-    }
+//     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+//         self.inner.route_labels(req)
+//     }
 
-    fn is_outbound<B>(&self, req: &http::Request<B>) -> bool {
-        self.inner.is_outbound(req)
-    }
-}
+//     fn is_outbound<B>(&self, req: &http::Request<B>) -> bool {
+//         self.inner.is_outbound(req)
+//     }
+// }
 
 impl<T: connect::ConnectAddr> connect::ConnectAddr for Target<T> {
     fn connect_addr(&self) -> SocketAddr {
@@ -212,92 +215,92 @@ impl http::settings::HasSettings for HttpEndpoint {
     }
 }
 
-impl tap::Inspect for HttpEndpoint {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions()
-            .get::<tls::accept::Meta>()
-            .map(|s| s.addrs.peer())
-    }
+// impl tap::Inspect for HttpEndpoint {
+//     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+//         req.extensions()
+//             .get::<tls::accept::Meta>()
+//             .map(|s| s.addrs.peer())
+//     }
 
-    fn src_tls<'a, B>(
-        &self,
-        _: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
-    }
+//     fn src_tls<'a, B>(
+//         &self,
+//         _: &'a http::Request<B>,
+//     ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
+//         Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+//     }
 
-    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
-        Some(self.addr)
-    }
+//     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
+//         Some(self.addr)
+//     }
 
-    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
-        Some(self.metadata.labels())
-    }
+//     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
+//         Some(self.metadata.labels())
+//     }
 
-    fn dst_tls<B>(
-        &self,
-        _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
-        self.identity.as_ref()
-    }
+//     fn dst_tls<B>(
+//         &self,
+//         _: &http::Request<B>,
+//     ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+//         self.identity.as_ref()
+//     }
 
-    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
-        req.extensions()
-            .get::<dst::Route>()
-            .map(|r| r.route.labels().clone())
-    }
+//     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+//         req.extensions()
+//             .get::<dst::Route>()
+//             .map(|r| r.route.labels().clone())
+//     }
 
-    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
-        true
-    }
-}
+//     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
+//         true
+//     }
+// }
 
-impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
-    type Out = Target<HttpEndpoint>;
+// impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
+//     type Out = Target<HttpEndpoint>;
 
-    fn map_endpoint(
-        &self,
-        concrete: &Concrete<http::Settings>,
-        addr: SocketAddr,
-        metadata: Metadata,
-    ) -> Self::Out {
-        tracing::trace!(%addr, ?metadata, "Resolved endpoint");
-        let identity = metadata
-            .identity()
-            .cloned()
-            .map(Conditional::Some)
-            .unwrap_or_else(|| {
-                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
-            });
+//     fn map_endpoint(
+//         &self,
+//         concrete: &Concrete<http::Settings>,
+//         addr: SocketAddr,
+//         metadata: Metadata,
+//     ) -> Self::Out {
+//         tracing::trace!(%addr, ?metadata, "Resolved endpoint");
+//         let identity = metadata
+//             .identity()
+//             .cloned()
+//             .map(Conditional::Some)
+//             .unwrap_or_else(|| {
+//                 Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
+//             });
 
-        Target {
-            // Use the logical addr for the target.
-            addr: concrete.inner.addr.clone(),
-            inner: HttpEndpoint {
-                addr,
-                identity,
-                metadata,
-                settings: concrete.inner.inner,
-            },
-        }
-    }
-}
+//         Target {
+//             // Use the logical addr for the target.
+//             addr: concrete.inner.addr.clone(),
+//             inner: HttpEndpoint {
+//                 addr,
+//                 identity,
+//                 metadata,
+//                 settings: concrete.inner.inner,
+//             },
+//         }
+//     }
+// }
 
-impl Into<EndpointLabels> for Target<HttpEndpoint> {
-    fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::{Direction, TlsId};
-        EndpointLabels {
-            authority: Some(self.addr.to_http_authority()),
-            direction: Direction::Out,
-            tls_id: self
-                .inner
-                .identity
-                .as_ref()
-                .map(|id| TlsId::ServerId(id.clone())),
-            labels: prefix_labels("dst", self.inner.metadata.labels().into_iter()),
-        }
-    }
-}
+// impl Into<EndpointLabels> for Target<HttpEndpoint> {
+//     fn into(self) -> EndpointLabels {
+//         use linkerd2_app_core::metric_labels::{Direction, TlsId};
+//         EndpointLabels {
+//             authority: Some(self.addr.to_http_authority()),
+//             direction: Direction::Out,
+//             tls_id: self
+//                 .inner
+//                 .identity
+//                 .as_ref()
+//                 .map(|id| TlsId::ServerId(id.clone())),
+//             labels: prefix_labels("dst", self.inner.metadata.labels().into_iter()),
+//         }
+//     }
+// }
 
 // === impl TcpEndpoint ===
 
@@ -322,17 +325,17 @@ impl tls::HasPeerIdentity for TcpEndpoint {
     }
 }
 
-impl Into<EndpointLabels> for TcpEndpoint {
-    fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::{Direction, TlsId};
-        EndpointLabels {
-            direction: Direction::Out,
-            tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
-            authority: None,
-            labels: None,
-        }
-    }
-}
+// impl Into<EndpointLabels> for TcpEndpoint {
+//     fn into(self) -> EndpointLabels {
+//         use linkerd2_app_core::metric_labels::{Direction, TlsId};
+//         EndpointLabels {
+//             direction: Direction::Out,
+//             tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
+//             authority: None,
+//             labels: None,
+//         }
+//     }
+// }
 
 // === impl LogicalPerRequest ===
 
@@ -406,20 +409,20 @@ impl<T> router::Recognize<Target<T>> for ProfilePerTarget {
 
 // === impl Profile ===
 
-impl profiles::HasDestination for Profile {
-    fn destination(&self) -> Addr {
-        self.0.clone()
-    }
-}
+// impl profiles::HasDestination for Profile {
+//     fn destination(&self) -> Addr {
+//         self.0.clone()
+//     }
+// }
 
-impl profiles::WithRoute for Profile {
-    type Route = dst::Route;
+// impl profiles::WithRoute for Profile {
+//     type Route = dst::Route;
 
-    fn with_route(self, route: profiles::Route) -> Self::Route {
-        dst::Route {
-            route,
-            target: self.0.clone(),
-            direction: metric_labels::Direction::Out,
-        }
-    }
-}
+//     fn with_route(self, route: profiles::Route) -> Self::Route {
+//         dst::Route {
+//             route,
+//             target: self.0.clone(),
+//             direction: metric_labels::Direction::Out,
+//         }
+//     }
+// }
