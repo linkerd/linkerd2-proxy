@@ -65,6 +65,7 @@ impl Config {
                     Box::new(future::lazy(move || {
                         debug!(peer.addr = ?addr, "running");
                         // certify::Daemon::new(certify, crt_store, svc)
+                        Ok(())
                     }))
                 };
 
