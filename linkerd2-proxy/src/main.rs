@@ -2,7 +2,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{future, Future};
+use futures::compat::Future01CompatExt;
 use linkerd2_app::{trace, Config};
 use linkerd2_signal as signal;
 pub use tracing::{debug, error, info, warn};
@@ -21,7 +21,7 @@ fn main() {
 
     tokio_compat::runtime::current_thread::Runtime::new()
         .expect("main runtime")
-        .block_on(future::lazy(move || {
+        .block_on_std(async move {
             let app = match trace.and_then(move |t| config.build(t)) {
                 Ok(app) => app,
                 Err(e) => {
@@ -53,13 +53,13 @@ fn main() {
                 }
             }
 
-            let dst_addr = app.dst_addr();
-            match dst_addr.identity.value() {
-                None => info!("Destinations resolved via {}", dst_addr.addr),
-                Some(identity) => {
-                    info!("Destinations resolved via {} ({})", dst_addr.addr, identity)
-                }
-            }
+            // let dst_addr = app.dst_addr();
+            // match dst_addr.identity.value() {
+            //     None => info!("Destinations resolved via {}", dst_addr.addr),
+            //     Some(identity) => {
+            //         info!("Destinations resolved via {} ({})", dst_addr.addr, identity)
+            //     }
+            // }
 
             if let Some(oc) = app.opencensus_addr() {
                 match oc.identity.value() {
@@ -71,7 +71,7 @@ fn main() {
             }
 
             let drain = app.spawn();
-            signal::shutdown().and_then(|()| drain.drain())
-        }))
-        .expect("main");
+            signal::shutdown().compat().await.expect("shutdown");
+            drain.drain().await;
+        });
 }
