@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 bytes = "0.4"
 futures = "0.1"
+futures_03 = {package = "futures", version = "0.3"}
 h2 = "0.1"
 http = "0.1"
 http-body = "0.1"
@@ -19,6 +20,7 @@ linkerd2-metrics = { path  = "../metrics" }
 linkerd2-stack = { path  = "../stack" }
 tokio = "0.1"
 tokio-timer = "0.2"   # for tokio_timer::clock
-tower = "0.1"
-tower-util = "0.1"
+tower = "0.3"
+tower-util = "0.3"
 tracing = "0.1.9"
+pin-project = "0.4"

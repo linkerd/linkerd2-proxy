@@ -5,12 +5,12 @@
 pub mod admin;
 // pub mod dst;
 pub mod env;
-// pub mod identity;
-// pub mod metrics;
+pub mod identity;
+pub mod metrics;
 // pub mod oc_collector;
 pub mod tap;
 
-// use self::metrics::Metrics;
+use self::metrics::Metrics;
 use futures::{future, Async, Future};
 use futures_03::TryFutureExt;
 pub use linkerd2_app_core::{self as core, trace};
@@ -55,12 +55,12 @@ pub struct App {
     admin: admin::Admin,
     dns: dns::Task,
     drain: drain::Signal,
-    dst: ControlAddr,
-    // identity: identity::Identity,
+    // dst: ControlAddr,
+    identity: identity::Identity,
     inbound: inbound::Inbound,
     // oc_collector: oc_collector::OcCollector,
     outbound: outbound::Outbound,
-    tap: tap::Tap,
+    // tap: tap::Tap,
 }
 
 impl Config {
@@ -84,7 +84,7 @@ impl Config {
             tap,
         } = self;
         debug!("building app");
-        // let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
+        let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
         let dns = info_span!("dns").in_scope(|| dns.build())?;
 
@@ -93,18 +93,18 @@ impl Config {
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
+        // let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
 
-        let dst = {
-            use linkerd2_app_core::{
-                // classify,
-                control,
-                // proxy::grpc,
-                reconnect,
-                transport::tls,
-            };
+        // let dst = {
+        //     use linkerd2_app_core::{
+        //         classify,
+        //         control,
+        //         proxy::grpc,
+        //         reconnect,
+        //         transport::tls,
+        //     };
 
-            let metrics = metrics.control.clone();
+        //     let metrics = metrics.control.clone();
         //     let dns = dns.resolver.clone();
         //     info_span!("dst").in_scope(|| {
         //         // XXX This is unfortunate. But we don't daemonize the service into a
@@ -141,44 +141,44 @@ impl Config {
         //     info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
         // }?;
 
-        // let admin = {
-        //     let identity = identity.local();
-        //     let drain = drain_rx.clone();
-        //     info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
-        // };
+        let admin = {
+            let identity = identity.local();
+            let drain = drain_rx.clone();
+            info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
+        };
 
-        let dst_addr = dst.addr.clone();
+        // let dst_addr = dst.addr.clone();
         let inbound = {
             let inbound = inbound;
             let identity = identity.local();
             // let profiles = dst.profiles.clone();
-            let tap = tap.layer();
+            // let tap = tap.layer();
             let metrics = metrics.inbound;
             // let oc = oc_collector.span_sink();
             let drain = drain_rx.clone();
-            info_span!("inbound")
-                .in_scope(move || inbound.build(identity, 
-                    (), // profiles, 
-                    // tap, 
-                    // metrics, 
-                    None, // oc, 
-                    drain))?
+            info_span!("inbound").in_scope(move || {
+                inbound.build(
+                    identity,
+                    (), // profiles,
+                    // tap,
+                    // metrics,
+                    None, // oc,
+                    drain,
+                )
+            })?
         };
         let outbound = {
             let identity = identity.local();
             let dns = dns.resolver;
-            let tap = tap.layer();
+            // let tap = tap.layer();
             let metrics = metrics.outbound;
-            let oc = oc_collector.span_sink();
+            // let oc = oc_collector.span_sink();
             info_span!("outbound").in_scope(move || {
                 outbound.build(
-                    identity,
-                    dst.resolve,
-                    dns,
-                    dst.profiles,
-                    tap,
-                    metrics,
-                    oc,
+                    identity, // dst.resolve,
+                    dns,      // dst.profiles,
+                    //tap,
+                    metrics, None, //oc,
                     drain_rx,
                 )
             })?
@@ -187,13 +187,13 @@ impl Config {
         Ok(App {
             admin,
             dns: dns.task,
-            dst: dst_addr,
+            // dst: dst_addr,
             drain: drain_tx,
             identity,
             inbound,
-            oc_collector,
+            // oc_collector,
             outbound,
-            tap,
+            // tap,
         })
     }
 }
@@ -212,15 +212,16 @@ impl App {
     }
 
     pub fn tap_addr(&self) -> Option<SocketAddr> {
-        match self.tap {
-            tap::Tap::Disabled { .. } => None,
-            tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),
-        }
+        // match self.tap {
+        //     tap::Tap::Disabled { .. } => None,
+        //     tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),
+        // }
+        None
     }
 
-    pub fn dst_addr(&self) -> &ControlAddr {
-        &self.dst
-    }
+    // pub fn dst_addr(&self) -> &ControlAddr {
+    //     &self.dst
+    // }
 
     pub fn local_identity(&self) -> Option<&identity::Local> {
         match self.identity {
@@ -237,10 +238,11 @@ impl App {
     }
 
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
-        match self.oc_collector {
-            oc_collector::OcCollector::Disabled { .. } => None,
-            oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
-        }
+        // match self.oc_collector {
+        //     oc_collector::OcCollector::Disabled { .. } => None,
+        //     oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
+        // }
+        None
     }
 
     pub fn spawn(self) -> drain::Signal {
@@ -250,7 +252,7 @@ impl App {
             drain,
             identity,
             inbound,
-            oc_collector,
+            // oc_collector,
             outbound,
             tap,
             ..
@@ -310,25 +312,25 @@ impl App {
                                 admin.latch.release()
                             }
 
-                            if let tap::Tap::Enabled { daemon, serve, .. } = tap {
-                                tokio::spawn(
-                                    daemon
-                                        .map_err(|never| match never {})
-                                        .instrument(info_span!("tap")),
-                                );
-                                tokio_02::task::spawn_local(
-                                    serve
-                                        .map_err(|error| error!(%error, "server died"))
-                                        .instrument(info_span!("tap")),
-                                );
-                            }
+                            // if let tap::Tap::Enabled { daemon, serve, .. } = tap {
+                            //     tokio::spawn(
+                            //         daemon
+                            //             .map_err(|never| match never {})
+                            //             .instrument(info_span!("tap")),
+                            //     );
+                            //     tokio_02::task::spawn_local(
+                            //         serve
+                            //             .map_err(|error| error!(%error, "server died"))
+                            //             .instrument(info_span!("tap")),
+                            //     );
+                            // }
 
-                            if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
-                                tokio::spawn(
-                                    task.map_err(|error| error!(%error, "client died"))
-                                        .instrument(info_span!("opencensus")),
-                                );
-                            }
+                            // if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
+                            //     tokio::spawn(
+                            //         task.map_err(|error| error!(%error, "client died"))
+                            //             .instrument(info_span!("opencensus")),
+                            //     );
+                            // }
 
                             admin_shutdown_rx.map_err(|_| ())
                         })

@@ -1027,11 +1027,10 @@ dependencies = [
 name = "linkerd2-http-classify"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
  "http",
  "linkerd2-error",
  "linkerd2-stack",
- "tower 0.1.1",
+ "tower 0.3.1",
 ]
 
 [[package]]
@@ -1040,6 +1039,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
+ "futures 0.3.4",
  "h2",
  "http",
  "http-body",
@@ -1049,10 +1049,11 @@ dependencies = [
  "linkerd2-http-classify",
  "linkerd2-metrics",
  "linkerd2-stack",
+ "pin-project",
  "tokio 0.1.22",
  "tokio-timer",
- "tower 0.1.1",
- "tower-util 0.1.0",
+ "tower 0.3.1",
+ "tower-util 0.3.1",
  "tracing",
 ]
 
@@ -1412,7 +1413,7 @@ dependencies = [
  "rand 0.7.2",
  "regex 1.0.0",
  "tokio 0.1.22",
- "tower 0.1.1",
+ "tower 0.3.1",
  "tower-grpc",
  "tower-util 0.1.0",
  "tracing",

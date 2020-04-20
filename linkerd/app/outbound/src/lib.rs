@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     drain,
     // dst,
     // errors,
-    // metric_labels,
+    metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -34,7 +34,7 @@ use linkerd2_app_core::{
     Conditional,
     DiscoveryRejected,
     Error,
-    // ProxyMetrics,
+    ProxyMetrics,
     TraceContextLayer,
     CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER,
@@ -80,11 +80,11 @@ impl Config {
     pub fn build<R, P>(
         self,
         local_identity: tls::Conditional<identity::Local>,
-        resolve: R,
+        // resolve: R,
         dns_resolver: dns::Resolver,
-        profiles_client: P,
+        // profiles_client: P,
         // tap_layer: tap::Layer,
-        // metrics: ProxyMetrics,
+        metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Result<Outbound, Error>
