@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::overwrite_authority::CanOverrideAuthority,
+        http::override_authority::CanOverrideAuthority,
         http::{self, identity_from_header, Settings},
         identity,
         resolve::map_endpoint::MapEndpoint,
