@@ -88,14 +88,14 @@ impl Config {
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Result<Outbound, Error>
-    where
-        R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        R::Future: Send,
-        R::Resolution: Send,
+where
+        // R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
+        //     + Clone
+        //     + Send
+        //     + Sync
+        //     + 'static,
+        // R::Future: Send,
+        // R::Resolution: Send,
         // P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         // P::Future: Send,
     {
