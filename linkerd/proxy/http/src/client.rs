@@ -120,7 +120,7 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         trace!("Building HTTP client");
         let connect = self.connect.clone();
-        match *target.http_settings() {
+        match target.http_settings() {
             Settings::Http1 {
                 keep_alive,
                 wants_h1_upgrade: _,
