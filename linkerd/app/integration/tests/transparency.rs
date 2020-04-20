@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![type_length_limit = "1586225"]
 
 use linkerd2_app_integration::*;
 use std::error::Error as _;
