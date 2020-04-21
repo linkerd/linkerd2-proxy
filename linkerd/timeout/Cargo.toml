@@ -6,7 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3"
+futures = { version = "0.3", features = ["compat"] }
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
