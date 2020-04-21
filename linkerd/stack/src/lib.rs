@@ -10,7 +10,7 @@ pub mod map_response;
 pub mod map_target;
 pub mod new_service;
 pub mod on_response;
-// mod oneshot;
+mod oneshot;
 mod proxy;
 
 // pub use self::fallback::{Fallback, FallbackLayer};
@@ -20,5 +20,5 @@ pub use self::map_response::{MapResponse, MapResponseLayer};
 pub use self::map_target::{MapTarget, MapTargetLayer, MapTargetService};
 pub use self::new_service::NewService;
 pub use self::on_response::{OnResponse, OnResponseLayer};
-// pub use self::oneshot::{Oneshot, OneshotLayer};
+pub use self::oneshot::{Oneshot, OneshotLayer};
 pub use self::proxy::{Proxy, ProxyService};
