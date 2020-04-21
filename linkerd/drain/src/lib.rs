@@ -89,9 +89,11 @@ impl Watch {
     {
         tokio::select! {
             res = &mut future => return res,
-            _ = self.rx => on_drain(&mut future),
+            _ = self.rx => {
+                on_drain(&mut future);
+                (&mut future).await
+            }
         }
-        future.await
     }
 
     /// Wrap a future to count it against the completion of the `Drained`
@@ -186,7 +188,9 @@ mod tests {
         // Now, poll after drain has been signaled.
         assert_pending!(watch.poll());
         assert!(fut.draining.load(Relaxed));
-        assert_eq!(fut.poll_cnt.load(Relaxed), 3);
+        // Because `select` picks the branch to poll first *randomly*, we can't
+        // make assertions about poll counts any longer.
+        // assert_eq!(fut.poll_cnt.load(Relaxed), 3);
 
         // Draining is not ready until watcher completes
         assert_pending!(draining.poll());
@@ -194,7 +198,6 @@ mod tests {
         // Finishing up the watch future
         fut.finished.store(true, Relaxed);
         assert_ready!(watch.poll());
-        assert_eq!(fut.poll_cnt.load(Relaxed), 4);
         drop(watch);
 
         assert_ready!(draining.poll());
