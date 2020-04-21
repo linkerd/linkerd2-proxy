@@ -102,9 +102,9 @@ impl<L> Layers<L> {
     //     self.push(timeout::ProbeReadyLayer::new(interval))
     // }
 
-    // pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
-    //     self.push(stack::OnResponseLayer::new(layer))
-    // }
+    pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
+        self.push(stack::OnResponseLayer::new(layer))
+    }
 
     pub fn push_spawn_ready(self) -> Layers<Pair<L, SpawnReadyLayer>> {
         self.push(SpawnReadyLayer::new())
@@ -114,9 +114,9 @@ impl<L> Layers<L> {
         self.push(concurrency_limit::Layer::new(max))
     }
 
-    // pub fn push_make_ready<Req>(self) -> Layers<Pair<L, stack::MakeReadyLayer<Req>>> {
-    //     self.push(stack::MakeReadyLayer::new())
-    // }
+    pub fn push_make_ready<Req>(self) -> Layers<Pair<L, stack::MakeReadyLayer<Req>>> {
+        self.push(stack::MakeReadyLayer::new())
+    }
 
     pub fn push_map_response<R: Clone>(
         self,
@@ -144,9 +144,9 @@ impl<L> Layers<L> {
         self.push(http::boxed::response::Layer::new())
     }
 
-    // pub fn push_oneshot(self) -> Layers<Pair<L, stack::OneshotLayer>> {
-    //     self.push(stack::OneshotLayer::new())
-    // }
+    pub fn push_oneshot(self) -> Layers<Pair<L, stack::OneshotLayer>> {
+        self.push(stack::OneshotLayer::new())
+    }
 
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, InstrumentMakeLayer<G>>> {
         self.push(InstrumentMakeLayer::new(get_span))
@@ -187,9 +187,9 @@ impl<S> Stack<S> {
     //     self.push(stack::new_service::FromMakeServiceLayer::default())
     // }
 
-    // pub fn push_make_ready<Req>(self) -> Stack<stack::MakeReady<S, Req>> {
-    //     self.push(stack::MakeReadyLayer::new())
-    // }
+    pub fn push_make_ready<Req>(self) -> Stack<stack::MakeReady<S, Req>> {
+        self.push(stack::MakeReadyLayer::new())
+    }
 
     // /// Buffer requests when when the next layer is out of capacity.
     // pub fn spawn_buffer<Req>(self, capacity: usize) -> Stack<buffer::Buffer<Req, S::Future>>
@@ -239,9 +239,9 @@ impl<S> Stack<S> {
     //     self.push(timeout::ProbeReadyLayer::new(interval))
     // }
 
-    // pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
-    //     self.push(stack::OneshotLayer::new())
-    // }
+    pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
+        self.push(stack::OneshotLayer::new())
+    }
 
     pub fn push_map_response<R: Clone>(self, map_response: R) -> Stack<stack::MapResponse<S, R>> {
         self.push(stack::MapResponseLayer::new(map_response))
@@ -261,21 +261,21 @@ impl<S> Stack<S> {
     //     self.push(cache::CacheLayer::new(track))
     // }
 
-    // pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<stack::Fallback<S, F>> {
-    //     self.push(stack::FallbackLayer::new(fallback))
-    // }
+    pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<stack::Fallback<S, F>> {
+        self.push(stack::FallbackLayer::new(fallback))
+    }
 
-    // pub fn push_fallback_with_predicate<F, P>(
-    //     self,
-    //     fallback: F,
-    //     predicate: P,
-    // ) -> Stack<stack::Fallback<S, F, P>>
-    // where
-    //     F: Clone,
-    //     P: Fn(&Error) -> bool + Clone,
-    // {
-    //     self.push(stack::FallbackLayer::new(fallback).with_predicate(predicate))
-    // }
+    pub fn push_fallback_with_predicate<F, P>(
+        self,
+        fallback: F,
+        predicate: P,
+    ) -> Stack<stack::Fallback<S, F, P>>
+    where
+        F: Clone,
+        P: Fn(&Error) -> bool + Clone,
+    {
+        self.push(stack::FallbackLayer::new(fallback).with_predicate(predicate))
+    }
 
     // pub fn boxed<A>(self) -> Stack<boxed::BoxService<A, S::Response>>
     // where
