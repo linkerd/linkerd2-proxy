@@ -88,12 +88,10 @@ impl Watch {
         F: FnOnce(&mut A),
     {
         tokio::select! {
-            res = &mut future => res,
-            _ = self.rx => {
-                on_drain(&mut future);
-                (&mut future).await
-            }
+            res = &mut future => return res,
+            _ = self.rx => on_drain(&mut future),
         }
+        future.await
     }
 
     /// Wrap a future to count it against the completion of the `Drained`
