@@ -1,7 +1,10 @@
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
 use linkerd2_error::Error;
+use pin_project::{pin_project, project};
+use std::future::Future;
 use std::marker::PhantomData;
-use tower::util::Ready;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 #[derive(Debug)]
 pub struct MakeReadyLayer<Req>(PhantomData<fn(Req)>);
@@ -9,10 +12,19 @@ pub struct MakeReadyLayer<Req>(PhantomData<fn(Req)>);
 #[derive(Debug)]
 pub struct MakeReady<M, Req>(M, PhantomData<fn(Req)>);
 
+#[pin_project]
 #[derive(Debug)]
-pub enum MakeReadyFuture<F, S, Req> {
-    Making(F),
-    Ready(Ready<S, Req>),
+pub struct MakeReadyFuture<F, S, Req> {
+    #[pin]
+    state: State<F, S>,
+    _req: PhantomData<fn(Req)>,
+}
+
+#[pin_project]
+#[derive(Debug)]
+enum State<F, S> {
+    Making(#[pin] F),
+    Ready(Option<S>),
 }
 
 impl<Req> MakeReadyLayer<Req> {
@@ -46,12 +58,15 @@ where
     type Error = Error;
     type Future = MakeReadyFuture<M::Future, S, Req>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, t: T) -> Self::Future {
-        MakeReadyFuture::Making(self.0.call(t))
+        MakeReadyFuture {
+            state: State::Making(self.0.call(t)),
+            _req: PhantomData,
+        }
     }
 }
 
@@ -63,23 +78,27 @@ impl<M: Clone, Req> Clone for MakeReady<M, Req> {
 
 impl<F, S, Req> Future for MakeReadyFuture<F, S, Req>
 where
-    F: Future<Item = S>,
+    F: TryFuture<Ok = S>,
     F::Error: Into<Error>,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
 {
-    type Item = S;
-    type Error = Error;
+    type Output = Result<S, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
         loop {
-            *self = match self {
-                MakeReadyFuture::Making(ref mut fut) => {
-                    let svc = try_ready!(fut.poll().map_err(Into::into));
-                    MakeReadyFuture::Ready(Ready::new(svc))
+            #[project]
+            match this.state.as_mut().project() {
+                State::Making(fut) => {
+                    let svc = ready!(fut.try_poll(cx)).map_err(Into::into)?;
+                    this.state.set(State::Ready(Some(svc)));
                 }
-                MakeReadyFuture::Ready(ref mut fut) => {
-                    return fut.poll().map_err(Into::into);
+                State::Ready(svc) => {
+                    let _ = ready!(svc.as_mut().expect("polled after ready!").poll_ready(cx))
+                        .map_err(Into::into)?;
+                    return Poll::Ready(Ok(svc.expect("polled after ready!")));
                 }
             }
         }
