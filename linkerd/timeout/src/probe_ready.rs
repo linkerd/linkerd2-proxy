@@ -1,7 +1,8 @@
-use futures::{Future, Poll};
 use linkerd2_error::Error;
-use std::time::{Duration, Instant};
-use tokio_timer::Delay;
+use std::future::Future;
+use std::task::{Context, Poll};
+use std::time::Duration;
+use tokio::time::{self, Delay, Instant};
 
 #[derive(Copy, Clone, Debug)]
 pub struct ProbeReadyLayer(Duration);
@@ -29,7 +30,7 @@ impl<S> tower::layer::Layer<S> for ProbeReadyLayer {
         Self::Service {
             inner,
             interval: self.0,
-            probe: Delay::new(Instant::now()),
+            probe: time::delay_until(Instant::now()),
         }
     }
 }
@@ -45,11 +46,14 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        let ready = self.inner.poll_ready()?;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let ready = self.inner.poll_ready(cx)?;
         self.probe.reset(Instant::now() + self.interval);
-        self.probe.poll().expect("timer must succeed");
-        Ok(ready)
+        let probe = &mut self.probe;
+        tokio::pin!(probe);
+        // We don't care if the timer is pending.
+        let _ = probe.poll(cx);
+        ready.map(Ok)
     }
 
     fn call(&mut self, req: T) -> Self::Future {
@@ -60,68 +64,60 @@ where
 #[cfg(test)]
 mod test {
     use super::ProbeReadyLayer;
-    use futures::{future, Async, Future, Poll};
+    use futures::future;
     use linkerd2_error::Never;
+    use std::future::Future;
+    use std::pin::Pin;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Weak,
+        Arc,
     };
-    use std::time::{Duration, Instant};
+    use std::task::{Context, Poll};
+    use std::time::Duration;
     use tower::layer::Layer;
     use tower::Service;
 
-    fn run<F, R>(f: F)
-    where
-        F: FnOnce() -> R + 'static,
-        R: future::IntoFuture<Item = ()> + 'static,
-    {
-        tokio::runtime::current_thread::run(future::lazy(f).map_err(|_| panic!("Failed")));
-    }
-
-    #[test]
-    fn probes() {
+    #[tokio::test]
+    async fn probes() {
         struct Ready;
         impl tower::Service<()> for Ready {
             type Response = ();
             type Error = Never;
-            type Future = future::FutureResult<Self::Response, Self::Error>;
+            type Future =
+                Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
-            fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-                Ok(Async::Ready(()))
+            fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
             }
 
             fn call(&mut self, _: ()) -> Self::Future {
-                future::ok(())
+                Box::pin(async { Ok(()) })
             }
         }
 
-        struct Drive(super::ProbeReady<Ready>, Weak<AtomicUsize>);
-        impl Future for Drive {
-            type Item = ();
-            type Error = ();
-            fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-                if let Some(c) = self.1.upgrade() {
-                    self.0.poll_ready().map_err(|_| ())?;
+        let interval = Duration::from_millis(100);
+        let count = Arc::new(AtomicUsize::new(0));
+        let service = ProbeReadyLayer::new(interval).layer(Ready);
+        let count2 = Arc::downgrade(&count);
+        tokio::spawn(async move {
+            let mut service = service;
+            let count = count2;
+            future::poll_fn(|cx| {
+                if let Some(c) = count.upgrade() {
+                    let _ = service.poll_ready(cx).map_err(|_| ())?;
                     c.fetch_add(1, Ordering::SeqCst);
-                    return Ok(Async::NotReady);
+                    return Poll::Pending;
                 }
 
-                Ok(Async::Ready(()))
-            }
-        }
-
-        run(move || {
-            let interval = Duration::from_millis(100);
-            let count = Arc::new(AtomicUsize::new(0));
-            let service = ProbeReadyLayer::new(interval).layer(Ready);
-            tokio::spawn(Drive(service, Arc::downgrade(&count)));
-            let delay = (2 * interval) + Duration::from_millis(3);
-            tokio_timer::Delay::new(Instant::now() + delay)
-                .map_err(|_| ())
-                .map(move |_| {
-                    let polls = count.load(Ordering::SeqCst);
-                    assert!(polls >= 3, "{}", polls);
-                })
+                Poll::Ready(Ok::<(), ()>(()))
+            })
+            .await
         });
+
+        let delay = (2 * interval) + Duration::from_millis(3);
+        tokio::time::delay_for(delay).await;
+
+        let polls = count.load(Ordering::SeqCst);
+        assert!(polls >= 3, "{}", polls);
     }
 }
