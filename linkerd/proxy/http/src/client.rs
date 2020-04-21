@@ -120,7 +120,7 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         trace!("Building HTTP client");
         let connect = self.connect.clone();
-        match *target.http_settings() {
+        match target.http_settings() {
             Settings::Http1 {
                 keep_alive,
                 wants_h1_upgrade: _,
@@ -128,12 +128,13 @@ where
             } => {
                 let exec =
                     tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
+
                 let h1 = hyper::Client::builder()
                     .executor(exec)
                     .keep_alive(keep_alive)
-                    // hyper should never try to automatically set the Host
-                    // header, instead always just passing whatever we received.
-                    .set_host(false)
+                    // hyper should only try to automatically
+                    // set the host if the request was in absolute_form
+                    .set_host(was_absolute_form)
                     .build(HyperConnect::new(connect, target, was_absolute_form));
                 MakeFuture::Http1(Some(h1))
             }
