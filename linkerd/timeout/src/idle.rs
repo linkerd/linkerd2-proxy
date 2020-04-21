@@ -78,57 +78,12 @@ impl std::error::Error for IdleError {}
 
 #[cfg(test)]
 mod test {
-    use super::Error;
     use super::IdleLayer;
-    use std::task::Poll;
+    use crate::test_util::*;
     use std::time::Duration;
     use tower::layer::Layer;
     use tower::Service;
     use tower_test::mock;
-
-    async fn assert_svc_ready<S, R>(service: &mut S)
-    where
-        S: Service<R>,
-        S::Error: std::fmt::Debug,
-    {
-        futures::future::poll_fn(|cx| match service.poll_ready(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(()),
-            poll => panic!("service must be ready: {:?}", poll),
-        })
-        .await;
-    }
-
-    async fn assert_svc_pending<S, R>(service: &mut S)
-    where
-        S: Service<R>,
-        S::Error: std::fmt::Debug,
-    {
-        futures::future::poll_fn(|cx| match service.poll_ready(cx) {
-            Poll::Pending => Poll::Ready(()),
-            poll => panic!("service must be pending: {:?}", poll),
-        })
-        .await;
-    }
-
-    async fn assert_svc_error<E, S, R>(service: &mut S)
-    where
-        E: std::error::Error + 'static,
-        S: Service<R, Error = Error>,
-    {
-        futures::future::poll_fn(|cx| match service.poll_ready(cx) {
-            Poll::Ready(Err(e)) => {
-                assert!(
-                    e.is::<E>(),
-                    "error was not expected type\n  expected: {}\n    actual: {}",
-                    std::any::type_name::<E>(),
-                    e
-                );
-                Poll::Ready(())
-            }
-            poll => panic!("service must be errored: {:?}", poll),
-        })
-        .await;
-    }
 
     #[tokio::test]
     async fn call_succeeds_when_idle() {
