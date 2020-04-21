@@ -14,7 +14,7 @@ use tokio::sync::{mpsc, oneshot};
 /// when a drain is signaled.
 pub fn channel() -> (Signal, Watch) {
     let (tx, rx) = oneshot::channel();
-    let (drained_tx, drained_rx) = mpsc::channel(0);
+    let (drained_tx, drained_rx) = mpsc::channel(1);
 
     // Since `FutureExt::shared` requires the future's `Output` type to
     // implement `Clone`, and `oneshot::RecvError` does not, just map the
