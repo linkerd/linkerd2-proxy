@@ -1,7 +1,12 @@
 //! A middleware that applies a layer to the inner `Service`'s (or
 //! `NewService`'s) response.
-
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
+use pin_project::pin_project;
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 /// Layers over services such that an `L`-typed Layer is applied to the result
 /// of the inner Service or NewService.
@@ -9,8 +14,10 @@ use futures::{try_ready, Future, Poll};
 pub struct OnResponseLayer<L>(L);
 
 /// Applies `L`-typed layers to the responses of an `S`-typed service.
+#[pin_project]
 #[derive(Clone, Debug)]
 pub struct OnResponse<L, S> {
+    #[pin]
     inner: S,
     layer: L,
 }
@@ -53,7 +60,7 @@ where
     type Error = M::Error;
     type Future = OnResponse<L, M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready()
     }
 
@@ -68,14 +75,14 @@ where
 
 impl<L, F> Future for OnResponse<L, F>
 where
-    L: tower::layer::Layer<F::Item>,
-    F: Future,
+    L: tower::layer::Layer<F::Ok>,
+    F: TryFuture,
 {
-    type Item = L::Service;
-    type Error = F::Error;
+    type Output = Result<L::Service, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(self.inner.try_poll(cx))?;
         Ok(self.layer.layer(inner).into())
     }
 }
