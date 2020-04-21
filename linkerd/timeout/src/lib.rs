@@ -15,10 +15,11 @@ use tokio_connect::Connect;
 
 pub mod error;
 mod failfast;
-// mod idle;
+mod idle;
 // mod probe_ready;
 
 pub use self::failfast::FailFastError;
+pub use self::idle::{Idle, IdleError, IdleLayer};
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]
 pub struct Timeout<T> {
