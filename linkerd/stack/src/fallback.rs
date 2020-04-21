@@ -149,7 +149,8 @@ where
                         if !(predicate)(&error) {
                             return Poll::Ready(Err(error));
                         }
-                        this.state.set(State::B(fallback.take().unwrap()));
+                        let fallback = fallback.take().unwrap();
+                        this.state.set(State::B(fallback));
                     }
                 },
                 State::B(b) => {

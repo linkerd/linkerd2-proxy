@@ -61,7 +61,7 @@ where
     type Future = OnResponse<L, M::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready()
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -82,7 +82,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let inner = ready!(self.inner.try_poll(cx))?;
-        Ok(self.layer.layer(inner).into())
+        let inner = ready!(this.inner.try_poll(cx))?;
+        Poll::Ready(Ok(this.layer.layer(inner).into()))
     }
 }

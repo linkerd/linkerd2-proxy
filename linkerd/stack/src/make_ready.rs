@@ -98,7 +98,7 @@ where
                 State::Ready(svc) => {
                     let _ = ready!(svc.as_mut().expect("polled after ready!").poll_ready(cx))
                         .map_err(Into::into)?;
-                    return Poll::Ready(Ok(svc.expect("polled after ready!")));
+                    return Poll::Ready(Ok(svc.take().expect("polled after ready!")));
                 }
             }
         }
