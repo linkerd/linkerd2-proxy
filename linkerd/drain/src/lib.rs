@@ -218,7 +218,7 @@ mod tests {
             fut.0.draining.store(true, Relaxed)
         }));
 
-        let watch2 = task::spawn(rx.clone().watch(TestMeFut(fut2.clone()), |fut| {
+        let watch2 = task::spawn(rx.watch(TestMeFut(fut2.clone()), |fut| {
             fut.0.draining.store(true, Relaxed)
         }));
 
