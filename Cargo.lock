@@ -1229,6 +1229,7 @@ dependencies = [
  "linkerd2-identity",
  "linkerd2-stack",
  "linkerd2-timeout",
+ "pin-project",
  "rand 0.7.2",
  "task-compat",
  "tokio 0.1.22",

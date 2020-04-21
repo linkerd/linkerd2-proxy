@@ -46,3 +46,4 @@ tower-util = "0.1"
 tracing = "0.1.9"
 tracing-futures = { version = "0.1", features = ["std-future"] }
 try-lock = "0.2"
+pin-project = "0.4"

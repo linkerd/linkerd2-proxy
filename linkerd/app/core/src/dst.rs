@@ -2,7 +2,7 @@ use super::classify;
 use crate::profiles;
 use linkerd2_addr::Addr;
 use linkerd2_http_classify::CanClassify;
-// use linkerd2_proxy_http::timeout;
+use linkerd2_proxy_http::timeout;
 use std::fmt;
 use std::time::Duration;
 
@@ -23,11 +23,11 @@ impl CanClassify for Route {
     }
 }
 
-// impl timeout::HasTimeout for Route {
-//     fn timeout(&self) -> Option<Duration> {
-//         self.route.timeout()
-//     }
-// }
+impl timeout::HasTimeout for Route {
+    fn timeout(&self) -> Option<Duration> {
+        self.route.timeout()
+    }
+}
 
 impl fmt::Display for Route {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
