@@ -254,7 +254,7 @@ where
             metrics: this.metrics.clone(),
             _p: PhantomData,
         };
-        task::Poll::Ready(Ok(service.into()))
+        Poll03::Ready(Ok(service.into()))
     }
 }
 
@@ -388,7 +388,7 @@ where
 
         let classify = this.classify.take();
         let metrics = this.metrics.take();
-        task::Poll::Ready(match rsp {
+        Poll03::Ready(match rsp {
             Ok(rsp) => {
                 let classify = classify.map(|c| c.start(&rsp));
                 let (head, inner) = rsp.into_parts();
