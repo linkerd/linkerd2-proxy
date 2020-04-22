@@ -1,5 +1,4 @@
 use crate::io::BoxedIo;
-// use futures::{try_ready, Future, Poll};
 use futures_03::{
     compat::{Compat01As03, Future01CompatExt},
     TryFuture,

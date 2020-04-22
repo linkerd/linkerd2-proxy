@@ -5,14 +5,14 @@
 
 use crate::{svc, transport::tls::accept::Connection};
 use futures::{future, Future};
-use futures_03::{compat::Future01CompatExt, FutureExt};
+use futures_03::compat::Future01CompatExt;
 use http::StatusCode;
 use hyper::service::{service_fn, Service};
 use hyper::{Body, Request, Response};
 use linkerd2_metrics::{self as metrics, FmtMetrics};
 use std::io;
 use std::pin::Pin;
-use std::task::{self, Context};
+use std::task::{Context, Poll};
 
 mod readiness;
 mod trace_level;
@@ -87,8 +87,8 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
         Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>,
     >;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> task::Poll<Result<(), Self::Error>> {
-        task::Poll::Ready(Ok(()))
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, (meta, io): Connection) -> Self::Future {

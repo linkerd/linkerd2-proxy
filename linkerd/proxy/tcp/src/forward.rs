@@ -1,4 +1,3 @@
-// use futures::{try_ready, Future, Poll};
 use futures::{
     compat::{Compat01As03, Future01CompatExt},
     TryFuture,

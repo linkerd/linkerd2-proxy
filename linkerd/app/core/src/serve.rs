@@ -1,5 +1,4 @@
 use super::accept_error::AcceptError;
-// use futures::{future, try_ready, Future, Poll};
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::listen::{Accept, Listen, Serve};
