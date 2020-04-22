@@ -79,21 +79,20 @@ impl std::error::Error for IdleError {}
 #[cfg(test)]
 mod test {
     use super::IdleLayer;
-    use crate::test_util::*;
     use std::time::Duration;
+    use tokio_test::{assert_pending, assert_ready, assert_ready_ok};
     use tower::layer::Layer;
-    use tower::Service;
-    use tower_test::mock;
+    use tower_test::mock::{self, Spawn};
 
     #[tokio::test]
     async fn call_succeeds_when_idle() {
         let timeout = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
-        let mut service = IdleLayer::new(timeout).layer(service);
+        let mut service = Spawn::new(IdleLayer::new(timeout).layer(service));
 
         // The inner starts available.
         handle.allow(1);
-        assert_svc_ready(&mut service).await;
+        assert_ready_ok!(service.poll_ready());
 
         // Then we wait for the idle timeout, at which point the service
         // should still be usable if we don't poll_ready again.
@@ -105,21 +104,23 @@ mod test {
         // Service remains usable.
         fut.await.expect("call");
 
-        assert_svc_pending(&mut service).await;
+        assert_pending!(service.poll_ready());
     }
 
     #[tokio::test]
     async fn poll_ready_fails_after_idle() {
         let timeout = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
-        let mut service = IdleLayer::new(timeout).layer(service);
+        let mut service = Spawn::new(IdleLayer::new(timeout).layer(service));
         // The inner starts available.
         handle.allow(1);
-        assert_svc_ready(&mut service).await;
+        assert_ready_ok!(service.poll_ready());
 
         // Then we wait for the idle timeout, at which point the service
         // should fail.
         tokio::time::delay_for(timeout + Duration::from_millis(1)).await;
-        assert_svc_error::<super::IdleError, _, _>(&mut service).await;
+        assert!(assert_ready!(service.poll_ready())
+            .unwrap_err()
+            .is::<super::IdleError>());
     }
 }

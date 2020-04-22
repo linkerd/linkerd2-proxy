@@ -148,33 +148,32 @@ impl std::error::Error for FailFastError {}
 #[cfg(test)]
 mod test {
     use super::FailFastLayer;
-    use crate::test_util::*;
     use std::time::Duration;
+    use tokio_test::{assert_pending, assert_ready, assert_ready_ok};
     use tower::layer::Layer;
-    use tower::Service;
-    use tower_test::mock;
+    use tower_test::mock::{self, Spawn};
 
     #[tokio::test]
     async fn fails_fast() {
         let max_unavailable = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
-        let mut service = FailFastLayer::new(max_unavailable).layer(service);
+        let mut service = Spawn::new(FailFastLayer::new(max_unavailable).layer(service));
 
         // The inner starts unavailable.
         handle.allow(0);
-        assert_svc_pending(&mut service).await;
+        assert_pending!(service.poll_ready());
 
         // Then we wait for the idle timeout, at which point the service
         // should start failing fast.
         tokio::time::delay_for(max_unavailable + Duration::from_millis(1)).await;
-        assert_svc_ready(&mut service).await;
+        assert_ready_ok!(service.poll_ready());
 
         let err = service.call(()).await.err().expect("should failfast");
         assert!(err.is::<super::FailFastError>());
 
         // Then the inner service becomes available.
         handle.allow(1);
-        assert_svc_ready(&mut service).await;
+        assert_ready_ok!(service.poll_ready());
         let fut = service.call(());
 
         let ((), rsp) = handle.next_request().await.expect("must get a request");
