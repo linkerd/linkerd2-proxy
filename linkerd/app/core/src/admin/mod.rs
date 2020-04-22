@@ -4,12 +4,15 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{svc, transport::tls::accept::Connection};
-use futures::{future, Future, Poll};
+use futures::{future, Future};
+use futures_03::compat::Future01CompatExt;
 use http::StatusCode;
 use hyper::service::{service_fn, Service};
 use hyper::{Body, Request, Response};
 use linkerd2_metrics::{self as metrics, FmtMetrics};
 use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 mod readiness;
 mod trace_level;
@@ -80,10 +83,12 @@ impl<M: FmtMetrics> Service for Admin<M> {
 impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
     type Response = ();
     type Error = hyper::error::Error;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
+    type Future = Pin<
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>,
+    >;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, (meta, io): Connection) -> Self::Future {
@@ -96,7 +101,7 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
             req.extensions_mut().insert(ClientAddr(peer));
             svc.call(req)
         });
-        Box::new(self.1.serve_connection(io, svc))
+        Box::pin(self.1.serve_connection(io, svc).compat())
     }
 }
 

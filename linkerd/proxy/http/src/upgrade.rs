@@ -4,6 +4,7 @@ use futures::{
     future::{self, Either},
     Future, Poll,
 };
+use futures_03::compat::Future01CompatExt;
 use hyper::upgrade::OnUpgrade;
 use linkerd2_drain as drain;
 use linkerd2_duplex::Duplex;
@@ -132,27 +133,31 @@ impl Drop for Inner {
         if let (Some(server), Some(client)) = (server, client) {
             trace!("HTTP/1.1 upgrade has both halves");
 
-            let server_upgrade = server.map_err(|e| debug!("server HTTP upgrade error: {}", e));
+            let server_upgrade = server
+                .map_err(|e| debug!("server HTTP upgrade error: {}", e))
+                .compat();
 
-            let client_upgrade = client.map_err(|e| debug!("client HTTP upgrade error: {}", e));
+            let client_upgrade = client
+                .map_err(|e| debug!("client HTTP upgrade error: {}", e))
+                .compat();
 
-            let both_upgrades =
-                server_upgrade
-                    .join(client_upgrade)
-                    .and_then(|(server_conn, client_conn)| {
-                        trace!("HTTP upgrade successful");
-                        Duplex::new(server_conn, client_conn)
-                            .map_err(|e| info!("tcp duplex error: {}", e))
-                    });
-
+            let both_upgrades = async move {
+                let (server_conn, client_conn) =
+                    tokio_02::try_join!(server_upgrade, client_upgrade)?;
+                trace!("HTTP upgrade successful");
+                if let Err(e) = Duplex::new(server_conn, client_conn).compat().await {
+                    info!("tcp duplex error: {}", e)
+                }
+                Ok::<(), ()>(())
+            };
             // There's nothing to do when drain is signaled, we just have to hope
             // the sockets finish soon. However, the drain signal still needs to
             // 'watch' the TCP future so that the process doesn't close early.
-            tokio::spawn(
+            tokio_02::spawn(
                 self.upgrade_drain_signal
                     .take()
                     .expect("only taken in drop")
-                    .watch(both_upgrades, |_| ())
+                    .after(both_upgrades)
                     .in_current_span(),
             );
         } else {

@@ -1,4 +1,7 @@
-use futures::{try_ready, Future, Poll};
+use futures::TryFuture;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 pub trait ResponseMap<Rsp> {
     type Response;
@@ -9,8 +12,10 @@ pub trait ResponseMap<Rsp> {
 #[derive(Clone, Debug)]
 pub struct MapResponseLayer<R>(R);
 
+#[pin_project::pin_project]
 #[derive(Clone, Debug)]
 pub struct MapResponse<S, R> {
+    #[pin]
     inner: S,
     response_map: R,
 }
@@ -41,8 +46,8 @@ where
     type Error = S::Error;
     type Future = MapResponse<S::Future, R>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, req: T) -> Self::Future {
@@ -55,15 +60,15 @@ where
 
 impl<F, R> Future for MapResponse<F, R>
 where
-    F: Future,
-    R: ResponseMap<F::Item>,
+    F: TryFuture,
+    R: ResponseMap<F::Ok>,
 {
-    type Item = R::Response;
-    type Error = F::Error;
+    type Output = Result<R::Response, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let rsp = try_ready!(self.inner.poll());
-        Ok(self.response_map.map_response(rsp).into())
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let rsp = futures::ready!(this.inner.try_poll(cx)?);
+        Poll::Ready(Ok(this.response_map.map_response(rsp)))
     }
 }
 

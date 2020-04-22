@@ -17,7 +17,7 @@ linkerd2-app-core = { path = "../core" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-retry = { path = "../../retry" }
 tokio = "0.1.14"
-tower = "0.1"
+tower = "0.3"
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 tracing = "0.1.9"
 

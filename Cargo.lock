@@ -413,7 +413,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a5081aa3de1f7542a794a397cde100ed903b0630152d0973479018fd85423a7"
 dependencies = [
  "proc-macro-hack",
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
 ]
@@ -448,6 +448,7 @@ dependencies = [
  "proc-macro-hack",
  "proc-macro-nested",
  "slab",
+ "tokio-io",
 ]
 
 [[package]]
@@ -580,8 +581,8 @@ dependencies = [
  "futures 0.1.26",
  "http",
  "hyper",
- "tower-load",
- "tower-service",
+ "tower-load 0.1.0",
+ "tower-service 0.2.0",
 ]
 
 [[package]]
@@ -718,16 +719,16 @@ dependencies = [
  "ring",
  "rustls",
  "tokio 0.1.22",
- "tokio 0.2.13",
+ "tokio 0.2.17",
  "tokio-compat",
  "tokio-connect",
  "tokio-current-thread",
  "tokio-io",
  "tokio-rustls",
- "tower",
+ "tower 0.1.1",
  "tower-grpc",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
  "webpki",
 ]
 
@@ -782,22 +783,25 @@ dependencies = [
  "linkerd2-test-util",
  "linkerd2-timeout",
  "linkerd2-trace-context",
+ "pin-project",
  "procinfo",
  "prost-types",
  "quickcheck",
  "rand 0.7.2",
  "regex 1.0.0",
  "tokio 0.1.22",
+ "tokio 0.2.17",
  "tokio-compat",
  "tokio-timer",
- "tower",
+ "tower 0.3.1",
  "tower-balance",
  "tower-grpc",
- "tower-load",
+ "tower-load 0.1.0",
+ "tower-make",
  "tower-request-modifier",
  "tower-spawn-ready",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.2.3",
  "tracing-log",
  "tracing-subscriber",
 ]
@@ -814,7 +818,7 @@ dependencies = [
  "linkerd2-retry",
  "quickcheck",
  "tokio 0.1.22",
- "tower",
+ "tower 0.3.1",
  "tower-grpc",
  "tracing",
 ]
@@ -826,6 +830,7 @@ dependencies = [
  "bytes 0.4.11",
  "flate2",
  "futures 0.1.26",
+ "futures 0.3.4",
  "h2",
  "http",
  "http-body",
@@ -846,10 +851,10 @@ dependencies = [
  "tokio-current-thread",
  "tokio-io",
  "tokio-rustls",
- "tower",
+ "tower 0.1.1",
  "tower-grpc",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
  "webpki",
 ]
 
@@ -866,7 +871,7 @@ dependencies = [
  "linkerd2-retry",
  "quickcheck",
  "tokio 0.1.22",
- "tower",
+ "tower 0.3.1",
  "tower-grpc",
  "tracing",
 ]
@@ -884,7 +889,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.26",
  "linkerd2-error",
- "tower",
+ "tower 0.1.1",
 ]
 
 [[package]]
@@ -894,10 +899,10 @@ dependencies = [
  "futures 0.1.26",
  "linkerd2-error",
  "tokio 0.1.22",
- "tower",
+ "tower 0.1.1",
  "tower-test",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
 ]
 
 [[package]]
@@ -909,9 +914,9 @@ dependencies = [
  "linkerd2-lock",
  "linkerd2-stack",
  "tokio 0.1.22",
- "tower",
+ "tower 0.1.1",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
 ]
 
 [[package]]
@@ -921,7 +926,7 @@ dependencies = [
  "futures 0.1.26",
  "linkerd2-error",
  "tokio-sync",
- "tower",
+ "tower 0.1.1",
  "tracing",
 ]
 
@@ -936,9 +941,9 @@ dependencies = [
  "futures 0.1.26",
  "linkerd2-dns-name",
  "linkerd2-stack",
- "tower",
+ "tower 0.1.1",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
  "trust-dns-resolver",
 ]
 
@@ -954,8 +959,11 @@ dependencies = [
 name = "linkerd2-drain"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
+ "pin-project",
+ "tokio 0.2.17",
+ "tokio-test",
 ]
 
 [[package]]
@@ -982,7 +990,7 @@ dependencies = [
  "futures 0.1.26",
  "indexmap",
  "linkerd2-metrics",
- "tower",
+ "tower 0.1.1",
 ]
 
 [[package]]
@@ -991,7 +999,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.26",
  "linkerd2-error",
- "tower",
+ "tower 0.1.1",
 ]
 
 [[package]]
@@ -1013,18 +1021,17 @@ dependencies = [
  "http",
  "hyper",
  "linkerd2-error",
- "tower",
+ "tower 0.1.1",
 ]
 
 [[package]]
 name = "linkerd2-http-classify"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
  "http",
  "linkerd2-error",
  "linkerd2-stack",
- "tower",
+ "tower 0.3.1",
 ]
 
 [[package]]
@@ -1033,6 +1040,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
+ "futures 0.3.4",
  "h2",
  "http",
  "http-body",
@@ -1042,10 +1050,11 @@ dependencies = [
  "linkerd2-http-classify",
  "linkerd2-metrics",
  "linkerd2-stack",
+ "pin-project",
  "tokio 0.1.22",
  "tokio-timer",
- "tower",
- "tower-util",
+ "tower 0.3.1",
+ "tower-util 0.3.1",
  "tracing",
 ]
 
@@ -1079,9 +1088,9 @@ dependencies = [
  "linkerd2-error",
  "rand 0.7.2",
  "tokio 0.1.22",
- "tower",
+ "tower 0.1.1",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
  "tracing-log",
  "tracing-subscriber",
 ]
@@ -1116,7 +1125,7 @@ dependencies = [
 name = "linkerd2-proxy"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-app",
  "linkerd2-signal",
  "tokio-compat",
@@ -1152,7 +1161,7 @@ dependencies = [
  "linkerd2-proxy-core",
  "prost",
  "tokio-sync",
- "tower",
+ "tower 0.1.1",
  "tower-grpc",
  "tracing",
 ]
@@ -1161,22 +1170,25 @@ dependencies = [
 name = "linkerd2-proxy-core"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
- "tokio 0.1.22",
- "tower",
+ "pin-project",
+ "tokio 0.2.17",
+ "tower 0.3.1",
+ "tracing-futures 0.2.3",
 ]
 
 [[package]]
 name = "linkerd2-proxy-detect"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
  "linkerd2-io",
  "linkerd2-proxy-core",
- "tokio 0.1.22",
- "tower",
+ "pin-project",
+ "tokio 0.2.17",
+ "tower 0.3.1",
 ]
 
 [[package]]
@@ -1188,10 +1200,10 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-proxy-core",
  "tokio 0.1.22",
- "tower",
- "tower-util",
+ "tower 0.1.1",
+ "tower-util 0.1.0",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
 ]
 
 [[package]]
@@ -1200,6 +1212,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
+ "futures 0.3.4",
  "h2",
  "http",
  "http-body",
@@ -1217,17 +1230,20 @@ dependencies = [
  "linkerd2-stack",
  "linkerd2-timeout",
  "rand 0.7.2",
+ "task-compat",
  "tokio 0.1.22",
+ "tokio 0.2.17",
  "tokio-connect",
  "tokio-timer",
- "tower",
+ "tower 0.1.1",
+ "tower 0.3.1",
  "tower-balance",
- "tower-discover",
+ "tower-discover 0.1.0",
  "tower-grpc",
- "tower-load",
- "tower-util",
+ "tower-load 0.1.0",
+ "tower-util 0.1.0",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
  "try-lock",
 ]
 
@@ -1254,8 +1270,9 @@ dependencies = [
  "indexmap",
  "linkerd2-error",
  "linkerd2-proxy-core",
+ "pin-project",
  "tokio 0.1.22",
- "tower",
+ "tower 0.3.1",
  "tracing",
 ]
 
@@ -1282,21 +1299,22 @@ dependencies = [
  "rand 0.7.2",
  "tokio 0.1.22",
  "tokio-timer",
- "tower",
+ "tower 0.1.1",
  "tower-grpc",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
 ]
 
 [[package]]
 name = "linkerd2-proxy-tcp"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-duplex",
  "linkerd2-error",
+ "pin-project",
  "tokio 0.1.22",
- "tower",
+ "tower 0.3.1",
 ]
 
 [[package]]
@@ -1305,6 +1323,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
+ "futures 0.3.4",
  "indexmap",
  "libc",
  "linkerd2-conditional",
@@ -1314,12 +1333,17 @@ dependencies = [
  "linkerd2-io",
  "linkerd2-metrics",
  "linkerd2-proxy-core",
+ "pin-project",
  "ring",
  "rustls",
+ "task-compat",
  "tokio 0.1.22",
+ "tokio-compat",
  "tokio-rustls",
- "tower",
- "tower-util",
+ "tokio-util",
+ "tower 0.1.1",
+ "tower 0.3.1",
+ "tower-util 0.3.1",
  "tracing",
  "tracing-subscriber",
  "untrusted",
@@ -1332,7 +1356,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.1.26",
  "linkerd2-error",
- "tower",
+ "tower 0.1.1",
  "tracing",
 ]
 
@@ -1341,7 +1365,7 @@ name = "linkerd2-request-filter"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.26",
- "tower",
+ "tower 0.1.1",
  "tracing",
 ]
 
@@ -1353,8 +1377,8 @@ dependencies = [
  "futures 0.1.26",
  "linkerd2-error",
  "linkerd2-stack",
- "tower",
- "tower-util",
+ "tower 0.1.1",
+ "tower-util 0.1.0",
  "tracing",
 ]
 
@@ -1366,9 +1390,9 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "tokio-compat",
- "tower",
+ "tower 0.1.1",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
 ]
 
 [[package]]
@@ -1390,11 +1414,11 @@ dependencies = [
  "rand 0.7.2",
  "regex 1.0.0",
  "tokio 0.1.22",
- "tower",
+ "tower 0.3.1",
  "tower-grpc",
- "tower-util",
+ "tower-util 0.1.0",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
 ]
 
 [[package]]
@@ -1410,9 +1434,11 @@ dependencies = [
 name = "linkerd2-stack"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
- "tower",
+ "pin-project",
+ "tokio 0.2.17",
+ "tower 0.3.1",
 ]
 
 [[package]]
@@ -1424,8 +1450,8 @@ dependencies = [
  "linkerd2-metrics",
  "tokio 0.1.22",
  "tokio-timer",
- "tower",
- "tower-util",
+ "tower 0.1.1",
+ "tower-util 0.1.0",
  "tracing",
 ]
 
@@ -1433,12 +1459,13 @@ dependencies = [
 name = "linkerd2-stack-tracing"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
  "linkerd2-stack",
- "tower",
+ "pin-project",
+ "tower 0.3.1",
  "tracing",
- "tracing-futures",
+ "tracing-futures 0.1.0",
 ]
 
 [[package]]
@@ -1460,7 +1487,7 @@ dependencies = [
  "tokio 0.1.22",
  "tokio-connect",
  "tokio-timer",
- "tower",
+ "tower 0.1.1",
  "tower-test",
  "tracing",
 ]
@@ -1476,7 +1503,7 @@ dependencies = [
  "http",
  "linkerd2-error",
  "rand 0.7.2",
- "tower",
+ "tower 0.1.1",
  "tracing",
 ]
 
@@ -1750,16 +1777,16 @@ version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "385322a45f2ecf3410c68d2a549a4a2685e8051d0f278e39743ff4e451cb9b3f"
 dependencies = [
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
 ]
 
 [[package]]
 name = "pin-project-lite"
-version = "0.1.1"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0af6cbca0e6e3ce8692ee19fb8d734b641899e07b68eb73e9bbbd32f1703991"
+checksum = "237844750cfbb86f67afe27eee600dfbbcb6188d734139b534cbfbf4f96792ae"
 
 [[package]]
 name = "pin-utils"
@@ -1796,9 +1823,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.1"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c5c2380ae88876faae57698be9e9775e3544decad214599c3a6266cca6ac802"
+checksum = "df246d292ff63439fea9bc8c0a270bed0e390d5ebd4db4ba15aba81111b5abe3"
 dependencies = [
  "unicode-xid 0.2.0",
 ]
@@ -1895,7 +1922,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053a8c8bcc71fcce321828dc897a98ab9760bef03a4fc36693c231e5b3216cfe"
 dependencies = [
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
 ]
 
 [[package]]
@@ -2311,7 +2338,7 @@ version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66850e97125af79138385e9b88339cbcd037e3f28ceab8c5ad98e64f0f1f80bf"
 dependencies = [
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "unicode-xid 0.2.0",
 ]
@@ -2326,6 +2353,16 @@ dependencies = [
  "quote 0.6.11",
  "syn 0.15.29",
  "unicode-xid 0.1.0",
+]
+
+[[package]]
+name = "task-compat"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0328783c46b98ea9e2747a49761313f483cf7bba40e51d6f0b05bf31b988d578"
+dependencies = [
+ "futures 0.1.26",
+ "futures 0.3.4",
 ]
 
 [[package]]
@@ -2408,9 +2445,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.2.13"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fa5e81d6bc4e67fe889d5783bd2a128ab2e0cfa487e0be16b6a8d177b101616"
+checksum = "39fb9142eb6e9cc37f4f29144e62618440b149a138eee01a7bbe9b9226aaf17c"
 dependencies = [
  "bytes 0.5.3",
  "fnv",
@@ -2420,6 +2457,7 @@ dependencies = [
  "num_cpus",
  "pin-project-lite",
  "slab",
+ "tokio-macros",
 ]
 
 [[package]]
@@ -2454,7 +2492,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "pin-project-lite",
- "tokio 0.2.13",
+ "tokio 0.2.17",
  "tokio-current-thread",
  "tokio-executor",
  "tokio-reactor",
@@ -2510,6 +2548,17 @@ dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
  "log",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0c3acc6aa564495a0f2e1d59fab677cd7f81a19994cfc7f3ad0e64301560389"
+dependencies = [
+ "proc-macro2 1.0.10",
+ "quote 1.0.2",
+ "syn 1.0.5",
 ]
 
 [[package]]
@@ -2586,6 +2635,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-test"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cf9705471976fa5fc6817d3fbc9c4ff9696a6647af0e5c1870c81ca7445b05"
+dependencies = [
+ "bytes 0.5.3",
+ "futures-core",
+ "tokio 0.2.17",
+]
+
+[[package]]
 name = "tokio-threadpool"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2647,21 +2707,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-util"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be8242891f2b6cbef26a2d7e8605133c2c554cd35b3e4948ea892d6d68436499"
+dependencies = [
+ "bytes 0.5.3",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
+ "log",
+ "pin-project-lite",
+ "tokio 0.2.17",
+]
+
+[[package]]
 name = "tower"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc72f33b6a72c75c9df0037afce313018bae845f0ec7fdb9201b8768427a917f"
 dependencies = [
  "futures 0.1.26",
- "tower-buffer",
- "tower-discover",
- "tower-layer",
- "tower-limit",
- "tower-load-shed",
- "tower-retry",
- "tower-service",
- "tower-timeout",
- "tower-util",
+ "tower-buffer 0.1.0",
+ "tower-discover 0.1.0",
+ "tower-layer 0.1.0",
+ "tower-limit 0.1.1",
+ "tower-load-shed 0.1.0",
+ "tower-retry 0.1.0",
+ "tower-service 0.2.0",
+ "tower-timeout 0.1.0",
+ "tower-util 0.1.0",
+]
+
+[[package]]
+name = "tower"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3169017c090b7a28fce80abaad0ab4f5566423677c9331bb320af7e49cfe62"
+dependencies = [
+ "futures-core",
+ "tower-buffer 0.3.0",
+ "tower-discover 0.3.0",
+ "tower-layer 0.3.0",
+ "tower-limit 0.3.1",
+ "tower-load-shed 0.3.0",
+ "tower-retry 0.3.0",
+ "tower-service 0.3.0",
+ "tower-timeout 0.3.0",
+ "tower-util 0.3.1",
 ]
 
 [[package]]
@@ -2675,12 +2768,12 @@ dependencies = [
  "slab",
  "tokio-sync",
  "tokio-timer",
- "tower-discover",
- "tower-layer",
- "tower-load",
+ "tower-discover 0.1.0",
+ "tower-layer 0.1.0",
+ "tower-load 0.1.0",
  "tower-ready-cache",
- "tower-service",
- "tower-util",
+ "tower-service 0.2.0",
+ "tower-util 0.1.0",
  "tracing",
 ]
 
@@ -2693,8 +2786,22 @@ dependencies = [
  "futures 0.1.26",
  "tokio-executor",
  "tokio-sync",
- "tower-layer",
- "tower-service",
+ "tower-layer 0.1.0",
+ "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-buffer"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4887dc2a65d464c8b9b66e0e4d51c2fd6cf5b3373afc72805b0a60bce00446a"
+dependencies = [
+ "futures-core",
+ "pin-project",
+ "tokio 0.2.17",
+ "tower-layer 0.3.0",
+ "tower-service 0.3.0",
+ "tracing",
 ]
 
 [[package]]
@@ -2704,7 +2811,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73a7632286f78164d65d18fd0e570307acde9362489aa5c8c53e6315cc2bde47"
 dependencies = [
  "futures 0.1.26",
- "tower-service",
+ "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-discover"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f6b5000c3c54d269cc695dff28136bb33d08cbf1df2c48129e143ab65bf3c2a"
+dependencies = [
+ "futures-core",
+ "pin-project",
+ "tower-service 0.3.0",
 ]
 
 [[package]]
@@ -2722,8 +2840,8 @@ dependencies = [
  "log",
  "percent-encoding",
  "prost",
- "tower-service",
- "tower-util",
+ "tower-service 0.2.0",
+ "tower-util 0.1.0",
 ]
 
 [[package]]
@@ -2744,8 +2862,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ddf07e10c07dcc8f41da6de036dc66def1a85b70eb8a385159e3908bb258328"
 dependencies = [
  "futures 0.1.26",
- "tower-service",
+ "tower-service 0.2.0",
 ]
+
+[[package]]
+name = "tower-layer"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a35d656f2638b288b33495d1053ea74c40dc05ec0b92084dd71ca5566c4ed1dc"
 
 [[package]]
 name = "tower-limit"
@@ -2756,9 +2880,23 @@ dependencies = [
  "futures 0.1.26",
  "tokio-sync",
  "tokio-timer",
- "tower-layer",
- "tower-service",
+ "tower-layer 0.1.0",
+ "tower-service 0.2.0",
  "tracing",
+]
+
+[[package]]
+name = "tower-limit"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92c3040c5dbed68abffaa0d4517ac1a454cd741044f33ab0eefab6b8d1361404"
+dependencies = [
+ "futures-core",
+ "pin-project",
+ "tokio 0.2.17",
+ "tower-layer 0.3.0",
+ "tower-load 0.3.0",
+ "tower-service 0.3.0",
 ]
 
 [[package]]
@@ -2769,8 +2907,22 @@ dependencies = [
  "futures 0.1.26",
  "log",
  "tokio-timer",
- "tower-discover",
- "tower-service",
+ "tower-discover 0.1.0",
+ "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-load"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8cc79fc3afd07492b7966d7efa7c6c50f8ed58d768a6075dd7ae6591c5d2017b"
+dependencies = [
+ "futures-core",
+ "log",
+ "pin-project",
+ "tokio 0.2.17",
+ "tower-discover 0.3.0",
+ "tower-service 0.3.0",
 ]
 
 [[package]]
@@ -2780,8 +2932,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04fbaf5bfb63d84204db87b9b2aeec61549613f2bbb8706dcc36f5f3ea8cd769"
 dependencies = [
  "futures 0.1.26",
- "tower-layer",
- "tower-service",
+ "tower-layer 0.1.0",
+ "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-load-shed"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f021e23900173dc315feb4b6922510dae3e79c689b74c089112066c11f0ae4e"
+dependencies = [
+ "futures-core",
+ "pin-project",
+ "tower-layer 0.3.0",
+ "tower-service 0.3.0",
+]
+
+[[package]]
+name = "tower-make"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce50370d644a0364bf4877ffd4f76404156a248d104e2cc234cd391ea5cdc965"
+dependencies = [
+ "tower-service 0.3.0",
 ]
 
 [[package]]
@@ -2793,8 +2966,8 @@ dependencies = [
  "indexmap",
  "log",
  "tokio-sync",
- "tower-service",
- "tower-util",
+ "tower-service 0.2.0",
+ "tower-util 0.1.0",
 ]
 
 [[package]]
@@ -2804,7 +2977,7 @@ source = "git+https://github.com/tower-rs/tower-http#044e0ed5ae8b2e9946233b7cc8f
 dependencies = [
  "futures 0.1.26",
  "http",
- "tower-service",
+ "tower-service 0.2.0",
 ]
 
 [[package]]
@@ -2815,8 +2988,21 @@ checksum = "09e80588125061f276ed2a7b0939988b411e570a2dbb2965b1382ef4f71036f7"
 dependencies = [
  "futures 0.1.26",
  "tokio-timer",
- "tower-layer",
- "tower-service",
+ "tower-layer 0.1.0",
+ "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-retry"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6727956aaa2f8957d4d9232b308fe8e4e65d99db30f42b225646e86c9b6a952"
+dependencies = [
+ "futures-core",
+ "pin-project",
+ "tokio 0.2.17",
+ "tower-layer 0.3.0",
+ "tower-service 0.3.0",
 ]
 
 [[package]]
@@ -2829,6 +3015,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "tower-service"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e987b6bf443f4b5b3b6f38704195592cca41c5bb7aedd3c3693c7081f8289860"
+
+[[package]]
 name = "tower-spawn-ready"
 version = "0.1.0"
 source = "git+https://github.com/tower-rs/tower#7e55b7fa0b2db4ff36fd90f3700bd628c89951b6"
@@ -2836,9 +3028,9 @@ dependencies = [
  "futures 0.1.26",
  "tokio-executor",
  "tokio-sync",
- "tower-layer",
- "tower-service",
- "tower-util",
+ "tower-layer 0.1.0",
+ "tower-service 0.2.0",
+ "tower-util 0.1.0",
 ]
 
 [[package]]
@@ -2849,7 +3041,7 @@ checksum = "99a0b25036e2c58f681a04a5b312e9283d229445ad5e1221a1b7a4630df6fbdf"
 dependencies = [
  "futures 0.1.26",
  "tokio-sync",
- "tower-service",
+ "tower-service 0.2.0",
 ]
 
 [[package]]
@@ -2860,8 +3052,20 @@ checksum = "daa179ec4087589dc67148dc661abce5badc2c3ed4197adc7bd64b39f1f33c31"
 dependencies = [
  "futures 0.1.26",
  "tokio-timer",
- "tower-layer",
- "tower-service",
+ "tower-layer 0.1.0",
+ "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-timeout"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "127b8924b357be938823eaaec0608c482d40add25609481027b96198b2e4b31e"
+dependencies = [
+ "pin-project",
+ "tokio 0.2.17",
+ "tower-layer 0.3.0",
+ "tower-service 0.3.0",
 ]
 
 [[package]]
@@ -2872,8 +3076,20 @@ checksum = "4792342fac093db5d2558655055a89a04ca909663467a4310c7739d9f8b64698"
 dependencies = [
  "futures 0.1.26",
  "tokio-io",
- "tower-layer",
- "tower-service",
+ "tower-layer 0.1.0",
+ "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-util"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1093c19826d33807c72511e68f73b4a0469a3f22c2bd5f7d5212178b4b89674"
+dependencies = [
+ "futures-core",
+ "futures-util",
+ "pin-project",
+ "tower-service 0.3.0",
 ]
 
 [[package]]
@@ -2918,6 +3134,17 @@ dependencies = [
  "futures 0.1.26",
  "pin-project",
  "tokio 0.1.22",
+ "tracing",
+]
+
+[[package]]
+name = "tracing-futures"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58b0b7fd92dc7b71f29623cc6836dd7200f32161a2313dd78be233a8405694f6"
+dependencies = [
+ "futures 0.1.26",
+ "pin-project",
  "tracing",
 ]
 
@@ -3128,7 +3355,7 @@ dependencies = [
  "bumpalo",
  "lazy_static",
  "log",
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
  "wasm-bindgen-shared",
@@ -3150,7 +3377,7 @@ version = "0.2.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a433d89ecdb9f77d46fcf00c8cf9f3467b7de9954d8710c175f61e2e245bb0e"
 dependencies = [
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
  "wasm-bindgen-backend",
@@ -3172,7 +3399,7 @@ dependencies = [
  "failure",
  "heck",
  "log",
- "proc-macro2 1.0.1",
+ "proc-macro2 1.0.10",
  "quote 1.0.2",
  "syn 1.0.5",
  "wasm-bindgen-backend",

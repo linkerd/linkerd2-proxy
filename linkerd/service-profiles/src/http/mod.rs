@@ -1,23 +1,24 @@
-use futures::{Future, Poll};
 use http;
 use indexmap::IndexMap;
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_error::Error;
 use regex::Regex;
 use std::fmt;
+use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::watch;
 use tower::retry::budget::Budget;
 
-mod concrete;
-mod requests;
-pub mod service;
+// mod concrete;
+// mod requests;
+// pub mod service;
 
-pub use self::service::Layer;
+// pub use self::service::Layer;
 
 #[derive(Clone, Debug)]
 pub struct WeightedAddr {
@@ -40,9 +41,9 @@ pub type Sender = watch::Sender<Routes>;
 /// never ends and cannot fail.
 pub trait GetRoutes<T> {
     type Error: Into<Error>;
-    type Future: Future<Item = Receiver, Error = Self::Error>;
+    type Future: Future<Output = Result<Receiver, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error>;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
     fn get_routes(&mut self, target: T) -> Self::Future;
 }
@@ -56,8 +57,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        tower::Service::poll_ready(self)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        tower::Service::poll_ready(self, cx)
     }
 
     fn get_routes(&mut self, target: T) -> Self::Future {

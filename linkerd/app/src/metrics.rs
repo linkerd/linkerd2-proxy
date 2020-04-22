@@ -1,9 +1,17 @@
 pub use linkerd2_app_core::{
     classify::Class,
-    errors, handle_time, http_metrics as metrics,
+    errors,
+    // handle_time,
+    http_metrics as metrics,
     metric_labels::{ControlLabels, EndpointLabels, RouteLabels},
     metrics::FmtMetrics,
-    opencensus, proxy, stack_metrics, telemetry, transport, ControlHttpMetrics, ProxyMetrics,
+    opencensus,
+    proxy,
+    stack_metrics,
+    telemetry,
+    transport,
+    ControlHttpMetrics,
+    ProxyMetrics,
 };
 use std::time::{Duration, SystemTime};
 
@@ -53,9 +61,9 @@ impl Metrics {
 
         let http_errors = errors::Metrics::default();
 
-        let handle_time_report = handle_time::Metrics::new();
-        let inbound_handle_time = handle_time_report.inbound();
-        let outbound_handle_time = handle_time_report.outbound();
+        // let handle_time_report = handle_time::Metrics::new();
+        // let inbound_handle_time = handle_time_report.inbound();
+        // let outbound_handle_time = handle_time_report.outbound();
 
         let stack = stack_metrics::Registry::default();
 
@@ -65,7 +73,7 @@ impl Metrics {
 
         let metrics = Metrics {
             inbound: ProxyMetrics {
-                http_handle_time: inbound_handle_time,
+                // http_handle_time: inbound_handle_time,
                 http_endpoint: http_endpoint.clone(),
                 http_route: http_route.clone(),
                 http_route_actual: http_route_actual.clone(),
@@ -75,7 +83,7 @@ impl Metrics {
                 transport: transport.clone(),
             },
             outbound: ProxyMetrics {
-                http_handle_time: outbound_handle_time,
+                // http_handle_time: outbound_handle_time,
                 http_endpoint,
                 http_route,
                 http_route_retry,
@@ -94,7 +102,7 @@ impl Metrics {
             .and_then(retry_report)
             .and_then(actual_report)
             .and_then(control_report)
-            .and_then(handle_time_report)
+            // .and_then(handle_time_report)
             .and_then(transport_report)
             .and_then(opencensus_report)
             .and_then(stack)

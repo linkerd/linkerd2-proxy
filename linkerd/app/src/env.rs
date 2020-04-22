@@ -5,7 +5,13 @@ use crate::core::{
     transport::{listen, tls},
     Addr,
 };
-use crate::{dns, identity, inbound, oc_collector, outbound};
+use crate::{
+    dns,
+    identity,
+    inbound,
+    // oc_collector,
+    outbound,
+};
 use indexmap::IndexSet;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
@@ -435,29 +441,29 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         }
     };
 
-    let dst = {
-        let addr = dst_addr?.ok_or(EnvError::NoDestinationAddress)?;
-        let connect = if addr.addr.is_loopback() {
-            inbound.proxy.connect.clone()
-        } else {
-            outbound.proxy.connect.clone()
-        };
-        super::dst::Config {
-            context: dst_token?.unwrap_or_default(),
-            get_suffixes: dst_get_suffixes?
-                .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
-            get_networks: dst_get_networks?.unwrap_or_default(),
-            profile_suffixes: dst_profile_suffixes?
-                .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
-            initial_profile_timeout: dst_profile_initial_timeout?
-                .unwrap_or(DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT),
-            control: ControlConfig {
-                addr,
-                connect,
-                buffer_capacity,
-            },
-        }
-    };
+    // let dst = {
+    //     let addr = dst_addr?.ok_or(EnvError::NoDestinationAddress)?;
+    //     let connect = if addr.addr.is_loopback() {
+    //         inbound.proxy.connect.clone()
+    //     } else {
+    //         outbound.proxy.connect.clone()
+    //     };
+    //     super::dst::Config {
+    //         context: dst_token?.unwrap_or_default(),
+    //         get_suffixes: dst_get_suffixes?
+    //             .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
+    //         get_networks: dst_get_networks?.unwrap_or_default(),
+    //         profile_suffixes: dst_profile_suffixes?
+    //             .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
+    //         initial_profile_timeout: dst_profile_initial_timeout?
+    //             .unwrap_or(DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT),
+    //         control: ControlConfig {
+    //             addr,
+    //             connect,
+    //             buffer_capacity,
+    //         },
+    //     }
+    // };
 
     let admin = super::admin::Config {
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
@@ -479,24 +485,24 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             .into(),
     };
 
-    let oc_collector = match trace_collector_addr? {
-        None => oc_collector::Config::Disabled,
-        Some(addr) => {
-            let connect = if addr.addr.is_loopback() {
-                inbound.proxy.connect.clone()
-            } else {
-                outbound.proxy.connect.clone()
-            };
-            oc_collector::Config::Enabled {
-                hostname: hostname?,
-                control: ControlConfig {
-                    addr,
-                    connect,
-                    buffer_capacity: 10,
-                },
-            }
-        }
-    };
+    // let oc_collector = match trace_collector_addr? {
+    //     None => oc_collector::Config::Disabled,
+    //     Some(addr) => {
+    //         let connect = if addr.addr.is_loopback() {
+    //             inbound.proxy.connect.clone()
+    //         } else {
+    //             outbound.proxy.connect.clone()
+    //         };
+    //         oc_collector::Config::Enabled {
+    //             hostname: hostname?,
+    //             control: ControlConfig {
+    //                 addr,
+    //                 connect,
+    //                 buffer_capacity: 10,
+    //             },
+    //         }
+    //     }
+    // };
 
     let tap = tap?
         .map(|(addr, ids)| super::tap::Config::Enabled {
@@ -530,9 +536,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     Ok(super::Config {
         admin,
         dns,
-        dst,
+        // dst,
         tap,
-        oc_collector,
+        // oc_collector,
         identity,
         outbound,
         inbound,

@@ -1,10 +1,12 @@
 use super::accept_error::AcceptError;
-use futures::{future, try_ready, Future, Poll};
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::listen::{Accept, Listen, Serve};
 use linkerd2_proxy_transport::listen::Addrs;
-use tokio_compat::prelude::*;
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tracing::{debug, info_span, Span};
 use tracing_futures::{Instrument, Instrumented};
 
@@ -32,13 +34,19 @@ where
         .watch(ServeAndSpawnUntilCancel::new(listen, accept), |s| {
             s.cancel()
         })
-        .compat()
         .await
 }
 
+#[pin_project]
 struct ServeAndSpawnUntilCancel<L: Listen, A: Accept<L::Connection>>(
-    Option<Serve<L, TraceAccept<AcceptError<A>>, Instrumented<tokio::executor::DefaultExecutor>>>,
+    #[pin] State<Serve<L, TraceAccept<AcceptError<A>>>>,
 );
+
+#[pin_project]
+enum State<F> {
+    Serving(#[pin] F),
+    Cancelled,
+}
 
 impl<L, A> ServeAndSpawnUntilCancel<L, A>
 where
@@ -49,17 +57,16 @@ where
     A::Future: Send + 'static,
 {
     fn new(listen: L, accept: A) -> Self {
-        let exec = tokio::executor::DefaultExecutor::current().in_current_span();
         let accept = TraceAccept {
             accept: AcceptError::new(accept),
             span: Span::current(),
         };
-        let serve = listen.serve(accept).with_executor(exec);
-        ServeAndSpawnUntilCancel(Some(serve))
+        let serve = listen.serve(accept);
+        ServeAndSpawnUntilCancel(State::Serving(serve))
     }
 
     fn cancel(&mut self) {
-        self.0 = None;
+        self.0 = State::Cancelled;
     }
 }
 
@@ -71,13 +78,19 @@ where
     A::Future: Send + 'static,
     A::Error: 'static,
 {
-    type Item = ();
-    type Error = Error;
+    type Output = Result<(), Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.0.as_mut() {
-            Some(ref mut serve) => match try_ready!(serve.poll()) {},
-            None => Ok(().into()),
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        match self.project().0.project() {
+            State::Serving(serve) => match futures_03::ready!(serve.poll(cx)) {
+                Ok(_never) => unreachable!(
+                    "this is supposed to be a `never` but rustc can't seem to figure that out?"
+                ),
+                Err(e) => Poll::Ready(Err(e)),
+            },
+            State::Cancelled => Poll::Ready(Ok(())),
         }
     }
 }
@@ -92,9 +105,9 @@ impl<C: HasSpan, A: Accept<C>> tower::Service<C> for TraceAccept<A> {
     type Error = A::Error;
     type Future = Instrumented<A::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), A::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), A::Error>> {
         let _enter = self.span.enter();
-        self.accept.poll_ready()
+        self.accept.poll_ready(cx)
     }
 
     fn call(&mut self, conn: C) -> Self::Future {

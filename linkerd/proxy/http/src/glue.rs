@@ -1,9 +1,11 @@
 use crate::{upgrade::Http11Upgrade, HasH2Reason};
 use futures::{try_ready, Async, Future, Poll};
+use futures_03::{compat::Compat, TryFutureExt};
 use http;
 use hyper::client::connect as hyper_connect;
 use hyper::{self, body::Payload};
 use linkerd2_error::Error;
+use std::pin::Pin;
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
@@ -117,24 +119,25 @@ impl<S> HyperServerSvc<S> {
 
 impl<S, B> hyper::service::Service for HyperServerSvc<S>
 where
-    S: tower::Service<http::Request<HttpBody>, Response = http::Response<B>>,
+    S: tower_03::Service<http::Request<HttpBody>, Response = http::Response<B>>,
     S::Error: Into<Error>,
     B: Payload,
 {
     type ReqBody = hyper::Body;
     type ResBody = B;
     type Error = S::Error;
-    type Future = S::Future;
+    type Future = Compat<Pin<Box<S::Future>>>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready()
+        task_compat::poll_03_to_01(task_compat::with_context(|cx| self.service.poll_ready(cx)))
     }
 
     fn call(&mut self, req: http::Request<Self::ReqBody>) -> Self::Future {
-        self.service.call(req.map(|b| HttpBody {
+        Box::pin(self.service.call(req.map(|b| HttpBody {
             body: Some(b),
             upgrade: None,
-        }))
+        })))
+        .compat()
     }
 }
 

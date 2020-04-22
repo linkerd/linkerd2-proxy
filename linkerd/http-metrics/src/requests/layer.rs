@@ -1,14 +1,30 @@
 use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
-use futures::{try_ready, Async, Future, Poll};
+use futures::{
+    try_ready,
+    Async,
+    // This renaming import is (temporarily) necessary, since we implement body
+    // traits from futures 0.1 versions of our dependencies.
+    Poll as Poll01,
+};
+use futures_03::TryFuture;
 use http;
 use hyper::body::Payload;
 use linkerd2_error::Error;
 use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
 use linkerd2_stack::{NewService, Proxy};
+use pin_project::pin_project;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::{
+    Context,
+    // This renaming import is (temporarily) necessary, since we implement body
+    // traits from futures 0.1 versions of our dependencies, but
+    // tower::Service from the std::future version of Tower.
+    Poll as Poll03,
+};
 use std::time::Instant;
 use tokio_timer::clock;
 
@@ -38,6 +54,7 @@ where
 }
 
 /// A middleware that records HTTP metrics.
+#[pin_project]
 #[derive(Debug)]
 pub struct Service<S, C>
 where
@@ -45,10 +62,12 @@ where
     C::Class: Hash + Eq,
 {
     metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
+    #[pin]
     inner: S,
     _p: PhantomData<fn() -> C>,
 }
 
+#[pin_project]
 pub struct ResponseFuture<F, C>
 where
     C: ClassifyResponse,
@@ -57,6 +76,7 @@ where
     classify: Option<C>,
     metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     stream_open_at: Instant,
+    #[pin]
     inner: F,
 }
 
@@ -193,8 +213,8 @@ where
     type Error = M::Error;
     type Future = Service<M::Future, C>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll03<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -218,23 +238,23 @@ where
     }
 }
 
-impl<F, C> Future for Service<F, C>
+impl<F, C> std::future::Future for Service<F, C>
 where
-    F: Future,
+    F: TryFuture,
     C: ClassifyResponse + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Item = Service<F::Item, C>;
-    type Error = F::Error;
+    type Output = Result<Service<F::Ok, C>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll03<Self::Output> {
+        let this = self.project();
+        let inner = futures_03::ready!(this.inner.try_poll(cx))?;
         let service = Service {
             inner,
-            metrics: self.metrics.clone(),
-            _p: self._p,
+            metrics: this.metrics.clone(),
+            _p: PhantomData,
         };
-        Ok(service.into())
+        Poll03::Ready(Ok(service.into()))
     }
 }
 
@@ -315,8 +335,8 @@ where
     type Error = Error;
     type Future = ResponseFuture<S::Future, C>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll03<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
@@ -352,27 +372,23 @@ where
     }
 }
 
-impl<C, F, B> Future for ResponseFuture<F, C>
+impl<C, F, B> std::future::Future for ResponseFuture<F, C>
 where
-    F: Future<Item = http::Response<B>>,
+    F: TryFuture<Ok = http::Response<B>>,
     F::Error: Into<Error>,
     B: Payload,
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
-    type Item = http::Response<ResponseBody<B, C::ClassifyEos>>;
-    type Error = Error;
+    type Output = Result<http::Response<ResponseBody<B, C::ClassifyEos>>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let rsp = match self.inner.poll() {
-            Ok(Async::NotReady) => return Ok(Async::NotReady),
-            Ok(Async::Ready(rsp)) => Ok(rsp),
-            Err(e) => Err(e),
-        };
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll03<Self::Output> {
+        let this = self.project();
+        let rsp = futures_03::ready!(this.inner.try_poll(cx));
 
-        let classify = self.classify.take();
-        let metrics = self.metrics.take();
-        match rsp {
+        let classify = this.classify.take();
+        let metrics = this.metrics.take();
+        Poll03::Ready(match rsp {
             Ok(rsp) => {
                 let classify = classify.map(|c| c.start(&rsp));
                 let (head, inner) = rsp.into_parts();
@@ -380,7 +396,7 @@ where
                     status: head.status,
                     classify,
                     metrics,
-                    stream_open_at: self.stream_open_at,
+                    stream_open_at: *this.stream_open_at,
                     latency_recorded: false,
                     inner,
                 };
@@ -396,7 +412,7 @@ where
                 }
                 Err(e)
             }
-        }
+        })
     }
 }
 
@@ -412,7 +428,7 @@ where
         self.inner.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
         let frame = try_ready!(self.inner.poll_data());
 
         if let Some(lock) = self.metrics.take() {
@@ -426,7 +442,7 @@ where
         Ok(Async::Ready(frame))
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
         self.inner.poll_trailers()
     }
 }
@@ -443,11 +459,11 @@ where
         Payload::is_end_stream(self)
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
         Payload::poll_data(self)
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
         Payload::poll_trailers(self)
     }
 }
@@ -566,7 +582,7 @@ where
         self.inner.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
         let frame = try_ready!(self
             .inner
             .poll_data()
@@ -579,7 +595,7 @@ where
         Ok(Async::Ready(frame))
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
         let trls = try_ready!(self
             .inner
             .poll_trailers()
@@ -606,11 +622,11 @@ where
         Payload::is_end_stream(self)
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
         Payload::poll_data(self)
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
         Payload::poll_trailers(self)
     }
 }

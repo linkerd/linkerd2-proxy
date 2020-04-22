@@ -1,4 +1,5 @@
 use super::*;
+use futures_03::compat::Future01CompatExt;
 
 pub fn new() -> Proxy {
     Proxy::new()
@@ -249,7 +250,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
 
                 tokio_compat::runtime::current_thread::Runtime::new()
                     .expect("proxy")
-                    .block_on(future::lazy(move || {
+                    .block_on_std(async move {
                         let main = config.build(trace_handle).expect("config");
 
                         // slip the running tx into the shutdown future, since the first time
@@ -263,20 +264,20 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
-                        let on_shutdown = future::poll_fn(move || {
+                        let on_shutdown = futures::future::poll_fn::<(), (), _>(move || {
                             if let Some((tx, addrs)) = running.take() {
                                 let _ = tx.send(addrs);
                             }
 
-                            try_ready!(rx.poll());
+                            try_ready!(rx.poll().map_err(|_| ()));
                             debug!("shutdown");
                             Ok(().into())
                         });
 
                         let drain = main.spawn();
-                        on_shutdown.and_then(move |()| drain.drain())
-                    }))
-                    .expect("proxy");
+                        on_shutdown.compat().await.expect("proxy");
+                        drain.drain().await;
+                    });
             })
         })
         .expect("spawn");

@@ -228,10 +228,10 @@ where
 
 // === impl Connect ===
 
-impl<L, T, M> tower::Service<T> for Connect<L, L::Labels, M>
+impl<L, T, M> tower_01::Service<T> for Connect<L, L::Labels, M>
 where
     L: TransportLabels<T>,
-    M: tower::MakeConnection<T>,
+    M: tower_01::MakeConnection<T>,
 {
     type Response = Io<M::Connection>;
     type Error = M::Error;

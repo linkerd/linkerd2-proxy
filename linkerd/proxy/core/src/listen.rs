@@ -1,7 +1,10 @@
-use futures::{try_ready, Future, Poll};
 use linkerd2_error::{Error, Never};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio;
 use tower::Service;
+use tracing_futures::Instrument;
 
 pub trait Bind {
     type Connection;
@@ -16,20 +19,16 @@ pub trait Listen {
 
     fn listen_addr(&self) -> std::net::SocketAddr;
 
-    fn poll_accept(&mut self) -> Poll<Self::Connection, Self::Error>;
+    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<Result<Self::Connection, Self::Error>>;
 
-    fn serve<A: Accept<Self::Connection>>(
-        self,
-        accept: A,
-    ) -> Serve<Self, A, tokio::executor::DefaultExecutor>
+    fn serve<A: Accept<Self::Connection>>(self, accept: A) -> Serve<Self, A>
     where
         Self: Sized,
-        Serve<Self, A, tokio::executor::DefaultExecutor>: Future,
+        Serve<Self, A>: Future,
     {
         Serve {
             listen: self,
             accept,
-            executor: tokio::executor::DefaultExecutor::current(),
         }
     }
 }
@@ -37,9 +36,9 @@ pub trait Listen {
 /// Handles an accepted connection.
 pub trait Accept<C> {
     type Error: Into<Error>;
-    type Future: Future<Item = (), Error = Self::Error>;
+    type Future: Future<Output = Result<(), Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error>;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
     fn accept(&mut self, connection: C) -> Self::Future;
 
@@ -62,8 +61,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Service::poll_ready(self)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Service::poll_ready(self, cx)
     }
 
     fn accept(&mut self, connection: C) -> Self::Future {
@@ -76,8 +75,8 @@ impl<C, S: Accept<C>> Service<C> for AcceptService<S> {
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
     }
 
     fn call(&mut self, connection: C) -> Self::Future {
@@ -85,43 +84,27 @@ impl<C, S: Accept<C>> Service<C> for AcceptService<S> {
     }
 }
 
-pub struct Serve<L, A, E> {
+#[pin_project::pin_project]
+pub struct Serve<L, A> {
     listen: L,
     accept: A,
-    executor: E,
 }
 
-impl<L, A> Serve<L, A, tokio::executor::DefaultExecutor>
+impl<L, A> Future for Serve<L, A>
 where
     L: Listen,
     A: Accept<L::Connection, Error = Never>,
     A::Future: Send + 'static,
 {
-    pub fn with_executor<E: tokio::executor::Executor>(self, executor: E) -> Serve<L, A, E> {
-        Serve {
-            listen: self.listen,
-            accept: self.accept,
-            executor,
-        }
-    }
-}
+    type Output = Result<Never, Error>;
 
-impl<L, A, E> Future for Serve<L, A, E>
-where
-    L: Listen,
-    A: Accept<L::Connection, Error = Never>,
-    A::Future: Send + 'static,
-    E: tokio::executor::Executor,
-{
-    type Item = Never;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
         loop {
-            try_ready!(self.accept.poll_ready());
-            let conn = try_ready!(self.listen.poll_accept().map_err(Into::into));
-            let accept = self.accept.accept(conn).map_err(|e| match e {});
-            self.executor.spawn(Box::new(accept)).map_err(Error::from)?;
+            futures::ready!(this.accept.poll_ready(cx))?;
+            let conn = futures::ready!(this.listen.poll_accept(cx).map_err(Into::into))?;
+            let accept = (this.accept).accept(conn).in_current_span();
+            tokio::spawn(accept);
         }
     }
 }

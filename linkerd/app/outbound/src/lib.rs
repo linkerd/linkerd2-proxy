@@ -11,21 +11,37 @@ pub use self::endpoint::{
 };
 use futures::future;
 use linkerd2_app_core::{
-    classify,
+    // classify,
     config::{ProxyConfig, ServerConfig},
-    dns, drain, dst, errors, metric_labels,
+    dns,
+    drain,
+    // dst,
+    // errors,
+    metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
         self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
         Server,
     },
-    reconnect, retry, router, serve,
+    reconnect,
+    // retry,
+    router,
+    serve,
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, tls},
-    Conditional, DiscoveryRejected, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
-    DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
+    Conditional,
+    DiscoveryRejected,
+    Error,
+    ProxyMetrics,
+    TraceContextLayer,
+    CANONICAL_DST_HEADER,
+    DST_OVERRIDE_HEADER,
+    L5D_CLIENT_ID,
+    L5D_REMOTE_IP,
+    L5D_REQUIRE_ID,
+    L5D_SERVER_ID,
 };
 use std::collections::HashMap;
 use std::future::Future;
@@ -40,11 +56,11 @@ mod add_remote_ip_on_rsp;
 #[allow(dead_code)] // TODO #2597
 mod add_server_id_on_rsp;
 mod endpoint;
-mod orig_proto_upgrade;
-mod require_identity_on_endpoint;
+// mod orig_proto_upgrade;
+// mod require_identity_on_endpoint;
 
-use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
-use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
+// use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
+// use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -64,24 +80,24 @@ impl Config {
     pub fn build<R, P>(
         self,
         local_identity: tls::Conditional<identity::Local>,
-        resolve: R,
+        // resolve: R,
         dns_resolver: dns::Resolver,
-        profiles_client: P,
-        tap_layer: tap::Layer,
+        // profiles_client: P,
+        // tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Result<Outbound, Error>
-    where
-        R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        R::Future: Send,
-        R::Resolution: Send,
-        P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
-        P::Future: Send,
+where
+        // R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
+        //     + Clone
+        //     + Send
+        //     + Sync
+        //     + 'static,
+        // R::Future: Send,
+        // R::Resolution: Send,
+        // P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
+        // P::Future: Send,
     {
         use proxy::core::listen::{Bind, Listen};
         let Config {
@@ -112,7 +128,8 @@ impl Config {
                 .push(tls::client::ConnectLayer::new(local_identity))
                 // Limits the time we wait for a connection to be established.
                 .push_timeout(connect.timeout)
-                .push(metrics.transport.layer_connect(TransportLabels));
+                // .push(metrics.transport.layer_connect(TransportLabels))
+                ;
 
             // Forwards TCP streams that cannot be decoded as HTTP.
             let tcp_forward = tcp_connect
@@ -416,14 +433,14 @@ impl Config {
             //     .check_new_service::<tls::accept::Meta>();
 
             let http_server = |_| {
-                tower::service_fn(move |_: http::Request<_>| {
-                    future::ok(http::Response::new(http::Body::default()))
+                tower::service_fn(move |_: http::Request<_>| async {
+                    Ok(http::Response::new(http::Body::default()))
                 })
             };
 
             let tcp_server = Server::new(
                 TransportLabels,
-                metrics.transport,
+                // metrics.transport,
                 tcp_forward.into_inner(),
                 http_server, /* .into_inner(), */
                 h2_settings,
@@ -444,9 +461,9 @@ impl Config {
     }
 }
 
-fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
-    metric_labels::StackLabels::outbound(name)
-}
+// fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
+//     metric_labels::StackLabels::outbound(name)
+// }
 
 #[derive(Copy, Clone, Debug)]
 struct TransportLabels;
@@ -504,7 +521,9 @@ impl From<Error> for DiscoveryError {
             return inner.clone();
         }
 
-        if orig.is::<DiscoveryRejected>() || orig.is::<profiles::InvalidProfileAddr>() {
+        if orig.is::<DiscoveryRejected>()
+        //  || orig.is::<profiles::InvalidProfileAddr>()
+        {
             return DiscoveryError::DiscoveryRejected;
         }
 
@@ -522,5 +541,6 @@ fn is_discovery_rejected(err: &Error) -> bool {
         return is_discovery_rejected(e.inner());
     }
 
-    err.is::<DiscoveryRejected>() || err.is::<profiles::InvalidProfileAddr>()
+    err.is::<DiscoveryRejected>()
+    //  || err.is::<profiles::InvalidProfileAddr>()
 }

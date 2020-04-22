@@ -16,6 +16,7 @@ mock-orig-dst  = []
 [dependencies]
 bytes = "0.4"
 futures = "0.1"
+futures_03 = { package = "futures", version = "0.3", features = ["compat", "io-compat"]}
 indexmap = "1.0.0"
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns-name = { path = "../../dns/name" }
@@ -27,16 +28,21 @@ linkerd2-proxy-core = { path = "../core" }
 ring = "0.16"
 rustls = "0.16"
 tokio = "0.1.14"
+tokio-compat = "0.1"
 tokio-rustls = "0.10"
-tower = "0.1"
+task-compat = "0.1"
+tower = "0.3"
+tower_01 = {package = "tower", version = "0.1"}
 tracing = "0.1.9"
 webpki = "0.21"
 untrusted = "0.7"
+pin-project = "0.4"
+tokio-util = { version = "0.3", features = ["compat"]}
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
 linkerd2-identity = { path = "../../identity", features = ["test-util"] }
-tower-util = "0.1"
+tower-util = "0.3"
 tracing-subscriber = "0.2.1"
