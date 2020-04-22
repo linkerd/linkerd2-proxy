@@ -170,11 +170,7 @@ where
                     .clone()
                     .into_service()
                     .oneshot((proto.tls, io));
-                return Box::pin(async move {
-                    tokio_02::pin!(fwd);
-                    drain.watch(fwd.map_err(Into::into), |_| {}).await;
-                    Ok(())
-                });
+                return Box::pin(drain.after(fwd.map_err(Into::into)));
             }
         };
 
