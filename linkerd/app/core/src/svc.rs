@@ -191,17 +191,17 @@ impl<S> Stack<S> {
     //     self.push(stack::MakeReadyLayer::new())
     // }
 
-    // /// Buffer requests when when the next layer is out of capacity.
-    // pub fn spawn_buffer<Req>(self, capacity: usize) -> Stack<buffer::Buffer<Req, S::Future>>
-    // where
-    //     Req: Send + 'static,
-    //     S: Service<Req> + Send + 'static,
-    //     S::Response: Send + 'static,
-    //     S::Error: Into<Error> + Send + Sync,
-    //     S::Future: Send,
-    // {
-    //     self.push(buffer::SpawnBufferLayer::new(capacity))
-    // }
+    /// Buffer requests when when the next layer is out of capacity.
+    pub fn spawn_buffer<Req>(self, capacity: usize) -> Stack<buffer::Buffer<Req, S::Future>>
+    where
+        Req: Send + 'static,
+        S: Service<Req> + Send + 'static,
+        S::Response: Send + 'static,
+        S::Error: Into<Error> + Send + Sync,
+        S::Future: Send,
+    {
+        self.push(buffer::SpawnBufferLayer::new(capacity))
+    }
 
     // /// Assuming `S` implements `NewService` or `MakeService`, applies the given
     // /// `L`-typed layer on each service produced by `S`.
