@@ -902,7 +902,7 @@ dependencies = [
  "tokio 0.2.17",
  "tokio-test",
  "tower 0.3.1",
- "tower-test 0.3.0",
+ "tower-test",
  "tracing",
  "tracing-futures 0.1.0",
 ]
@@ -1492,7 +1492,7 @@ dependencies = [
  "tokio-connect",
  "tokio-test",
  "tower 0.3.1",
- "tower-test 0.3.0",
+ "tower-test",
  "tracing",
 ]
 
@@ -3035,17 +3035,6 @@ dependencies = [
  "tower-layer 0.1.0",
  "tower-service 0.2.0",
  "tower-util 0.1.0",
-]
-
-[[package]]
-name = "tower-test"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99a0b25036e2c58f681a04a5b312e9283d229445ad5e1221a1b7a4630df6fbdf"
-dependencies = [
- "futures 0.1.26",
- "tokio-sync",
- "tower-service 0.2.0",
 ]
 
 [[package]]
