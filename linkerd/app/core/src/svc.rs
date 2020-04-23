@@ -87,20 +87,20 @@ impl<L> Layers<L> {
         self.push(lock::LockLayer::new())
     }
 
-    // // Fails the inner service after it has not been polled for the given timeout.
-    // pub fn push_idle_timeout(self, timeout: Duration) -> Layers<Pair<L, timeout::IdleLayer>> {
-    //     self.push(timeout::IdleLayer::new(timeout))
-    // }
+    // Fails the inner service after it has not been polled for the given timeout.
+    pub fn push_idle_timeout(self, timeout: Duration) -> Layers<Pair<L, timeout::IdleLayer>> {
+        self.push(timeout::IdleLayer::new(timeout))
+    }
 
-    // // Makes the service eagerly process and fail requests after the given timeout.
-    // pub fn push_failfast(self, timeout: Duration) -> Layers<Pair<L, timeout::FailFastLayer>> {
-    //     self.push(timeout::FailFastLayer::new(timeout))
-    // }
+    // Makes the service eagerly process and fail requests after the given timeout.
+    pub fn push_failfast(self, timeout: Duration) -> Layers<Pair<L, timeout::FailFastLayer>> {
+        self.push(timeout::FailFastLayer::new(timeout))
+    }
 
-    // // Polls the inner service at least once per interval.
-    // pub fn push_probe_ready(self, interval: Duration) -> Layers<Pair<L, timeout::ProbeReadyLayer>> {
-    //     self.push(timeout::ProbeReadyLayer::new(interval))
-    // }
+    // Polls the inner service at least once per interval.
+    pub fn push_probe_ready(self, interval: Duration) -> Layers<Pair<L, timeout::ProbeReadyLayer>> {
+        self.push(timeout::ProbeReadyLayer::new(interval))
+    }
 
     // pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
     //     self.push(stack::OnResponseLayer::new(layer))
@@ -224,20 +224,20 @@ impl<S> Stack<S> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
     }
 
-    // // Fails the inner service after it has not been polled for the given timeout.
-    // pub fn push_idle_timeout(self, timeout: Duration) -> Stack<timeout::Idle<S>> {
-    //     self.push(timeout::IdleLayer::new(timeout))
-    // }
+    // Fails the inner service after it has not been polled for the given timeout.
+    pub fn push_idle_timeout(self, timeout: Duration) -> Stack<timeout::Idle<S>> {
+        self.push(timeout::IdleLayer::new(timeout))
+    }
 
-    // // Makes the service eagerly process and fail requests after the given timeout.
-    // pub fn push_failfast(self, timeout: Duration) -> Stack<timeout::FailFast<S>> {
-    //     self.push(timeout::FailFastLayer::new(timeout))
-    // }
+    // Makes the service eagerly process and fail requests after the given timeout.
+    pub fn push_failfast(self, timeout: Duration) -> Stack<timeout::FailFast<S>> {
+        self.push(timeout::FailFastLayer::new(timeout))
+    }
 
-    // // Polls the inner service at least once per interval.
-    // pub fn push_probe_ready(self, interval: Duration) -> Stack<timeout::ProbeReady<S>> {
-    //     self.push(timeout::ProbeReadyLayer::new(interval))
-    // }
+    // Polls the inner service at least once per interval.
+    pub fn push_probe_ready(self, interval: Duration) -> Stack<timeout::ProbeReady<S>> {
+        self.push(timeout::ProbeReadyLayer::new(interval))
+    }
 
     // pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
     //     self.push(stack::OneshotLayer::new())

@@ -1231,6 +1231,7 @@ dependencies = [
  "linkerd2-identity",
  "linkerd2-stack",
  "linkerd2-timeout",
+ "pin-project",
  "rand 0.7.2",
  "task-compat",
  "tokio 0.1.22",
@@ -1483,14 +1484,15 @@ dependencies = [
 name = "linkerd2-timeout"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
  "linkerd2-stack",
- "tokio 0.1.22",
+ "pin-project",
+ "tokio 0.2.17",
  "tokio-connect",
- "tokio-timer",
- "tower 0.1.1",
- "tower-test 0.1.0",
+ "tokio-test",
+ "tower 0.3.1",
+ "tower-test 0.3.0",
  "tracing",
 ]
 
