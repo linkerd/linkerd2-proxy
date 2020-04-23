@@ -18,7 +18,7 @@ pub mod header_from_target;
 pub mod orig_proto;
 pub mod settings;
 // pub mod strip_header;
-// pub mod timeout;
+pub mod timeout;
 pub mod upgrade;
 mod version;
 
@@ -26,7 +26,7 @@ pub use self::{
     client::MakeClientLayer,
     glue::{HttpBody as Body, HyperServerSvc},
     settings::Settings,
-    // timeout::MakeTimeoutLayer,
+    timeout::MakeTimeoutLayer,
     version::Version,
 };
 pub use http::{header, uri, Request, Response};

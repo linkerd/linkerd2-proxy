@@ -6,14 +6,15 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
+futures = { version = "0.3", features = ["compat"] }
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
-tokio-timer = "0.2.4"
-tower = "0.1"
+tower = "0.3"
 tracing = "0.1"
+pin-project = "0.4"
+tokio = { version = "0.2", features = ["time"] }
 
 [dev-dependencies]
-tokio = "0.1"
-tower-test = "0.1"
+tower-test = "0.3"
+tokio-test = "0.2"

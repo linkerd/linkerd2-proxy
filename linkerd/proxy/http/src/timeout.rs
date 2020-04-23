@@ -1,6 +1,10 @@
-use futures::{try_ready, Future, Poll};
+use futures_03::{ready, TryFuture};
 use linkerd2_stack::NewService;
 use linkerd2_timeout::Timeout;
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 /// Implement on targets to determine if a service has a timeout.
@@ -23,7 +27,9 @@ pub struct MakeTimeout<M> {
     inner: M,
 }
 
+#[pin_project]
 pub struct MakeFuture<F> {
+    #[pin]
     inner: F,
     timeout: Option<Duration>,
 }
@@ -51,17 +57,17 @@ where
     }
 }
 
-impl<T, M> tower::Service<T> for MakeTimeout<M>
+impl<T, M> tower_03::Service<T> for MakeTimeout<M>
 where
-    M: tower::Service<T>,
+    M: tower_03::Service<T>,
     T: HasTimeout,
 {
     type Response = Timeout<M::Response>;
     type Error = M::Error;
     type Future = MakeFuture<M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -72,18 +78,18 @@ where
     }
 }
 
-impl<F: Future> Future for MakeFuture<F> {
-    type Item = Timeout<F::Item>;
-    type Error = F::Error;
+impl<F: TryFuture> Future for MakeFuture<F> {
+    type Output = Result<Timeout<F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
 
-        let svc = match self.timeout {
-            Some(t) => Timeout::new(inner, t),
+        let svc = match this.timeout {
+            Some(t) => Timeout::new(inner, *t),
             None => Timeout::passthru(inner),
         };
 
-        Ok(svc.into())
+        Poll::Ready(Ok(svc.into()))
     }
 }

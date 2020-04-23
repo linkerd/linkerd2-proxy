@@ -900,7 +900,7 @@ dependencies = [
  "linkerd2-error",
  "tokio 0.1.22",
  "tower 0.1.1",
- "tower-test",
+ "tower-test 0.1.0",
  "tracing",
  "tracing-futures 0.1.0",
 ]
@@ -1229,6 +1229,7 @@ dependencies = [
  "linkerd2-identity",
  "linkerd2-stack",
  "linkerd2-timeout",
+ "pin-project",
  "rand 0.7.2",
  "task-compat",
  "tokio 0.1.22",
@@ -1481,14 +1482,15 @@ dependencies = [
 name = "linkerd2-timeout"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
  "linkerd2-stack",
- "tokio 0.1.22",
+ "pin-project",
+ "tokio 0.2.17",
  "tokio-connect",
- "tokio-timer",
- "tower 0.1.1",
- "tower-test",
+ "tokio-test",
+ "tower 0.3.1",
+ "tower-test 0.3.0",
  "tracing",
 ]
 
@@ -3042,6 +3044,20 @@ dependencies = [
  "futures 0.1.26",
  "tokio-sync",
  "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-test"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ba4bbc2c1e4a8543c30d4c13a4c8314ed72d6e07581910f665aa13fde0153c8"
+dependencies = [
+ "futures-util",
+ "pin-project",
+ "tokio 0.2.17",
+ "tokio-test",
+ "tower-layer 0.3.0",
+ "tower-service 0.3.0",
 ]
 
 [[package]]

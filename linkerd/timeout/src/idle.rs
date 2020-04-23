@@ -1,8 +1,10 @@
 use crate::error::HumanDuration;
-use futures::{future, Future, Poll};
+use futures::{future, TryFutureExt};
 use linkerd2_error::Error;
-use std::time::{Duration, Instant};
-use tokio_timer::Delay;
+use std::future::Future;
+use std::task::{Context, Poll};
+use std::time::Duration;
+use tokio::time::{self, Delay, Instant};
 
 #[derive(Copy, Clone, Debug)]
 pub struct IdleLayer(Duration);
@@ -32,7 +34,7 @@ impl<S> tower::layer::Layer<S> for IdleLayer {
         Self::Service {
             inner,
             timeout: self.0,
-            idle: Delay::new(Instant::now() + self.0),
+            idle: time::delay_for(self.0),
         }
     }
 }
@@ -48,12 +50,14 @@ where
     type Error = Error;
     type Future = future::MapErr<S::Future, fn(S::Error) -> Self::Error>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        if self.idle.poll().expect("timer must succeed").is_ready() {
-            return Err(IdleError(self.timeout).into());
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let idle = &mut self.idle;
+        tokio::pin!(idle);
+        if idle.poll(cx).is_ready() {
+            return Poll::Ready(Err(IdleError(self.timeout).into()));
         }
 
-        self.inner.poll_ready().map_err(Into::into)
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, req: T) -> Self::Future {
@@ -75,69 +79,48 @@ impl std::error::Error for IdleError {}
 #[cfg(test)]
 mod test {
     use super::IdleLayer;
-    use futures::{future, Future};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    use tokio_test::{assert_pending, assert_ready, assert_ready_ok};
     use tower::layer::Layer;
-    use tower::Service;
-    use tower_test::mock;
+    use tower_test::mock::{self, Spawn};
 
-    fn run<F, R>(f: F)
-    where
-        F: FnOnce() -> R + 'static,
-        R: future::IntoFuture<Item = ()> + 'static,
-    {
-        tokio::runtime::current_thread::run(future::lazy(f).map_err(|_| panic!("Failed")));
-    }
-
-    #[test]
-    fn call_succeeds_when_idle() {
+    #[tokio::test]
+    async fn call_succeeds_when_idle() {
         let timeout = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
-        let mut service = IdleLayer::new(timeout).layer(service);
+        let mut service = Spawn::new(IdleLayer::new(timeout).layer(service));
 
-        run(move || {
-            // The inner starts available.
-            handle.allow(1);
-            assert!(service.poll_ready().unwrap().is_ready());
+        // The inner starts available.
+        handle.allow(1);
+        assert_ready_ok!(service.poll_ready());
 
-            // Then we wait for the idle timeout, at which point the service
-            // should still be usable if we don't poll_ready again.
-            tokio_timer::Delay::new(Instant::now() + timeout + Duration::from_millis(1))
-                .map_err(|_| ())
-                .and_then(move |_| {
-                    let fut = service.call(());
-                    let ((), rsp) = handle.next_request().expect("must get a request");
-                    rsp.send_response(());
-                    fut.map_err(|_| ()).map(move |()| {
-                        // Service remains usable.
-                        assert!(service.poll_ready().unwrap().is_not_ready());
-                        let _ = handle;
-                    })
-                })
-        });
+        // Then we wait for the idle timeout, at which point the service
+        // should still be usable if we don't poll_ready again.
+        tokio::time::delay_for(timeout + Duration::from_millis(1)).await;
+
+        let fut = service.call(());
+        let ((), rsp) = handle.next_request().await.expect("must get a request");
+        rsp.send_response(());
+        // Service remains usable.
+        fut.await.expect("call");
+
+        assert_pending!(service.poll_ready());
     }
 
-    #[test]
-    fn poll_ready_fails_after_idle() {
+    #[tokio::test]
+    async fn poll_ready_fails_after_idle() {
         let timeout = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
-        let mut service = IdleLayer::new(timeout).layer(service);
+        let mut service = Spawn::new(IdleLayer::new(timeout).layer(service));
+        // The inner starts available.
+        handle.allow(1);
+        assert_ready_ok!(service.poll_ready());
 
-        run(move || {
-            // The inner starts available.
-            handle.allow(1);
-            assert!(service.poll_ready().unwrap().is_ready());
-
-            // Then we wait for the idle timeout, at which point the service
-            // should fail.
-            tokio_timer::Delay::new(Instant::now() + timeout + Duration::from_millis(1))
-                .map_err(|_| ())
-                .map(move |_| {
-                    assert!(service
-                        .poll_ready()
-                        .expect_err("must fail")
-                        .is::<super::IdleError>());
-                })
-        });
+        // Then we wait for the idle timeout, at which point the service
+        // should fail.
+        tokio::time::delay_for(timeout + Duration::from_millis(1)).await;
+        assert!(assert_ready!(service.poll_ready())
+            .unwrap_err()
+            .is::<super::IdleError>());
     }
 }
