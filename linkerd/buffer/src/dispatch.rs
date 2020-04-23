@@ -64,6 +64,7 @@ where
         let mut this = self.project();
         // Complete the task when all services have dropped.
         return_ready_if!({
+            // `watch::Sender::poll_close` is private in `tokio::sync`.
             let closed = this.ready.closed();
             tokio::pin!(closed);
             closed.poll(cx).is_ready()
@@ -74,7 +75,7 @@ where
             let ready = match this.inner.as_mut() {
                 Some(inner) => inner.poll_ready(cx),
                 None => {
-                    // This is safe because ready.poll_close has returned Pending.
+                    // This is safe because ready.closed() has returned Pending.
                     return Poll::Pending;
                 }
             };
@@ -112,7 +113,7 @@ where
                     // Ensure the task remains active until all services have observed the error.
                     return_ready_if!(!is_active);
 
-                    // This is safe because ready.poll_close has returned Pending. The task will
+                    // This is safe because ready.closed() has returned Pending. The task will
                     // complete when all observes have dropped their interest in `ready`.
                     return Poll::Pending;
                 }
