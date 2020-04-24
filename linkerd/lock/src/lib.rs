@@ -6,7 +6,6 @@ pub mod error;
 mod layer;
 mod lock;
 mod service;
-mod shared;
 #[cfg(test)]
 mod test;
 

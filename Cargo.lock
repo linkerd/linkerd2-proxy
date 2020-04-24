@@ -123,9 +123,9 @@ dependencies = [
 
 [[package]]
 name = "bytes"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10004c15deb332055f7a4a208190aed362cf9a7c2f6ab70a305fba50e1105f38"
+checksum = "130aac562c0dd69c56b3b1cc8ffd2e17be31d0b6c25b61c96b76231aa23e39e1"
 
 [[package]]
 name = "c2-chacha"
@@ -670,9 +670,6 @@ name = "lazy_static"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5729f27f159ddd61f4df6228e827e86643d4d3e7c32183cb30a1c08f604a14"
-dependencies = [
- "spin",
-]
 
 [[package]]
 name = "libc"
@@ -719,7 +716,7 @@ dependencies = [
  "ring",
  "rustls",
  "tokio 0.1.22",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tokio-compat",
  "tokio-connect",
  "tokio-current-thread",
@@ -790,7 +787,7 @@ dependencies = [
  "rand 0.7.2",
  "regex 1.0.0",
  "tokio 0.1.22",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tokio-compat",
  "tokio-timer",
  "tower 0.3.1",
@@ -801,7 +798,7 @@ dependencies = [
  "tower-request-modifier",
  "tower-spawn-ready",
  "tracing",
- "tracing-futures 0.2.3",
+ "tracing-futures 0.2.4",
  "tracing-log",
  "tracing-subscriber",
 ]
@@ -962,7 +959,7 @@ dependencies = [
  "futures 0.3.4",
  "linkerd2-error",
  "pin-project",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tokio-test",
 ]
 
@@ -1083,11 +1080,13 @@ dependencies = [
 name = "linkerd2-lock"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
  "rand 0.7.2",
- "tokio 0.1.22",
- "tower 0.1.1",
+ "tokio 0.2.18",
+ "tokio-test",
+ "tower 0.3.1",
+ "tower-test 0.3.0",
  "tracing",
  "tracing-futures 0.1.0",
  "tracing-log",
@@ -1172,9 +1171,9 @@ dependencies = [
  "futures 0.3.4",
  "linkerd2-error",
  "pin-project",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tower 0.3.1",
- "tracing-futures 0.2.3",
+ "tracing-futures 0.2.4",
 ]
 
 [[package]]
@@ -1186,7 +1185,7 @@ dependencies = [
  "linkerd2-io",
  "linkerd2-proxy-core",
  "pin-project",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tower 0.3.1",
 ]
 
@@ -1232,7 +1231,7 @@ dependencies = [
  "rand 0.7.2",
  "task-compat",
  "tokio 0.1.22",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tokio-connect",
  "tokio-timer",
  "tower 0.1.1",
@@ -1435,7 +1434,7 @@ dependencies = [
  "futures 0.3.4",
  "linkerd2-error",
  "pin-project",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tower 0.3.1",
 ]
 
@@ -1483,7 +1482,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tokio-connect",
  "tokio-test",
  "tower 0.3.1",
@@ -1763,18 +1762,18 @@ dependencies = [
 
 [[package]]
 name = "pin-project"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7804a463a8d9572f13453c516a5faea534a2403d7ced2f0c7e100eeff072772c"
+checksum = "6f6a7f5eee6292c559c793430c55c00aea9d3b3d1905e855806ca4d7253426a2"
 dependencies = [
  "pin-project-internal",
 ]
 
 [[package]]
 name = "pin-project-internal"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "385322a45f2ecf3410c68d2a549a4a2685e8051d0f278e39743ff4e451cb9b3f"
+checksum = "8988430ce790d8682672117bc06dda364c0be32d3abd738234f19f3240bad99a"
 dependencies = [
  "proc-macro2 1.0.10",
  "quote 1.0.2",
@@ -1789,9 +1788,9 @@ checksum = "237844750cfbb86f67afe27eee600dfbbcb6188d734139b534cbfbf4f96792ae"
 
 [[package]]
 name = "pin-utils"
-version = "0.1.0-alpha.4"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5894c618ce612a3fa23881b152b608bafb8c56cfc22f434a3ba3120b40f7b587"
+checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "ppv-lite86"
@@ -2166,9 +2165,9 @@ dependencies = [
 
 [[package]]
 name = "ring"
-version = "0.16.7"
+version = "0.16.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "796ae8317a07b04dffb1983bdc7045ccd02f741f0b411704f07fd35dbf99f757"
+checksum = "1ba5a8ec64ee89a76c98c549af81ff14813df09c3e6dc4766c3856da48597a0c"
 dependencies = [
  "cc",
  "lazy_static",
@@ -2263,9 +2262,9 @@ dependencies = [
 
 [[package]]
 name = "sharded-slab"
-version = "0.0.8"
+version = "0.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae75d0445b5d3778c9da3d1f840faa16d0627c8607f78a74daf69e5b988c39a1"
+checksum = "06d5a3f5166fb5b42a5439f2eee8b9de149e235961e3eb21c5808fc3ea17ff3e"
 dependencies = [
  "lazy_static",
 ]
@@ -2444,11 +2443,11 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39fb9142eb6e9cc37f4f29144e62618440b149a138eee01a7bbe9b9226aaf17c"
+checksum = "34ef16d072d2b6dc8b4a56c70f5c5ced1a37752116f8e7c1e80c659aa7cb6713"
 dependencies = [
- "bytes 0.5.3",
+ "bytes 0.5.4",
  "fnv",
  "futures-core",
  "lazy_static",
@@ -2491,7 +2490,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "pin-project-lite",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tokio-current-thread",
  "tokio-executor",
  "tokio-reactor",
@@ -2635,13 +2634,13 @@ dependencies = [
 
 [[package]]
 name = "tokio-test"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cf9705471976fa5fc6817d3fbc9c4ff9696a6647af0e5c1870c81ca7445b05"
+checksum = "ed0049c119b6d505c4447f5c64873636c7af6c75ab0d45fd9f618d82acb8016d"
 dependencies = [
- "bytes 0.5.3",
+ "bytes 0.5.4",
  "futures-core",
- "tokio 0.2.17",
+ "tokio 0.2.18",
 ]
 
 [[package]]
@@ -2711,13 +2710,13 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be8242891f2b6cbef26a2d7e8605133c2c554cd35b3e4948ea892d6d68436499"
 dependencies = [
- "bytes 0.5.3",
+ "bytes 0.5.4",
  "futures-core",
  "futures-io",
  "futures-sink",
  "log",
  "pin-project-lite",
- "tokio 0.2.17",
+ "tokio 0.2.18",
 ]
 
 [[package]]
@@ -2746,7 +2745,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "pin-project",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tower-layer 0.3.0 (git+https://github.com/tower-rs/tower?rev=8752a3811788e94670c62dc0acbc9613207931b1)",
  "tower-service 0.3.0",
  "tracing",
@@ -2974,7 +2973,7 @@ checksum = "9ba4bbc2c1e4a8543c30d4c13a4c8314ed72d6e07581910f665aa13fde0153c8"
 dependencies = [
  "futures-util",
  "pin-project",
- "tokio 0.2.17",
+ "tokio 0.2.18",
  "tokio-test",
  "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-service 0.3.0",
@@ -3029,12 +3028,11 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-version = "0.1.6"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "528c8ebaaa16cdac34795180b046c031775b0d56402704d98c096788f33d646a"
+checksum = "0aa83a9a47081cd522c09c81b31aec2c9273424976f922ad61c053b58350b715"
 dependencies = [
  "lazy_static",
- "spin",
 ]
 
 [[package]]
@@ -3051,9 +3049,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-futures"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58b0b7fd92dc7b71f29623cc6836dd7200f32161a2313dd78be233a8405694f6"
+checksum = "ab7bb6f14721aa00656086e9335d363c5c8747bae02ebe32ea2c7dece5689b4c"
 dependencies = [
  "futures 0.1.26",
  "pin-project",
@@ -3083,9 +3081,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.3"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dedebcf5813b02261d6bab3a12c6a8ae702580c0405a2e8ec16c3713caf14c20"
+checksum = "1d53c40489aa69c9aed21ff483f26886ca8403df33bdc2d2f87c60c1617826d2"
 dependencies = [
  "ansi_term",
  "chrono",
@@ -3333,8 +3331,9 @@ dependencies = [
 
 [[package]]
 name = "webpki"
-version = "0.21.0"
-source = "git+https://github.com/seanmonstar/webpki?branch=cert-dns-names-0.21#c4d77fd78a48a5daf05fd7ce2c18d34f9a077e4a"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1f50e1972865d6b1adb54167d1c8ed48606004c2c9d0ea5f1eeb34d95e863ef"
 dependencies = [
  "ring",
  "untrusted",
@@ -3426,3 +3425,8 @@ dependencies = [
  "winapi 0.2.8",
  "winapi-build",
 ]
+
+[[patch.unused]]
+name = "webpki"
+version = "0.21.0"
+source = "git+https://github.com/seanmonstar/webpki?branch=cert-dns-names-0.21#c4d77fd78a48a5daf05fd7ce2c18d34f9a077e4a"
