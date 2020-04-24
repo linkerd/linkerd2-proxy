@@ -92,6 +92,7 @@ features = [
     "util",
     "make",
     "timeout",
+    "spawn-ready"
 ]
 
 [target.'cfg(target_os = "linux")'.dependencies]

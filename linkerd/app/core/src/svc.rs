@@ -14,10 +14,10 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::layer::Layer;
+pub use tower::make::MakeService;
+use tower::spawn_ready::SpawnReadyLayer;
 pub use tower::util::{Either, Oneshot};
 pub use tower::{service_fn as mk, Service, ServiceExt};
-pub use tower_make::MakeService;
-use tower_spawn_ready::SpawnReadyLayer;
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
@@ -182,10 +182,10 @@ impl<S> Stack<S> {
         self.push(InstrumentMakeLayer::from_target())
     }
 
-    // /// Wraps an inner `MakeService` to be a `NewService`.
-    // pub fn into_new_service(self) -> Stack<stack::new_service::FromMakeService<S>> {
-    //     self.push(stack::new_service::FromMakeServiceLayer::default())
-    // }
+    /// Wraps an inner `MakeService` to be a `NewService`.
+    pub fn into_new_service(self) -> Stack<stack::new_service::FromMakeService<S>> {
+        self.push(stack::new_service::FromMakeServiceLayer::default())
+    }
 
     pub fn push_make_ready<Req>(self) -> Stack<stack::MakeReady<S, Req>> {
         self.push(stack::MakeReadyLayer::new())
@@ -203,15 +203,15 @@ impl<S> Stack<S> {
         self.push(buffer::SpawnBufferLayer::new(capacity))
     }
 
-    // /// Assuming `S` implements `NewService` or `MakeService`, applies the given
-    // /// `L`-typed layer on each service produced by `S`.
-    // pub fn push_on_response<L: Clone>(self, layer: L) -> Stack<stack::OnResponse<L, S>> {
-    //     self.push(stack::OnResponseLayer::new(layer))
-    // }
+    /// Assuming `S` implements `NewService` or `MakeService`, applies the given
+    /// `L`-typed layer on each service produced by `S`.
+    pub fn push_on_response<L: Clone>(self, layer: L) -> Stack<stack::OnResponse<L, S>> {
+        self.push(stack::OnResponseLayer::new(layer))
+    }
 
-    // pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
-    //     self.push(SpawnReadyLayer::new())
-    // }
+    pub fn push_spawn_ready(self) -> Stack<tower::spawn_ready::MakeSpawnReady<S>> {
+        self.push(SpawnReadyLayer::new())
+    }
 
     // pub fn push_concurrency_limit(
     //     self,
