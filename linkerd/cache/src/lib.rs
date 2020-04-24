@@ -1,12 +1,12 @@
 #![deny(warnings, rust_2018_idioms)]
-
-use futures::{future, Async, Poll};
+use futures::future;
 use linkerd2_error::Never;
 use linkerd2_lock::{Guard, Lock};
 use linkerd2_stack::NewService;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
+use std::task::{Context, Poll};
 use tracing::{debug, trace};
 
 pub mod layer;
@@ -63,38 +63,33 @@ where
 
 impl<T, N> tower::Service<T> for Cache<T, N>
 where
-    T: Clone + Eq + Hash,
+    T: Clone + Eq + Hash + 'static,
     N: NewService<(T, Handle)>,
-    N::Service: Clone,
+    N::Service: Clone + 'static,
 {
     type Response = N::Service;
     type Error = Never;
-    type Future = future::FutureResult<Self::Response, Self::Error>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if self.guard.is_none() {
-            match self.lock.poll_acquire() {
-                Async::NotReady => return Ok(Async::NotReady),
-                Async::Ready(mut services) => {
-                    // Drop defunct services before interacting with the cache.
-                    let n = services.len();
-                    services.retain(|_, (_, weak)| {
-                        if weak.strong_count() > 0 {
-                            true
-                        } else {
-                            debug!("Dropping defunct service");
-                            false
-                        }
-                    });
-                    trace!(services = services.len(), dropped = n - services.len());
-
-                    self.guard = Some(services);
+            let mut services = futures::ready!(self.lock.poll_acquire(cx));
+            // Drop defunct services before interacting with the cache.
+            let n = services.len();
+            services.retain(|_, (_, weak)| {
+                if weak.strong_count() > 0 {
+                    true
+                } else {
+                    trace!("Dropping defunct service");
+                    false
                 }
-            }
+            });
+            debug!(services = services.len(), dropped = n - services.len());
+            self.guard = Some(services);
         }
 
         debug_assert!(self.guard.is_some(), "guard must be acquired");
-        Ok(Async::Ready(()))
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {

@@ -1,11 +1,12 @@
 #![feature(test)]
-
-extern crate linkerd2_cache;
-use futures::{future, Async, Future, Poll};
+use futures::future;
 use linkerd2_cache::{Cache, Handle};
 use linkerd2_error::Never;
 use linkerd2_stack::NewService;
+use std::future::Future;
+use std::task::{Context, Poll};
 use tower::Service;
+use tower::util::ServiceExt;
 
 extern crate test;
 use test::Bencher;
@@ -37,10 +38,10 @@ struct NewSometimesEvict;
 impl Service<usize> for NeverEvict {
     type Response = usize;
     type Error = Never;
-    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(Async::Ready(()))
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, rhs: usize) -> Self::Future {
@@ -62,10 +63,10 @@ impl NewService<(usize, Handle)> for NewNeverEvict {
 impl Service<usize> for AlwaysEvict {
     type Response = usize;
     type Error = Never;
-    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(Async::Ready(()))
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, rhs: usize) -> Self::Future {
@@ -84,10 +85,10 @@ impl NewService<(usize, Handle)> for NewAlwaysEvict {
 impl Service<usize> for SometimesEvict {
     type Response = usize;
     type Error = Never;
-    type Future = futures::future::FutureResult<Self::Response, Self::Error>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(Async::Ready(()))
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, rhs: usize) -> Self::Future {
@@ -122,8 +123,10 @@ where
     let mut cache = Cache::new(new_svc);
     b.iter(|| {
         for n in 0..num_svc {
-            cache.poll_ready().unwrap();
-            let _r = cache.call(n).wait().unwrap().call(n);
+            futures::executor::block_on(async {
+                let mut svc = cache.ready_and().await.unwrap();
+                svc.call(n).await.unwrap().call(n).await.unwrap();
+            })
         }
     });
 }

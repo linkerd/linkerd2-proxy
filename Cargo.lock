@@ -906,12 +906,12 @@ dependencies = [
 name = "linkerd2-cache"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
  "linkerd2-lock",
  "linkerd2-stack",
- "tokio 0.1.22",
- "tower 0.1.1",
+ "tokio 0.2.18",
+ "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
 ]
@@ -3331,9 +3331,8 @@ dependencies = [
 
 [[package]]
 name = "webpki"
-version = "0.21.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1f50e1972865d6b1adb54167d1c8ed48606004c2c9d0ea5f1eeb34d95e863ef"
+version = "0.21.0"
+source = "git+https://github.com/seanmonstar/webpki?branch=cert-dns-names-0.21#c4d77fd78a48a5daf05fd7ce2c18d34f9a077e4a"
 dependencies = [
  "ring",
  "untrusted",
@@ -3425,8 +3424,3 @@ dependencies = [
  "winapi 0.2.8",
  "winapi-build",
 ]
-
-[[patch.unused]]
-name = "webpki"
-version = "0.21.0"
-source = "git+https://github.com/seanmonstar/webpki?branch=cert-dns-names-0.21#c4d77fd78a48a5daf05fd7ce2c18d34f9a077e4a"
