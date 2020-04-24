@@ -5,7 +5,7 @@ use tokio::sync::Semaphore;
 /// Provides mutually exclusive to a `T`-typed value, asynchronously.
 pub struct Lock<T> {
     /// Set when this Lock is interested in acquiring the value.
-    waiting: Option<Pin<Box<dyn Future<Output = Guard<T>> + 'static>>>,
+    waiting: Option<Pin<Box<dyn Future<Output = OwnedSemaphorePermit> + 'static>>>,
     shared: Arc<Shared<T>>,
 }
 
