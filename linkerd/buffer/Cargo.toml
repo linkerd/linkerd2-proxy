@@ -6,12 +6,14 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 linkerd2-error = { path = "../error" }
-tokio = "0.1"
-tower = "0.1"
+tokio = { version = "0.2", features = ["sync", "stream", "macros"] }
+tower = "0.3"
 tracing = "0.1"
-tracing-futures = "0.1"
+tracing-futures = { version = "0.1", features = ["std-future"] }
+pin-project = "0.4"
 
 [dev-dependencies]
-tower-test = "0.1"
+tower-test = "0.3"
+tokio-test = "0.2"

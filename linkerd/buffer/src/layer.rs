@@ -1,5 +1,4 @@
 use crate::Buffer;
-use futures::Future;
 use linkerd2_error::Error;
 use tracing_futures::Instrument;
 
@@ -38,7 +37,7 @@ where
 
     fn layer(&self, inner: S) -> Self::Service {
         let (buffer, dispatch) = crate::new(inner, self.capacity);
-        tokio::spawn(dispatch.in_current_span().map_err(|n| match n {}));
+        tokio::spawn(dispatch.in_current_span());
         buffer
     }
 }
