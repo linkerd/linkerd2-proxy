@@ -11,6 +11,14 @@ Utilities for composing Tower services.
 [dependencies]
 futures = "0.3"
 linkerd2-error = { path = "../error" }
-tower = "0.3"
 pin-project = "0.4"
 tokio = {version = "0.2", features = ["macros"]}
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false
+features = [
+    "util",
+]

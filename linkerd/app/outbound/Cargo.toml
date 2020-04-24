@@ -17,9 +17,17 @@ linkerd2-app-core = { path = "../core" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-retry = { path = "../../retry" }
 tokio = "0.1.14"
-tower = "0.3"
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 tracing = "0.1.9"
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false
+features = [
+    "util",
+]
 
 [dev-dependencies]
 quickcheck = { version = "0.9", default-features = false }

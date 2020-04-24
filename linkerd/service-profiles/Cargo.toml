@@ -21,11 +21,19 @@ linkerd2-stack = { path  = "../stack" }
 rand = { version = "0.7", features = ["small_rng"] }
 regex = "1.0.0"
 tokio = "0.1"
-tower = "0.3"
 tower-grpc = { version = "0.1", default-features = false }
-tower-util = "0.1"
 tracing = "0.1.9"
 tracing-futures = "0.1"
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false
+features = [
+    "util",
+    "retry",
+]
 
 [dev-dependencies]
 linkerd2-test-util = { path = "../test-util" }

@@ -10,10 +10,19 @@ futures = { version = "0.3", features = ["compat"] }
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
-tower = "0.3"
 tracing = "0.1"
 pin-project = "0.4"
 tokio = { version = "0.2", features = ["time"] }
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false
+features = [
+    "util",
+    "make",
+]
 
 [dev-dependencies]
 tower-test = "0.3"

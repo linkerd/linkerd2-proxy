@@ -24,8 +24,7 @@ use tokio::{
     io::{self, AsyncRead, AsyncWrite},
 };
 use tower::layer::Layer;
-use tower::ServiceExt;
-use tower_util::service_fn;
+use tower::util::{service_fn, ServiceExt};
 
 #[test]
 fn plaintext() {
