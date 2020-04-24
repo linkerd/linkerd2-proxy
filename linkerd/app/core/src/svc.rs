@@ -251,15 +251,16 @@ impl<S> Stack<S> {
     //     self.push(http::insert::target::layer())
     // }
 
-    // pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
-    // where
-    //     T: Eq + std::hash::Hash,
-    //     S: NewService<T> + Clone,
-    //     L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
-    //     L::Service: NewService<T, Service = U>,
-    // {
-    //     self.push(cache::CacheLayer::new(track))
-    // }
+    pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
+    where
+        T: Eq + std::hash::Hash + 'static,
+        S: NewService<T> + Clone,
+        S::Service: 'static,
+        L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
+        L::Service: NewService<T, Service = U>,
+    {
+        self.push(cache::CacheLayer::new(track))
+    }
 
     pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<stack::Fallback<S, F>> {
         self.push(stack::FallbackLayer::new(fallback))
