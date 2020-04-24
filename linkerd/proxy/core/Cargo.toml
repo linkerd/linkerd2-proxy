@@ -12,6 +12,6 @@ Core interfaces needed to implement proxy components
 futures = {package = "futures", version = "0.3" }
 linkerd2-error = { path = "../../error" }
 tokio = "0.2"
-tower = "0.3"
+tower = {version = "0.3", default-features = false }
 tracing-futures = "0.2"
 pin-project = "0.4"

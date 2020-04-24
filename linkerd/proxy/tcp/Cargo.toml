@@ -11,5 +11,5 @@ futures = { version = "0.3", features = ["compat"] }
 linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
 tokio = "0.1.14"
-tower = "0.3"
+tower = { version = "0.3", default-features = false }
 pin-project = "0.4"

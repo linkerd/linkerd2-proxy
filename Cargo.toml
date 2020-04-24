@@ -65,3 +65,4 @@ debug = false
 webpki = { git = "https://github.com/seanmonstar/webpki", branch = "cert-dns-names-0.21" }
 # backport danburkert/prost#268 to `prost` 0.5 temporarily.
 prost = { git = "https://github.com/linkerd/prost", branch = "v0.5.x" }
+tower = { version = "0.3", git = "https://github.com/tower-rs/tower", rev = "8752a3811788e94670c62dc0acbc9613207931b1"}

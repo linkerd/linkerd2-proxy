@@ -14,6 +14,11 @@ linkerd2-error = { path = "../../error" }
 linkerd2-proxy-core = { path = "../core" }
 indexmap = "1.0"
 tokio = "0.1"
-tower = "0.3"
 tracing = "0.1"
 pin-project = "0.4"
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false

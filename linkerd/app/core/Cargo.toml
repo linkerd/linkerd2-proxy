@@ -65,7 +65,6 @@ tokio = "0.1.14"
 tokio-02 = { package = "tokio", version = "0.2", features = ["macros"]}
 tokio-timer = "0.2"
 tokio-compat = "0.1"
-tower = { version = "0.3", features = ["full"] }
 tower-make = "0.3"
 tower-balance = { git = "https://github.com/tower-rs/tower" }
 tower-load = { git = "https://github.com/tower-rs/tower" }
@@ -77,11 +76,23 @@ tracing-futures = { version = "0.2", features = ["futures-01"] }
 tracing-log = "0.1"
 futures_03 = { package = "futures", version = "0.3", features = ["compat"] }
 pin-project = "0.4"
+
 [dependencies.tracing-subscriber]
 version = "0.2.1"
 # we don't need `chrono` time formatting
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi"]
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false
+features = [
+    "util",
+    "make",
+    "timeout",
+]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
