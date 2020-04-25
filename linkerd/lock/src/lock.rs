@@ -1,22 +1,20 @@
 use std::task::{Context, Poll};
 use std::{cell::UnsafeCell, future::Future, pin::Pin, sync::Arc};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Provides mutually exclusive to a `T`-typed value, asynchronously.
 pub struct Lock<T> {
     /// Set when this Lock is interested in acquiring the value.
     waiting: Option<Pin<Box<dyn Future<Output = OwnedSemaphorePermit> + 'static>>>,
-    shared: Arc<Shared<T>>,
+    sem: Arc<Semaphore>,
+    value: Arc<UnsafeCell<T>>,
 }
 
 /// Guards access to a `T`-typed value, ensuring the value is released on Drop.
 pub struct Guard<T> {
-    shared: Arc<Shared<T>>,
-}
-
-struct Shared<T: ?Sized> {
-    sem: Semaphore,
-    value: UnsafeCell<T>,
+    value: Arc<UnsafeCell<T>>,
+    // Hang onto this to drop it when the access ends.
+    _permit: OwnedSemaphorePermit,
 }
 
 // === impl Lock ===
@@ -25,10 +23,11 @@ impl<S> Lock<S> {
     pub fn new(value: S) -> Self {
         Self {
             waiting: None,
-            shared: Arc::new(Shared {
-                sem: Semaphore::new(1),
-                value: UnsafeCell::new(value),
-            }),
+            // XXX: Bummer that these have to be arced separately and we can't
+            // them in a single `Arc`, but `Semaphore::acquire_owned` needs an
+            // `Arc<Self>` receiver...
+            sem: Arc::new(Semaphore::new(1)),
+            value: Arc::new(UnsafeCell::new(value)),
         }
     }
 }
@@ -38,35 +37,28 @@ impl<S> Clone for Lock<S> {
         Self {
             // Clones have an independent local lock state.
             waiting: None,
-            shared: self.shared.clone(),
+            sem: self.sem.clone(),
+            value: self.value.clone(),
         }
     }
 }
 
-impl<T: 'static> Lock<T> {
+impl<T> Lock<T> {
     pub fn poll_acquire(&mut self, cx: &mut Context<'_>) -> Poll<Guard<T>> {
         loop {
             self.waiting = match self.waiting {
                 // This instance has not registered interest in the lock.
-                None => {
-                    let shared = self.shared.clone();
-                    Some(Box::pin(async move {
-                        let permit = shared.sem.acquire().await;
-                        // We cannot use the `tokio::sync::semaphore::Permit`
-                        // type for the release-on-drop behavior, because it borrows
-                        // the semaphore. Instead, we will manually release the
-                        // permit when dropping a guard.
-                        permit.forget();
-                        Guard { shared }
-                    }))
-                }
+                None => Some(Box::pin(self.sem.clone().acquire_owned())),
 
                 // This instance is interested in the lock.
                 Some(ref mut waiter) => {
                     tokio::pin!(waiter);
-                    let guard = futures::ready!(waiter.poll(cx));
+                    let _permit = futures::ready!(waiter.poll(cx));
                     self.waiting = None;
-                    return Poll::Ready(guard);
+                    return Poll::Ready(Guard {
+                        value: self.value.clone(),
+                        _permit,
+                    });
                 }
             };
         }
@@ -79,7 +71,7 @@ impl<T> std::ops::Deref for Guard<T> {
         // Safety: creating a `Guard` means that the single permit in the
         // semaphore has been acquired and we have exclusive access to the
         // value.
-        unsafe { &*self.shared.value.get() }
+        unsafe { &*self.value.get() }
     }
 }
 
@@ -88,7 +80,7 @@ impl<T> std::ops::DerefMut for Guard<T> {
         // Safety: creating a `Guard` means that the single permit in the
         // semaphore has been acquired and we have exclusive access to the
         // value.
-        unsafe { &mut *self.shared.value.get() }
+        unsafe { &mut *self.value.get() }
     }
 }
 
@@ -101,20 +93,6 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Guard<T> {
 impl<T: std::fmt::Display> std::fmt::Display for Guard<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&**self, f)
-    }
-}
-
-impl<T> Drop for Lock<T> {
-    fn drop(&mut self) {
-        // Release the single permit back to the semaphore.
-        self.shared.sem.add_permits(0);
-    }
-}
-
-impl<T> Drop for Guard<T> {
-    fn drop(&mut self) {
-        // Release the single permit back to the semaphore.
-        self.shared.sem.add_permits(1);
     }
 }
 
