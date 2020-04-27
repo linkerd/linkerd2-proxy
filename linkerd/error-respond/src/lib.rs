@@ -7,17 +7,20 @@ use linkerd2_error::Error;
 
 /// Creates an error responder for a request.
 pub trait NewRespond<Req, E = Error> {
-    type Response;
-    type Respond: Respond<E, Response = Self::Response>;
+    type ResponseIn;
+    type ResponseOut;
+
+    type Respond: Respond<E, ResponseIn = Self::ResponseIn, ResponseOut = Self::ResponseOut>;
 
     fn new_respond(&self, req: &Req) -> Self::Respond;
 }
 
 /// Creates a response for an error.
 pub trait Respond<E = Error> {
-    type Response;
+    type ResponseIn;
+    type ResponseOut;
 
-    fn respond(&self, error: E) -> Result<Self::Response, E>;
+    fn respond(&self, response: Result<Self::ResponseIn, E>) -> Result<Self::ResponseOut, E>;
 }
 
 #[derive(Clone, Debug)]
@@ -57,9 +60,9 @@ impl<N: Clone, S> tower::layer::Layer<S> for RespondLayer<N> {
 impl<Req, N, S> tower::Service<Req> for RespondService<N, S>
 where
     S: tower::Service<Req>,
-    N: NewRespond<Req, S::Error, Response = S::Response>,
+    N: NewRespond<Req, S::Error, ResponseIn = S::Response>,
 {
-    type Response = S::Response;
+    type Response = N::ResponseOut;
     type Error = S::Error;
     type Future = RespondFuture<N::Respond, S::Future>;
 
@@ -77,15 +80,16 @@ where
 impl<R, F> Future for RespondFuture<R, F>
 where
     F: Future,
-    R: Respond<F::Error, Response = F::Item>,
+    R: Respond<F::Error, ResponseIn = F::Item>,
 {
-    type Item = F::Item;
+    type Item = R::ResponseOut;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self.inner.poll() {
-            Ok(ok) => Ok(ok),
-            Err(err) => self.respond.respond(err).map(Async::Ready),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Ok(Async::Ready(rsp)) => self.respond.respond(Ok(rsp)).map(Async::Ready),
+            Err(err) => self.respond.respond(Err(err)).map(Async::Ready),
         }
     }
 }
