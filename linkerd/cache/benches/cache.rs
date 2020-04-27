@@ -5,8 +5,8 @@ use linkerd2_error::Never;
 use linkerd2_stack::NewService;
 use std::future::Future;
 use std::task::{Context, Poll};
-use tower::Service;
 use tower::util::ServiceExt;
+use tower::Service;
 
 extern crate test;
 use test::Bencher;

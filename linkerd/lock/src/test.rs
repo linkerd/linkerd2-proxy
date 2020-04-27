@@ -1,6 +1,6 @@
 use crate::error::ServiceError;
 use crate::LockService;
-use futures::{StreamExt, future};
+use futures::{future, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 use std::{future::Future, pin::Pin, sync::Arc};
@@ -75,7 +75,9 @@ async fn propagates_errors() {
 
 #[tokio::test]
 async fn dropping_releases_access() {
-    let _ = tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
     use tower::util::ServiceExt;
     let mut svc0 = LockService::new(Decr::new(3, Arc::new(true.into())));
 
@@ -161,7 +163,9 @@ async fn dropping_releases_access() {
 
 #[tokio::test]
 async fn fuzz() {
-    let _ = tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
     const ITERS: usize = 100_000;
     for (concurrency, iterations) in &[(1usize, ITERS), (3, ITERS), (100, ITERS)] {
         async {
@@ -171,28 +175,33 @@ async fn fuzz() {
             for i in 0..*concurrency {
                 let lock = svc.clone();
                 let tx = tx.clone();
-                tokio::spawn(async move {
-                    let mut lock = lock;
-                    let _tx = tx;
-                    future::poll_fn::<Result<(),()>, _>(|cx| {
-                        loop {
-                            futures::ready!(lock.poll_ready(cx)).map_err(|_|())?;
+                tokio::spawn(
+                    async move {
+                        let mut lock = lock;
+                        let _tx = tx;
+                        future::poll_fn::<Result<(), ()>, _>(|cx| {
+                            loop {
+                                futures::ready!(lock.poll_ready(cx)).map_err(|_| ())?;
 
-                            // Randomly be busy while holding the lock.
-                            if rand::random::<bool>() {
-                                cx.waker().wake_by_ref();
-                                return Poll::Pending;
+                                // Randomly be busy while holding the lock.
+                                if rand::random::<bool>() {
+                                    cx.waker().wake_by_ref();
+                                    return Poll::Pending;
+                                }
+
+                                tokio::spawn(lock.call(1));
                             }
-
-                            tokio::spawn(lock.call(1));
-                        }
-                    }).await
-                }.instrument(tracing::trace_span!("task", number = i)));
+                        })
+                        .await
+                    }
+                    .instrument(tracing::trace_span!("task", number = i)),
+                );
             }
 
             rx.fold((), |(), ()| async { () }).await;
             tracing::info!("done");
-        }.instrument(tracing::info_span!("fuzz", concurrency, iterations))
+        }
+        .instrument(tracing::info_span!("fuzz", concurrency, iterations))
         .await
     }
 }
