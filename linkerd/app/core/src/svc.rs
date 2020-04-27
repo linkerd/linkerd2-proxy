@@ -213,12 +213,12 @@ impl<S> Stack<S> {
         self.push(SpawnReadyLayer::new())
     }
 
-    // pub fn push_concurrency_limit(
-    //     self,
-    //     max: usize,
-    // ) -> Stack<concurrency_limit::ConcurrencyLimit<S>> {
-    //     self.push(concurrency_limit::Layer::new(max))
-    // }
+    pub fn push_concurrency_limit(
+        self,
+        max: usize,
+    ) -> Stack<concurrency_limit::ConcurrencyLimit<S>> {
+        self.push(concurrency_limit::Layer::new(max))
+    }
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
