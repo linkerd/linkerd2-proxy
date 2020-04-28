@@ -72,7 +72,7 @@ where
                         let mut error_trailers = http::HeaderMap::new();
                         let code = set_grpc_status(&error, &mut error_trailers);
                         warn!(
-                            "Handing body error: {:?} with grpc status {:?}",
+                            "Handling body error: {:?} with grpc status {:?}",
                             error, code
                         );
                         *trailers = Some(error_trailers);
@@ -107,13 +107,13 @@ impl<B: Default + hyper::body::Payload> Default for ResponseBody<B> {
     }
 }
 
-impl<A, B: Default + hyper::body::Payload> respond::NewRespond<http::Request<A>> for NewRespond<B> {
-    type ResponseIn = http::Response<B>;
-    type ResponseOut = http::Response<ResponseBody<B>>;
+impl<ReqB, RspB: Default + hyper::body::Payload>
+    respond::NewRespond<http::Request<ReqB>, http::Response<RspB>> for NewRespond<RspB>
+{
+    type Response = http::Response<ResponseBody<RspB>>;
+    type Respond = Respond<RspB>;
 
-    type Respond = Respond<B>;
-
-    fn new_respond(&self, req: &http::Request<A>) -> Self::Respond {
+    fn new_respond(&self, req: &http::Request<ReqB>) -> Self::Respond {
         match req.version() {
             http::Version::HTTP_2 => {
                 let is_grpc = req
@@ -134,14 +134,15 @@ impl<B> Clone for NewRespond<B> {
     }
 }
 
-impl<B: Default + hyper::body::Payload> respond::Respond for Respond<B> {
-    type ResponseIn = http::Response<B>;
-    type ResponseOut = http::Response<ResponseBody<B>>;
+impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>>
+    for Respond<RspB>
+{
+    type Response = http::Response<ResponseBody<RspB>>;
 
     fn respond(
         &self,
-        reseponse: Result<Self::ResponseIn, Error>,
-    ) -> Result<Self::ResponseOut, Error> {
+        reseponse: Result<http::Response<RspB>, Error>,
+    ) -> Result<Self::Response, Error> {
         match reseponse {
             Ok(response) => Ok(response.map(|b| match *self {
                 Respond::Http2 { is_grpc } if is_grpc == true => ResponseBody::Grpc {

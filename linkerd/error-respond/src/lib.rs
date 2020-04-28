@@ -6,21 +6,17 @@ use futures::{Async, Future, Poll};
 use linkerd2_error::Error;
 
 /// Creates an error responder for a request.
-pub trait NewRespond<Req, E = Error> {
-    type ResponseIn;
-    type ResponseOut;
-
-    type Respond: Respond<E, ResponseIn = Self::ResponseIn, ResponseOut = Self::ResponseOut>;
+pub trait NewRespond<Req, Rsp, E = Error> {
+    type Response;
+    type Respond: Respond<Rsp, E, Response = Self::Response>;
 
     fn new_respond(&self, req: &Req) -> Self::Respond;
 }
 
 /// Creates a response for an error.
-pub trait Respond<E = Error> {
-    type ResponseIn;
-    type ResponseOut;
-
-    fn respond(&self, response: Result<Self::ResponseIn, E>) -> Result<Self::ResponseOut, E>;
+pub trait Respond<Rsp, E = Error> {
+    type Response;
+    fn respond(&self, response: Result<Rsp, E>) -> Result<Self::Response, E>;
 }
 
 #[derive(Clone, Debug)]
@@ -60,9 +56,9 @@ impl<N: Clone, S> tower::layer::Layer<S> for RespondLayer<N> {
 impl<Req, N, S> tower::Service<Req> for RespondService<N, S>
 where
     S: tower::Service<Req>,
-    N: NewRespond<Req, S::Error, ResponseIn = S::Response>,
+    N: NewRespond<Req, S::Response, S::Error>,
 {
-    type Response = N::ResponseOut;
+    type Response = N::Response;
     type Error = S::Error;
     type Future = RespondFuture<N::Respond, S::Future>;
 
@@ -80,9 +76,9 @@ where
 impl<R, F> Future for RespondFuture<R, F>
 where
     F: Future,
-    R: Respond<F::Error, ResponseIn = F::Item>,
+    R: Respond<F::Item, F::Error>,
 {
-    type Item = R::ResponseOut;
+    type Item = R::Response;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
