@@ -12,8 +12,8 @@ use linkerd2_timeout::{error::ResponseTimeout, FailFastError};
 use tower_grpc::{self as grpc, Code};
 use tracing::{debug, warn};
 
-pub fn layer<B: Default>() -> respond::RespondLayer<NewRespond<B>> {
-    respond::RespondLayer::new(NewRespond(std::marker::PhantomData))
+pub fn layer() -> respond::RespondLayer<NewRespond> {
+    respond::RespondLayer::new(NewRespond(()))
 }
 
 #[derive(Clone, Default)]
@@ -36,12 +36,12 @@ pub enum Reason {
     Unexpected,
 }
 
-#[derive(Debug)]
-pub struct NewRespond<B>(std::marker::PhantomData<fn() -> B>);
+#[derive(Copy, Clone, Debug)]
+pub struct NewRespond(());
 
 #[derive(Copy, Clone, Debug)]
-pub enum Respond<B> {
-    Http1(http::Version, std::marker::PhantomData<fn() -> B>),
+pub enum Respond {
+    Http1(http::Version),
     Http2 { is_grpc: bool },
 }
 
@@ -108,10 +108,10 @@ impl<B: Default + hyper::body::Payload> Default for ResponseBody<B> {
 }
 
 impl<ReqB, RspB: Default + hyper::body::Payload>
-    respond::NewRespond<http::Request<ReqB>, http::Response<RspB>> for NewRespond<RspB>
+    respond::NewRespond<http::Request<ReqB>, http::Response<RspB>> for NewRespond
 {
     type Response = http::Response<ResponseBody<RspB>>;
-    type Respond = Respond<RspB>;
+    type Respond = Respond;
 
     fn new_respond(&self, req: &http::Request<ReqB>) -> Self::Respond {
         match req.version() {
@@ -123,20 +123,12 @@ impl<ReqB, RspB: Default + hyper::body::Payload>
                     .unwrap_or(false);
                 Respond::Http2 { is_grpc }
             }
-            version => Respond::Http1(version, self.0),
+            version => Respond::Http1(version),
         }
     }
 }
 
-impl<B> Clone for NewRespond<B> {
-    fn clone(&self) -> Self {
-        NewRespond(self.0)
-    }
-}
-
-impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>>
-    for Respond<RspB>
-{
+impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>> for Respond {
     type Response = http::Response<ResponseBody<RspB>>;
 
     fn respond(
@@ -173,7 +165,7 @@ impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>
                 }
 
                 let version = match self {
-                    Respond::Http1(ref version, _) => version.clone(),
+                    Respond::Http1(ref version) => version.clone(),
                     Respond::Http2 { .. } => http::Version::HTTP_2,
                 };
 
