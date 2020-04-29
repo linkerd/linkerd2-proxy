@@ -71,10 +71,7 @@ where
                         let error = error.into();
                         let mut error_trailers = http::HeaderMap::new();
                         let code = set_grpc_status(&error, &mut error_trailers);
-                        warn!(
-                            "Handling body error: {:?} with grpc status {:?}",
-                            error, code
-                        );
+                        debug!(%error, grpc.status = ?code, "Handling gRPC stream failure");
                         *trailers = Some(error_trailers);
                         Ok(Async::Ready(None))
                     }
