@@ -1,12 +1,10 @@
 use crate::proxy::identity;
 use futures::{Async, Poll};
 use http::{header::HeaderValue, StatusCode};
-use linkerd2_buffer as buffer;
 use linkerd2_error::Error;
 use linkerd2_error_metrics as metrics;
 use linkerd2_error_respond as respond;
 pub use linkerd2_error_respond::RespondLayer;
-use linkerd2_lock as lock;
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_timeout::{error::ResponseTimeout, FailFastError};
 use tower_grpc::{self as grpc, Code};
@@ -70,7 +68,7 @@ where
                     Err(error) => {
                         let error = error.into();
                         let mut error_trailers = http::HeaderMap::new();
-                        let code = set_grpc_status(&error, &mut error_trailers);
+                        let code = set_grpc_status(&*error, &mut error_trailers);
                         debug!(%error, grpc.status = ?code, "Handling gRPC stream failure");
                         *trailers = Some(error_trailers);
                         Ok(Async::Ready(None))
@@ -156,7 +154,7 @@ impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>
                             .header(http::header::CONTENT_LENGTH, "0")
                             .body(ResponseBody::default())
                             .expect("app::errors response is valid");
-                        let code = set_grpc_status(&error, rsp.headers_mut());
+                        let code = set_grpc_status(&*error, rsp.headers_mut());
                         debug!(?code, "Handling error with gRPC status");
                         return Ok(rsp);
                     }
@@ -167,7 +165,7 @@ impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>
                     Respond::Http2 { .. } => http::Version::HTTP_2,
                 };
 
-                let status = http_status(&error);
+                let status = http_status(&*error);
                 debug!(%status, ?version, "Handling error with HTTP response");
                 Ok(http::Response::builder()
                     .version(version)
@@ -180,7 +178,7 @@ impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>
     }
 }
 
-fn http_status(error: &Error) -> StatusCode {
+fn http_status(error: &(dyn std::error::Error + 'static)) -> StatusCode {
     if error.is::<ResponseTimeout>() {
         http::StatusCode::GATEWAY_TIMEOUT
     } else if error.is::<FailFastError>() {
@@ -189,16 +187,18 @@ fn http_status(error: &Error) -> StatusCode {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<IdentityRequired>() {
         http::StatusCode::FORBIDDEN
-    } else if let Some(e) = error.downcast_ref::<lock::error::ServiceError>() {
-        http_status(e.inner())
-    } else if let Some(e) = error.downcast_ref::<buffer::error::ServiceError>() {
-        http_status(e.inner())
     } else {
-        http::StatusCode::BAD_GATEWAY
+        match error.source() {
+            Some(source) => http_status(source),
+            None => http::StatusCode::BAD_GATEWAY,
+        }
     }
 }
 
-fn set_grpc_status(error: &Error, headers: &mut http::HeaderMap) -> grpc::Code {
+fn set_grpc_status(
+    error: &(dyn std::error::Error + 'static),
+    headers: &mut http::HeaderMap,
+) -> grpc::Code {
     const GRPC_STATUS: &'static str = "grpc-status";
     const GRPC_MESSAGE: &'static str = "grpc-message";
 
@@ -230,22 +230,23 @@ fn set_grpc_status(error: &Error, headers: &mut http::HeaderMap) -> grpc::Code {
             headers.insert(GRPC_MESSAGE, msg);
         }
         code
-    } else if error.is::<hyper::error::Error>() {
+    } else if error.is::<std::io::Error>() {
         let code = Code::Unavailable;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("connection closed"));
         code
-    } else if let Some(e) = error.downcast_ref::<lock::error::ServiceError>() {
-        set_grpc_status(e.inner(), headers)
-    } else if let Some(e) = error.downcast_ref::<buffer::error::ServiceError>() {
-        set_grpc_status(e.inner(), headers)
     } else {
-        let code = Code::Internal;
-        headers.insert(GRPC_STATUS, code_header(code));
-        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
-            headers.insert(GRPC_MESSAGE, msg);
+        match error.source() {
+            Some(source) => set_grpc_status(source, headers),
+            None => {
+                let code = Code::Internal;
+                headers.insert(GRPC_STATUS, code_header(code));
+                if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
+                    headers.insert(GRPC_MESSAGE, msg);
+                }
+                code
+            }
         }
-        code
     }
 }
 
