@@ -90,6 +90,7 @@ where
             },
         }
     }
+
     fn is_end_stream(&self) -> bool {
         match self {
             Self::NonGrpc(inner) => inner.is_end_stream(),
