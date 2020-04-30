@@ -34,7 +34,7 @@ impl<S> Clone for LockService<S> {
 
 impl<T, S> tower::Service<T> for LockService<S>
 where
-    S: tower::Service<T>,
+    S: tower::Service<T> + Send + 'static,
     S::Error: Into<Error>,
 {
     type Response = S::Response;

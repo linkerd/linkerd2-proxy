@@ -118,7 +118,8 @@ fn run_bench<N>(num_svc: usize, new_svc: N, b: &mut Bencher)
 where
     N: NewService<(usize, Handle)>,
     N::Service: Service<usize>,
-    N::Service: Clone,
+    N::Service: Clone + Send + 'static,
+    <N::Service as Service<usize>>::Error: std::fmt::Debug,
 {
     let mut cache = Cache::new(new_svc);
     b.iter(|| {

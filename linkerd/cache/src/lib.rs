@@ -63,9 +63,9 @@ where
 
 impl<T, N> tower::Service<T> for Cache<T, N>
 where
-    T: Clone + Eq + Hash,
+    T: Clone + Eq + Hash + Send + 'static,
     N: NewService<(T, Handle)>,
-    N::Service: Clone,
+    N::Service: Clone + Send + 'static,
 {
     type Response = N::Service;
     type Error = Never;

@@ -4,7 +4,7 @@
 //! As the router's Stack is built, a destination is extracted from the stack's
 //! target and it is used to get route profiles from ` GetRoutes` implementation.
 //!
-//! Each route uses a shared underlying concrete dst router.  The concrete dst
+//! Each route uses a shared underlying concrete dst .  The concrete dst
 //! router picks a concrete dst (NameAddr) from the profile's `dst_overrides` if
 //! they exist, or uses the router's target's addr if no `dst_overrides` exist.
 //! The concrete dst router uses the concrete dst as the target for the
