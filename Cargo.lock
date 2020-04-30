@@ -1020,10 +1020,11 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
+ "futures 0.3.4",
  "http",
  "hyper",
  "linkerd2-error",
- "tower 0.1.1",
+ "tower 0.3.1",
 ]
 
 [[package]]

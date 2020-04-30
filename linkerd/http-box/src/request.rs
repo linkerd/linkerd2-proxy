@@ -1,7 +1,7 @@
 //! A middleware that boxes HTTP request bodies.
 
 use crate::Payload;
-use futures::Poll;
+use std::task::{Context, Poll};
 
 #[derive(Debug)]
 pub struct Layer<B>(std::marker::PhantomData<fn(B)>);
@@ -52,8 +52,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
