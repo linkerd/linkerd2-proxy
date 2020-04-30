@@ -896,7 +896,7 @@ dependencies = [
  "futures 0.3.4",
  "linkerd2-error",
  "pin-project",
- "tokio 0.2.19",
+ "tokio 0.2.20",
  "tokio-test",
  "tower 0.3.1",
  "tower-test",
@@ -924,7 +924,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.4",
  "pin-project",
- "tokio 0.2.19",
+ "tokio 0.2.20",
  "tower 0.3.1",
  "tracing",
 ]
@@ -1088,7 +1088,7 @@ dependencies = [
  "tokio 0.2.20",
  "tokio-test",
  "tower 0.3.1",
- "tower-test 0.3.0",
+ "tower-test",
  "tracing",
  "tracing-futures 0.1.0",
  "tracing-log",
@@ -2448,7 +2448,6 @@ dependencies = [
 name = "tokio"
 version = "0.2.20"
 source = "git+https://github.com/tokio-rs/tokio?rev=45773c56413267cbcf9d5e7877e8dc4afc1e5b07#45773c56413267cbcf9d5e7877e8dc4afc1e5b07"
-
 dependencies = [
  "bytes 0.5.4",
  "fnv",
