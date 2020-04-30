@@ -1,5 +1,5 @@
-use futures::Async;
 use linkerd2_error::Error;
+use std::task::Poll;
 use tokio::sync::{mpsc, watch};
 
 mod dispatch;
@@ -26,51 +26,51 @@ where
     S::Future: Send + 'static,
 {
     let (tx, rx) = mpsc::channel(capacity);
-    let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
+    let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
     let dispatch = Dispatch::new(inner, rx, ready_tx);
     (Buffer::new(tx, ready_rx), dispatch)
 }
 
 #[cfg(test)]
 mod test {
-    use futures::{future, Async, Future, Poll};
     use std::sync::Arc;
+    use std::task::{Context, Poll};
+    use std::{future::Future, pin::Pin};
+    use tokio_test::{assert_pending, assert_ready, assert_ready_ok, task};
     use tower::util::ServiceExt;
-    use tower::Service;
     use tower_test::mock;
 
     #[test]
     fn propagates_readiness() {
-        run(|| {
-            let (service, mut handle) = mock::pair::<(), ()>();
-            let (mut service, mut dispatch) = super::new(service, 1);
-            handle.allow(0);
+        let (service, mut handle) = mock::pair::<(), ()>();
+        let (service, dispatch) = super::new(service, 1);
+        handle.allow(0);
+        let mut service = mock::Spawn::new(service);
+        let mut dispatch = task::spawn(dispatch);
 
-            assert!(dispatch.poll().expect("never fails").is_not_ready());
-            assert!(service.poll_ready().expect("must not fail").is_not_ready());
-            handle.allow(1);
+        assert_pending!(dispatch.poll());
+        assert_pending!(service.poll_ready());
+        handle.allow(1);
 
-            assert!(dispatch.poll().expect("never fails").is_not_ready());
-            assert!(service.poll_ready().expect("must not fail").is_ready());
-            // Consume the allowed call.
-            drop(service.call(()));
+        assert_pending!(dispatch.poll());
+        assert_ready_ok!(service.poll_ready());
 
-            handle.send_error(Bad);
-            assert!(dispatch.poll().expect("never fails").is_not_ready());
-            assert_eq!(
-                "bad",
-                service.poll_ready().expect_err("must fail").to_string()
-            );
+        // Consume the allowed call.
+        drop(service.call(()));
 
-            drop(service);
-            assert!(dispatch.poll().expect("never fails").is_ready());
+        handle.send_error(Bad);
+        assert_pending!(dispatch.poll());
+        assert_eq!(
+            Poll::Ready(Err(String::from("bad"))),
+            service.poll_ready().map_err(|e| e.to_string())
+        );
 
-            Ok::<(), ()>(())
-        })
+        drop(service);
+        assert_ready!(dispatch.poll());
     }
 
-    #[test]
-    fn repolls_ready_on_notification() {
+    #[tokio::test]
+    async fn repolls_ready_on_notification() {
         struct ReadyNotify {
             notified: bool,
             _handle: Arc<()>,
@@ -78,18 +78,18 @@ mod test {
         impl tower::Service<()> for ReadyNotify {
             type Response = ();
             type Error = Bad;
-            type Future = future::FutureResult<(), Bad>;
+            type Future = Pin<Box<dyn Future<Output = Result<(), Bad>> + Send + Sync + 'static>>;
 
-            fn poll_ready(&mut self) -> Poll<(), Bad> {
+            fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Bad>> {
                 println!("Polling");
                 if self.notified {
-                    return Err(Bad);
+                    return Poll::Ready(Err(Bad));
                 }
 
                 println!("Notifying");
-                futures::task::current().notify();
+                cx.waker().wake_by_ref();
                 self.notified = true;
-                Ok(Async::Ready(()))
+                Poll::Ready(Ok(()))
             }
 
             fn call(&mut self, _: ()) -> Self::Future {
@@ -97,26 +97,22 @@ mod test {
             }
         }
 
-        run(|| {
-            let _handle = Arc::new(());
-            let handle = Arc::downgrade(&_handle);
-            let (service, dispatch) = super::new(
-                ReadyNotify {
-                    _handle,
-                    notified: false,
-                },
-                1,
-            );
-            tokio::spawn(dispatch.map_err(|_| ()));
-            service.ready().then(move |ret| {
-                assert!(ret.is_err());
-                assert!(
-                    handle.upgrade().is_none(),
-                    "inner service must be dropped on error"
-                );
-                Ok::<(), ()>(())
-            })
-        })
+        let _handle = Arc::new(());
+        let handle = Arc::downgrade(&_handle);
+        let (mut service, dispatch) = super::new(
+            ReadyNotify {
+                _handle,
+                notified: false,
+            },
+            1,
+        );
+        tokio::spawn(dispatch);
+        let ret = service.ready_and().await;
+        assert!(ret.is_err());
+        assert!(
+            handle.upgrade().is_none(),
+            "inner service must be dropped on error"
+        );
     }
 
     #[derive(Debug)]
@@ -126,13 +122,5 @@ mod test {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "bad")
         }
-    }
-
-    fn run<F, R>(f: F)
-    where
-        F: FnOnce() -> R + 'static,
-        R: future::IntoFuture<Item = ()> + 'static,
-    {
-        tokio::runtime::current_thread::run(future::lazy(f).map_err(|_| panic!("Failed")));
     }
 }

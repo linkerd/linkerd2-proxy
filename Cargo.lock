@@ -893,11 +893,13 @@ dependencies = [
 name = "linkerd2-buffer"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
- "tokio 0.1.22",
- "tower 0.1.1",
- "tower-test 0.1.0",
+ "pin-project",
+ "tokio 0.2.19",
+ "tokio-test",
+ "tower 0.3.1",
+ "tower-test",
  "tracing",
  "tracing-futures 0.1.0",
 ]
@@ -920,10 +922,10 @@ dependencies = [
 name = "linkerd2-concurrency-limit"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
- "linkerd2-error",
- "tokio-sync",
- "tower 0.1.1",
+ "futures 0.3.4",
+ "pin-project",
+ "tokio 0.2.19",
+ "tower 0.3.1",
  "tracing",
 ]
 
@@ -1384,11 +1386,12 @@ dependencies = [
 name = "linkerd2-router"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
  "linkerd2-stack",
+ "pin-project",
  "tokio-compat",
- "tower 0.1.1",
+ "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
 ]
@@ -1486,7 +1489,7 @@ dependencies = [
  "tokio-connect",
  "tokio-test",
  "tower 0.3.1",
- "tower-test 0.3.0",
+ "tower-test",
  "tracing",
 ]
 
@@ -2445,6 +2448,7 @@ dependencies = [
 name = "tokio"
 version = "0.2.20"
 source = "git+https://github.com/tokio-rs/tokio?rev=45773c56413267cbcf9d5e7877e8dc4afc1e5b07#45773c56413267cbcf9d5e7877e8dc4afc1e5b07"
+
 dependencies = [
  "bytes 0.5.4",
  "fnv",
@@ -2950,17 +2954,6 @@ dependencies = [
  "tower-layer 0.1.0",
  "tower-service 0.2.0",
  "tower-util",
-]
-
-[[package]]
-name = "tower-test"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99a0b25036e2c58f681a04a5b312e9283d229445ad5e1221a1b7a4630df6fbdf"
-dependencies = [
- "futures 0.1.26",
- "tokio-sync",
- "tower-service 0.2.0",
 ]
 
 [[package]]

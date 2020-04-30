@@ -6,12 +6,13 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
-tower = "0.1"
+tower = { version = "0.3", default-features = false, features = ["util"] }
 tracing = "0.1.2"
 tracing-futures = "0.1"
+pin-project = "0.4"
 
 [dev-dependencies]
 tokio-compat = "0.1"
