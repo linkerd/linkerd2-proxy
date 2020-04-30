@@ -15,7 +15,7 @@ use linkerd2_app_core::{
     drain,
     // dst,
     // errors,
-    // metric_labels,
+    metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -33,7 +33,7 @@ use linkerd2_app_core::{
     svc::{self, NewService},
     transport::{self, io::BoxedIo, tls},
     Error,
-    // ProxyMetrics,
+    ProxyMetrics,
     TraceContextLayer,
     DST_OVERRIDE_HEADER,
     L5D_CLIENT_ID,
@@ -69,7 +69,7 @@ impl Config {
         local_identity: tls::Conditional<identity::Local>,
         profiles_client: P,
         // tap_layer: tap::Layer,
-        // metrics: ProxyMetrics,
+        metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Result<Inbound, Error>
@@ -104,8 +104,7 @@ impl Config {
             let tcp_connect = svc::connect(connect.keepalive)
                 .push_map_response(BoxedIo::new) // Ensures the transport propagates shutdown properly.
                 .push_timeout(connect.timeout)
-                // .push(metrics.transport.layer_connect(TransportLabels))
-                ;
+                .push(metrics.transport.layer_connect(TransportLabels));
 
             // Forwards TCP streams that cannot be decoded as HTTP.
             let tcp_forward = tcp_connect
@@ -115,25 +114,25 @@ impl Config {
                 })
                 .push(svc::layer::mk(tcp::Forward::new));
 
-            // // Creates HTTP clients for each inbound port & HTTP settings.
-            // let http_endpoint = tcp_connect
-            //     .push(http::MakeClientLayer::new(connect.h2_settings))
-            //     .push(reconnect::layer({
-            //         let backoff = connect.backoff.clone();
-            //         move |_| Ok(backoff.stream())
-            //     }))
-            //     .push_on_response(
-            //         svc::layers()
-            //             // If the service has been ready & unused for `cache_max_idle_age`,
-            //             // fail it.
-            //             .push_idle_timeout(cache_max_idle_age)
-            //             // If the service has been unavailable for an extend time, eagerly
-            //             // fail requests.
-            //             .push_failfast(dispatch_timeout)
-            //             // Shares the service, ensuring discovery errors are propagated.
-            //             .push_spawn_buffer(buffer_capacity),
-            //     )
-            //     .check_service::<HttpEndpoint>();
+            // Creates HTTP clients for each inbound port & HTTP settings.
+            let http_endpoint = tcp_connect
+                .push(http::MakeClientLayer::new(connect.h2_settings))
+                .push(reconnect::layer({
+                    let backoff = connect.backoff.clone();
+                    move |_| Ok(backoff.stream())
+                }))
+                .push_on_response(
+                    svc::layers()
+                        // If the service has been ready & unused for `cache_max_idle_age`,
+                        // fail it.
+                        .push_idle_timeout(cache_max_idle_age)
+                        // If the service has been unavailable for an extend time, eagerly
+                        // fail requests.
+                        .push_failfast(dispatch_timeout)
+                        // Shares the service, ensuring discovery errors are propagated.
+                        .push_spawn_buffer(buffer_capacity),
+                )
+                .check_service::<HttpEndpoint>();
 
             // let http_target_observability = svc::layers()
             //     // Registers the stack to be tapped.
@@ -356,6 +355,6 @@ pub fn trace_labels() -> HashMap<String, String> {
     l
 }
 
-// fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
-//     metric_labels::StackLabels::inbound(name)
-// }
+fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
+    metric_labels::StackLabels::inbound(name)
+}

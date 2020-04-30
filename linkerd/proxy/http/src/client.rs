@@ -4,12 +4,20 @@ use super::{
     h1, h2,
     settings::{HasSettings, Settings},
 };
-use futures::{try_ready, Async, Future, Poll};
+use futures_03::{
+    compat::{Compat01As03, Future01CompatExt},
+    ready,
+};
 use http;
 use hyper;
 use linkerd2_error::Error;
+use pin_project::{pin_project, project};
+use std::future::Future;
 use std::marker::PhantomData;
-use tower::ServiceExt;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio as tokio_01;
+use tower_03::ServiceExt;
 use tracing::{debug, info_span, trace};
 use tracing_futures::Instrument;
 
@@ -30,15 +38,16 @@ pub struct MakeClient<C, B> {
 }
 
 /// A `Future` returned from `MakeClient::new_service()`.
+#[pin_project]
 pub enum MakeFuture<C, T, B>
 where
     B: hyper::body::Payload + 'static,
-    C: tower::MakeConnection<T> + 'static,
-    C::Connection: Send + 'static,
+    C: tower_03::Service<T> + 'static,
     C::Error: Into<Error>,
+    C::Response: tokio_01::io::AsyncRead + tokio_01::io::AsyncWrite + Send + 'static,
 {
     Http1(Option<HyperMakeClient<C, T, B>>),
-    Http2(::tower_util::Oneshot<h2::Connect<C, B>, T>),
+    Http2(#[pin] Compat01As03<tower_util::Oneshot<h2::Connect<C, B>, T>>),
 }
 
 /// The `Service` yielded by `MakeClient::new_service()`.
@@ -51,13 +60,14 @@ where
     Http2(h2::Connection<B>),
 }
 
+#[pin_project]
 pub enum ClientFuture {
     Http1 {
-        future: hyper::client::ResponseFuture,
+        future: #[pin] Compat01As03<hyper::client::ResponseFuture>,
         upgrade: Option<Http11Upgrade>,
         is_http_connect: bool,
     },
-    Http2(h2::ResponseFuture),
+    Http2(#[pin] Compat01As03<h2::ResponseFuture>),
 }
 
 // === impl MakeClientLayer ===
@@ -100,12 +110,12 @@ where
 
 // === impl MakeClient ===
 
-impl<C, T, B> tower::Service<T> for MakeClient<C, B>
+impl<C, T, B> tower_03::Service<T> for MakeClient<C, B>
 where
-    C: tower::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: tower_03::Service<T> + Clone + Send + Sync + 'static,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<Error>,
-    C::Connection: Send + 'static,
+    C::Error: Into<Error>,
+    C::Response: tokio_01::io::AsyncRead + tokio_01::io::AsyncWrite + Send + 'static,
     T: HasSettings + Clone + Send + Sync,
     B: hyper::body::Payload + 'static,
 {
@@ -113,7 +123,7 @@ where
     type Error = Error;
     type Future = MakeFuture<C, T, B>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Ok(().into())
     }
 
@@ -139,7 +149,9 @@ where
                 MakeFuture::Http1(Some(h1))
             }
             Settings::Http2 => {
-                let h2 = h2::Connect::new(connect, self.h2_settings.clone()).oneshot(target);
+                let h2 = h2::Connect::new(connect, self.h2_settings.clone())
+                    .oneshot(target)
+                    .compat();
                 MakeFuture::Http2(h2)
             }
         }
@@ -166,18 +178,19 @@ where
     C::Error: Into<Error>,
     B: hyper::body::Payload + 'static,
 {
-    type Item = Client<C, T, B>;
-    type Error = Error;
+    type Output = Result<Client<C, T, B>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let svc = match *self {
-            MakeFuture::Http1(ref mut h1) => Client::Http1(h1.take().expect("poll more than once")),
-            MakeFuture::Http2(ref mut h2) => {
-                let svc = try_ready!(h2.poll());
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        let svc = match self.project() {
+            MakeFuture::Http1(h1) => Client::Http1(h1.take().expect("poll more than once")),
+            MakeFuture::Http2(h2) => {
+                let svc = ready!(h2.poll(cx))?;
                 Client::Http2(svc)
             }
         };
-        Ok(Async::Ready(svc))
+        Poll::Ready(Ok(svc))
     }
 }
 
@@ -188,7 +201,7 @@ where
     C: tower::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: Send,
     C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<Error>,
+    C::Error: Into<Error>,
     T: Clone + Send + Sync + 'static,
     B: hyper::body::Payload + 'static,
 {
@@ -196,9 +209,9 @@ where
     type Error = Error;
     type Future = ClientFuture;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self) -> Poll<Result<(), Self::Error>> {
         match *self {
-            Client::Http1(_) => Ok(Async::Ready(())),
+            Client::Http1(_) => Poll::Ready(Ok(())),
             Client::Http2(ref mut h2) => h2.poll_ready().map_err(Into::into),
         }
     }
@@ -233,20 +246,21 @@ where
 // === impl ClientFuture ===
 
 impl Future for ClientFuture {
-    type Item = http::Response<HttpBody>;
-    type Error = Error;
+    type Output = Result<http::Response<HttpBody>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self {
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        match self.project() {
             ClientFuture::Http1 {
                 future,
                 upgrade,
                 is_http_connect,
             } => {
-                let mut res = try_ready!(future.poll()).map(|b| HttpBody {
+                let mut res = ready!(future.poll()).map(|b| HttpBody {
                     body: Some(b),
                     upgrade: upgrade.take(),
-                });
+                })?;
                 if *is_http_connect {
                     res.extensions_mut().insert(HttpConnect);
                 }
@@ -256,9 +270,9 @@ impl Future for ClientFuture {
                 } else {
                     h1::strip_connection_headers(res.headers_mut());
                 }
-                Ok(Async::Ready(res))
+                Poll::Ready(Ok(res))
             }
-            ClientFuture::Http2(f) => f.poll().map_err(Into::into),
+            ClientFuture::Http2(f) => f.poll(cx).map_err(Into::into),
         }
     }
 }
