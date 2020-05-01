@@ -187,11 +187,10 @@ fn http_status(error: &(dyn std::error::Error + 'static)) -> StatusCode {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<IdentityRequired>() {
         http::StatusCode::FORBIDDEN
+    } else if let Some(source) = error.source() {
+        http_status(source)
     } else {
-        match error.source() {
-            Some(source) => http_status(source),
-            None => http::StatusCode::BAD_GATEWAY,
-        }
+        http::StatusCode::BAD_GATEWAY
     }
 }
 
@@ -235,18 +234,15 @@ fn set_grpc_status(
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("connection closed"));
         code
+    } else if let Some(source) = error.source() {
+        set_grpc_status(source, headers)
     } else {
-        match error.source() {
-            Some(source) => set_grpc_status(source, headers),
-            None => {
-                let code = Code::Internal;
-                headers.insert(GRPC_STATUS, code_header(code));
-                if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
-                    headers.insert(GRPC_MESSAGE, msg);
-                }
-                code
-            }
+        let code = Code::Internal;
+        headers.insert(GRPC_STATUS, code_header(code));
+        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
+            headers.insert(GRPC_MESSAGE, msg);
         }
+        code
     }
 }
 
