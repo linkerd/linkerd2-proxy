@@ -1,17 +1,18 @@
 use crate::{upgrade::Http11Upgrade, HasH2Reason};
+use bytes::Bytes;
 use futures::{try_ready, Async, Future, Poll};
 use futures_03::{compat::Compat, TryFutureExt};
 use http;
 use hyper::client::connect as hyper_connect;
-use hyper::{self, body::Payload};
+use hyper::{self, body::HttpBody};
 use linkerd2_error::Error;
 use std::pin::Pin;
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[derive(Debug)]
-pub struct HttpBody {
-    /// In HttpBody::drop, if this was an HTTP upgrade, the body is taken
+pub struct UpgradeBody {
+    /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
     /// to be inserted into the Http11Upgrade half.
     pub(super) body: Option<hyper::Body>,
     pub(super) upgrade: Option<Http11Upgrade>,
@@ -37,10 +38,10 @@ pub struct HyperConnectFuture<F> {
     absolute_form: bool,
 }
 
-// ===== impl HttpBody =====
+// ===== impl UpgradeBody =====
 
-impl Payload for HttpBody {
-    type Data = hyper::body::Chunk;
+impl HttpBody for UpgradeBody {
+    type Data = Bytes;
     type Error = hyper::Error;
 
     fn is_end_stream(&self) -> bool {
@@ -73,33 +74,33 @@ impl Payload for HttpBody {
     }
 }
 
-impl http_body::Body for HttpBody {
-    type Data = hyper::body::Chunk;
+impl http_body::Body for UpgradeBody {
+    type Data = Bytes;
     type Error = hyper::Error;
 
     fn is_end_stream(&self) -> bool {
-        Payload::is_end_stream(self)
+        HttpBody::is_end_stream(self)
     }
 
     fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        Payload::poll_data(self)
+        HttpBody::poll_data(self)
     }
 
     fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
-        Payload::poll_trailers(self)
+        HttpBody::poll_trailers(self)
     }
 }
 
-impl Default for HttpBody {
-    fn default() -> HttpBody {
-        HttpBody {
+impl Default for UpgradeBody {
+    fn default() -> UpgradeBody {
+        UpgradeBody {
             body: Some(hyper::Body::empty()),
             upgrade: None,
         }
     }
 }
 
-impl Drop for HttpBody {
+impl Drop for UpgradeBody {
     fn drop(&mut self) {
         // If an HTTP/1 upgrade was wanted, send the upgrade future.
         if let Some(upgrade) = self.upgrade.take() {
@@ -117,23 +118,20 @@ impl<S> HyperServerSvc<S> {
     }
 }
 
-impl<S, B> hyper::service::Service for HyperServerSvc<S>
+impl<S, B> tower_03::Service<http::Request<B>> for HyperServerSvc<S>
 where
-    S: tower_03::Service<http::Request<HttpBody>, Response = http::Response<B>>,
+    S: tower_03::Service<http::Request<UpgradeBody>, Response = http::Response<B>>,
     S::Error: Into<Error>,
-    B: Payload,
+    B: HttpBody,
 {
-    type ReqBody = hyper::Body;
-    type ResBody = B;
+    type Response = http::Response<B>;
     type Error = S::Error;
-    type Future = Compat<Pin<Box<S::Future>>>;
+    type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        task_compat::poll_03_to_01(task_compat::with_context(|cx| self.service.poll_ready(cx)))
-    }
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {}
 
-    fn call(&mut self, req: http::Request<Self::ReqBody>) -> Self::Future {
-        Box::pin(self.service.call(req.map(|b| HttpBody {
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        Box::pin(self.service.call(req.map(|b| UpgradeBody {
             body: Some(b),
             upgrade: None,
         })))

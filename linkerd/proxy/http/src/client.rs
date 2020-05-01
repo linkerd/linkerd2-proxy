@@ -1,4 +1,4 @@
-use super::glue::{HttpBody, HyperConnect};
+use super::glue::{HyperConnect, UpgradeBody};
 use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{
     h1, h2,
@@ -41,7 +41,7 @@ pub struct MakeClient<C, B> {
 #[pin_project]
 pub enum MakeFuture<C, T, B>
 where
-    B: hyper::body::Payload + 'static,
+    B: hyper::body::HttpBody + 'static,
     C: tower_03::Service<T> + 'static,
     C::Error: Into<Error>,
     C::Response: tokio_01::io::AsyncRead + tokio_01::io::AsyncWrite + Send + 'static,
@@ -53,7 +53,7 @@ where
 /// The `Service` yielded by `MakeClient::new_service()`.
 pub enum Client<C, T, B>
 where
-    B: hyper::body::Payload + 'static,
+    B: hyper::body::HttpBody + 'static,
     C: tower::MakeConnection<T> + 'static,
 {
     Http1(HyperMakeClient<C, T, B>),
@@ -63,7 +63,8 @@ where
 #[pin_project]
 pub enum ClientFuture {
     Http1 {
-        future: #[pin] Compat01As03<hyper::client::ResponseFuture>,
+        #[pin]
+        future: hyper::client::ResponseFuture,
         upgrade: Option<Http11Upgrade>,
         is_http_connect: bool,
     },
@@ -83,7 +84,7 @@ impl<B> MakeClientLayer<B> {
 
 impl<B> Clone for MakeClientLayer<B>
 where
-    B: hyper::body::Payload + Send + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
 {
     fn clone(&self) -> Self {
         Self {
@@ -95,7 +96,7 @@ where
 
 impl<C, B> tower::layer::Layer<C> for MakeClientLayer<B>
 where
-    B: hyper::body::Payload + Send + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
 {
     type Service = MakeClient<C, B>;
 
@@ -117,7 +118,7 @@ where
     C::Error: Into<Error>,
     C::Response: tokio_01::io::AsyncRead + tokio_01::io::AsyncWrite + Send + 'static,
     T: HasSettings + Clone + Send + Sync,
-    B: hyper::body::Payload + 'static,
+    B: hyper::body::HttpBody + 'static,
 {
     type Response = Client<C, T, B>;
     type Error = Error;
@@ -176,7 +177,7 @@ where
     C::Connection: Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
-    B: hyper::body::Payload + 'static,
+    B: hyper::body::HttpBody + 'static,
 {
     type Output = Result<Client<C, T, B>, Error>;
 
@@ -203,9 +204,9 @@ where
     C::Future: Send + 'static,
     C::Error: Into<Error>,
     T: Clone + Send + Sync + 'static,
-    B: hyper::body::Payload + 'static,
+    B: hyper::body::HttpBody + 'static,
 {
-    type Response = http::Response<HttpBody>;
+    type Response = http::Response<UpgradeBody>;
     type Error = Error;
     type Future = ClientFuture;
 
@@ -246,7 +247,7 @@ where
 // === impl ClientFuture ===
 
 impl Future for ClientFuture {
-    type Output = Result<http::Response<HttpBody>, Error>;
+    type Output = Result<http::Response<UpgradeBody>, Error>;
 
     #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -257,7 +258,7 @@ impl Future for ClientFuture {
                 upgrade,
                 is_http_connect,
             } => {
-                let mut res = ready!(future.poll()).map(|b| HttpBody {
+                let mut res = ready!(future.poll()).map(|b| UpgradeBody {
                     body: Some(b),
                     upgrade: upgrade.take(),
                 })?;

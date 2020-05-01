@@ -299,7 +299,7 @@ impl hyper::service::Service for Svc {
     type ReqBody = hyper::Body;
     type ResBody = hyper::Body;
     type Error = BoxError;
-    type Future = Box<dyn Future<Item = hyper::Response<hyper::Body>, Error = Self::Error> + Send>;
+    type Future = Box<dyn Future<Item = ::Response<hyper::Body>, Error = Self::Error> + Send>;
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
         let req = req.map(|body| {
