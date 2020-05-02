@@ -39,15 +39,17 @@ const DEFAULT_LOG: &'static str = "error,\
 
 pub fn trace_init() -> (Dispatch, app::core::trace::LevelHandle) {
     use std::env;
-    let log = env::var("LINKERD2_PROXY_LOG")
+    let log_level = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
         .unwrap_or_else(|_| DEFAULT_LOG.to_owned());
-    env::set_var("RUST_LOG", &log);
-    env::set_var("LINKERD2_PROXY_LOG", &log);
+    env::set_var("RUST_LOG", &log_level);
+    env::set_var("LINKERD2_PROXY_LOG", &log_level);
+    let log_format = env::var("LINKERD2_PROXY_LOG_FORMAT").unwrap_or_else(|_| "PLAIN".to_string());
+    env::set_var("LINKERD2_PROXY_LOG_FORMAT", &log_format);
     // This may fail, since the global log compat layer may have been
     // initialized by another test.
     let _ = app::core::trace::init_log_compat();
-    app::core::trace::with_filter(&log)
+    app::core::trace::with_filter_and_format(&log_level, &log_format)
 }
 
 /// Retry an assertion up to a specified number of times, waiting

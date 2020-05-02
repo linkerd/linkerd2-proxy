@@ -79,7 +79,7 @@ tracing-log = "0.1"
 version = "0.2.1"
 # we don't need `chrono` time formatting
 default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi"]
+features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi", "json"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
