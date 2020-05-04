@@ -13,7 +13,7 @@ futures = "0.3"
 linkerd2-error = { path = "../error" }
 tower = { version = "0.3", default-features = false }
 tracing = "0.1"
-tokio = { version = "0.2.19", features = ["sync", "macros"] }
+tokio = { version = "0.2.19", features = ["sync", "macros", "rt-core"] }
 
 [dev-dependencies]
 rand = "0.7"

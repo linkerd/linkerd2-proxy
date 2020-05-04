@@ -4,7 +4,7 @@ use futures::{future, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 use std::{future::Future, pin::Pin, sync::Arc};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tokio_test::{assert_pending, assert_ready, assert_ready_ok};
 use tower::Service as _Service;
 use tower_test::mock::Spawn;
@@ -171,18 +171,19 @@ async fn fuzz() {
         async {
             tracing::info!("starting");
             let svc = LockService::new(Decr::new(*iterations, Arc::new(true.into())));
-            let (tx, rx) = mpsc::channel(1);
+            let joins = futures::stream::futures_unordered::FuturesUnordered::new();
             for i in 0..*concurrency {
                 let lock = svc.clone();
-                let tx = tx.clone();
-                tokio::spawn(
+                let join = tokio::spawn(
                     async move {
                         let mut lock = lock;
-                        let _tx = tx;
-                        future::poll_fn::<Result<(), ()>, _>(|cx| {
+                        future::poll_fn(|cx| {
                             loop {
-                                futures::ready!(lock.poll_ready(cx)).map_err(|_| ())?;
-
+                                let ready = lock.poll_ready(cx);
+                                tracing::trace!(?ready);
+                                if futures::ready!(ready).is_err() {
+                                    return Poll::Ready(());
+                                }
                                 // Randomly be busy while holding the lock.
                                 if rand::random::<bool>() {
                                     cx.waker().wake_by_ref();
@@ -192,13 +193,20 @@ async fn fuzz() {
                                 tokio::spawn(lock.call(1));
                             }
                         })
-                        .await
+                        .await;
+                        tracing::trace!("task done");
                     }
                     .instrument(tracing::trace_span!("task", number = i)),
                 );
+                joins.push(join);
             }
 
-            rx.fold((), |(), ()| async { () }).await;
+            joins
+                .for_each(|res| {
+                    let _ = res.expect("task must not have panicked");
+                    async {}
+                })
+                .await;
             tracing::info!("done");
         }
         .instrument(tracing::info_span!("fuzz", concurrency, iterations))
