@@ -111,9 +111,6 @@ impl Config {
                 }))
                 .push_on_response(
                     svc::layers()
-                        // If the service has been ready & unused for `cache_max_idle_age`,
-                        // fail it.
-                        .push_idle_timeout(cache_max_idle_age)
                         // If the service has been unavailable for an extend time, eagerly
                         // fail requests.
                         .push_failfast(dispatch_timeout)
