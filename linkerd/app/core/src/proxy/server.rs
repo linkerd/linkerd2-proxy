@@ -13,7 +13,7 @@ use crate::{
     transport::{self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls},
     Error,
 };
-use futures_03::{compat::Future01CompatExt, TryFutureExt};
+use futures_03::{compat::Future01CompatExt, FutureExt, TryFutureExt};
 use http;
 use hyper;
 use indexmap::IndexSet;
@@ -35,6 +35,12 @@ pub type Connection = (Protocol, BoxedIo);
 #[derive(Clone, Debug)]
 pub struct ProtocolDetect {
     skip_ports: Arc<IndexSet<u16>>,
+}
+
+impl ProtocolDetect {
+    pub fn new(skip_ports: Arc<IndexSet<u16>>) -> Self {
+        ProtocolDetect { skip_ports }
+    }
 }
 
 impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
@@ -107,20 +113,16 @@ where
         make_http: H,
         h2_settings: H2Settings,
         drain: drain::Watch,
-        skip_ports: Arc<IndexSet<u16>>,
-    ) -> detect::Accept<ProtocolDetect, Self> {
-        detect::Accept::new(
-            ProtocolDetect { skip_ports },
-            Self {
-                http: hyper::server::conn::Http::new(),
-                h2_settings,
-                transport_labels,
-                // transport_metrics,
-                forward_tcp,
-                make_http,
-                drain,
-            },
-        )
+    ) -> Self {
+        Self {
+            http: hyper::server::conn::Http::new(),
+            h2_settings,
+            transport_labels,
+            // transport_metrics,
+            forward_tcp,
+            make_http,
+            drain,
+        }
     }
 }
 
@@ -131,6 +133,7 @@ where
     // Send + 'static,
     F: Accept<(tls::accept::Meta, BoxedIo)> + Clone + Send + 'static,
     F::Future: Send + 'static,
+    F::ConnectionFuture: Send + 'static,
     H: NewService<tls::accept::Meta> + Send + 'static,
     H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>, Error = Error>
         + Send
@@ -138,9 +141,10 @@ where
     <H::Service as Service<http::Request<HttpBody>>>::Future: Send + 'static,
     B: hyper::body::Payload + Default + Send + 'static,
 {
-    type Response = ();
+    type Response = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'static>>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(().into()))
@@ -165,12 +169,18 @@ where
             Some(http) => http,
             None => {
                 trace!("did not detect protocol; forwarding TCP");
-                let fwd = self
+
+                let accept = self
                     .forward_tcp
                     .clone()
                     .into_service()
                     .oneshot((proto.tls, io));
-                return Box::pin(drain.after(fwd.map_err(Into::into)));
+                let fwd = async move {
+                    let conn = accept.await.map_err(Into::into)?;
+                    Ok(Box::pin(drain.after(conn).map_err(Into::into)) as Self::Response)
+                };
+
+                return Box::pin(fwd);
             }
         };
 
@@ -179,53 +189,56 @@ where
         let builder = self.http.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
-        match http_version {
-            HttpVersion::Http1 => {
-                // Enable support for HTTP upgrades (CONNECT and websockets).
-                // TODO(eliza): port upgrades!
-                let svc = /* upgrade::Service::new(http_svc, drain.clone()) */ http_svc;
-                let exec =
-                    tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
-                let conn = builder
-                    .with_executor(exec)
-                    .http1_only(true)
-                    .serve_connection(io, HyperServerSvc::new(svc))
-                    .with_upgrades();
+        Box::pin(async move {
+            match http_version {
+                HttpVersion::Http1 => {
+                    // Enable support for HTTP upgrades (CONNECT and websockets).
+                    // TODO(eliza): port upgrades!
+                    let svc = /* upgrade::Service::new(http_svc, drain.clone()) */ http_svc;
+                    let exec =
+                        tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
+                    let conn = builder
+                        .with_executor(exec)
+                        .http1_only(true)
+                        .serve_connection(io, HyperServerSvc::new(svc))
+                        .with_upgrades();
 
-                Box::pin(async move {
-                    drain
-                        .watch(conn.compat(), |conn| {
-                            // XXX(eliza): `compat` prevents us from calling
-                            // `graceful_shutdown` because it wraps the future!
-                            // conn.graceful_shutdown()
-                            ()
-                        })
-                        .await?;
-                    Ok(())
-                })
-            }
+                    Ok(Box::pin(async move {
+                        drain
+                            .watch(conn.compat(), |conn| {
+                                // XXX(eliza): `compat` prevents us from calling
+                                // `graceful_shutdown` because it wraps the future!
+                                // conn.graceful_shutdown()
+                                ()
+                            })
+                            .await?;
+                        Ok(())
+                    }) as Self::Response)
+                }
 
-            HttpVersion::H2 => {
-                let exec = tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
-                let conn = builder
-                    .with_executor(exec)
-                    .http2_only(true)
-                    .http2_initial_stream_window_size(initial_stream_window_size)
-                    .http2_initial_connection_window_size(initial_conn_window_size)
-                    .serve_connection(io, HyperServerSvc::new(http_svc));
-                Box::pin(async move {
-                    drain
-                        .watch(conn.compat(), |conn| {
-                            // XXX(eliza): `compat` prevents us from calling
-                            // `graceful_shutdown` because it wraps the future!
-                            // conn.graceful_shutdown()
-                            ()
-                        })
-                        .await?;
-                    Ok(())
-                })
+                HttpVersion::H2 => {
+                    let exec =
+                        tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
+                    let conn = builder
+                        .with_executor(exec)
+                        .http2_only(true)
+                        .http2_initial_stream_window_size(initial_stream_window_size)
+                        .http2_initial_connection_window_size(initial_conn_window_size)
+                        .serve_connection(io, HyperServerSvc::new(http_svc));
+                    Ok(Box::pin(async move {
+                        drain
+                            .watch(conn.compat(), |conn| {
+                                // XXX(eliza): `compat` prevents us from calling
+                                // `graceful_shutdown` because it wraps the future!
+                                // conn.graceful_shutdown()
+                                ()
+                            })
+                            .await?;
+                        Ok(())
+                    }) as Self::Response)
+                }
             }
-        }
+        })
     }
 }
 

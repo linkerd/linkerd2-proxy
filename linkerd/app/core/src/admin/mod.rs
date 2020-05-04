@@ -5,10 +5,11 @@
 
 use crate::{svc, transport::tls::accept::Connection};
 use futures::{future, Future};
-use futures_03::compat::Future01CompatExt;
+use futures_03::{compat::Future01CompatExt, future as future_03};
 use http::StatusCode;
 use hyper::service::{service_fn, Service};
 use hyper::{Body, Request, Response};
+use linkerd2_error::Error;
 use linkerd2_metrics::{self as metrics, FmtMetrics};
 use std::io;
 use std::pin::Pin;
@@ -62,6 +63,13 @@ impl<M: FmtMetrics> Admin<M> {
                 .expect("builder with known status code must not fail")
         }
     }
+
+    fn live_rsp(&self) -> Response<Body> {
+        Response::builder()
+            .status(StatusCode::OK)
+            .body("live\n".into())
+            .expect("builder with known status code must not fail")
+    }
 }
 
 impl<M: FmtMetrics> Service for Admin<M> {
@@ -75,17 +83,17 @@ impl<M: FmtMetrics> Service for Admin<M> {
             "/metrics" => Box::new(self.metrics.call(req)),
             "/proxy-log-level" => self.trace_level.call(req),
             "/ready" => Box::new(future::ok(self.ready_rsp())),
+            "/live" => Box::new(future::ok(self.live_rsp())),
             _ => Box::new(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
     }
 }
 
 impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
-    type Response = ();
-    type Error = hyper::error::Error;
-    type Future = Pin<
-        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>,
-    >;
+    type Response =
+        Pin<Box<dyn std::future::Future<Output = Result<(), Self::Error>> + Send + 'static>>;
+    type Error = Error;
+    type Future = future_03::Ready<Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -101,7 +109,9 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
             req.extensions_mut().insert(ClientAddr(peer));
             svc.call(req)
         });
-        Box::pin(self.1.serve_connection(io, svc).compat())
+
+        let connection_future = Box::pin(self.1.serve_connection(io, svc).compat());
+        future_03::ok(connection_future)
     }
 }
 

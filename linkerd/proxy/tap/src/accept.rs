@@ -1,4 +1,4 @@
-use futures::{Future, Poll};
+use futures::{future, Future, Poll};
 use indexmap::IndexSet;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
@@ -58,16 +58,16 @@ impl AcceptPermittedClients {
 }
 
 impl Service<Connection> for AcceptPermittedClients {
-    type Response = ();
+    type Response = ServeFuture;
     type Error = Error;
-    type Future = ServeFuture;
+    type Future = future::FutureResult<Self::Response, Self::Error>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         Ok(().into())
     }
 
     fn call(&mut self, (meta, io): Connection) -> Self::Future {
-        match meta.peer_identity {
+        future::ok(match meta.peer_identity {
             Conditional::Some(ref peer) => {
                 if self.permitted_client_ids.contains(peer) {
                     self.serve_authenticated(io)
@@ -79,7 +79,7 @@ impl Service<Connection> for AcceptPermittedClients {
                 self.serve_authenticated(io)
             }
             Conditional::None(reason) => self.serve_unauthenticated(io, reason.to_string()),
-        }
+        })
     }
 }
 

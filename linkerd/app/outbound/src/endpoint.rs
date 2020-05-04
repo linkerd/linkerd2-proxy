@@ -1,3 +1,4 @@
+use crate::http::uri::Authority;
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     // dst,
@@ -6,7 +7,8 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::{self, identity_from_header},
+        http::override_authority::CanOverrideAuthority,
+        http::{self, identity_from_header, Settings},
         identity,
         // resolve::map_endpoint::MapEndpoint,
         tap,
@@ -110,7 +112,7 @@ impl<'t, T> From<&'t Target<T>> for ::http::header::HeaderValue {
 // }
 
 impl<T: http::settings::HasSettings> http::settings::HasSettings for Target<T> {
-    fn http_settings(&self) -> &http::Settings {
+    fn http_settings(&self) -> http::Settings {
         self.inner.http_settings()
     }
 }
@@ -171,12 +173,11 @@ impl HttpEndpoint {
             return false;
         }
 
+        // Look at the original settings, ignoring any authority overrides.
         match self.settings {
             http::Settings::Http2 => false,
             http::Settings::Http1 {
-                keep_alive: _,
-                wants_h1_upgrade,
-                was_absolute_form: _,
+                wants_h1_upgrade, ..
             } => !wants_h1_upgrade,
         }
     }
@@ -192,7 +193,7 @@ impl std::hash::Hash for HttpEndpoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.addr.hash(state);
         self.identity.hash(state);
-        self.settings.hash(state);
+        http::settings::HasSettings::http_settings(self).hash(state);
         // Ignore metadata.
     }
 }
@@ -210,8 +211,21 @@ impl connect::ConnectAddr for HttpEndpoint {
 }
 
 impl http::settings::HasSettings for HttpEndpoint {
-    fn http_settings(&self) -> &http::Settings {
-        &self.settings
+    fn http_settings(&self) -> http::Settings {
+        match self.settings {
+            Settings::Http1 {
+                keep_alive,
+                wants_h1_upgrade,
+                was_absolute_form,
+            } => Settings::Http1 {
+                keep_alive,
+                wants_h1_upgrade,
+                // Always use absolute form when an onverride is present.
+                was_absolute_form: self.metadata.authority_override().is_some()
+                    || was_absolute_form,
+            },
+            settings => settings,
+        }
     }
 }
 
@@ -283,6 +297,12 @@ impl http::settings::HasSettings for HttpEndpoint {
 //                 settings: concrete.inner.inner,
 //             },
 //         }
+//     }
+// }
+
+// impl CanOverrideAuthority for Target<HttpEndpoint> {
+//     fn override_authority(&self) -> Option<Authority> {
+//         self.inner.metadata.authority_override().cloned()
 //     }
 // }
 

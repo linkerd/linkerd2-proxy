@@ -22,4 +22,8 @@ impl std::fmt::Display for ServiceError {
     }
 }
 
-impl std::error::Error for ServiceError {}
+impl std::error::Error for ServiceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&**self.0.as_ref())
+    }
+}

@@ -1,6 +1,6 @@
 use futures::{
     compat::{Compat01As03, Future01CompatExt},
-    TryFuture,
+    future, TryFuture,
 };
 use linkerd2_duplex::Duplex;
 use linkerd2_error::Error;
@@ -45,25 +45,27 @@ impl<C> Forward<C> {
 impl<C, T, I> Service<(T, I)> for Forward<C>
 where
     C: Service<T>,
+    C::Response: Send + 'static,
+    C::Future: Send + 'static,
     C::Error: Into<Error>,
     C::Response: AsyncRead + AsyncWrite,
-    I: AsyncRead + AsyncWrite,
+    I: AsyncRead + AsyncWrite + Send + 'static,
 {
-    type Response = ();
+    type Response = ForwardFuture<I, C::Future>;
     type Error = Error;
-    type Future = ForwardFuture<I, C::Future>;
+    type Future = future::Ready<Result<Self::Response, Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), self::Error>> {
         self.connect.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, (meta, io): (T, I)) -> Self::Future {
-        ForwardFuture {
+        future::ok(ForwardFuture {
             state: ForwardState::Connect {
                 io: Some(io),
                 connect: self.connect.call(meta),
             },
-        }
+        })
     }
 }
 

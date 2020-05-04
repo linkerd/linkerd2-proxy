@@ -35,8 +35,10 @@ pub trait Listen {
 
 /// Handles an accepted connection.
 pub trait Accept<C> {
+    type ConnectionError: Into<Error>;
+    type ConnectionFuture: Future<Output = Result<(), Self::ConnectionError>>;
     type Error: Into<Error>;
-    type Future: Future<Output = Result<(), Self::Error>>;
+    type Future: Future<Output = Result<Self::ConnectionFuture, Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
@@ -53,11 +55,15 @@ pub trait Accept<C> {
 #[derive(Clone, Debug)]
 pub struct AcceptService<S>(S);
 
-impl<C, S> Accept<C> for S
+impl<C, S, E> Accept<C> for S
 where
-    S: Service<C, Response = ()>,
+    E: Into<Error>,
+    S: Service<C>,
+    S::Response: Future<Output = Result<(), E>>,
     S::Error: Into<Error>,
 {
+    type ConnectionError = E;
+    type ConnectionFuture = S::Response;
     type Error = S::Error;
     type Future = S::Future;
 
@@ -71,7 +77,7 @@ where
 }
 
 impl<C, S: Accept<C>> Service<C> for AcceptService<S> {
-    type Response = ();
+    type Response = S::ConnectionFuture;
     type Error = S::Error;
     type Future = S::Future;
 
@@ -93,7 +99,8 @@ pub struct Serve<L, A> {
 impl<L, A> Future for Serve<L, A>
 where
     L: Listen,
-    A: Accept<L::Connection, Error = Never>,
+    A: Accept<L::Connection, Error = Never, ConnectionError = Never>,
+    A::ConnectionFuture: Send + 'static,
     A::Future: Send + 'static,
 {
     type Output = Result<Never, Error>;
@@ -103,8 +110,20 @@ where
         loop {
             futures::ready!(this.accept.poll_ready(cx))?;
             let conn = futures::ready!(this.listen.poll_accept(cx).map_err(Into::into))?;
-            let accept = (this.accept).accept(conn).in_current_span();
-            tokio::spawn(accept);
+            let accept = (this.accept).accept(conn);
+            tokio::spawn(
+                async move {
+                    let conn_future = match accept.await {
+                        Ok(f) => f,
+                        Err(e) => match e {},
+                    };
+                    match conn_future.await {
+                        Ok(_) => {}
+                        Err(e) => match e {},
+                    };
+                }
+                .in_current_span(),
+            );
         }
     }
 }

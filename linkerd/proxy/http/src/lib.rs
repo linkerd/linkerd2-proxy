@@ -16,6 +16,7 @@ pub mod header_from_target;
 // pub mod insert;
 // pub mod normalize_uri;
 pub mod orig_proto;
+pub mod override_authority;
 pub mod settings;
 // pub mod strip_header;
 pub mod timeout;
