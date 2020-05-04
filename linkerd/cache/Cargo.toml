@@ -6,11 +6,11 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 linkerd2-error = { path = "../error" }
 linkerd2-lock = { path = "../lock" }
 linkerd2-stack = { path = "../stack" }
-tokio = "0.1"
-tower = "0.1"
+tokio = "0.2"
+tower = { version = "0.3", default-features = false, features = ["util"] }
 tracing = "0.1"
 tracing-futures = "0.1"
