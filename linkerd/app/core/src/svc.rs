@@ -289,17 +289,17 @@ impl<S> Stack<S> {
     //     self.push(boxed::Layer::new())
     // }
 
-    // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
-    // where
-    //     B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
-    //     S: tower::Service<http::Request<http::boxed::Payload>>,
-    // {
-    //     self.push(http::boxed::request::Layer::new())
-    // }
+    pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
+    where
+        B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
+        S: tower::Service<http::Request<http::boxed::Payload>>,
+    {
+        self.push(http::boxed::request::Layer::new())
+    }
 
-    // pub fn box_http_response(self) -> Stack<http::boxed::BoxResponse<S>> {
-    //     self.push(http::boxed::response::Layer::new())
-    // }
+    pub fn box_http_response(self) -> Stack<http::boxed::BoxResponse<S>> {
+        self.push(http::boxed::response::Layer::new())
+    }
 
     /// Validates that this stack serves T-typed targets.
     pub fn check_new_service<T>(self) -> Self
