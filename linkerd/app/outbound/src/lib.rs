@@ -200,14 +200,14 @@ impl Config {
                 .cache(
                     svc::layers().push_on_response(
                         svc::layers()
-                            // If the balancer has been ready & unused for `cache_max_idle_age`,
-                            // fail the balancer.
-                            .push_idle_timeout(cache_max_idle_age)
                             // If the balancer has been empty/unavailable for 10s, eagerly fail
                             // requests.
                             .push_failfast(dispatch_timeout)
                             // Shares the balancer, ensuring discovery errors are propagated.
-                            .push_spawn_buffer(buffer_capacity)
+                            .push_spawn_buffer_with_idle_timeout(
+                                buffer_capacity,
+                                cache_max_idle_age,
+                            )
                             .push(metrics.stack.layer(stack_labels("balance"))),
                     ),
                 )
@@ -226,14 +226,11 @@ impl Config {
                     svc::layers()
                         .push_on_response(
                             svc::layers()
-                                // If the endpoint has been ready & unused for `cache_max_idle_age`,
-                                // fail it.
-                                .push_idle_timeout(cache_max_idle_age)
-                                // If the endpoint has been unavailable for an extend time, eagerly
+                                // If the endpoint has been unavailable for an extended time, eagerly
                                 // fail requests.
                                 .push_failfast(dispatch_timeout)
                                 // Shares the balancer, ensuring discovery errors are propagated.
-                                .push_spawn_buffer(buffer_capacity)
+                                .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
                                 .box_http_request()
                                 .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
                         ),
@@ -307,14 +304,14 @@ impl Config {
                 .cache(
                     svc::layers().push_on_response(
                         svc::layers()
-                            // If the service has been ready & unused for `cache_max_idle_age`,
-                            // fail it.
-                            .push_idle_timeout(cache_max_idle_age)
-                            // If the service has been unavailable for an extend time, eagerly
+                            // If the service has been unavailable for an extended time, eagerly
                             // fail requests.
                             .push_failfast(dispatch_timeout)
                             // Shares the service, ensuring discovery errors are propagated.
-                            .push_spawn_buffer(buffer_capacity)
+                            .push_spawn_buffer_with_idle_timeout(
+                                buffer_capacity,
+                                cache_max_idle_age,
+                            )
                             .push(metrics.stack.layer(stack_labels("profile"))),
                     ),
                 )
@@ -334,14 +331,14 @@ impl Config {
                 .cache(
                     svc::layers().push_on_response(
                         svc::layers()
-                            // If the service has been ready & unused for `cache_max_idle_age`,
-                            // fail it.
-                            .push_idle_timeout(cache_max_idle_age)
-                            // If the service has been unavailable for an extend time, eagerly
+                            // If the service has been unavailable for an extended time, eagerly
                             // fail requests.
                             .push_failfast(dispatch_timeout)
                             // Shares the service, ensuring discovery errors are propagated.
-                            .push_spawn_buffer(buffer_capacity)
+                            .push_spawn_buffer_with_idle_timeout(
+                                buffer_capacity,
+                                cache_max_idle_age,
+                            )
                             .push(metrics.stack.layer(stack_labels("canonicalize"))),
                     ),
                 )
@@ -389,6 +386,8 @@ impl Config {
             let http_admit_request = svc::layers()
                 // Limits the number of in-flight requests.
                 .push_concurrency_limit(max_in_flight_requests)
+                // Eagerly fail requests when the proxy is out of capacity for a
+                // dispatch_timeout.
                 .push_failfast(dispatch_timeout)
                 .push(metrics.http_errors)
                 // Synthesizes responses for proxy errors.
