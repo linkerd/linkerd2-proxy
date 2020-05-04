@@ -32,19 +32,37 @@ impl<S> Clone for Lock<S> {
 }
 
 impl<T: Send + 'static> Lock<T> {
+    /// Attempt to acquire the lock, returning `Pending` if it is held
+    /// elsewhere.
+    ///
+    /// If this `Lock` instance is not
     pub fn poll_acquire(&mut self, cx: &mut Context<'_>) -> Poll<Guard<T>> {
-        loop {
-            self.waiting = match self.waiting {
-                // This instance has not registered interest in the lock.
-                None => Some(Box::pin(self.lock.clone().lock_owned())),
+        // If we have already registered interest in the lock and are waiting on
+        // a future, we'll poll that. Otherwise, we need a future.
+        //
+        // We `take` the waiting future so that if we drive it to completion on
+        // this poll, it won't be set on subsequent polls.
+        let mut waiting = self.waiting.take().unwrap_or_else(|| {
+            // This instance has not registered interest in the lock.
+            Box::pin(self.lock.clone().lock_owned())
+        });
 
-                // This instance is interested in the lock.
-                Some(ref mut waiter) => {
-                    tokio::pin!(waiter);
-                    return waiter.poll(cx);
-                }
-            };
+        // Poll the future.
+        let res = {
+            let future = &mut waiting;
+            tokio::pin!(future);
+            future.poll(cx)
+        };
+
+        tracing::trace!(ready = res.is_ready());
+
+        // If the future hasn't completed, save it to be polled again the next
+        // time `poll_acquire` is called.
+        if res.is_pending() {
+            self.waiting = Some(waiting);
         }
+
+        res
     }
 }
 
