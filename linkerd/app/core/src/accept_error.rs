@@ -1,4 +1,4 @@
-use futures_03::{future, FutureExt};
+use futures_03::{future, FutureExt, TryFutureExt};
 use linkerd2_error::{Error, Never};
 use linkerd2_proxy_core::listen::Accept;
 use std::task::{Context, Poll};
@@ -25,8 +25,8 @@ where
     type Response = future::Either<
         future::OrElse<
             A::ConnectionFuture,
-            Result<(), Never>,
-            fn(A::ConnectionError) -> Result<(), Never>,
+            future::Ready<Result<(), Never>>,
+            fn(A::ConnectionError) -> future::Ready<Result<(), Never>>,
         >,
         future::Ready<Result<(), Never>>,
     >;
@@ -44,15 +44,15 @@ where
 
     fn call(&mut self, sock: T) -> Self::Future {
         self.0.accept(sock).map(|f| match f {
-            Ok(connection_future) => Ok(future::Either::A(connection_future.or_else(|e| {
+            Ok(connection_future) => Ok(future::Either::Left(connection_future.or_else(|e| {
                 let error: Error = e.into();
                 tracing::debug!(%error, "Connection failed");
-                Ok(())
+                future::ok(())
             }))),
             Err(e) => {
                 let error: Error = e.into();
                 tracing::debug!(%error, "Accept failed");
-                Ok(future::Either::B(future::ok(())))
+                Ok(future::Either::Right(future::ok(())))
             }
         })
     }

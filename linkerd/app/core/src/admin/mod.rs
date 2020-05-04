@@ -110,8 +110,12 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
             svc.call(req)
         });
 
-        let connection_future = Box::pin(self.1.serve_connection(io, svc).compat());
-        future_03::ok(connection_future)
+        let connection_future = self
+            .1
+            .serve_connection(io, svc)
+            .map_err(Into::into)
+            .compat();
+        future_03::ok(Box::pin(connection_future))
     }
 }
 
