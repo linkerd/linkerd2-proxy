@@ -152,17 +152,17 @@ where
                 let server = server.clone();
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());
-                async move {
-                    let result = server((meta, conn)).await;
+                let future = server((meta, conn));
+                futures_03::future::ok::<_, Never>(async move {
+                    let result = future.await;
                     sender
                         .send(Transported {
                             peer_identity,
                             result,
                         })
                         .expect("send result");
-                    let ok: Result<(), Never> = Ok(());
-                    ok
-                }
+                    Ok::<(), Never>(())
+                })
             }),
         );
         let server = async move {
@@ -170,7 +170,7 @@ where
             let conn = futures_03::future::poll_fn(|cx| listen.poll_accept(cx))
                 .await
                 .expect("listen failed");
-            accept.accept(conn).await.expect("connection failed")
+            accept.accept(conn).await.expect("connection failed").await
         };
         (server, listen_addr, receiver)
     };

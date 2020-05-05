@@ -22,7 +22,13 @@ pub trait Detect<T>: Clone {
 }
 
 #[derive(Debug, Clone)]
-pub struct Accept<D, A> {
+pub struct DetectProtocolLayer<D> {
+    detect: D,
+    peek_capacity: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct DetectProtocol<D, A> {
     detect: D,
     accept: A,
     peek_capacity: usize,
@@ -61,30 +67,36 @@ pub enum PeekAndDetect<T, D: Detect<T>> {
     Peek(Option<T>, #[pin] Compat01As03<Peek<BoxedIo>>),
 }
 
-impl<D, A> Accept<D, A> {
+impl<D> DetectProtocolLayer<D> {
     const DEFAULT_CAPACITY: usize = 8192;
 
-    /// Creates a new `Detect`.
-    pub fn new(detect: D, accept: A) -> Self {
+    pub fn new(detect: D) -> Self {
         Self {
             detect,
-            accept,
             peek_capacity: Self::DEFAULT_CAPACITY,
         }
     }
+}
 
-    pub fn with_capacity(mut self, capacity: usize) -> Self {
-        self.peek_capacity = capacity;
-        self
+impl<D: Clone, A> tower::layer::Layer<A> for DetectProtocolLayer<D> {
+    type Service = DetectProtocol<D, A>;
+
+    fn layer(&self, accept: A) -> Self::Service {
+        Self::Service {
+            detect: self.detect.clone(),
+            peek_capacity: self.peek_capacity,
+            accept,
+        }
     }
 }
 
-impl<T, D, A> tower::Service<(T, BoxedIo)> for Accept<D, A>
+impl<T, D, A> tower::Service<(T, BoxedIo)> for DetectProtocol<D, A>
 where
     D: Detect<T>,
     A: core::listen::Accept<(D::Target, BoxedIo)> + Clone,
+    D::Target: std::fmt::Debug,
 {
-    type Response = ();
+    type Response = A::ConnectionFuture;
     type Error = Error;
     type Future = AcceptFuture<T, D, A>;
 
@@ -117,7 +129,7 @@ where
     A: core::listen::Accept<(D::Target, BoxedIo)>,
     A::Error: Into<Error>,
 {
-    type Output = Result<(), Error>;
+    type Output = Result<A::ConnectionFuture, Error>;
 
     #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

@@ -25,6 +25,7 @@ linkerd2-identity = { path = "../../identity" }
 linkerd2-io = { path = "../../io" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-proxy-core = { path = "../core" }
+linkerd2-stack = { path = "../../stack" }
 ring = "0.16"
 rustls = "0.16"
 tokio = "0.1.14"

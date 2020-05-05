@@ -1,18 +1,17 @@
 use crate::proxy::identity;
+use futures::{Async, Poll};
 use http::{header::HeaderValue, StatusCode};
-use linkerd2_buffer as buffer;
 use linkerd2_error::Error;
 use linkerd2_error_metrics as metrics;
 use linkerd2_error_respond as respond;
 pub use linkerd2_error_respond::RespondLayer;
-use linkerd2_lock as lock;
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_timeout::{error::ResponseTimeout, FailFastError};
 use tower_grpc::{self as grpc, Code};
-use tracing::debug;
+use tracing::{debug, warn};
 
-pub fn layer<B: Default>() -> respond::RespondLayer<NewRespond<B>> {
-    respond::RespondLayer::new(NewRespond(std::marker::PhantomData))
+pub fn layer() -> respond::RespondLayer<NewRespond> {
+    respond::RespondLayer::new(NewRespond(()))
 }
 
 #[derive(Clone, Default)]
@@ -35,20 +34,82 @@ pub enum Reason {
     Unexpected,
 }
 
-#[derive(Debug)]
-pub struct NewRespond<B>(std::marker::PhantomData<fn() -> B>);
+#[derive(Copy, Clone, Debug)]
+pub struct NewRespond(());
 
 #[derive(Copy, Clone, Debug)]
-pub enum Respond<B> {
-    Http1(http::Version, std::marker::PhantomData<fn() -> B>),
+pub enum Respond {
+    Http1(http::Version),
     Http2 { is_grpc: bool },
 }
 
-impl<A, B: Default> respond::NewRespond<http::Request<A>> for NewRespond<B> {
-    type Response = http::Response<B>;
-    type Respond = Respond<B>;
+pub enum ResponseBody<B> {
+    NonGrpc(B),
+    Grpc {
+        inner: B,
+        trailers: Option<http::HeaderMap>,
+    },
+}
 
-    fn new_respond(&self, req: &http::Request<A>) -> Self::Respond {
+impl<B: hyper::body::Payload> hyper::body::Payload for ResponseBody<B>
+where
+    B::Error: Into<Error>,
+{
+    type Data = B::Data;
+    type Error = B::Error;
+
+    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+        match self {
+            Self::NonGrpc(inner) => inner.poll_data(),
+            Self::Grpc { inner, trailers } => {
+                // should not be calling poll_data if we have set trailers derived from an error
+                assert!(trailers.is_none());
+                match inner.poll_data() {
+                    Err(error) => {
+                        let error = error.into();
+                        let mut error_trailers = http::HeaderMap::new();
+                        let code = set_grpc_status(&*error, &mut error_trailers);
+                        debug!(%error, grpc.status = ?code, "Handling gRPC stream failure");
+                        *trailers = Some(error_trailers);
+                        Ok(Async::Ready(None))
+                    }
+                    data => data,
+                }
+            }
+        }
+    }
+
+    fn poll_trailers(&mut self) -> futures::Poll<Option<http::HeaderMap>, Self::Error> {
+        match self {
+            Self::NonGrpc(inner) => inner.poll_trailers(),
+            Self::Grpc { inner, trailers } => match trailers.take() {
+                Some(t) => Ok(Async::Ready(Some(t))),
+                None => inner.poll_trailers(),
+            },
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        match self {
+            Self::NonGrpc(inner) => inner.is_end_stream(),
+            Self::Grpc { inner, trailers } => trailers.is_none() && inner.is_end_stream(),
+        }
+    }
+}
+
+impl<B: Default + hyper::body::Payload> Default for ResponseBody<B> {
+    fn default() -> ResponseBody<B> {
+        ResponseBody::NonGrpc(B::default())
+    }
+}
+
+impl<ReqB, RspB: Default + hyper::body::Payload>
+    respond::NewRespond<http::Request<ReqB>, http::Response<RspB>> for NewRespond
+{
+    type Response = http::Response<ResponseBody<RspB>>;
+    type Respond = Respond;
+
+    fn new_respond(&self, req: &http::Request<ReqB>) -> Self::Respond {
         match req.version() {
             http::Version::HTTP_2 => {
                 let is_grpc = req
@@ -58,58 +119,66 @@ impl<A, B: Default> respond::NewRespond<http::Request<A>> for NewRespond<B> {
                     .unwrap_or(false);
                 Respond::Http2 { is_grpc }
             }
-            version => Respond::Http1(version, self.0),
+            version => Respond::Http1(version),
         }
     }
 }
 
-impl<B> Clone for NewRespond<B> {
-    fn clone(&self) -> Self {
-        NewRespond(self.0)
-    }
-}
+impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>> for Respond {
+    type Response = http::Response<ResponseBody<RspB>>;
 
-impl<B: Default> respond::Respond for Respond<B> {
-    type Response = http::Response<B>;
+    fn respond(
+        &self,
+        reseponse: Result<http::Response<RspB>, Error>,
+    ) -> Result<Self::Response, Error> {
+        match reseponse {
+            Ok(response) => Ok(response.map(|b| match *self {
+                Respond::Http2 { is_grpc } if is_grpc == true => ResponseBody::Grpc {
+                    inner: b,
+                    trailers: None,
+                },
+                _ => ResponseBody::NonGrpc(b),
+            })),
+            Err(error) => {
+                warn!("Failed to proxy request: {}", error);
 
-    fn respond(&self, error: Error) -> Result<Self::Response, Error> {
-        tracing::warn!("Failed to proxy request: {}", error);
+                if let Respond::Http2 { is_grpc } = self {
+                    if let Some(reset) = error.h2_reason() {
+                        debug!(%reset, "Propagating HTTP2 reset");
+                        return Err(error);
+                    }
 
-        if let Respond::Http2 { is_grpc } = self {
-            if let Some(reset) = error.h2_reason() {
-                debug!(%reset, "Propagating HTTP2 reset");
-                return Err(error);
-            }
+                    if *is_grpc {
+                        let mut rsp = http::Response::builder()
+                            .version(http::Version::HTTP_2)
+                            .header(http::header::CONTENT_LENGTH, "0")
+                            .body(ResponseBody::default())
+                            .expect("app::errors response is valid");
+                        let code = set_grpc_status(&*error, rsp.headers_mut());
+                        debug!(?code, "Handling error with gRPC status");
+                        return Ok(rsp);
+                    }
+                }
 
-            if *is_grpc {
-                let mut rsp = http::Response::builder()
-                    .version(http::Version::HTTP_2)
+                let version = match self {
+                    Respond::Http1(ref version) => version.clone(),
+                    Respond::Http2 { .. } => http::Version::HTTP_2,
+                };
+
+                let status = http_status(&*error);
+                debug!(%status, ?version, "Handling error with HTTP response");
+                Ok(http::Response::builder()
+                    .version(version)
+                    .status(status)
                     .header(http::header::CONTENT_LENGTH, "0")
-                    .body(B::default())
-                    .expect("app::errors response is valid");
-                let code = set_grpc_status(&error, rsp.headers_mut());
-                debug!(?code, "Handling error with gRPC status");
-                return Ok(rsp);
+                    .body(ResponseBody::default())
+                    .expect("error response must be valid"))
             }
         }
-
-        let version = match self {
-            Respond::Http1(ref version, _) => version.clone(),
-            Respond::Http2 { .. } => http::Version::HTTP_2,
-        };
-
-        let status = http_status(&error);
-        debug!(%status, ?version, "Handling error with HTTP response");
-        Ok(http::Response::builder()
-            .version(version)
-            .status(status)
-            .header(http::header::CONTENT_LENGTH, "0")
-            .body(B::default())
-            .expect("error response must be valid"))
     }
 }
 
-fn http_status(error: &Error) -> StatusCode {
+fn http_status(error: &(dyn std::error::Error + 'static)) -> StatusCode {
     if error.is::<ResponseTimeout>() {
         http::StatusCode::GATEWAY_TIMEOUT
     } else if error.is::<FailFastError>() {
@@ -118,16 +187,17 @@ fn http_status(error: &Error) -> StatusCode {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<IdentityRequired>() {
         http::StatusCode::FORBIDDEN
-    } else if let Some(e) = error.downcast_ref::<lock::error::ServiceError>() {
-        http_status(e.inner())
-    } else if let Some(e) = error.downcast_ref::<buffer::error::ServiceError>() {
-        http_status(e.inner())
+    } else if let Some(source) = error.source() {
+        http_status(source)
     } else {
         http::StatusCode::BAD_GATEWAY
     }
 }
 
-fn set_grpc_status(error: &Error, headers: &mut http::HeaderMap) -> grpc::Code {
+fn set_grpc_status(
+    error: &(dyn std::error::Error + 'static),
+    headers: &mut http::HeaderMap,
+) -> grpc::Code {
     const GRPC_STATUS: &'static str = "grpc-status";
     const GRPC_MESSAGE: &'static str = "grpc-message";
 
@@ -159,10 +229,13 @@ fn set_grpc_status(error: &Error, headers: &mut http::HeaderMap) -> grpc::Code {
             headers.insert(GRPC_MESSAGE, msg);
         }
         code
-    } else if let Some(e) = error.downcast_ref::<lock::error::ServiceError>() {
-        set_grpc_status(e.inner(), headers)
-    } else if let Some(e) = error.downcast_ref::<buffer::error::ServiceError>() {
-        set_grpc_status(e.inner(), headers)
+    } else if error.is::<std::io::Error>() {
+        let code = Code::Unavailable;
+        headers.insert(GRPC_STATUS, code_header(code));
+        headers.insert(GRPC_MESSAGE, HeaderValue::from_static("connection closed"));
+        code
+    } else if let Some(source) = error.source() {
+        set_grpc_status(source, headers)
     } else {
         let code = Code::Internal;
         headers.insert(GRPC_STATUS, code_header(code));

@@ -20,12 +20,12 @@ pub enum Settings {
 }
 
 pub trait HasSettings {
-    fn http_settings(&self) -> &Settings;
+    fn http_settings(&self) -> Settings;
 }
 
 impl HasSettings for Settings {
-    fn http_settings(&self) -> &Settings {
-        self
+    fn http_settings(&self) -> Settings {
+        *self
     }
 }
 

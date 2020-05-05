@@ -95,7 +95,7 @@ where
     fn retryable_total(&self) -> Metric<'_, Prefixed<'_, &'static str>, Counter> {
         Metric::new(
             self.prefix_key("retryable_total"),
-            "Total count of retryable HTTP responses that were not retried.",
+            "Total count of retryable HTTP responses.",
         )
     }
 }

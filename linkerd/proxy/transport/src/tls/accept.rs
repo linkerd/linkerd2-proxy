@@ -9,6 +9,7 @@ use linkerd2_dns_name as dns;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
 use linkerd2_proxy_core::listen::Accept;
+use linkerd2_stack::layer;
 use pin_project::{pin_project, project};
 pub use rustls::ServerConfig as Config;
 use std::future::Future;
@@ -91,6 +92,18 @@ impl<A: Accept<Connection>, T: HasConfig> AcceptTls<A, T> {
         self.skip_ports = skip_ports;
         self
     }
+
+    pub fn layer(
+        tls: super::Conditional<T>,
+        skip_ports: Arc<IndexSet<u16>>,
+    ) -> impl tower::layer::Layer<A, Service = AcceptTls<A, T>>
+    where
+        T: Clone,
+    {
+        layer::mk(move |accept| {
+            AcceptTls::new(tls.clone(), accept).with_skip_ports(skip_ports.clone())
+        })
+    }
 }
 
 impl<A, T> tower::Service<listen::Connection> for AcceptTls<A, T>
@@ -98,7 +111,7 @@ where
     A: Accept<Connection> + Clone,
     T: HasConfig + Send + 'static,
 {
-    type Response = ();
+    type Response = A::ConnectionFuture;
     type Error = Error;
     type Future = AcceptFuture<A>;
 
@@ -171,7 +184,7 @@ impl<A: Accept<Connection>> AcceptFuture<A> {
 }
 
 impl<A: Accept<Connection>> Future for AcceptFuture<A> {
-    type Output = Result<(), Error>;
+    type Output = Result<A::ConnectionFuture, Error>;
     #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();

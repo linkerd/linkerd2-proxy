@@ -24,8 +24,10 @@ where
     L::Connection: HasSpan,
     L::Error: std::error::Error + Send + 'static,
     A: Accept<L::Connection> + Send + 'static,
-    A::Error: 'static,
+    A::Error: Send + 'static,
     A::Future: Send + 'static,
+    A::Error: Into<Error>,
+    A::ConnectionFuture: Send + 'static,
 {
     // As soon as we get a shutdown signal, the listener task completes and
     // stops accepting new connections.
@@ -55,6 +57,8 @@ where
     A: Accept<L::Connection>,
     A::Error: 'static,
     A::Future: Send + 'static,
+    A::ConnectionError: 'static,
+    A::ConnectionFuture: Send + 'static,
 {
     fn new(listen: L, accept: A) -> Self {
         let accept = TraceAccept {
@@ -76,7 +80,9 @@ where
     L::Connection: HasSpan,
     A: Accept<L::Connection>,
     A::Future: Send + 'static,
-    A::Error: 'static,
+    A::Error: Send + 'static,
+    A::ConnectionError: 'static,
+    A::ConnectionFuture: Send + 'static,
 {
     type Output = Result<(), Error>;
 
@@ -101,7 +107,7 @@ struct TraceAccept<A> {
 }
 
 impl<C: HasSpan, A: Accept<C>> tower::Service<C> for TraceAccept<A> {
-    type Response = ();
+    type Response = A::ConnectionFuture;
     type Error = A::Error;
     type Future = Instrumented<A::Future>;
 
