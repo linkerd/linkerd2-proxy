@@ -17,7 +17,6 @@ pub struct Dispatch<S, Req, F> {
     rx: mpsc::Receiver<InFlight<Req, F>>,
     ready: watch::Sender<Poll<Result<(), ServiceError>>>,
     max_idle: Option<Duration>,
-    #[pin]
     current_idle: Option<Delay>,
 }
 
@@ -136,11 +135,12 @@ where
                     // There are no requests available, so track idleness.
                     if let Some(timeout) = this.max_idle {
                         if this.current_idle.is_none() {
-                            *this.current_idle.as_mut() = Some(delay_for(*timeout));
+                            *this.current_idle = Some(delay_for(*timeout));
                         }
                     }
 
-                    if let Some(idle) = this.current_idle.as_pin_mut() {
+                    if let Some(idle) = this.current_idle.as_mut() {
+                        tokio::pin!(idle);
                         if idle.poll(cx).is_ready() {
                             let error = IdleError(*this.max_idle.as_ref().unwrap());
                             let shared = ServiceError(Arc::new(error.into()));
