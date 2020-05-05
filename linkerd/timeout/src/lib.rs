@@ -9,12 +9,10 @@ use tokio_timer as timer;
 
 pub mod error;
 mod failfast;
-mod idle;
 mod probe_ready;
 
 pub use self::{
     failfast::{FailFast, FailFastError, FailFastLayer},
-    idle::{Idle, IdleError, IdleLayer},
     probe_ready::{ProbeReady, ProbeReadyLayer},
 };
 

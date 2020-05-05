@@ -1,5 +1,6 @@
 use futures::Async;
 use linkerd2_error::Error;
+use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 
 mod dispatch;
@@ -17,6 +18,7 @@ struct InFlight<Req, F> {
 pub(crate) fn new<Req, S>(
     inner: S,
     capacity: usize,
+    idle_timeout: Option<Duration>,
 ) -> (Buffer<Req, S::Future>, Dispatch<S, Req, S::Future>)
 where
     Req: Send + 'static,
@@ -27,7 +29,7 @@ where
 {
     let (tx, rx) = mpsc::channel(capacity);
     let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
-    let dispatch = Dispatch::new(inner, rx, ready_tx);
+    let dispatch = Dispatch::new(inner, rx, ready_tx, idle_timeout);
     (Buffer::new(tx, ready_rx), dispatch)
 }
 
@@ -43,7 +45,7 @@ mod test {
     fn propagates_readiness() {
         run(|| {
             let (service, mut handle) = mock::pair::<(), ()>();
-            let (mut service, mut dispatch) = super::new(service, 1);
+            let (mut service, mut dispatch) = super::new(service, 1, None);
             handle.allow(0);
 
             assert!(dispatch.poll().expect("never fails").is_not_ready());
@@ -106,6 +108,7 @@ mod test {
                     notified: false,
                 },
                 1,
+                None,
             );
             tokio::spawn(dispatch.map_err(|_| ()));
             service.ready().then(move |ret| {
