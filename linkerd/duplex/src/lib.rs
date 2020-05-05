@@ -1,21 +1,27 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use bytes::{Buf, BufMut};
-use futures::{try_ready, Async, Future, Poll};
+use futures::ready;
+use pin_project::pin_project;
 use std::io;
+use std::task::{Context, Poll};
+use std::{future::Future, mem::MaybeUninit, pin::Pin};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::trace;
 
 /// A future piping data bi-directionally to In and Out.
+#[pin_project]
 pub struct Duplex<In, Out> {
     half_in: HalfDuplex<In>,
     half_out: HalfDuplex<Out>,
 }
 
+#[pin_project]
 struct HalfDuplex<T> {
     // None means socket met eof, and bytes have been drained into other half.
     buf: Option<CopyBuf>,
     is_shutdown: bool,
+    #[pin]
     io: T,
 }
 
@@ -34,8 +40,8 @@ struct CopyBuf {
 
 impl<In, Out> Duplex<In, Out>
 where
-    In: AsyncRead + AsyncWrite,
-    Out: AsyncRead + AsyncWrite,
+    In: AsyncRead + AsyncWrite + Unpin,
+    Out: AsyncRead + AsyncWrite + Unpin,
 {
     pub fn new(in_io: In, out_io: Out) -> Self {
         Duplex {
@@ -47,30 +53,30 @@ where
 
 impl<In, Out> Future for Duplex<In, Out>
 where
-    In: AsyncRead + AsyncWrite,
-    Out: AsyncRead + AsyncWrite,
+    In: AsyncRead + AsyncWrite + Unpin,
+    Out: AsyncRead + AsyncWrite + Unpin,
 {
-    type Item = ();
-    type Error = io::Error;
+    type Output = Result<(), io::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
         // This purposefully ignores the Async part, since we don't want to
         // return early if the first half isn't ready, but the other half
         // could make progress.
         trace!("poll");
-        self.half_in.copy_into(&mut self.half_out)?;
-        self.half_out.copy_into(&mut self.half_in)?;
-        if self.half_in.is_done() && self.half_out.is_done() {
-            Ok(Async::Ready(()))
+        let _ = this.half_in.copy_into(&mut this.half_out, cx)?;
+        let _ = this.half_out.copy_into(&mut this.half_in, cx)?;
+        if this.half_in.is_done() && this.half_out.is_done() {
+            Poll::Ready(Ok(()))
         } else {
-            Ok(Async::NotReady)
+            Poll::Pending
         }
     }
 }
 
 impl<T> HalfDuplex<T>
 where
-    T: AsyncRead,
+    T: AsyncRead + Unpin,
 {
     fn new(io: T) -> Self {
         Self {
@@ -80,9 +86,13 @@ where
         }
     }
 
-    fn copy_into<U>(&mut self, dst: &mut HalfDuplex<U>) -> Poll<(), io::Error>
+    fn copy_into<U>(
+        &mut self,
+        dst: &mut HalfDuplex<U>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), io::Error>>
     where
-        U: AsyncWrite,
+        U: AsyncWrite + Unpin,
     {
         // Since Duplex::poll() intentionally ignores the Async part of our
         // return value, we may be polled again after returning Ready, if the
@@ -91,30 +101,30 @@ where
         // the copy loop.
         if dst.is_shutdown {
             trace!("already shutdown");
-            return Ok(Async::Ready(()));
+            return Poll::Ready(Ok(()));
         }
         loop {
-            try_ready!(self.read());
-            try_ready!(self.write_into(dst));
+            ready!(self.poll_read(cx))?;
+            ready!(self.poll_write_into(dst, cx))?;
             if self.buf.is_none() {
                 trace!("shutting down");
                 debug_assert!(!dst.is_shutdown, "attempted to shut down destination twice");
-                try_ready!(dst.io.shutdown());
+                ready!(Pin::new(&mut dst.io).poll_shutdown(cx))?;
                 dst.is_shutdown = true;
 
-                return Ok(Async::Ready(()));
+                return Poll::Ready(Ok(()));
             }
         }
     }
 
-    fn read(&mut self) -> Poll<(), io::Error> {
+    fn poll_read(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         let mut is_eof = false;
         if let Some(ref mut buf) = self.buf {
             if !buf.has_remaining() {
                 buf.reset();
 
                 trace!("reading");
-                let n = try_ready!(self.io.read_buf(buf));
+                let n = ready!(Pin::new(&mut self.io).poll_read_buf(cx, buf))?;
                 trace!("read {}B", n);
 
                 is_eof = n == 0;
@@ -125,25 +135,29 @@ where
             self.buf = None;
         }
 
-        Ok(Async::Ready(()))
+        Poll::Ready(Ok(()))
     }
 
-    fn write_into<U>(&mut self, dst: &mut HalfDuplex<U>) -> Poll<(), io::Error>
+    fn poll_write_into<U>(
+        &mut self,
+        dst: &mut HalfDuplex<U>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), io::Error>>
     where
-        U: AsyncWrite,
+        U: AsyncWrite + Unpin,
     {
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
                 trace!("writing {}B", buf.remaining());
-                let n = try_ready!(dst.io.write_buf(buf));
+                let n = ready!(Pin::new(&mut dst.io).poll_write_buf(cx, buf))?;
                 trace!("wrote {}B", n);
                 if n == 0 {
-                    return Err(write_zero());
+                    return Poll::Ready(Err(write_zero()));
                 }
             }
         }
 
-        Ok(Async::Ready(()))
+        Poll::Ready(Ok(()))
     }
 
     fn is_done(&self) -> bool {
@@ -191,8 +205,14 @@ impl BufMut for CopyBuf {
         self.buf.len() - self.write_pos
     }
 
-    unsafe fn bytes_mut(&mut self) -> &mut [u8] {
-        &mut self.buf[self.write_pos..]
+    fn bytes_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        unsafe {
+            // this is, in fact, _totally fine and safe_: all the memory is
+            // initialized.
+            // there's just no way to turn a `&[T]` into a `&[MaybeUninit<T>]`
+            // without ptr casting.
+            &mut *(&mut self.buf[self.write_pos..] as *mut _ as *mut [MaybeUninit<u8>])
+        }
     }
 
     unsafe fn advance_mut(&mut self, cnt: usize) {
@@ -203,59 +223,58 @@ impl BufMut for CopyBuf {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Error, Read, Result, Write};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    // use std::io::{Error, Read, Result, Write};
+    // use std::sync::atomic::{AtomicBool, Ordering};
 
-    use super::*;
-    use futures::{Async, Poll};
-    use tokio::io::{AsyncRead, AsyncWrite};
+    // use super::*;
+    // use tokio::io::{AsyncRead, AsyncWrite};
 
-    #[derive(Debug)]
-    struct DoneIo(AtomicBool);
+    // #[derive(Debug)]
+    // struct DoneIo(AtomicBool);
 
-    impl<'a> Read for &'a DoneIo {
-        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-            if self.0.swap(false, Ordering::Relaxed) {
-                Ok(buf.len())
-            } else {
-                Ok(0)
-            }
-        }
-    }
+    // impl<'a> Read for &'a DoneIo {
+    //     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+    //         if self.0.swap(false, Ordering::Relaxed) {
+    //             Ok(buf.len())
+    //         } else {
+    //             Ok(0)
+    //         }
+    //     }
+    // }
 
-    impl<'a> AsyncRead for &'a DoneIo {
-        unsafe fn prepare_uninitialized_buffer(&self, _buf: &mut [u8]) -> bool {
-            true
-        }
-    }
+    // impl<'a> AsyncRead for &'a DoneIo {
+    //     unsafe fn prepare_uninitialized_buffer(&self, _buf: &mut [u8]) -> bool {
+    //         true
+    //     }
+    // }
 
-    impl<'a> Write for &'a DoneIo {
-        fn write(&mut self, buf: &[u8]) -> Result<usize> {
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> Result<()> {
-            Ok(())
-        }
-    }
-    impl<'a> AsyncWrite for &'a DoneIo {
-        fn shutdown(&mut self) -> Poll<(), Error> {
-            if self.0.swap(false, Ordering::Relaxed) {
-                Ok(Async::NotReady)
-            } else {
-                Ok(Async::Ready(()))
-            }
-        }
-    }
+    // impl<'a> Write for &'a DoneIo {
+    //     fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    //         Ok(buf.len())
+    //     }
+    //     fn flush(&mut self) -> Result<()> {
+    //         Ok(())
+    //     }
+    // }
+    // impl<'a> AsyncWrite for &'a DoneIo {
+    //     fn shutdown(&mut self) -> Poll<(), Error> {
+    //         if self.0.swap(false, Ordering::Relaxed) {
+    //             Ok(Async::NotReady)
+    //         } else {
+    //             Ok(Async::Ready(()))
+    //         }
+    //     }
+    // }
 
-    #[test]
-    fn duplex_doesnt_hang_when_one_half_finishes() {
-        // Test reproducing an infinite loop in Duplex that caused issue #519,
-        // where a Duplex would enter an infinite loop when one half finishes.
-        let io_1 = DoneIo(AtomicBool::new(true));
-        let io_2 = DoneIo(AtomicBool::new(true));
-        let mut duplex = Duplex::new(&io_1, &io_2);
+    // #[test]
+    // fn duplex_doesnt_hang_when_one_half_finishes() {
+    //     // Test reproducing an infinite loop in Duplex that caused issue #519,
+    //     // where a Duplex would enter an infinite loop when one half finishes.
+    //     let io_1 = DoneIo(AtomicBool::new(true));
+    //     let io_2 = DoneIo(AtomicBool::new(true));
+    //     let mut duplex = Duplex::new(&io_1, &io_2);
 
-        assert_eq!(duplex.poll().unwrap(), Async::NotReady);
-        assert_eq!(duplex.poll().unwrap(), Async::Ready(()));
-    }
+    //     assert_eq!(duplex.poll().unwrap(), Async::NotReady);
+    //     assert_eq!(duplex.poll().unwrap(), Async::Ready(()));
+    // }
 }
