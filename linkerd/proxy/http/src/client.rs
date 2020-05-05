@@ -1,13 +1,10 @@
-use super::glue::{HyperConnect, UpgradeBody};
+use super::glue::{Body, HyperConnect};
 use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{
     h1, h2,
     settings::{HasSettings, Settings},
 };
-use futures_03::{
-    compat::{Compat01As03, Future01CompatExt},
-    ready,
-};
+use futures_03::{ready, TryFuture};
 use http;
 use hyper;
 use linkerd2_error::Error;
@@ -16,10 +13,9 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio as tokio_01;
 use tower_03::ServiceExt;
-use tracing::{debug, info_span, trace};
-use tracing_futures::Instrument;
+use tracing::{debug, trace};
+// use tracing_futures::{Instrument, Instrumented};
 
 /// Configures an HTTP client that uses a `C`-typed connector
 #[derive(Debug)]
@@ -41,20 +37,22 @@ pub struct MakeClient<C, B> {
 #[pin_project]
 pub enum MakeFuture<C, T, B>
 where
-    B: hyper::body::HttpBody + 'static,
-    C: tower_03::Service<T> + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
+    C: tower_03::make::MakeConnection<T> + 'static,
     C::Error: Into<Error>,
-    C::Response: tokio_01::io::AsyncRead + tokio_01::io::AsyncWrite + Send + 'static,
+    C::Connection: tokio_02::io::AsyncRead + tokio_02::io::AsyncWrite + Unpin + Send + 'static,
 {
     Http1(Option<HyperMakeClient<C, T, B>>),
-    Http2(#[pin] Compat01As03<tower_util::Oneshot<h2::Connect<C, B>, T>>),
+    Http2(#[pin] tower_03::util::Oneshot<h2::Connect<C, B>, T>),
 }
 
 /// The `Service` yielded by `MakeClient::new_service()`.
 pub enum Client<C, T, B>
 where
     B: hyper::body::HttpBody + 'static,
-    C: tower::MakeConnection<T> + 'static,
+    C: tower_03::make::MakeConnection<T> + 'static,
 {
     Http1(HyperMakeClient<C, T, B>),
     Http2(h2::Connection<B>),
@@ -68,7 +66,7 @@ pub enum ClientFuture {
         upgrade: Option<Http11Upgrade>,
         is_http_connect: bool,
     },
-    Http2(#[pin] Compat01As03<h2::ResponseFuture>),
+    Http2(#[pin] h2::ResponseFuture),
 }
 
 // === impl MakeClientLayer ===
@@ -113,19 +111,21 @@ where
 
 impl<C, T, B> tower_03::Service<T> for MakeClient<C, B>
 where
-    C: tower_03::Service<T> + Clone + Send + Sync + 'static,
-    C::Future: Send + 'static,
+    C: tower_03::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
+    C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
-    C::Response: tokio_01::io::AsyncRead + tokio_01::io::AsyncWrite + Send + 'static,
-    T: HasSettings + Clone + Send + Sync,
-    B: hyper::body::HttpBody + 'static,
+    C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
+    T: HasSettings + Clone + Send + Sync + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
 {
     type Response = Client<C, T, B>;
     type Error = Error;
     type Future = MakeFuture<C, T, B>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Ok(().into())
+        self.connect.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -137,11 +137,8 @@ where
                 wants_h1_upgrade: _,
                 was_absolute_form,
             } => {
-                let exec =
-                    tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
-
+                #[allow(deprecated)]
                 let h1 = hyper::Client::builder()
-                    .executor(exec)
                     .keep_alive(keep_alive)
                     // hyper should only try to automatically
                     // set the host if the request was in absolute_form
@@ -150,9 +147,7 @@ where
                 MakeFuture::Http1(Some(h1))
             }
             Settings::Http2 => {
-                let h2 = h2::Connect::new(connect, self.h2_settings.clone())
-                    .oneshot(target)
-                    .compat();
+                let h2 = h2::Connect::new(connect, self.h2_settings.clone()).oneshot(target);
                 MakeFuture::Http2(h2)
             }
         }
@@ -173,11 +168,13 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
 
 impl<C, T, B> Future for MakeFuture<C, T, B>
 where
-    C: tower::MakeConnection<T> + Send + Sync + 'static,
-    C::Connection: Send + 'static,
+    C: tower_03::make::MakeConnection<T> + Unpin + Send + Sync + 'static,
+    C::Connection: Unpin + Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
-    B: hyper::body::HttpBody + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
 {
     type Output = Result<Client<C, T, B>, Error>;
 
@@ -197,23 +194,25 @@ where
 
 // === impl Client ===
 
-impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
+impl<C, T, B> tower_03::Service<http::Request<B>> for Client<C, T, B>
 where
-    C: tower::MakeConnection<T> + Clone + Send + Sync + 'static,
-    C::Connection: Send,
-    C::Future: Send + 'static,
+    C: tower_03::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
+    C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
     T: Clone + Send + Sync + 'static,
-    B: hyper::body::HttpBody + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
 {
-    type Response = http::Response<UpgradeBody>;
+    type Response = http::Response<Body>;
     type Error = Error;
     type Future = ClientFuture;
 
-    fn poll_ready(&mut self) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match *self {
             Client::Http1(_) => Poll::Ready(Ok(())),
-            Client::Http2(ref mut h2) => h2.poll_ready().map_err(Into::into),
+            Client::Http2(ref mut h2) => h2.poll_ready(cx).map_err(Into::into),
         }
     }
 
@@ -247,7 +246,7 @@ where
 // === impl ClientFuture ===
 
 impl Future for ClientFuture {
-    type Output = Result<http::Response<UpgradeBody>, Error>;
+    type Output = Result<http::Response<Body>, Error>;
 
     #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -258,10 +257,10 @@ impl Future for ClientFuture {
                 upgrade,
                 is_http_connect,
             } => {
-                let mut res = ready!(future.poll()).map(|b| UpgradeBody {
+                let mut res = ready!(future.try_poll(cx))?.map(|b| Body {
                     body: Some(b),
                     upgrade: upgrade.take(),
-                })?;
+                });
                 if *is_http_connect {
                     res.extensions_mut().insert(HttpConnect);
                 }

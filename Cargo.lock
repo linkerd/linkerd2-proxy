@@ -859,7 +859,6 @@ dependencies = [
  "tower-balance",
  "tower-grpc",
  "tower-load",
- "tower-make",
  "tower-request-modifier",
  "tower-spawn-ready",
  "tracing",
@@ -1034,9 +1033,10 @@ dependencies = [
 name = "linkerd2-duplex"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
- "futures 0.1.26",
- "tokio 0.1.22",
+ "bytes 0.5.4",
+ "futures 0.3.4",
+ "pin-project",
+ "tokio 0.2.20",
  "tracing",
 ]
 
@@ -1276,10 +1276,10 @@ dependencies = [
 name = "linkerd2-proxy-http"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
+ "bytes 0.5.4",
  "futures 0.1.26",
  "futures 0.3.4",
- "h2 0.1.26",
+ "h2 0.2.4",
  "http 0.2.1",
  "http-body 0.3.1",
  "httparse",
@@ -1308,7 +1308,6 @@ dependencies = [
  "tower-discover",
  "tower-grpc",
  "tower-load",
- "tower-util",
  "tracing",
  "tracing-futures 0.1.0",
  "try-lock",
@@ -1380,7 +1379,7 @@ dependencies = [
  "linkerd2-duplex",
  "linkerd2-error",
  "pin-project",
- "tokio 0.1.22",
+ "tokio 0.2.20",
  "tower 0.3.1",
 ]
 
@@ -2950,15 +2949,6 @@ dependencies = [
  "futures 0.1.26",
  "tower-layer 0.1.0",
  "tower-service 0.2.0",
-]
-
-[[package]]
-name = "tower-make"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce50370d644a0364bf4877ffd4f76404156a248d104e2cc234cd391ea5cdc965"
-dependencies = [
- "tower-service 0.3.0",
 ]
 
 [[package]]

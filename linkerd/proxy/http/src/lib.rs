@@ -25,7 +25,7 @@ mod version;
 
 pub use self::{
     client::MakeClientLayer,
-    glue::{HttpBody as Body, HyperServerSvc},
+    glue::{Body, HyperServerSvc},
     settings::Settings,
     timeout::MakeTimeoutLayer,
     version::Version,

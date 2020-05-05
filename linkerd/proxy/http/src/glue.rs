@@ -1,18 +1,26 @@
 use crate::{upgrade::Http11Upgrade, HasH2Reason};
-use bytes::Bytes;
-use futures_03::{TryFuture, TryFutureExt};
+use bytes::{
+    buf::{Buf, BufMut},
+    Bytes,
+};
+use futures_03::TryFuture;
 use http;
 use hyper::client::connect as hyper_connect;
 use hyper::{self, body::HttpBody};
 use linkerd2_error::Error;
+use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
+use std::io;
+use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio_02::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
+#[pin_project(PinnedDrop)]
 #[derive(Debug)]
-pub struct UpgradeBody {
+pub struct Body {
     /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
     /// to be inserted into the Http11Upgrade half.
     pub(super) body: Option<hyper::Body>,
@@ -33,15 +41,25 @@ pub struct HyperConnect<C, T> {
     target: T,
 }
 
+#[pin_project]
+#[derive(Debug, Clone)]
+pub struct Connection<T> {
+    #[pin]
+    transport: T,
+    absolute_form: bool,
+}
+
 /// Future returned by `HyperConnect`.
+#[pin_project]
 pub struct HyperConnectFuture<F> {
+    #[pin]
     inner: F,
     absolute_form: bool,
 }
 
 // ===== impl UpgradeBody =====
 
-impl HttpBody for UpgradeBody {
+impl HttpBody for Body {
     type Data = Bytes;
     type Error = hyper::Error;
 
@@ -56,24 +74,24 @@ impl HttpBody for UpgradeBody {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        self.body
-            .as_mut()
-            .expect("only taken in drop")
-            .poll_data()
-            .map_err(|e| {
+        let body = self.project().body.as_mut().expect("only taken in drop");
+        let poll = futures_03::ready!(Pin::new(body) // `hyper::Body` is Unpin
+            .poll_data(cx));
+        Poll::Ready(poll.map(|x| {
+            x.map_err(|e| {
                 debug!("http body error: {}", e);
                 e
             })
+        }))
     }
 
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        self.body
-            .as_mut()
-            .expect("only taken in drop")
-            .poll_trailers()
+        let body = self.project().body.as_mut().expect("only taken in drop");
+        Pin::new(body) // `hyper::Body` is Unpin
+            .poll_trailers(cx)
             .map_err(|e| {
                 debug!("http trailers error: {}", e);
                 e
@@ -81,43 +99,22 @@ impl HttpBody for UpgradeBody {
     }
 }
 
-impl http_body::Body for UpgradeBody {
-    type Data = Bytes;
-    type Error = hyper::Error;
-
-    fn is_end_stream(&self) -> bool {
-        HttpBody::is_end_stream(self)
-    }
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        HttpBody::poll_data(self)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        HttpBody::poll_trailers(self)
-    }
-}
-
-impl Default for UpgradeBody {
-    fn default() -> UpgradeBody {
-        UpgradeBody {
+impl Default for Body {
+    fn default() -> Body {
+        Body {
             body: Some(hyper::Body::empty()),
             upgrade: None,
         }
     }
 }
 
-impl Drop for UpgradeBody {
-    fn drop(&mut self) {
+#[pinned_drop]
+impl PinnedDrop for Body {
+    fn drop(self: Pin<&mut Self>) {
+        let this = self.project();
         // If an HTTP/1 upgrade was wanted, send the upgrade future.
-        if let Some(upgrade) = self.upgrade.take() {
-            let on_upgrade = self.body.take().expect("take only on drop").on_upgrade();
+        if let Some(upgrade) = this.upgrade.take() {
+            let on_upgrade = this.body.take().expect("take only on drop").on_upgrade();
             upgrade.insert_half(on_upgrade);
         }
     }
@@ -131,9 +128,9 @@ impl<S> HyperServerSvc<S> {
     }
 }
 
-impl<S, B> tower_03::Service<http::Request<B>> for HyperServerSvc<S>
+impl<S, B> tower_03::Service<http::Request<hyper::Body>> for HyperServerSvc<S>
 where
-    S: tower_03::Service<http::Request<UpgradeBody>, Response = http::Response<B>>,
+    S: tower_03::Service<http::Request<Body>, Response = http::Response<B>>,
     S::Error: Into<Error>,
     B: HttpBody,
 {
@@ -141,14 +138,15 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {}
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx)
+    }
 
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        Box::pin(self.service.call(req.map(|b| UpgradeBody {
+    fn call(&mut self, req: http::Request<hyper::Body>) -> Self::Future {
+        self.service.call(req.map(|b| Body {
             body: Some(b),
             upgrade: None,
-        })))
-        .compat()
+        }))
     }
 }
 
@@ -164,21 +162,26 @@ impl<C, T> HyperConnect<C, T> {
     }
 }
 
-impl<C, T> hyper_connect::Connect for HyperConnect<C, T>
+impl<C, T> tower_03::Service<hyper::Uri> for HyperConnect<C, T>
 where
-    C: tower::MakeConnection<T> + Clone + Send + Sync,
-    C::Future: TryFuture + Send + 'static,
+    C: tower_03::make::MakeConnection<T> + Clone + Send + Sync,
     C::Error: Into<Error>,
-    C::Connection: Send + 'static,
+    C::Future: TryFuture<Ok = C::Connection> + Unpin + Send + 'static,
+    <C::Future as TryFuture>::Error: Into<Error>,
+    C::Connection: Unpin + Send + 'static,
     T: Clone + Send + Sync,
 {
-    type Transport = C::Connection;
-    type Error = C::Error;
+    type Response = Connection<C::Connection>;
+    type Error = Error;
     type Future = HyperConnectFuture<C::Future>;
 
-    fn connect(&self, _dst: hyper_connect::Destination) -> Self::Future {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.connect.poll_ready(cx).map_err(Into::into)
+    }
+
+    fn call(&mut self, _dst: hyper::Uri) -> Self::Future {
         HyperConnectFuture {
-            inner: self.connect.clone().make_connection(self.target.clone()),
+            inner: self.connect.make_connection(self.target.clone()),
             absolute_form: self.absolute_form,
         }
     }
@@ -189,12 +192,15 @@ where
     F: TryFuture + 'static,
     F::Error: Into<Error>,
 {
-    type Output = Result<(F::Ok, hyper_connect::Connected), F::Error>;
+    type Output = Result<Connection<F::Ok>, Error>;
 
-    fn poll(&mut self) -> Poll<Resylt<Self::Item, Self::Error>> {
-        let transport = try_ready!(self.inner.poll());
-        let connected = hyper_connect::Connected::new().proxy(self.absolute_form);
-        Ok(Async::Ready((transport, connected)))
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let transport = futures_03::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
+        Poll::Ready(Ok(Connection {
+            transport,
+            absolute_form: *this.absolute_form,
+        }))
     }
 }
 
@@ -203,5 +209,76 @@ where
 impl HasH2Reason for hyper::Error {
     fn h2_reason(&self) -> Option<h2::Reason> {
         (self as &(dyn std::error::Error + 'static)).h2_reason()
+    }
+}
+
+// === impl Connected ===
+
+impl<C> AsyncRead for Connection<C>
+where
+    C: AsyncRead,
+{
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
+        self.transport.prepare_uninitialized_buffer(buf)
+    }
+
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        self.project().transport.poll_read(cx, buf)
+    }
+
+    fn poll_read_buf<B: BufMut>(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut B,
+    ) -> Poll<io::Result<usize>>
+    where
+        Self: Sized,
+    {
+        self.project().transport.poll_read_buf(cx, buf)
+    }
+}
+
+impl<C> AsyncWrite for Connection<C>
+where
+    C: AsyncWrite,
+{
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        self.project().transport.poll_write(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        self.project().transport.poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        self.project().transport.poll_shutdown(cx)
+    }
+
+    fn poll_write_buf<B: Buf>(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut B,
+    ) -> Poll<Result<usize, io::Error>>
+    where
+        Self: Sized,
+    {
+        self.project().transport.poll_write_buf(cx, buf)
+    }
+}
+
+impl<C> hyper_connect::Connection for Connection<C>
+where
+    C: hyper_connect::Connection,
+{
+    fn connected(&self) -> hyper_connect::Connected {
+        self.transport.connected().proxy(self.absolute_form)
     }
 }

@@ -1,16 +1,17 @@
 //! HTTP/1.1 Upgrades
-use super::{glue::HttpBody, h1};
-use futures::{
+use super::{h1, Body};
+
+use futures_03::{
     future::{self, Either},
-    Future, Poll,
+    TryFutureExt,
 };
-use futures_03::compat::Future01CompatExt;
 use hyper::upgrade::OnUpgrade;
 use linkerd2_drain as drain;
 use linkerd2_duplex::Duplex;
 use std::fmt;
 use std::mem;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use tracing::{debug, info, trace};
 use tracing_futures::Instrument;
 use try_lock::TryLock;
@@ -133,19 +134,15 @@ impl Drop for Inner {
         if let (Some(server), Some(client)) = (server, client) {
             trace!("HTTP/1.1 upgrade has both halves");
 
-            let server_upgrade = server
-                .map_err(|e| debug!("server HTTP upgrade error: {}", e))
-                .compat();
+            let server_upgrade = server.map_err(|e| debug!("server HTTP upgrade error: {}", e));
 
-            let client_upgrade = client
-                .map_err(|e| debug!("client HTTP upgrade error: {}", e))
-                .compat();
+            let client_upgrade = client.map_err(|e| debug!("client HTTP upgrade error: {}", e));
 
             let both_upgrades = async move {
                 let (server_conn, client_conn) =
                     tokio_02::try_join!(server_upgrade, client_upgrade)?;
                 trace!("HTTP upgrade successful");
-                if let Err(e) = Duplex::new(server_conn, client_conn).compat().await {
+                if let Err(e) = Duplex::new(server_conn, client_conn).await {
                     info!("tcp duplex error: {}", e)
                 }
                 Ok::<(), ()>(())
@@ -176,20 +173,20 @@ impl<S> Service<S> {
     }
 }
 
-impl<S, B> tower::Service<http::Request<HttpBody>> for Service<S>
+impl<S, B> tower_03::Service<http::Request<Body>> for Service<S>
 where
-    S: tower::Service<http::Request<HttpBody>, Response = http::Response<B>>,
+    S: tower_03::Service<http::Request<Body>, Response = http::Response<B>>,
     B: Default,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = Either<S::Future, future::FutureResult<http::Response<B>, Self::Error>>;
+    type Future = Either<S::Future, future::Ready<Result<http::Response<B>, Self::Error>>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: http::Request<HttpBody>) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<Body>) -> Self::Future {
         // Should this rejection happen later in the Service stack?
         //
         // Rejecting here means telemetry doesn't record anything about it...
@@ -199,7 +196,7 @@ where
         if h1::is_bad_request(&req) {
             let mut res = http::Response::default();
             *res.status_mut() = http::StatusCode::BAD_REQUEST;
-            return Either::B(future::ok(res));
+            return Either::Right(future::ok(res));
         }
 
         let upgrade = if h1::wants_upgrade(&req) {
@@ -219,6 +216,6 @@ where
 
         req.body_mut().upgrade = upgrade;
 
-        Either::A(self.service.call(req))
+        Either::Left(self.service.call(req))
     }
 }
