@@ -42,49 +42,6 @@ where
             current_idle: None,
         }
     }
-
-    /// Sets an idle timeout if one does not exist and a `max_idle` value is set.
-    fn set_idle(&mut self) {
-        if let Some(timeout) = self.max_idle {
-            if self.current_idle.is_none() {
-                self.current_idle = Some(delay_for(timeout));
-            }
-        }
-    }
-
-    /// Check the idle timeout and, if it is expired, return an error.
-    fn poll_idle(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IdleError> {
-        let this = self.project();
-        if let Some(idle) = this.current_idle.as_pin_mut() {
-            if idle.poll(cx).is_ready() {
-                return Poll::Ready(IdleError(*this.max_idle.as_ref().unwrap()));
-            }
-        }
-        Poll::Pending
-    }
-
-    /// Transitions the buffer to failing, notifying all consumers and pending
-    /// requests of the failure.
-    fn fail(self: Pin<&mut Self>, cx: &mut Context<'_>, error: impl Into<Error>) -> Result<(), ()> {
-        let mut this = self.project();
-
-        let shared = ServiceError(Arc::new(error.into()));
-        trace!(%shared, "Inner service failed");
-
-        // First, notify services of the readiness change to prevent new requests from
-        // being buffered.
-        let broadcast = this.ready.broadcast(Poll::Ready(Err(shared.clone())));
-
-        // Propagate the error to all in-flight requests.
-        while let Poll::Ready(Some(InFlight { tx, .. })) = this.rx.poll_recv(cx) {
-            let _ = tx.send(Err(shared.clone().into()));
-        }
-
-        // Drop the inner Service to free its resources. It won't be used again.
-        let _ = this.inner.take();
-
-        broadcast.map(|_| ()).map_err(|_| ())
-    }
 }
 
 impl<S, Req> Future for Dispatch<S, Req, S::Future>
@@ -143,8 +100,24 @@ where
                 // If the service fails, propagate the failure to all pending
                 // requests and then complete.
                 Poll::Ready(Err(error)) => {
+                    let shared = ServiceError(Arc::new(error.into()));
+                    trace!(%shared, "Inner service failed");
+
+                    // First, notify services of the readiness change to prevent new requests from
+                    // being buffered.
+                    let broadcast = this.ready.broadcast(Poll::Ready(Err(shared.clone())));
+
+                    // Propagate the error to all in-flight requests.
+                    while let Poll::Ready(Some(InFlight { tx, .. })) = this.rx.poll_recv(cx) {
+                        let _ = tx.send(Err(shared.clone().into()));
+                    }
+
                     // Ensure the task remains active until all services have observed the error.
-                    return_ready_if!(this.fail(cx, error).is_err());
+                    return_ready_if!(broadcast.is_err());
+
+                    // Drop the inner Service to free its resources. It won't be used again.
+                    let _ = this.inner.take();
+
                     // This is safe because ready.closed() has returned Pending. The task will
                     // complete when all observes have dropped their interest in `ready`.
                     return Poll::Pending;
@@ -161,11 +134,31 @@ where
             match this.rx.poll_recv(cx) {
                 Poll::Pending => {
                     // There are no requests available, so track idleness.
-                    this.set_idle();
-                    if let Poll::Ready(error) = this.poll_idle(cx) {
-                        return_ready_if!(this.fail(cx, error).is_err());
+                    if let Some(timeout) = this.max_idle {
+                        if this.current_idle.is_none() {
+                            *this.current_idle.as_mut() = Some(delay_for(*timeout));
+                        }
                     }
-                    return Poll::Pending;
+
+                    if let Some(idle) = this.current_idle.as_pin_mut() {
+                        if idle.poll(cx).is_ready() {
+                            let error = IdleError(*this.max_idle.as_ref().unwrap());
+                            let shared = ServiceError(Arc::new(error.into()));
+                            trace!(%error, "Inner service idled out");
+
+                            // Drop the inner Service to free its resources. It won't be used again.
+                            let _ = this.inner.take();
+
+                            // First, notify services of the readiness change to
+                            // prevent new requests from being buffered. Ensure
+                            // the task remains active until all services have
+                            // observed the error.
+                            return_ready_if!(this
+                                .ready
+                                .broadcast(Poll::Ready(Err(shared.clone())))
+                                .is_err());
+                        }
+                    }
                 }
 
                 // All senders have been dropped, complete.
