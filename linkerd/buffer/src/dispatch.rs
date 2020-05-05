@@ -17,6 +17,7 @@ pub struct Dispatch<S, Req, F> {
     rx: mpsc::Receiver<InFlight<Req, F>>,
     ready: watch::Sender<Poll<Result<(), ServiceError>>>,
     max_idle: Option<Duration>,
+    #[pin]
     current_idle: Option<Delay>,
 }
 
@@ -52,10 +53,11 @@ where
     }
 
     /// Check the idle timeout and, if it is expired, return an error.
-    fn poll_idle(&mut self, cx: &mut Context<'_>) -> Poll<IdleError> {
-        if let Some(idle) = self.current_idle.as_mut() {
-            if idle.poll(cx).expect("timer must not fail").is_ready() {
-                return Poll::Ready(IdleError(self.max_idle.unwrap()));
+    fn poll_idle(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IdleError> {
+        let this = self.project();
+        if let Some(idle) = this.current_idle.as_pin_mut() {
+            if idle.poll(cx).is_ready() {
+                return Poll::Ready(IdleError(*this.max_idle.as_ref().unwrap()));
             }
         }
         Poll::Pending
@@ -63,21 +65,23 @@ where
 
     /// Transitions the buffer to failing, notifying all consumers and pending
     /// requests of the failure.
-    fn fail(&mut self, cx: &mut Context<'_>, error: impl Into<Error>) -> Result<(), ()> {
+    fn fail(self: Pin<&mut Self>, cx: &mut Context<'_>, error: impl Into<Error>) -> Result<(), ()> {
+        let mut this = self.project();
+
         let shared = ServiceError(Arc::new(error.into()));
         trace!(%shared, "Inner service failed");
 
         // First, notify services of the readiness change to prevent new requests from
         // being buffered.
-        let broadcast = self.ready.broadcast(Poll::Ready(Err(shared.clone())));
+        let broadcast = this.ready.broadcast(Poll::Ready(Err(shared.clone())));
 
         // Propagate the error to all in-flight requests.
-        while let Poll::Ready(Some(InFlight { tx, .. })) = self.rx.poll_recv(cx) {
-            let _ = tx.send(Poll::Ready(Err(shared.clone().into())));
+        while let Poll::Ready(Some(InFlight { tx, .. })) = this.rx.poll_recv(cx) {
+            let _ = tx.send(Err(shared.clone().into()));
         }
 
         // Drop the inner Service to free its resources. It won't be used again.
-        self.inner = None;
+        let _ = this.inner.take();
 
         broadcast.map(|_| ()).map_err(|_| ())
     }
@@ -93,8 +97,6 @@ where
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        let mut this = self.project();
-
         macro_rules! return_ready {
             () => {{
                 trace!("Complete");
@@ -109,6 +111,8 @@ where
                 }
             }};
         }
+
+        let mut this = self.project();
 
         // Complete the task when all services have dropped.
         return_ready_if!({
@@ -140,7 +144,7 @@ where
                 // requests and then complete.
                 Poll::Ready(Err(error)) => {
                     // Ensure the task remains active until all services have observed the error.
-                    return_ready_if!(self.fail(cx, error).is_err());
+                    return_ready_if!(this.fail(cx, error).is_err());
                     // This is safe because ready.closed() has returned Pending. The task will
                     // complete when all observes have dropped their interest in `ready`.
                     return Poll::Pending;
@@ -148,7 +152,7 @@ where
 
                 // If the inner service can receive requests, start polling the channel.
                 Poll::Ready(Ok(())) => {
-                    return_ready_if!(self.ready.broadcast(Poll::Ready(Ok(()))).is_err());
+                    return_ready_if!(this.ready.broadcast(Poll::Ready(Ok(()))).is_err());
                     trace!("Ready for requests");
                 }
             }
@@ -186,7 +190,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::time::{Duration, Instant};
+    use std::task::Poll;
+    use std::time::Duration;
     use tokio::sync::{mpsc, oneshot, watch};
     use tokio::time::delay_for;
     use tower_test::mock;
@@ -196,9 +201,10 @@ mod test {
         let max_idle = Duration::from_millis(100);
 
         let (tx, rx) = mpsc::channel(1);
-        let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
+        let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
         let (inner, mut handle) = mock::pair::<(), ()>();
-        let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
+        let mut dispatch =
+            mock::Spawn::new(super::Dispatch::new(inner, rx, ready_tx, Some(max_idle)));
         handle.allow(1);
 
         // Service ready without requests. Idle counter starts ticking.
@@ -207,7 +213,7 @@ mod test {
         delay_for(max_idle).await;
         assert!(dispatch.poll().unwrap().is_not_ready(),);
         assert!(
-            dispatch.inner.is_none(),
+            dispatch.get_ref().inner.is_none(),
             "Did not drop inner service after timeout."
         );
         assert!(
@@ -227,7 +233,7 @@ mod test {
         let max_idle = Duration::from_millis(100);
 
         let (tx, rx) = mpsc::channel(1);
-        let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
+        let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
         let (inner, mut handle) = mock::pair::<(), ()>();
         let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
         handle.allow(0);
@@ -246,7 +252,7 @@ mod test {
         let max_idle = Duration::from_millis(100);
 
         let (mut tx, rx) = mpsc::channel(1);
-        let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
+        let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
         let (inner, mut handle) = mock::pair::<(), ()>();
         let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
         handle.allow(1);
