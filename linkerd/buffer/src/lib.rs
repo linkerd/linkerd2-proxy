@@ -1,5 +1,6 @@
 use linkerd2_error::Error;
 use std::task::Poll;
+use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 
 mod dispatch;
@@ -17,6 +18,7 @@ struct InFlight<Req, F> {
 pub(crate) fn new<Req, S>(
     inner: S,
     capacity: usize,
+    idle_timeout: Option<Duration>,
 ) -> (Buffer<Req, S::Future>, Dispatch<S, Req, S::Future>)
 where
     Req: Send + 'static,
@@ -27,7 +29,7 @@ where
 {
     let (tx, rx) = mpsc::channel(capacity);
     let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
-    let dispatch = Dispatch::new(inner, rx, ready_tx);
+    let dispatch = Dispatch::new(inner, rx, ready_tx, idle_timeout);
     (Buffer::new(tx, ready_rx), dispatch)
 }
 
@@ -43,7 +45,7 @@ mod test {
     #[test]
     fn propagates_readiness() {
         let (service, mut handle) = mock::pair::<(), ()>();
-        let (service, dispatch) = super::new(service, 1);
+        let (service, dispatch) = super::new(service, 1, None);
         handle.allow(0);
         let mut service = mock::Spawn::new(service);
         let mut dispatch = task::spawn(dispatch);
@@ -105,6 +107,7 @@ mod test {
                 notified: false,
             },
             1,
+            None,
         );
         tokio::spawn(dispatch);
         let ret = service.ready_and().await;
