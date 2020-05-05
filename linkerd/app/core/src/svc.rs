@@ -82,14 +82,20 @@ impl<L> Layers<L> {
         self.push(buffer::SpawnBufferLayer::new(capacity))
     }
 
+    pub fn push_spawn_buffer_with_idle_timeout<Req>(
+        self,
+        capacity: usize,
+        idle_timeout: Duration,
+    ) -> Layers<Pair<L, buffer::SpawnBufferLayer<Req>>>
+    where
+        Req: Send + 'static,
+    {
+        self.push(buffer::SpawnBufferLayer::new(capacity).with_idle_timeout(idle_timeout))
+    }
+
     /// Makes the inner service shareable in a mutually-exclusive fashion.
     pub fn push_lock(self) -> Layers<Pair<L, lock::LockLayer>> {
         self.push(lock::LockLayer::new())
-    }
-
-    // Fails the inner service after it has not been polled for the given timeout.
-    pub fn push_idle_timeout(self, timeout: Duration) -> Layers<Pair<L, timeout::IdleLayer>> {
-        self.push(timeout::IdleLayer::new(timeout))
     }
 
     // Makes the service eagerly process and fail requests after the given timeout.
@@ -222,11 +228,6 @@ impl<S> Stack<S> {
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
-    }
-
-    // Fails the inner service after it has not been polled for the given timeout.
-    pub fn push_idle_timeout(self, timeout: Duration) -> Stack<timeout::Idle<S>> {
-        self.push(timeout::IdleLayer::new(timeout))
     }
 
     // Makes the service eagerly process and fail requests after the given timeout.
