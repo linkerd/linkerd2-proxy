@@ -16,7 +16,7 @@ futures = "0.1"
 futures_03 = { package = "futures", version = "0.3", features = ["compat"]}
 h2 = "0.1"
 http = "0.2"
-http-body = "0.1"
+http-body = "0.3"
 httparse = "1.2"
 hyper = "0.13"
 hyper-balance = { path  = "../../../hyper-balance" }

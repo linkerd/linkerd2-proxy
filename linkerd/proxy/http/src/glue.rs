@@ -1,12 +1,13 @@
 use crate::{upgrade::Http11Upgrade, HasH2Reason};
 use bytes::Bytes;
-use futures::{try_ready, Async, Future, Poll};
-use futures_03::{compat::Compat, TryFutureExt};
+use futures_03::{TryFuture, TryFutureExt};
 use http;
 use hyper::client::connect as hyper_connect;
 use hyper::{self, body::HttpBody};
 use linkerd2_error::Error;
+use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
@@ -51,7 +52,10 @@ impl HttpBody for UpgradeBody {
             .is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         self.body
             .as_mut()
             .expect("only taken in drop")
@@ -62,7 +66,10 @@ impl HttpBody for UpgradeBody {
             })
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         self.body
             .as_mut()
             .expect("only taken in drop")
@@ -82,11 +89,17 @@ impl http_body::Body for UpgradeBody {
         HttpBody::is_end_stream(self)
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         HttpBody::poll_data(self)
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         HttpBody::poll_trailers(self)
     }
 }
@@ -154,13 +167,13 @@ impl<C, T> HyperConnect<C, T> {
 impl<C, T> hyper_connect::Connect for HyperConnect<C, T>
 where
     C: tower::MakeConnection<T> + Clone + Send + Sync,
-    C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<Error>,
+    C::Future: TryFuture + Send + 'static,
+    C::Error: Into<Error>,
     C::Connection: Send + 'static,
     T: Clone + Send + Sync,
 {
     type Transport = C::Connection;
-    type Error = <C::Future as Future>::Error;
+    type Error = C::Error;
     type Future = HyperConnectFuture<C::Future>;
 
     fn connect(&self, _dst: hyper_connect::Destination) -> Self::Future {
@@ -173,13 +186,12 @@ where
 
 impl<F> Future for HyperConnectFuture<F>
 where
-    F: Future + 'static,
+    F: TryFuture + 'static,
     F::Error: Into<Error>,
 {
-    type Item = (F::Item, hyper_connect::Connected);
-    type Error = F::Error;
+    type Output = Result<(F::Ok, hyper_connect::Connected), F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Resylt<Self::Item, Self::Error>> {
         let transport = try_ready!(self.inner.poll());
         let connected = hyper_connect::Connected::new().proxy(self.absolute_form);
         Ok(Async::Ready((transport, connected)))

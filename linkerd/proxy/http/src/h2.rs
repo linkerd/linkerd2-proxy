@@ -2,7 +2,7 @@ use super::Body;
 use futures::{try_ready, Future, Poll};
 use http;
 use hyper::{
-    body::Payload,
+    body::HttpBody,
     client::conn::{self, Handshake, SendRequest},
 };
 use linkerd2_error::Error;
@@ -71,7 +71,7 @@ where
     C: tower::MakeConnection<T>,
     C::Connection: Send + 'static,
     C::Error: Into<Error>,
-    B: Payload,
+    B: HttpBody,
 {
     type Response = Connection<B>;
     type Error = Error;
