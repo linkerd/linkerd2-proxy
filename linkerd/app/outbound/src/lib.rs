@@ -245,16 +245,11 @@ where
             //         svc::layers()
             //             .push_on_response(
             //                 svc::layers()
-            //                     // If the endpoint has been ready & unused for `cache_max_idle_age`,
-            //                     // fail it.
-            //                     .push_idle_timeout(cache_max_idle_age)
-            //                     // If the endpoint has been unavailable for an extend time, eagerly
+            //                     // If the endpoint has been unavailable for an extended time, eagerly
             //                     // fail requests.
             //                     .push_failfast(dispatch_timeout)
             //                     // Shares the balancer, ensuring discovery errors are propagated.
-            //                     .push_spawn_buffer(buffer_capacity)
-            //                     .box_http_request()
-            //                     .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
+            //                     .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
             //             ),
             //     )
             //     .instrument(|endpoint: &Target<HttpEndpoint>| {
