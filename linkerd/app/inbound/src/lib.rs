@@ -109,17 +109,6 @@ impl Config {
                     let backoff = connect.backoff.clone();
                     move |_| Ok(backoff.stream())
                 }))
-                .push_on_response(
-                    svc::layers()
-                        // If the service has been ready & unused for `cache_max_idle_age`,
-                        // fail it.
-                        .push_idle_timeout(cache_max_idle_age)
-                        // If the service has been unavailable for an extend time, eagerly
-                        // fail requests.
-                        .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer(buffer_capacity),
-                )
                 .check_service::<HttpEndpoint>();
 
             let http_target_observability = svc::layers()
