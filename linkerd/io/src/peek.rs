@@ -1,6 +1,5 @@
 use crate::{AsyncRead, AsyncWrite, PrefixedIo};
 use bytes::BytesMut;
-use futures::ready;
 use pin_project::pin_project;
 use std::future::Future;
 use std::io;

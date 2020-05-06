@@ -29,9 +29,9 @@ use tower::util::{service_fn, ServiceExt};
 fn plaintext() {
     let (client_result, server_result) = run_test(
         Conditional::None(tls::ReasonForNoIdentity::Disabled),
-        |conn| write_then_read(conn, PING).compat(),
+        |conn| write_then_read(conn, PING),
         Conditional::None(tls::ReasonForNoIdentity::Disabled),
-        |(_, conn)| read_then_write(conn, PING.len(), PONG).compat(),
+        |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), false);
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -45,9 +45,9 @@ fn proxy_to_proxy_tls_works() {
     let client_tls = test_util::BAR_NS1.validate().unwrap();
     let (client_result, server_result) = run_test(
         Conditional::Some((client_tls, server_tls.tls_server_name())),
-        |conn| write_then_read(conn, PING).compat(),
+        |conn| write_then_read(conn, PING),
         Conditional::Some(server_tls),
-        |(_, conn)| read_then_write(conn, PING.len(), PONG).compat(),
+        |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), true);
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -66,9 +66,9 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
 
     let (client_result, server_result) = run_test(
         Conditional::Some((client_tls, client_target)),
-        |conn| write_then_read(conn, PING).compat(),
+        |conn| write_then_read(conn, PING),
         Conditional::Some(server_tls),
-        |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG).compat(),
+        |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
     );
 
     // The server's connection will succeed with the TLS client hello passed
@@ -229,7 +229,7 @@ where
 /// Writes `to_write` and shuts down the write side, then reads until EOF,
 /// returning the bytes read.
 async fn write_then_read(
-    conn: impl AsyncRead + AsyncWrite + Unpin,
+    mut conn: impl AsyncRead + AsyncWrite + Unpin,
     to_write: &'static [u8],
 ) -> Result<Vec<u8>, io::Error> {
     let conn = write_and_shutdown(conn, to_write).await?;
@@ -241,19 +241,19 @@ async fn write_then_read(
 /// Reads until EOF then writes `to_write` and shuts down the write side,
 /// returning the bytes read.
 async fn read_then_write(
-    conn: impl AsyncRead + AsyncWrite + Unpin,
+    mut conn: impl AsyncRead + AsyncWrite + Unpin,
     read_prefix_len: usize,
     to_write: &'static [u8],
 ) -> Result<Vec<u8>, io::Error> {
     let mut vec = vec![0; read_prefix_len];
-    conn.read_exact(vec).await?;
-    write_and_shutdown(conn, to_write, to_write).await?;
+    conn.read_exact(&mut vec[..]).await?;
+    write_and_shutdown(conn, to_write).await?;
     Ok(vec)
 }
 
 /// writes `to_write` to `conn` and then shuts down the write side of `conn`.
 async fn write_and_shutdown<T: AsyncRead + AsyncWrite + Unpin>(
-    conn: T,
+    mut conn: T,
     to_write: &'static [u8],
 ) -> Result<T, io::Error> {
     conn.write_all(to_write).await?;
