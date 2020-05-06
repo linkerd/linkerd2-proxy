@@ -9,7 +9,6 @@ General I/O primitives.
 """
 
 [dependencies]
-bytes = "0.4"
-futures = "0.1"
-tokio = "0.1"
+bytes = "0.5"
+tokio = { version = "0.2", features = ["io-util", "net"] }
 tokio-rustls = "0.10"

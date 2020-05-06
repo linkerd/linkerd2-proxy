@@ -798,11 +798,11 @@ dependencies = [
 name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
+ "bytes 0.5.4",
  "futures 0.1.26",
  "futures 0.3.4",
- "http 0.1.21",
- "hyper 0.12.34",
+ "http 0.2.1",
+ "hyper 0.13.5",
  "indexmap",
  "libc",
  "linkerd2-addr",
@@ -1138,9 +1138,8 @@ dependencies = [
 name = "linkerd2-io"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
- "futures 0.1.26",
- "tokio 0.1.22",
+ "bytes 0.5.4",
+ "tokio 0.2.20",
  "tokio-rustls",
 ]
 
@@ -2520,8 +2519,10 @@ dependencies = [
  "futures-core",
  "iovec",
  "lazy_static",
+ "libc",
  "memchr 2.3.3",
  "mio",
+ "mio-uds",
  "num_cpus",
  "pin-project-lite",
  "slab",

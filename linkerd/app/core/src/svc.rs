@@ -418,7 +418,7 @@ pub mod make_response {
 
     impl<T, M> tower::Service<T> for MakeResponse<M>
     where
-        M: tower_make::MakeService<T, ()>,
+        M: tower::make::MakeService<T, ()>,
         M::MakeError: Into<Error>,
         M::Error: Into<Error>,
     {

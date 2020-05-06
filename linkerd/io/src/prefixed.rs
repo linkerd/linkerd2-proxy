@@ -1,6 +1,6 @@
 use crate::internal::Io;
 use bytes::{Buf, Bytes};
-use futures::Poll;
+use std::task::{Context, Poll};
 use std::{cmp, io};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -79,7 +79,11 @@ impl<S: Io> Io for PrefixedIo<S> {
         self.io.shutdown_write()
     }
 
-    fn write_buf_erased(&mut self, buf: &mut dyn Buf) -> Poll<usize, io::Error> {
-        self.io.write_buf_erased(buf)
+    fn poll_write_buf_erased(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut dyn Buf,
+    ) -> Poll<usize, io::Error> {
+        self.io.poll_write_buf_erased(cx, buf)
     }
 }

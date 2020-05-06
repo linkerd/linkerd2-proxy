@@ -4,7 +4,7 @@ use crate::{
         core::Accept,
         detect,
         http::{
-            glue::{HttpBody, HyperServerSvc},
+            glue::{Body, HyperServerSvc},
             h2::Settings as H2Settings,
             upgrade, Version as HttpVersion,
         },
@@ -87,7 +87,7 @@ impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
 pub struct Server<L, F, H, B>
 where
     H: NewService<tls::accept::Meta>,
-    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
+    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
 {
     http: hyper::server::conn::Http,
     h2_settings: H2Settings,
@@ -102,7 +102,7 @@ impl<L, F, H, B> Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey>,
     H: NewService<tls::accept::Meta>,
-    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
+    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
     Self: Accept<Connection>,
 {
     /// Creates a new `Server`.
@@ -135,11 +135,12 @@ where
     F::Future: Send + 'static,
     F::ConnectionFuture: Send + 'static,
     H: NewService<tls::accept::Meta> + Send + 'static,
-    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>, Error = Error>
+    H::Service: Service<http::Request<Body>, Response = http::Response<B>, Error = Error>
+        + Unpin
         + Send
         + 'static,
-    <H::Service as Service<http::Request<HttpBody>>>::Future: Send + 'static,
-    B: hyper::body::Payload + Default + Send + 'static,
+    <H::Service as Service<http::Request<Body>>>::Future: Send + 'static,
+    B: hyper::body::HttpBody + Default + Send + 'static,
 {
     type Response = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
     type Error = Error;
@@ -227,7 +228,7 @@ where
                         .serve_connection(io, HyperServerSvc::new(http_svc));
                     Ok(Box::pin(async move {
                         drain
-                            .watch(conn.compat(), |conn| {
+                            .watch(conn, |conn| {
                                 // XXX(eliza): `compat` prevents us from calling
                                 // `graceful_shutdown` because it wraps the future!
                                 // conn.graceful_shutdown()
@@ -247,8 +248,8 @@ where
     L: TransportLabels<Protocol, Labels = TransportKey> + Clone,
     F: Clone,
     H: NewService<tls::accept::Meta> + Clone,
-    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
-    B: hyper::body::Payload,
+    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
+    B: hyper::body::HttpBody,
 {
     fn clone(&self) -> Self {
         Self {

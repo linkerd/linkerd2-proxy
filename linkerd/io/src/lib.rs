@@ -6,12 +6,14 @@ pub use self::{boxed::BoxedIo, peek::Peek, prefixed::PrefixedIo};
 pub use std::io::{Error, Read, Result, Write};
 pub use tokio::io::{AsyncRead, AsyncWrite};
 
-pub type Poll<T> = futures::Poll<T, Error>;
+pub type Poll<T> = std::task::Poll<Result<T, Error>>;
 
 mod internal {
     use super::{AsyncRead, AsyncWrite, Poll, Result};
     use bytes::Buf;
     use std::net::Shutdown;
+    use std::pin::Pin;
+    use std::task::Context;
 
     /// This trait is private, since its purpose is for creating a dynamic trait
     /// object, but doing so without care can to lead not getting vectored
@@ -23,7 +25,11 @@ mod internal {
 
         /// This method is to allow using `Async::write_buf` even through a
         /// trait object.
-        fn write_buf_erased(&mut self, buf: &mut dyn Buf) -> Poll<usize>;
+        fn poll_write_buf_erased(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut dyn Buf,
+        ) -> Poll<usize>;
     }
 
     impl Io for tokio::net::TcpStream {
@@ -31,7 +37,11 @@ mod internal {
             tokio::net::TcpStream::shutdown(self, Shutdown::Write)
         }
 
-        fn write_buf_erased(&mut self, mut buf: &mut dyn Buf) -> Poll<usize> {
+        fn poll_write_buf_erased(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut dyn Buf,
+        ) -> Poll<usize> {
             self.write_buf(&mut buf)
         }
     }
@@ -41,7 +51,11 @@ mod internal {
             self.get_mut().0.shutdown_write()
         }
 
-        fn write_buf_erased(&mut self, mut buf: &mut dyn Buf) -> Poll<usize> {
+        fn poll_write_buf_erased(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut dyn Buf,
+        ) -> Poll<usize> {
             self.write_buf(&mut buf)
         }
     }
@@ -51,7 +65,11 @@ mod internal {
             self.get_mut().0.shutdown_write()
         }
 
-        fn write_buf_erased(&mut self, mut buf: &mut dyn Buf) -> Poll<usize> {
+        fn poll_write_buf_erased(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut dyn Buf,
+        ) -> Poll<usize> {
             self.write_buf(&mut buf)
         }
     }
