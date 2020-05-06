@@ -1,7 +1,8 @@
-TARGET = target/debug
+CARGO_TARGET ?= $(shell rustup show |sed -n 's/^Default host: \(.*\)/\1/p')
+TARGET = target/$(CARGO_TARGET)/debug
 ifdef CARGO_RELEASE
 	RELEASE = --release
-	TARGET = target/release
+	TARGET = target/$(CARGO_TARGET)/release
 endif
 
 ifndef PACKAGE_VERSION
@@ -20,8 +21,8 @@ PKG = $(PKG_NAME).tar.gz
 SHASUM = shasum -a 256
 
 CARGO ?= cargo
-CARGO_BUILD = $(CARGO) build --frozen $(RELEASE)
-CARGO_TEST = $(CARGO) test --frozen $(RELEASE)
+CARGO_BUILD = $(CARGO) build --frozen $(RELEASE) --target $(CARGO_TARGET)
+CARGO_TEST = $(CARGO) test --frozen $(RELEASE) --target $(CARGO_TARGET)
 CARGO_FMT = $(CARGO) fmt --all
 
 DOCKER = docker
@@ -112,3 +113,4 @@ docker: Dockerfile Cargo.lock
 
 .PHONY: all
 all: build test
+
