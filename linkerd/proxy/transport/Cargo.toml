@@ -27,10 +27,10 @@ linkerd2-metrics = { path = "../../metrics" }
 linkerd2-proxy-core = { path = "../core" }
 linkerd2-stack = { path = "../../stack" }
 ring = "0.16"
-rustls = "0.16"
-tokio = "0.1.14"
+rustls = "0.17"
+tokio = { version = "0.2", features = ["net", "io-util"]}
 tokio-compat = "0.1"
-tokio-rustls = "0.10"
+tokio-rustls = "0.13"
 task-compat = "0.1"
 tower_01 = {package = "tower", version = "0.1"}
 tracing = "0.1.9"
