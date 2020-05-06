@@ -1,8 +1,7 @@
 mod boxed;
-// mod peek;
+mod peek;
 mod prefixed;
-pub use self::{boxed::BoxedIo, prefixed::PrefixedIo};
-// pub use self::{boxed::BoxedIo, peek::Peek, prefixed::PrefixedIo};
+pub use self::{boxed::BoxedIo, peek::Peek, prefixed::PrefixedIo};
 pub use std::io::{Error, Read, Result, Write};
 pub use tokio::io::{AsyncRead, AsyncWrite};
 
