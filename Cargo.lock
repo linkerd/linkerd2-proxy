@@ -1146,6 +1146,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.3.4",
+ "pin-project",
  "tokio 0.2.20",
  "tokio-rustls 0.13.0",
  "tokio-test",

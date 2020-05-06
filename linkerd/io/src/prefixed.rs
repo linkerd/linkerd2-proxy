@@ -1,13 +1,18 @@
-use crate::internal::Io;
-use bytes::{Buf, Bytes};
-use std::task::{Context, Poll};
+use crate::{internal::Io, Poll};
+use bytes::{Buf, BufMut, Bytes};
 use std::{cmp, io};
+use std::{mem::MaybeUninit, pin::Pin, task::Context};
 use tokio::io::{AsyncRead, AsyncWrite};
 
+use pin_project::pin_project;
+
 /// A TcpStream where the initial reads will be served from `prefix`.
+#[pin_project]
 #[derive(Debug)]
 pub struct PrefixedIo<S> {
     prefix: Bytes,
+
+    #[pin]
     io: S,
 }
 
@@ -22,31 +27,30 @@ impl<S: AsyncRead + AsyncWrite> PrefixedIo<S> {
     }
 }
 
-impl<S: io::Read> io::Read for PrefixedIo<S> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<usize> {
+        let this = self.project();
         // Check the length only once, since looking as the length
         // of a Bytes isn't as cheap as the length of a &[u8].
-        let peeked_len = self.prefix.len();
+        let peeked_len = this.prefix.len();
 
         if peeked_len == 0 {
-            self.io.read(buf)
+            this.io.poll_read(cx, buf)
         } else {
             let len = cmp::min(buf.len(), peeked_len);
-            buf[..len].copy_from_slice(&self.prefix.as_ref()[..len]);
-            self.prefix.advance(len);
+            buf[..len].copy_from_slice(&this.prefix.as_ref()[..len]);
+            this.prefix.advance(len);
             // If we've finally emptied the prefix, drop it so we don't
             // hold onto the allocated memory any longer. We won't peek
             // again.
             if peeked_len == len {
-                self.prefix = Default::default();
+                *this.prefix = Bytes::new();
             }
-            Ok(len)
+            Poll::Ready(Ok(len))
         }
     }
-}
 
-impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
         self.io.prepare_uninitialized_buffer(buf)
     }
 }
@@ -62,15 +66,27 @@ impl<S: io::Write> io::Write for PrefixedIo<S> {
 }
 
 impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
-    fn shutdown(&mut self) -> super::Poll<()> {
-        self.io.shutdown()
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        self.project().io.poll_shutdown(cx)
     }
 
-    fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error>
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        self.project().io.poll_flush(cx)
+    }
+
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<usize> {
+        self.project().io.poll_write(cx, buf)
+    }
+
+    fn poll_write_buf<B: Buf>(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut B,
+    ) -> Poll<usize>
     where
         Self: Sized,
     {
-        self.io.write_buf(buf)
+        self.project().io.poll_write_buf(cx, buf)
     }
 }
 
@@ -83,7 +99,15 @@ impl<S: Io> Io for PrefixedIo<S> {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut dyn Buf,
-    ) -> Poll<usize, io::Error> {
-        self.io.poll_write_buf_erased(cx, buf)
+    ) -> Poll<usize> {
+        self.project().io.poll_write_buf_erased(cx, buf)
+    }
+
+    fn poll_read_buf_erased(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut dyn BufMut,
+    ) -> Poll<usize> {
+        self.project().io.poll_read_buf_erased(cx, buf)
     }
 }
