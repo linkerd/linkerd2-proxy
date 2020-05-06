@@ -23,7 +23,9 @@ use linkerd2_app_core::{
         server::{Protocol as ServerProtocol, ProtocolDetect, Server},
         tap, tcp,
     },
-    reconnect, router, serve,
+    reconnect,
+    reject_with_no_identity::RejectWithNoIdentityLayer,
+    router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, io::BoxedIo, tls},
@@ -44,6 +46,7 @@ mod set_remote_ip_on_req;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
+    pub identity_required: bool,
 }
 
 pub struct Inbound {
@@ -78,6 +81,7 @@ impl Config {
                     max_in_flight_requests,
                     detect_protocol_timeout,
                 },
+            identity_required,
         } = self;
 
         let listen = bind.bind().map_err(Error::from)?;
@@ -271,6 +275,7 @@ impl Config {
                 .push(DetectProtocolLayer::new(ProtocolDetect::new(
                     disable_protocol_detection_for_ports.clone(),
                 )))
+                .push(RejectWithNoIdentityLayer::new(identity_required))
                 // Terminates inbound mTLS from other outbound proxies.
                 .push(tls::AcceptTls::layer(
                     local_identity,

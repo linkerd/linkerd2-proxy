@@ -33,6 +33,7 @@ pub struct Env;
 pub enum EnvError {
     InvalidEnvVar,
     NoDestinationAddress,
+    ConflictingConfig,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -129,6 +130,7 @@ pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
+pub const ENV_IDENTITY_REQUIRED: &str = "LINKERD2_PROXY_IDENTITY_REQUIRED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
 pub const ENV_IDENTITY_IDENTITY_LOCAL_NAME: &str = "LINKERD2_PROXY_IDENTITY_LOCAL_NAME";
@@ -430,6 +432,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
 
+        let identity_required = strings
+            .get(ENV_IDENTITY_REQUIRED)?
+            .map(|d| !d.is_empty())
+            .unwrap_or(false);
+
+        if id_disabled && identity_required {
+            error!(
+                "if {} is true, {} must be false",
+                ENV_IDENTITY_REQUIRED, ENV_IDENTITY_DISABLED
+            );
+            return Err(EnvError::ConflictingConfig);
+        }
+
         inbound::Config {
             proxy: ProxyConfig {
                 server,
@@ -445,6 +460,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout: dispatch_timeout,
             },
+            identity_required,
         }
     };
 
@@ -1005,6 +1021,7 @@ impl fmt::Display for EnvError {
         match self {
             EnvError::InvalidEnvVar => write!(f, "invalid environment variable"),
             EnvError::NoDestinationAddress => write!(f, "no destination service configured"),
+            EnvError::ConflictingConfig => write!(f, "conflicting configuration"),
         }
     }
 }
