@@ -5,8 +5,7 @@
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
 
-use futures::future::Future as _;
-use futures_03::{compat::Future01CompatExt, FutureExt};
+use futures_03::FutureExt;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
 use linkerd2_proxy_core::listen::{Accept, Bind as _Bind, Listen as CoreListen};
@@ -21,7 +20,7 @@ use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::{
     self,
-    io::{self, AsyncRead, AsyncWrite},
+    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 use tower::layer::Layer;
 use tower::util::{service_fn, ServiceExt};
@@ -229,35 +228,37 @@ where
 
 /// Writes `to_write` and shuts down the write side, then reads until EOF,
 /// returning the bytes read.
-fn write_then_read(
-    conn: impl AsyncRead + AsyncWrite,
+async fn write_then_read(
+    conn: impl AsyncRead + AsyncWrite + Unpin,
     to_write: &'static [u8],
-) -> impl futures::future::Future<Item = Vec<u8>, Error = io::Error> {
-    write_and_shutdown(conn, to_write)
-        .and_then(|conn| io::read_to_end(conn, Vec::new()))
-        .map(|(_conn, r)| r)
+) -> Result<Vec<u8>, io::Error> {
+    let conn = write_and_shutdown(conn, to_write).await?;
+    let mut vec = Vec::new();
+    conn.read_to_end(&mut vec).await?;
+    Ok(vec)
 }
 
 /// Reads until EOF then writes `to_write` and shuts down the write side,
 /// returning the bytes read.
-fn read_then_write(
-    conn: impl AsyncRead + AsyncWrite,
+async fn read_then_write(
+    conn: impl AsyncRead + AsyncWrite + Unpin,
     read_prefix_len: usize,
     to_write: &'static [u8],
-) -> impl futures::future::Future<Item = Vec<u8>, Error = io::Error> {
-    io::read_exact(conn, vec![0; read_prefix_len])
-        .and_then(move |(conn, r)| write_and_shutdown(conn, to_write).map(|_conn| r))
+) -> Result<Vec<u8>, io::Error> {
+    let mut vec = vec![0; read_prefix_len];
+    conn.read_exact(vec).await?;
+    write_and_shutdown(conn, to_write, to_write).await?;
+    Ok(vec)
 }
 
 /// writes `to_write` to `conn` and then shuts down the write side of `conn`.
-fn write_and_shutdown<T: AsyncRead + AsyncWrite>(
+async fn write_and_shutdown<T: AsyncRead + AsyncWrite + Unpin>(
     conn: T,
     to_write: &'static [u8],
-) -> impl futures::future::Future<Item = T, Error = io::Error> {
-    io::write_all(conn, to_write).and_then(|(mut conn, _)| {
-        conn.shutdown()?;
-        Ok(conn)
-    })
+) -> Result<T, io::Error> {
+    conn.write_all(to_write).await?;
+    conn.shutdown().await?;
+    Ok(conn)
 }
 
 const PING: &[u8] = b"ping";

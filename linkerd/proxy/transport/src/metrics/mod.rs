@@ -1,11 +1,15 @@
-use futures::{try_ready, Future, Poll};
+use futures_03::{ready, TryFuture};
 use indexmap::IndexMap;
 use linkerd2_metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
 };
+use pin_project::pin_project;
 use std::fmt;
+use std::future::Future;
 use std::hash::Hash;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
@@ -56,7 +60,9 @@ pub struct Connect<L, K: Eq + Hash + FmtLabels, M> {
     registry: Arc<Mutex<Inner<K>>>,
 }
 
+#[pin_project]
 pub struct Connecting<F> {
+    #[pin]
     underlying: F,
     new_sensor: Option<NewSensor>,
 }
@@ -228,17 +234,17 @@ where
 
 // === impl Connect ===
 
-impl<L, T, M> tower_01::Service<T> for Connect<L, L::Labels, M>
+impl<L, T, M> tower::Service<T> for Connect<L, L::Labels, M>
 where
     L: TransportLabels<T>,
-    M: tower_01::MakeConnection<T>,
+    M: tower::make::MakeConnection<T>,
 {
     type Response = Io<M::Connection>;
     type Error = M::Error;
     type Future = Connecting<M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -261,23 +267,23 @@ where
 
 impl<F> Future for Connecting<F>
 where
-    F: Future,
-    F::Item: AsyncRead + AsyncWrite,
+    F: TryFuture,
+    F::Ok: AsyncRead + AsyncWrite,
 {
-    type Item = Io<F::Item>;
-    type Error = F::Error;
+    type Output = Result<Io<F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let io = try_ready!(self.underlying.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let io = ready!(this.underlying.try_poll(cx))?;
         debug!("client connection open");
 
-        let sensor = self
+        let sensor = this
             .new_sensor
             .take()
             .expect("future must not be polled after ready")
             .new_sensor();
         let t = Io::new(io, sensor);
-        Ok(t.into())
+        Poll::Ready(Ok(t))
     }
 }
 
@@ -348,6 +354,25 @@ impl Sensor {
             let class = by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
             class.close_total.incr();
             class.connection_duration.add(duration);
+        }
+    }
+
+    /// Wraps an operation on the underlying transport with error telemetry.
+    ///
+    /// If the transport operation results in a non-recoverable error, record a
+    /// transport closure.
+    fn sense_err<T>(&mut self, op: Poll<std::io::Result<T>>) -> Poll<std::io::Result<T>> {
+        match op {
+            Poll::Ready(Ok(v)) => Poll::Ready(Ok(v)),
+            Poll::Ready(Err(e)) => {
+                if e.kind() != std::io::ErrorKind::WouldBlock {
+                    let eos = e.raw_os_error().map(|e| e.into());
+                    self.record_close(eos);
+                }
+
+                Poll::Ready(Err(e))
+            }
+            Poll::Pending => Poll::Pending,
         }
     }
 }

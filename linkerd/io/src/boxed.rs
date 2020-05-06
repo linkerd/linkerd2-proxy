@@ -44,7 +44,7 @@ impl AsyncRead for BoxedIo {
 impl AsyncWrite for BoxedIo {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
         let mut this = self.as_mut();
-        futures::ready!(this.0.as_mut().poll_shutdown(cx));
+        futures::ready!(this.0.as_mut().poll_shutdown(cx))?;
 
         // TCP shutdown the write side.
         //

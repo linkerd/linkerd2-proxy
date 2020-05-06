@@ -14,7 +14,7 @@ This should probably be decomposed into smaller, decoupled crates.
 mock-orig-dst  = []
 
 [dependencies]
-bytes = "0.4"
+bytes = "0.5"
 futures = "0.1"
 futures_03 = { package = "futures", version = "0.3", features = ["compat", "io-compat"]}
 indexmap = "1.0.0"
