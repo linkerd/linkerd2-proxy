@@ -17,6 +17,7 @@ mock-orig-dst  = ["linkerd2-proxy-transport/mock-orig-dst"]
 [dependencies]
 bytes = "0.5"
 http = "0.2"
+http-body = "0.3"
 hyper = "0.13"
 futures = "0.1"
 indexmap = "1.0"
