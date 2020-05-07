@@ -1477,7 +1477,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
- "http 0.1.21",
+ "http 0.2.1",
  "indexmap",
  "linkerd2-addr",
  "linkerd2-dns",
