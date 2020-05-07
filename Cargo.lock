@@ -1086,12 +1086,12 @@ dependencies = [
 name = "linkerd2-http-box"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
- "futures 0.1.26",
+ "bytes 0.5.4",
  "futures 0.3.4",
- "http 0.1.21",
- "hyper 0.12.34",
+ "http 0.2.1",
+ "http-body 0.3.1",
  "linkerd2-error",
+ "pin-project",
  "tower 0.3.1",
 ]
 

@@ -1,7 +1,7 @@
 //! A middleware that boxes HTTP response bodies.
 
 use crate::Payload;
-use futures_03::{future, TryFutureExt};
+use futures::{future, TryFutureExt};
 use linkerd2_error::Error;
 use std::task::{Context, Poll};
 
@@ -28,7 +28,8 @@ impl<S> tower::layer::Layer<S> for Layer {
 impl<S, Req, B> tower::Service<Req> for BoxResponse<S>
 where
     S: tower::Service<Req, Response = http::Response<B>>,
-    B: hyper::body::Payload + Send + 'static,
+    B: http_body::Body + Send + 'static,
+    B::Data: Send + 'static,
     B::Error: Into<Error> + 'static,
 {
     type Response = http::Response<Payload>;
