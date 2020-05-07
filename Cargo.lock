@@ -1100,7 +1100,7 @@ dependencies = [
 name = "linkerd2-http-classify"
 version = "0.1.0"
 dependencies = [
- "http 0.1.21",
+ "http 0.2.1",
  "linkerd2-error",
  "linkerd2-stack",
  "tower 0.3.1",
