@@ -1175,9 +1175,9 @@ name = "linkerd2-metrics"
 version = "0.1.0"
 dependencies = [
  "deflate",
- "futures 0.1.26",
- "http 0.1.21",
- "hyper 0.12.34",
+ "futures 0.3.4",
+ "http 0.2.1",
+ "hyper 0.13.5",
  "indexmap",
  "quickcheck",
  "tracing",
