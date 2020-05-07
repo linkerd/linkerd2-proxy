@@ -1,30 +1,17 @@
 use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
-use futures::{
-    try_ready,
-    Async,
-    // This renaming import is (temporarily) necessary, since we implement body
-    // traits from futures 0.1 versions of our dependencies.
-    Poll as Poll01,
-};
 use futures_03::TryFuture;
 use http;
-use hyper::body::Payload;
+use http_body::Body;
 use linkerd2_error::Error;
 use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
 use linkerd2_stack::{NewService, Proxy};
-use pin_project::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::task::{
-    Context,
-    // This renaming import is (temporarily) necessary, since we implement body
-    // traits from futures 0.1 versions of our dependencies, but
-    // tower::Service from the std::future version of Tower.
-    Poll as Poll03,
-};
+use std::task::{Context, Poll};
 use std::time::Instant;
 use tokio_timer::clock;
 
@@ -80,20 +67,23 @@ where
     inner: F,
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub struct RequestBody<B, C>
 where
-    B: Payload,
+    B: Body,
     C: Hash + Eq,
 {
     metrics: Option<Arc<Mutex<Metrics<C>>>>,
+    #[pin]
     inner: B,
 }
 
+#[pin_project(PinnedDrop)]
 #[derive(Debug)]
 pub struct ResponseBody<B, C>
 where
-    B: Payload,
+    B: Body,
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {
@@ -102,6 +92,7 @@ where
     metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     stream_open_at: Instant,
     latency_recorded: bool,
+    #[pin]
     inner: B,
 }
 
@@ -213,7 +204,7 @@ where
     type Error = M::Error;
     type Future = Service<M::Future, C>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll03<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
@@ -246,7 +237,7 @@ where
 {
     type Output = Result<Service<F::Ok, C>, F::Error>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll03<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let inner = futures_03::ready!(this.inner.try_poll(cx))?;
         let service = Service {
@@ -254,7 +245,7 @@ where
             metrics: this.metrics.clone(),
             _p: PhantomData,
         };
-        Poll03::Ready(Ok(service.into()))
+        Poll::Ready(Ok(service.into()))
     }
 }
 
@@ -281,8 +272,8 @@ where
     S: tower::Service<P::Request>,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
-    A: Payload,
-    B: Payload,
+    A: Body,
+    B: Body,
 {
     type Request = P::Request;
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
@@ -326,8 +317,8 @@ impl<C, S, A, B> tower::Service<http::Request<A>> for Service<S, C>
 where
     S: tower::Service<http::Request<RequestBody<A, C::Class>>, Response = http::Response<B>>,
     S::Error: Into<Error>,
-    A: Payload,
-    B: Payload,
+    A: Body,
+    B: Body,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
@@ -335,7 +326,7 @@ where
     type Error = Error;
     type Future = ResponseFuture<S::Future, C>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll03<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(Into::into)
     }
 
@@ -376,19 +367,19 @@ impl<C, F, B> std::future::Future for ResponseFuture<F, C>
 where
     F: TryFuture<Ok = http::Response<B>>,
     F::Error: Into<Error>,
-    B: Payload,
+    B: Body,
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Output = Result<http::Response<ResponseBody<B, C::ClassifyEos>>, Error>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll03<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let rsp = futures_03::ready!(this.inner.try_poll(cx));
 
         let classify = this.classify.take();
         let metrics = this.metrics.take();
-        Poll03::Ready(match rsp {
+        Poll::Ready(match rsp {
             Ok(rsp) => {
                 let classify = classify.map(|c| c.start(&rsp));
                 let (head, inner) = rsp.into_parts();
@@ -416,9 +407,9 @@ where
     }
 }
 
-impl<B, C> Payload for RequestBody<B, C>
+impl<B, C> Body for RequestBody<B, C>
 where
-    B: Payload,
+    B: Body,
     C: Send + Hash + Eq + 'static,
 {
     type Data = B::Data;
@@ -428,10 +419,14 @@ where
         self.inner.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
-        let frame = try_ready!(self.inner.poll_data());
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        let this = self.project();
+        let frame = futures_03::ready!(this.inner.poll_data(cx));
 
-        if let Some(lock) = self.metrics.take() {
+        if let Some(lock) = this.metrics.take() {
             let now = clock::now();
             if let Ok(mut metrics) = lock.lock() {
                 (*metrics).last_update = now;
@@ -439,38 +434,24 @@ where
             }
         }
 
-        Ok(Async::Ready(frame))
+        Poll::Ready(frame)
     }
 
-    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
-        self.inner.poll_trailers()
-    }
-}
-
-impl<B, C> http_body::Body for RequestBody<B, C>
-where
-    B: Payload,
-    C: Hash + Eq + Send + 'static,
-{
-    type Data = B::Data;
-    type Error = B::Error;
-
-    fn is_end_stream(&self) -> bool {
-        Payload::is_end_stream(self)
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        self.project().inner.poll_trailers(cx)
     }
 
-    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
-        Payload::poll_data(self)
-    }
-
-    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
-        Payload::poll_trailers(self)
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.inner.size_hint()
     }
 }
 
 impl<B, C> Default for RequestBody<B, C>
 where
-    B: Payload + Default,
+    B: Body + Default,
     C: Hash + Eq,
 {
     fn default() -> Self {
@@ -483,7 +464,7 @@ where
 
 impl<B, C> Default for ResponseBody<B, C>
 where
-    B: Payload + Default,
+    B: Body + Default,
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {
@@ -501,14 +482,15 @@ where
 
 impl<B, C> ResponseBody<B, C>
 where
-    B: Payload,
+    B: Body,
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {
-    fn record_latency(&mut self) {
+    fn record_latency(self: Pin<&mut Self>) {
+        let this = self.project();
         let now = clock::now();
 
-        let lock = match self.metrics.as_mut() {
+        let lock = match this.metrics.as_mut() {
             Some(lock) => lock,
             None => return,
         };
@@ -521,22 +503,29 @@ where
 
         let status_metrics = metrics
             .by_status
-            .entry(Some(self.status))
+            .entry(Some(*this.status))
             .or_insert_with(|| StatusMetrics::default());
 
-        status_metrics.latency.add(now - self.stream_open_at);
+        status_metrics.latency.add(now - *this.stream_open_at);
 
-        self.latency_recorded = true;
+        *this.latency_recorded = true;
     }
 
-    fn record_class(&mut self, class: C::Class) {
-        if let Some(lock) = self.metrics.take() {
-            measure_class(&lock, class, Some(self.status));
+    fn record_class(self: Pin<&mut Self>, class: C::Class) {
+        let this = self.project();
+        if let Some(lock) = this.metrics.take() {
+            measure_class(&lock, class, Some(*this.status));
         }
     }
 
-    fn measure_err(&mut self, err: Error) -> Error {
-        if let Some(c) = self.classify.take().map(|c| c.error(&err)) {
+    fn measure_err(mut self: Pin<&mut Self>, err: Error) -> Error {
+        if let Some(c) = self
+            .as_mut()
+            .project()
+            .classify
+            .take()
+            .map(|c| c.error(&err))
+        {
             self.record_class(c);
         }
         err
@@ -569,9 +558,10 @@ fn measure_class<C: Hash + Eq>(
     class_metrics.total.incr();
 }
 
-impl<B, C> Payload for ResponseBody<B, C>
+impl<B, C> Body for ResponseBody<B, C>
 where
-    B: Payload,
+    B: Body,
+    B::Error: Into<Error>,
     C: ClassifyEos + Send + 'static,
     C::Class: Hash + Eq + Send,
 {
@@ -582,68 +572,55 @@ where
         self.inner.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
-        let frame = try_ready!(self
-            .inner
-            .poll_data()
-            .map_err(|e| self.measure_err(e.into())));
+    fn poll_data(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        let poll = futures_03::ready!(self.as_mut().project().inner.poll_data(cx));
+        let frame = poll.map(|opt| opt.map_err(|e| self.as_mut().measure_err(e.into())));
 
-        if !self.latency_recorded {
+        if !(*self.as_mut().project().latency_recorded) {
             self.record_latency();
         }
 
-        Ok(Async::Ready(frame))
+        Poll::Ready(frame)
     }
 
-    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
-        let trls = try_ready!(self
-            .inner
-            .poll_trailers()
-            .map_err(|e| self.measure_err(e.into())));
+    fn poll_trailers(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        let trls = futures_03::ready!(self.as_mut().project().inner.poll_trailers(cx))
+            .map_err(|e| self.as_mut().measure_err(e.into()))?;
 
-        if let Some(c) = self.classify.take().map(|c| c.eos(trls.as_ref())) {
+        if let Some(c) = self
+            .as_mut()
+            .project()
+            .classify
+            .take()
+            .map(|c| c.eos(trls.as_ref()))
+        {
             self.record_class(c);
         }
 
-        Ok(Async::Ready(trls))
+        Poll::Ready(Ok(trls))
     }
 }
 
-impl<B, C> http_body::Body for ResponseBody<B, C>
+#[pinned_drop]
+impl<B, C> PinnedDrop for ResponseBody<B, C>
 where
-    B: Payload,
-    C: ClassifyEos + Send + 'static,
-    C::Class: Hash + Eq + Send + 'static,
-{
-    type Data = B::Data;
-    type Error = Error;
-
-    fn is_end_stream(&self) -> bool {
-        Payload::is_end_stream(self)
-    }
-
-    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
-        Payload::poll_data(self)
-    }
-
-    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
-        Payload::poll_trailers(self)
-    }
-}
-
-impl<B, C> Drop for ResponseBody<B, C>
-where
-    B: Payload,
+    B: Body,
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {
-    fn drop(&mut self) {
-        if !self.latency_recorded {
-            self.record_latency();
+    fn drop(mut self: Pin<&mut Self>) {
+        if !self.as_ref().latency_recorded {
+            self.as_mut().record_latency();
         }
 
-        if let Some(c) = self.classify.take().map(|c| c.eos(None)) {
-            self.record_class(c);
+        if let Some(c) = self.as_mut().project().classify.take().map(|c| c.eos(None)) {
+            self.as_mut().record_class(c);
         }
     }
 }
