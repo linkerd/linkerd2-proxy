@@ -13,6 +13,7 @@ use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, fs};
 use tracing::{error, warn};
@@ -33,7 +34,6 @@ pub struct Env;
 pub enum EnvError {
     InvalidEnvVar,
     NoDestinationAddress,
-    ConflictingConfig,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -129,8 +129,10 @@ pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
 pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
+pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
+    "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_IDENTITY";
+
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
-pub const ENV_IDENTITY_REQUIRED: &str = "LINKERD2_PROXY_IDENTITY_REQUIRED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
 pub const ENV_IDENTITY_IDENTITY_LOCAL_NAME: &str = "LINKERD2_PROXY_IDENTITY_LOCAL_NAME";
@@ -432,17 +434,17 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
 
-        let identity_required = strings
-            .get(ENV_IDENTITY_REQUIRED)?
-            .map(|d| !d.is_empty())
-            .unwrap_or(false);
+        let require_identity_for_inbound_ports: Arc<IndexSet<u16>> =
+            parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?
+                .unwrap_or_else(|| IndexSet::new())
+                .into();
 
-        if id_disabled && identity_required {
+        if id_disabled && !require_identity_for_inbound_ports.is_empty() {
             error!(
-                "if {} is true, {} must be false",
-                ENV_IDENTITY_REQUIRED, ENV_IDENTITY_DISABLED
+                "if {} is true, {} must be empty",
+                ENV_IDENTITY_DISABLED, ENV_INBOUND_PORTS_REQUIRE_IDENTITY
             );
-            return Err(EnvError::ConflictingConfig);
+            return Err(EnvError::InvalidEnvVar);
         }
 
         inbound::Config {
@@ -460,7 +462,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout: dispatch_timeout,
             },
-            identity_required,
+            require_identity_for_inbound_ports,
         }
     };
 
@@ -1021,7 +1023,6 @@ impl fmt::Display for EnvError {
         match self {
             EnvError::InvalidEnvVar => write!(f, "invalid environment variable"),
             EnvError::NoDestinationAddress => write!(f, "no destination service configured"),
-            EnvError::ConflictingConfig => write!(f, "conflicting configuration"),
         }
     }
 }

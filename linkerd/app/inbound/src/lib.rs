@@ -8,7 +8,9 @@
 pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
 };
+use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::future;
+use indexmap::IndexSet;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
@@ -23,21 +25,21 @@ use linkerd2_app_core::{
         server::{Protocol as ServerProtocol, ProtocolDetect, Server},
         tap, tcp,
     },
-    reconnect,
-    reject_with_no_identity::RejectWithNoIdentityLayer,
-    router, serve,
+    reconnect, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, io::BoxedIo, tls},
+    transport::{self, admit, io::BoxedIo, tls},
     Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
 mod endpoint;
+mod require_identity_for_ports;
 #[allow(dead_code)] // TODO #2597
 mod set_client_id_on_req;
 #[allow(dead_code)] // TODO #2597
@@ -46,7 +48,7 @@ mod set_remote_ip_on_req;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
-    pub identity_required: bool,
+    pub require_identity_for_inbound_ports: Arc<IndexSet<u16>>,
 }
 
 pub struct Inbound {
@@ -81,7 +83,7 @@ impl Config {
                     max_in_flight_requests,
                     detect_protocol_timeout,
                 },
-            identity_required,
+            require_identity_for_inbound_ports,
         } = self;
 
         let listen = bind.bind().map_err(Error::from)?;
@@ -275,7 +277,9 @@ impl Config {
                 .push(DetectProtocolLayer::new(ProtocolDetect::new(
                     disable_protocol_detection_for_ports.clone(),
                 )))
-                .push(RejectWithNoIdentityLayer::new(identity_required))
+                .push(admit::AdmitLayer::new(RequireIdentityForPorts::new(
+                    require_identity_for_inbound_ports,
+                )))
                 // Terminates inbound mTLS from other outbound proxies.
                 .push(tls::AcceptTls::layer(
                     local_identity,

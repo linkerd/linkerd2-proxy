@@ -3,6 +3,7 @@
 use std::time::Duration;
 use tokio::net::TcpStream;
 
+pub mod admit;
 pub mod connect;
 pub use linkerd2_io as io;
 pub mod listen;

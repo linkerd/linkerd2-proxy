@@ -37,7 +37,6 @@ pub mod errors;
 pub mod handle_time;
 pub mod metric_labels;
 pub mod proxy;
-pub mod reject_with_no_identity;
 pub mod retry;
 pub mod serve;
 pub mod spans;
