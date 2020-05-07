@@ -65,7 +65,7 @@ pub fn http_request_l5d_override_dst_addr<B>(req: &http::Request<B>) -> Result<A
 
 pub fn http_request_authority_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
     req.uri()
-        .authority_part()
+        .authority()
         .ok_or(addr::Error::InvalidHost)
         .and_then(|a| Addr::from_authority_and_default_port(a, DEFAULT_PORT))
 }
