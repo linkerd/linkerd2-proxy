@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::override_authority::CanOverrideAuthority,
+        // http::override_authority::CanOverrideAuthority,
         http::{self, identity_from_header, Settings},
         identity,
         // resolve::map_endpoint::MapEndpoint,
@@ -75,15 +75,15 @@ impl<T> std::fmt::Display for Target<T> {
     }
 }
 
-impl<T> http::canonicalize::Target for Target<T> {
-    fn addr(&self) -> &Addr {
-        &self.addr
-    }
+// impl<T> http::canonicalize::Target for Target<T> {
+//     fn addr(&self) -> &Addr {
+//         &self.addr
+//     }
 
-    fn addr_mut(&mut self) -> &mut Addr {
-        &mut self.addr
-    }
-}
+//     fn addr_mut(&mut self) -> &mut Addr {
+//         &mut self.addr
+//     }
+// }
 
 impl<'t, T> From<&'t Target<T>> for ::http::header::HeaderValue {
     fn from(target: &'t Target<T>) -> Self {

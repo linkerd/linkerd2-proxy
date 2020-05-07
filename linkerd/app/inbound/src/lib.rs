@@ -48,10 +48,10 @@ use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
 mod endpoint;
-#[allow(dead_code)] // TODO #2597
-mod set_client_id_on_req;
-#[allow(dead_code)] // TODO #2597
-mod set_remote_ip_on_req;
+// #[allow(dead_code)] // TODO #2597
+// mod set_client_id_on_req;
+// #[allow(dead_code)] // TODO #2597
+// mod set_remote_ip_on_req;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -114,25 +114,25 @@ impl Config {
                 })
                 .push(svc::layer::mk(tcp::Forward::new));
 
-            // Creates HTTP clients for each inbound port & HTTP settings.
-            let http_endpoint = tcp_connect
-                .push(http::MakeClientLayer::new(connect.h2_settings))
-                .push(reconnect::layer({
-                    let backoff = connect.backoff.clone();
-                    move |_| Ok(backoff.stream())
-                }))
-                .push_on_response(
-                    svc::layers()
-                        // If the service has been ready & unused for `cache_max_idle_age`,
-                        // fail it.
-                        .push_idle_timeout(cache_max_idle_age)
-                        // If the service has been unavailable for an extend time, eagerly
-                        // fail requests.
-                        .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer(buffer_capacity),
-                )
-                .check_service::<HttpEndpoint>();
+            // // Creates HTTP clients for each inbound port & HTTP settings.
+            // let http_endpoint = tcp_connect
+            //     .push(http::MakeClientLayer::new(connect.h2_settings))
+            //     .push(reconnect::layer({
+            //         let backoff = connect.backoff.clone();
+            //         move |_| Ok(backoff.stream())
+            //     }))
+            //     .push_on_response(
+            //         svc::layers()
+            //             // If the service has been ready & unused for `cache_max_idle_age`,
+            //             // fail it.
+            //             .push_idle_timeout(cache_max_idle_age)
+            //             // If the service has been unavailable for an extend time, eagerly
+            //             // fail requests.
+            //             .push_failfast(dispatch_timeout)
+            //             // Shares the service, ensuring discovery errors are propagated.
+            //             .push_spawn_buffer(buffer_capacity),
+            //     )
+            //     .check_service::<HttpEndpoint>();
 
             // let http_target_observability = svc::layers()
             //     // Registers the stack to be tapped.

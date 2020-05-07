@@ -52,10 +52,10 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::info_span;
 
-#[allow(dead_code)] // TODO #2597
-mod add_remote_ip_on_rsp;
-#[allow(dead_code)] // TODO #2597
-mod add_server_id_on_rsp;
+// #[allow(dead_code)] // TODO #2597
+// mod add_remote_ip_on_rsp;
+// #[allow(dead_code)] // TODO #2597
+// mod add_server_id_on_rsp;
 mod endpoint;
 // mod orig_proto_upgrade;
 // mod require_identity_on_endpoint;

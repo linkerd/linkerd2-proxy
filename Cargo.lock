@@ -878,9 +878,9 @@ dependencies = [
 name = "linkerd2-app-inbound"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
+ "bytes 0.5.4",
  "futures 0.1.26",
- "http 0.1.21",
+ "http 0.2.1",
  "indexmap",
  "linkerd2-app-core",
  "linkerd2-retry",
