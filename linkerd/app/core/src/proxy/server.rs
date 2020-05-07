@@ -189,7 +189,7 @@ where
 
         let http_svc = self.make_http.new_service(proto.tls);
 
-        let builder = self.http.clone();
+        let mut builder = self.http.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
         Box::pin(async move {

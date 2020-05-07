@@ -4,7 +4,7 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{svc, transport::tls::accept::Connection};
-use futures_03::{compat::Future01CompatExt, future};
+use futures_03::{future, TryFutureExt};
 use http::StatusCode;
 use hyper::{Body, Request, Response};
 use linkerd2_error::Error;
@@ -77,7 +77,7 @@ impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
     type Error = io::Error;
     type Future = ResponseFuture;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
@@ -107,7 +107,7 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
         // that adds the remote IP as a request extension.
         let peer = meta.addrs.peer();
         let mut svc = self.0.clone();
-        let svc = service_fn(move |mut req| {
+        let svc = service_fn(move |mut req: Request<Body>| {
             req.extensions_mut().insert(ClientAddr(peer));
             svc.call(req)
         });
@@ -133,6 +133,7 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_03::compat::Future01CompatExt;
     use http::method::Method;
     use linkerd2_test_util::BlockOnFor;
     use std::time::Duration;
@@ -154,7 +155,7 @@ mod tests {
                     .uri("http://4.3.2.1:5678/ready")
                     .body(Body::empty())
                     .unwrap();
-                let f = srv.call(r);
+                let f = srv.call(r).compat();
                 rt.block_on_for(TIMEOUT, f).expect("call")
             };};
         }

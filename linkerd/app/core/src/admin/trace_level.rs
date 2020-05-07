@@ -55,7 +55,7 @@ impl Service<Request<Body>> for TraceLevel {
             &Method::PUT => {
                 let handle = self.clone();
                 let f = async move {
-                    let body = hyper::body::aggregate(req.into_body())
+                    let mut body = hyper::body::aggregate(req.into_body())
                         .await
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                     Ok(match handle.set_from(body.to_bytes()) {
