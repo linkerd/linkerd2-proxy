@@ -58,14 +58,13 @@ mod test {
             drop(service.call(()));
 
             handle.send_error(Bad);
-            assert!(dispatch.poll().expect("never fails").is_not_ready());
-            assert_eq!(
-                "bad",
-                service.poll_ready().expect_err("must fail").to_string()
-            );
-
-            drop(service);
             assert!(dispatch.poll().expect("never fails").is_ready());
+            assert!(service
+                .poll_ready()
+                .expect_err("must fail")
+                .source()
+                .unwrap()
+                .is::<Bad>());
 
             Ok::<(), ()>(())
         })
