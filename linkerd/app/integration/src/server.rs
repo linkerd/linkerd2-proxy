@@ -1,10 +1,14 @@
 use super::*;
-use futures::future::Either;
+use futures::TryFuture;
+use http::Response;
 use rustls::ServerConfig;
 use std::collections::HashMap;
+use std::future::Future;
 use std::io;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::thread;
 use tokio::net::TcpStream;
 use tokio_rustls::TlsAcceptor;
@@ -112,8 +116,7 @@ impl Server {
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
         F: Fn(Request<ReqBody>) -> U + Send + 'static,
-        U: IntoFuture<Item = Response<Bytes>> + Send + 'static,
-        U::Future: Send + 'static,
+        U: TryFuture<Ok = Response<Bytes>> + Send + 'static,
         U::Error: Into<BoxError>,
     {
         let func = move |req| {
@@ -146,7 +149,7 @@ impl Server {
         self.run_inner(None)
     }
 
-    fn run_inner(self, delay: Option<Box<dyn Future<Item = (), Error = ()> + Send>>) -> Listening {
+    fn run_inner(self, delay: Option<impl Future<Output = ()> + Send>) -> Listening {
         let (tx, rx) = shutdown_signal();
         let (listening_tx, listening_rx) = oneshot::channel();
         let mut listening_tx = Some(listening_tx);
@@ -165,62 +168,52 @@ impl Server {
         ::std::thread::Builder::new()
             .name(tname)
             .spawn(move || {
-                if let Some(delay) = delay {
-                    let _ = listening_tx.take().unwrap().send(());
-                    delay.wait().expect("support server delay wait");
-                }
-                let listener = listener.listen(1024).expect("Tcp::listen");
-
-                let mut runtime = runtime::current_thread::Runtime::new()
-                    .expect("initialize support server runtime");
-
                 let mut new_svc = NewSvc(Arc::new(self.routes));
                 let mut http = hyper::server::conn::Http::new();
                 match self.version {
                     Run::Http1 => http.http1_only(true),
                     Run::Http2 => http.http2_only(true),
                 };
+                let serve = async move {
+                    if let Some(delay) = delay {
+                        let _ = listening_tx.take().unwrap().send(());
+                        delay.await;
+                    }
+                    let listener = listener.listen(1024).expect("Tcp::listen");
+                    let listener = TcpListener::from_std(listener).await.expect("from_std");
 
-                let bind =
-                    TcpListener::from_std(listener, &reactor::Handle::default()).expect("from_std");
+                    if let Some(listening_tx) = listening_tx {
+                        let _ = listening_tx.send(());
+                    }
 
-                if let Some(listening_tx) = listening_tx {
-                    let _ = listening_tx.send(());
-                }
+                    while let (sock, addr) = listener.accept().await? {
+                        let sock = accept_connection(sock, tls_config).await?;
+                        let http = http.clone();
+                        let srv_conn_count = srv_conn_count.clone();
+                        let svc = new_svc.call(());
+                        tokio::spawn(async move {
+                            let svc = svc.await;
+                            srv_conn_count.fetch_add(1, Ordering::Release);
+                            let svc = svc
+                                .map_err(|e| println!("support/server new_service error: {}", e))?;
+                            http.serve_connection(sock, svc)
+                                .await
+                                .map_err(|e| println!("support/server error: {}", e))
+                        });
+                    }
+                };
 
-                let serve = bind
-                    .incoming()
-                    .and_then(move |s| accept_connection(s, tls_config.clone()))
-                    .for_each(move |sock| {
-                        let http_clone = http.clone();
-                        let srv_conn_count = Arc::clone(&srv_conn_count);
-                        let fut = new_svc
-                            .call(())
-                            .inspect(move |_| {
-                                srv_conn_count.fetch_add(1, Ordering::Release);
-                            })
-                            .map_err(|e| println!("support/server new_service error: {}", e))
-                            .and_then(move |svc| {
-                                http_clone
-                                    .serve_connection(sock, svc)
-                                    .map_err(|e| println!("support/server error: {}", e))
-                            })
-                            .map(|_| ());
-                        current_thread::TaskExecutor::current()
-                            .execute(fut)
-                            .map_err(|e| {
-                                println!("server execute error: {:?}", e);
-                                io::Error::from(io::ErrorKind::Other)
-                            })
+                tokio::runtime::Runtime::builder()
+                    .basic_scheduler()
+                    .enable_all()
+                    .build()
+                    .expect("initialize support server runtime")
+                    .block_on(async move {
+                        tokio::select! {
+                            _ = serve => {},
+                            _ = rx => {},
+                        }
                     });
-
-                runtime.spawn(
-                    serve
-                        .map(|_| ())
-                        .map_err(|e| println!("server error: {}", e)),
-                );
-
-                runtime.block_on(rx).expect("block on");
             })
             .unwrap();
 
@@ -245,8 +238,11 @@ enum Run {
 
 struct Route(
     Box<
-        dyn Fn(Request<ReqBody>) -> Box<dyn Future<Item = Response<Bytes>, Error = BoxError> + Send>
-            + Send,
+        dyn Fn(
+                Request<ReqBody>,
+            ) -> Pin<
+                Box<dyn Future<Output = Result<http::Response<Bytes>, BoxError>> + Send + 'static>,
+            > + Send,
     >,
 );
 
@@ -264,42 +260,43 @@ impl Route {
     }
 }
 
-impl ::std::fmt::Debug for Route {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+impl std::fmt::Debug for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Route")
     }
 }
 
-type ReqBody = Box<dyn Stream<Item = Bytes, Error = ()> + Send>;
+type ReqBody = Box<dyn Stream<Item = Bytes> + Send>;
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 struct Svc(Arc<HashMap<String, Route>>);
 
 impl Svc {
-    fn route(
-        &mut self,
-        req: Request<ReqBody>,
-    ) -> impl Future<Item = Response<Bytes>, Error = BoxError> {
+    async fn route(&mut self, req: Request<ReqBody>) -> Result<Response<Bytes>, BoxError> {
         match self.0.get(req.uri().path()) {
-            Some(Route(ref func)) => func(req),
+            Some(Route(ref func)) => func(req).await,
             None => {
                 println!("server 404: {:?}", req.uri().path());
                 let res = http::Response::builder()
                     .status(404)
                     .body(Default::default())
                     .unwrap();
-                Box::new(future::ok(res))
+                Ok(res)
             }
         }
     }
 }
 
-impl hyper::service::Service for Svc {
-    type ReqBody = hyper::Body;
-    type ResBody = hyper::Body;
+impl tower::Service<Request<hyper::Body>> for Svc {
+    type Response = Response<hyper::Body>;
     type Error = BoxError;
-    type Future = Box<dyn Future<Item = ::Response<hyper::Body>, Error = Self::Error> + Send>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Response<hyper::Body>, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
         let req = req.map(|body| {
@@ -317,10 +314,10 @@ struct NewSvc(Arc<HashMap<String, Route>>);
 impl Service<()> for NewSvc {
     type Response = Svc;
     type Error = ::std::io::Error;
-    type Future = future::FutureResult<Svc, Self::Error>;
+    type Future = future::Ready<Result<Svc, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(Async::Ready(()))
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, _: ()) -> Self::Future {
@@ -328,17 +325,16 @@ impl Service<()> for NewSvc {
     }
 }
 
-fn accept_connection(
+async fn accept_connection(
     io: TcpStream,
     tls: Option<Arc<ServerConfig>>,
-) -> impl Future<Item = RunningIo, Error = std::io::Error> {
+) -> Result<RunningIo, io::Error> {
     match tls {
-        Some(cfg) => Either::B(
-            TlsAcceptor::from(cfg)
-                .accept(io)
-                .map(|io| RunningIo(Box::new(io), None)),
-        ),
+        Some(cfg) => {
+            let io = TlsAcceptor::from(cfg).accept(io).await;
+            Ok(RunningIo(Box::new(io)))
+        }
 
-        None => Either::A(future::ok(RunningIo(Box::new(io), None))),
+        None => Ok(RunningIo(Box::new(io), None)),
     }
 }
