@@ -232,7 +232,7 @@ async fn write_then_read(
     mut conn: impl AsyncRead + AsyncWrite + Unpin,
     to_write: &'static [u8],
 ) -> Result<Vec<u8>, io::Error> {
-    let conn = write_and_shutdown(conn, to_write).await?;
+    let mut conn = write_and_shutdown(conn, to_write).await?;
     let mut vec = Vec::new();
     conn.read_to_end(&mut vec).await?;
     Ok(vec)
