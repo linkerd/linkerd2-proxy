@@ -105,7 +105,7 @@ where
             self.state = match self.state {
                 State::Ready(_) => {
                     trace!(available = %self.semaphore.available_permits(), "permit acquired");
-                    return Poll::Ready(Ok(()));
+                    return self.inner.poll_ready(cx);
                 }
                 State::Waiting(ref mut fut) => {
                     tokio::pin!(fut);
