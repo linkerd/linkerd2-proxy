@@ -141,6 +141,8 @@ where
         + 'static,
     <H::Service as Service<http::Request<Body>>>::Future: Send + 'static,
     B: hyper::body::HttpBody + Default + Send + 'static,
+    B::Error: std::error::Error + Send + Sync + 'static,
+    B::Data: Send + 'static,
 {
     type Response = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
     type Error = Error;
@@ -196,17 +198,15 @@ where
                     // Enable support for HTTP upgrades (CONNECT and websockets).
                     // TODO(eliza): port upgrades!
                     let svc = /* upgrade::Service::new(http_svc, drain.clone()) */ http_svc;
-                    let exec =
-                        tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
                     let conn = builder
-                        .with_executor(exec)
                         .http1_only(true)
                         .serve_connection(io, HyperServerSvc::new(svc))
-                        .with_upgrades();
+                        .with_upgrades()
+                        .instrument(info_span!("h2"));
 
                     Ok(Box::pin(async move {
                         drain
-                            .watch(conn.compat(), |conn| {
+                            .watch(conn, |conn| {
                                 // XXX(eliza): `compat` prevents us from calling
                                 // `graceful_shutdown` because it wraps the future!
                                 // conn.graceful_shutdown()
@@ -218,14 +218,12 @@ where
                 }
 
                 HttpVersion::H2 => {
-                    let exec =
-                        tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
                     let conn = builder
-                        .with_executor(exec)
                         .http2_only(true)
                         .http2_initial_stream_window_size(initial_stream_window_size)
                         .http2_initial_connection_window_size(initial_conn_window_size)
-                        .serve_connection(io, HyperServerSvc::new(http_svc));
+                        .serve_connection(io, HyperServerSvc::new(http_svc))
+                        .instrument(info_span!("h2"));
                     Ok(Box::pin(async move {
                         drain
                             .watch(conn, |conn| {

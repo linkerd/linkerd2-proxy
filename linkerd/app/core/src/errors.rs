@@ -51,7 +51,7 @@ pub enum ResponseBody<B> {
     },
 }
 
-impl<B: hyper::body::Payload> hyper::body::Payload for ResponseBody<B>
+impl<B: hyper::body::HttpBody> hyper::body::HttpBody for ResponseBody<B>
 where
     B::Error: Into<Error>,
 {
@@ -97,13 +97,13 @@ where
     }
 }
 
-impl<B: Default + hyper::body::Payload> Default for ResponseBody<B> {
+impl<B: Default + hyper::body::HttpBody> Default for ResponseBody<B> {
     fn default() -> ResponseBody<B> {
         ResponseBody::NonGrpc(B::default())
     }
 }
 
-impl<ReqB, RspB: Default + hyper::body::Payload>
+impl<ReqB, RspB: Default + hyper::body::HttpBody>
     respond::NewRespond<http::Request<ReqB>, http::Response<RspB>> for NewRespond
 {
     type Response = http::Response<ResponseBody<RspB>>;
@@ -124,7 +124,7 @@ impl<ReqB, RspB: Default + hyper::body::Payload>
     }
 }
 
-impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>> for Respond {
+impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB>> for Respond {
     type Response = http::Response<ResponseBody<RspB>>;
 
     fn respond(

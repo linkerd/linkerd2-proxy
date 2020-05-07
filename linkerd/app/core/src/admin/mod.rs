@@ -4,16 +4,16 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{svc, transport::tls::accept::Connection};
-use futures::{future, Future};
-use futures_03::{compat::Future01CompatExt, future as future_03};
+use futures_03::{compat::Future01CompatExt, future};
 use http::StatusCode;
-use hyper::service::{service_fn, Service};
 use hyper::{Body, Request, Response};
 use linkerd2_error::Error;
 use linkerd2_metrics::{self as metrics, FmtMetrics};
+use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tower::{service_fn, Service};
 
 mod readiness;
 mod trace_level;
@@ -35,7 +35,7 @@ pub struct Accept<M: FmtMetrics>(Admin<M>, hyper::server::conn::Http);
 pub struct ClientAddr(std::net::SocketAddr);
 
 pub type ResponseFuture =
-    Box<dyn Future<Item = Response<Body>, Error = io::Error> + Send + 'static>;
+    Pin<Box<dyn Future<Output = Result<Response<Body>, io::Error>> + Send + 'static>>;
 
 impl<M: FmtMetrics> Admin<M> {
     pub fn new(m: M, ready: Readiness, trace_level: TraceLevel) -> Self {
@@ -72,28 +72,30 @@ impl<M: FmtMetrics> Admin<M> {
     }
 }
 
-impl<M: FmtMetrics> Service for Admin<M> {
-    type ReqBody = Body;
-    type ResBody = Body;
+impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
+    type Response = Response<Body>;
     type Error = io::Error;
     type Future = ResponseFuture;
 
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         match req.uri().path() {
-            "/metrics" => Box::new(self.metrics.call(req)),
+            "/metrics" => Box::pin(self.metrics.call(req)),
             "/proxy-log-level" => self.trace_level.call(req),
-            "/ready" => Box::new(future::ok(self.ready_rsp())),
-            "/live" => Box::new(future::ok(self.live_rsp())),
-            _ => Box::new(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
+            "/ready" => Box::pin(future::ok(self.ready_rsp())),
+            "/live" => Box::pin(future::ok(self.live_rsp())),
+            _ => Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
     }
 }
 
 impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
-    type Response =
-        Pin<Box<dyn std::future::Future<Output = Result<(), Self::Error>> + Send + 'static>>;
+    type Response = Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'static>>;
     type Error = Error;
-    type Future = future_03::Ready<Result<Self::Response, Self::Error>>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -110,12 +112,8 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
             svc.call(req)
         });
 
-        let connection_future = self
-            .1
-            .serve_connection(io, svc)
-            .map_err(Into::into)
-            .compat();
-        future_03::ok(Box::pin(connection_future))
+        let connection_future = self.1.serve_connection(io, svc).map_err(Into::into);
+        future::ok(Box::pin(connection_future))
     }
 }
 
