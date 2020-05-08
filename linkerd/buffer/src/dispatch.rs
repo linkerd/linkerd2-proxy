@@ -62,21 +62,19 @@ where
 
     /// Transitions the buffer to failing, notifying all consumers and pending
     /// requests of the failure.
-    fn fail(&mut self, error: impl Into<Error>) -> Result<(), ()> {
+    fn fail(&mut self, error: impl Into<Error>) {
         let shared = ServiceError(Arc::new(error.into()));
         println!("Failing {}", shared);
         trace!(%shared, "Inner service failed");
 
         // First, notify services of the readiness change to prevent new requests from
         // being buffered.
-        let broadcast = self.ready.broadcast(Err(shared.clone()));
+        let _ = self.ready.broadcast(Err(shared.clone()));
 
         // Propagate the error to all in-flight requests.
         while let Ok(Async::Ready(Some(InFlight { tx, .. }))) = self.rx.poll() {
             let _ = tx.send(Err(shared.clone().into()));
         }
-
-        broadcast.map(|_| ()).map_err(|_| ())
     }
 }
 
@@ -114,7 +112,7 @@ where
                 // If the service fails, propagate the failure to all pending
                 // requests and then complete.
                 Err(error) => {
-                    let _ = self.fail(error);
+                    self.fail(error);
                     return_ready!();
                 }
 
@@ -133,7 +131,7 @@ where
                     // There are no requests available, so track idleness.
                     self.set_idle();
                     if let Err(error) = self.check_idle() {
-                        let _ = self.fail(error);
+                        self.fail(error);
                         return_ready!();
                     }
 
