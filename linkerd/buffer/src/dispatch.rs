@@ -21,8 +21,6 @@ pub(crate) async fn run<S, Req, I>(
 ) where
     S: tower::Service<Req>,
     S::Error: Into<Error>,
-    S::Response: Send + 'static,
-    S::Future: Send + 'static,
     I: std::future::Future,
     I::Output: Into<Error>,
 {
