@@ -134,7 +134,6 @@ where
                         let _ = self.ready.broadcast(Ok(Async::Ready(())));
                         self.ready_set = true;
                     }
-                    println!("Ready for requests");
                 }
             }
 
