@@ -10,7 +10,6 @@ pub use self::endpoint::{
 };
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::future;
-use indexmap::IndexSet;
 use linkerd2_admit as admit;
 use linkerd2_app_core::{
     classify,
@@ -48,7 +47,7 @@ mod set_remote_ip_on_req;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
-    pub require_identity_for_inbound_ports: IndexSet<u16>,
+    pub require_identity_for_inbound_ports: RequireIdentityForPorts,
 }
 
 pub struct Inbound {
@@ -277,9 +276,7 @@ impl Config {
                 .push(DetectProtocolLayer::new(ProtocolDetect::new(
                     disable_protocol_detection_for_ports.clone(),
                 )))
-                .push(admit::AdmitLayer::new(RequireIdentityForPorts::new(
-                    require_identity_for_inbound_ports.into_iter(),
-                )))
+                .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))
                 // Terminates inbound mTLS from other outbound proxies.
                 .push(tls::AcceptTls::layer(
                     local_identity,

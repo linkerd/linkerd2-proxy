@@ -4,7 +4,7 @@ use linkerd2_app_core::transport::tls;
 use std::sync::Arc;
 
 /// A connection policy that drops
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RequireIdentityForPorts {
     ports: Arc<IndexSet<u16>>,
 }
@@ -12,10 +12,10 @@ pub struct RequireIdentityForPorts {
 #[derive(Debug)]
 pub struct IdentityRequired(());
 
-impl RequireIdentityForPorts {
-    pub fn new(ports: impl Iterator<Item = u16>) -> Self {
+impl<T: IntoIterator<Item = u16>> From<T> for RequireIdentityForPorts {
+    fn from(ports: T) -> Self {
         Self {
-            ports: Arc::new(ports.collect()),
+            ports: Arc::new(ports.into_iter().collect()),
         }
     }
 }
