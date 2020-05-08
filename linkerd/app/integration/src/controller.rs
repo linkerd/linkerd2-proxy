@@ -1,6 +1,8 @@
 use super::*;
-use bytes::IntoBuf;
-use hyper::body::Payload;
+
+use bytes_04::IntoBuf;
+use futures_01::{future, sync};
+use hyper_012::body::Payload;
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 use std::collections::{HashMap, VecDeque};
@@ -114,7 +116,7 @@ impl Controller {
 
     pub fn delay_listen<F>(self, f: F) -> Listening
     where
-        F: Future<Item = (), Error = ()> + Send + 'static,
+        F: Future01<Item = (), Error = ()> + Send + 'static,
     {
         run(
             pb::server::DestinationServer::new(self),
@@ -174,11 +176,11 @@ fn grpc_unexpected_request() -> grpc::Status {
     )
 }
 
-impl Stream for DstReceiver {
+impl Stream01 for DstReceiver {
     type Item = pb::Update;
     type Error = grpc::Status;
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        match try_ready!(self.0.poll().map_err(|_| grpc_internal_code())) {
+    fn poll(&mut self) -> Poll01<Option<Self::Item>, Self::Error> {
+        match futures_01::try_ready!(self.0.poll().map_err(|_| grpc_internal_code())) {
             Some(res) => Ok(Async::Ready(Some(res?))),
             None => Ok(Async::Ready(None)),
         }
@@ -216,10 +218,10 @@ impl DstSender {
     }
 }
 
-impl Stream for ProfileReceiver {
+impl Stream01 for ProfileReceiver {
     type Item = pb::DestinationProfile;
     type Error = grpc::Status;
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll(&mut self) -> Poll01<Option<Self::Item>, Self::Error> {
         self.0.poll().map_err(|_| grpc_internal_code())
     }
 }
@@ -306,10 +308,10 @@ impl pb::server::Destination for Controller {
 pub(in crate) fn run<T, B>(
     svc: T,
     name: &'static str,
-    delay: Option<Box<dyn Future<Item = (), Error = ()> + Send>>,
+    delay: Option<Box<dyn Future01<Item = (), Error = ()> + Send>>,
 ) -> Listening
 where
-    T: Service<http::Request<tower_grpc::BoxBody>, Response = http::Response<B>>,
+    T: tower_01::Service<http::Request<tower_grpc::BoxBody>, Response = http::Response<B>>,
     T: Clone + Send + Sync + 'static,
     T::Error: ::std::error::Error + Send + Sync,
     T::Future: Send,
@@ -338,8 +340,11 @@ where
                 let mut runtime = runtime::current_thread::Runtime::new().expect("support runtime");
 
                 let listener = listener.listen(1024).expect("Tcp::listen");
-                let bind =
-                    TcpListener::from_std(listener, &reactor::Handle::default()).expect("from_std");
+                let bind = tokio_01::net::TcpListener::from_std(
+                    listener,
+                    &tokio_01::reactor::Handle::default(),
+                )
+                .expect("from_std");
 
                 if let Some(listening_tx) = listening_tx {
                     let _ = listening_tx.send(());
@@ -635,12 +640,12 @@ where
         self.0.is_end_stream()
     }
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        let data = try_ready!(self.0.poll_data());
+    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
+        let data = futures_01::try_ready!(self.0.poll_data());
         Ok(data.map(IntoBuf::into_buf).into())
     }
 
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
+    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
         self.0.poll_trailers()
     }
 }

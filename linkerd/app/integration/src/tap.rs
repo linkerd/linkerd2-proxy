@@ -1,7 +1,6 @@
 use super::*;
-use bytes::{BufMut, BytesMut};
+use bytes_04::BytesMut;
 use linkerd2_proxy_api::tap as pb;
-use std::task::Poll;
 
 pub fn client(addr: SocketAddr) -> Client {
     let api = pb::client::Tap::new(SyncSvc(client::http2(addr, "localhost")));
@@ -189,15 +188,15 @@ impl TapEventExt for pb::TapEvent {
 
 struct SyncSvc(client::Client);
 
-impl<B> tower::Service<http::Request<B>> for SyncSvc
+impl<B> tower_01::Service<http::Request<B>> for SyncSvc
 where
     B: grpc::Body,
 {
     type Response = http::Response<client::BytesBody>;
     type Error = String;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send>;
+    type Future = Box<dyn Future01<Item = Self::Response, Error = Self::Error> + Send>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self) -> Poll01<Self::Response, Self::Error> {
         unreachable!("tap SyncSvc poll_ready");
     }
 

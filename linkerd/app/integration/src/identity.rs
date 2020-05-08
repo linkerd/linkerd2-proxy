@@ -1,4 +1,5 @@
 use super::*;
+use futures_01::{future, Future as Future01, IntoFuture};
 use std::{
     collections::VecDeque,
     fs, io,
@@ -25,7 +26,7 @@ type Certify = Box<
     dyn FnMut(
             pb::CertifyRequest,
         ) -> Box<
-            dyn Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send,
+            dyn Future01<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send,
         > + Send,
 >;
 
@@ -188,7 +189,7 @@ impl Controller {
         F: FnOnce(pb::CertifyRequest) -> U + Send + 'static,
         U: IntoFuture<Item = pb::CertifyResponse> + Send + 'static,
         U::Future: Send + 'static,
-        <U::Future as Future>::Error: fmt::Display + Send,
+        <U::Future as Future01>::Error: fmt::Display + Send,
     {
         let mut f = Some(f);
         let func: Certify = Box::new(move |req| {
@@ -217,7 +218,7 @@ impl Controller {
 
 impl pb::server::Identity for Controller {
     type CertifyFuture =
-        Box<dyn Future<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
+        Box<dyn Future01<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
     fn certify(&mut self, req: grpc::Request<pb::CertifyRequest>) -> Self::CertifyFuture {
         if let Some(mut f) = self.expect_calls.lock().unwrap().pop_front() {
             return f(req.into_inner());
