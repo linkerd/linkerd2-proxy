@@ -194,14 +194,15 @@ impl Server {
                         delay.await;
                     }
                     let listener = listener.listen(1024).expect("Tcp::listen");
-                    let listener = TcpListener::from_std(listener).expect("from_std");
+                    let mut listener = TcpListener::from_std(listener).expect("from_std");
 
                     if let Some(listening_tx) = listening_tx {
                         let _ = listening_tx.send(());
                     }
 
-                    while let (sock, addr) = listener.accept().await? {
-                        let sock = accept_connection(sock, tls_config).await?;
+                    loop {
+                        let (sock, _) = listener.accept().await?;
+                        let sock = accept_connection(sock, tls_config.clone()).await?;
                         let http = http.clone();
                         let srv_conn_count = srv_conn_count.clone();
                         let svc = new_svc.call(());
@@ -215,7 +216,6 @@ impl Server {
                                 .map_err(|e| println!("support/server error: {}", e))
                         });
                     }
-                    Ok::<(), io::Error>(())
                 };
 
                 let mut rt = tokio::runtime::Builder::new()
@@ -226,7 +226,7 @@ impl Server {
                 tokio::task::LocalSet::new().block_on(&mut rt, async move {
                     tokio::select! {
                         res = serve => res,
-                        _ = rx => Ok(()),
+                        _ = rx => { Ok::<(), io::Error>(())},
                     }
                 })
             })

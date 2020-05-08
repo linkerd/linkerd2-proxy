@@ -81,14 +81,14 @@ impl TcpServer {
         F: FnOnce(Vec<u8>) -> U + Send + 'static,
         U: Into<Vec<u8>>,
     {
-        self.accept_fut(move |sock| {
+        self.accept_fut(move |mut sock| {
             Box::pin(
                 async move {
                     let mut vec = vec![0; 1024];
                     let n = sock.read(&mut vec).await?;
                     vec.truncate(n);
                     let write = cb(vec).into();
-                    sock.write_all(&vec).await
+                    sock.write_all(&write).await
                 }
                 .map(|r| match r {
                     Err(e) => panic!("tcp server error: {}", e),
@@ -146,17 +146,14 @@ impl TcpConn {
             .build()
             .unwrap()
             .block_on(self.read_future())
-            .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
     }
 
     pub fn write<T: Into<Vec<u8>>>(&self, buf: T) {
         println!("tcp client (addr={}): write", self.addr);
         let (tx, rx) = oneshot::channel();
         let _ = self.tx.send((Some(buf.into()), tx));
-        rx.map_err(|_| panic!("tcp write dropped"))
-            .map(|rsp| assert!(rsp.unwrap().is_none()))
-            .wait()
-            .unwrap()
+        futures::executor::block_on(rx.map_ok(|rsp| assert!(rsp.unwrap().is_none())))
+            .expect("tcp write dropped")
     }
 }
 
@@ -175,7 +172,7 @@ fn run_client(addr: SocketAddr) -> TcpSender {
         .spawn(move || {
             let mut core = tokio_compat::runtime::current_thread::Runtime::new()
                 .expect("support tcp client runtime");
-
+            let mut rx = rx;
             let work = async move {
                 while let Some(cb) = rx.recv().await {
                     let tcp = TcpStream::connect(&addr).await.expect("tcp connect error");
@@ -183,8 +180,10 @@ fn run_client(addr: SocketAddr) -> TcpSender {
                         Option<Vec<u8>>,
                         oneshot::Sender<Result<Option<Vec<u8>>, io::Error>>,
                     )>();
-                    cb.send(tx);
+                    cb.send(tx).unwrap();
                     tokio::spawn(async move {
+                        let mut rx = rx;
+                        let mut tcp = tcp;
                         while let Some((action, cb)) = rx.recv().await {
                             match action {
                                 None => {
@@ -195,7 +194,7 @@ fn run_client(addr: SocketAddr) -> TcpSender {
                                             let _ = cb.send(Ok(Some(vec)));
                                         }
                                         Err(e) => {
-                                            cb.send(Err(e));
+                                            cb.send(Err(e)).unwrap();
                                             break;
                                         }
                                     }
@@ -205,7 +204,7 @@ fn run_client(addr: SocketAddr) -> TcpSender {
                                         let _ = cb.send(Ok(None));
                                     }
                                     Err(e) => {
-                                        cb.send(Err(e));
+                                        cb.send(Err(e)).unwrap();
                                         break;
                                     }
                                 },
@@ -240,7 +239,7 @@ fn run_server(tcp: TcpServer) -> server::Listening {
                 .build()
                 .unwrap();
 
-            let listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
+            let mut listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
 
             let mut accepts = tcp.accepts;
 

@@ -110,7 +110,7 @@ impl Client {
 
     pub async fn get(&self, path: &str) -> String {
         use bytes::Buf;
-        let mut req = self.request_builder(path);
+        let req = self.request_builder(path);
         let res = self
             .request_async(req.method("GET"))
             .await
@@ -122,7 +122,7 @@ impl Client {
             res.status(),
         );
         let stream = res.into_parts().1;
-        let body = hyper::body::aggregate(stream).await.expect("wait body");
+        let mut body = hyper::body::aggregate(stream).await.expect("wait body");
         std::str::from_utf8(body.to_bytes().as_ref())
             .unwrap()
             .to_string()
@@ -149,17 +149,15 @@ impl Client {
     }
 
     pub fn request_builder(&self, path: &str) -> http::request::Builder {
-        let mut b = ::http::Request::builder();
+        let b = ::http::Request::builder();
 
         if self.tls.is_some() {
             b.uri(format!("https://{}{}", self.authority, path).as_str())
-                .version(self.version);
+                .version(self.version)
         } else {
             b.uri(format!("http://{}{}", self.authority, path).as_str())
-                .version(self.version);
-        };
-
-        b
+                .version(self.version)
+        }
     }
 
     #[tracing::instrument(skip(self))]
@@ -220,7 +218,7 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                 addr,
                 running: Arc::new(Mutex::new(Some(running_tx))),
                 absolute_uris,
-                tls: Arc::new(tls),
+                tls,
             };
 
             let http2_only = match version {
@@ -234,6 +232,7 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                 .build::<Conn, hyper::Body>(conn);
 
             let work = async move {
+                let mut rx = rx;
                 while let Some((req, cb)) = rx.recv().await {
                     let req = req.map(hyper::Body::from);
                     let req = client.request(req);
@@ -258,7 +257,7 @@ struct Conn {
     addr: SocketAddr,
     running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     absolute_uris: bool,
-    tls: Arc<Option<TlsConfig>>,
+    tls: Option<TlsConfig>,
 }
 
 impl tower::Service<hyper::Uri> for Conn {
@@ -274,18 +273,18 @@ impl tower::Service<hyper::Uri> for Conn {
     fn call(&mut self, _: hyper::Uri) -> Self::Future {
         let running = self.running.clone();
         let tls = self.tls.clone();
-        let conn = TcpStream::connect(&self.addr.clone());
+        let conn = TcpStream::connect(self.addr.clone());
         let abs_form = self.absolute_uris;
         Box::pin(async move {
             let io = conn.await?;
 
             let io = if let Some(TlsConfig {
-                ref name,
-                ref client_config,
-            }) = *tls
+                name,
+                client_config,
+            }) = tls
             {
                 let io = tokio_rustls::TlsConnector::from(client_config.clone())
-                    .connect(DNSName::as_ref(name), io)
+                    .connect(DNSName::as_ref(&name), io)
                     .await?;
                 Box::pin(io) as Pin<Box<dyn Io + Send + 'static>>
             } else {

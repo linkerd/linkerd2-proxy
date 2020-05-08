@@ -1,5 +1,5 @@
 #![cfg(test)]
-#![type_length_limit = "1982738"]
+#![type_length_limit = "2838213"]
 // These are basically integration tests for the `connection` submodule, but
 // they cannot be "real" integration tests because `connection` isn't a public
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use

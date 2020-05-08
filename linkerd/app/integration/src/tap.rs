@@ -205,7 +205,6 @@ where
     fn call(&mut self, req: http_01::Request<B>) -> Self::Future {
         use bytes::BufMut;
         use bytes_04::{Buf, IntoBuf};
-        use std::convert::TryInto;
         // XXX: this is all terrible, but hopefully all this code can leave soon.
         let (parts, mut body) = req.into_parts();
         let mut buf = BytesMut::new();
@@ -219,9 +218,9 @@ where
 
         let body = buf.freeze();
         let mut req = http::Request::builder()
-            .method(parts.method.as_str().try_into().unwrap())
+            .method(parts.method.as_str())
             // .version(parts.version.as_str().try_into().unwrap())
-            .uri((&parts.uri.to_string()[..]).try_into().unwrap());
+            .uri(&parts.uri.to_string()[..]);
         *req.headers_mut().unwrap() = headermap_compat_01(parts.headers);
         let req = req.body(body).unwrap();
 
@@ -229,7 +228,12 @@ where
             Box::pin(self.0.send_req(req))
                 .compat()
                 .map_err(|err| err.to_string())
-                .map(CompatBody::new),
+                .map(|rsp| {
+                    let (parts, body) = rsp.into_parts();
+                    let mut rsp = http_01::response::Builder::new();
+                    *rsp.headers_mut().unwrap() = headermap_compat(parts.headers);
+                    rsp.body(CompatBody(body)).unwrap()
+                }),
         )
     }
 }
@@ -245,11 +249,12 @@ impl http_body_01::Body for CompatBody {
     }
 
     fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
-        let poll = task_compat::with_context(|cx| Pin::new(self.0).poll_data(cx));
+        use bytes::Buf;
+        let poll = task_compat::with_context(|cx| Pin::new(&mut self.0).poll_data(cx));
         match poll {
-            Poll::Ready(Some(Ok(data))) => {
-                Ok(Async::Ready(Some(Cursor::new(Bytes::from(data.bytes())))))
-            }
+            Poll::Ready(Some(Ok(data))) => Ok(Async::Ready(Some(Cursor::new(
+                bytes_04::Bytes::from(data.bytes()),
+            )))),
             Poll::Ready(Some(Err(e))) => Err(e),
             Poll::Ready(None) => Ok(Async::Ready(None)),
             Poll::Pending => Ok(Async::NotReady),
@@ -259,37 +264,42 @@ impl http_body_01::Body for CompatBody {
     fn poll_trailers(&mut self) -> Poll01<Option<http_01::HeaderMap>, Self::Error> {
         let poll = task_compat::with_context(|cx| Pin::new(&mut self.0).poll_trailers(cx));
         match poll {
-            Poll::Ready(Some(Ok(headers))) => {
+            Poll::Ready(Ok(Some(headers))) => {
                 let headers = headermap_compat(headers);
                 Ok(Async::Ready(Some(headers)))
             }
-            Poll::Ready(Some(Err(e))) => Err(e),
-            Poll::Ready(None) => Ok(Async::Ready(None)),
+            Poll::Ready(Err(e)) => Err(e),
+            Poll::Ready(Ok(None)) => Ok(Async::Ready(None)),
             Poll::Pending => Ok(Async::NotReady),
         }
     }
 }
 
-fn headermap_compat(headers: http::HeaderMap) -> http_01::HeaderMap {
+fn headermap_compat(mut headers: http::HeaderMap) -> http_01::HeaderMap {
     // XXX: this far from efficient, but hopefully this code will go away soon.
     headers
         .drain()
         .map(|(k, v)| {
-            let name = http_01::header::HeaderName::from_bytes(k.as_ref()).unwrap();
+            let name =
+                http_01::header::HeaderName::from_bytes(k.as_ref().unwrap().as_ref()).unwrap();
             let value = http_01::HeaderValue::from_bytes(v.as_ref()).unwrap();
             (name, value)
         })
         .collect()
 }
 
-fn headermap_compat_01(headers: http_01::HeaderMap) -> http::HeaderMap {
+fn headermap_compat_01(mut headers: http_01::HeaderMap) -> http::HeaderMap {
     // XXX: this far from efficient, but hopefully this code will go away soon.
     headers
         .drain()
-        .map(|(k, v)| {
+        .flat_map(|(k, v)| {
             let name = http::header::HeaderName::from_bytes(k.as_ref()).unwrap();
-            let value = http1::HeaderValue::from_bytes(v.as_ref()).unwrap();
-            (name, value)
+            v.map(move |v| {
+                (
+                    name.clone(),
+                    http::HeaderValue::from_bytes(v.as_ref()).unwrap(),
+                )
+            })
         })
         .collect()
 }
