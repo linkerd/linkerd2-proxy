@@ -88,13 +88,6 @@ where
     type Error = Never;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        macro_rules! return_ready {
-            () => {{
-                trace!("Complete");
-                return Ok(Async::Ready(()));
-            }};
-        }
-
         // Drive requests from the queue to the inner service.
         loop {
             match self.inner.poll_ready() {
@@ -112,7 +105,7 @@ where
                 // requests and then complete.
                 Err(error) => {
                     self.fail(error);
-                    return_ready!();
+                    return Ok(Async::Ready(()));
                 }
 
                 // If the inner service can receive requests, start polling the channel.
@@ -131,14 +124,17 @@ where
                     self.set_idle();
                     if let Err(error) = self.check_idle() {
                         self.fail(error);
-                        return_ready!();
+                        return Ok(Async::Ready(()));
                     }
 
                     return Ok(Async::NotReady);
                 }
 
                 // All senders have been dropped, complete.
-                Err(_) | Ok(Async::Ready(None)) => return_ready!(),
+                Err(_) | Ok(Async::Ready(None)) => {
+                    trace!("Senders dropped");
+                    return Ok(Async::Ready(()));
+                }
 
                 // If a request was ready, dispatch it and return the future to the caller.
                 Ok(Async::Ready(Some(InFlight { request, tx }))) => {
@@ -160,6 +156,30 @@ mod test {
     use tokio::sync::{mpsc, oneshot, watch};
     use tokio::timer::Delay;
     use tower_test::mock;
+
+    #[test]
+    fn ready_when_senders_dropped() {
+        run(|| {
+            let max_idle = Duration::from_millis(100);
+
+            let (tx, rx) = mpsc::channel(1);
+            let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
+            let (inner, mut handle) = mock::pair::<(), ()>();
+            let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
+            handle.allow(1);
+
+            assert!(dispatch.poll().unwrap().is_not_ready());
+            assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
+            let tx1 = tx.clone();
+            drop(tx);
+            assert!(dispatch.poll().unwrap().is_not_ready());
+            assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
+            drop(tx1);
+            assert!(dispatch.poll().unwrap().is_ready());
+
+            Ok::<_, ()>(())
+        })
+    }
 
     #[test]
     fn idle_when_unused() {
