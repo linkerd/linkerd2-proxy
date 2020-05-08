@@ -11,8 +11,9 @@ pub use self::endpoint::{
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::future;
 use indexmap::IndexSet;
+use linkerd2_admit as admit;
 use linkerd2_app_core::{
-    admit, classify,
+    classify,
     config::{ProxyConfig, ServerConfig},
     drain, dst, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,

@@ -1,5 +1,6 @@
 use indexmap::IndexSet;
-use linkerd2_app_core::{admit, transport::tls};
+use linkerd2_admit as admit;
+use linkerd2_app_core::transport::tls;
 use std::sync::Arc;
 
 /// A connection policy that drops
