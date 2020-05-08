@@ -13,7 +13,6 @@ use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, fs};
 use tracing::{error, warn};
@@ -434,10 +433,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
 
-        let require_identity_for_inbound_ports: Arc<IndexSet<u16>> =
+        let require_identity_for_inbound_ports =
             parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?
-                .unwrap_or_else(|| IndexSet::new())
-                .into();
+                .unwrap_or_else(|| IndexSet::new());
 
         if id_disabled && !require_identity_for_inbound_ports.is_empty() {
             error!(
@@ -462,7 +460,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout: dispatch_timeout,
             },
-            require_identity_for_inbound_ports,
+            require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
         }
     };
 
