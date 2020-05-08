@@ -12,7 +12,7 @@ use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::future;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
-    classify,
+    admit, classify,
     config::{ProxyConfig, ServerConfig},
     drain, dst, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
@@ -28,7 +28,7 @@ use linkerd2_app_core::{
     reconnect, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, admit, io::BoxedIo, tls},
+    transport::{self, io::BoxedIo, tls},
     Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
     L5D_SERVER_ID,
 };

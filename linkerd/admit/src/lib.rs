@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 //! A middleware that fails requests by policy.
 
 use futures::{future, Future, Poll};

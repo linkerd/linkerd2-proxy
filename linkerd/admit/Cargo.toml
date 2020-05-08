@@ -1,0 +1,13 @@
+[package]
+name = "linkerd2-admit"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.1"
+linkerd2-error = { path = "../error" }
+tower = "0.1"
+tracing = "0.1"
+
