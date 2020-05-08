@@ -11,7 +11,7 @@ use webpki::{DNSName, DNSNameRef};
 
 type ClientError = hyper::Error;
 type Request = http::Request<Bytes>;
-type Response = http::Response<BytesBody>;
+type Response = http::Response<hyper::Body>;
 type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, ClientError>>)>;
 
 #[derive(Clone)]
@@ -31,9 +31,6 @@ impl TlsConfig {
         }
     }
 }
-
-#[derive(Debug)]
-pub struct BytesBody(hyper::Body);
 
 pub fn new<T: Into<String>>(addr: SocketAddr, auth: T) -> Client {
     http2(addr, auth.into())
@@ -112,8 +109,12 @@ impl Client {
     }
 
     pub async fn get(&self, path: &str) -> String {
+        use bytes::Buf;
         let mut req = self.request_builder(path);
-        let res = self.request_async(req.method("GET")).await;
+        let res = self
+            .request_async(req.method("GET"))
+            .await
+            .expect("response");
         assert!(
             res.status().is_success(),
             "client.get({:?}) expects 2xx, got \"{}\"",
@@ -122,18 +123,20 @@ impl Client {
         );
         let stream = res.into_parts().1;
         let body = hyper::body::aggregate(stream).await.expect("wait body");
-        std::str::from_utf8(&body).unwrap().to_string()
+        std::str::from_utf8(body.to_bytes().as_ref())
+            .unwrap()
+            .to_string()
     }
 
     pub async fn request_async(
         &self,
-        builder: &mut http::request::Builder,
+        builder: http::request::Builder,
     ) -> Result<Response, ClientError> {
         self.send_req(builder.body(Bytes::new()).unwrap()).await
     }
 
-    pub fn request(&self, builder: &mut http::request::Builder) -> Response {
-        self.request_async(builder).wait().expect("response")
+    pub fn request(&self, builder: http::request::Builder) -> Response {
+        futures::executor::block_on(self.request_async(builder)).expect("response")
     }
 
     #[tokio::main]
@@ -160,8 +163,11 @@ impl Client {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn send_req(&self, mut req: Request) -> Result<Response, ClientError> {
-        if req.uri().scheme_part().is_none() {
+    pub(crate) fn send_req(
+        &self,
+        mut req: Request,
+    ) -> impl Future<Output = Result<Response, ClientError>> + Send + Sync + 'static {
+        if req.uri().scheme().is_none() {
             if self.tls.is_some() {
                 *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
                     .parse()
@@ -174,12 +180,12 @@ impl Client {
         }
         tracing::debug!(headers = ?req.headers(), "request");
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send((req, tx));
-        rx.await.expect("request cancelled")
+        let _ = self.tx.send((req, tx));
+        async { rx.await.expect("request cancelled") }.in_current_span()
     }
 
     pub fn wait_for_closed(self) {
-        self.running.wait().expect("wait_for_closed");
+        futures::executor::block_on(self.running)
     }
 }
 
@@ -199,8 +205,11 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
     ::std::thread::Builder::new()
         .name(tname)
         .spawn(move || {
-            let mut runtime =
-                runtime::current_thread::Runtime::new().expect("initialize support client runtime");
+            let mut runtime = tokio::runtime::Builder::new()
+                .enable_all()
+                .basic_scheduler()
+                .build()
+                .expect("initialize support client runtime");
 
             let absolute_uris = if let Run::Http1 { absolute_uris } = version {
                 absolute_uris
@@ -211,7 +220,7 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                 addr,
                 running: Arc::new(Mutex::new(Some(running_tx))),
                 absolute_uris,
-                tls,
+                tls: Arc::new(tls),
             };
 
             let http2_only = match version {
@@ -221,164 +230,84 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
 
             let span = info_span!("test client", peer_addr = %addr);
             let client = hyper::Client::builder()
-                .executor(DefaultExecutor::current().instrument(span.clone()))
                 .http2_only(http2_only)
                 .build::<Conn, hyper::Body>(conn);
 
-            let work = rx
-                .for_each(move |(req, cb)| {
+            let work = async move {
+                while let Some((req, cb)) = rx.recv().await {
                     let req = req.map(hyper::Body::from);
-                    let fut = client.request(req).then(move |result| {
-                        let result = result.map(|resp| resp.map(BytesBody));
-                        let _ = cb.send(result);
-                        Ok(())
-                    });
-                    tokio::spawn(fut.in_current_span());
-                    Ok(())
-                })
-                .map_err(|e| println!("client error: {:?}", e));
+                    let req = client.request(req);
+                    tokio::spawn(
+                        async move {
+                            let result = req.await;
+                            let _ = cb.send(result);
+                        }
+                        .in_current_span(),
+                    );
+                }
+            };
 
-            runtime
-                .block_on(work.instrument(span))
-                .expect("support client runtime");
+            runtime.block_on(work.instrument(span));
         })
         .expect("thread spawn");
     (tx, running_rx)
 }
 
+#[derive(Clone)]
 struct Conn {
     addr: SocketAddr,
     running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     absolute_uris: bool,
-    tls: Option<TlsConfig>,
+    tls: Arc<Option<TlsConfig>>,
 }
 
-impl Conn {
-    fn connect_(&self) -> Box<dyn Future<Item = RunningIo, Error = ::std::io::Error> + Send> {
-        Box::new(ConnectorFuture::Init {
-            future: TcpStream::connect(&self.addr),
-            tls: self.tls.clone(),
-            running: self.running.clone(),
+impl tower::Service<hyper::Uri> for Conn {
+    type Response = RunningIo;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Error = io::Error;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _: hyper::Uri) -> Self::Future {
+        let running = self.running.clone();
+        let tls = self.tls.clone();
+        let conn = TcpStream::connect(&self.addr.clone());
+        let abs_form = self.absolute_uris;
+        Box::pin(async move {
+            let io = conn.await?;
+
+            let io = if let Some(TlsConfig {
+                ref name,
+                ref client_config,
+            }) = *tls
+            {
+                let io = tokio_rustls::TlsConnector::from(client_config.clone())
+                    .connect(DNSName::as_ref(name), io)
+                    .await?;
+                Box::pin(io) as Pin<Box<dyn Io + Send + 'static>>
+            } else {
+                Box::pin(io) as Pin<Box<dyn Io + Send + 'static>>
+            };
+
+            let running = running
+                .lock()
+                .expect("running lock")
+                .take()
+                .expect("support client cannot connect more than once");
+            Ok(RunningIo {
+                io,
+                abs_form,
+                _running: Some(running),
+            })
         })
     }
 }
 
-impl Connect for Conn {
-    type Connected = RunningIo;
-    type Error = ::std::io::Error;
-    type Future = Box<dyn Future<Item = Self::Connected, Error = ::std::io::Error>>;
-
-    fn connect(&self) -> Self::Future {
-        self.connect_()
-    }
-}
-
-impl hyper::client::connect::Connect for Conn {
-    type Transport = RunningIo;
-    type Future = Box<
-        dyn Future<
-                Item = (Self::Transport, hyper::client::connect::Connected),
-                Error = ::std::io::Error,
-            > + Send,
-    >;
-    type Error = ::std::io::Error;
-    fn connect(&self, _: hyper::client::connect::Destination) -> Self::Future {
-        let connected = hyper::client::connect::Connected::new().proxy(self.absolute_uris);
-        Box::new(self.connect_().map(|t| (t, connected)))
-    }
-}
-
-enum ConnectorFuture {
-    Init {
-        future: tokio::net::tcp::ConnectFuture,
-        tls: Option<TlsConfig>,
-        running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    },
-    Handshake {
-        future: tokio_rustls::Connect<TcpStream>,
-        running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    },
-}
-
-impl Future for ConnectorFuture {
-    type Item = RunningIo;
-    type Error = io::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let take_running = move |r: &Mutex<Option<oneshot::Sender<()>>>| {
-            r.lock()
-                .expect("running lock")
-                .take()
-                .expect("support client cannot connect more than once")
-        };
-
-        loop {
-            *self = match self {
-                ConnectorFuture::Init {
-                    future,
-                    tls,
-                    running,
-                } => {
-                    let io = try_ready!(future.poll());
-
-                    match tls {
-                        None => {
-                            return Ok(Async::Ready(RunningIo(
-                                Box::new(io),
-                                Some(take_running(running)),
-                            )));
-                        }
-
-                        Some(TlsConfig {
-                            client_config,
-                            name,
-                        }) => {
-                            let future = tokio_rustls::TlsConnector::from(client_config.clone())
-                                .connect(DNSName::as_ref(name), io);
-                            ConnectorFuture::Handshake {
-                                future,
-                                running: running.clone(),
-                            }
-                        }
-                    }
-                }
-
-                ConnectorFuture::Handshake { future, running } => {
-                    let io = try_ready!(future.poll());
-                    return Ok(Async::Ready(RunningIo(
-                        Box::new(io),
-                        Some(take_running(running)),
-                    )));
-                }
-            }
-        }
-    }
-}
-
-impl HttpBody for BytesBody {
-    type Data = <Bytes as IntoBuf>::Buf;
-    type Error = hyper::Error;
-
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        match try_ready!(self.0.poll_data()) {
-            Some(chunk) => Ok(Async::Ready(Some(Bytes::from(chunk).into_buf()))),
-            None => Ok(Async::Ready(None)),
-        }
-    }
-
-    fn poll_trailers(&mut self) -> Poll<Option<http::HeaderMap>, Self::Error> {
-        self.0.poll_trailers()
-    }
-}
-
-impl Stream for BytesBody {
-    type Item = Bytes;
-    type Error = hyper::Error;
-
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        match try_ready!(self.0.poll_data()) {
-            Some(chunk) => Ok(Async::Ready(Some(chunk.into()))),
-            None => Ok(Async::Ready(None)),
-        }
+impl hyper::client::connect::Connection for RunningIo {
+    fn connected(&self) -> hyper::client::connect::Connected {
+        hyper::client::connect::Connected::new().proxy(self.abs_form)
     }
 }

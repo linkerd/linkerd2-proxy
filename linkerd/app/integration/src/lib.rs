@@ -6,7 +6,6 @@ mod test_env;
 
 pub use self::test_env::TestEnv;
 pub use bytes::Bytes;
-use bytes::{Buf, BufMut};
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 
 use futures_01::{Async, Future as Future01, Poll as Poll01, Stream as Stream01};
@@ -17,7 +16,6 @@ pub use std::collections::HashMap;
 use std::fmt;
 pub use std::future::Future;
 use std::io;
-use std::io::{Read, Write};
 pub use std::net::SocketAddr;
 use std::pin::Pin;
 pub use std::sync::Arc;
@@ -27,8 +25,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 pub use tokio::stream::{Stream, StreamExt};
 pub use tokio::sync::oneshot;
-use tokio_compat::runtime::{self, current_thread};
-use tokio_connect::Connect;
+use tokio_compat::runtime::{self};
 pub use tower::Service;
 pub use tower_grpc as grpc;
 pub use tracing::*;
@@ -155,70 +152,47 @@ pub mod tcp;
 trait Io: AsyncRead + AsyncWrite {}
 impl<T: AsyncRead + AsyncWrite> Io for T {}
 
-struct RunningIo(pub Box<dyn Io + Send>, pub Option<oneshot::Sender<()>>);
-
-impl Read for RunningIo {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
-}
-
-impl Write for RunningIo {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
-    }
+struct RunningIo {
+    pub io: Pin<Box<dyn Io + Send>>,
+    pub abs_form: bool,
+    pub _running: Option<oneshot::Sender<()>>,
 }
 
 impl AsyncRead for RunningIo {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<usize> {
-        self.as_mut().0.as_mut().poll_read(cx, buf)
-    }
-
-    fn poll_read_buf<B: BufMut>(
+    fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        mut buf: &mut B,
-    ) -> Poll<usize> {
-        // A trait object of AsyncWrite would use the default poll_read_buf,
-        // which doesn't allow vectored writes. Going through this method
-        // allows the trait object to call the specialized write_buf method.
-        self.as_mut().0.as_mut().poll_read_buf_erased(cx, &mut buf)
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        self.as_mut().io.as_mut().poll_read(cx, buf)
     }
 
     unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [std::mem::MaybeUninit<u8>]) -> bool {
-        self.0.prepare_uninitialized_buffer(buf)
+        self.io.prepare_uninitialized_buffer(buf)
     }
 }
 
 impl AsyncWrite for RunningIo {
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        self.as_mut().0.as_mut().poll_shutdown(cx)
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.as_mut().io.as_mut().poll_shutdown(cx)
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        self.as_mut().0.as_mut().poll_flush(cx)
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.as_mut().io.as_mut().poll_flush(cx)
     }
 
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<usize> {
-        self.as_mut().0.as_mut().poll_write(cx, buf)
-    }
-
-    fn poll_write_buf<B: Buf>(
+    fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut B,
-    ) -> Poll<usize> {
-        self.as_mut().0.as_mut().poll_write_buf(cx, buf)
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.as_mut().io.as_mut().poll_write(cx, buf)
     }
 }
 
 pub fn shutdown_signal() -> (Shutdown, ShutdownRx) {
     let (_tx, rx) = oneshot::channel();
-    (Shutdown { _tx }, Box::new(rx.then(|_| Ok(()))))
+    (Shutdown { _tx }, Box::pin(rx.map(|_| ())))
 }
 
 pub struct Shutdown {
@@ -236,7 +210,7 @@ pub type ShutdownRx = Pin<Box<dyn Future<Output = ()> + Send>>;
 /// A channel used to signal when a Client's related connection is running or closed.
 pub fn running() -> (oneshot::Sender<()>, Running) {
     let (tx, rx) = oneshot::channel();
-    let rx = Box::new(rx.then(|_| Ok::<(), ()>(())));
+    let rx = Box::pin(rx.map(|_| ()));
     (tx, rx)
 }
 
@@ -296,9 +270,9 @@ pub trait FutureWaitExt: Future {
             })
     }
 
-    fn try_wait_timeout(self, dur: Duration) -> Result<Self::Ok, Waited<Error>>
+    fn try_wait_timeout<T, E>(self, dur: Duration) -> Result<T, Waited<E>>
     where
-        Self: TryFuture + Sized,
+        Self: Future<Output = Result<T, E>> + Sized,
     {
         match self.wait_timeout(dur) {
             Ok(Ok(x)) => Ok(x),

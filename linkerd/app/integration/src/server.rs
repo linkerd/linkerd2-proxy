@@ -109,7 +109,10 @@ impl Server {
     where
         F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + 'static,
     {
-        self.route_async(path, move |req| Ok::<_, BoxError>(cb(req)))
+        self.route_async(path, move |req| {
+            let res = cb(req);
+            async move { Ok::<_, BoxError>(res) }
+        })
     }
 
     /// Call a closure when the request matches, returning a Future of
@@ -117,19 +120,26 @@ impl Server {
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
         F: Fn(Request<ReqBody>) -> U + Send + 'static,
-        U: TryFuture<Ok = Response<Bytes>> + Send + 'static,
-        U::Error: Into<BoxError>,
+        U: TryFuture<Ok = Response<Bytes>> + Send + Sync + 'static,
+        U::Error: Into<BoxError> + Send + 'static,
     {
         let func = move |req| {
-            Box::new(cb(req).into_future().map_err(Into::into))
-                as Box<dyn Future<Item = Response<Bytes>, Error = BoxError> + Send>
+            Box::pin(cb(req).map_err(Into::into))
+                as Pin<
+                    Box<
+                        dyn Future<Output = Result<Response<Bytes>, BoxError>>
+                            + Send
+                            + Sync
+                            + 'static,
+                    >,
+                >
         };
         self.routes.insert(path.into(), Route(Box::new(func)));
         self
     }
 
     pub fn route_with_latency(self, path: &str, resp: &str, latency: Duration) -> Self {
-        let resp = Bytes::from(resp);
+        let resp = Bytes::from(resp.to_string());
         self.route_fn(path, move |_| {
             thread::sleep(latency);
             http::Response::builder()
@@ -150,7 +160,10 @@ impl Server {
         self.run_inner(None)
     }
 
-    fn run_inner(self, delay: Option<impl Future<Output = ()> + Send + 'static>) -> Listening {
+    fn run_inner(
+        self,
+        delay: Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
+    ) -> Listening {
         let (tx, rx) = shutdown_signal();
         let (listening_tx, listening_rx) = oneshot::channel();
         let mut listening_tx = Some(listening_tx);
@@ -243,14 +256,19 @@ struct Route(
         dyn Fn(
                 Request<ReqBody>,
             ) -> Pin<
-                Box<dyn Future<Output = Result<http::Response<Bytes>, BoxError>> + Send + 'static>,
+                Box<
+                    dyn Future<Output = Result<http::Response<Bytes>, BoxError>>
+                        + Send
+                        + Sync
+                        + 'static,
+                >,
             > + Send,
     >,
 );
 
 impl Route {
     fn string(body: &str) -> Route {
-        let body = Bytes::from(body);
+        let body = Bytes::from(body.to_string());
         Route(Box::new(move |_| {
             Box::pin(future::ok(
                 http::Response::builder()
@@ -268,23 +286,27 @@ impl std::fmt::Debug for Route {
     }
 }
 
-type ReqBody = Box<dyn Stream<Item = Bytes> + Send>;
+type ReqBody = Pin<Box<dyn Stream<Item = Bytes> + Send + Sync>>;
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 struct Svc(Arc<HashMap<String, Route>>);
 
 impl Svc {
-    async fn route(&mut self, req: Request<ReqBody>) -> Result<Response<Bytes>, BoxError> {
+    fn route(
+        &mut self,
+        req: Request<ReqBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<Response<Bytes>, BoxError>> + Send + Sync + 'static>>
+    {
         match self.0.get(req.uri().path()) {
-            Some(Route(ref func)) => func(req).await,
+            Some(Route(ref func)) => func(req),
             None => {
                 println!("server 404: {:?}", req.uri().path());
                 let res = http::Response::builder()
                     .status(404)
                     .body(Default::default())
                     .unwrap();
-                Ok(res)
+                Box::pin(async move { Ok(res) })
             }
         }
     }
@@ -301,12 +323,12 @@ impl tower::Service<Request<hyper::Body>> for Svc {
     }
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-        let req = req.map(|body| {
-            Box::new(body.map(|chunk| chunk.into_bytes()).map_err(|err| {
-                panic!("body error: {}", err);
-            })) as ReqBody
-        });
-        Box::new(self.route(req).map(|res| res.map(|s| hyper::Body::from(s))))
+        let req =
+            req.map(|body| Box::pin(body.map(|chunk| chunk.expect("body error!"))) as ReqBody);
+        Box::pin(
+            self.route(req)
+                .map_ok(|res| res.map(|s| hyper::Body::from(s))),
+        )
     }
 }
 
@@ -334,9 +356,17 @@ async fn accept_connection(
     match tls {
         Some(cfg) => {
             let io = TlsAcceptor::from(cfg).accept(io).await?;
-            Ok(RunningIo(Box::new(io), None))
+            Ok(RunningIo {
+                io: Box::pin(io),
+                abs_form: false,
+                _running: None,
+            })
         }
 
-        None => Ok(RunningIo(Box::new(io), None)),
+        None => Ok(RunningIo {
+            io: Box::pin(io),
+            abs_form: false,
+            _running: None,
+        }),
     }
 }

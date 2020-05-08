@@ -25,6 +25,8 @@ futures = { version = "0.3", features = ["compat"] }
 h2 = "0.2"
 http = "0.2"
 http-body = "0.3"
+http-body_01 = { package = "http-body", version = "0.1"}
+http-01 = { package = "http", version = "0.1"}
 hyper = "0.13"
 hyper_012 = { package = "hyper", version = "0.12"}
 linkerd2-app = { path = "..", features = ["mock-orig-dst"] }
@@ -42,6 +44,7 @@ tokio_01 = { package = "tokio", version = "0.1"}
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-rustls = "0.13"
 tokio-compat = "0.1"
+task-compat = "0.1"
 tower = "0.3"
 tower_01 = { package = "tower", version = "0.1" }
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }

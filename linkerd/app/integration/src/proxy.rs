@@ -124,7 +124,7 @@ impl Proxy {
         // It doesn't matter what kind of future you give us,
         // we'll just wrap it up in a box and trigger when
         // it triggers. The results are discarded.
-        let fut = Box::new(sig.then(|_| Ok(())));
+        let fut = Box::pin(sig.map(|_| ()));
         self.shutdown_signal = Some(fut);
         self
     }

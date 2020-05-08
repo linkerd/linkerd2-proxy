@@ -1,6 +1,7 @@
 use super::*;
 
 use bytes_04::IntoBuf;
+use futures::TryFutureExt;
 use futures_01::{future, sync};
 use hyper_012::body::Payload;
 use linkerd2_proxy_api::destination as pb;
@@ -311,7 +312,7 @@ pub(in crate) fn run<T, B>(
     delay: Option<Box<dyn Future01<Item = (), Error = ()> + Send>>,
 ) -> Listening
 where
-    T: tower_01::Service<http::Request<tower_grpc::BoxBody>, Response = http::Response<B>>,
+    T: tower_01::Service<http_01::Request<tower_grpc::BoxBody>, Response = http_01::Response<B>>,
     T: Clone + Send + Sync + 'static,
     T::Error: ::std::error::Error + Send + Sync,
     T::Future: Send,
@@ -325,7 +326,7 @@ where
     listener.bind(addr).expect("Tcp::bind");
     let addr = listener.local_addr().expect("Tcp::local_addr");
 
-    let (listening_tx, listening_rx) = oneshot::channel();
+    let (listening_tx, listening_rx) = futures_01::sync::oneshot::channel();
     let mut listening_tx = Some(listening_tx);
 
     let (trace, _) = trace_init();
@@ -351,11 +352,11 @@ where
                 }
 
                 let name = name.clone();
-                let serve = hyper::Server::builder(bind.incoming())
+                let serve = hyper_012::Server::builder(bind.incoming())
                     .http2_only(true)
                     .serve(move || {
                         let svc = Mutex::new(svc.clone());
-                        hyper::service::service_fn(move |req| {
+                        hyper_012::service::service_fn(move |req| {
                             let req = req.map(|body| tower_grpc::BoxBody::map_from(body));
                             svc.lock()
                                 .expect("svc lock")
@@ -366,7 +367,9 @@ where
                     .map_err(move |e| println!("{} error: {:?}", name, e));
 
                 runtime.spawn(serve);
-                runtime.block_on(rx).expect(name);
+                runtime
+                    .block_on(rx.map(|_| Ok::<(), ()>(())).compat())
+                    .expect(name);
             })
         })
         .unwrap();
@@ -645,7 +648,7 @@ where
         Ok(data.map(IntoBuf::into_buf).into())
     }
 
-    fn poll_trailers(&mut self) -> Poll01<Option<http::HeaderMap>, Self::Error> {
+    fn poll_trailers(&mut self) -> Poll01<Option<http_01::HeaderMap>, Self::Error> {
         self.0.poll_trailers()
     }
 }

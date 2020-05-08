@@ -35,14 +35,20 @@ pub struct TcpClient {
 type Handler = Box<dyn CallBox + Send>;
 
 trait CallBox: 'static {
-    fn call_box(self: Box<Self>, sock: TcpStream) -> Pin<Box<dyn Future<Output = ()>>>;
+    fn call_box(
+        self: Box<Self>,
+        sock: TcpStream,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 }
 
 impl<F> CallBox for F
 where
-    F: FnOnce(TcpStream) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+    F: FnOnce(TcpStream) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + 'static,
 {
-    fn call_box(self: Box<Self>, sock: TcpStream) -> Pin<Box<dyn Future<Output = ()>>> {
+    fn call_box(
+        self: Box<Self>,
+        sock: TcpStream,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         (*self)(sock)
     }
 }
@@ -59,11 +65,8 @@ pub struct TcpConn {
 impl TcpClient {
     pub fn connect(&self) -> TcpConn {
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send(tx);
-        let tx = rx
-            .map_err(|_| panic!("tcp connect dropped"))
-            .wait()
-            .unwrap();
+        let _ = self.tx.send(tx);
+        let tx = futures::executor::block_on(rx).unwrap();
         println!("tcp client (addr={}): connected", self.addr);
         TcpConn {
             addr: self.addr,
@@ -98,12 +101,11 @@ impl TcpServer {
     pub fn accept_fut<F, U>(mut self, cb: F) -> Self
     where
         F: FnOnce(TcpStream) -> U + Send + 'static,
-        U: Future<Output = ()> + 'static,
+        U: Future<Output = ()> + Send + 'static,
     {
-        self.accepts
-            .push_back(Box::new(move |tcp| -> Pin<Box<dyn Future + 'static>> {
-                Box::pin(cb(tcp))
-            }));
+        self.accepts.push_back(Box::new(
+            move |tcp| -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> { Box::pin(cb(tcp)) },
+        ));
         self
     }
 
@@ -119,29 +121,38 @@ impl TcpConn {
     }
 
     pub fn read_timeout(&self, timeout: Duration) -> Vec<u8> {
-        use linkerd2_test_util::BlockOnFor;
-        current_thread::Runtime::new()
+        tokio::runtime::Builder::new()
+            .enable_all()
+            .basic_scheduler()
+            .build()
             .unwrap()
-            .block_on_for(timeout, self.read_future())
+            .block_on(tokio::time::timeout(timeout, self.read_future()))
+            .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
             .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
     }
 
-    fn read_future(&self) -> impl Future<Item = Vec<u8>, Error = io::Error> {
+    async fn read_future(&self) -> Result<Vec<u8>, io::Error> {
         println!("tcp client (addr={}): read", self.addr);
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send((None, tx));
-        rx.map_err(|_| panic!("tcp read dropped"))
-            .and_then(|res| res.map(|opt| opt.unwrap()))
+        let _ = self.tx.send((None, tx));
+        let res = rx.await.expect("tcp read dropped");
+        res.map(|opt| opt.unwrap())
     }
 
     pub fn try_read(&self) -> io::Result<Vec<u8>> {
-        self.read_future().wait()
+        tokio::runtime::Builder::new()
+            .enable_all()
+            .basic_scheduler()
+            .build()
+            .unwrap()
+            .block_on(self.read_future())
+            .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
     }
 
     pub fn write<T: Into<Vec<u8>>>(&self, buf: T) {
         println!("tcp client (addr={}): write", self.addr);
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send((Some(buf.into()), tx));
+        let _ = self.tx.send((Some(buf.into()), tx));
         rx.map_err(|_| panic!("tcp write dropped"))
             .map(|rsp| assert!(rsp.unwrap().is_none()))
             .wait()
@@ -223,39 +234,38 @@ fn run_server(tcp: TcpServer) -> server::Listening {
     ::std::thread::Builder::new()
         .name(tname)
         .spawn(move || {
-            let mut core =
-                runtime::current_thread::Runtime::new().expect("support tcp server Runtime::new");
+            let mut core = tokio::runtime::Builder::new()
+                .enable_all()
+                .basic_scheduler()
+                .build()
+                .unwrap();
 
-            let bind = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
+            let listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
 
             let mut accepts = tcp.accepts;
 
-            let listen = bind
-                .incoming()
-                .for_each(move |sock| {
+            let listen = async move {
+                loop {
+                    let (sock, _) = listener.accept().await.unwrap();
                     let cb = accepts.pop_front().expect("no more accepts");
                     srv_conn_count.fetch_add(1, Ordering::Release);
 
                     let fut = cb.call_box(sock);
-
-                    current_thread::TaskExecutor::current()
-                        .execute(fut)
-                        .map_err(|e| {
-                            println!("tcp execute error: {:?}", e);
-                            io::Error::from(io::ErrorKind::Other)
-                        })
-                        .map(|_| ())
-                })
-                .map_err(|e| panic!("tcp accept error: {}", e));
-
-            core.spawn(listen);
+                    tokio::task::spawn_local(fut);
+                }
+            };
 
             let _ = started_tx.send(());
-            core.block_on(rx).unwrap();
+            tokio::task::LocalSet::new().block_on(&mut core, async move {
+                tokio::select! {
+                    _ = rx => { },
+                    _ = listen => { },
+                }
+            });
         })
         .unwrap();
 
-    started_rx.wait().expect("support tcp server started");
+    futures::executor::block_on(started_rx).expect("support tcp server started");
 
     // printlns will show if the test fails...
     println!("tcp server (addr={}): running", addr);

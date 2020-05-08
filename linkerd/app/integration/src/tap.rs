@@ -1,6 +1,8 @@
 use super::*;
-use bytes_04::BytesMut;
+use bytes::BytesMut;
+use http_body::Body;
 use linkerd2_proxy_api::tap as pb;
+use std::io::Cursor;
 
 pub fn client(addr: SocketAddr) -> Client {
     let api = pb::client::Tap::new(SyncSvc(client::http2(addr, "localhost")));
@@ -20,7 +22,7 @@ impl Client {
     pub fn observe(
         &mut self,
         req: ObserveBuilder,
-    ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Status> {
+    ) -> impl Stream01<Item = pb::TapEvent, Error = tower_grpc::Status> {
         let req = tower_grpc::Request::new(req.0);
         self.api
             .observe(req)
@@ -33,7 +35,7 @@ impl Client {
         &mut self,
         req: ObserveBuilder,
         require_id: &str,
-    ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Status> {
+    ) -> impl Stream01<Item = pb::TapEvent, Error = tower_grpc::Status> {
         let mut req = tower_grpc::Request::new(req.0);
 
         let require_id = tower_grpc::metadata::MetadataValue::from_str(require_id).unwrap();
@@ -188,35 +190,106 @@ impl TapEventExt for pb::TapEvent {
 
 struct SyncSvc(client::Client);
 
-impl<B> tower_01::Service<http::Request<B>> for SyncSvc
+impl<B> tower_01::Service<http_01::Request<B>> for SyncSvc
 where
     B: grpc::Body,
 {
-    type Response = http::Response<client::BytesBody>;
+    type Response = http_01::Response<CompatBody>;
     type Error = String;
     type Future = Box<dyn Future01<Item = Self::Response, Error = Self::Error> + Send>;
 
-    fn poll_ready(&mut self) -> Poll01<Self::Response, Self::Error> {
+    fn poll_ready(&mut self) -> Poll01<(), Self::Error> {
         unreachable!("tap SyncSvc poll_ready");
     }
 
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        let req = req.map(|mut body| {
-            let mut buf = BytesMut::new();
-            while let Some(bytes) = future::poll_fn(|| body.poll_data())
-                .wait()
-                .map_err(Into::into)
-                .expect("req body")
-            {
-                buf.put(bytes);
-            }
+    fn call(&mut self, req: http_01::Request<B>) -> Self::Future {
+        use bytes::BufMut;
+        use bytes_04::{Buf, IntoBuf};
+        use std::convert::TryInto;
+        // XXX: this is all terrible, but hopefully all this code can leave soon.
+        let (parts, mut body) = req.into_parts();
+        let mut buf = BytesMut::new();
+        while let Some(bytes) = futures_01::future::poll_fn(|| body.poll_data())
+            .wait()
+            .map_err(Into::into)
+            .expect("req body")
+        {
+            buf.put(bytes.into_buf().bytes());
+        }
 
-            buf.freeze()
-        });
+        let body = buf.freeze();
+        let mut req = http::Request::builder()
+            .method(parts.method.as_str().try_into().unwrap())
+            // .version(parts.version.as_str().try_into().unwrap())
+            .uri((&parts.uri.to_string()[..]).try_into().unwrap());
+        *req.headers_mut().unwrap() = headermap_compat_01(parts.headers);
+        let req = req.body(body).unwrap();
+
         Box::new(
-            self.0
-                .request_body_async(req)
-                .map_err(|err| err.to_string()),
+            Box::pin(self.0.send_req(req))
+                .compat()
+                .map_err(|err| err.to_string())
+                .map(CompatBody::new),
         )
     }
+}
+
+struct CompatBody(hyper::Body);
+
+impl http_body_01::Body for CompatBody {
+    type Data = Cursor<bytes_04::Bytes>;
+    type Error = hyper::Error;
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
+        let poll = task_compat::with_context(|cx| Pin::new(self.0).poll_data(cx));
+        match poll {
+            Poll::Ready(Some(Ok(data))) => {
+                Ok(Async::Ready(Some(Cursor::new(Bytes::from(data.bytes())))))
+            }
+            Poll::Ready(Some(Err(e))) => Err(e),
+            Poll::Ready(None) => Ok(Async::Ready(None)),
+            Poll::Pending => Ok(Async::NotReady),
+        }
+    }
+
+    fn poll_trailers(&mut self) -> Poll01<Option<http_01::HeaderMap>, Self::Error> {
+        let poll = task_compat::with_context(|cx| Pin::new(&mut self.0).poll_trailers(cx));
+        match poll {
+            Poll::Ready(Some(Ok(headers))) => {
+                let headers = headermap_compat(headers);
+                Ok(Async::Ready(Some(headers)))
+            }
+            Poll::Ready(Some(Err(e))) => Err(e),
+            Poll::Ready(None) => Ok(Async::Ready(None)),
+            Poll::Pending => Ok(Async::NotReady),
+        }
+    }
+}
+
+fn headermap_compat(headers: http::HeaderMap) -> http_01::HeaderMap {
+    // XXX: this far from efficient, but hopefully this code will go away soon.
+    headers
+        .drain()
+        .map(|(k, v)| {
+            let name = http_01::header::HeaderName::from_bytes(k.as_ref()).unwrap();
+            let value = http_01::HeaderValue::from_bytes(v.as_ref()).unwrap();
+            (name, value)
+        })
+        .collect()
+}
+
+fn headermap_compat_01(headers: http_01::HeaderMap) -> http::HeaderMap {
+    // XXX: this far from efficient, but hopefully this code will go away soon.
+    headers
+        .drain()
+        .map(|(k, v)| {
+            let name = http::header::HeaderName::from_bytes(k.as_ref()).unwrap();
+            let value = http1::HeaderValue::from_bytes(v.as_ref()).unwrap();
+            (name, value)
+        })
+        .collect()
 }
