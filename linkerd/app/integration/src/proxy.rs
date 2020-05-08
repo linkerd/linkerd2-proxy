@@ -237,7 +237,12 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let (tx, mut rx) = shutdown_signal();
 
     if let Some(fut) = proxy.shutdown_signal {
-        rx = Box::new(rx.select(fut).then(|_| Ok(())));
+        rx = Box::pin(async move {
+            tokio::select! {
+                _ = rx => {},
+                _ = fut => {},
+            }
+        });
     }
 
     std::thread::Builder::new()
@@ -266,18 +271,18 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
-                        let on_shutdown = futures::future::poll_fn::<(), (), _>(move |cx| {
+                        let on_shutdown = futures::future::poll_fn::<(), _>(move |cx| {
                             if let Some((tx, addrs)) = running.take() {
                                 let _ = tx.send(addrs);
                             }
 
-                            futures::ready!(rx.poll(cx));
+                            futures::ready!((&mut rx).as_mut().poll(cx));
                             debug!("shutdown");
                             Poll::Ready(())
                         });
 
                         let drain = main.spawn();
-                        on_shutdown.compat().await.expect("proxy");
+                        on_shutdown.await;
                         drain.drain().await;
                     });
             })
@@ -285,7 +290,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         .expect("spawn");
 
     let (tap_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
-        running_rx.wait().unwrap();
+        futures::executor::block_on(running_rx).unwrap();
 
     // printlns will show if the test fails...
     println!(

@@ -8,6 +8,8 @@ pub use self::test_env::TestEnv;
 pub use bytes::Bytes;
 use bytes::{Buf, BufMut};
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
+
+use futures_01::{Async, Future as Future01, Poll as Poll01, Stream as Stream01};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app as app;

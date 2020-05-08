@@ -79,14 +79,19 @@ impl TcpServer {
         U: Into<Vec<u8>>,
     {
         self.accept_fut(move |sock| {
-            async move {
-                let mut vec = vec![0; 1024];
-                let n = sock.read(&mut vec).await?;
-                vec.truncate(n);
-                let write = cb(vec).into();
-                sock.write_all(vec).await?
-            }
-            .map_err(|e| panic!("tcp server error: {}", e))
+            Box::pin(
+                async move {
+                    let mut vec = vec![0; 1024];
+                    let n = sock.read(&mut vec).await?;
+                    vec.truncate(n);
+                    let write = cb(vec).into();
+                    sock.write_all(&vec).await
+                }
+                .map(|r| match r {
+                    Err(e) => panic!("tcp server error: {}", e),
+                    _ => {}
+                }),
+            )
         })
     }
 
@@ -145,18 +150,28 @@ impl TcpConn {
 }
 
 fn run_client(addr: SocketAddr) -> TcpSender {
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (tx, rx) = mpsc::unbounded_channel::<
+        oneshot::Sender<
+            mpsc::UnboundedSender<(
+                Option<Vec<u8>>,
+                oneshot::Sender<Result<Option<Vec<u8>>, io::Error>>,
+            )>,
+        >,
+    >();
     let tname = format!("support tcp client (addr={})", addr);
     ::std::thread::Builder::new()
         .name(tname)
         .spawn(move || {
-            let mut core =
-                runtime::current_thread::Runtime::new().expect("support tcp client runtime");
+            let mut core = tokio_compat::runtime::current_thread::Runtime::new()
+                .expect("support tcp client runtime");
 
             let work = async move {
                 while let Some(cb) = rx.recv().await {
                     let tcp = TcpStream::connect(&addr).await.expect("tcp connect error");
-                    let (tx, rx) = mpsc::unbounded_channel();
+                    let (tx, rx) = mpsc::unbounded_channel::<(
+                        Option<Vec<u8>>,
+                        oneshot::Sender<Result<Option<Vec<u8>>, io::Error>>,
+                    )>();
                     cb.send(tx);
                     tokio::spawn(async move {
                         while let Some((action, cb)) = rx.recv().await {
@@ -166,7 +181,7 @@ fn run_client(addr: SocketAddr) -> TcpSender {
                                     match tcp.read(&mut vec).await {
                                         Ok(n) => {
                                             vec.truncate(n);
-                                            cb.send(Ok(Some(vec)));
+                                            let _ = cb.send(Ok(Some(vec)));
                                         }
                                         Err(e) => {
                                             cb.send(Err(e));
@@ -174,8 +189,10 @@ fn run_client(addr: SocketAddr) -> TcpSender {
                                         }
                                     }
                                 }
-                                Some(vec) => match tcp.write_all(vec).await {
-                                    Ok(_) => cb.send(Ok(None)),
+                                Some(vec) => match tcp.write_all(&vec).await {
+                                    Ok(_) => {
+                                        let _ = cb.send(Ok(None));
+                                    }
                                     Err(e) => {
                                         cb.send(Err(e));
                                         break;
@@ -186,7 +203,7 @@ fn run_client(addr: SocketAddr) -> TcpSender {
                     });
                 }
             };
-            core.block_on(work).unwrap();
+            core.block_on_std(work);
         })
         .unwrap();
 

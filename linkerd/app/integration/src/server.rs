@@ -141,16 +141,16 @@ impl Server {
 
     pub fn delay_listen<F>(self, f: F) -> Listening
     where
-        F: Future<Item = (), Error = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
     {
-        self.run_inner(Some(Box::new(f.then(|_| Ok(())))))
+        self.run_inner(Some(Box::pin(f)))
     }
 
     pub fn run(self) -> Listening {
         self.run_inner(None)
     }
 
-    fn run_inner(self, delay: Option<impl Future<Output = ()> + Send>) -> Listening {
+    fn run_inner(self, delay: Option<impl Future<Output = ()> + Send + 'static>) -> Listening {
         let (tx, rx) = shutdown_signal();
         let (listening_tx, listening_rx) = oneshot::channel();
         let mut listening_tx = Some(listening_tx);
@@ -181,7 +181,7 @@ impl Server {
                         delay.await;
                     }
                     let listener = listener.listen(1024).expect("Tcp::listen");
-                    let listener = TcpListener::from_std(listener).await.expect("from_std");
+                    let listener = TcpListener::from_std(listener).expect("from_std");
 
                     if let Some(listening_tx) = listening_tx {
                         let _ = listening_tx.send(());
@@ -192,7 +192,7 @@ impl Server {
                         let http = http.clone();
                         let srv_conn_count = srv_conn_count.clone();
                         let svc = new_svc.call(());
-                        tokio::spawn(async move {
+                        tokio::task::spawn_local(async move {
                             let svc = svc.await;
                             srv_conn_count.fetch_add(1, Ordering::Release);
                             let svc = svc
@@ -202,23 +202,24 @@ impl Server {
                                 .map_err(|e| println!("support/server error: {}", e))
                         });
                     }
+                    Ok::<(), io::Error>(())
                 };
 
-                tokio::runtime::Runtime::builder()
+                let mut rt = tokio::runtime::Builder::new()
                     .basic_scheduler()
                     .enable_all()
                     .build()
-                    .expect("initialize support server runtime")
-                    .block_on(async move {
-                        tokio::select! {
-                            _ = serve => {},
-                            _ = rx => {},
-                        }
-                    });
+                    .expect("initialize support server runtime");
+                tokio::task::LocalSet::new().block_on(&mut rt, async move {
+                    tokio::select! {
+                        res = serve => res,
+                        _ = rx => Ok(()),
+                    }
+                })
             })
             .unwrap();
 
-        listening_rx.wait().expect("listening_rx");
+        futures::executor::block_on(listening_rx).expect("listening_rx");
 
         // printlns will show if the test fails...
         println!("{:?} server running; addr={}", version, addr,);
@@ -251,7 +252,7 @@ impl Route {
     fn string(body: &str) -> Route {
         let body = Bytes::from(body);
         Route(Box::new(move |_| {
-            Box::new(future::ok(
+            Box::pin(future::ok(
                 http::Response::builder()
                     .status(200)
                     .body(body.clone())
@@ -332,8 +333,8 @@ async fn accept_connection(
 ) -> Result<RunningIo, io::Error> {
     match tls {
         Some(cfg) => {
-            let io = TlsAcceptor::from(cfg).accept(io).await;
-            Ok(RunningIo(Box::new(io)))
+            let io = TlsAcceptor::from(cfg).accept(io).await?;
+            Ok(RunningIo(Box::new(io), None))
         }
 
         None => Ok(RunningIo(Box::new(io), None)),
