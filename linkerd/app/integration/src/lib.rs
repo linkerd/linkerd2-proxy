@@ -6,20 +6,25 @@ mod test_env;
 
 pub use self::test_env::TestEnv;
 pub use bytes::Bytes;
-pub use futures::sync::oneshot;
-pub use futures::{future::Executor, *};
+use bytes::{Buf, BufMut};
+pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app as app;
 pub use std::collections::HashMap;
 use std::fmt;
+pub use std::future::Future;
 use std::io;
 use std::io::{Read, Write};
 pub use std::net::SocketAddr;
+use std::pin::Pin;
 pub use std::sync::Arc;
+use std::task::{Context, Poll};
 pub use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
+pub use tokio::stream::{Stream, StreamExt};
+pub use tokio::sync::oneshot;
 use tokio_compat::runtime::{self, current_thread};
 use tokio_connect::Connect;
 pub use tower::Service;
@@ -166,11 +171,46 @@ impl Write for RunningIo {
     }
 }
 
-impl AsyncRead for RunningIo {}
+impl AsyncRead for RunningIo {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<usize> {
+        self.as_mut().0.as_mut().poll_read(cx, buf)
+    }
+
+    fn poll_read_buf<B: BufMut>(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        mut buf: &mut B,
+    ) -> Poll<usize> {
+        // A trait object of AsyncWrite would use the default poll_read_buf,
+        // which doesn't allow vectored writes. Going through this method
+        // allows the trait object to call the specialized write_buf method.
+        self.as_mut().0.as_mut().poll_read_buf_erased(cx, &mut buf)
+    }
+
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [std::mem::MaybeUninit<u8>]) -> bool {
+        self.0.prepare_uninitialized_buffer(buf)
+    }
+}
 
 impl AsyncWrite for RunningIo {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.0.shutdown()
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        self.as_mut().0.as_mut().poll_shutdown(cx)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        self.as_mut().0.as_mut().poll_flush(cx)
+    }
+
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<usize> {
+        self.as_mut().0.as_mut().poll_write(cx, buf)
+    }
+
+    fn poll_write_buf<B: Buf>(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut B,
+    ) -> Poll<usize> {
+        self.as_mut().0.as_mut().poll_write_buf(cx, buf)
     }
 }
 
@@ -189,7 +229,7 @@ impl Shutdown {
     }
 }
 
-pub type ShutdownRx = Box<dyn Future<Item = (), Error = ()> + Send>;
+pub type ShutdownRx = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 /// A channel used to signal when a Client's related connection is running or closed.
 pub fn running() -> (oneshot::Sender<()>, Running) {
@@ -198,7 +238,7 @@ pub fn running() -> (oneshot::Sender<()>, Running) {
     (tx, rx)
 }
 
-pub type Running = Box<dyn Future<Item = (), Error = ()> + Send>;
+pub type Running = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 pub fn s(bytes: &[u8]) -> &str {
     ::std::str::from_utf8(bytes.as_ref()).unwrap()
@@ -238,37 +278,30 @@ impl fmt::Display for HumanDuration {
 }
 
 pub trait FutureWaitExt: Future {
-    fn wait_timeout(self, dur: Duration) -> Result<Self::Item, Waited<Self::Error>>
+    fn wait_timeout(self, dur: Duration) -> Result<Self::Output, Waited<()>>
     where
         Self: Sized,
     {
-        use std::thread;
-        use std::time::Instant;
+        tokio::runtime::Builder::new()
+            .basic_scheduler()
+            .enable_all()
+            .build()
+            .expect("build rt")
+            .block_on(async move {
+                tokio::time::timeout(dur, self)
+                    .await
+                    .map_err(|_| Waited::TimedOut)
+            })
+    }
 
-        struct ThreadNotify(thread::Thread);
-
-        impl futures::executor::Notify for ThreadNotify {
-            fn notify(&self, _id: usize) {
-                self.0.unpark();
-            }
-        }
-
-        let deadline = Instant::now() + dur;
-        let mut task = futures::executor::spawn(self);
-        let notify = Arc::new(ThreadNotify(thread::current()));
-
-        loop {
-            match task.poll_future_notify(&notify, 0)? {
-                Async::Ready(val) => return Ok(val),
-                Async::NotReady => {
-                    let now = Instant::now();
-                    if now >= deadline {
-                        return Err(Waited::TimedOut);
-                    }
-
-                    thread::park_timeout(deadline - now);
-                }
-            }
+    fn try_wait_timeout(self, dur: Duration) -> Result<Self::Ok, Waited<Error>>
+    where
+        Self: TryFuture + Sized,
+    {
+        match self.wait_timeout(dur) {
+            Ok(Ok(x)) => Ok(x),
+            Ok(Err(e)) => Err(Waited::Error(e)),
+            Err(_) => Err(Waited::TimedOut),
         }
     }
 }
