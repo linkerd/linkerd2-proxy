@@ -19,7 +19,7 @@ pub use std::net::SocketAddr;
 pub use std::sync::Arc;
 pub use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::{net::TcpListener, reactor};
+use tokio::net::TcpListener;
 use tokio_compat::runtime::{self, current_thread};
 use tokio_connect::Connect;
 pub use tower::Service;
