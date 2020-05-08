@@ -10,7 +10,7 @@ use tracing::trace;
 
 /// A future that drives the inner service.
 pub struct Dispatch<S, Req, F> {
-    inner: Option<S>,
+    inner: S,
     rx: mpsc::Receiver<InFlight<Req, F>>,
     ready: watch::Sender<Poll<(), ServiceError>>,
     ready_set: bool,
@@ -32,7 +32,7 @@ where
         max_idle: Option<Duration>,
     ) -> Self {
         Self {
-            inner: Some(inner),
+            inner,
             rx,
             ready,
             ready_set: false,
@@ -64,6 +64,7 @@ where
     /// requests of the failure.
     fn fail(&mut self, error: impl Into<Error>) -> Result<(), ()> {
         let shared = ServiceError(Arc::new(error.into()));
+        println!("Failing {}", shared);
         trace!(%shared, "Inner service failed");
 
         // First, notify services of the readiness change to prevent new requests from
@@ -74,9 +75,6 @@ where
         while let Ok(Async::Ready(Some(InFlight { tx, .. }))) = self.rx.poll() {
             let _ = tx.send(Err(shared.clone().into()));
         }
-
-        // Drop the inner Service to free its resources. It won't be used again.
-        self.inner = None;
 
         broadcast.map(|_| ()).map_err(|_| ())
     }
@@ -102,15 +100,7 @@ where
 
         // Drive requests from the queue to the inner service.
         loop {
-            let ready = match self.inner.as_mut() {
-                Some(inner) => inner.poll_ready(),
-                None => {
-                    // This is safe because ready.poll_close has returned NotReady.
-                    return Ok(Async::NotReady);
-                }
-            };
-
-            match ready {
+            match self.inner.poll_ready() {
                 // If it's not ready, wait for it..
                 Ok(Async::NotReady) => {
                     // `ready` stays in whatever state it's in. If we've already
@@ -156,11 +146,7 @@ where
                 // If a request was ready, dispatch it and return the future to the caller.
                 Ok(Async::Ready(Some(InFlight { request, tx }))) => {
                     trace!("Dispatching a request");
-                    let fut = self
-                        .inner
-                        .as_mut()
-                        .expect("Service must not be dropped")
-                        .call(request);
+                    let fut = self.inner.call(request);
                     let _ = tx.send(Ok(fut));
 
                     self.current_idle = None;
@@ -267,10 +253,6 @@ mod test {
 
                 Delay::new(Instant::now() + max_idle).map(move |()| {
                     assert!(dispatch.poll().unwrap().is_ready(),);
-                    assert!(
-                        dispatch.inner.is_none(),
-                        "Did not drop inner service after timeout."
-                    );
                     assert!(
                         ready_rx.get_ref().is_err(),
                         "Did not advertise an error to consumers."
