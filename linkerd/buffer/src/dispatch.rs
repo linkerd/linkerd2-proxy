@@ -64,7 +64,6 @@ where
     /// requests of the failure.
     fn fail(&mut self, error: impl Into<Error>) {
         let shared = ServiceError(Arc::new(error.into()));
-        println!("Failing {}", shared);
         trace!(%shared, "Inner service failed");
 
         // First, notify services of the readiness change to prevent new requests from
