@@ -38,7 +38,7 @@ impl<Req, S> tower::layer::Layer<S> for SpawnBufferLayer<Req>
 where
     Req: Send + 'static,
     S: tower::Service<Req> + Send + 'static,
-    S::Error: Into<Error>,
+    S::Error: Into<Error> + Send + 'static,
     S::Response: Send + 'static,
     S::Future: Send + 'static,
 {

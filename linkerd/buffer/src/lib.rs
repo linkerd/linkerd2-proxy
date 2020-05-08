@@ -8,7 +8,7 @@ pub mod error;
 mod layer;
 mod service;
 
-pub use self::{dispatch::Dispatch, layer::SpawnBufferLayer, service::Buffer};
+pub use self::{layer::SpawnBufferLayer, service::Buffer};
 
 struct InFlight<Req, F> {
     request: Req,
@@ -19,27 +19,33 @@ pub(crate) fn new<Req, S>(
     inner: S,
     capacity: usize,
     idle_timeout: Option<Duration>,
-) -> (Buffer<Req, S::Future>, Dispatch<S, Req, S::Future>)
+) -> (
+    Buffer<Req, S::Future>,
+    impl std::future::Future<Output = ()> + Send + 'static,
+)
 where
     Req: Send + 'static,
     S: tower::Service<Req> + Send + 'static,
-    S::Error: Into<Error>,
+    S::Error: Into<Error> + Send + 'static,
     S::Response: Send + 'static,
     S::Future: Send + 'static,
 {
+    use futures::future;
+
     let (tx, rx) = mpsc::channel(capacity);
     let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
-    let dispatch = Dispatch::new(inner, rx, ready_tx, idle_timeout);
+    let idle = move || match idle_timeout {
+        Some(t) => future::Either::Left(dispatch::idle(t)),
+        None => future::Either::Right(future::pending()),
+    };
+    let dispatch = dispatch::run(inner, rx, ready_tx, idle);
     (Buffer::new(tx, ready_rx), dispatch)
 }
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-    use std::task::{Context, Poll};
-    use std::{future::Future, pin::Pin};
+    use std::task::Poll;
     use tokio_test::{assert_pending, assert_ready, assert_ready_ok, task};
-    use tower::util::ServiceExt;
     use tower_test::mock;
 
     #[test]
@@ -62,60 +68,12 @@ mod test {
 
         handle.send_error(Bad);
         assert_pending!(dispatch.poll());
-        assert_eq!(
-            Poll::Ready(Err(String::from("bad"))),
-            service.poll_ready().map_err(|e| e.to_string())
+        assert!(
+            matches!(service.poll_ready(), Poll::Ready(Err(e)) if e.source().unwrap().is::<Bad>())
         );
 
         drop(service);
         assert_ready!(dispatch.poll());
-    }
-
-    #[tokio::test]
-    async fn repolls_ready_on_notification() {
-        struct ReadyNotify {
-            notified: bool,
-            _handle: Arc<()>,
-        }
-        impl tower::Service<()> for ReadyNotify {
-            type Response = ();
-            type Error = Bad;
-            type Future = Pin<Box<dyn Future<Output = Result<(), Bad>> + Send + Sync + 'static>>;
-
-            fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Bad>> {
-                println!("Polling");
-                if self.notified {
-                    return Poll::Ready(Err(Bad));
-                }
-
-                println!("Notifying");
-                cx.waker().wake_by_ref();
-                self.notified = true;
-                Poll::Ready(Ok(()))
-            }
-
-            fn call(&mut self, _: ()) -> Self::Future {
-                unimplemented!("not called");
-            }
-        }
-
-        let _handle = Arc::new(());
-        let handle = Arc::downgrade(&_handle);
-        let (mut service, dispatch) = super::new(
-            ReadyNotify {
-                _handle,
-                notified: false,
-            },
-            1,
-            None,
-        );
-        tokio::spawn(dispatch);
-        let ret = service.ready_and().await;
-        assert!(ret.is_err());
-        assert!(
-            handle.upgrade().is_none(),
-            "inner service must be dropped on error"
-        );
     }
 
     #[derive(Debug)]
