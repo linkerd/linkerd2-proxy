@@ -1,5 +1,7 @@
 use super::*;
-use futures_03::compat::Future01CompatExt;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::Poll;
 
 pub fn new() -> Proxy {
     Proxy::new()
@@ -22,7 +24,7 @@ pub struct Proxy {
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
     outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
 
-    shutdown_signal: Option<Box<dyn Future<Item = (), Error = ()> + Send>>,
+    shutdown_signal: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
 pub struct Listening {
@@ -264,14 +266,14 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
-                        let on_shutdown = futures::future::poll_fn::<(), (), _>(move || {
+                        let on_shutdown = futures::future::poll_fn::<(), (), _>(move |cx| {
                             if let Some((tx, addrs)) = running.take() {
                                 let _ = tx.send(addrs);
                             }
 
-                            try_ready!(rx.poll().map_err(|_| ()));
+                            futures::ready!(rx.poll(cx));
                             debug!("shutdown");
-                            Ok(().into())
+                            Poll::Ready(())
                         });
 
                         let drain = main.spawn();

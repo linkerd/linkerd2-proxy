@@ -1,6 +1,7 @@
 use super::*;
 use bytes::{BufMut, BytesMut};
 use linkerd2_proxy_api::tap as pb;
+use std::task::Poll;
 
 pub fn client(addr: SocketAddr) -> Client {
     let api = pb::client::Tap::new(SyncSvc(client::http2(addr, "localhost")));

@@ -1,12 +1,10 @@
 use super::*;
-use bytes::IntoBuf;
-use futures::sync::{mpsc, oneshot};
 use rustls::ClientConfig;
 use std::io;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tokio::executor::DefaultExecutor;
 use tokio::net::TcpStream;
+use tokio::sync::{mpsc, oneshot};
 use tracing::info_span;
 use tracing_futures::Instrument;
 use webpki::{DNSName, DNSNameRef};
@@ -113,9 +111,9 @@ impl Client {
         }
     }
 
-    pub fn get(&self, path: &str) -> String {
+    pub async fn get(&self, path: &str) -> String {
         let mut req = self.request_builder(path);
-        let res = self.request(req.method("GET"));
+        let res = self.request_async(req.method("GET")).await;
         assert!(
             res.status().is_success(),
             "client.get({:?}) expects 2xx, got \"{}\"",
@@ -123,33 +121,28 @@ impl Client {
             res.status(),
         );
         let stream = res.into_parts().1;
-        stream
-            .concat2()
-            .map(|body| ::std::str::from_utf8(&body).unwrap().to_string())
-            .wait()
-            .expect("get() wait body")
+        let body = hyper::body::aggregate(stream).await.expect("wait body");
+        std::str::from_utf8(&body).unwrap().to_string()
     }
 
-    pub fn request_async(
+    pub async fn request_async(
         &self,
         builder: &mut http::request::Builder,
-    ) -> Box<dyn Future<Item = Response, Error = ClientError> + Send> {
-        self.send_req(builder.body(Bytes::new()).unwrap())
+    ) -> Result<Response, ClientError> {
+        self.send_req(builder.body(Bytes::new()).unwrap()).await
     }
 
     pub fn request(&self, builder: &mut http::request::Builder) -> Response {
         self.request_async(builder).wait().expect("response")
     }
 
-    pub fn request_body(&self, req: Request) -> Response {
-        self.send_req(req).wait().expect("response")
+    #[tokio::main]
+    pub async fn request_body(&self, req: Request) -> Response {
+        self.send_req(req).await.expect("response")
     }
 
-    pub fn request_body_async(
-        &self,
-        req: Request,
-    ) -> Box<dyn Future<Item = Response, Error = ClientError> + Send> {
-        self.send_req(req)
+    pub async fn request_body_async(&self, req: Request) -> Result<Response, ClientError> {
+        self.send_req(req).await
     }
 
     pub fn request_builder(&self, path: &str) -> http::request::Builder {
@@ -166,10 +159,8 @@ impl Client {
         b
     }
 
-    fn send_req(
-        &self,
-        mut req: Request,
-    ) -> Box<dyn Future<Item = Response, Error = ClientError> + Send> {
+    #[tracing::instrument(skip(self))]
+    async fn send_req(&self, mut req: Request) -> Result<Response, ClientError> {
         if req.uri().scheme_part().is_none() {
             if self.tls.is_some() {
                 *req.uri_mut() = format!("https://{}{}", self.authority, req.uri().path())
@@ -184,7 +175,7 @@ impl Client {
         tracing::debug!(headers = ?req.headers(), "request");
         let (tx, rx) = oneshot::channel();
         let _ = self.tx.unbounded_send((req, tx));
-        Box::new(rx.then(|oneshot_result| oneshot_result.expect("request canceled")))
+        rx.await.expect("request cancelled")
     }
 
     pub fn wait_for_closed(self) {
@@ -199,7 +190,8 @@ enum Run {
 }
 
 fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Running) {
-    let (tx, rx) = mpsc::unbounded::<(Request, oneshot::Sender<Result<Response, ClientError>>)>();
+    let (tx, rx) =
+        mpsc::unbounded_channel::<(Request, oneshot::Sender<Result<Response, ClientError>>)>();
     let (running_tx, running_rx) = running();
 
     let tname = format!("support {:?} server (test={})", version, thread_name(),);
