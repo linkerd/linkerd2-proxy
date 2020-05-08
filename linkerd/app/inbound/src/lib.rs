@@ -34,7 +34,6 @@ use linkerd2_app_core::{
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
@@ -48,7 +47,7 @@ mod set_remote_ip_on_req;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
-    pub require_identity_for_inbound_ports: Arc<IndexSet<u16>>,
+    pub require_identity_for_inbound_ports: IndexSet<u16>,
 }
 
 pub struct Inbound {
@@ -278,7 +277,7 @@ impl Config {
                     disable_protocol_detection_for_ports.clone(),
                 )))
                 .push(admit::AdmitLayer::new(RequireIdentityForPorts::new(
-                    require_identity_for_inbound_ports,
+                    require_identity_for_inbound_ports.into_iter(),
                 )))
                 // Terminates inbound mTLS from other outbound proxies.
                 .push(tls::AcceptTls::layer(
