@@ -1,5 +1,6 @@
 use super::*;
 use bytes::BytesMut;
+use futures::compat::{Future01CompatExt, Stream01CompatExt};
 use http_body::Body;
 use linkerd2_proxy_api::tap as pb;
 use std::io::Cursor;
@@ -19,23 +20,25 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn observe(
+    pub async fn observe(
         &mut self,
         req: ObserveBuilder,
-    ) -> impl Stream01<Item = pb::TapEvent, Error = tower_grpc::Status> {
+    ) -> impl Stream<Item = Result<pb::TapEvent, tower_grpc::Status>> {
         let req = tower_grpc::Request::new(req.0);
         self.api
             .observe(req)
-            .wait()
+            .compat()
+            .await
             .expect("tap observe wait")
             .into_inner()
+            .compat()
     }
 
-    pub fn observe_with_require_id(
+    pub async fn observe_with_require_id(
         &mut self,
         req: ObserveBuilder,
         require_id: &str,
-    ) -> impl Stream01<Item = pb::TapEvent, Error = tower_grpc::Status> {
+    ) -> impl Stream<Item = Result<pb::TapEvent, tower_grpc::Status>> {
         let mut req = tower_grpc::Request::new(req.0);
 
         let require_id = tower_grpc::metadata::MetadataValue::from_str(require_id).unwrap();
@@ -43,9 +46,11 @@ impl Client {
 
         self.api
             .observe(req)
-            .wait()
+            .compat()
+            .await
             .expect("tap observe wait")
             .into_inner()
+            .compat()
     }
 }
 
@@ -203,7 +208,6 @@ where
     }
 
     fn call(&mut self, req: http_01::Request<B>) -> Self::Future {
-        use bytes::BufMut;
         use bytes_04::{Buf, IntoBuf};
         // XXX: this is all terrible, but hopefully all this code can leave soon.
         let (parts, mut body) = req.into_parts();
@@ -249,7 +253,6 @@ impl http_body_01::Body for CompatBody {
     }
 
     fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
-        use bytes::Buf;
         let poll = task_compat::with_context(|cx| Pin::new(&mut self.0).poll_data(cx));
         match poll {
             Poll::Ready(Some(Ok(data))) => Ok(Async::Ready(Some(Cursor::new(

@@ -90,7 +90,7 @@ macro_rules! assert_eventually {
                 })
                 .unwrap_or($crate::DEFAULT_TEST_PATIENCE);
             let start_t = Instant::now();
-            for i in 0..($retries + 1) {
+            for i in 0i32..($retries as i32 + 1i32) {
                 if $cond {
                     break;
                 } else if i == $retries {
