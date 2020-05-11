@@ -227,9 +227,9 @@ fn ready() {
     assert_eventually!(ready().status() == http::StatusCode::OK);
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "nyi"), ignore)]
-fn refresh() {
+async fn refresh() {
     let _ = trace_init();
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity::Identity {
@@ -265,10 +265,10 @@ fn refresh() {
     env.put(app::env::ENV_IDENTITY_MIN_REFRESH, "0ms".into());
     let _proxy = proxy::new().identity(id_svc).run_with_test_env(env);
 
-    let expiry = expiry_rx.wait().expect("wait for expiry");
+    let expiry = expiry_rx.await.expect("wait for expiry");
     let how_long = expiry.duration_since(SystemTime::now()).unwrap();
 
-    std::thread::sleep(how_long);
+    tokio::time::delay_for(how_long).await;
 
     assert_eventually!(refreshed.load(Ordering::SeqCst) == true);
 }
