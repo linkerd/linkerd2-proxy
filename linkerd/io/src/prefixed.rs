@@ -98,16 +98,16 @@ impl<S: Io> Io for PrefixedIo<S> {
     fn poll_write_buf_erased(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut dyn Buf,
+        mut buf: &mut dyn Buf,
     ) -> Poll<usize> {
-        self.project().io.poll_write_buf_erased(cx, buf)
+        self.poll_write_buf(cx, &mut buf)
     }
 
     fn poll_read_buf_erased(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut dyn BufMut,
+        mut buf: &mut dyn BufMut,
     ) -> Poll<usize> {
-        self.project().io.poll_read_buf_erased(cx, buf)
+        self.poll_read_buf(cx, &mut buf)
     }
 }
