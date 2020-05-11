@@ -13,6 +13,7 @@ use std::thread;
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
 use tokio_rustls::TlsAcceptor;
+use tracing_futures::Instrument;
 
 pub fn new() -> Server {
     http2()
@@ -178,10 +179,12 @@ impl Server {
         let addr = listener.local_addr().expect("Tcp::local_addr");
 
         let tls_config = self.tls.clone();
-
         ::std::thread::Builder::new()
             .name(tname)
             .spawn(move || {
+                let (subscriber, _) = trace_init();
+                let _subscriber = subscriber.set_default();
+                tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
                 let mut http = hyper::server::conn::Http::new();
                 match self.version {
@@ -199,22 +202,27 @@ impl Server {
                     if let Some(listening_tx) = listening_tx {
                         let _ = listening_tx.send(());
                     }
-
+                    tracing::info!("listening!");
                     loop {
-                        let (sock, _) = listener.accept().await?;
-                        let sock = accept_connection(sock, tls_config.clone()).await?;
+                        let (sock, addr) = listener.accept().await?;
+                        let span = tracing::debug_span!("conn", %addr);
+                        let sock = accept_connection(sock, tls_config.clone()).instrument(span.clone()).await?;
                         let http = http.clone();
                         let srv_conn_count = srv_conn_count.clone();
                         let svc = new_svc.call(());
                         tokio::task::spawn_local(async move {
+                            tracing::trace!("serving...");
                             let svc = svc.await;
+                            tracing::trace!("service acquired");
                             srv_conn_count.fetch_add(1, Ordering::Release);
                             let svc = svc
                                 .map_err(|e| println!("support/server new_service error: {}", e))?;
-                            http.serve_connection(sock, svc)
+                            let result = http.serve_connection(sock, svc)
                                 .await
-                                .map_err(|e| println!("support/server error: {}", e))
-                        });
+                                .map_err(|e| println!("support/server error: {}", e));
+                            tracing::trace!(?result, "serve done");
+                            result
+                        }.instrument(span.clone()));
                     }
                 };
 
@@ -228,7 +236,7 @@ impl Server {
                         res = serve => res,
                         _ = rx => { Ok::<(), io::Error>(())},
                     }
-                })
+                }.instrument(tracing::info_span!("test_server", ?version, %addr)))
             })
             .unwrap();
 
@@ -299,7 +307,10 @@ impl Svc {
     ) -> Pin<Box<dyn Future<Output = Result<Response<Bytes>, BoxError>> + Send + Sync + 'static>>
     {
         match self.0.get(req.uri().path()) {
-            Some(Route(ref func)) => func(req),
+            Some(Route(ref func)) => {
+                tracing::trace!(path = %req.uri().path(), "found route for path");
+                func(req)
+            }
             None => {
                 println!("server 404: {:?}", req.uri().path());
                 let res = http::Response::builder()
@@ -353,7 +364,8 @@ async fn accept_connection(
     io: TcpStream,
     tls: Option<Arc<ServerConfig>>,
 ) -> Result<RunningIo, io::Error> {
-    match tls {
+    tracing::debug!(tls = tls.is_some(), "accepting connection");
+    let res = match tls {
         Some(cfg) => {
             let io = TlsAcceptor::from(cfg).accept(io).await?;
             Ok(RunningIo {
@@ -368,5 +380,7 @@ async fn accept_connection(
             abs_form: false,
             _running: None,
         }),
-    }
+    };
+    tracing::trace!("connection accepted");
+    res
 }

@@ -29,6 +29,7 @@ use tokio_compat::runtime::{self};
 pub use tower::Service;
 pub use tower_grpc as grpc;
 pub use tracing::*;
+pub use tracing_subscriber::prelude::*;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";

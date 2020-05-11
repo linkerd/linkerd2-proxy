@@ -208,12 +208,16 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
     ::std::thread::Builder::new()
         .name(tname)
         .spawn(move || {
+            let (subscriber, _) = trace_init();
+            let _subscriber = subscriber.set_default();
+            tracing::info!("support client running");
+
             let mut runtime = tokio::runtime::Builder::new()
                 .enable_all()
                 .basic_scheduler()
                 .build()
                 .expect("initialize support client runtime");
-
+            
             let absolute_uris = if let Run::Http1 { absolute_uris } = version {
                 absolute_uris
             } else {
@@ -240,14 +244,16 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                 let mut rx = rx;
                 while let Some((req, cb)) = rx.recv().await {
                     let req = req.map(hyper::Body::from);
+                    tracing::trace!(?req);
                     let req = client.request(req);
-                    tokio::spawn(
+                    let res = tokio::spawn(
                         async move {
                             let result = req.await;
                             let _ = cb.send(result);
                         }
                         .in_current_span(),
-                    );
+                    ).await;
+                    tracing::trace!(?res);
                 }
             };
 

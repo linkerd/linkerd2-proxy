@@ -928,6 +928,7 @@ dependencies = [
  "tower-grpc",
  "tracing",
  "tracing-futures 0.1.0",
+ "tracing-subscriber",
  "webpki",
 ]
 
