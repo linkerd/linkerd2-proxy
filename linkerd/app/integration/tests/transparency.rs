@@ -84,7 +84,7 @@ fn inbound_tcp() {
     assert_eq!(tcp_client.read(), msg2.as_bytes());
 }
 
-async fn test_server_speaks_first(env: TestEnv) {
+fn test_server_speaks_first(env: TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     let _ = trace_init();
@@ -124,13 +124,13 @@ async fn test_server_speaks_first(env: TestEnv) {
     rx.recv_timeout(TIMEOUT).unwrap();
 }
 
-#[tokio::test]
-async fn tcp_server_first() {
-    test_server_speaks_first(TestEnv::new()).await;
+#[test]
+fn tcp_server_first() {
+    test_server_speaks_first(TestEnv::new());
 }
 
-#[tokio::test]
-async fn tcp_server_first_tls() {
+#[test]
+fn tcp_server_first_tls() {
     use std::path::PathBuf;
 
     let (_cert, _key, _trust_anchors) = {
@@ -169,7 +169,7 @@ async fn tcp_server_first_tls() {
     //    "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
     //);
 
-    test_server_speaks_first(env).await
+    test_server_speaks_first(env)
 }
 
 #[test]

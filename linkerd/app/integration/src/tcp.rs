@@ -120,13 +120,10 @@ impl TcpConn {
             .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
     }
 
-    pub fn read_timeout(&self, timeout: Duration) -> Vec<u8> {
-        tokio::runtime::Builder::new()
-            .enable_all()
-            .basic_scheduler()
-            .build()
-            .unwrap()
-            .block_on(tokio::time::timeout(timeout, self.read_future()))
+    #[tokio::main(basic_scheduler)]
+    pub async fn read_timeout(&self, timeout: Duration) -> Vec<u8> {
+        tokio::time::timeout(timeout, self.read_future())
+            .await
             .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
             .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
     }
@@ -242,7 +239,8 @@ fn run_server(tcp: TcpServer) -> server::Listening {
             let mut accepts = tcp.accepts;
 
             let listen = async move {
-                let mut listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
+                let mut listener =
+                    TcpListener::from_std(std_listener).expect("TcpListener::from_std");
 
                 loop {
                     let (sock, _) = listener.accept().await.unwrap();
