@@ -31,11 +31,11 @@ tokio-compat = "0.1"
 tokio_02 = {package = "tokio", version = "0.2", features = ["rt-util"] }
 
 [dev-dependencies]
-bytes = "0.4"
-h2 = "0.1"
-http = "0.1"
-http-body = "0.1"
-hyper = "0.12"
+bytes = "0.5"
+h2 = "0.2"
+http = "0.2"
+http-body = "0.3"
+hyper = "0.13"
 linkerd2-metrics = { path = "../metrics", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
 net2 = "0.2"

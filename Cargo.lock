@@ -766,13 +766,13 @@ dependencies = [
 name = "linkerd2-app"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
+ "bytes 0.5.4",
  "futures 0.1.26",
  "futures 0.3.4",
- "h2 0.1.26",
- "http 0.1.21",
- "http-body 0.1.0",
- "hyper 0.12.34",
+ "h2 0.2.4",
+ "http 0.2.1",
+ "http-body 0.3.1",
+ "hyper 0.13.5",
  "indexmap",
  "ipnet",
  "linkerd2-app-core",

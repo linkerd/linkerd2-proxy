@@ -108,8 +108,9 @@ impl Client {
         }
     }
 
-    pub fn get(&self, path: &str) -> String {
-        futures::executor::block_on(self.get_async(path))
+    #[tokio::main]
+    pub async fn get(&self, path: &str) -> String {
+        self.get_async(path).await
     }
 
     pub async fn get_async(&self, path: &str) -> String {
@@ -138,17 +139,18 @@ impl Client {
         self.send_req(builder.body(Bytes::new()).unwrap()).await
     }
 
-    pub fn request(&self, builder: http::request::Builder) -> Response {
-        futures::executor::block_on(self.request_async(builder)).expect("response")
+    #[tokio::main]
+    pub async fn request(&self, builder: http::request::Builder) -> Response {
+        self.request_async(builder).await.expect("response")
     }
 
     #[tokio::main]
     pub async fn request_body(&self, req: Request) -> Response {
-        self.send_req(req).await.expect("response")
+        self.request_body_async(req).await
     }
 
-    pub async fn request_body_async(&self, req: Request) -> Result<Response, ClientError> {
-        self.send_req(req).await
+    pub async fn request_body_async(&self, req: Request) -> Response {
+        self.send_req(req).await.expect("response")
     }
 
     pub fn request_builder(&self, path: &str) -> http::request::Builder {
