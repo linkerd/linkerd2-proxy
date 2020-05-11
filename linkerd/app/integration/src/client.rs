@@ -108,7 +108,11 @@ impl Client {
         }
     }
 
-    pub async fn get(&self, path: &str) -> String {
+    pub fn get(&self, path: &str) -> String {
+        futures::executor::block_on(self.get_async(path))
+    }
+
+    pub async fn get_async(&self, path: &str) -> String {
         use bytes::Buf;
         let req = self.request_builder(path);
         let res = self

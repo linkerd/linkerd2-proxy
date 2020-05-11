@@ -117,12 +117,12 @@ impl Controller {
 
     pub fn delay_listen<F>(self, f: F) -> Listening
     where
-        F: Future01<Item = (), Error = ()> + Send + 'static,
+        F: TryFuture<Ok = (), Error = ()> + Send + 'static,
     {
         run(
             pb::server::DestinationServer::new(self),
             "support destination service",
-            Some(Box::new(f.then(|_| Ok(())))),
+            Some(Box::new(Box::pin(f.map(|_| Ok(()))).compat())),
         )
     }
 
