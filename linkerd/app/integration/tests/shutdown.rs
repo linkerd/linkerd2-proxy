@@ -109,7 +109,7 @@ fn tcp_waits_for_proxies_to_close() {
             async move {
                 shdn.signal();
                 let mut vec = vec![0; 256];
-                let n = sock.read_to_end(&mut vec).await?;
+                let n = sock.read(&mut vec).await?;
                 assert_eq!(&vec[..n], msg1.as_bytes());
                 sock.write_all(msg2.as_bytes()).await
             }
