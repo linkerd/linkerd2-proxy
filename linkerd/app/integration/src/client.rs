@@ -113,7 +113,6 @@ impl Client {
     }
 
     pub async fn get_async(&self, path: &str) -> String {
-        use bytes::Buf;
         let req = self.request_builder(path);
         let res = self
             .request_async(req.method("GET"))

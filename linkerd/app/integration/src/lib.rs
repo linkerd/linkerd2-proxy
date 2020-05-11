@@ -5,7 +5,7 @@
 mod test_env;
 
 pub use self::test_env::TestEnv;
-pub use bytes::Bytes;
+pub use bytes::{Buf, BufMut, Bytes};
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 
 use futures_01::{Async, Future as Future01, Poll as Poll01, Stream as Stream01};
@@ -21,7 +21,7 @@ use std::pin::Pin;
 pub use std::sync::Arc;
 use std::task::{Context, Poll};
 pub use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncWrite};
+pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 pub use tokio::stream::{Stream, StreamExt};
 pub use tokio::sync::oneshot;
