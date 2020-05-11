@@ -239,11 +239,11 @@ fn run_server(tcp: TcpServer) -> server::Listening {
                 .build()
                 .unwrap();
 
-            let mut listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
-
             let mut accepts = tcp.accepts;
 
             let listen = async move {
+                let mut listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
+
                 loop {
                     let (sock, _) = listener.accept().await.unwrap();
                     let cb = accepts.pop_front().expect("no more accepts");
