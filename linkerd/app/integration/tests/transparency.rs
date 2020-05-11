@@ -98,7 +98,7 @@ fn test_server_speaks_first(env: TestEnv) {
             async move {
                 sock.write_all(msg1.as_bytes()).await?;
                 let mut vec = vec![0; 512];
-                let n = sock.read_to_end(&mut vec).await?;
+                let n = sock.read(&mut vec).await?;
                 assert_eq!(s(&vec[..n]), msg2);
                 tx.send(()).unwrap();
                 Ok(())
