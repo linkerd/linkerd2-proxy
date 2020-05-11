@@ -104,12 +104,12 @@ macro_rules! generate_tls_reject_test {
             client::TlsConfig::new(client_config, id),
         );
 
-        assert!(client
-            .request_async(client.request_builder("/ready").method("GET"))
-            .wait()
-            .err()
-            .unwrap()
-            .is_connect());
+        assert!(futures::executor::block_on(
+            client.request_async(client.request_builder("/ready").method("GET"))
+        )
+        .err()
+        .unwrap()
+        .is_connect());
     };
 }
 

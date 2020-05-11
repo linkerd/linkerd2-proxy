@@ -1,5 +1,5 @@
 use super::*;
-use futures_01::{future, Future as Future01, IntoFuture};
+use futures_01::{future, Future as Future01};
 use std::{
     collections::VecDeque,
     fs, io,
@@ -181,15 +181,14 @@ impl Controller {
     where
         F: FnOnce(pb::CertifyRequest) -> pb::CertifyResponse + Send + 'static,
     {
-        self.certify_async(move |req| Ok::<_, grpc::Status>(f(req)))
+        self.certify_async(move |req| async { Ok::<_, grpc::Status>(f(req)) })
     }
 
     pub fn certify_async<F, U>(self, f: F) -> Self
     where
         F: FnOnce(pb::CertifyRequest) -> U + Send + 'static,
-        U: IntoFuture<Item = pb::CertifyResponse> + Send + 'static,
-        U::Future: Send + 'static,
-        <U::Future as Future01>::Error: fmt::Display + Send,
+        U: TryFuture<Ok = pb::CertifyResponse> + Send + 'static,
+        U::Error: fmt::Display + Send,
     {
         let mut f = Some(f);
         let func: Certify = Box::new(move |req| {
@@ -197,10 +196,9 @@ impl Controller {
             // closure could be one (and not a `FnMut`).
             let f = f.take().expect("called twice?");
             let fut = f(req)
-                .into_future()
-                .map(grpc::Response::new)
+                .map_ok(grpc::Response::new)
                 .map_err(|e| grpc::Status::new(grpc::Code::Internal, format!("{}", e)));
-            Box::new(fut)
+            Box::new(Box::pin(fut).compat())
         });
         self.expect_calls.lock().unwrap().push_back(func);
         self
