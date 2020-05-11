@@ -190,6 +190,7 @@ fn tcp_connections_close_if_client_closes() {
                 let n = sock.read(&mut vec).await?;
 
                 assert_eq!(s(&vec[..n]), msg1);
+                sock.write_all(msg2.as_bytes()).await?;
                 let n = sock.read(&mut [0; 16]).await?;
                 assert_eq!(n, 0);
                 tx.send(()).unwrap();
