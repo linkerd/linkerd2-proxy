@@ -15,12 +15,12 @@ use tokio_connect::Connect;
 
 pub mod error;
 mod failfast;
-mod idle;
 mod probe_ready;
 
-pub use self::failfast::{FailFast, FailFastError, FailFastLayer};
-pub use self::idle::{Idle, IdleError, IdleLayer};
-pub use self::probe_ready::{ProbeReady, ProbeReadyLayer};
+pub use self::{
+    failfast::{FailFast, FailFastError, FailFastLayer},
+    probe_ready::{ProbeReady, ProbeReadyLayer},
+};
 
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]

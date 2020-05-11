@@ -48,7 +48,10 @@ impl<Req, F> Buffer<Req, F> {
         loop {
             match self.ready.poll_recv_ref(cx) {
                 Poll::Pending => break,
-                Poll::Ready(Some(_)) => {}
+                Poll::Ready(Some(ready)) => match &*ready {
+                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err.clone().into())),
+                    _ => {} // continue;
+                },
                 Poll::Ready(None) => return Poll::Ready(Err(Closed(()).into())),
             }
         }
