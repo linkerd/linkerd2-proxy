@@ -10,9 +10,10 @@ use tracing::trace;
 
 /// A future that drives the inner service.
 pub struct Dispatch<S, Req, F> {
-    inner: Option<S>,
+    inner: S,
     rx: mpsc::Receiver<InFlight<Req, F>>,
     ready: watch::Sender<Poll<(), ServiceError>>,
+    ready_set: bool,
     max_idle: Option<Duration>,
     current_idle: Option<Delay>,
 }
@@ -31,9 +32,10 @@ where
         max_idle: Option<Duration>,
     ) -> Self {
         Self {
-            inner: Some(inner),
+            inner,
             rx,
             ready,
+            ready_set: false,
             max_idle,
             current_idle: None,
         }
@@ -60,23 +62,18 @@ where
 
     /// Transitions the buffer to failing, notifying all consumers and pending
     /// requests of the failure.
-    fn fail(&mut self, error: impl Into<Error>) -> Result<(), ()> {
+    fn fail(&mut self, error: impl Into<Error>) {
         let shared = ServiceError(Arc::new(error.into()));
         trace!(%shared, "Inner service failed");
 
         // First, notify services of the readiness change to prevent new requests from
         // being buffered.
-        let broadcast = self.ready.broadcast(Err(shared.clone()));
+        let _ = self.ready.broadcast(Err(shared.clone()));
 
         // Propagate the error to all in-flight requests.
         while let Ok(Async::Ready(Some(InFlight { tx, .. }))) = self.rx.poll() {
             let _ = tx.send(Err(shared.clone().into()));
         }
-
-        // Drop the inner Service to free its resources. It won't be used again.
-        self.inner = None;
-
-        broadcast.map(|_| ()).map_err(|_| ())
     }
 }
 
@@ -91,38 +88,14 @@ where
     type Error = Never;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        macro_rules! return_ready {
-            () => {{
-                trace!("Complete");
-                return Ok(Async::Ready(()));
-            }};
-        }
-
-        macro_rules! return_ready_if {
-            ($cond:expr) => {{
-                if $cond {
-                    return_ready!();
-                }
-            }};
-        }
-
-        // Complete the task when all services have dropped.
-        return_ready_if!(self.ready.poll_close().expect("must not fail").is_ready());
-
         // Drive requests from the queue to the inner service.
         loop {
-            let ready = match self.inner.as_mut() {
-                Some(inner) => inner.poll_ready(),
-                None => {
-                    // This is safe because ready.poll_close has returned NotReady.
-                    return Ok(Async::NotReady);
-                }
-            };
-
-            match ready {
+            match self.inner.poll_ready() {
                 // If it's not ready, wait for it..
                 Ok(Async::NotReady) => {
-                    return_ready_if!(self.ready.broadcast(Ok(Async::NotReady)).is_err());
+                    // `ready` stays in whatever state it's in. If we've already
+                    // become ready, permit messages as long as there's buffer
+                    // capacity.
 
                     trace!("Waiting for inner service");
                     return Ok(Async::NotReady);
@@ -131,18 +104,16 @@ where
                 // If the service fails, propagate the failure to all pending
                 // requests and then complete.
                 Err(error) => {
-                    // Ensure the task remains active until all services have observed the error.
-                    return_ready_if!(self.fail(error).is_err());
-
-                    // This is safe because ready.poll_close has returned NotReady. The task will
-                    // complete when all observes have dropped their interest in `ready`.
-                    return Ok(Async::NotReady);
+                    self.fail(error);
+                    return Ok(Async::Ready(()));
                 }
 
                 // If the inner service can receive requests, start polling the channel.
                 Ok(Async::Ready(())) => {
-                    return_ready_if!(self.ready.broadcast(Ok(Async::Ready(()))).is_err());
-                    trace!("Ready for requests");
+                    if !self.ready_set {
+                        let _ = self.ready.broadcast(Ok(Async::Ready(())));
+                        self.ready_set = true;
+                    }
                 }
             }
 
@@ -152,23 +123,23 @@ where
                     // There are no requests available, so track idleness.
                     self.set_idle();
                     if let Err(error) = self.check_idle() {
-                        return_ready_if!(self.fail(error).is_err());
+                        self.fail(error);
+                        return Ok(Async::Ready(()));
                     }
 
                     return Ok(Async::NotReady);
                 }
 
                 // All senders have been dropped, complete.
-                Err(_) | Ok(Async::Ready(None)) => return_ready!(),
+                Err(_) | Ok(Async::Ready(None)) => {
+                    trace!("Senders dropped");
+                    return Ok(Async::Ready(()));
+                }
 
                 // If a request was ready, dispatch it and return the future to the caller.
                 Ok(Async::Ready(Some(InFlight { request, tx }))) => {
                     trace!("Dispatching a request");
-                    let fut = self
-                        .inner
-                        .as_mut()
-                        .expect("Service must not be dropped")
-                        .call(request);
+                    let fut = self.inner.call(request);
                     let _ = tx.send(Ok(fut));
 
                     self.current_idle = None;
@@ -187,6 +158,30 @@ mod test {
     use tower_test::mock;
 
     #[test]
+    fn ready_when_senders_dropped() {
+        run(|| {
+            let max_idle = Duration::from_millis(100);
+
+            let (tx, rx) = mpsc::channel(1);
+            let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
+            let (inner, mut handle) = mock::pair::<(), ()>();
+            let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
+            handle.allow(1);
+
+            assert!(dispatch.poll().unwrap().is_not_ready());
+            assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
+            let tx1 = tx.clone();
+            drop(tx);
+            assert!(dispatch.poll().unwrap().is_not_ready());
+            assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
+            drop(tx1);
+            assert!(dispatch.poll().unwrap().is_ready());
+
+            Ok::<_, ()>(())
+        })
+    }
+
+    #[test]
     fn idle_when_unused() {
         run(|| {
             let max_idle = Duration::from_millis(100);
@@ -201,19 +196,10 @@ mod test {
             assert!(dispatch.poll().unwrap().is_not_ready());
             assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
             Delay::new(Instant::now() + max_idle).map(move |()| {
-                assert!(dispatch.poll().unwrap().is_not_ready(),);
-                assert!(
-                    dispatch.inner.is_none(),
-                    "Did not drop inner service after timeout."
-                );
+                assert!(dispatch.poll().unwrap().is_ready());
                 assert!(
                     ready_rx.get_ref().is_err(),
                     "Did not advertise an error to consumers."
-                );
-                drop(ready_rx);
-                assert!(
-                    dispatch.poll().unwrap().is_ready(),
-                    "Did not complete after idle timeout."
                 );
                 drop((tx, handle));
             })
@@ -266,13 +252,15 @@ mod test {
                 .ok()
                 .expect("request not sent");
 
+                println!("Polling while request is pending");
                 assert!(dispatch.poll().unwrap().is_not_ready());
                 assert!(
-                    ready_rx.get_ref().as_ref().unwrap().is_not_ready(),
-                    "Did not advertise readiness to consumers"
+                    ready_rx.get_ref().as_ref().unwrap().is_ready(),
+                    "Did not remain ready after initialization"
                 );
 
                 handle.allow(1);
+                println!("Polling to detect inner serviec is ready");
                 assert!(dispatch.poll().unwrap().is_not_ready());
                 assert!(
                     ready_rx.get_ref().as_ref().unwrap().is_ready(),
@@ -281,19 +269,10 @@ mod test {
                 assert!(dispatch.current_idle.is_some(), "Idle timeout not reset");
 
                 Delay::new(Instant::now() + max_idle).map(move |()| {
-                    assert!(dispatch.poll().unwrap().is_not_ready(),);
-                    assert!(
-                        dispatch.inner.is_none(),
-                        "Did not drop inner service after timeout."
-                    );
+                    assert!(dispatch.poll().unwrap().is_ready(),);
                     assert!(
                         ready_rx.get_ref().is_err(),
                         "Did not advertise an error to consumers."
-                    );
-                    drop(ready_rx);
-                    assert!(
-                        dispatch.poll().unwrap().is_ready(),
-                        "Did not complete after idle timeout."
                     );
                     drop((tx, handle));
                 })

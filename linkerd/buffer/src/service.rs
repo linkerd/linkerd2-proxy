@@ -38,7 +38,10 @@ impl<Req, F> Buffer<Req, F> {
         loop {
             match self.ready.poll_ref() {
                 Ok(Async::NotReady) => break,
-                Ok(Async::Ready(Some(_))) => {}
+                Ok(Async::Ready(Some(res))) => match res.as_ref() {
+                    Ok(_) => {}
+                    Err(e) => return Err(e.clone().into()),
+                },
                 Err(_) | Ok(Async::Ready(None)) => return Err(Closed(()).into()),
             }
         }
