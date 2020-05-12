@@ -145,10 +145,10 @@ where
                 } else {
                     &mut h1
                 }
-                    // hyper should only try to automatically
-                    // set the host if the request was in absolute_form
-                    .set_host(was_absolute_form)
-                    .build(HyperConnect::new(connect, target, was_absolute_form));
+                // hyper should only try to automatically
+                // set the host if the request was in absolute_form
+                .set_host(was_absolute_form)
+                .build(HyperConnect::new(connect, target, was_absolute_form));
                 MakeFuture::Http1(Some(h1))
             }
             Settings::Http2 => {
