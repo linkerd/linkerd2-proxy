@@ -174,8 +174,8 @@ where
             tracing::debug!("accept ready");
             let res = accept.accept(conn).await.expect("connection failed").await;
             tracing::debug!("done");
-
-        }.instrument(tracing::info_span!("run_server", %listen_addr));
+        }
+        .instrument(tracing::info_span!("run_server", %listen_addr));
         (server, listen_addr, receiver)
     };
 

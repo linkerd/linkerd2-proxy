@@ -206,23 +206,30 @@ impl Server {
                     loop {
                         let (sock, addr) = listener.accept().await?;
                         let span = tracing::debug_span!("conn", %addr);
-                        let sock = accept_connection(sock, tls_config.clone()).instrument(span.clone()).await?;
+                        let sock = accept_connection(sock, tls_config.clone())
+                            .instrument(span.clone())
+                            .await?;
                         let http = http.clone();
                         let srv_conn_count = srv_conn_count.clone();
                         let svc = new_svc.call(());
-                        tokio::task::spawn_local(async move {
-                            tracing::trace!("serving...");
-                            let svc = svc.await;
-                            tracing::trace!("service acquired");
-                            srv_conn_count.fetch_add(1, Ordering::Release);
-                            let svc = svc
-                                .map_err(|e| println!("support/server new_service error: {}", e))?;
-                            let result = http.serve_connection(sock, svc)
-                                .await
-                                .map_err(|e| println!("support/server error: {}", e));
-                            tracing::trace!(?result, "serve done");
-                            result
-                        }.instrument(span.clone()));
+                        tokio::task::spawn_local(
+                            async move {
+                                tracing::trace!("serving...");
+                                let svc = svc.await;
+                                tracing::trace!("service acquired");
+                                srv_conn_count.fetch_add(1, Ordering::Release);
+                                let svc = svc.map_err(|e| {
+                                    println!("support/server new_service error: {}", e)
+                                })?;
+                                let result = http
+                                    .serve_connection(sock, svc)
+                                    .await
+                                    .map_err(|e| println!("support/server error: {}", e));
+                                tracing::trace!(?result, "serve done");
+                                result
+                            }
+                            .instrument(span.clone()),
+                        );
                     }
                 };
 
@@ -231,12 +238,16 @@ impl Server {
                     .enable_all()
                     .build()
                     .expect("initialize support server runtime");
-                tokio::task::LocalSet::new().block_on(&mut rt, async move {
-                    tokio::select! {
-                        res = serve => res,
-                        _ = rx => { Ok::<(), io::Error>(())},
+                tokio::task::LocalSet::new().block_on(
+                    &mut rt,
+                    async move {
+                        tokio::select! {
+                            res = serve => res,
+                            _ = rx => { Ok::<(), io::Error>(())},
+                        }
                     }
-                }.instrument(tracing::info_span!("test_server", ?version, %addr)))
+                    .instrument(tracing::info_span!("test_server", ?version, %addr)),
+                )
             })
             .unwrap();
 

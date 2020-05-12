@@ -217,7 +217,7 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                 .basic_scheduler()
                 .build()
                 .expect("initialize support client runtime");
-            
+
             let absolute_uris = if let Run::Http1 { absolute_uris } = version {
                 absolute_uris
             } else {
@@ -252,7 +252,8 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                             let _ = cb.send(result);
                         }
                         .in_current_span(),
-                    ).await;
+                    )
+                    .await;
                     tracing::trace!(?res);
                 }
             };
