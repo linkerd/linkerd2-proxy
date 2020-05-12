@@ -91,10 +91,6 @@ impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
 }
 
 impl<S: Io> Io for PrefixedIo<S> {
-    fn shutdown_write(&mut self) -> io::Result<()> {
-        self.io.shutdown_write()
-    }
-
     fn poll_write_buf_erased(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

@@ -1,4 +1,4 @@
-use super::{internal::Io, AsyncRead, AsyncWrite, Poll, Result};
+use super::{internal::Io, AsyncRead, AsyncWrite, Poll};
 use bytes::{Buf, BufMut};
 use std::{mem::MaybeUninit, pin::Pin, task::Context};
 
@@ -11,12 +11,6 @@ pub struct BoxedIo(Pin<Box<dyn Io + Unpin>>);
 impl BoxedIo {
     pub fn new<T: Io + Unpin + 'static>(io: T) -> Self {
         BoxedIo(Box::pin(io))
-    }
-
-    /// Since `Io` isn't publicly exported, but `Connection` wants
-    /// this method, it's just an inherent method.
-    pub fn shutdown_write(&mut self) -> Result<()> {
-        self.0.shutdown_write()
     }
 }
 
@@ -43,16 +37,7 @@ impl AsyncRead for BoxedIo {
 
 impl AsyncWrite for BoxedIo {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
-        let mut this = self.as_mut();
-        futures::ready!(this.0.as_mut().poll_shutdown(cx))?;
-
-        // TCP shutdown the write side.
-        //
-        // If we're shutting down, then we definitely won't write
-        // anymore. So, we should tell the remote about this. This
-        // is relied upon in our TCP proxy, to start shutting down
-        // the pipe if one side closes.
-        Poll::Ready(this.0.shutdown_write())
+        self.as_mut().0.as_mut().poll_shutdown(cx)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
@@ -79,10 +64,6 @@ impl AsyncWrite for BoxedIo {
 }
 
 impl Io for BoxedIo {
-    fn shutdown_write(&mut self) -> Result<()> {
-        self.0.as_mut().shutdown_write()
-    }
-
     /// This method is to allow using `Async::poll_write_buf` even through a
     /// trait object.
     fn poll_write_buf_erased(
@@ -140,10 +121,6 @@ mod tests {
     }
 
     impl Io for WriteBufDetector {
-        fn shutdown_write(&mut self) -> Result<()> {
-            unreachable!("not called in test")
-        }
-
         fn poll_write_buf_erased(
             self: Pin<&mut Self>,
             cx: &mut Context<'_>,
