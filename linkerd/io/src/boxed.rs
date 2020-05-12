@@ -25,8 +25,8 @@ impl AsyncRead for BoxedIo {
         mut buf: &mut B,
     ) -> Poll<usize> {
         // A trait object of AsyncWrite would use the default poll_read_buf,
-        // which doesn't allow vectored writes. Going through this method
-        // allows the trait object to call the specialized write_buf method.
+        // which doesn't allow vectored reads. Going through this method
+        // allows the trait object to call the specialized poll_read_buf method.
         self.as_mut().0.as_mut().poll_read_buf_erased(cx, &mut buf)
     }
 
@@ -58,7 +58,8 @@ impl AsyncWrite for BoxedIo {
     {
         // A trait object of AsyncWrite would use the default poll_write_buf,
         // which doesn't allow vectored writes. Going through this method
-        // allows the trait object to call the specialized write_buf method.
+        // allows the trait object to call the specialized poll_write_buf
+        // method.
         self.as_mut().0.as_mut().poll_write_buf_erased(cx, buf)
     }
 }
