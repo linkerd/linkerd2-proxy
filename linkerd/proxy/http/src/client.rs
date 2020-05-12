@@ -137,9 +137,14 @@ where
                 wants_h1_upgrade: _,
                 was_absolute_form,
             } => {
-                #[allow(deprecated)]
-                let h1 = hyper::Client::builder()
-                    .keep_alive(keep_alive)
+                let mut h1 = hyper::Client::builder();
+                let h1 = if !keep_alive {
+                    // disable hyper's connection pooling by setting the maximum
+                    // number of idle connections to 0.
+                    h1.pool_max_idle_per_host(0)
+                } else {
+                    &mut h1
+                }
                     // hyper should only try to automatically
                     // set the host if the request was in absolute_form
                     .set_host(was_absolute_form)
