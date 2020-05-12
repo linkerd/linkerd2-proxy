@@ -1,5 +1,5 @@
 #![cfg(test)]
-#![type_length_limit = "3547723"]
+#![type_length_limit = "3659323"]
 // These are basically integration tests for the `connection` submodule, but
 // they cannot be "real" integration tests because `connection` isn't a public
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
@@ -24,6 +24,7 @@ use tokio::{
 };
 use tower::layer::Layer;
 use tower::util::{service_fn, ServiceExt};
+use tracing_futures::Instrument;
 
 #[test]
 fn plaintext() {
@@ -151,7 +152,7 @@ where
                 let server = server.clone();
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());
-                let future = server((meta, conn));
+                let future = server((meta, conn)).instrument(tracing::info_span!("test_svc"));
                 futures_03::future::ok::<_, Never>(async move {
                     let result = future.await;
                     sender
@@ -165,12 +166,16 @@ where
             }),
         );
         let server = async move {
-            let accept = accept.ready_and().await.expect("accept failed");
             let conn = futures_03::future::poll_fn(|cx| listen.poll_accept(cx))
                 .await
                 .expect("listen failed");
-            accept.accept(conn).await.expect("connection failed").await
-        };
+            tracing::debug!("incoming connection");
+            let accept = accept.ready_and().await.expect("accept failed");
+            tracing::debug!("accept ready");
+            let res = accept.accept(conn).await.expect("connection failed").await;
+            tracing::debug!("done");
+
+        }.instrument(tracing::info_span!("run_server", %listen_addr));
         (server, listen_addr, receiver)
     };
 
@@ -198,7 +203,7 @@ where
                         .expect("send result");
                 }
                 Ok(conn) => {
-                    let result = client(conn).await;
+                    let result = client(conn).instrument(tracing::info_span!("client")).await;
                     sender
                         .send(Transported {
                             peer_identity,
@@ -232,9 +237,16 @@ async fn write_then_read(
     mut conn: impl AsyncRead + AsyncWrite + Unpin,
     to_write: &'static [u8],
 ) -> Result<Vec<u8>, io::Error> {
-    let mut conn = write_and_shutdown(conn, to_write).await?;
+    let conn = write_and_shutdown(conn, to_write).await;
+    if let Err(ref write_err) = conn {
+        tracing::error!(%write_err);
+    }
+    let mut conn = conn?;
     let mut vec = Vec::new();
-    conn.read_to_end(&mut vec).await?;
+    tracing::debug!("read_to_end");
+    let read = conn.read_to_end(&mut vec).await;
+    tracing::debug!(?read, ?vec);
+    read?;
     Ok(vec)
 }
 
@@ -246,7 +258,10 @@ async fn read_then_write(
     to_write: &'static [u8],
 ) -> Result<Vec<u8>, io::Error> {
     let mut vec = vec![0; read_prefix_len];
-    conn.read_exact(&mut vec[..]).await?;
+    tracing::debug!("read_exact");
+    let read = conn.read_exact(&mut vec[..]).await;
+    tracing::debug!(?read, ?vec);
+    read?;
     write_and_shutdown(conn, to_write).await?;
     Ok(vec)
 }
@@ -257,7 +272,9 @@ async fn write_and_shutdown<T: AsyncRead + AsyncWrite + Unpin>(
     to_write: &'static [u8],
 ) -> Result<T, io::Error> {
     conn.write_all(to_write).await?;
+    tracing::debug!("shutting down...");
     conn.shutdown().await?;
+    tracing::debug!("shutdown done");
     Ok(conn)
 }
 
