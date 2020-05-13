@@ -19,6 +19,7 @@ futures = "0.1"
 indexmap = "1.0.0"
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns-name = { path = "../../dns/name" }
+linkerd2-errno = { path = "../../errno" }
 linkerd2-error = { path = "../../error" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-io = { path = "../../io" }
