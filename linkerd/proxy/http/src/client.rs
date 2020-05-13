@@ -114,7 +114,7 @@ where
     C: tower::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
-    C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
+    C::Connection: Unpin + Send + 'static,
     T: HasSettings + Clone + Send + Sync + 'static,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
@@ -202,7 +202,7 @@ where
 impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
 where
     C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
-    C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
+    C::Connection: Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
     T: Clone + Send + Sync + 'static,

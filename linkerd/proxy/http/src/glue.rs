@@ -274,11 +274,8 @@ where
     }
 }
 
-impl<C> hyper_connect::Connection for Connection<C>
-where
-    C: hyper_connect::Connection,
-{
+impl<C> hyper_connect::Connection for Connection<C> {
     fn connected(&self) -> hyper_connect::Connected {
-        self.transport.connected().proxy(self.absolute_form)
+        hyper_connect::Connected::new().proxy(self.absolute_form)
     }
 }
