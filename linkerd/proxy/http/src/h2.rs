@@ -100,9 +100,9 @@ impl<C: Clone, B> Clone for Connect<C, B> {
     }
 }
 
-impl<C, B, T> tower_03::Service<T> for Connect<C, B>
+impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
-    C: tower_03::make::MakeConnection<T>,
+    C: tower::make::MakeConnection<T>,
     C::Connection: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     C::Error: Into<Error>,
     B: HttpBody + Send + 'static,
@@ -175,7 +175,7 @@ where
 
 // ===== impl Connection =====
 
-impl<B> tower_03::Service<http::Request<B>> for Connection<B>
+impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
     B: HttpBody + Send + 'static,
     B::Data: Send,

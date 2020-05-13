@@ -1332,7 +1332,6 @@ dependencies = [
  "tokio 0.2.20",
  "tokio-connect",
  "tokio-timer",
- "tower 0.1.1",
  "tower 0.3.1",
  "tower-balance",
  "tower-discover",

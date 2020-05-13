@@ -13,7 +13,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tower_03::ServiceExt;
+use tower::ServiceExt;
 use tracing::{debug, trace};
 // use tracing_futures::{Instrument, Instrumented};
 
@@ -40,19 +40,19 @@ where
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: std::error::Error + Send + Sync,
-    C: tower_03::make::MakeConnection<T> + 'static,
+    C: tower::make::MakeConnection<T> + 'static,
     C::Error: Into<Error>,
     C::Connection: tokio_02::io::AsyncRead + tokio_02::io::AsyncWrite + Unpin + Send + 'static,
 {
     Http1(Option<HyperMakeClient<C, T, B>>),
-    Http2(#[pin] tower_03::util::Oneshot<h2::Connect<C, B>, T>),
+    Http2(#[pin] tower::util::Oneshot<h2::Connect<C, B>, T>),
 }
 
 /// The `Service` yielded by `MakeClient::new_service()`.
 pub enum Client<C, T, B>
 where
     B: hyper::body::HttpBody + 'static,
-    C: tower_03::make::MakeConnection<T> + 'static,
+    C: tower::make::MakeConnection<T> + 'static,
 {
     Http1(HyperMakeClient<C, T, B>),
     Http2(h2::Connection<B>),
@@ -109,9 +109,9 @@ where
 
 // === impl MakeClient ===
 
-impl<C, T, B> tower_03::Service<T> for MakeClient<C, B>
+impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
-    C: tower_03::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
+    C: tower::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
     C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
@@ -173,7 +173,7 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
 
 impl<C, T, B> Future for MakeFuture<C, T, B>
 where
-    C: tower_03::make::MakeConnection<T> + Unpin + Send + Sync + 'static,
+    C: tower::make::MakeConnection<T> + Unpin + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
@@ -199,9 +199,9 @@ where
 
 // === impl Client ===
 
-impl<C, T, B> tower_03::Service<http::Request<B>> for Client<C, T, B>
+impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
 where
-    C: tower_03::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,

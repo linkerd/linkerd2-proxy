@@ -128,9 +128,9 @@ impl<S> HyperServerSvc<S> {
     }
 }
 
-impl<S, B> tower_03::Service<http::Request<hyper::Body>> for HyperServerSvc<S>
+impl<S, B> tower::Service<http::Request<hyper::Body>> for HyperServerSvc<S>
 where
-    S: tower_03::Service<http::Request<Body>, Response = http::Response<B>>,
+    S: tower::Service<http::Request<Body>, Response = http::Response<B>>,
     S::Error: Into<Error>,
     B: HttpBody,
 {
@@ -162,9 +162,9 @@ impl<C, T> HyperConnect<C, T> {
     }
 }
 
-impl<C, T> tower_03::Service<hyper::Uri> for HyperConnect<C, T>
+impl<C, T> tower::Service<hyper::Uri> for HyperConnect<C, T>
 where
-    C: tower_03::make::MakeConnection<T> + Clone + Send + Sync,
+    C: tower::make::MakeConnection<T> + Clone + Send + Sync,
     C::Error: Into<Error>,
     C::Future: TryFuture<Ok = C::Connection> + Unpin + Send + 'static,
     <C::Future as TryFuture>::Error: Into<Error>,
