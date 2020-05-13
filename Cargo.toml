@@ -18,6 +18,7 @@ members = [
     "linkerd/drain",
     "linkerd/duplex",
     "linkerd/error",
+    "linkerd/errno",
     "linkerd/error-metrics",
     "linkerd/error-respond",
     "linkerd/exp-backoff",

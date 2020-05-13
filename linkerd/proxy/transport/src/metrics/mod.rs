@@ -1,5 +1,6 @@
 use futures_03::{ready, TryFuture};
 use indexmap::IndexMap;
+use linkerd2_errno::Errno;
 use linkerd2_metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
 };
@@ -14,10 +15,9 @@ use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
-mod errno;
 mod io;
 
-pub use self::{errno::Errno, io::Io};
+pub use self::io::Io;
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
