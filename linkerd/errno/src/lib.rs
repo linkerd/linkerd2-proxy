@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use std::fmt;
 
 /// Represents a platform-agnostic system error for metrics labels.
