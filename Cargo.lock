@@ -1438,7 +1438,6 @@ dependencies = [
  "tokio-compat",
  "tokio-rustls",
  "tokio-util",
- "tower 0.1.1",
  "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
