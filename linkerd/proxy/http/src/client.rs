@@ -39,7 +39,7 @@ pub enum MakeFuture<C, T, B>
 where
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
     C: tower::make::MakeConnection<T> + 'static,
     C::Error: Into<Error>,
     C::Connection: tokio_02::io::AsyncRead + tokio_02::io::AsyncWrite + Unpin + Send + 'static,
@@ -80,10 +80,7 @@ impl<B> MakeClientLayer<B> {
     }
 }
 
-impl<B> Clone for MakeClientLayer<B>
-where
-    B: hyper::body::HttpBody + Send + 'static,
-{
+impl<B> Clone for MakeClientLayer<B> {
     fn clone(&self) -> Self {
         Self {
             h2_settings: self.h2_settings,
@@ -93,8 +90,8 @@ where
 }
 
 impl<C, B> tower::layer::Layer<C> for MakeClientLayer<B>
-where
-    B: hyper::body::HttpBody + Send + 'static,
+// where
+// B: hyper::body::HttpBody + Send + 'static,
 {
     type Service = MakeClient<C, B>;
 
@@ -118,7 +115,7 @@ where
     T: HasSettings + Clone + Send + Sync + 'static,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = Client<C, T, B>;
     type Error = Error;
@@ -179,7 +176,7 @@ where
     C::Error: Into<Error>,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Output = Result<Client<C, T, B>, Error>;
 
@@ -208,7 +205,7 @@ where
     T: Clone + Send + Sync + 'static,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = http::Response<Body>;
     type Error = Error;

@@ -39,7 +39,7 @@ where
     F: TryFuture,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
     F::Ok: AsyncRead + AsyncWrite + Send + 'static,
 {
     #[pin]
@@ -53,7 +53,7 @@ where
     F: TryFuture,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
     F::Ok: AsyncRead + AsyncWrite + Send + 'static,
 {
     Connect(#[pin] F),
@@ -107,7 +107,7 @@ where
     C::Error: Into<Error>,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = Connection<B>;
     type Error = Error;
@@ -134,7 +134,7 @@ where
     F::Error: Into<Error>,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Output = Result<Connection<B>, Error>;
 
@@ -179,7 +179,7 @@ impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = http::Response<Body>;
     type Error = hyper::Error;
