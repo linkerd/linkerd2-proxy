@@ -15,9 +15,10 @@ independently of the inbound and outbound proxy logic.
 mock-orig-dst  = ["linkerd2-proxy-transport/mock-orig-dst"]
 
 [dependencies]
-bytes = "0.4"
-http = "0.1"
-hyper = "0.12"
+bytes = "0.5"
+http = "0.2"
+http-body = "0.3"
+hyper = "0.13"
 futures = "0.1"
 indexmap = "1.0"
 linkerd2-addr = { path = "../../addr" }
@@ -65,7 +66,6 @@ tokio = "0.1.14"
 tokio-02 = { package = "tokio", version = "0.2", features = ["macros"]}
 tokio-timer = "0.2"
 tokio-compat = "0.1"
-tower-make = "0.3"
 tower-balance = { git = "https://github.com/tower-rs/tower" }
 tower-load = { git = "https://github.com/tower-rs/tower" }
 tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }

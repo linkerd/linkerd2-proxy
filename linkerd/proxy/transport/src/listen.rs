@@ -1,9 +1,9 @@
 use linkerd2_proxy_core::listen;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::reactor;
 use tracing::trace;
 
 /// A mockable source for address info, i.e., for tests.
@@ -118,15 +118,12 @@ where
                     // background reactor if `polled before the runtime is
                     // initialized.
                     trace!("listening");
-                    let listener = tokio::net::TcpListener::from_std(
-                        std.take().expect("illegal state"),
-                        &reactor::Handle::default(),
-                    )?;
+                    let listener =
+                        tokio::net::TcpListener::from_std(std.take().expect("illegal state"))?;
                     State::Bound(listener)
                 }
                 State::Bound(ref mut listener) => {
-                    let poll = task_compat::with_notify(cx, || listener.poll_accept());
-                    let (tcp, peer_addr) = futures_03::ready!(task_compat::poll_01_to_03(poll))?;
+                    let (tcp, peer_addr) = futures_03::ready!(Pin::new(listener).poll_accept(cx))?;
                     let orig_dst = self.orig_dst_addr.orig_dst_addr(&tcp);
                     trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "accepted");
                     // TODO: On Linux and most other platforms it would be better

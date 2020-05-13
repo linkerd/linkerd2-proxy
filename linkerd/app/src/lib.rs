@@ -161,7 +161,7 @@ impl Config {
                     identity,
                     (), // profiles,
                     // tap,
-                    // metrics,
+                    metrics,
                     None, // oc,
                     drain,
                 )

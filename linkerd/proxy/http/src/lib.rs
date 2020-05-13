@@ -4,9 +4,9 @@ use http::uri::Authority;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
 
-pub mod add_header;
+// pub mod add_header;
 // pub mod balance;
-pub mod canonicalize;
+// pub mod canonicalize;
 pub mod client;
 pub mod glue;
 // pub mod grpc;
@@ -15,8 +15,8 @@ pub mod h2;
 pub mod header_from_target;
 // pub mod insert;
 // pub mod normalize_uri;
-pub mod orig_proto;
-pub mod override_authority;
+// pub mod orig_proto;
+// pub mod override_authority;
 pub mod settings;
 // pub mod strip_header;
 pub mod timeout;
@@ -25,7 +25,7 @@ mod version;
 
 pub use self::{
     client::MakeClientLayer,
-    glue::{HttpBody as Body, HyperServerSvc},
+    glue::{Body, HyperServerSvc},
     settings::Settings,
     timeout::MakeTimeoutLayer,
     version::Version,

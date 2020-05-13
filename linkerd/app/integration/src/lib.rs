@@ -5,26 +5,31 @@
 mod test_env;
 
 pub use self::test_env::TestEnv;
-pub use bytes::Bytes;
-pub use futures::sync::oneshot;
-pub use futures::{future::Executor, *};
+pub use bytes::{Buf, BufMut, Bytes};
+pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
+
+use futures_01::{Async, Future as Future01, Poll as Poll01, Stream as Stream01};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app as app;
 pub use std::collections::HashMap;
 use std::fmt;
+pub use std::future::Future;
 use std::io;
-use std::io::{Read, Write};
 pub use std::net::SocketAddr;
+use std::pin::Pin;
 pub use std::sync::Arc;
+use std::task::{Context, Poll};
 pub use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::{net::TcpListener, reactor};
-use tokio_compat::runtime::{self, current_thread};
-use tokio_connect::Connect;
+pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpListener;
+pub use tokio::stream::{Stream, StreamExt};
+pub use tokio::sync::oneshot;
+use tokio_compat::runtime::{self};
 pub use tower::Service;
 pub use tower_grpc as grpc;
 pub use tracing::*;
+pub use tracing_subscriber::prelude::*;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";
@@ -86,7 +91,7 @@ macro_rules! assert_eventually {
                 })
                 .unwrap_or($crate::DEFAULT_TEST_PATIENCE);
             let start_t = Instant::now();
-            for i in 0..($retries + 1) {
+            for i in 0i32..($retries as i32 + 1i32) {
                 if $cond {
                     break;
                 } else if i == $retries {
@@ -148,35 +153,47 @@ pub mod tcp;
 trait Io: AsyncRead + AsyncWrite {}
 impl<T: AsyncRead + AsyncWrite> Io for T {}
 
-struct RunningIo(pub Box<dyn Io + Send>, pub Option<oneshot::Sender<()>>);
-
-impl Read for RunningIo {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
+struct RunningIo {
+    pub io: Pin<Box<dyn Io + Send>>,
+    pub abs_form: bool,
+    pub _running: Option<oneshot::Sender<()>>,
 }
 
-impl Write for RunningIo {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
+impl AsyncRead for RunningIo {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        self.as_mut().io.as_mut().poll_read(cx, buf)
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [std::mem::MaybeUninit<u8>]) -> bool {
+        self.io.prepare_uninitialized_buffer(buf)
     }
 }
-
-impl AsyncRead for RunningIo {}
 
 impl AsyncWrite for RunningIo {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        self.0.shutdown()
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.as_mut().io.as_mut().poll_shutdown(cx)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.as_mut().io.as_mut().poll_flush(cx)
+    }
+
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.as_mut().io.as_mut().poll_write(cx, buf)
     }
 }
 
 pub fn shutdown_signal() -> (Shutdown, ShutdownRx) {
     let (_tx, rx) = oneshot::channel();
-    (Shutdown { _tx }, Box::new(rx.then(|_| Ok(()))))
+    (Shutdown { _tx }, Box::pin(rx.map(|_| ())))
 }
 
 pub struct Shutdown {
@@ -189,16 +206,16 @@ impl Shutdown {
     }
 }
 
-pub type ShutdownRx = Box<dyn Future<Item = (), Error = ()> + Send>;
+pub type ShutdownRx = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 /// A channel used to signal when a Client's related connection is running or closed.
 pub fn running() -> (oneshot::Sender<()>, Running) {
     let (tx, rx) = oneshot::channel();
-    let rx = Box::new(rx.then(|_| Ok::<(), ()>(())));
+    let rx = Box::pin(rx.map(|_| ()));
     (tx, rx)
 }
 
-pub type Running = Box<dyn Future<Item = (), Error = ()> + Send>;
+pub type Running = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 pub fn s(bytes: &[u8]) -> &str {
     ::std::str::from_utf8(bytes.as_ref()).unwrap()
@@ -238,37 +255,30 @@ impl fmt::Display for HumanDuration {
 }
 
 pub trait FutureWaitExt: Future {
-    fn wait_timeout(self, dur: Duration) -> Result<Self::Item, Waited<Self::Error>>
+    fn wait_timeout(self, dur: Duration) -> Result<Self::Output, Waited<()>>
     where
         Self: Sized,
     {
-        use std::thread;
-        use std::time::Instant;
+        tokio::runtime::Builder::new()
+            .basic_scheduler()
+            .enable_all()
+            .build()
+            .expect("build rt")
+            .block_on(async move {
+                tokio::time::timeout(dur, self)
+                    .await
+                    .map_err(|_| Waited::TimedOut)
+            })
+    }
 
-        struct ThreadNotify(thread::Thread);
-
-        impl futures::executor::Notify for ThreadNotify {
-            fn notify(&self, _id: usize) {
-                self.0.unpark();
-            }
-        }
-
-        let deadline = Instant::now() + dur;
-        let mut task = futures::executor::spawn(self);
-        let notify = Arc::new(ThreadNotify(thread::current()));
-
-        loop {
-            match task.poll_future_notify(&notify, 0)? {
-                Async::Ready(val) => return Ok(val),
-                Async::NotReady => {
-                    let now = Instant::now();
-                    if now >= deadline {
-                        return Err(Waited::TimedOut);
-                    }
-
-                    thread::park_timeout(deadline - now);
-                }
-            }
+    fn try_wait_timeout<T, E>(self, dur: Duration) -> Result<T, Waited<E>>
+    where
+        Self: Future<Output = Result<T, E>> + Sized,
+    {
+        match self.wait_timeout(dur) {
+            Ok(Ok(x)) => Ok(x),
+            Ok(Err(e)) => Err(Waited::Error(e)),
+            Err(_) => Err(Waited::TimedOut),
         }
     }
 }

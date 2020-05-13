@@ -77,7 +77,7 @@ macro_rules! generate_tests {
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-            let rsp = client.request(&mut client.request_builder("/"));
+            let rsp = client.request(client.request_builder("/"));
 
             assert!(
                 did_not_fall_back.load(Ordering::Acquire),
@@ -176,7 +176,7 @@ macro_rules! generate_tests {
             // Wait for the reconnect to happen. TODO: Replace this flaky logic.
             thread::sleep(Duration::from_millis(1000));
 
-            let rsp = initially_exists.request(&mut initially_exists.request_builder("/"));
+            let rsp = initially_exists.request(initially_exists.request_builder("/"));
             assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
 
         }
@@ -201,7 +201,7 @@ macro_rules! generate_tests {
                 .run_with_test_env(env);
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
-            let mut req = client.request_builder("/");
+            let req = client.request_builder("/");
             let rsp = client.request(req.method("GET"));
             // the request should time out
             assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
@@ -293,7 +293,7 @@ macro_rules! generate_tests {
                 ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
                 let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
                 let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
-                let rsp = client.request(&mut client.request_builder("/strip"));
+                let rsp = client.request(client.request_builder("/strip"));
 
                 assert_eq!(rsp.status(), 200);
                 assert_ne!(rsp.headers().get(REMOTE_IP_HEADER), Some(&header));
@@ -331,7 +331,7 @@ macro_rules! generate_tests {
                 ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
                 let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
                 let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
-                let rsp = client.request(&mut client.request_builder("/set"));
+                let rsp = client.request(client.request_builder("/set"));
 
                 assert_eq!(rsp.status(), 200);
                 assert_eq!(rsp.headers().get(REMOTE_IP_HEADER), Some(&header));
@@ -351,7 +351,7 @@ macro_rules! generate_tests {
 
                 let proxy = proxy::new().inbound(srv).run();
                 let client = $make_client(proxy.inbound, "disco.test.svc.cluster.local");
-                let rsp = client.request(&mut client.request_builder("/set"));
+                let rsp = client.request(client.request_builder("/set"));
 
                 assert_eq!(rsp.status(), 200);
             }
@@ -359,6 +359,7 @@ macro_rules! generate_tests {
 
         mod override_header {
             use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+            use bytes::buf::Buf;
             use super::super::*;
 
             const OVERRIDE_HEADER: &'static str = "l5d-dst-override";
@@ -454,48 +455,47 @@ macro_rules! generate_tests {
                 }
             }
 
-            fn override_req(client: &client::Client) -> http::Response<client::BytesBody> {
-                client.request(
+            async fn override_req(client: &client::Client) -> http::Response<hyper::Body> {
+                client.request_async(
                     client.request_builder("/")
                         .header(OVERRIDE_HEADER, BAR)
                         .method("GET")
-                )
+                ).await
+                .expect("override request")
             }
 
-            #[test]
+            #[tokio::test]
             #[cfg_attr(not(feature = "nyi"), ignore)]
-            fn outbound_honors_override_header() {
+            async fn outbound_honors_override_header() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy().run();
 
                 let client = $make_client(proxy.outbound, FOO);
 
                 // Request 1 --- without override header.
-                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(client.get_async("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 1);
                 assert_eq!(fixture.bar_reqs(), 0);
 
                 // Request 2 --- with override header
-                let res = override_req(&client);
+                let res = override_req(&client).await;
                 assert_eq!(res.status(), http::StatusCode::OK);
                 let stream = res.into_parts().1;
-                let body = stream.concat2()
-                    .map(|body| ::std::str::from_utf8(&body).unwrap().to_string())
-                    .wait()
-                    .expect("response 2 body");
+                let mut body = hyper::body::aggregate(stream).await.expect("response 2 body");
+                let body = std::str::from_utf8(body.to_bytes().as_ref()).expect("body is utf-8").to_owned();
                 assert_eq!(body, "hello from bar");
                 assert_eq!(fixture.foo_reqs(), 1);
                 assert_eq!(fixture.bar_reqs(), 1);
 
                 // Request 3 --- without override header again.
-                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(client.get_async("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 1);
             }
 
-            #[test]
+            #[tokio::test]
             #[cfg_attr(not(feature = "nyi"), ignore)]
-            fn outbound_overrides_profile() {
+            async fn outbound_overrides_profile() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy().run();
 
@@ -504,18 +504,18 @@ macro_rules! generate_tests {
                 let metrics = client::http1(proxy.metrics, "localhost");
 
                 // Request 1 --- without override header.
-                client.get("/");
-                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"foo\"");
+                client.get_async("/").await;
+                assert_eventually_contains!(metrics.get_async("/metrics").await, "rt_hello=\"foo\"");
 
                 // Request 2 --- with override header
-                let res = override_req(&client);
+                let res = override_req(&client).await;
                 assert_eq!(res.status(), http::StatusCode::OK);
-                assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"bar\"");
+                assert_eventually_contains!(metrics.get_async("/metrics").await, "rt_hello=\"bar\"");
             }
 
-            #[test]
+            #[tokio::test]
             #[cfg_attr(not(feature = "nyi"), ignore)]
-            fn outbound_honors_override_header_with_orig_dst() {
+            async fn outbound_honors_override_header_with_orig_dst() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
                     .outbound(fixture.foo())
@@ -524,24 +524,22 @@ macro_rules! generate_tests {
                 let client = $make_client(proxy.outbound, "foo.test.svc.cluster.local");
 
                 // Request 1 --- without override header.
-                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(client.get_async("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 1);
                 assert_eq!(fixture.bar_reqs(), 0);
 
                 // Request 2 --- with override header
-                let res = override_req(&client);
+                let res = override_req(&client).await;
                 assert_eq!(res.status(), http::StatusCode::OK);
                 let stream = res.into_parts().1;
-                let body = stream.concat2()
-                    .map(|body| ::std::str::from_utf8(&body).unwrap().to_string())
-                    .wait()
-                    .expect("response 2 body");
+                let mut body = hyper::body::aggregate(stream).await.expect("response 2 body");
+                let body = std::str::from_utf8(body.to_bytes().as_ref()).expect("body is utf-8").to_owned();
                 assert_eq!(body, "hello from bar");
                 assert_eq!(fixture.foo_reqs(), 1);
                 assert_eq!(fixture.bar_reqs(), 1);
 
                 // Request 3 --- without override header again.
-                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(client.get_async("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 1);
             }
@@ -567,9 +565,9 @@ macro_rules! generate_tests {
                 // assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"bar\"");
             }
 
-            #[test]
+            #[tokio::test]
             #[cfg_attr(not(feature = "nyi"), ignore)]
-            fn inbound_still_routes_to_orig_dst() {
+            async fn inbound_still_routes_to_orig_dst() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
                     .inbound(fixture.foo())
@@ -578,24 +576,22 @@ macro_rules! generate_tests {
                 let client = $make_client(proxy.inbound, "foo.test.svc.cluster.local");
 
                 // Request 1 --- without override header.
-                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(client.get_async("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 1);
                 assert_eq!(fixture.bar_reqs(), 0);
 
                 // Request 2 --- with override header
-                let res = override_req(&client);
+                let res = override_req(&client).await;
                 assert_eq!(res.status(), http::StatusCode::OK);
                 let stream = res.into_parts().1;
-                let body = stream.concat2()
-                    .map(|body| ::std::str::from_utf8(&body).unwrap().to_string())
-                    .wait()
-                    .expect("response 2 body");
+                let mut body = hyper::body::aggregate(stream).await.expect("response 2 body");
+                let body = std::str::from_utf8(body.to_bytes().as_ref()).expect("body is utf-8").to_owned();
                 assert_eq!(body, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 0);
 
                 // Request 3 --- without override header again.
-                assert_eq!(client.get("/"), "hello from foo");
+                assert_eq!(client.get_async("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 3);
                 assert_eq!(fixture.bar_reqs(), 0);
             }
@@ -609,9 +605,9 @@ mod http2 {
 
     generate_tests! { server: server::new, client: client::new }
 
-    #[test]
+    #[tokio::test]
     #[cfg_attr(not(feature = "nyi"), ignore)]
-    fn outbound_balancer_waits_for_ready_endpoint() {
+    async fn outbound_balancer_waits_for_ready_endpoint() {
         // See https://github.com/linkerd/linkerd2/issues/2550
         let _ = trace_init();
 
@@ -636,7 +632,7 @@ mod http2 {
         let client = client::http2(proxy.outbound, host);
         let metrics = client::http1(proxy.metrics, "localhost");
 
-        assert_eq!(client.get("/"), "hello");
+        assert_eq!(client.get_async("/").await, "hello");
 
         // Simulate the first server falling over without discovery
         // knowing about it...
@@ -644,7 +640,7 @@ mod http2 {
 
         // Wait until the proxy has seen the `srv1` disconnect...
         assert_eventually_contains!(
-            metrics.get("/metrics"),
+            metrics.get_async("/metrics").await,
             "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1"
         );
 
@@ -652,13 +648,13 @@ mod http2 {
         // This request should be waiting at the balancer for a ready endpoint.
         //
         // The only one it knows about is dead, so it won't have progressed.
-        let fut = client.request_async(&mut client.request_builder("/bye"));
+        let fut = client.request_async(client.request_builder("/bye"));
 
         // When we tell the balancer about a new endpoint, it should have added
         // it and then dispatched the request...
         dst.send_addr(srv2.addr);
 
-        let res = fut.wait().expect("/bye response");
+        let res = fut.await.expect("/bye response");
         assert_eq!(res.status(), http::StatusCode::OK);
     }
 }
@@ -708,7 +704,7 @@ mod proxy_to_proxy {
 
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
-        let res = client.request(&mut client.request_builder("/hint"));
+        let res = client.request(client.request_builder("/hint"));
         assert_eq!(res.status(), 200);
         assert_eq!(res.version(), http::Version::HTTP_11);
     }
@@ -822,7 +818,7 @@ mod proxy_to_proxy {
 
         let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
 
-        let res = client.request(&mut client.request_builder("/strip-me"));
+        let res = client.request(client.request_builder("/strip-me"));
         assert_eq!(res.status(), 200, "must be sucessful");
         assert_eq!(
             res.headers().get("l5d-server-id"),
@@ -853,7 +849,7 @@ mod proxy_to_proxy {
 
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
-        let res = client.request(&mut client.request_builder("/strip-me"));
+        let res = client.request(client.request_builder("/strip-me"));
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get("l5d-server-id"), None);
     }
@@ -887,7 +883,7 @@ mod proxy_to_proxy {
 
             let client = $make_client(out_proxy.outbound, "disco.test.svc.cluster.local");
 
-            let res = client.request(&mut client.request_builder("/hallo"));
+            let res = client.request(client.request_builder("/hallo"));
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers()["l5d-server-id"], id);
         };

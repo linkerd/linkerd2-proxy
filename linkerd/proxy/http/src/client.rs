@@ -1,17 +1,21 @@
-use super::glue::{HttpBody, HyperConnect};
+use super::glue::{Body, HyperConnect};
 use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{
     h1, h2,
     settings::{HasSettings, Settings},
 };
-use futures::{try_ready, Async, Future, Poll};
+use futures_03::{ready, TryFuture};
 use http;
 use hyper;
 use linkerd2_error::Error;
+use pin_project::{pin_project, project};
+use std::future::Future;
 use std::marker::PhantomData;
-use tower::ServiceExt;
-use tracing::{debug, info_span, trace};
-use tracing_futures::Instrument;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tower_03::ServiceExt;
+use tracing::{debug, trace};
+// use tracing_futures::{Instrument, Instrumented};
 
 /// Configures an HTTP client that uses a `C`-typed connector
 #[derive(Debug)]
@@ -30,34 +34,39 @@ pub struct MakeClient<C, B> {
 }
 
 /// A `Future` returned from `MakeClient::new_service()`.
+#[pin_project]
 pub enum MakeFuture<C, T, B>
 where
-    B: hyper::body::Payload + 'static,
-    C: tower::MakeConnection<T> + 'static,
-    C::Connection: Send + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
+    C: tower_03::make::MakeConnection<T> + 'static,
     C::Error: Into<Error>,
+    C::Connection: tokio_02::io::AsyncRead + tokio_02::io::AsyncWrite + Unpin + Send + 'static,
 {
     Http1(Option<HyperMakeClient<C, T, B>>),
-    Http2(::tower_util::Oneshot<h2::Connect<C, B>, T>),
+    Http2(#[pin] tower_03::util::Oneshot<h2::Connect<C, B>, T>),
 }
 
 /// The `Service` yielded by `MakeClient::new_service()`.
 pub enum Client<C, T, B>
 where
-    B: hyper::body::Payload + 'static,
-    C: tower::MakeConnection<T> + 'static,
+    B: hyper::body::HttpBody + 'static,
+    C: tower_03::make::MakeConnection<T> + 'static,
 {
     Http1(HyperMakeClient<C, T, B>),
     Http2(h2::Connection<B>),
 }
 
+#[pin_project]
 pub enum ClientFuture {
     Http1 {
+        #[pin]
         future: hyper::client::ResponseFuture,
         upgrade: Option<Http11Upgrade>,
         is_http_connect: bool,
     },
-    Http2(h2::ResponseFuture),
+    Http2(#[pin] h2::ResponseFuture),
 }
 
 // === impl MakeClientLayer ===
@@ -73,7 +82,7 @@ impl<B> MakeClientLayer<B> {
 
 impl<B> Clone for MakeClientLayer<B>
 where
-    B: hyper::body::Payload + Send + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
 {
     fn clone(&self) -> Self {
         Self {
@@ -85,7 +94,7 @@ where
 
 impl<C, B> tower::layer::Layer<C> for MakeClientLayer<B>
 where
-    B: hyper::body::Payload + Send + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
 {
     type Service = MakeClient<C, B>;
 
@@ -100,21 +109,23 @@ where
 
 // === impl MakeClient ===
 
-impl<C, T, B> tower::Service<T> for MakeClient<C, B>
+impl<C, T, B> tower_03::Service<T> for MakeClient<C, B>
 where
-    C: tower::MakeConnection<T> + Clone + Send + Sync + 'static,
-    C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<Error>,
-    C::Connection: Send + 'static,
-    T: HasSettings + Clone + Send + Sync,
-    B: hyper::body::Payload + 'static,
+    C: tower_03::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
+    C::Future: Unpin + Send + 'static,
+    C::Error: Into<Error>,
+    C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
+    T: HasSettings + Clone + Send + Sync + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
 {
     type Response = Client<C, T, B>;
     type Error = Error;
     type Future = MakeFuture<C, T, B>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.connect.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -126,16 +137,18 @@ where
                 wants_h1_upgrade: _,
                 was_absolute_form,
             } => {
-                let exec =
-                    tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
-
-                let h1 = hyper::Client::builder()
-                    .executor(exec)
-                    .keep_alive(keep_alive)
-                    // hyper should only try to automatically
-                    // set the host if the request was in absolute_form
-                    .set_host(was_absolute_form)
-                    .build(HyperConnect::new(connect, target, was_absolute_form));
+                let mut h1 = hyper::Client::builder();
+                let h1 = if !keep_alive {
+                    // disable hyper's connection pooling by setting the maximum
+                    // number of idle connections to 0.
+                    h1.pool_max_idle_per_host(0)
+                } else {
+                    &mut h1
+                }
+                // hyper should only try to automatically
+                // set the host if the request was in absolute_form
+                .set_host(was_absolute_form)
+                .build(HyperConnect::new(connect, target, was_absolute_form));
                 MakeFuture::Http1(Some(h1))
             }
             Settings::Http2 => {
@@ -160,46 +173,51 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
 
 impl<C, T, B> Future for MakeFuture<C, T, B>
 where
-    C: tower::MakeConnection<T> + Send + Sync + 'static,
-    C::Connection: Send + 'static,
+    C: tower_03::make::MakeConnection<T> + Unpin + Send + Sync + 'static,
+    C::Connection: Unpin + Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
-    B: hyper::body::Payload + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
 {
-    type Item = Client<C, T, B>;
-    type Error = Error;
+    type Output = Result<Client<C, T, B>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let svc = match *self {
-            MakeFuture::Http1(ref mut h1) => Client::Http1(h1.take().expect("poll more than once")),
-            MakeFuture::Http2(ref mut h2) => {
-                let svc = try_ready!(h2.poll());
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        let svc = match self.project() {
+            MakeFuture::Http1(h1) => Client::Http1(h1.take().expect("poll more than once")),
+            MakeFuture::Http2(h2) => {
+                let svc = ready!(h2.poll(cx))?;
                 Client::Http2(svc)
             }
         };
-        Ok(Async::Ready(svc))
+        Poll::Ready(Ok(svc))
     }
 }
 
 // === impl Client ===
 
-impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
+impl<C, T, B> tower_03::Service<http::Request<B>> for Client<C, T, B>
 where
-    C: tower::MakeConnection<T> + Clone + Send + Sync + 'static,
-    C::Connection: Send,
-    C::Future: Send + 'static,
-    <C::Future as Future>::Error: Into<Error>,
+    C: tower_03::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
+    C::Future: Unpin + Send + 'static,
+    C::Error: Into<Error>,
     T: Clone + Send + Sync + 'static,
-    B: hyper::body::Payload + 'static,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: std::error::Error + Send + Sync,
 {
-    type Response = http::Response<HttpBody>;
+    type Response = http::Response<Body>;
     type Error = Error;
     type Future = ClientFuture;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match *self {
-            Client::Http1(_) => Ok(Async::Ready(())),
-            Client::Http2(ref mut h2) => h2.poll_ready().map_err(Into::into),
+            Client::Http1(_) => Poll::Ready(Ok(())),
+            Client::Http2(ref mut h2) => h2.poll_ready(cx).map_err(Into::into),
         }
     }
 
@@ -233,17 +251,18 @@ where
 // === impl ClientFuture ===
 
 impl Future for ClientFuture {
-    type Item = http::Response<HttpBody>;
-    type Error = Error;
+    type Output = Result<http::Response<Body>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self {
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        match self.project() {
             ClientFuture::Http1 {
                 future,
                 upgrade,
                 is_http_connect,
             } => {
-                let mut res = try_ready!(future.poll()).map(|b| HttpBody {
+                let mut res = ready!(future.try_poll(cx))?.map(|b| Body {
                     body: Some(b),
                     upgrade: upgrade.take(),
                 });
@@ -256,9 +275,9 @@ impl Future for ClientFuture {
                 } else {
                     h1::strip_connection_headers(res.headers_mut());
                 }
-                Ok(Async::Ready(res))
+                Poll::Ready(Ok(res))
             }
-            ClientFuture::Http2(f) => f.poll().map_err(Into::into),
+            ClientFuture::Http2(f) => f.poll(cx).map_err(Into::into),
         }
     }
 }

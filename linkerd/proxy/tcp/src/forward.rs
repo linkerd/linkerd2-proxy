@@ -1,7 +1,4 @@
-use futures::{
-    compat::{Compat01As03, Future01CompatExt},
-    future, TryFuture,
-};
+use futures::{future, TryFuture};
 use linkerd2_duplex::Duplex;
 use linkerd2_error::Error;
 use pin_project::{pin_project, project};
@@ -33,7 +30,7 @@ enum ForwardState<I, F: TryFuture> {
         connect: F,
         io: Option<I>,
     },
-    Duplex(#[pin] Compat01As03<Duplex<I, F::Ok>>),
+    Duplex(#[pin] Duplex<I, F::Ok>),
 }
 
 impl<C> Forward<C> {
@@ -48,8 +45,8 @@ where
     C::Response: Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
-    C::Response: AsyncRead + AsyncWrite,
-    I: AsyncRead + AsyncWrite + Send + 'static,
+    C::Response: AsyncRead + AsyncWrite + Unpin,
+    I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     type Response = ForwardFuture<I, C::Future>;
     type Error = Error;
@@ -71,9 +68,9 @@ where
 
 impl<I, F> Future for ForwardFuture<I, F>
 where
-    I: AsyncRead + AsyncWrite,
+    I: AsyncRead + AsyncWrite + Unpin,
     F: TryFuture,
-    F::Ok: AsyncRead + AsyncWrite,
+    F::Ok: AsyncRead + AsyncWrite + Unpin,
     F::Error: Into<Error>,
 {
     type Output = Result<(), Error>;
@@ -87,7 +84,7 @@ where
                 ForwardState::Connect { connect, io } => {
                     let client_io = futures::ready!(connect.try_poll(cx).map_err(Into::into))?;
                     let server_io = io.take().expect("illegal state");
-                    let duplex = Duplex::new(server_io, client_io).compat();
+                    let duplex = Duplex::new(server_io, client_io);
                     this.state.set(ForwardState::Duplex(duplex))
                 }
                 ForwardState::Duplex(fut) => {

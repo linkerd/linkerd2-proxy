@@ -15,7 +15,7 @@ use linkerd2_app_core::{
     drain,
     // dst,
     // errors,
-    // metric_labels,
+    metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -33,7 +33,7 @@ use linkerd2_app_core::{
     svc::{self, NewService},
     transport::{self, io::BoxedIo, tls},
     Error,
-    // ProxyMetrics,
+    ProxyMetrics,
     TraceContextLayer,
     DST_OVERRIDE_HEADER,
     L5D_CLIENT_ID,
@@ -48,10 +48,10 @@ use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
 mod endpoint;
-#[allow(dead_code)] // TODO #2597
-mod set_client_id_on_req;
-#[allow(dead_code)] // TODO #2597
-mod set_remote_ip_on_req;
+// #[allow(dead_code)] // TODO #2597
+// mod set_client_id_on_req;
+// #[allow(dead_code)] // TODO #2597
+// mod set_remote_ip_on_req;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -69,7 +69,7 @@ impl Config {
         local_identity: tls::Conditional<identity::Local>,
         profiles_client: P,
         // tap_layer: tap::Layer,
-        // metrics: ProxyMetrics,
+        metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Result<Inbound, Error>
@@ -104,8 +104,7 @@ impl Config {
             let tcp_connect = svc::connect(connect.keepalive)
                 .push_map_response(BoxedIo::new) // Ensures the transport propagates shutdown properly.
                 .push_timeout(connect.timeout)
-                // .push(metrics.transport.layer_connect(TransportLabels))
-                ;
+                .push(metrics.transport.layer_connect(TransportLabels));
 
             // Forwards TCP streams that cannot be decoded as HTTP.
             let tcp_forward = tcp_connect
@@ -346,6 +345,6 @@ pub fn trace_labels() -> HashMap<String, String> {
     l
 }
 
-// fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
-//     metric_labels::StackLabels::inbound(name)
-// }
+fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
+    metric_labels::StackLabels::inbound(name)
+}

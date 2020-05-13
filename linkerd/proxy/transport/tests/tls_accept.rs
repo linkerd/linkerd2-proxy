@@ -1,12 +1,11 @@
 #![cfg(test)]
-#![type_length_limit = "1982738"]
+#![type_length_limit = "3659323"]
 // These are basically integration tests for the `connection` submodule, but
 // they cannot be "real" integration tests because `connection` isn't a public
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
 
-use futures::future::Future as _;
-use futures_03::{compat::Future01CompatExt, FutureExt};
+use futures_03::FutureExt;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
 use linkerd2_proxy_core::listen::{Accept, Bind as _Bind, Listen as CoreListen};
@@ -21,18 +20,19 @@ use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::{
     self,
-    io::{self, AsyncRead, AsyncWrite},
+    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 use tower::layer::Layer;
 use tower::util::{service_fn, ServiceExt};
+use tracing_futures::Instrument;
 
 #[test]
 fn plaintext() {
     let (client_result, server_result) = run_test(
         Conditional::None(tls::ReasonForNoIdentity::Disabled),
-        |conn| write_then_read(conn, PING).compat(),
+        |conn| write_then_read(conn, PING),
         Conditional::None(tls::ReasonForNoIdentity::Disabled),
-        |(_, conn)| read_then_write(conn, PING.len(), PONG).compat(),
+        |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), false);
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -46,9 +46,9 @@ fn proxy_to_proxy_tls_works() {
     let client_tls = test_util::BAR_NS1.validate().unwrap();
     let (client_result, server_result) = run_test(
         Conditional::Some((client_tls, server_tls.tls_server_name())),
-        |conn| write_then_read(conn, PING).compat(),
+        |conn| write_then_read(conn, PING),
         Conditional::Some(server_tls),
-        |(_, conn)| read_then_write(conn, PING.len(), PONG).compat(),
+        |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), true);
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -67,9 +67,9 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
 
     let (client_result, server_result) = run_test(
         Conditional::Some((client_tls, client_target)),
-        |conn| write_then_read(conn, PING).compat(),
+        |conn| write_then_read(conn, PING),
         Conditional::Some(server_tls),
-        |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG).compat(),
+        |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
     );
 
     // The server's connection will succeed with the TLS client hello passed
@@ -152,7 +152,7 @@ where
                 let server = server.clone();
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());
-                let future = server((meta, conn));
+                let future = server((meta, conn)).instrument(tracing::info_span!("test_svc"));
                 futures_03::future::ok::<_, Never>(async move {
                     let result = future.await;
                     sender
@@ -166,12 +166,16 @@ where
             }),
         );
         let server = async move {
-            let accept = accept.ready_and().await.expect("accept failed");
             let conn = futures_03::future::poll_fn(|cx| listen.poll_accept(cx))
                 .await
                 .expect("listen failed");
-            accept.accept(conn).await.expect("connection failed").await
-        };
+            tracing::debug!("incoming connection");
+            let accept = accept.ready_and().await.expect("accept failed");
+            tracing::debug!("accept ready");
+            let res = accept.accept(conn).await.expect("connection failed").await;
+            tracing::debug!("done");
+        }
+        .instrument(tracing::info_span!("run_server", %listen_addr));
         (server, listen_addr, receiver)
     };
 
@@ -199,7 +203,7 @@ where
                         .expect("send result");
                 }
                 Ok(conn) => {
-                    let result = client(conn).await;
+                    let result = client(conn).instrument(tracing::info_span!("client")).await;
                     sender
                         .send(Transported {
                             peer_identity,
@@ -229,35 +233,49 @@ where
 
 /// Writes `to_write` and shuts down the write side, then reads until EOF,
 /// returning the bytes read.
-fn write_then_read(
-    conn: impl AsyncRead + AsyncWrite,
+async fn write_then_read(
+    mut conn: impl AsyncRead + AsyncWrite + Unpin,
     to_write: &'static [u8],
-) -> impl futures::future::Future<Item = Vec<u8>, Error = io::Error> {
-    write_and_shutdown(conn, to_write)
-        .and_then(|conn| io::read_to_end(conn, Vec::new()))
-        .map(|(_conn, r)| r)
+) -> Result<Vec<u8>, io::Error> {
+    let conn = write_and_shutdown(conn, to_write).await;
+    if let Err(ref write_err) = conn {
+        tracing::error!(%write_err);
+    }
+    let mut conn = conn?;
+    let mut vec = Vec::new();
+    tracing::debug!("read_to_end");
+    let read = conn.read_to_end(&mut vec).await;
+    tracing::debug!(?read, ?vec);
+    read?;
+    Ok(vec)
 }
 
 /// Reads until EOF then writes `to_write` and shuts down the write side,
 /// returning the bytes read.
-fn read_then_write(
-    conn: impl AsyncRead + AsyncWrite,
+async fn read_then_write(
+    mut conn: impl AsyncRead + AsyncWrite + Unpin,
     read_prefix_len: usize,
     to_write: &'static [u8],
-) -> impl futures::future::Future<Item = Vec<u8>, Error = io::Error> {
-    io::read_exact(conn, vec![0; read_prefix_len])
-        .and_then(move |(conn, r)| write_and_shutdown(conn, to_write).map(|_conn| r))
+) -> Result<Vec<u8>, io::Error> {
+    let mut vec = vec![0; read_prefix_len];
+    tracing::debug!("read_exact");
+    let read = conn.read_exact(&mut vec[..]).await;
+    tracing::debug!(?read, ?vec);
+    read?;
+    write_and_shutdown(conn, to_write).await?;
+    Ok(vec)
 }
 
 /// writes `to_write` to `conn` and then shuts down the write side of `conn`.
-fn write_and_shutdown<T: AsyncRead + AsyncWrite>(
-    conn: T,
+async fn write_and_shutdown<T: AsyncRead + AsyncWrite + Unpin>(
+    mut conn: T,
     to_write: &'static [u8],
-) -> impl futures::future::Future<Item = T, Error = io::Error> {
-    io::write_all(conn, to_write).and_then(|(mut conn, _)| {
-        conn.shutdown()?;
-        Ok(conn)
-    })
+) -> Result<T, io::Error> {
+    conn.write_all(to_write).await?;
+    tracing::debug!("shutting down...");
+    conn.shutdown().await?;
+    tracing::debug!("shutdown done");
+    Ok(conn)
 }
 
 const PING: &[u8] = b"ping";

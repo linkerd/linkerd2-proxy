@@ -14,7 +14,7 @@ This should probably be decomposed into smaller, decoupled crates.
 mock-orig-dst  = []
 
 [dependencies]
-bytes = "0.4"
+bytes = "0.5"
 futures = "0.1"
 futures_03 = { package = "futures", version = "0.3", features = ["compat", "io-compat"]}
 indexmap = "1.0.0"
@@ -27,10 +27,10 @@ linkerd2-metrics = { path = "../../metrics" }
 linkerd2-proxy-core = { path = "../core" }
 linkerd2-stack = { path = "../../stack" }
 ring = "0.16"
-rustls = "0.16"
-tokio = "0.1.14"
+rustls = "0.17"
+tokio = { version = "0.2", features = ["net", "io-util"]}
 tokio-compat = "0.1"
-tokio-rustls = "0.10"
+tokio-rustls = "0.13"
 task-compat = "0.1"
 tower_01 = {package = "tower", version = "0.1"}
 tracing = "0.1.9"
@@ -44,6 +44,7 @@ version = "0.3"
 # disable tower's tracing `log` integration for performance reasons, since we
 # will consume tower's traces as traces.
 default-features = false
+features = ["make"]
 
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -53,3 +54,4 @@ libc = "0.2"
 linkerd2-identity = { path = "../../identity", features = ["test-util"] }
 tracing-subscriber = "0.2.1"
 tower = { version = "0.3", default-features = false, features = ["util"] }
+tracing-futures = { version = "0.1", features = ["std-future"] }

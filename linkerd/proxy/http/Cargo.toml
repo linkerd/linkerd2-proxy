@@ -11,14 +11,14 @@ This should probably be decomposed into smaller, decoupled crates.
 """
 
 [dependencies]
-bytes = "0.4"
+bytes = "0.5"
 futures = "0.1"
 futures_03 = { package = "futures", version = "0.3", features = ["compat"]}
-h2 = "0.1"
-http = "0.1"
-http-body = "0.1"
+h2 = "0.2"
+http = "0.2"
+http-body = "0.3"
 httparse = "1.2"
-hyper = "0.12.3"
+hyper = "0.13"
 hyper-balance = { path  = "../../../hyper-balance" }
 indexmap = "1.0"
 linkerd2-addr = { path  = "../../addr" }
@@ -42,7 +42,7 @@ tower-balance = { git = "https://github.com/tower-rs/tower" }
 tower-discover = "0.1"
 tower-load = { git = "https://github.com/tower-rs/tower" }
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
-tower-util = "0.1"
+# tower-util = "0.1"
 tracing = "0.1.9"
 tracing-futures = { version = "0.1", features = ["std-future"] }
 try-lock = "0.2"

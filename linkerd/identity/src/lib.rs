@@ -366,12 +366,8 @@ impl CertResolver {
 }
 
 impl rustls::ResolvesServerCert for CertResolver {
-    fn resolve(
-        &self,
-        server_name: Option<webpki::DNSNameRef<'_>>,
-        sigschemes: &[rustls::SignatureScheme],
-    ) -> Option<rustls::sign::CertifiedKey> {
-        let server_name = if let Some(server_name) = server_name {
+    fn resolve(&self, hello: rustls::ClientHello<'_>) -> Option<rustls::sign::CertifiedKey> {
+        let server_name = if let Some(server_name) = hello.server_name() {
             server_name
         } else {
             debug!("no SNI -> no certificate");
@@ -393,7 +389,7 @@ impl rustls::ResolvesServerCert for CertResolver {
             return None;
         }
 
-        self.resolve_(sigschemes)
+        self.resolve_(hello.sigschemes())
     }
 }
 

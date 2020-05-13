@@ -55,7 +55,7 @@ pub struct AcceptFuture<A: Accept<Connection>> {
 enum AcceptState<A: Accept<Connection>> {
     TryTls(Option<TryTls<A>>),
     TerminateTls(
-        #[pin] Compat01As03<tokio_rustls::Accept<PrefixedIo<TcpStream>>>,
+        #[pin] tokio_rustls::Accept<PrefixedIo<TcpStream>>,
         Option<AcceptMeta<A>>,
     ),
     ReadyAccept(A, Option<Connection>),
@@ -214,7 +214,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                             } = try_tls.take().expect("polled after complete");
                             let io = PrefixedIo::new(peek_buf.freeze(), socket);
                             this.state.set(AcceptState::TerminateTls(
-                                tokio_rustls::TlsAcceptor::from(config).accept(io).compat(),
+                                tokio_rustls::TlsAcceptor::from(config).accept(io),
                                 Some(meta),
                             ));
                         }
@@ -286,12 +286,8 @@ impl<A: Accept<Connection>> TryTls<A> {
     ) -> Poll<Result<conditional_accept::Match, Error>> {
         use crate::io::AsyncRead;
 
-        let poll = task_compat::with_notify(cx, || {
-            self.socket
-                .read_buf(&mut self.peek_buf)
-                .map_err(Error::from)
-        });
-        let sz = futures_03::ready!(task_compat::poll_01_to_03(poll))?;
+        let sz =
+            futures_03::ready!(Pin::new(&mut self.socket).poll_read_buf(cx, &mut self.peek_buf))?;
         trace!(%sz, "read");
         if sz == 0 {
             // XXX: It is ambiguous whether this is the start of a Tls handshake or not.

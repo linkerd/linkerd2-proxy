@@ -1,5 +1,4 @@
 use crate::proxy::identity;
-use futures::{Async, Poll};
 use http::{header::HeaderValue, StatusCode};
 use linkerd2_error::Error;
 use linkerd2_error_metrics as metrics;
@@ -7,6 +6,9 @@ use linkerd2_error_respond as respond;
 pub use linkerd2_error_respond::RespondLayer;
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_timeout::{error::ResponseTimeout, FailFastError};
+use pin_project::{pin_project, project};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tower_grpc::{self as grpc, Code};
 use tracing::{debug, warn};
 
@@ -43,35 +45,42 @@ pub enum Respond {
     Http2 { is_grpc: bool },
 }
 
+#[pin_project]
 pub enum ResponseBody<B> {
-    NonGrpc(B),
+    NonGrpc(#[pin] B),
     Grpc {
+        #[pin]
         inner: B,
         trailers: Option<http::HeaderMap>,
     },
 }
 
-impl<B: hyper::body::Payload> hyper::body::Payload for ResponseBody<B>
+impl<B: hyper::body::HttpBody> hyper::body::HttpBody for ResponseBody<B>
 where
     B::Error: Into<Error>,
 {
     type Data = B::Data;
     type Error = B::Error;
 
-    fn poll_data(&mut self) -> Poll<Option<Self::Data>, Self::Error> {
-        match self {
-            Self::NonGrpc(inner) => inner.poll_data(),
-            Self::Grpc { inner, trailers } => {
+    #[project]
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        #[project]
+        match self.project() {
+            ResponseBody::NonGrpc(inner) => inner.poll_data(cx),
+            ResponseBody::Grpc { inner, trailers } => {
                 // should not be calling poll_data if we have set trailers derived from an error
                 assert!(trailers.is_none());
-                match inner.poll_data() {
-                    Err(error) => {
+                match inner.poll_data(cx) {
+                    Poll::Ready(Some(Err(error))) => {
                         let error = error.into();
                         let mut error_trailers = http::HeaderMap::new();
                         let code = set_grpc_status(&*error, &mut error_trailers);
                         debug!(%error, grpc.status = ?code, "Handling gRPC stream failure");
                         *trailers = Some(error_trailers);
-                        Ok(Async::Ready(None))
+                        Poll::Ready(None)
                     }
                     data => data,
                 }
@@ -79,12 +88,17 @@ where
         }
     }
 
-    fn poll_trailers(&mut self) -> futures::Poll<Option<http::HeaderMap>, Self::Error> {
-        match self {
-            Self::NonGrpc(inner) => inner.poll_trailers(),
-            Self::Grpc { inner, trailers } => match trailers.take() {
-                Some(t) => Ok(Async::Ready(Some(t))),
-                None => inner.poll_trailers(),
+    #[project]
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        #[project]
+        match self.project() {
+            ResponseBody::NonGrpc(inner) => inner.poll_trailers(cx),
+            ResponseBody::Grpc { inner, trailers } => match trailers.take() {
+                Some(t) => Poll::Ready(Ok(Some(t))),
+                None => inner.poll_trailers(cx),
             },
         }
     }
@@ -95,15 +109,22 @@ where
             Self::Grpc { inner, trailers } => trailers.is_none() && inner.is_end_stream(),
         }
     }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        match self {
+            Self::NonGrpc(inner) => inner.size_hint(),
+            Self::Grpc { inner, trailers } => inner.size_hint(),
+        }
+    }
 }
 
-impl<B: Default + hyper::body::Payload> Default for ResponseBody<B> {
+impl<B: Default + hyper::body::HttpBody> Default for ResponseBody<B> {
     fn default() -> ResponseBody<B> {
         ResponseBody::NonGrpc(B::default())
     }
 }
 
-impl<ReqB, RspB: Default + hyper::body::Payload>
+impl<ReqB, RspB: Default + hyper::body::HttpBody>
     respond::NewRespond<http::Request<ReqB>, http::Response<RspB>> for NewRespond
 {
     type Response = http::Response<ResponseBody<RspB>>;
@@ -124,7 +145,7 @@ impl<ReqB, RspB: Default + hyper::body::Payload>
     }
 }
 
-impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>> for Respond {
+impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB>> for Respond {
     type Response = http::Response<ResponseBody<RspB>>;
 
     fn respond(

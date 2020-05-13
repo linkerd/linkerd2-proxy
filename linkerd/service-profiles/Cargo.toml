@@ -11,7 +11,7 @@ Implements client layers for Linkerd ServiceProfiles.
 [dependencies]
 bytes = "0.4"
 futures = "0.1"
-http = "0.1"
+http = "0.2"
 indexmap = "1.0"
 linkerd2-addr = { path  = "../addr" }
 linkerd2-dns = { path  = "../dns" }

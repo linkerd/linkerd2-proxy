@@ -43,7 +43,7 @@ enum ConnectState<L, F: TryFuture> {
         future: F,
         tls: super::Conditional<(identity::Name, L)>,
     },
-    Handshake(#[pin] Compat01As03<tokio_rustls::Connect<F::Ok>>),
+    Handshake(#[pin] tokio_rustls::Connect<F::Ok>),
 }
 
 // === impl ConnectLayer ===
@@ -125,8 +125,7 @@ where
                             trace!(peer.id = %peer_identity, "initiating TLS");
                             let handshake =
                                 tokio_rustls::TlsConnector::from(local_tls.tls_client_config())
-                                    .connect(peer_identity.as_dns_name_ref(), io)
-                                    .compat();
+                                    .connect(peer_identity.as_dns_name_ref(), io);
                             this.state.set(ConnectState::Handshake(handshake));
                         }
                         Conditional::None(reason) => {

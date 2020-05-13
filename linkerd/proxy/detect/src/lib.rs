@@ -64,7 +64,7 @@ pub enum PeekAndDetect<T, D: Detect<T>> {
     // Waiting for accept to become ready.
     Detected(Option<(D::Target, BoxedIo)>),
     // Waiting for the prefix to be read.
-    Peek(Option<T>, #[pin] Compat01As03<Peek<BoxedIo>>),
+    Peek(Option<T>, #[pin] Peek<BoxedIo>),
 }
 
 impl<D> DetectProtocolLayer<D> {
@@ -115,7 +115,7 @@ where
                     accept: self.accept.clone(),
                     inner: PeekAndDetect::Peek(
                         Some(target),
-                        Peek::with_capacity(self.peek_capacity, io).compat(),
+                        Peek::with_capacity(self.peek_capacity, io),
                     ),
                 },
             },

@@ -31,20 +31,20 @@ tokio-compat = "0.1"
 tokio_02 = {package = "tokio", version = "0.2", features = ["rt-util"] }
 
 [dev-dependencies]
-bytes = "0.4"
-h2 = "0.1"
-http = "0.1"
-http-body = "0.1"
-hyper = "0.12"
+bytes = "0.5"
+h2 = "0.2"
+http = "0.2"
+http-body = "0.3"
+hyper = "0.13"
 linkerd2-metrics = { path = "../metrics", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
 net2 = "0.2"
 quickcheck = { version = "0.9", default-features = false }
 ring = "0.16"
-rustls = "0.16"
+rustls = "0.17"
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-io = "0.1.6"
 tokio-current-thread = "0.1.4"
-tokio-rustls = "0.10"
+tokio-rustls = "0.13"
 tower = "0.1"
 webpki = "=0.21.0"

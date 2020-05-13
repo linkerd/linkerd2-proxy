@@ -1,6 +1,9 @@
 use super::*;
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
+use futures::compat::{Future01CompatExt, Stream01CompatExt};
+use http_body::Body;
 use linkerd2_proxy_api::tap as pb;
+use std::io::Cursor;
 
 pub fn client(addr: SocketAddr) -> Client {
     let api = pb::client::Tap::new(SyncSvc(client::http2(addr, "localhost")));
@@ -17,23 +20,25 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn observe(
+    pub async fn observe(
         &mut self,
         req: ObserveBuilder,
-    ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Status> {
+    ) -> impl Stream<Item = Result<pb::TapEvent, tower_grpc::Status>> {
         let req = tower_grpc::Request::new(req.0);
         self.api
             .observe(req)
-            .wait()
+            .compat()
+            .await
             .expect("tap observe wait")
             .into_inner()
+            .compat()
     }
 
-    pub fn observe_with_require_id(
+    pub async fn observe_with_require_id(
         &mut self,
         req: ObserveBuilder,
         require_id: &str,
-    ) -> impl Stream<Item = pb::TapEvent, Error = tower_grpc::Status> {
+    ) -> impl Stream<Item = Result<pb::TapEvent, tower_grpc::Status>> {
         let mut req = tower_grpc::Request::new(req.0);
 
         let require_id = tower_grpc::metadata::MetadataValue::from_str(require_id).unwrap();
@@ -41,9 +46,11 @@ impl Client {
 
         self.api
             .observe(req)
-            .wait()
+            .compat()
+            .await
             .expect("tap observe wait")
             .into_inner()
+            .compat()
     }
 }
 
@@ -188,35 +195,114 @@ impl TapEventExt for pb::TapEvent {
 
 struct SyncSvc(client::Client);
 
-impl<B> tower::Service<http::Request<B>> for SyncSvc
+impl<B> tower_01::Service<http_01::Request<B>> for SyncSvc
 where
     B: grpc::Body,
 {
-    type Response = http::Response<client::BytesBody>;
+    type Response = http_01::Response<CompatBody>;
     type Error = String;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send>;
+    type Future = Box<dyn Future01<Item = Self::Response, Error = Self::Error> + Send>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self) -> Poll01<(), Self::Error> {
         unreachable!("tap SyncSvc poll_ready");
     }
 
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        let req = req.map(|mut body| {
-            let mut buf = BytesMut::new();
-            while let Some(bytes) = future::poll_fn(|| body.poll_data())
-                .wait()
-                .map_err(Into::into)
-                .expect("req body")
-            {
-                buf.put(bytes);
-            }
+    fn call(&mut self, req: http_01::Request<B>) -> Self::Future {
+        use bytes_04::{Buf, IntoBuf};
+        // XXX: this is all terrible, but hopefully all this code can leave soon.
+        let (parts, mut body) = req.into_parts();
+        let mut buf = BytesMut::new();
+        while let Some(bytes) = futures_01::future::poll_fn(|| body.poll_data())
+            .wait()
+            .map_err(Into::into)
+            .expect("req body")
+        {
+            buf.put(bytes.into_buf().bytes());
+        }
 
-            buf.freeze()
-        });
+        let body = buf.freeze();
+        let mut req = http::Request::builder()
+            .method(parts.method.as_str())
+            // .version(parts.version.as_str().try_into().unwrap())
+            .uri(&parts.uri.to_string()[..]);
+        *req.headers_mut().unwrap() = headermap_compat_01(parts.headers);
+        let req = req.body(body).unwrap();
+
         Box::new(
-            self.0
-                .request_body_async(req)
-                .map_err(|err| err.to_string()),
+            Box::pin(self.0.send_req(req))
+                .compat()
+                .map_err(|err| err.to_string())
+                .map(|rsp| {
+                    let (parts, body) = rsp.into_parts();
+                    let mut rsp = http_01::response::Builder::new();
+                    *rsp.headers_mut().unwrap() = headermap_compat(parts.headers);
+                    rsp.body(CompatBody(body)).unwrap()
+                }),
         )
     }
+}
+
+struct CompatBody(hyper::Body);
+
+impl http_body_01::Body for CompatBody {
+    type Data = Cursor<bytes_04::Bytes>;
+    type Error = hyper::Error;
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
+        let poll = task_compat::with_context(|cx| Pin::new(&mut self.0).poll_data(cx));
+        match poll {
+            Poll::Ready(Some(Ok(data))) => Ok(Async::Ready(Some(Cursor::new(
+                bytes_04::Bytes::from(data.bytes()),
+            )))),
+            Poll::Ready(Some(Err(e))) => Err(e),
+            Poll::Ready(None) => Ok(Async::Ready(None)),
+            Poll::Pending => Ok(Async::NotReady),
+        }
+    }
+
+    fn poll_trailers(&mut self) -> Poll01<Option<http_01::HeaderMap>, Self::Error> {
+        let poll = task_compat::with_context(|cx| Pin::new(&mut self.0).poll_trailers(cx));
+        match poll {
+            Poll::Ready(Ok(Some(headers))) => {
+                let headers = headermap_compat(headers);
+                Ok(Async::Ready(Some(headers)))
+            }
+            Poll::Ready(Err(e)) => Err(e),
+            Poll::Ready(Ok(None)) => Ok(Async::Ready(None)),
+            Poll::Pending => Ok(Async::NotReady),
+        }
+    }
+}
+
+fn headermap_compat(mut headers: http::HeaderMap) -> http_01::HeaderMap {
+    // XXX: this far from efficient, but hopefully this code will go away soon.
+    headers
+        .drain()
+        .map(|(k, v)| {
+            let name =
+                http_01::header::HeaderName::from_bytes(k.as_ref().unwrap().as_ref()).unwrap();
+            let value = http_01::HeaderValue::from_bytes(v.as_ref()).unwrap();
+            (name, value)
+        })
+        .collect()
+}
+
+fn headermap_compat_01(mut headers: http_01::HeaderMap) -> http::HeaderMap {
+    // XXX: this far from efficient, but hopefully this code will go away soon.
+    headers
+        .drain()
+        .flat_map(|(k, v)| {
+            let name = http::header::HeaderName::from_bytes(k.as_ref()).unwrap();
+            v.map(move |v| {
+                (
+                    name.clone(),
+                    http::HeaderValue::from_bytes(v.as_ref()).unwrap(),
+                )
+            })
+        })
+        .collect()
 }

@@ -1,74 +1,88 @@
-use super::{internal::Io, AsyncRead, AsyncWrite, Poll, Result};
-use futures::try_ready;
+use super::{internal::Io, AsyncRead, AsyncWrite, Poll};
+use bytes::{Buf, BufMut};
+use std::{mem::MaybeUninit, pin::Pin, task::Context};
 
 /// A public wrapper around a `Box<Io>`.
 ///
 /// This type ensures that the proper write_buf method is called,
 /// to allow vectored writes to occur.
-pub struct BoxedIo(Box<dyn Io>);
+pub struct BoxedIo(Pin<Box<dyn Io + Unpin>>);
 
 impl BoxedIo {
-    pub fn new<T: Io + 'static>(io: T) -> Self {
-        BoxedIo(Box::new(io))
-    }
-
-    /// Since `Io` isn't publicly exported, but `Connection` wants
-    /// this method, it's just an inherent method.
-    pub fn shutdown_write(&mut self) -> Result<()> {
-        self.0.shutdown_write()
-    }
-}
-
-impl std::io::Read for BoxedIo {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.0.read(buf)
-    }
-}
-
-impl std::io::Write for BoxedIo {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> Result<()> {
-        self.0.flush()
+    pub fn new<T: Io + Unpin + 'static>(io: T) -> Self {
+        BoxedIo(Box::pin(io))
     }
 }
 
 impl AsyncRead for BoxedIo {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]) -> Poll<usize> {
+        self.as_mut().0.as_mut().poll_read(cx, buf)
+    }
+
+    fn poll_read_buf<B: BufMut>(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        mut buf: &mut B,
+    ) -> Poll<usize> {
+        // A trait object of AsyncWrite would use the default poll_read_buf,
+        // which doesn't allow vectored reads. Going through this method
+        // allows the trait object to call the specialized poll_read_buf method.
+        self.as_mut().0.as_mut().poll_read_buf_erased(cx, &mut buf)
+    }
+
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
         self.0.prepare_uninitialized_buffer(buf)
     }
 }
 
 impl AsyncWrite for BoxedIo {
-    fn shutdown(&mut self) -> Poll<()> {
-        try_ready!(self.0.shutdown());
-
-        // TCP shutdown the write side.
-        //
-        // If we're shutting down, then we definitely won't write
-        // anymore. So, we should tell the remote about this. This
-        // is relied upon in our TCP proxy, to start shutting down
-        // the pipe if one side closes.
-        Ok(self.0.shutdown_write()?.into())
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+        self.as_mut().0.as_mut().poll_shutdown(cx)
     }
 
-    fn write_buf<B: bytes::Buf>(&mut self, mut buf: &mut B) -> Poll<usize> {
-        // A trait object of AsyncWrite would use the default write_buf,
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+        self.as_mut().0.as_mut().poll_flush(cx)
+    }
+
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<usize> {
+        self.as_mut().0.as_mut().poll_write(cx, buf)
+    }
+
+    fn poll_write_buf<B: Buf>(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut B,
+    ) -> Poll<usize>
+    where
+        Self: Sized,
+    {
+        // A trait object of AsyncWrite would use the default poll_write_buf,
         // which doesn't allow vectored writes. Going through this method
-        // allows the trait object to call the specialized write_buf method.
-        self.0.write_buf_erased(&mut buf)
+        // allows the trait object to call the specialized poll_write_buf
+        // method.
+        self.as_mut().0.as_mut().poll_write_buf_erased(cx, buf)
     }
 }
 
 impl Io for BoxedIo {
-    fn shutdown_write(&mut self) -> Result<()> {
-        self.0.shutdown_write()
+    /// This method is to allow using `Async::poll_write_buf` even through a
+    /// trait object.
+    fn poll_write_buf_erased(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut dyn Buf,
+    ) -> Poll<usize> {
+        self.as_mut().0.as_mut().poll_write_buf_erased(cx, buf)
     }
 
-    fn write_buf_erased(&mut self, buf: &mut dyn bytes::Buf) -> Poll<usize> {
-        self.0.write_buf_erased(buf)
+    /// This method is to allow using `Async::poll_read_buf` even through a
+    /// trait object.
+    fn poll_read_buf_erased(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut dyn BufMut,
+    ) -> Poll<usize> {
+        self.as_mut().0.as_mut().poll_read_buf_erased(cx, buf)
     }
 }
 
@@ -79,51 +93,68 @@ mod tests {
     #[derive(Debug)]
     struct WriteBufDetector;
 
-    impl std::io::Read for WriteBufDetector {
-        fn read(&mut self, _: &mut [u8]) -> Result<usize> {
+    impl AsyncRead for WriteBufDetector {
+        fn poll_read(self: Pin<&mut Self>, _: &mut Context<'_>, _: &mut [u8]) -> Poll<usize> {
             unreachable!("not called in test")
         }
     }
-
-    impl std::io::Write for WriteBufDetector {
-        fn write(&mut self, _: &[u8]) -> Result<usize> {
-            panic!("BoxedIo called wrong write_buf method");
-        }
-        fn flush(&mut self) -> Result<()> {
-            unreachable!("not called in test")
-        }
-    }
-
-    impl AsyncRead for WriteBufDetector {}
 
     impl AsyncWrite for WriteBufDetector {
-        fn shutdown(&mut self) -> Poll<()> {
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<()> {
             unreachable!("not called in test")
         }
 
-        fn write_buf<B: bytes::Buf>(&mut self, _: &mut B) -> Poll<usize> {
-            Ok(0.into())
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<()> {
+            unreachable!("not called in test")
+        }
+
+        fn poll_write(self: Pin<&mut Self>, _: &mut Context<'_>, _: &[u8]) -> Poll<usize> {
+            panic!("BoxedIo called wrong write_buf method");
+        }
+
+        fn poll_write_buf<B: bytes::Buf>(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &mut B,
+        ) -> Poll<usize> {
+            Poll::Ready(Ok(0))
         }
     }
 
     impl Io for WriteBufDetector {
-        fn shutdown_write(&mut self) -> Result<()> {
-            unreachable!("not called in test")
+        fn poll_write_buf_erased(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            mut buf: &mut dyn Buf,
+        ) -> Poll<usize> {
+            self.poll_write_buf(cx, &mut buf)
         }
 
-        fn write_buf_erased(&mut self, mut buf: &mut dyn bytes::Buf) -> Poll<usize> {
-            self.write_buf(&mut buf)
+        fn poll_read_buf_erased(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &mut dyn BufMut,
+        ) -> Poll<usize> {
+            unreachable!("not called in test")
         }
     }
 
-    #[test]
-    fn boxed_io_uses_vectored_io() {
-        use bytes::IntoBuf;
+    #[tokio::test]
+    async fn boxed_io_uses_vectored_io() {
+        use bytes::Bytes;
         let mut io = BoxedIo::new(WriteBufDetector);
 
-        // This method will trigger the panic in WriteBufDetector::write IFF
-        // BoxedIo doesn't call write_buf_erased, but write_buf, and triggering
-        // a regular write.
-        io.write_buf(&mut "hello".into_buf()).expect("write_buf");
+        futures::future::poll_fn(|cx| {
+            // This method will trigger the panic in WriteBufDetector::write IFF
+            // BoxedIo doesn't call write_buf_erased, but write_buf, and triggering
+            // a regular write.
+            match Pin::new(&mut io).poll_write_buf(cx, &mut Bytes::from("hello")) {
+                Poll::Ready(Ok(_)) => {}
+                _ => panic!("poll_write_buf should return Poll::Ready(Ok(_))"),
+            }
+            Poll::Ready(Ok(()))
+        })
+        .await
+        .unwrap()
     }
 }

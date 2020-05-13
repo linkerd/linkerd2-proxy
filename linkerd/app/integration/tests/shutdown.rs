@@ -21,9 +21,9 @@ fn h2_goaways_connections() {
     client.wait_for_closed();
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "nyi"), ignore)]
-fn h2_exercise_goaways_connections() {
+async fn h2_exercise_goaways_connections() {
     let _ = trace_init();
 
     const RESPONSE_SIZE: usize = 1024 * 16;
@@ -46,7 +46,7 @@ fn h2_exercise_goaways_connections() {
         .collect::<Vec<_>>();
 
     // Wait to get all responses (but not bodies)
-    let resps = future::join_all(reqs).wait().expect("reqs");
+    let resps = future::try_join_all(reqs).await.expect("reqs");
 
     // Trigger a shutdown while bodies are still in progress.
     shdn.signal();
@@ -54,15 +54,14 @@ fn h2_exercise_goaways_connections() {
     let bodies = resps
         .into_iter()
         .map(|resp| {
-            resp.into_body()
-                .concat2()
+            hyper::body::aggregate(resp.into_body())
                 // Make sure the bodies weren't cut off
-                .map(|buf| assert_eq!(buf.len(), RESPONSE_SIZE))
+                .map_ok(|mut buf| assert_eq!(buf.to_bytes().len(), RESPONSE_SIZE))
         })
         .collect::<Vec<_>>();
 
     // See that the proxy gives us all the bodies.
-    future::join_all(bodies).wait().expect("bodies");
+    future::try_join_all(bodies).await.expect("bodies");
 
     client.wait_for_closed();
 }
@@ -106,16 +105,18 @@ fn tcp_waits_for_proxies_to_close() {
 
     let srv = server::tcp()
         // Trigger a shutdown while TCP stream is busy
-        .accept_fut(move |sock| {
-            shdn.signal();
-            tokio_io::io::read(sock, vec![0; 256])
-                .and_then(move |(sock, vec, n)| {
-                    assert_eq!(&vec[..n], msg1.as_bytes());
-
-                    tokio_io::io::write_all(sock, msg2.as_bytes())
-                })
-                .map(|_| ())
-                .map_err(|e| panic!("tcp server error: {}", e))
+        .accept_fut(move |mut sock| {
+            async move {
+                shdn.signal();
+                let mut vec = vec![0; 256];
+                let n = sock.read(&mut vec).await?;
+                assert_eq!(&vec[..n], msg1.as_bytes());
+                sock.write_all(msg2.as_bytes()).await
+            }
+            .map(|res| match res {
+                Err(e) => panic!("tcp server error: {}", e),
+                Ok(_) => {}
+            })
         })
         .run();
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
