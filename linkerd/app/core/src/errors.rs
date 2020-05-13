@@ -30,6 +30,7 @@ pub enum Reason {
     DispatchTimeout,
     ResponseTimeout,
     IdentityRequired,
+    Io,
     FailFast,
     Unexpected,
 }
@@ -295,11 +296,9 @@ impl std::fmt::Display for IdentityRequired {
 
 impl std::error::Error for IdentityRequired {}
 
-impl metrics::LabelError<Error> for LabelError {
-    type Labels = Label;
-
-    fn label_error(&self, err: &Error) -> Self::Labels {
-        let reason = if err.is::<ResponseTimeout>() {
+impl LabelError {
+    fn reason(err: &(dyn std::error::Error + 'static)) -> Reason {
+        if err.is::<ResponseTimeout>() {
             Reason::ResponseTimeout
         } else if err.is::<FailFastError>() {
             Reason::FailFast
@@ -307,11 +306,21 @@ impl metrics::LabelError<Error> for LabelError {
             Reason::DispatchTimeout
         } else if err.is::<IdentityRequired>() {
             Reason::IdentityRequired
+        } else if err.is::<std::io::Error>() {
+            Reason::Io
+        } else if let Some(e) = err.source() {
+            Self::reason(e)
         } else {
             Reason::Unexpected
-        };
+        }
+    }
+}
 
-        (self.0, reason)
+impl metrics::LabelError<Error> for LabelError {
+    type Labels = Label;
+
+    fn label_error(&self, err: &Error) -> Self::Labels {
+        (self.0, Self::reason(err.as_ref()))
     }
 }
 
@@ -325,6 +334,7 @@ impl metrics::FmtLabels for Reason {
                 Reason::DispatchTimeout => "dispatch timeout",
                 Reason::ResponseTimeout => "response timeout",
                 Reason::IdentityRequired => "identity required",
+                Reason::Io => "i/o",
                 Reason::Unexpected => "unexpected",
             }
         )
