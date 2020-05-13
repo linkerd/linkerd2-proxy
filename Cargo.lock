@@ -1527,14 +1527,9 @@ dependencies = [
 name = "linkerd2-stack-metrics"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
  "indexmap",
  "linkerd2-metrics",
- "tokio 0.1.22",
- "tokio-timer",
- "tower 0.1.1",
- "tower-util",
- "tracing",
+ "tower 0.3.1",
 ]
 
 [[package]]
