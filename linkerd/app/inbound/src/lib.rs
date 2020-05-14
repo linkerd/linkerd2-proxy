@@ -247,12 +247,12 @@ impl Config {
             //     .push(metrics.http_handle_time.layer());
 
             let http_server = svc::stack(http_profile_cache)
-                .push_on_response(svc::layers().box_http_response())
+                // .push_on_response(svc::layers().box_http_response())
                 .push_make_ready()
-                .push_fallback(
-                    http_target_cache
-                        .push_on_response(svc::layers().box_http_response().box_http_request()),
-                )
+                // .push_fallback(
+                //     http_target_cache
+                //         .push_on_response(svc::layers().box_http_response().box_http_request()),
+                // )
                 .check_service::<Target>()
                 // Ensures that the built service is ready before it is returned
                 // to the router to dispatch a request.
@@ -271,7 +271,7 @@ impl Config {
                 // Used by tap.
                 // .push_http_insert_target()
                 // .push_on_response(http_strip_headers)
-                .push_on_response(http_admit_request)
+                // .push_on_response(http_admit_request)
                 // .push_on_response(http_server_observability)
                 .push_on_response(metrics.stack.layer(stack_labels("source")))
                 .instrument(|src: &tls::accept::Meta| {
