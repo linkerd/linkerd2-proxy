@@ -23,7 +23,7 @@ use linkerd2_app_core::{
     proxy::{
         self,
         detect::DetectProtocolLayer,
-        http::{self /*, normalize_uri, orig_proto, strip_header*/},
+        http::{self, normalize_uri /* orig_proto, strip_header*/},
         identity,
         server::{Protocol as ServerProtocol, ProtocolDetect, Server},
         tap, tcp,
@@ -155,9 +155,9 @@ impl Config {
             let http_target_cache = http_endpoint
                 .push_map_target(HttpEndpoint::from)
                 .check_service_unpin::<Target>()
-                // // Normalizes the URI, i.e. if it was originally in
-                // // absolute-form on the outbound side.
-                // .push(normalize_uri::layer())
+                // Normalizes the URI, i.e. if it was originally in
+                // absolute-form on the outbound side.
+                .push(normalize_uri::layer())
                 // .push(http_target_observability)
                 .into_new_service()
                 .check_new_service::<Target>()
