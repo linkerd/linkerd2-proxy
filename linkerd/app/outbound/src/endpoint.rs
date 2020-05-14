@@ -92,18 +92,18 @@ impl<'t, T> From<&'t Target<T>> for ::http::header::HeaderValue {
     }
 }
 
-// impl<T: http::settings::HasSettings> http::normalize_uri::ShouldNormalizeUri for Target<T> {
-//     fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
-//         if let http::Settings::Http1 {
-//             was_absolute_form: false,
-//             ..
-//         } = self.inner.http_settings()
-//         {
-//             return Some(self.addr.to_http_authority());
-//         }
-//         None
-//     }
-// }
+impl<T: http::settings::HasSettings> http::normalize_uri::ShouldNormalizeUri for Target<T> {
+    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
+        if let http::Settings::Http1 {
+            was_absolute_form: false,
+            ..
+        } = self.inner.http_settings()
+        {
+            return Some(self.addr.to_http_authority());
+        }
+        None
+    }
+}
 
 // impl<T> profiles::OverrideDestination for Target<T> {
 //     fn dst_mut(&mut self) -> &mut Addr {

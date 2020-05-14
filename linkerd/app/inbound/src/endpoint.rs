@@ -140,23 +140,23 @@ impl Profile {
 
 // // === impl Target ===
 
-// impl http::normalize_uri::ShouldNormalizeUri for Target {
-//     fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
-//         if let http::Settings::Http1 {
-//             was_absolute_form: false,
-//             ..
-//         } = self.http_settings
-//         {
-//             return Some(
-//                 self.dst_name
-//                     .as_ref()
-//                     .map(|dst| dst.as_http_authority())
-//                     .unwrap_or_else(|| Addr::from(self.addr).to_http_authority()),
-//             );
-//         }
-//         None
-//     }
-// }
+impl http::normalize_uri::ShouldNormalizeUri for Target {
+    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
+        if let http::Settings::Http1 {
+            was_absolute_form: false,
+            ..
+        } = self.http_settings
+        {
+            return Some(
+                self.dst_name
+                    .as_ref()
+                    .map(|dst| dst.as_http_authority())
+                    .unwrap_or_else(|| Addr::from(self.addr).to_http_authority()),
+            );
+        }
+        None
+    }
+}
 
 impl http::settings::HasSettings for Target {
     fn http_settings(&self) -> http::Settings {
