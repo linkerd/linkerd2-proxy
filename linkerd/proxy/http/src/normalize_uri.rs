@@ -1,7 +1,11 @@
 use super::h1;
-use futures::{try_ready, Future, Poll};
+use futures_03::{ready, TryFuture};
 use http::uri::Authority;
 use linkerd2_stack::{layer, NewService};
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tracing::trace;
 
 pub trait ShouldNormalizeUri {
@@ -13,7 +17,9 @@ pub struct MakeNormalizeUri<N> {
     inner: N,
 }
 
+#[pin_project]
 pub struct MakeFuture<F> {
+    #[pin]
     inner: F,
     authority: Option<Authority>,
 }
@@ -26,7 +32,7 @@ pub struct NormalizeUri<S> {
 
 // === impl Layer ===
 
-pub fn layer<M>() -> impl tower::layer::Layer<M, Service = MakeNormalizeUri<M>> + Copy {
+pub fn layer<M>() -> impl tower_03::layer::Layer<M, Service = MakeNormalizeUri<M>> + Copy {
     layer::mk(|inner| MakeNormalizeUri { inner })
 }
 
@@ -46,17 +52,17 @@ where
     }
 }
 
-impl<T, M> tower::Service<T> for MakeNormalizeUri<M>
+impl<T, M> tower_03::Service<T> for MakeNormalizeUri<M>
 where
     T: ShouldNormalizeUri,
-    M: tower::Service<T>,
+    M: tower_03::Service<T>,
 {
     type Response = NormalizeUri<M::Response>;
     type Error = M::Error;
     type Future = MakeFuture<M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), M::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -70,32 +76,32 @@ where
 
 // === impl MakeFuture ===
 
-impl<F: Future> Future for MakeFuture<F> {
-    type Item = NormalizeUri<F::Item>;
-    type Error = F::Error;
+impl<F: TryFuture> Future for MakeFuture<F> {
+    type Output = Result<NormalizeUri<F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
         let svc = NormalizeUri {
             inner,
-            authority: self.authority.take(),
+            authority: this.authority.take(),
         };
-        Ok(svc.into())
+        Poll::Ready(Ok(svc))
     }
 }
 
 // === impl NormalizeUri ===
 
-impl<S, B> tower::Service<http::Request<B>> for NormalizeUri<S>
+impl<S, B> tower_03::Service<http::Request<B>> for NormalizeUri<S>
 where
-    S: tower::Service<http::Request<B>>,
+    S: tower_03::Service<http::Request<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), S::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
@@ -107,7 +113,7 @@ where
             // canonical but the request's authority is relative.
             let authority = request
                 .uri()
-                .authority_part()
+                .authority()
                 .cloned()
                 .or_else(|| h1::authority_from_host(&request))
                 .unwrap_or_else(|| default_authority.clone());
