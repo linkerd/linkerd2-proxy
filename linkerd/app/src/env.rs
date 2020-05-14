@@ -134,6 +134,9 @@ pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
 pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
+pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
+    "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_IDENTITY";
+
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
@@ -436,6 +439,18 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
 
+        let require_identity_for_inbound_ports =
+            parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?
+                .unwrap_or_else(|| IndexSet::new());
+
+        if id_disabled && !require_identity_for_inbound_ports.is_empty() {
+            error!(
+                "if {} is true, {} must be empty",
+                ENV_IDENTITY_DISABLED, ENV_INBOUND_PORTS_REQUIRE_IDENTITY
+            );
+            return Err(EnvError::InvalidEnvVar);
+        }
+
         inbound::Config {
             proxy: ProxyConfig {
                 server,
@@ -451,6 +466,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout: dispatch_timeout,
             },
+            require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
         }
     };
 

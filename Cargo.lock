@@ -763,6 +763,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-admit"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.4",
+ "linkerd2-error",
+ "tower 0.3.1",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd2-app"
 version = "0.1.0"
 dependencies = [
@@ -883,8 +893,8 @@ dependencies = [
  "futures 0.1.26",
  "http 0.2.1",
  "indexmap",
+ "linkerd2-admit",
  "linkerd2-app-core",
- "linkerd2-retry",
  "quickcheck",
  "tokio 0.1.22",
  "tower 0.3.1",

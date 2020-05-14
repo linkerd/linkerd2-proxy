@@ -8,7 +8,9 @@
 pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
 };
+use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::future;
+use linkerd2_admit as admit;
 use linkerd2_app_core::{
     // classify,
     config::{ProxyConfig, ServerConfig},
@@ -48,6 +50,7 @@ use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
 mod endpoint;
+mod require_identity_for_ports;
 // #[allow(dead_code)] // TODO #2597
 // mod set_client_id_on_req;
 // #[allow(dead_code)] // TODO #2597
@@ -56,6 +59,7 @@ mod endpoint;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
+    pub require_identity_for_inbound_ports: RequireIdentityForPorts,
 }
 
 pub struct Inbound {
@@ -90,6 +94,7 @@ impl Config {
                     max_in_flight_requests,
                     detect_protocol_timeout,
                 },
+            require_identity_for_inbound_ports,
         } = self;
 
         let listen = bind.bind().map_err(Error::from)?;
@@ -288,6 +293,7 @@ impl Config {
                 .push(DetectProtocolLayer::new(ProtocolDetect::new(
                     disable_protocol_detection_for_ports.clone(),
                 )))
+                .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))
                 // Terminates inbound mTLS from other outbound proxies.
                 .push(tls::AcceptTls::layer(
                     local_identity,
