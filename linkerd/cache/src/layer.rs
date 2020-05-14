@@ -27,7 +27,7 @@ impl<L: Clone, T> Clone for CacheLayer<T, L> {
 
 impl<T, L, N> tower::layer::Layer<N> for CacheLayer<T, L>
 where
-    T: Eq + std::hash::Hash,
+    T: Eq + std::hash::Hash + Send + 'static,
     N: NewService<T> + Clone,
     L: tower::layer::Layer<Track<N>> + Clone,
     L::Service: NewService<T>,

@@ -128,7 +128,7 @@ impl Config {
                 // }))
                 .check_service::<HttpEndpoint>();
 
-            // let http_target_observability = svc::layers()
+            let http_target_observability = svc::layers()
             //     // Registers the stack to be tapped.
             //     .push(tap_layer)
             //     // Records metrics for each `Target`.
@@ -138,6 +138,7 @@ impl Config {
             //             .clone()
             //             .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
             //     ));
+            ;
 
             // let http_profile_route_proxy = svc::proxies()
             //     // Sets the route as a request extension so that it can be used
@@ -153,29 +154,32 @@ impl Config {
             // An HTTP client is created for each target via the endpoint stack.
             let http_target_cache = http_endpoint
                 .push_map_target(HttpEndpoint::from)
-                // Normalizes the URI, i.e. if it was originally in
-                // absolute-form on the outbound side.
+                .check_service_unpin::<Target>()
+                // // Normalizes the URI, i.e. if it was originally in
+                // // absolute-form on the outbound side.
                 // .push(normalize_uri::layer())
                 // .push(http_target_observability)
                 .into_new_service()
-                // .check_new_clone_service::<Target>()
-                .cache(
-                    svc::layers().push_on_response(
-                        svc::layers()
-                            // If the service has been unavailable for an extended time, eagerly
-                            // fail requests.
-                            .push_failfast(dispatch_timeout)
-                            // Shares the service, ensuring discovery errors are propagated.
-                            .push_spawn_buffer_with_idle_timeout(
-                                buffer_capacity,
-                                cache_max_idle_age,
-                            )
-                            .push(metrics.stack.layer(stack_labels("target"))),
-                    ),
-                )
-                // .instrument(|_: &Target| info_span!("target"))
-                // Prevent the cache's lock from being acquired in poll_ready, ensuring this happens
-                // in the response future. This prevents buffers from holding the cache's lock.
+                .check_new_service::<Target>()
+                .check_clone()
+                // .cache(
+                //     svc::layers()
+                //         .push_on_response(
+                //             svc::layers()
+                //                 // If the service has been unavailable for an extended time, eagerly
+                //                 // fail requests.
+                //                 // .push_failfast(dispatch_timeout)
+                //                 // Shares the service, ensuring discovery errors are propagated.
+                //                 .push_spawn_buffer_with_idle_timeout(
+                //                     buffer_capacity,
+                //                     cache_max_idle_age,
+                //                 )
+                //                 .push(metrics.stack.layer(stack_labels("target"))),
+                //         )
+                // )
+                .instrument(|_: &Target| info_span!("target"))
+                // // Prevent the cache's lock from being acquired in poll_ready, ensuring this happens
+                // // in the response future. This prevents buffers from holding the cache's lock.
                 .push_oneshot()
                 .check_service::<Target>();
 

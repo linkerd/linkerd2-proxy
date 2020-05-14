@@ -254,9 +254,8 @@ impl<S> Stack<S> {
 
     pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
     where
-        T: Eq + std::hash::Hash + 'static,
+        T: Eq + std::hash::Hash + Send + 'static,
         S: NewService<T> + Clone,
-        S::Service: 'static,
         L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
         L::Service: NewService<T, Service = U>,
     {
@@ -310,6 +309,14 @@ impl<S> Stack<S> {
         self
     }
 
+    /// Validates that this stack can be cloned
+    pub fn check_clone(self) -> Self
+    where
+        S: Clone,
+    {
+        self
+    }
+
     pub fn check_new_clone_service<T>(self) -> Self
     where
         S: NewService<T>,
@@ -322,6 +329,15 @@ impl<S> Stack<S> {
     pub fn check_service<T>(self) -> Self
     where
         S: Service<T>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets with `Unpin` futures.
+    pub fn check_service_unpin<T>(self) -> Self
+    where
+        S: Service<T>,
+        S::Future: Unpin,
     {
         self
     }
