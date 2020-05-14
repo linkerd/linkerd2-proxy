@@ -366,6 +366,17 @@ impl<S> Stack<S> {
         self
     }
 
+    pub fn check_new_send_and_static<M, T, Req>(self) -> Self
+    where
+        S: NewService<T, Service = M>,
+        M: Service<Req> + Send + 'static,
+        M::Response: Send + 'static,
+        M::Error: Into<Error> + Send + Sync,
+        M::Future: Send,
+    {
+        self
+    }
+
     pub fn into_inner(self) -> S {
         self.0
     }

@@ -162,21 +162,21 @@ impl Config {
                 .into_new_service()
                 .check_new_service::<Target>()
                 .check_clone()
-                // .cache(
-                //     svc::layers()
-                //         .push_on_response(
-                //             svc::layers()
-                //                 // If the service has been unavailable for an extended time, eagerly
-                //                 // fail requests.
-                //                 // .push_failfast(dispatch_timeout)
-                //                 // Shares the service, ensuring discovery errors are propagated.
-                //                 .push_spawn_buffer_with_idle_timeout(
-                //                     buffer_capacity,
-                //                     cache_max_idle_age,
-                //                 )
-                //                 .push(metrics.stack.layer(stack_labels("target"))),
-                //         )
-                // )
+                .check_new_send_and_static()
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the service has been unavailable for an extended time, eagerly
+                            // fail requests.
+                            // .push_failfast(dispatch_timeout)
+                            // Shares the service, ensuring discovery errors are propagated.
+                            .push_spawn_buffer_with_idle_timeout(
+                                buffer_capacity,
+                                cache_max_idle_age,
+                            )
+                            .push(metrics.stack.layer(stack_labels("target"))),
+                    ),
+                )
                 .instrument(|_: &Target| info_span!("target"))
                 // // Prevent the cache's lock from being acquired in poll_ready, ensuring this happens
                 // // in the response future. This prevents buffers from holding the cache's lock.
@@ -186,38 +186,39 @@ impl Config {
             // Routes targets to a Profile stack, i.e. so that profile
             // resolutions are shared even as the type of request may vary.
             let http_profile_cache = http_target_cache
-                .clone()
-                .push_on_response(svc::layers().box_http_request())
-                .check_service::<Target>()
-                // Provides route configuration without pdestination overrides.
-                .push(profiles::Layer::without_overrides(
-                    profiles_client,
-                    http_profile_route_proxy.into_inner(),
-                ))
-                .into_new_service()
-                // Caches profile stacks.
-                .check_new_service_routes::<Profile, Target>()
-                .cache(
-                    svc::layers().push_on_response(
-                        svc::layers()
-                            // If the service has been unavailable for an extended time, eagerly
-                            // fail requests.
-                            .push_failfast(dispatch_timeout)
-                            // Shares the service, ensuring discovery errors are propagated.
-                            .push_spawn_buffer_with_idle_timeout(
-                                buffer_capacity,
-                                cache_max_idle_age,
-                            )
-                            .push(metrics.stack.layer(stack_labels("profile"))),
-                    ),
-                )
-                .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
-                .check_make_service::<Profile, Target>()
-                // Ensures that cache's lock isn't held in poll_ready.
-                .push_oneshot()
-                .push(router::Layer::new(|()| ProfileTarget))
-                .check_new_service_routes::<(), Target>()
-                .new_service(());
+                // .clone()
+                // .push_on_response(svc::layers().box_http_request())
+                // .check_service::<Target>()
+                // // Provides route configuration without pdestination overrides.
+                // .push(profiles::Layer::without_overrides(
+                //     profiles_client,
+                //     http_profile_route_proxy.into_inner(),
+                // ))
+                // .into_new_service()
+                // // Caches profile stacks.
+                // .check_new_service_routes::<Profile, Target>()
+                // .cache(
+                //     svc::layers().push_on_response(
+                //         svc::layers()
+                //             // If the service has been unavailable for an extended time, eagerly
+                //             // fail requests.
+                //             .push_failfast(dispatch_timeout)
+                //             // Shares the service, ensuring discovery errors are propagated.
+                //             .push_spawn_buffer_with_idle_timeout(
+                //                 buffer_capacity,
+                //                 cache_max_idle_age,
+                //             )
+                //             .push(metrics.stack.layer(stack_labels("profile"))),
+                //     ),
+                // )
+                // .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
+                // .check_make_service::<Profile, Target>()
+                // // Ensures that cache's lock isn't held in poll_ready.
+                // .push_oneshot()
+                // .push(router::Layer::new(|()| ProfileTarget))
+                // .check_new_service_routes::<(), Target>()
+                // .new_service(())
+                ;
 
             // Strips headers that may be set by the inbound router.
             // let http_strip_headers = svc::layers()
@@ -261,7 +262,7 @@ impl Config {
                 .push_timeout(dispatch_timeout)
                 // Removes the override header after it has been used to
                 // determine a reuquest target.
-                .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+                // .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
                 // Routes each request to a target, obtains a service for that
                 // target, and dispatches the request.
                 .instrument_from_target()

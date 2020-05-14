@@ -36,7 +36,7 @@ pub struct Connection<B> {
 #[pin_project]
 pub struct ConnectFuture<F, B>
 where
-    F: TryFuture,
+    F: TryFuture + Send + 'static,
     B: HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
@@ -50,7 +50,7 @@ where
 #[pin_project]
 enum ConnectState<F, B>
 where
-    F: TryFuture,
+    F: TryFuture + Send + 'static,
     B: HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
@@ -62,11 +62,12 @@ where
         Pin<
             Box<
                 dyn Future<
-                    Output = hyper::Result<(
-                        SendRequest<B>,
-                        hyper::client::conn::Connection<F::Ok, B>,
-                    )>,
-                >,
+                        Output = Result<
+                            (SendRequest<B>, hyper::client::conn::Connection<F::Ok, B>),
+                            hyper::Error,
+                        >,
+                    > + Send
+                    + 'static,
             >,
         >,
     ),
@@ -103,6 +104,7 @@ impl<C: Clone, B> Clone for Connect<C, B> {
 impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
     C: tower::make::MakeConnection<T>,
+    C::Future: Send + 'static,
     C::Connection: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     C::Error: Into<Error>,
     B: HttpBody + Send + 'static,
@@ -129,7 +131,7 @@ where
 
 impl<F, B> Future for ConnectFuture<F, B>
 where
-    F: TryFuture,
+    F: TryFuture + Send + 'static,
     F::Ok: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     F::Error: Into<Error>,
     B: HttpBody + Send + 'static,

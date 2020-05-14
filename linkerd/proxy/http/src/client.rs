@@ -43,6 +43,7 @@ where
     C: tower::make::MakeConnection<T> + 'static,
     C::Error: Into<Error>,
     C::Connection: tokio_02::io::AsyncRead + tokio_02::io::AsyncWrite + Unpin + Send + 'static,
+    C::Future: Send + 'static,
 {
     Http1(Option<HyperMakeClient<C, T, B>>),
     Http2(#[pin] tower::util::Oneshot<h2::Connect<C, B>, T>),

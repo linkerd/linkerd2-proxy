@@ -61,12 +61,12 @@ impl<Req, F> Buffer<Req, F> {
     }
 }
 
-impl<Req, F> tower::Service<Req> for Buffer<Req, F>
+impl<Req, F, E, T> tower::Service<Req> for Buffer<Req, F>
 where
-    F: TryFuture,
-    F::Error: Into<Error>,
+    F: Future<Output = Result<T, E>>,
+    E: Into<Error>,
 {
-    type Response = F::Ok;
+    type Response = T;
     type Error = Error;
     type Future = ResponseFuture<F>;
 
