@@ -821,6 +821,7 @@ dependencies = [
  "linkerd2-dns",
  "linkerd2-drain",
  "linkerd2-duplex",
+ "linkerd2-errno",
  "linkerd2-error",
  "linkerd2-error-metrics",
  "linkerd2-error-respond",
@@ -1052,6 +1053,10 @@ dependencies = [
  "tokio 0.2.20",
  "tracing",
 ]
+
+[[package]]
+name = "linkerd2-errno"
+version = "0.1.0"
 
 [[package]]
 name = "linkerd2-error"
@@ -1409,6 +1414,7 @@ dependencies = [
  "libc",
  "linkerd2-conditional",
  "linkerd2-dns-name",
+ "linkerd2-errno",
  "linkerd2-error",
  "linkerd2-identity",
  "linkerd2-io",
