@@ -9,11 +9,11 @@ Utilities for working with `Resolve` implementations
 """
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 linkerd2-error = { path = "../../error" }
 linkerd2-proxy-core = { path = "../core" }
 indexmap = "1.0"
-tokio = "0.1"
+tokio = "0.2"
 tracing = "0.1"
 pin-project = "0.4"
 
