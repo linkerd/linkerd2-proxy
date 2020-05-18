@@ -1316,7 +1316,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api-tonic"
 version = "0.1.12"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic#e14d830c0635d20739fdb24312a73a7245ec2de6"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic#530af0b4964b8d8386b11f20760d69b3211e1845"
 dependencies = [
  "h2 0.2.4",
  "http 0.2.1",
