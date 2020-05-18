@@ -173,9 +173,9 @@ impl<S> Service<S> {
     }
 }
 
-impl<S, B> tower_03::Service<http::Request<Body>> for Service<S>
+impl<S, B> tower::Service<http::Request<Body>> for Service<S>
 where
-    S: tower_03::Service<http::Request<Body>, Response = http::Response<B>>,
+    S: tower::Service<http::Request<Body>, Response = http::Response<B>>,
     B: Default,
 {
     type Response = S::Response;

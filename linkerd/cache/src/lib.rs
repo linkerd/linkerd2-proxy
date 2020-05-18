@@ -34,7 +34,7 @@ type Services<T, S> = HashMap<T, (S, Weak<()>)>;
 
 impl<T, N> Cache<T, N>
 where
-    T: Eq + Hash,
+    T: Eq + Hash + Send + 'static,
     N: NewService<(T, Handle)>,
 {
     pub fn new(new_service: N) -> Self {

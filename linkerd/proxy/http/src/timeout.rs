@@ -57,9 +57,9 @@ where
     }
 }
 
-impl<T, M> tower_03::Service<T> for MakeTimeout<M>
+impl<T, M> tower::Service<T> for MakeTimeout<M>
 where
-    M: tower_03::Service<T>,
+    M: tower::Service<T>,
     T: HasTimeout,
 {
     type Response = Timeout<M::Response>;

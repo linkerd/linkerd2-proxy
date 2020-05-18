@@ -33,7 +33,7 @@ tokio = { version = "0.2", features = ["net", "io-util"]}
 tokio-compat = "0.1"
 tokio-rustls = "0.13"
 task-compat = "0.1"
-tower_01 = {package = "tower", version = "0.1"}
+# tower_01 = {package = "tower", version = "0.1"}
 tracing = "0.1.9"
 webpki = "0.21"
 untrusted = "0.7"

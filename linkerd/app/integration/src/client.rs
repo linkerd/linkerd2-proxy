@@ -319,6 +319,8 @@ impl tower::Service<hyper::Uri> for Conn {
 
 impl hyper::client::connect::Connection for RunningIo {
     fn connected(&self) -> hyper::client::connect::Connected {
+        // Setting `proxy` to true will configure Hyper to use absolute-form
+        // URIs on this connection.
         hyper::client::connect::Connected::new().proxy(self.abs_form)
     }
 }

@@ -36,10 +36,10 @@ pub struct Connection<B> {
 #[pin_project]
 pub struct ConnectFuture<F, B>
 where
-    F: TryFuture,
+    F: TryFuture + Send + 'static,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
     F::Ok: AsyncRead + AsyncWrite + Send + 'static,
 {
     #[pin]
@@ -50,10 +50,10 @@ where
 #[pin_project]
 enum ConnectState<F, B>
 where
-    F: TryFuture,
+    F: TryFuture + Send + 'static,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
     F::Ok: AsyncRead + AsyncWrite + Send + 'static,
 {
     Connect(#[pin] F),
@@ -62,11 +62,12 @@ where
         Pin<
             Box<
                 dyn Future<
-                    Output = hyper::Result<(
-                        SendRequest<B>,
-                        hyper::client::conn::Connection<F::Ok, B>,
-                    )>,
-                >,
+                        Output = Result<
+                            (SendRequest<B>, hyper::client::conn::Connection<F::Ok, B>),
+                            hyper::Error,
+                        >,
+                    > + Send
+                    + 'static,
             >,
         >,
     ),
@@ -100,14 +101,15 @@ impl<C: Clone, B> Clone for Connect<C, B> {
     }
 }
 
-impl<C, B, T> tower_03::Service<T> for Connect<C, B>
+impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
-    C: tower_03::make::MakeConnection<T>,
+    C: tower::make::MakeConnection<T>,
+    C::Future: Send + 'static,
     C::Connection: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     C::Error: Into<Error>,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = Connection<B>;
     type Error = Error;
@@ -129,12 +131,12 @@ where
 
 impl<F, B> Future for ConnectFuture<F, B>
 where
-    F: TryFuture,
+    F: TryFuture + Send + 'static,
     F::Ok: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     F::Error: Into<Error>,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Output = Result<Connection<B>, Error>;
 
@@ -175,11 +177,11 @@ where
 
 // ===== impl Connection =====
 
-impl<B> tower_03::Service<http::Request<B>> for Connection<B>
+impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = http::Response<Body>;
     type Error = hyper::Error;

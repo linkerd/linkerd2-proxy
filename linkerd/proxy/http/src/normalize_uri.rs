@@ -32,7 +32,7 @@ pub struct NormalizeUri<S> {
 
 // === impl Layer ===
 
-pub fn layer<M>() -> impl tower_03::layer::Layer<M, Service = MakeNormalizeUri<M>> + Copy {
+pub fn layer<M>() -> impl tower::layer::Layer<M, Service = MakeNormalizeUri<M>> + Copy {
     layer::mk(|inner| MakeNormalizeUri { inner })
 }
 
@@ -52,10 +52,10 @@ where
     }
 }
 
-impl<T, M> tower_03::Service<T> for MakeNormalizeUri<M>
+impl<T, M> tower::Service<T> for MakeNormalizeUri<M>
 where
     T: ShouldNormalizeUri,
-    M: tower_03::Service<T>,
+    M: tower::Service<T>,
 {
     type Response = NormalizeUri<M::Response>;
     type Error = M::Error;
@@ -92,9 +92,9 @@ impl<F: TryFuture> Future for MakeFuture<F> {
 
 // === impl NormalizeUri ===
 
-impl<S, B> tower_03::Service<http::Request<B>> for NormalizeUri<S>
+impl<S, B> tower::Service<http::Request<B>> for NormalizeUri<S>
 where
-    S: tower_03::Service<http::Request<B>>,
+    S: tower::Service<http::Request<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;

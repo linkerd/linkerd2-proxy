@@ -13,7 +13,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tower_03::ServiceExt;
+use tower::ServiceExt;
 use tracing::{debug, trace};
 // use tracing_futures::{Instrument, Instrumented};
 
@@ -39,20 +39,21 @@ pub enum MakeFuture<C, T, B>
 where
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
-    C: tower_03::make::MakeConnection<T> + 'static,
+    B::Error: Into<Error> + Send + Sync,
+    C: tower::make::MakeConnection<T> + 'static,
     C::Error: Into<Error>,
     C::Connection: tokio_02::io::AsyncRead + tokio_02::io::AsyncWrite + Unpin + Send + 'static,
+    C::Future: Send + 'static,
 {
     Http1(Option<HyperMakeClient<C, T, B>>),
-    Http2(#[pin] tower_03::util::Oneshot<h2::Connect<C, B>, T>),
+    Http2(#[pin] tower::util::Oneshot<h2::Connect<C, B>, T>),
 }
 
 /// The `Service` yielded by `MakeClient::new_service()`.
 pub enum Client<C, T, B>
 where
     B: hyper::body::HttpBody + 'static,
-    C: tower_03::make::MakeConnection<T> + 'static,
+    C: tower::make::MakeConnection<T> + 'static,
 {
     Http1(HyperMakeClient<C, T, B>),
     Http2(h2::Connection<B>),
@@ -80,10 +81,7 @@ impl<B> MakeClientLayer<B> {
     }
 }
 
-impl<B> Clone for MakeClientLayer<B>
-where
-    B: hyper::body::HttpBody + Send + 'static,
-{
+impl<B> Clone for MakeClientLayer<B> {
     fn clone(&self) -> Self {
         Self {
             h2_settings: self.h2_settings,
@@ -93,8 +91,8 @@ where
 }
 
 impl<C, B> tower::layer::Layer<C> for MakeClientLayer<B>
-where
-    B: hyper::body::HttpBody + Send + 'static,
+// where
+// B: hyper::body::HttpBody + Send + 'static,
 {
     type Service = MakeClient<C, B>;
 
@@ -109,16 +107,16 @@ where
 
 // === impl MakeClient ===
 
-impl<C, T, B> tower_03::Service<T> for MakeClient<C, B>
+impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
-    C: tower_03::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
+    C: tower::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
-    C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
+    C::Connection: Unpin + Send + 'static,
     T: HasSettings + Clone + Send + Sync + 'static,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = Client<C, T, B>;
     type Error = Error;
@@ -173,13 +171,13 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
 
 impl<C, T, B> Future for MakeFuture<C, T, B>
 where
-    C: tower_03::make::MakeConnection<T> + Unpin + Send + Sync + 'static,
+    C: tower::make::MakeConnection<T> + Unpin + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Output = Result<Client<C, T, B>, Error>;
 
@@ -199,16 +197,16 @@ where
 
 // === impl Client ===
 
-impl<C, T, B> tower_03::Service<http::Request<B>> for Client<C, T, B>
+impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
 where
-    C: tower_03::make::MakeConnection<T> + Clone + Send + Sync + 'static,
-    C::Connection: hyper::client::connect::Connection + Unpin + Send + 'static,
+    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C::Connection: Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
     T: Clone + Send + Sync + 'static,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: std::error::Error + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = http::Response<Body>;
     type Error = Error;

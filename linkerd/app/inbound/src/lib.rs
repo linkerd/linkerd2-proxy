@@ -15,15 +15,15 @@ use linkerd2_app_core::{
     // classify,
     config::{ProxyConfig, ServerConfig},
     drain,
-    // dst,
-    // errors,
+    dst,
+    errors,
     metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
         self,
         detect::DetectProtocolLayer,
-        http::{self /*, normalize_uri, orig_proto, strip_header*/},
+        http::{self, normalize_uri /* orig_proto, strip_header*/},
         identity,
         server::{Protocol as ServerProtocol, ProtocolDetect, Server},
         tap, tcp,
@@ -119,16 +119,16 @@ impl Config {
                 })
                 .push(svc::layer::mk(tcp::Forward::new));
 
-            // // Creates HTTP clients for each inbound port & HTTP settings.
-            // let http_endpoint = tcp_connect
-            //     .push(http::MakeClientLayer::new(connect.h2_settings))
-            //     .push(reconnect::layer({
-            //         let backoff = connect.backoff.clone();
-            //         move |_| Ok(backoff.stream())
-            //     }))
-            //     .check_service::<HttpEndpoint>();
+            // Creates HTTP clients for each inbound port & HTTP settings.
+            let http_endpoint = tcp_connect
+                .push(http::MakeClientLayer::new(connect.h2_settings))
+                // .push(reconnect::layer({
+                //     let backoff = connect.backoff.clone();
+                //     move |_| Ok(backoff.stream())
+                // }))
+                .check_service::<HttpEndpoint>();
 
-            // let http_target_observability = svc::layers()
+            let http_target_observability = svc::layers()
             //     // Registers the stack to be tapped.
             //     .push(tap_layer)
             //     // Records metrics for each `Target`.
@@ -138,6 +138,7 @@ impl Config {
             //             .clone()
             //             .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
             //     ));
+            ;
 
             // let http_profile_route_proxy = svc::proxies()
             //     // Sets the route as a request extension so that it can be used
@@ -150,88 +151,93 @@ impl Config {
             //     .push(classify::Layer::new())
             //     .check_new_clone_service::<dst::Route>();
 
-            // // An HTTP client is created for each target via the endpoint stack.
-            // let http_target_cache = http_endpoint
-            //     .push_map_target(HttpEndpoint::from)
-            //     // Normalizes the URI, i.e. if it was originally in
-            //     // absolute-form on the outbound side.
-            //     .push(normalize_uri::layer())
-            //     .push(http_target_observability)
-            //     .into_new_service()
-            //     .cache(
-            //         svc::layers().push_on_response(
-            //             svc::layers()
-            //                 // If the service has been unavailable for an extended time, eagerly
-            //                 // fail requests.
-            //                 .push_failfast(dispatch_timeout)
-            //                 // Shares the service, ensuring discovery errors are propagated.
-            //                 .push_spawn_buffer_with_idle_timeout(
-            //                     buffer_capacity,
-            //                     cache_max_idle_age,
-            //                 )
-            //                 .push(metrics.stack.layer(stack_labels("target"))),
-            //         ),
-            //     )
-            //     .instrument(|_: &Target| info_span!("target"))
-            //     // Prevent the cache's lock from being acquired in poll_ready, ensuring this happens
-            //     // in the response future. This prevents buffers from holding the cache's lock.
-            //     .push_oneshot()
-            //     .check_service::<Target>();
+            // An HTTP client is created for each target via the endpoint stack.
+            let http_target_cache = http_endpoint
+                .push_map_target(HttpEndpoint::from)
+                .check_service_unpin::<Target>()
+                // Normalizes the URI, i.e. if it was originally in
+                // absolute-form on the outbound side.
+                .push(normalize_uri::layer())
+                // .push(http_target_observability)
+                .into_new_service()
+                .check_new_service::<Target>()
+                .check_clone()
+                .check_new_send_and_static()
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the service has been unavailable for an extended time, eagerly
+                            // fail requests.
+                            // .push_failfast(dispatch_timeout)
+                            // Shares the service, ensuring discovery errors are propagated.
+                            .push_spawn_buffer_with_idle_timeout(
+                                buffer_capacity,
+                                cache_max_idle_age,
+                            )
+                            .push(metrics.stack.layer(stack_labels("target"))),
+                    ),
+                )
+                .instrument(|_: &Target| info_span!("target"))
+                // // Prevent the cache's lock from being acquired in poll_ready, ensuring this happens
+                // // in the response future. This prevents buffers from holding the cache's lock.
+                .push_oneshot()
+                .check_service::<Target>();
 
-            // // Routes targets to a Profile stack, i.e. so that profile
-            // // resolutions are shared even as the type of request may vary.
-            // let http_profile_cache = http_target_cache
-            //     .clone()
-            //     .push_on_response(svc::layers().box_http_request())
-            //     .check_service::<Target>()
-            //     // Provides route configuration without pdestination overrides.
-            //     .push(profiles::Layer::without_overrides(
-            //         profiles_client,
-            //         http_profile_route_proxy.into_inner(),
-            //     ))
-            //     .into_new_service()
-            //     // Caches profile stacks.
-            //     .check_new_service_routes::<Profile, Target>()
-            //     .cache(
-            //         svc::layers().push_on_response(
-            //             svc::layers()
-            //                 // If the service has been unavailable for an extended time, eagerly
-            //                 // fail requests.
-            //                 .push_failfast(dispatch_timeout)
-            //                 // Shares the service, ensuring discovery errors are propagated.
-            //                 .push_spawn_buffer_with_idle_timeout(
-            //                     buffer_capacity,
-            //                     cache_max_idle_age,
-            //                 )
-            //                 .push(metrics.stack.layer(stack_labels("profile"))),
-            //         ),
-            //     )
-            //     .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
-            //     .check_make_service::<Profile, Target>()
-            //     // Ensures that cache's lock isn't held in poll_ready.
-            //     .push_oneshot()
-            //     .push(router::Layer::new(|()| ProfileTarget))
-            //     .check_new_service_routes::<(), Target>()
-            //     .new_service(());
+            // Routes targets to a Profile stack, i.e. so that profile
+            // resolutions are shared even as the type of request may vary.
+            let http_profile_cache = http_target_cache
+                // .clone()
+                // .push_on_response(svc::layers().box_http_request())
+                // .check_service::<Target>()
+                // // Provides route configuration without pdestination overrides.
+                // .push(profiles::Layer::without_overrides(
+                //     profiles_client,
+                //     http_profile_route_proxy.into_inner(),
+                // ))
+                // .into_new_service()
+                // // Caches profile stacks.
+                // .check_new_service_routes::<Profile, Target>()
+                // .cache(
+                //     svc::layers().push_on_response(
+                //         svc::layers()
+                //             // If the service has been unavailable for an extended time, eagerly
+                //             // fail requests.
+                //             .push_failfast(dispatch_timeout)
+                //             // Shares the service, ensuring discovery errors are propagated.
+                //             .push_spawn_buffer_with_idle_timeout(
+                //                 buffer_capacity,
+                //                 cache_max_idle_age,
+                //             )
+                //             .push(metrics.stack.layer(stack_labels("profile"))),
+                //     ),
+                // )
+                // .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
+                // .check_make_service::<Profile, Target>()
+                // // Ensures that cache's lock isn't held in poll_ready.
+                // .push_oneshot()
+                // .push(router::Layer::new(|()| ProfileTarget))
+                // .check_new_service_routes::<(), Target>()
+                // .new_service(())
+                ;
 
-            // // Strips headers that may be set by the inbound router.
+            // Strips headers that may be set by the inbound router.
             // let http_strip_headers = svc::layers()
             //     .push(strip_header::request::layer(L5D_REMOTE_IP))
             //     .push(strip_header::request::layer(L5D_CLIENT_ID))
             //     .push(strip_header::response::layer(L5D_SERVER_ID));
 
-            // // Handles requests as they are initially received by the proxy.
-            // let http_admit_request = svc::layers()
-            //     // Downgrades the protocol if upgraded by an outbound proxy.
-            //     .push(svc::layer::mk(orig_proto::Downgrade::new))
-            //     // Limits the number of in-flight requests.
-            //     .push_concurrency_limit(max_in_flight_requests)
-            //     // Eagerly fail requests when the proxy is out of capacity for a
-            //     // dispatch_timeout.
-            //     .push_failfast(dispatch_timeout)
-            //     .push(metrics.http_errors)
-            //     // Synthesizes responses for proxy errors.
-            //     .push(errors::layer());
+            // Handles requests as they are initially received by the proxy.
+            let http_admit_request = svc::layers()
+                // Downgrades the protocol if upgraded by an outbound proxy.
+                // .push(svc::layer::mk(orig_proto::Downgrade::new))
+                // Limits the number of in-flight requests.
+                .push_concurrency_limit(max_in_flight_requests)
+                // Eagerly fail requests when the proxy is out of capacity for a
+                // dispatch_timeout.
+                .push_failfast(dispatch_timeout)
+                .push(metrics.http_errors)
+                // Synthesizes responses for proxy errors.
+                .push(errors::layer());
 
             // let http_server_observability = svc::layers()
             //     .push(TraceContextLayer::new(span_sink.map(|span_sink| {
@@ -240,51 +246,46 @@ impl Config {
             //     // Tracks proxy handletime.
             //     .push(metrics.http_handle_time.layer());
 
-            // let http_server = svc::stack(http_profile_cache)
-            //     .push_on_response(svc::layers().box_http_response())
-            //     .push_make_ready()
-            //     .push_fallback(
-            //         http_target_cache
-            //             .push_on_response(svc::layers().box_http_response().box_http_request()),
-            //     )
-            //     .check_service::<Target>()
-            //     // Ensures that the built service is ready before it is returned
-            //     // to the router to dispatch a request.
-            //     .push_make_ready()
-            //     // Limits the amount of time each request waits to obtain a
-            //     // ready service.
-            //     .push_timeout(dispatch_timeout)
-            //     // Removes the override header after it has been used to
-            //     // determine a reuquest target.
-            //     .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
-            //     // Routes each request to a target, obtains a service for that
-            //     // target, and dispatches the request.
-            //     .instrument_from_target()
-            //     .push(router::Layer::new(RequestTarget::from))
-            //     .check_new_service::<tls::accept::Meta>()
-            //     // Used by tap.
-            //     .push_http_insert_target()
-            //     .push_on_response(http_strip_headers)
-            //     .push_on_response(http_admit_request)
-            //     .push_on_response(http_server_observability)
-            //     .push_on_response(metrics.stack.layer(stack_labels("source")))
-            //     .instrument(|src: &tls::accept::Meta| {
-            //         info_span!(
-            //             "source",
-            //             target.addr = %src.addrs.target_addr(),
-            //         )
-            //     });
-            let http_server = |_| {
-                tower::service_fn(move |_: http::Request<_>| async {
-                    Ok(http::Response::new(http::Body::default()))
-                })
-            };
+            let http_server = svc::stack(http_profile_cache)
+                // .push_on_response(svc::layers().box_http_response())
+                .push_make_ready()
+                // .push_fallback(
+                //     http_target_cache
+                //         .push_on_response(svc::layers().box_http_response().box_http_request()),
+                // )
+                .check_service::<Target>()
+                // Ensures that the built service is ready before it is returned
+                // to the router to dispatch a request.
+                .push_make_ready()
+                // Limits the amount of time each request waits to obtain a
+                // ready service.
+                .push_timeout(dispatch_timeout)
+                // Removes the override header after it has been used to
+                // determine a reuquest target.
+                // .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+                // Routes each request to a target, obtains a service for that
+                // target, and dispatches the request.
+                .instrument_from_target()
+                .push(router::Layer::new(RequestTarget::from))
+                .check_new_service::<tls::accept::Meta>()
+                // Used by tap.
+                // .push_http_insert_target()
+                // .push_on_response(http_strip_headers)
+                // .push_on_response(http_admit_request)
+                // .push_on_response(http_server_observability)
+                .push_on_response(metrics.stack.layer(stack_labels("source")))
+                .instrument(|src: &tls::accept::Meta| {
+                    info_span!(
+                        "source",
+                        target.addr = %src.addrs.target_addr(),
+                    )
+                });
 
             let tcp_server = Server::new(
                 TransportLabels,
                 // metrics.transport,
                 tcp_forward.into_inner(),
-                http_server, /* .into_inner() */
+                http_server.into_inner(),
                 h2_settings,
                 drain.clone(),
             );
