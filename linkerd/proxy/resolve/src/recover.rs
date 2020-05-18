@@ -1,9 +1,9 @@
 //! A middleware that recovers a resolution after some failures.
 
-use futures::{ready, stream::TryStreamExt};
+use futures::{ready, stream::TryStreamExt, FutureExt};
 use indexmap::IndexMap;
 use linkerd2_error::{Error, Recover};
-use linkerd2_proxy_core::resolve::{self, Update};
+use linkerd2_proxy_core::resolve::{self, Resolution as _, Update};
 use pin_project::{pin_project, project};
 use std::future::Future;
 use std::net::SocketAddr;
@@ -18,13 +18,11 @@ pub struct Resolve<E, R> {
 
 #[pin_project]
 pub struct ResolveFuture<T, E: Recover, R: resolve::Resolve<T>> {
-    #[pin]
     inner: Option<Inner<T, E, R>>,
 }
 
 #[pin_project]
 pub struct Resolution<T, E: Recover, R: resolve::Resolve<T>> {
-    #[pin]
     inner: Inner<T, E, R>,
     cache: IndexMap<SocketAddr, R::Endpoint>,
     reconcile: Option<Update<R::Endpoint>>,
@@ -35,7 +33,6 @@ struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
     target: T,
     resolve: R,
     recover: E,
-    #[pin]
     state: State<R::Future, R::Resolution, E::Backoff>,
 }
 
@@ -50,28 +47,30 @@ enum State<F, R: resolve::Resolution, B> {
         backoff: Option<B>,
     },
     Connecting {
-        #[pin]
         future: F,
         backoff: Option<B>,
     },
+
+    // XXX This state shouldn't be necessary, but we need it to pass tests(!)
+    // that don't properly mimic the go server's behavior. See
+    // linkerd/linkerd2#3362.
+    Pending {
+        resolution: Option<R>,
+        backoff: Option<B>,
+    },
+
     Connected {
         #[pin]
         resolution: R,
-        inner: Connected<B, R::Endpoint>,
+        initial: Option<Update<R::Endpoint>>,
     },
+
     Recover {
         error: Option<Error>,
         backoff: Option<B>,
     },
-    Backoff(Option<B>),
-}
 
-enum Connected<B, E> {
-    // XXX This state shouldn't be necessary, but we need it to pass tests(!)
-    // that don't properly mimic the go server's behavior. See
-    // linkerd/linkerd2#3362.
-    Pending { backoff: Option<B> },
-    Connected { initial: Option<Update<E>> },
+    Backoff(Option<B>),
 }
 
 // === impl Resolve ===
@@ -86,6 +85,8 @@ impl<T, E, R> tower::Service<T> for Resolve<E, R>
 where
     T: Clone,
     R: resolve::Resolve<T> + Clone,
+    R::Resolution: Unpin,
+    R::Future: Unpin,
     R::Endpoint: Clone + PartialEq,
     E: Recover + Clone,
     E::Backoff: Unpin,
@@ -123,6 +124,8 @@ impl<T, E, R> Future for ResolveFuture<T, E, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,
+    R::Resolution: Unpin,
+    R::Future: Unpin,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
     E::Backoff: Unpin,
@@ -134,7 +137,7 @@ where
         // Wait until the resolution is connected.
         ready!(this
             .inner
-            .as_pin_mut()
+            .as_mut()
             .expect("polled after complete")
             .poll_connected(cx))?;
         let inner = this.inner.take().expect("polled after complete");
@@ -153,6 +156,8 @@ impl<T, E, R> resolve::Resolution for Resolution<T, E, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,
+    R::Future: Unpin,
+    R::Resolution: Unpin,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
     E::Backoff: Unpin,
@@ -160,7 +165,6 @@ where
     type Endpoint = R::Endpoint;
     type Error = Error;
 
-    #[project]
     fn poll(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -174,29 +178,16 @@ where
                 return Poll::Ready(Ok(update));
             }
 
-            #[project]
-            match this.inner.as_mut().project().state.project() {
+            match this.inner.state {
                 State::Connected {
-                    inner: Connected::Pending { .. },
-                    ..
-                } => continue,
-                _ => {}
-            };
-            #[project]
-            match this.inner.as_mut().project().state.project() {
-                State::Connected { resolution, inner } => {
-                    let initial = if let Connected::Connected { initial } =
-                        std::mem::replace(inner, Connected::Connected { initial: None })
-                    {
-                        initial
-                    } else {
-                        continue;
-                    };
+                    ref mut resolution,
+                    ref mut initial,
+                } => {
                     // XXX Due to linkerd/linkerd2#3362, errors can't be discovered
                     // eagerly, so we must potentially read the first update to be
                     // sure it didn't fail. If that's the case, then reconcile the
                     // cache against the initial update.
-                    if let Some(initial) = initial {
+                    if let Some(initial) = initial.take() {
                         // The initial state afer a reconnect may be identitical to
                         // the prior state, and so there may be no updates to
                         // advertise.
@@ -212,16 +203,16 @@ where
                     // Process the resolution stream, updating the cache.
                     //
                     // Attempt recovery/backoff if the resolution fails.
-                    match ready!(resolution.poll(cx)) {
+                    match ready!(resolution.poll_unpin(cx)) {
                         Ok(update) => {
                             this.update_active(&update);
                             return Poll::Ready(Ok(update));
                         }
                         Err(e) => {
-                            this.inner.as_mut().project().state.set(State::Recover {
+                            this.inner.state = State::Recover {
                                 error: Some(e.into()),
                                 backoff: None,
-                            });
+                            }
                         }
                     }
                 }
@@ -230,7 +221,7 @@ where
                 _ => {}
             }
 
-            ready!(this.inner.as_mut().poll_connected(cx))?;
+            ready!(this.inner.poll_connected(cx))?;
         }
     }
 }
@@ -266,86 +257,80 @@ impl<T, E, R> Inner<T, E, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,
+    R::Resolution: Unpin,
+    R::Future: Unpin,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
     E::Backoff: Unpin,
 {
     /// Drives the state forward until its connected.
-    #[project]
-    fn poll_connected(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        let mut this = self.project();
+    fn poll_connected(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         loop {
-            #[project]
-            match this.state.as_mut().project() {
+            self.state = match self.state {
                 // When disconnected, start connecting.
                 //
                 // If we're recovering from a previous failure, we retain the
                 // backoff in case this connection attempt fails.
-                State::Disconnected { backoff } => {
+                State::Disconnected { ref mut backoff } => {
                     tracing::trace!("connecting");
-                    ready!(this.resolve.poll_ready(cx).map_err(Into::into))?;
-                    let future = this.resolve.resolve(this.target.clone());
+                    ready!(self.resolve.poll_ready(cx).map_err(Into::into))?;
+                    let future = self.resolve.resolve(self.target.clone());
                     let backoff = backoff.take();
-                    this.state.set(State::Connecting { future, backoff });
+                    State::Connecting { future, backoff }
                 }
 
-                State::Connecting { future, backoff } => {
-                    tokio::pin!(future);
-                    match ready!(future.poll(cx)) {
-                        Ok(resolution) => {
-                            tracing::trace!("pending");
-                            let backoff = backoff.take();
-                            this.state.set(State::Connected {
-                                resolution,
-                                inner: Connected::Pending { backoff },
-                            });
-                        }
-                        Err(e) => {
-                            let backoff = backoff.take();
-                            this.state.set(State::Recover {
-                                error: Some(e.into()),
-                                backoff,
-                            });
+                State::Connecting {
+                    ref mut future,
+                    ref mut backoff,
+                } => match ready!(future.poll_unpin(cx)) {
+                    Ok(resolution) => {
+                        tracing::trace!("pending");
+                        State::Pending {
+                            resolution: Some(resolution),
+                            backoff: backoff.take(),
                         }
                     }
-                }
+                    Err(e) => State::Recover {
+                        error: Some(e.into()),
+                        backoff: backoff.take(),
+                    },
+                },
 
                 // We've already connected, but haven't yet received an update
                 // (or an error). This state shouldn't exist. See
                 // linkerd/linkerd2#3362.
-                State::Connected { resolution, inner } => match inner {
-                    Connected::Pending { backoff } => {
-                        match ready!(resolve::Resolution::poll(resolution, cx)) {
-                            Err(e) => {
-                                let backoff = backoff.take();
-                                this.state.set(State::Recover {
-                                    error: Some(e.into()),
-                                    backoff,
-                                });
-                            }
-                            Ok(initial) => {
-                                tracing::trace!("connected");
-                                *inner = Connected::Connected {
-                                    initial: Some(initial),
-                                };
-                            }
+                State::Pending {
+                    ref mut resolution,
+                    ref mut backoff,
+                } => match ready!(resolution.as_mut().expect("illegal state").poll_unpin(cx)) {
+                    Err(e) => State::Recover {
+                        error: Some(e.into()),
+                        backoff: backoff.take(),
+                    },
+                    Ok(initial) => {
+                        tracing::trace!("connected");
+                        State::Connected {
+                            resolution: resolution.take().expect("illegal state"),
+                            initial: Some(initial),
                         }
                     }
-                    Connected::Connected { .. } => return Poll::Ready(Ok(())),
                 },
+
+                State::Connected { .. } => return Poll::Ready(Ok(())),
 
                 // If any stage failed, try to recover. If the error is
                 // recoverable, start (or continue) backing off...
-                State::Recover { error, backoff } => {
+                State::Recover {
+                    ref mut error,
+                    ref mut backoff,
+                } => {
                     let err = error.take().expect("illegal state");
                     tracing::debug!(%err, "recovering");
-                    let new_backoff = this.recover.recover(err)?;
-                    let backoff = backoff.take();
-                    this.state
-                        .set(State::Backoff(backoff.or(Some(new_backoff))));
+                    let new_backoff = self.recover.recover(err)?;
+                    State::Backoff(backoff.take().or(Some(new_backoff)))
                 }
 
-                State::Backoff(backoff) => {
+                State::Backoff(ref mut backoff) => {
                     let unit = ready!(backoff
                         .as_mut()
                         .expect("illegal state")
@@ -358,7 +343,7 @@ where
                     } else {
                         None
                     };
-                    this.state.set(State::Disconnected { backoff });
+                    State::Disconnected { backoff }
                 }
             };
         }

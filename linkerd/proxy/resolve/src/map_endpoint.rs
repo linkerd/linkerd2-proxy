@@ -113,14 +113,15 @@ where
     ) -> Poll<Result<resolve::Update<M::Out>, Self::Error>> {
         let this = self.project();
         let update = match ready!(this.resolution.poll(cx))? {
-            resolve::Update::Add(eps) => resolve::Update::Add(
-                eps.into_iter()
-                    .map(|(a, ep)| {
-                        let ep = this.map.map_endpoint(&this.target, a, ep);
-                        (a, ep)
-                    })
-                    .collect(),
-            ),
+            resolve::Update::Add(eps) => {
+                let mut update = Vec::new();
+                for (a, ep) in eps.into_iter() {
+                    let ep = this.map.map_endpoint(&this.target, a, ep);
+                    update.push((a, ep));
+                }
+
+                resolve::Update::Add(update)
+            }
             resolve::Update::Remove(addrs) => resolve::Update::Remove(addrs),
             resolve::Update::DoesNotExist => resolve::Update::DoesNotExist,
             resolve::Update::Empty => resolve::Update::Empty,
