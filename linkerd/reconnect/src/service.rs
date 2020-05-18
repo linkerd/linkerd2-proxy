@@ -1,4 +1,4 @@
-use futures::{future, try_ready, Async, Future, Poll, Stream};
+use futures::{future, try_ready, Async, Future, Poll, TryStream};
 use linkerd2_error::{Error, Recover};
 use tracing;
 
@@ -123,7 +123,7 @@ where
                     let more = try_ready!(backoff
                         .as_mut()
                         .expect("backoff must be set")
-                        .poll()
+                        .try_poll(cx)
                         .map_err(Into::into));
                     State::Disconnected {
                         // Only reuse the backoff if the backoff stream did not complete.
