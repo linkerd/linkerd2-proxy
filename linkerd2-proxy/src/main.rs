@@ -22,7 +22,7 @@ fn main() {
     tokio_compat::runtime::current_thread::Runtime::new()
         .expect("main runtime")
         .block_on_std(async move {
-            let app = match trace.and_then(move |t| config.build(t)) {
+            let app = match async move { config.build(trace?).await }.await {
                 Ok(app) => app,
                 Err(e) => {
                     eprintln!("Initialization failure: {}", e);
