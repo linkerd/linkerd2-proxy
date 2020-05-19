@@ -18,7 +18,6 @@ http = "0.2"
 http-body = "0.3"
 tonic = { version = "0.2", default-features = false }
 indexmap = "1.0"
-tokio = { version = "0.2", features = ["sync"] }
-tower = {version = "0.3", default-features = false }
+tower = { version = "0.3", default-features = false }
 tracing = "0.1"
 pin-project = "0.4"
