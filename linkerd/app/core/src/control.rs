@@ -284,82 +284,82 @@ impl fmt::Display for ControlAddr {
 //     impl<I: fmt::Debug + fmt::Display> error::Error for Error<I> {}
 // }
 
-// /// Creates a client suitable for gRPC.
-// pub mod client {
-//     use crate::transport::{connect, tls};
-//     use crate::{proxy::http, svc};
-//     use futures::Poll;
-//     use linkerd2_proxy_http::h2::Settings as H2Settings;
-//     use std::net::SocketAddr;
+/// Creates a client suitable for gRPC.
+pub mod client {
+    use crate::transport::{connect, tls};
+    use crate::{proxy::http, svc};
+    use linkerd2_proxy_http::h2::Settings as H2Settings;
+    use std::net::SocketAddr;
+    use std::task::{Context, Poll};
 
-//     #[derive(Clone, Debug)]
-//     pub struct Target {
-//         pub(super) addr: SocketAddr,
-//         pub(super) server_name: tls::PeerIdentity,
-//     }
+    #[derive(Clone, Debug)]
+    pub struct Target {
+        pub(super) addr: SocketAddr,
+        pub(super) server_name: tls::PeerIdentity,
+    }
 
-//     #[derive(Debug)]
-//     pub struct Client<C, B> {
-//         inner: http::h2::Connect<C, B>,
-//     }
+    #[derive(Debug)]
+    pub struct Client<C, B> {
+        inner: http::h2::Connect<C, B>,
+    }
 
-//     // === impl Target ===
+    // === impl Target ===
 
-//     impl connect::ConnectAddr for Target {
-//         fn connect_addr(&self) -> SocketAddr {
-//             self.addr
-//         }
-//     }
+    impl connect::ConnectAddr for Target {
+        fn connect_addr(&self) -> SocketAddr {
+            self.addr
+        }
+    }
 
-//     impl tls::HasPeerIdentity for Target {
-//         fn peer_identity(&self) -> tls::PeerIdentity {
-//             self.server_name.clone()
-//         }
-//     }
+    impl tls::HasPeerIdentity for Target {
+        fn peer_identity(&self) -> tls::PeerIdentity {
+            self.server_name.clone()
+        }
+    }
 
-//     // === impl Layer ===
+    // === impl Layer ===
 
-//     pub fn layer<C, B>() -> impl svc::Layer<C, Service = Client<C, B>> + Copy
-//     where
-//         http::h2::Connect<C, B>: tower::Service<Target>,
-//     {
-//         svc::layer::mk(|mk_conn| {
-//             let inner = http::h2::Connect::new(mk_conn, H2Settings::default());
-//             Client { inner }
-//         })
-//     }
+    pub fn layer<C, B>() -> impl svc::Layer<C, Service = Client<C, B>> + Copy
+    where
+        http::h2::Connect<C, B>: tower::Service<Target>,
+    {
+        svc::layer::mk(|mk_conn| {
+            let inner = http::h2::Connect::new(mk_conn, H2Settings::default());
+            Client { inner }
+        })
+    }
 
-//     // === impl Client ===
+    // === impl Client ===
 
-//     impl<C, B> tower::Service<Target> for Client<C, B>
-//     where
-//         http::h2::Connect<C, B>: tower::Service<Target>,
-//     {
-//         type Response = <http::h2::Connect<C, B> as tower::Service<Target>>::Response;
-//         type Error = <http::h2::Connect<C, B> as tower::Service<Target>>::Error;
-//         type Future = <http::h2::Connect<C, B> as tower::Service<Target>>::Future;
+    impl<C, B> tower::Service<Target> for Client<C, B>
+    where
+        http::h2::Connect<C, B>: tower::Service<Target>,
+    {
+        type Response = <http::h2::Connect<C, B> as tower::Service<Target>>::Response;
+        type Error = <http::h2::Connect<C, B> as tower::Service<Target>>::Error;
+        type Future = <http::h2::Connect<C, B> as tower::Service<Target>>::Future;
 
-//         #[inline]
-//         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-//             self.inner.poll_ready()
-//         }
+        #[inline]
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
+        }
 
-//         #[inline]
-//         fn call(&mut self, target: Target) -> Self::Future {
-//             self.inner.call(target)
-//         }
-//     }
+        #[inline]
+        fn call(&mut self, target: Target) -> Self::Future {
+            self.inner.call(target)
+        }
+    }
 
-//     // A manual impl is needed since derive adds `B: Clone`, but that's just
-//     // a PhantomData.
-//     impl<C, B> Clone for Client<C, B>
-//     where
-//         http::h2::Connect<C, B>: Clone,
-//     {
-//         fn clone(&self) -> Self {
-//             Client {
-//                 inner: self.inner.clone(),
-//             }
-//         }
-//     }
-// }
+    // A manual impl is needed since derive adds `B: Clone`, but that's just
+    // a PhantomData.
+    impl<C, B> Clone for Client<C, B>
+    where
+        http::h2::Connect<C, B>: Clone,
+    {
+        fn clone(&self) -> Self {
+            Client {
+                inner: self.inner.clone(),
+            }
+        }
+    }
+}
