@@ -836,7 +836,7 @@ dependencies = [
  "linkerd2-app-outbound",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "net2",
  "quickcheck",
  "regex 1.0.0",
@@ -849,8 +849,8 @@ dependencies = [
  "tokio-current-thread",
  "tokio-io",
  "tokio-rustls",
+ "tonic",
  "tower 0.1.1",
- "tower-grpc",
  "tracing",
  "tracing-futures 0.1.0",
  "webpki",
@@ -919,9 +919,9 @@ dependencies = [
  "tokio 0.2.20",
  "tokio-compat",
  "tokio-timer",
+ "tonic",
  "tower 0.3.1",
  "tower-balance",
- "tower-grpc",
  "tower-load",
  "tower-request-modifier",
  "tower-spawn-ready",
@@ -1308,6 +1308,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-proxy-api"
+version = "0.1.12"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api#59d91c1d8787f907fbab2de5ca844c25e7aeb9f7"
+dependencies = [
+ "bytes 0.4.11",
+ "futures 0.1.26",
+ "h2 0.1.26",
+ "http 0.1.21",
+ "prost 0.5.0",
+ "prost-types 0.5.0",
+ "quickcheck",
+ "rand 0.7.2",
+ "tower-grpc",
+ "tower-grpc-build",
+]
+
+[[package]]
 name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
@@ -1395,10 +1412,10 @@ dependencies = [
  "tokio 0.2.20",
  "tokio-connect",
  "tokio-timer",
+ "tonic",
  "tower 0.3.1",
  "tower-balance",
  "tower-discover",
- "tower-grpc",
  "tower-load",
  "tracing",
  "tracing-futures 0.1.0",

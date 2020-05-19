@@ -8,7 +8,11 @@ use linkerd2_app_core::{
 use linkerd2_app_outbound::Target;
 use std::net::IpAddr;
 use std::sync::Arc;
-use tower_grpc::{generic::client::GrpcService, Body, BoxBody, Code, Status};
+use tonic::{
+    body::{Body, BoxBody},
+    client::GrpcService,
+    Code, Status,
+};
 
 pub type Resolve<S> = request_filter::Service<
     PermitConfiguredDsts,

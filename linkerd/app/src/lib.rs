@@ -3,7 +3,7 @@
 // #![deny(warnings, rust_2018_idioms)]
 
 pub mod admin;
-// pub mod dst;
+pub mod dst;
 pub mod env;
 pub mod identity;
 pub mod metrics;
@@ -45,7 +45,7 @@ pub struct Config {
 
     pub dns: dns::Config,
     pub identity: identity::Config,
-    // pub dst: dst::Config,
+    pub dst: dst::Config,
     pub admin: admin::Config,
     pub tap: tap::Config,
     // pub oc_collector: oc_collector::Config,
@@ -55,7 +55,7 @@ pub struct App {
     admin: admin::Admin,
     admin_rt: tokio_02::runtime::Runtime,
     drain: drain::Signal,
-    // dst: ControlAddr,
+    dst: ControlAddr,
     identity: identity::Identity,
     inbound: inbound::Inbound,
     // oc_collector: oc_collector::OcCollector,
@@ -76,7 +76,7 @@ impl Config {
         let Config {
             admin,
             dns,
-            // dst,
+            dst,
             identity,
             inbound,
             // oc_collector,
@@ -110,38 +110,38 @@ impl Config {
 
         // let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
 
-        // let dst = {
-        //     use linkerd2_app_core::{classify, control, proxy::grpc, reconnect, transport::tls};
+        let dst = {
+            use linkerd2_app_core::{classify, control, reconnect, transport::tls};
 
-        //     let metrics = metrics.control.clone();
-        //     let dns = dns.resolver.clone();
-        //     info_span!("dst").in_scope(|| {
-        //         // XXX This is unfortunate. But we don't daemonize the service into a
-        //         // task in the build, so we'd have to name it. And that's not
-        //         // happening today. Really, we should daemonize the whole client
-        //         // into a task so consumers can be ignorant. This would also
-        //         // probably enable the use of a lock.
-        //         let svc = svc::connect(dst.control.connect.keepalive)
-        //             .push(tls::ConnectLayer::new(identity.local()))
-        //             .push_timeout(dst.control.connect.timeout)
-        //             .push(control::client::layer())
-        //             .push(control::resolve::layer(dns))
-        //             .push(reconnect::layer({
-        //                 let backoff = dst.control.connect.backoff;
-        //                 move |_| Ok(backoff.stream())
-        //             }))
-        //             .push(metrics.into_layer::<classify::Response>())
-        //             .push(control::add_origin::Layer::new())
-        //             .into_new_service()
-        //             .push_on_response(
-        //                 svc::layers()
-        //                     .push(grpc::req_body_as_payload::layer())
-        //                     .push_spawn_buffer(dst.control.buffer_capacity),
-        //             )
-        //             .new_service(dst.control.addr.clone());
-        //         dst.build(svc)
-        //     })
-        // }?;
+            let metrics = metrics.control.clone();
+            let dns = dns.resolver.clone();
+            info_span!("dst").in_scope(|| {
+                // XXX This is unfortunate. But we don't daemonize the service into a
+                // task in the build, so we'd have to name it. And that's not
+                // happening today. Really, we should daemonize the whole client
+                // into a task so consumers can be ignorant. This would also
+                // probably enable the use of a lock.
+                let svc = svc::connect(dst.control.connect.keepalive)
+                    .push(tls::ConnectLayer::new(identity.local()))
+                    .push_timeout(dst.control.connect.timeout)
+                    .push(control::client::layer())
+                    .push(control::resolve::layer(dns))
+                    .push(reconnect::layer({
+                        let backoff = dst.control.connect.backoff;
+                        move |_| Ok(backoff.stream())
+                    }))
+                    .push(metrics.into_layer::<classify::Response>())
+                    .push(control::add_origin::Layer::new())
+                    .into_new_service()
+                    .push_on_response(
+                        svc::layers()
+                            .push(grpc::req_body_as_payload::layer())
+                            .push_spawn_buffer(dst.control.buffer_capacity),
+                    )
+                    .new_service(dst.control.addr.clone());
+                dst.build(svc)
+            })
+        }?;
 
         // let oc_collector = {
         //     let identity = identity.local();
@@ -196,7 +196,7 @@ impl Config {
         Ok(App {
             admin,
             admin_rt,
-            // dst: dst_addr,
+            dst: dst_addr,
             drain: drain_tx,
             identity,
             inbound,

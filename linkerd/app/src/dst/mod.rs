@@ -6,7 +6,10 @@ use linkerd2_app_core::{
     dns, profiles, Error,
 };
 use std::time::Duration;
-use tower_grpc::{generic::client::GrpcService, Body, BoxBody};
+use tonic::{
+    body::{Body, BoxBody},
+    client::GrpcService,
+};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -23,7 +26,7 @@ pub struct Config {
 /// The addr is preserved for logging.
 pub struct Dst<S> {
     pub addr: ControlAddr,
-    pub profiles: profiles::Client<S, resolve::BackoffUnlessInvalidArgument>,
+    // pub profiles: profiles::Client<S, resolve::BackoffUnlessInvalidArgument>,
     pub resolve: resolve::Resolve<S>,
 }
 
@@ -44,18 +47,18 @@ impl Config {
             self.control.connect.backoff,
         );
 
-        let profiles = profiles::Client::new(
-            svc,
-            resolve::BackoffUnlessInvalidArgument::from(self.control.connect.backoff),
-            self.initial_profile_timeout,
-            self.context,
-            self.profile_suffixes,
-        );
+        // let profiles = profiles::Client::new(
+        //     svc,
+        //     resolve::BackoffUnlessInvalidArgument::from(self.control.connect.backoff),
+        //     self.initial_profile_timeout,
+        //     self.context,
+        //     self.profile_suffixes,
+        // );
 
         Ok(Dst {
             addr: self.control.addr,
             resolve,
-            profiles,
+            // profiles,
         })
     }
 }
