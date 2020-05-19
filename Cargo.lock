@@ -3200,11 +3200,10 @@ dependencies = [
 [[package]]
 name = "tower-request-modifier"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower-http#044e0ed5ae8b2e9946233b7cc8fc24471b2d126a"
+source = "git+https://github.com/tower-rs/tower-http#bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea"
 dependencies = [
- "futures 0.1.26",
- "http 0.1.21",
- "tower-service 0.2.0",
+ "http 0.2.1",
+ "tower-service 0.3.0",
 ]
 
 [[package]]
