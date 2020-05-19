@@ -144,7 +144,6 @@ where
         Poll::Ready(Ok(Resolution {
             inner,
             cache: IndexMap::default(),
-            //cache: Cache::default(),
             reconcile: None,
         }))
     }
