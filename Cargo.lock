@@ -1098,10 +1098,11 @@ dependencies = [
 name = "linkerd2-exp-backoff"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
+ "pin-project",
  "quickcheck",
  "rand 0.7.2",
- "tokio-timer",
+ "tokio 0.2.20",
 ]
 
 [[package]]

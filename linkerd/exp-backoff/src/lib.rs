@@ -1,11 +1,14 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{try_ready, Future, Poll, Stream};
+use pin_project::pin_project;
 use rand::{rngs::SmallRng, SeedableRng};
 use std::fmt;
+use std::future::Future;
 use std::ops::Mul;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio_timer as timer;
+use tokio::{stream::Stream, time};
 
 /// A jittered exponential backoff strategy.
 // The raw fields are exposed so this type can be constructed statically.
@@ -24,12 +27,14 @@ pub struct ExponentialBackoff {
 }
 
 /// A jittered exponential backoff stream.
+#[pin_project]
 #[derive(Debug)]
 pub struct ExponentialBackoffStream {
     backoff: ExponentialBackoff,
     rng: SmallRng,
     iterations: u32,
-    delay: Option<timer::Delay>,
+    #[pin]
+    delay: Option<time::Delay>,
 }
 
 #[derive(Clone, Debug)]
@@ -94,28 +99,28 @@ impl ExponentialBackoff {
 
 impl Stream for ExponentialBackoffStream {
     type Item = ();
-    type Error = timer::Error;
 
-    fn poll(&mut self) -> Poll<Option<()>, Self::Error> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<()>> {
+        let mut this = self.project();
         loop {
             // If there's an active delay, wait until it's done and then
             // update the state.
-            if let Some(delay) = self.delay.as_mut() {
-                try_ready!(delay.poll());
+            if let Some(delay) = this.delay.as_mut().as_pin_mut() {
+                futures::ready!(delay.poll(cx));
 
-                self.delay = None;
-                self.iterations += 1;
-                return Ok(Some(()).into());
+                this.delay.as_mut().set(None);
+                *this.iterations += 1;
+                return Poll::Ready(Some(()));
             }
-            if self.iterations == std::u32::MAX {
-                return Ok(None.into());
+            if *this.iterations == std::u32::MAX {
+                return Poll::Ready(None);
             }
 
             let backoff = {
-                let base = self.backoff.base(self.iterations);
-                base + self.backoff.jitter(base, &mut self.rng)
+                let base = this.backoff.base(*this.iterations);
+                base + this.backoff.jitter(base, &mut this.rng)
             };
-            self.delay = Some(timer::Delay::new(timer::clock::now() + backoff));
+            this.delay.as_mut().set(Some(time::delay_for(backoff)));
         }
     }
 }
