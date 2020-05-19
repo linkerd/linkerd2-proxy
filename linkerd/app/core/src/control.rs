@@ -138,151 +138,163 @@ impl fmt::Display for ControlAddr {
 //     }
 // }
 
-// /// Resolves the controller's `addr` once before building a client.
-// pub mod resolve {
-//     use super::{client, ControlAddr};
-//     use crate::svc;
-//     use futures::{try_ready, Future, Poll};
-//     use linkerd2_addr::Addr;
-//     use linkerd2_dns as dns;
-//     use std::net::SocketAddr;
-//     use std::{error, fmt};
+/// Resolves the controller's `addr` once before building a client.
+pub mod resolve {
+    use super::{client, ControlAddr};
+    use crate::svc;
+    use futures_03::{ready, TryFuture};
+    use linkerd2_addr::Addr;
+    use linkerd2_dns as dns;
+    use pin_project::{pin_project, project};
+    use std::future::Future;
+    use std::net::SocketAddr;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use std::{error, fmt};
 
-//     #[derive(Clone, Debug)]
-//     pub struct Layer {
-//         dns: dns::Resolver,
-//     }
+    #[derive(Clone, Debug)]
+    pub struct Layer {
+        dns: dns::Resolver,
+    }
 
-//     #[derive(Clone, Debug)]
-//     pub struct Resolve<M> {
-//         dns: dns::Resolver,
-//         inner: M,
-//     }
+    #[derive(Clone, Debug)]
+    pub struct Resolve<M> {
+        dns: dns::Resolver,
+        inner: M,
+    }
 
-//     pub struct Init<M>
-//     where
-//         M: tower::Service<client::Target>,
-//     {
-//         state: State<M>,
-//     }
+    #[pin_project]
+    pub struct Init<M>
+    where
+        M: tower::Service<client::Target>,
+    {
+        #[pin]
+        state: State<M>,
+    }
 
-//     enum State<M>
-//     where
-//         M: tower::Service<client::Target>,
-//     {
-//         Resolve(dns::IpAddrFuture, Option<(M, ControlAddr)>),
-//         NotReady(M, Option<(SocketAddr, ControlAddr)>),
-//         Inner(M::Future),
-//     }
+    #[pin_project]
+    enum State<M>
+    where
+        M: tower::Service<client::Target>,
+    {
+        Resolve(#[pin] dns::IpAddrFuture, Option<(M, ControlAddr)>),
+        NotReady(M, Option<(SocketAddr, ControlAddr)>),
+        Inner(#[pin] M::Future),
+    }
 
-//     #[derive(Debug)]
-//     pub enum Error<I> {
-//         Dns(dns::Error),
-//         Inner(I),
-//     }
+    #[derive(Debug)]
+    pub enum Error<I> {
+        Dns(dns::Error),
+        Inner(I),
+    }
 
-//     // === impl Layer ===
+    // === impl Layer ===
 
-//     pub fn layer<M>(dns: dns::Resolver) -> impl svc::Layer<M, Service = Resolve<M>> + Clone
-//     where
-//         M: tower::Service<client::Target> + Clone,
-//     {
-//         svc::layer::mk(move |inner| Resolve {
-//             dns: dns.clone(),
-//             inner,
-//         })
-//     }
+    pub fn layer<M>(dns: dns::Resolver) -> impl svc::Layer<M, Service = Resolve<M>> + Clone
+    where
+        M: tower::Service<client::Target> + Clone,
+    {
+        svc::layer::mk(move |inner| Resolve {
+            dns: dns.clone(),
+            inner,
+        })
+    }
 
-//     // === impl Resolve ===
+    // === impl Resolve ===
 
-//     impl<M> tower::Service<ControlAddr> for Resolve<M>
-//     where
-//         M: tower::Service<client::Target> + Clone,
-//     {
-//         type Response = M::Response;
-//         type Error = <Init<M> as Future>::Error;
-//         type Future = Init<M>;
+    impl<M> tower::Service<ControlAddr> for Resolve<M>
+    where
+        M: tower::Service<client::Target> + Clone,
+    {
+        type Response = M::Response;
+        type Error = <Init<M> as TryFuture>::Error;
+        type Future = Init<M>;
 
-//         fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-//             self.inner.poll_ready().map_err(Error::Inner)
-//         }
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx).map_err(Error::Inner)
+        }
 
-//         fn call(&mut self, target: ControlAddr) -> Self::Future {
-//             let state = match target.addr {
-//                 Addr::Socket(sa) => State::make_inner(sa, &target, &mut self.inner),
-//                 Addr::Name(ref na) => {
-//                     // The inner service is ready, but we are going to do
-//                     // additional work before using it. In case the inner
-//                     // service has acquired resources (like a lock), we
-//                     // relinquish our claim on the service by replacing it.
-//                     self.inner = self.inner.clone();
+        fn call(&mut self, target: ControlAddr) -> Self::Future {
+            let state = match target.addr {
+                Addr::Socket(sa) => State::make_inner(sa, &target, &mut self.inner),
+                Addr::Name(ref na) => {
+                    // The inner service is ready, but we are going to do
+                    // additional work before using it. In case the inner
+                    // service has acquired resources (like a lock), we
+                    // relinquish our claim on the service by replacing it.
+                    self.inner = self.inner.clone();
 
-//                     let future = self.dns.resolve_one_ip(na.name());
-//                     State::Resolve(future, Some((self.inner.clone(), target.clone())))
-//                 }
-//             };
+                    let future = self.dns.resolve_one_ip(na.name());
+                    State::Resolve(future, Some((self.inner.clone(), target.clone())))
+                }
+            };
 
-//             Init { state }
-//         }
-//     }
+            Init { state }
+        }
+    }
 
-//     // === impl Init ===
+    // === impl Init ===
 
-//     impl<M> Future for Init<M>
-//     where
-//         M: tower::Service<client::Target>,
-//     {
-//         type Item = M::Response;
-//         type Error = Error<M::Error>;
+    impl<M> Future for Init<M>
+    where
+        M: tower::Service<client::Target>,
+    {
+        type Output = Result<M::Response, Error<M::Error>>;
 
-//         fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-//             loop {
-//                 self.state = match self.state {
-//                     State::Resolve(ref mut fut, ref mut stack) => {
-//                         let ip = try_ready!(fut.poll().map_err(Error::Dns));
-//                         let (svc, config) = stack.take().unwrap();
-//                         let addr = SocketAddr::from((ip, config.addr.port()));
-//                         State::NotReady(svc, Some((addr, config)))
-//                     }
-//                     State::NotReady(ref mut svc, ref mut cfg) => {
-//                         try_ready!(svc.poll_ready().map_err(Error::Inner));
-//                         let (addr, config) = cfg.take().unwrap();
-//                         State::make_inner(addr, &config, svc)
-//                     }
-//                     State::Inner(ref mut fut) => return fut.poll().map_err(Error::Inner),
-//                 };
-//             }
-//         }
-//     }
+        #[project]
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let mut this = self.project();
+            loop {
+                #[project]
+                match this.state.as_mut().project() {
+                    State::Resolve(fut, stack) => {
+                        let ip = ready!(fut.poll(cx).map_err(Error::Dns))?;
+                        let (svc, config) = stack.take().unwrap();
+                        let addr = SocketAddr::from((ip, config.addr.port()));
+                        this.state
+                            .as_mut()
+                            .set(State::NotReady(svc, Some((addr, config))));
+                    }
+                    State::NotReady(svc, cfg) => {
+                        ready!(svc.poll_ready(cx).map_err(Error::Inner))?;
+                        let (addr, config) = cfg.take().unwrap();
+                        let state = State::make_inner(addr, &config, svc);
+                        this.state.as_mut().set(state);
+                    }
+                    State::Inner(fut) => return fut.poll(cx).map_err(Error::Inner),
+                };
+            }
+        }
+    }
 
-//     impl<M> State<M>
-//     where
-//         M: tower::Service<client::Target>,
-//     {
-//         fn make_inner(addr: SocketAddr, dst: &ControlAddr, mk_svc: &mut M) -> Self {
-//             let target = client::Target {
-//                 addr,
-//                 server_name: dst.identity.clone(),
-//             };
+    impl<M> State<M>
+    where
+        M: tower::Service<client::Target>,
+    {
+        fn make_inner(addr: SocketAddr, dst: &ControlAddr, mk_svc: &mut M) -> Self {
+            let target = client::Target {
+                addr,
+                server_name: dst.identity.clone(),
+            };
 
-//             State::Inner(mk_svc.call(target))
-//         }
-//     }
+            State::Inner(mk_svc.call(target))
+        }
+    }
 
-//     // === impl Error ===
+    // === impl Error ===
 
-//     impl<I: fmt::Display> fmt::Display for Error<I> {
-//         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//             match self {
-//                 Error::Dns(dns::Error::NoAddressesFound) => write!(f, "no addresses found"),
-//                 Error::Dns(dns::Error::ResolutionFailed(e)) => fmt::Display::fmt(&e, f),
-//                 Error::Inner(ref e) => fmt::Display::fmt(&e, f),
-//             }
-//         }
-//     }
+    impl<I: fmt::Display> fmt::Display for Error<I> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Error::Dns(dns::Error::NoAddressesFound) => write!(f, "no addresses found"),
+                Error::Dns(dns::Error::ResolutionFailed(e)) => fmt::Display::fmt(&e, f),
+                Error::Inner(ref e) => fmt::Display::fmt(&e, f),
+            }
+        }
+    }
 
-//     impl<I: fmt::Debug + fmt::Display> error::Error for Error<I> {}
-// }
+    impl<I: fmt::Debug + fmt::Display> error::Error for Error<I> {}
+}
 
 /// Creates a client suitable for gRPC.
 pub mod client {
