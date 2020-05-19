@@ -9,7 +9,7 @@ Core interfaces needed to implement proxy components
 """
 
 [dependencies]
-futures = {package = "futures", version = "0.3" }
+futures = "0.3"
 linkerd2-error = { path = "../../error" }
 tokio = "0.2"
 tower = {version = "0.3", default-features = false }

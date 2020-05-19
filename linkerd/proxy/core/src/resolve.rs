@@ -32,6 +32,16 @@ pub trait Resolution {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>>;
+
+    fn poll_unpin(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>>
+    where
+        Self: Unpin,
+    {
+        Pin::new(self).poll(cx)
+    }
 }
 
 #[derive(Clone, Debug)]
