@@ -72,7 +72,7 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub fn build(self, log_level: trace::LevelHandle) -> Result<App, Error> {
+    pub async fn build(self, log_level: trace::LevelHandle) -> Result<App, Error> {
         let Config {
             admin,
             dns,
@@ -98,7 +98,10 @@ impl Config {
             .build()
             .expect("admin runtime");
 
-        let dns = admin_rt.block_on(dns.build().instrument(info_span!("dns")));
+        let dns = dns
+            .build(admin_rt.handle().clone())
+            .instrument(info_span!("dns"))
+            .await;
 
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
@@ -108,13 +111,7 @@ impl Config {
         // let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
 
         // let dst = {
-        //     use linkerd2_app_core::{
-        //         classify,
-        //         control,
-        //         proxy::grpc,
-        //         reconnect,
-        //         transport::tls,
-        //     };
+        //     use linkerd2_app_core::{classify, control, proxy::grpc, reconnect, transport::tls};
 
         //     let metrics = metrics.control.clone();
         //     let dns = dns.resolver.clone();

@@ -17,8 +17,8 @@ pub struct Dns {
 // === impl Config ===
 
 impl Config {
-    pub async fn build(self) -> Dns {
-        let resolver = Resolver::from_system_config_with(&self)
+    pub async fn build(self, handle: tokio_02::runtime::Handle) -> Dns {
+        let resolver = Resolver::from_system_config_with(&self, handle)
             .await
             .expect("system DNS config must be valid");
         Dns { resolver }

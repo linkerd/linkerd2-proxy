@@ -50,18 +50,23 @@ impl Resolver {
     /// TODO: This should be infallible like it is in the `domain` crate.
     pub async fn from_system_config_with<C: ConfigureResolver>(
         c: &C,
+        handle: tokio::runtime::Handle,
     ) -> Result<Self, ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Self::new(config, opts).await
+        Self::new(config, opts, handle).await
     }
 
-    pub async fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Result<Self, ResolveError> {
+    pub async fn new(
+        config: ResolverConfig,
+        mut opts: ResolverOpts,
+        handle: tokio::runtime::Handle,
+    ) -> Result<Self, ResolveError> {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
-        let resolver = AsyncResolver::tokio(config, opts).await?;
+        let resolver = AsyncResolver::new(config, opts, handle).await?;
         Ok(Resolver { resolver })
     }
 

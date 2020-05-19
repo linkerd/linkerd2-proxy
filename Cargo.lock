@@ -1042,6 +1042,7 @@ dependencies = [
  "linkerd2-dns-name",
  "linkerd2-stack",
  "pin-project",
+ "tokio 0.2.20",
  "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
