@@ -836,7 +836,7 @@ dependencies = [
  "linkerd2-app-outbound",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "net2",
  "quickcheck",
  "regex 1.0.0",
@@ -887,7 +887,7 @@ dependencies = [
  "linkerd2-lock",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-proxy-api-resolve",
  "linkerd2-proxy-core",
  "linkerd2-proxy-detect",
@@ -967,7 +967,7 @@ dependencies = [
  "linkerd2-app",
  "linkerd2-app-core",
  "linkerd2-metrics",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-test-util",
  "net2",
  "quickcheck",
@@ -1295,6 +1295,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-proxy-api"
+version = "0.1.12"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic#b7dc966731ffc1223d2cde4472686ae2c7bb05d6"
+dependencies = [
+ "h2 0.2.4",
+ "http 0.2.1",
+ "prost 0.6.1",
+ "prost-types 0.6.1",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
@@ -1303,7 +1316,7 @@ dependencies = [
  "http-body 0.3.1",
  "indexmap",
  "linkerd2-identity",
- "linkerd2-proxy-api-tonic",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic)",
  "linkerd2-proxy-core",
  "pin-project",
  "prost 0.6.1",
@@ -1311,19 +1324,6 @@ dependencies = [
  "tonic",
  "tower 0.3.1",
  "tracing",
-]
-
-[[package]]
-name = "linkerd2-proxy-api-tonic"
-version = "0.1.12"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic#1d590d6a64215fe165af0e0af187c1dd393a4145"
-dependencies = [
- "h2 0.2.4",
- "http 0.2.1",
- "prost 0.6.1",
- "prost-types 0.6.1",
- "tonic",
- "tonic-build",
 ]
 
 [[package]]
@@ -1413,7 +1413,7 @@ dependencies = [
  "futures 0.1.26",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-proxy-transport",
  "tokio 0.1.22",
  "tokio-timer",
@@ -1448,7 +1448,7 @@ dependencies = [
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-proxy-core",
  "linkerd2-proxy-http",
  "linkerd2-proxy-transport",
@@ -1567,7 +1567,7 @@ dependencies = [
  "linkerd2-addr",
  "linkerd2-dns",
  "linkerd2-error",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-stack",
  "linkerd2-test-util",
  "prost-types 0.5.0",
