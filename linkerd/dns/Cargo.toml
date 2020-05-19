@@ -13,5 +13,4 @@ tower = "0.3"
 trust-dns-resolver = { version = "0.19", default-features = false, features = ["system-config", "tokio-runtime"] }
 tracing = "0.1"
 tracing-futures = "0.1"
-tokio = { version = "0.2", features = ["rt-core"]}
 pin-project = "0.4"

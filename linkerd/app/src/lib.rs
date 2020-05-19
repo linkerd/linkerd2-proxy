@@ -53,6 +53,7 @@ pub struct Config {
 
 pub struct App {
     admin: admin::Admin,
+    admin_rt: tokio_compat::runtime::current_thread::Runtime,
     dns: dns::Task,
     drain: drain::Signal,
     // dst: ControlAddr,
@@ -86,7 +87,16 @@ impl Config {
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
-        let dns = info_span!("dns").in_scope(|| dns.build())?;
+        // Because constructing a `trust-dns` resolver is an async fn that
+        // spawns the DNS background task on the runtime that executes it,
+        // wehave to construct the admin runtime early and use it to build the
+        // DNS resolver. When we spawn the admin thread, we will move the
+        // runtime constructed here to that thread and have it execute the admin
+        // workloads.
+        let mut admin_rt =
+            tokio_compat::runtime::current_thread::Runtime::new().expect("admin runtime");
+
+        let dns = admin_rt.block_on_std(dns.build().instrument(info_span!("dns")));
 
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
@@ -186,6 +196,7 @@ impl Config {
 
         Ok(App {
             admin,
+            admin_rt,
             dns: dns.task,
             // dst: dst_addr,
             drain: drain_tx,
@@ -268,12 +279,10 @@ impl App {
         std::thread::Builder::new()
             .name("admin".into())
             .spawn(move || {
-                tokio_compat::runtime::current_thread::Runtime::new()
-                    .expect("admin runtime")
+                admin_rt
                     .block_on(
                         future::lazy(move || {
                             debug!("running admin thread");
-                            tokio::spawn(dns);
 
                             // Start the admin server to serve the readiness endpoint.
                             tokio_02::task::spawn(

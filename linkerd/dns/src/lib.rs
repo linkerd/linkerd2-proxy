@@ -9,7 +9,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{fmt, net};
-use tokio::runtime::Handle;
 use tracing::{info_span, trace};
 use tracing_futures::Instrument;
 pub use trust_dns_resolver::config::ResolverOpts;
@@ -51,23 +50,18 @@ impl Resolver {
     /// TODO: This should be infallible like it is in the `domain` crate.
     pub async fn from_system_config_with<C: ConfigureResolver>(
         c: &C,
-        handle: Handle,
     ) -> Result<Self, ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Self::new(config, opts, handle).await
+        Self::new(config, opts).await
     }
 
-    pub async fn new(
-        config: ResolverConfig,
-        mut opts: ResolverOpts,
-        handle: Handle,
-    ) -> Result<Self, ResolveError> {
+    pub async fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Result<Self, ResolveError> {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
-        let resolver = AsyncResolver::new(config, opts, handle).await?;
+        let resolver = AsyncResolver::tokio(config, opts).await?;
         Ok(Resolver { resolver })
     }
 
