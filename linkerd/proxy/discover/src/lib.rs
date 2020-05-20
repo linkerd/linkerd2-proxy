@@ -1,11 +1,11 @@
-// // #![deny(warnings, rust_2018_idioms)]
+// #![deny(warnings, rust_2018_idioms)]
 
 // use linkerd2_error::Error;
 // use linkerd2_proxy_core::Resolve;
 // use std::fmt;
 // use std::time::Duration;
 
-// pub mod buffer;
+pub mod buffer;
 // pub mod from_resolve;
 // pub mod make_endpoint;
 
