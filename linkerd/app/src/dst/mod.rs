@@ -1,5 +1,6 @@
 mod resolve;
 
+use http_body::Body as HttpBody;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
@@ -35,8 +36,10 @@ impl Config {
     pub fn build<S>(self, svc: S) -> Result<Dst<S>, Error>
     where
         S: GrpcService<BoxBody> + Clone + Send + 'static,
+        S::Error: Into<Error> + Send,
         S::ResponseBody: Send,
         <S::ResponseBody as Body>::Data: Send,
+        <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
         S::Future: Send,
     {
         let resolve = resolve::new(

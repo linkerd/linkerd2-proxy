@@ -834,6 +834,7 @@ dependencies = [
  "linkerd2-app-core",
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
+ "linkerd2-error",
  "linkerd2-metrics",
  "linkerd2-opencensus",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
@@ -1147,6 +1148,7 @@ name = "linkerd2-exp-backoff"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.4",
+ "linkerd2-error",
  "pin-project",
  "quickcheck",
  "rand 0.7.2",
@@ -1412,7 +1414,6 @@ dependencies = [
  "tokio 0.2.20",
  "tokio-connect",
  "tokio-timer",
- "tonic",
  "tower 0.3.1",
  "tower-balance",
  "tower-discover",
