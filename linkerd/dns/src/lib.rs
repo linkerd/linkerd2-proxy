@@ -3,19 +3,22 @@
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
-use futures::{prelude::*, try_ready};
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{fmt, net};
 use tracing::{info_span, trace};
 use tracing_futures::Instrument;
 pub use trust_dns_resolver::config::ResolverOpts;
 pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 use trust_dns_resolver::lookup_ip::LookupIp;
-use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver};
+use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver, TokioAsyncResolver};
 
 #[derive(Clone)]
 pub struct Resolver {
-    resolver: AsyncResolver,
+    resolver: TokioAsyncResolver,
 }
 
 pub trait ConfigureResolver {
@@ -28,9 +31,12 @@ pub enum Error {
     ResolutionFailed(ResolveError),
 }
 
-pub struct IpAddrFuture(Box<dyn Future<Item = LookupIp, Error = ResolveError> + Send + 'static>);
+#[pin_project]
+pub struct IpAddrFuture(
+    #[pin] Pin<Box<dyn Future<Output = Result<LookupIp, ResolveError>> + Send + 'static>>,
+);
 
-pub type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
+pub type Task = Box<dyn Future<Output = ()> + Send + 'static>;
 
 impl Resolver {
     /// Construct a new `Resolver` from environment variables and system
@@ -38,39 +44,38 @@ impl Resolver {
     ///
     /// # Returns
     ///
-    /// Either a tuple containing a new `Resolver` and the background task to
-    /// drive that resolver's futures, or an error if the system configuration
+    /// Either a new `Resolver` or an error if the system configuration
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_with<C: ConfigureResolver>(
+    pub async fn from_system_config_with<C: ConfigureResolver>(
         c: &C,
-    ) -> Result<(Self, Task), ResolveError> {
+        handle: tokio::runtime::Handle,
+    ) -> Result<Self, ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Ok(Self::new(config, opts))
+        Self::new(config, opts, handle).await
     }
 
-    /// NOTE: It would be nice to be able to return a named type rather than
-    ///       `impl Future` for the background future; it would be called
-    ///       `Background` or `ResolverBackground` if that were possible.
-    pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> (Self, Task) {
+    pub async fn new(
+        config: ResolverConfig,
+        mut opts: ResolverOpts,
+        handle: tokio::runtime::Handle,
+    ) -> Result<Self, ResolveError> {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
-        let (resolver, task) = AsyncResolver::new(config, opts);
-        let resolver = Resolver { resolver };
-        (resolver, Box::new(task))
+        let resolver = AsyncResolver::new(config, opts, handle).await?;
+        Ok(Resolver { resolver })
     }
 
     pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {
+        let span = info_span!("resolve_one_ip", %name);
         let name = name.clone();
-        let f = self
-            .resolver
-            .lookup_ip(name.as_ref())
-            .instrument(info_span!("resolve_one_ip", %name));
-        IpAddrFuture(Box::new(f))
+        let resolver = self.resolver.clone();
+        let f = async move { resolver.lookup_ip(name.as_ref()).await }.instrument(span);
+        IpAddrFuture(Box::pin(f))
     }
 
     /// Creates a refining service.
@@ -90,15 +95,11 @@ impl fmt::Debug for Resolver {
 }
 
 impl Future for IpAddrFuture {
-    type Item = net::IpAddr;
-    type Error = Error;
+    type Output = Result<net::IpAddr, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let ips = try_ready!(self.0.poll().map_err(Error::ResolutionFailed));
-        ips.iter()
-            .next()
-            .map(Async::Ready)
-            .ok_or_else(|| Error::NoAddressesFound)
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let ips = futures::ready!(self.project().0.poll(cx).map_err(Error::ResolutionFailed))?;
+        Poll::Ready(ips.iter().next().ok_or_else(|| Error::NoAddressesFound))
     }
 }
 

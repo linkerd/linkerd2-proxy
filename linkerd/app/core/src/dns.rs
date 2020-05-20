@@ -12,16 +12,16 @@ pub struct Config {
 
 pub struct Dns {
     pub resolver: Resolver,
-    pub task: Task,
 }
 
 // === impl Config ===
 
 impl Config {
-    pub fn build(self) -> Result<Dns, Error> {
-        let (resolver, task) =
-            Resolver::from_system_config_with(&self).expect("system DNS config must be valid");
-        Ok(Dns { resolver, task })
+    pub async fn build(self, handle: tokio_02::runtime::Handle) -> Dns {
+        let resolver = Resolver::from_system_config_with(&self, handle)
+            .await
+            .expect("system DNS config must be valid");
+        Dns { resolver }
     }
 }
 

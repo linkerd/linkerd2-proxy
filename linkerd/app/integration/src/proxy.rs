@@ -258,7 +258,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                 tokio_compat::runtime::current_thread::Runtime::new()
                     .expect("proxy")
                     .block_on_std(async move {
-                        let main = config.build(trace_handle).expect("config");
+                        let main = config.build(trace_handle).await.expect("config");
 
                         // slip the running tx into the shutdown future, since the first time
                         // the shutdown future is polled, that means all of the proxy is now
