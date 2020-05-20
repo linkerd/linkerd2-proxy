@@ -109,7 +109,7 @@ impl Config {
         let (drain_tx, drain_rx) = drain::channel();
 
         // let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
-
+        let dst_addr = dst.control.addr.clone();
         let dst = {
             use linkerd2_app_core::{classify, control, reconnect, transport::tls};
 
@@ -196,7 +196,7 @@ impl Config {
         Ok(App {
             admin,
             admin_rt,
-            dst,
+            dst: dst_addr,
             drain: drain_tx,
             identity,
             inbound,
@@ -228,9 +228,9 @@ impl App {
         None
     }
 
-    // pub fn dst_addr(&self) -> &ControlAddr {
-    //     &self.dst
-    // }
+    pub fn dst_addr(&self) -> &ControlAddr {
+        &self.dst
+    }
 
     pub fn local_identity(&self) -> Option<&identity::Local> {
         match self.identity {
