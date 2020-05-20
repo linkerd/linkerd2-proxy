@@ -1,3 +1,4 @@
+use http_body::Body as HttpBody;
 use ipnet::{Contains, IpNet};
 use linkerd2_app_core::{
     dns::Suffix,
@@ -6,9 +7,15 @@ use linkerd2_app_core::{
     request_filter, Addr, DiscoveryRejected, Error, Recover,
 };
 use linkerd2_app_outbound::Target;
+use linkerd2_error::Never;
+use std::error;
 use std::net::IpAddr;
 use std::sync::Arc;
-use tower_grpc::{generic::client::GrpcService, Body, BoxBody, Code, Status};
+use tonic::{
+    body::{Body, BoxBody},
+    client::GrpcService,
+    Code, Status,
+};
 
 pub type Resolve<S> = request_filter::Service<
     PermitConfiguredDsts,
@@ -24,8 +31,10 @@ pub fn new<S>(
 ) -> Resolve<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S::Error: Into<Error> + Send,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
+    <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
 {
     request_filter::Service::new(
@@ -94,7 +103,7 @@ impl From<ExponentialBackoff> for BackoffUnlessInvalidArgument {
 
 impl Recover<Error> for BackoffUnlessInvalidArgument {
     type Backoff = ExponentialBackoffStream;
-    type Error = <ExponentialBackoffStream as futures::Stream>::Error;
+    type Error = Never;
 
     fn recover(&self, err: Error) -> Result<Self::Backoff, Error> {
         match err.downcast::<Status>() {

@@ -834,9 +834,10 @@ dependencies = [
  "linkerd2-app-core",
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
+ "linkerd2-error",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "net2",
  "quickcheck",
  "regex 1.0.0",
@@ -849,8 +850,8 @@ dependencies = [
  "tokio-current-thread",
  "tokio-io",
  "tokio-rustls",
+ "tonic",
  "tower 0.1.1",
- "tower-grpc",
  "tracing",
  "tracing-futures 0.1.0",
  "webpki",
@@ -919,9 +920,9 @@ dependencies = [
  "tokio 0.2.20",
  "tokio-compat",
  "tokio-timer",
+ "tonic",
  "tower 0.3.1",
  "tower-balance",
- "tower-grpc",
  "tower-load",
  "tower-request-modifier",
  "tower-spawn-ready",
@@ -1147,6 +1148,7 @@ name = "linkerd2-exp-backoff"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.4",
+ "linkerd2-error",
  "pin-project",
  "quickcheck",
  "rand 0.7.2",
@@ -1308,6 +1310,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-proxy-api"
+version = "0.1.12"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api#59d91c1d8787f907fbab2de5ca844c25e7aeb9f7"
+dependencies = [
+ "bytes 0.4.11",
+ "futures 0.1.26",
+ "h2 0.1.26",
+ "http 0.1.21",
+ "prost 0.5.0",
+ "prost-types 0.5.0",
+ "quickcheck",
+ "rand 0.7.2",
+ "tower-grpc",
+ "tower-grpc-build",
+]
+
+[[package]]
 name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
@@ -1398,7 +1417,6 @@ dependencies = [
  "tower 0.3.1",
  "tower-balance",
  "tower-discover",
- "tower-grpc",
  "tower-load",
  "tracing",
  "tracing-futures 0.1.0",
@@ -3200,11 +3218,10 @@ dependencies = [
 [[package]]
 name = "tower-request-modifier"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower-http#044e0ed5ae8b2e9946233b7cc8fc24471b2d126a"
+source = "git+https://github.com/tower-rs/tower-http#bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea"
 dependencies = [
- "futures 0.1.26",
- "http 0.1.21",
- "tower-service 0.2.0",
+ "http 0.2.1",
+ "tower-service 0.3.0",
 ]
 
 [[package]]

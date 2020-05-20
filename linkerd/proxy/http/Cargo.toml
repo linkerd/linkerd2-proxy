@@ -40,7 +40,6 @@ tower = { version = "0.3", default-features = false }
 tower-balance = { git = "https://github.com/tower-rs/tower" }
 tower-discover = "0.1"
 tower-load = { git = "https://github.com/tower-rs/tower" }
-tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 # tower-util = "0.1"
 tracing = "0.1.9"
 tracing-futures = { version = "0.1", features = ["std-future"] }

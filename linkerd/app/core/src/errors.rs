@@ -10,7 +10,7 @@ use linkerd2_timeout::{error::ResponseTimeout, FailFastError};
 use pin_project::{pin_project, project};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tower_grpc::{self as grpc, Code};
+use tonic::{self as grpc, Code};
 use tracing::{debug, warn};
 
 pub fn layer() -> respond::RespondLayer<NewRespond> {
