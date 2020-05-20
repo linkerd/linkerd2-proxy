@@ -7,7 +7,7 @@
 
 pub mod buffer;
 pub mod from_resolve;
-// pub mod make_endpoint;
+pub mod make_endpoint;
 
 // use self::buffer::Buffer;
 // use self::from_resolve::FromResolve;
