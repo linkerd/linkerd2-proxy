@@ -7,9 +7,10 @@ publish = false
 
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 rand = { version = "0.7", features = ["small_rng"] }
-tokio-timer = "0.2.6"
+tokio = { version = "0.2", features = ["time", "stream"]}
+pin-project = "0.4"
 
 [dev-dependencies]
 quickcheck = { version = "0.9", default-features = false }
