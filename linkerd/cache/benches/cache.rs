@@ -3,7 +3,6 @@ use futures::future;
 use linkerd2_cache::{Cache, Handle};
 use linkerd2_error::Never;
 use linkerd2_stack::NewService;
-use std::future::Future;
 use std::task::{Context, Poll};
 use tower::util::ServiceExt;
 use tower::Service;

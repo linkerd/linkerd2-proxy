@@ -34,12 +34,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85bb70cc08ec97ca5450e6eba421deeea5f172c0fc61f78b5357b2a8e8be195f"
+
+[[package]]
 name = "arrayvec"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1e964f9e24d588183fcb43503abda40d288c8657dfc27311516ce2f05675aef"
 dependencies = [
  "nodrop",
+]
+
+[[package]]
+name = "async-stream"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22068c0c19514942eefcfd4daf8976ef1aad84e61539f95cd200c35202f80af5"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25f9db3b38af870bf7e5cc649167533b493928e50744e2c30ae350230b414670"
+dependencies = [
+ "proc-macro2 1.0.10",
+ "quote 1.0.2",
+ "syn 1.0.21",
 ]
 
 [[package]]
@@ -322,6 +349,12 @@ name = "fixedbitset"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85cb8fec437468d86dc7c83ca7cfc933341d561873275f22dd5eedefa63a6478"
+
+[[package]]
+name = "fixedbitset"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37ab347416e802de484e4d03c7316c48f1ecb56574dfd4a46a80f173ce1de04d"
 
 [[package]]
 name = "flate2"
@@ -803,7 +836,7 @@ dependencies = [
  "linkerd2-app-outbound",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "net2",
  "quickcheck",
  "regex 1.0.0",
@@ -854,7 +887,7 @@ dependencies = [
  "linkerd2-lock",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-proxy-api-resolve",
  "linkerd2-proxy-core",
  "linkerd2-proxy-detect",
@@ -878,7 +911,7 @@ dependencies = [
  "linkerd2-trace-context",
  "pin-project",
  "procinfo",
- "prost-types",
+ "prost-types 0.5.0",
  "quickcheck",
  "rand 0.7.2",
  "regex 1.0.0",
@@ -934,7 +967,7 @@ dependencies = [
  "linkerd2-app",
  "linkerd2-app-core",
  "linkerd2-metrics",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-test-util",
  "net2",
  "quickcheck",
@@ -1253,8 +1286,8 @@ dependencies = [
  "futures 0.1.26",
  "h2 0.1.26",
  "http 0.1.21",
- "prost",
- "prost-types",
+ "prost 0.5.0",
+ "prost-types 0.5.0",
  "quickcheck",
  "rand 0.7.2",
  "tower-grpc",
@@ -1262,19 +1295,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-proxy-api"
+version = "0.1.12"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic#b7dc966731ffc1223d2cde4472686ae2c7bb05d6"
+dependencies = [
+ "h2 0.2.4",
+ "http 0.2.1",
+ "prost 0.6.1",
+ "prost-types 0.6.1",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
- "http 0.1.21",
+ "futures 0.3.4",
+ "http 0.2.1",
+ "http-body 0.3.1",
  "indexmap",
  "linkerd2-identity",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic)",
  "linkerd2-proxy-core",
- "prost",
- "tokio-sync",
- "tower 0.1.1",
- "tower-grpc",
+ "pin-project",
+ "prost 0.6.1",
+ "tonic",
+ "tower 0.3.1",
  "tracing",
 ]
 
@@ -1365,7 +1412,7 @@ dependencies = [
  "futures 0.1.26",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-proxy-transport",
  "tokio 0.1.22",
  "tokio-timer",
@@ -1400,12 +1447,12 @@ dependencies = [
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-proxy-core",
  "linkerd2-proxy-http",
  "linkerd2-proxy-transport",
  "linkerd2-stack",
- "prost-types",
+ "prost-types 0.5.0",
  "quickcheck",
  "rand 0.7.2",
  "tokio 0.1.22",
@@ -1519,10 +1566,10 @@ dependencies = [
  "linkerd2-addr",
  "linkerd2-dns",
  "linkerd2-error",
- "linkerd2-proxy-api",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-stack",
  "linkerd2-test-util",
- "prost-types",
+ "prost-types 0.5.0",
  "quickcheck",
  "rand 0.7.2",
  "regex 1.0.0",
@@ -1758,6 +1805,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eb04b9f127583ed176e163fb9ec6f3e793b87e21deedd5734a69386a18a0151"
 
 [[package]]
+name = "multimap"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8883adfde9756c1d30b0f519c9b8c502a94b41ac62f696453c37c7fc0a958ce"
+
+[[package]]
 name = "net2"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1829,8 +1882,8 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
- "prost",
- "prost-types",
+ "prost 0.5.0",
+ "prost-types 0.5.0",
  "tower-grpc",
  "tower-grpc-build",
 ]
@@ -1879,7 +1932,17 @@ version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a7e5234c228fbfa874c86a77f685886127f82e0aef602ad1d48333fcac6ad61"
 dependencies = [
- "fixedbitset",
+ "fixedbitset 0.1.8",
+]
+
+[[package]]
+name = "petgraph"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29c127eea4a29ec6c85d153c59dc1213f33ec74cead30fe4730aecc88cc1fd92"
+dependencies = [
+ "fixedbitset 0.2.0",
+ "indexmap",
 ]
 
 [[package]]
@@ -1968,7 +2031,17 @@ version = "0.5.0"
 source = "git+https://github.com/linkerd/prost?branch=v0.5.x#8875bb9404ed50de20ef51c61bd2eaff5812fb1e"
 dependencies = [
  "bytes 0.4.11",
- "prost-derive",
+ "prost-derive 0.5.0",
+]
+
+[[package]]
+name = "prost"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce49aefe0a6144a45de32927c77bd2859a5f7677b55f220ae5b744e87389c212"
+dependencies = [
+ "bytes 0.5.4",
+ "prost-derive 0.6.1",
 ]
 
 [[package]]
@@ -1981,12 +2054,30 @@ dependencies = [
  "heck",
  "itertools",
  "log",
- "multimap",
- "petgraph",
- "prost",
- "prost-types",
+ "multimap 0.4.0",
+ "petgraph 0.4.11",
+ "prost 0.5.0",
+ "prost-types 0.5.0",
  "tempfile",
- "which",
+ "which 2.0.0",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02b10678c913ecbd69350e8535c3aef91a8676c0773fc1d7b95cdd196d7f2f26"
+dependencies = [
+ "bytes 0.5.4",
+ "heck",
+ "itertools",
+ "log",
+ "multimap 0.8.1",
+ "petgraph 0.5.0",
+ "prost 0.6.1",
+ "prost-types 0.6.1",
+ "tempfile",
+ "which 3.1.1",
 ]
 
 [[package]]
@@ -2002,13 +2093,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "537aa19b95acde10a12fec4301466386f757403de4cd4e5b4fa78fb5ecb18f72"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2 1.0.10",
+ "quote 1.0.2",
+ "syn 1.0.21",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1de482a366941c8d56d19b650fac09ca08508f2a696119ee7513ad590c8bac6f"
 dependencies = [
  "bytes 0.4.11",
- "prost",
+ "prost 0.5.0",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1834f67c0697c001304b75be76f67add9c89742eda3a085ad8ee0bb38c3417aa"
+dependencies = [
+ "bytes 0.5.4",
+ "prost 0.6.1",
 ]
 
 [[package]]
@@ -2862,6 +2976,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4afef9ce97ea39593992cf3fa00ff33b1ad5eb07665b31355df63a690e38c736"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "base64 0.11.0",
+ "bytes 0.5.4",
+ "futures-core",
+ "futures-util",
+ "http 0.2.1",
+ "http-body 0.3.1",
+ "percent-encoding 2.1.0",
+ "pin-project",
+ "prost 0.6.1",
+ "prost-derive 0.6.1",
+ "tokio-util",
+ "tower-make",
+ "tower-service 0.3.0",
+ "tracing",
+]
+
+[[package]]
+name = "tonic-build"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71d8d21cb568e802d77055ab7fcd43f0992206de5028de95c8d3a41118d32e8e"
+dependencies = [
+ "proc-macro2 1.0.10",
+ "prost-build 0.6.1",
+ "quote 1.0.2",
+ "syn 1.0.21",
+]
+
+[[package]]
 name = "tower"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2950,7 +3100,7 @@ dependencies = [
  "http-body 0.1.0",
  "log",
  "percent-encoding 1.0.1",
- "prost",
+ "prost 0.5.0",
  "tower-service 0.2.0",
  "tower-util",
 ]
@@ -2963,7 +3113,7 @@ checksum = "8862053a26bc7b901cf52bca8ae7d4c2e041222673e38f81a475aeb6c82481df"
 dependencies = [
  "codegen",
  "heck",
- "prost-build",
+ "prost-build 0.5.0",
 ]
 
 [[package]]
@@ -3022,6 +3172,16 @@ dependencies = [
  "futures 0.1.26",
  "tower-layer 0.1.0",
  "tower-service 0.2.0",
+]
+
+[[package]]
+name = "tower-make"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce50370d644a0364bf4877ffd4f76404156a248d104e2cc234cd391ea5cdc965"
+dependencies = [
+ "tokio 0.2.20",
+ "tower-service 0.3.0",
 ]
 
 [[package]]
@@ -3485,6 +3645,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49c4f580e93079b70ac522e7bdebbe1568c8afa7d8d05ee534ee737ca37d2f51"
 dependencies = [
  "failure",
+ "libc",
+]
+
+[[package]]
+name = "which"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d011071ae14a2f6671d0b74080ae0cd8ebf3a6f8c9589a2cd45f23126fe29724"
+dependencies = [
  "libc",
 ]
 
