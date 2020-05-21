@@ -16,7 +16,7 @@ linkerd2-proxy-core = { path = "../core" }
 indexmap = "1.0"
 tokio = { version = "0.2", features = ["sync", "time", "stream"] }
 tracing = "0.1"
-tracing-futures = "0.1"
+tracing-futures = { version = "0.1", features = ["std-future"] }
 pin-project = "0.4"
 
 [dependencies.tower]
@@ -27,4 +27,6 @@ default-features = false
 features = ["discover"]
 
 [dev-dependencies]
-tower-util = "0.1"
+tower-test = "0.3"
+tokio-test = "0.2"
+tower = { version = "0.3", default-features = false, features = ["discover", "util"]}

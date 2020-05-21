@@ -1379,8 +1379,9 @@ dependencies = [
  "linkerd2-proxy-core",
  "pin-project",
  "tokio 0.2.20",
+ "tokio-test",
  "tower 0.3.1",
- "tower-util",
+ "tower-test",
  "tracing",
  "tracing-futures 0.1.0",
 ]
