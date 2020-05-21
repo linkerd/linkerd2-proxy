@@ -1,7 +1,11 @@
-use futures::{stream::FuturesUnordered, try_ready, Async, Future, Poll, Stream};
+use futures::{ready, stream::FuturesUnordered, Stream, TryFuture};
 use indexmap::IndexMap;
 use linkerd2_error::Error;
+use pin_project::pin_project;
+use std::future::Future;
 use std::hash::Hash;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio::sync::oneshot;
 use tower::discover::{self, Change};
 
@@ -11,29 +15,39 @@ pub struct MakeEndpoint<D, E> {
     make_endpoint: E,
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub struct DiscoverFuture<F, M> {
+    #[pin]
     future: F,
     make_endpoint: Option<M>,
 }
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
+#[pin_project]
 pub struct Discover<D: discover::Discover, E: tower::Service<D::Service>> {
+    #[pin]
     discover: D,
     make_endpoint: E,
+    #[pin]
     make_futures: MakeFutures<D::Key, E::Future>,
     pending_removals: Vec<D::Key>,
 }
 
+#[pin_project]
 struct MakeFutures<K, F> {
+    #[pin]
     futures: FuturesUnordered<MakeFuture<K, F>>,
     cancelations: IndexMap<K, oneshot::Sender<()>>,
 }
 
+#[pin_project]
 struct MakeFuture<K, F> {
     key: Option<K>,
+    #[pin]
     inner: F,
+    #[pin]
     canceled: oneshot::Receiver<()>,
 }
 
@@ -65,7 +79,7 @@ impl<T, D, E, InnerDiscover> tower::Service<T> for MakeEndpoint<D, E>
 where
     D: tower::Service<T, Response = InnerDiscover>,
     InnerDiscover: discover::Discover,
-    InnerDiscover::Key: Clone,
+    InnerDiscover::Key: Hash + Clone,
     InnerDiscover::Error: Into<Error>,
     E: tower::Service<InnerDiscover::Service> + Clone,
     E::Error: Into<Error>,
@@ -75,8 +89,8 @@ where
     type Future = DiscoverFuture<D::Future, E>;
 
     #[inline]
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.make_discover.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.make_discover.poll_ready(cx)
     }
 
     #[inline]
@@ -93,20 +107,20 @@ where
 
 impl<F, E, D> Future for DiscoverFuture<F, E>
 where
-    F: Future<Item = D>,
+    F: TryFuture<Ok = D>,
     D: discover::Discover,
-    D::Key: Clone,
+    D::Key: Hash + Clone,
     D::Error: Into<Error>,
     E: tower::Service<D::Service>,
     E::Error: Into<Error>,
 {
-    type Item = Discover<F::Item, E>;
-    type Error = F::Error;
+    type Output = Result<Discover<F::Ok, E>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let resolution = try_ready!(self.future.poll());
-        let make_endpoint = self.make_endpoint.take().expect("polled after ready");
-        Ok(Async::Ready(Discover::new(resolution, make_endpoint)))
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let resolution = ready!(this.future.try_poll(cx))?;
+        let make_endpoint = this.make_endpoint.take().expect("polled after ready");
+        Poll::Ready(Ok(Discover::new(resolution, make_endpoint)))
     }
 }
 
@@ -115,7 +129,7 @@ where
 impl<D, E> Discover<D, E>
 where
     D: discover::Discover,
-    D::Key: Clone,
+    D::Key: Hash + Clone,
     D::Error: Into<Error>,
     E: tower::Service<D::Service>,
     E::Error: Into<Error>,
@@ -130,60 +144,69 @@ where
     }
 }
 
-impl<D, E> discover::Discover for Discover<D, E>
+impl<D, E> Stream for Discover<D, E>
 where
     D: discover::Discover,
-    D::Key: Clone,
+    D::Key: Hash + Clone,
     D::Error: Into<Error>,
     E: tower::Service<D::Service>,
     E::Error: Into<Error>,
 {
-    type Key = D::Key;
-    type Service = E::Response;
-    type Error = Error;
+    type Item = Result<Change<D::Key, E::Response>, Error>;
 
-    fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
-        if let Async::Ready(key) = self.poll_removals()? {
-            return Ok(Async::Ready(Change::Remove(key)));
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Change<D::Key, E::Response>, Error>>> {
+        if let Poll::Ready(key) = self.poll_removals(cx) {
+            return Poll::Ready(Some(Ok(Change::Remove(key?))));
         }
 
-        if let Async::Ready(Some((key, svc))) = self.make_futures.poll().map_err(Into::into)? {
-            return Ok(Async::Ready(Change::Insert(key, svc)));
+        if let Poll::Ready(Some(res)) = self.project().make_futures.poll_next(cx) {
+            let (key, svc) = res.map_err(Into::into)?;
+            return Poll::Ready(Some(Ok(Change::Insert(key, svc))));
         }
 
-        Ok(Async::NotReady)
+        Poll::Pending
     }
 }
 
 impl<D, E> Discover<D, E>
 where
     D: discover::Discover,
-    D::Key: Clone,
+    D::Key: Hash + Clone,
     D::Error: Into<Error>,
     E: tower::Service<D::Service>,
     E::Error: Into<Error>,
 {
-    fn poll_removals(&mut self) -> Poll<D::Key, Error> {
+    fn poll_removals(
+        self: &mut Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<D::Key, Error>> {
         loop {
-            if let Some(key) = self.pending_removals.pop() {
-                self.make_futures.remove(&key);
-                return Ok(key.into());
+            let mut this = self.as_mut().project();
+            if let Some(key) = this.pending_removals.pop() {
+                this.make_futures.remove(&key);
+                return Poll::Ready(Ok(key));
             }
 
             // Before polling the resolution, where we could potentially receive
             // an `Add`, poll_ready to ensure that `make` is ready to build new
             // services. Don't process any updates until we can do so.
-            try_ready!(self.make_endpoint.poll_ready().map_err(Into::into));
+            ready!(this.make_endpoint.poll_ready(cx)).map_err(Into::into)?;
 
-            match try_ready!(self.discover.poll().map_err(Into::into)) {
+            match ready!(this.discover.poll_discover(cx))
+                .expect("XXX(eliza): can this ever be none???")
+                .map_err(Into::into)?
+            {
                 Change::Insert(key, target) => {
                     // Start building the service and continue. If a pending
                     // service exists for this addr, it will be canceled.
-                    let fut = self.make_endpoint.call(target);
-                    self.make_futures.push(key, fut);
+                    let fut = this.make_endpoint.call(target);
+                    this.make_futures.push(key, fut);
                 }
                 Change::Remove(key) => {
-                    self.pending_removals.push(key);
+                    this.pending_removals.push(key);
                 }
             }
         }
@@ -192,7 +215,7 @@ where
 
 // === impl MakeFutures ===
 
-impl<K: Clone + Eq + Hash, F: Future> MakeFutures<K, F> {
+impl<K: Clone + Eq + Hash, F: TryFuture> MakeFutures<K, F> {
     fn new() -> Self {
         Self {
             futures: FuturesUnordered::new(),
@@ -219,21 +242,21 @@ impl<K: Clone + Eq + Hash, F: Future> MakeFutures<K, F> {
     }
 }
 
-impl<K: Eq + Hash, F: Future> Stream for MakeFutures<K, F> {
-    type Item = (K, F::Item);
-    type Error = F::Error;
+impl<K: Eq + Hash, F: TryFuture> Stream for MakeFutures<K, F> {
+    type Item = Result<(K, F::Ok), F::Error>;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
-            return match self.futures.poll() {
-                Err(MakeError::Canceled) => continue,
-                Err(MakeError::Inner(err)) => Err(err),
-                Ok(Async::Ready(Some((key, svc)))) => {
-                    let _rm = self.cancelations.remove(&key);
+            let this = self.as_mut().project();
+            return match ready!(this.futures.poll_next(cx)) {
+                Some(Err(MakeError::Canceled)) => continue,
+                Some(Err(MakeError::Inner(err))) => Poll::Ready(Some(Err(err))),
+                Some(Ok((key, svc))) => {
+                    let _rm = this.cancelations.remove(&key);
                     debug_assert!(_rm.is_some(), "cancelation missing");
-                    Ok(Async::Ready(Some((key, svc))))
+                    Poll::Ready(Some(Ok((key, svc))))
                 }
-                Ok(r) => Ok(r),
+                None => Poll::Ready(None),
             };
         }
     }
@@ -241,17 +264,17 @@ impl<K: Eq + Hash, F: Future> Stream for MakeFutures<K, F> {
 
 // === impl MakeFuture ===
 
-impl<K, F: Future> Future for MakeFuture<K, F> {
-    type Item = (K, F::Item);
-    type Error = MakeError<F::Error>;
+impl<K, F: TryFuture> Future for MakeFuture<K, F> {
+    type Output = Result<(K, F::Ok), MakeError<F::Error>>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if let Ok(Async::Ready(())) = self.canceled.poll() {
-            return Err(MakeError::Canceled);
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        if let Poll::Ready(Ok(())) = this.canceled.poll(cx) {
+            return Poll::Ready(Err(MakeError::Canceled));
         }
-        let svc = try_ready!(self.inner.poll());
-        let key = self.key.take().expect("polled after complete");
-        Ok((key, svc).into())
+        let svc = ready!(this.inner.try_poll(cx))?;
+        let key = this.key.take().expect("polled after complete");
+        Poll::Ready(Ok((key, svc)))
     }
 }
 
@@ -269,19 +292,24 @@ mod tests {
     use futures::future;
     use std::net::SocketAddr;
     use tokio::sync::mpsc;
-    use tower::discover::{self, Change, Discover as _};
+    use tokio_test::{assert_pending, assert_ready, assert_ready_ok, task};
+    use tower::discover::Change;
+    use tower::util::service_fn;
     use tower::Service;
-    use tower_util::service_fn;
+    use tower_test::mock;
 
     #[derive(Debug)]
     struct Svc<F>(Vec<F>);
-    impl<F: Future> Service<()> for Svc<F> {
-        type Response = F::Item;
-        type Error = F::Error;
+    impl<F, T, E> Service<()> for Svc<F>
+    where
+        F: Future<Output = Result<T, E>>,
+    {
+        type Response = T;
+        type Error = E;
         type Future = F;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            Ok(().into())
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
         }
 
         fn call(&mut self, _: ()) -> Self::Future {
@@ -289,241 +317,212 @@ mod tests {
         }
     }
 
-    struct Dx(mpsc::Receiver<Change<SocketAddr, ()>>);
+    #[pin_project]
+    struct Dx(#[pin] mpsc::Receiver<Change<SocketAddr, ()>>);
 
-    impl discover::Discover for Dx {
-        type Key = SocketAddr;
-        type Service = ();
-        type Error = Error;
+    impl Stream for Dx {
+        type Item = Result<Change<SocketAddr, ()>, Error>;
 
-        fn poll(&mut self) -> Poll<Change<SocketAddr, ()>, Self::Error> {
-            let change = try_ready!(self.0.poll()).expect("stream must not end");
-            Ok(change.into())
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let change = ready!(self.project().0.poll_next(cx)).expect("stream must not end");
+            Poll::Ready(Some(Ok(change)))
         }
     }
 
     #[test]
     fn inserts_delivered_out_of_order() {
-        with_task(move || {
-            let (mut reso_tx, reso_rx) = mpsc::channel(2);
-            let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
-            let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
+        let (mut reso_tx, reso_rx) = mpsc::channel(2);
+        let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
+        let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
 
-            let mut discover = Discover::new(Dx(reso_rx), Svc(vec![make1_rx, make0_rx]));
-            assert!(
-                discover::Discover::poll(&mut discover)
-                    .expect("discover can't fail")
-                    .is_not_ready(),
-                "ready without updates"
-            );
+        let mut discover = task::spawn(Discover::new(Dx(reso_rx), Svc(vec![make1_rx, make0_rx])));
+        assert_pending!(discover.poll_next(), "ready without updates");
 
-            let addr0 = SocketAddr::from(([127, 0, 0, 1], 80));
-            reso_tx.try_send(Change::Insert(addr0, ())).ok().unwrap();
-            assert!(
-                discover.poll().expect("discover can't fail").is_not_ready(),
-                "ready without service being made"
-            );
-            assert_eq!(
-                discover.make_futures.futures.len(),
-                1,
-                "must be only one pending make"
-            );
-            assert_eq!(
-                discover.make_futures.cancelations.len(),
-                1,
-                "no pending cancelation"
-            );
+        let addr0 = SocketAddr::from(([127, 0, 0, 1], 80));
+        reso_tx.try_send(Change::Insert(addr0, ())).ok().unwrap();
+        assert_pending!(discover.poll_next(), "ready without service being made");
+        assert_eq!(
+            discover.make_futures.futures.len(),
+            1,
+            "must be only one pending make"
+        );
+        assert_eq!(
+            discover.make_futures.cancelations.len(),
+            1,
+            "no pending cancelation"
+        );
 
-            let addr1 = SocketAddr::from(([127, 0, 0, 2], 80));
-            reso_tx
-                .try_send(Change::Insert(addr1, ()))
-                .ok()
-                .expect("update must be sent");
-            assert!(
-                discover.poll().expect("discover can't fail").is_not_ready(),
-                "ready without service being made"
-            );
-            assert_eq!(
-                discover.make_futures.futures.len(),
-                2,
-                "must be only one pending make"
-            );
-            assert_eq!(
-                discover.make_futures.cancelations.len(),
-                2,
-                "no pending cancelation"
-            );
+        let addr1 = SocketAddr::from(([127, 0, 0, 2], 80));
+        reso_tx
+            .try_send(Change::Insert(addr1, ()))
+            .ok()
+            .expect("update must be sent");
+        assert_pending!(discover.poll_next(), "ready without service being made");
+        assert_eq!(
+            discover.make_futures.futures.len(),
+            2,
+            "must be only one pending make"
+        );
+        assert_eq!(
+            discover.make_futures.cancelations.len(),
+            2,
+            "no pending cancelation"
+        );
 
-            let (rsp1_tx, rsp1_rx) = oneshot::channel();
-            make1_tx
-                .send(Svc(vec![rsp1_rx]))
-                .expect("make must receive service");
-            match discover.poll().expect("discover can't fail") {
-                Async::NotReady => panic!("not processed"),
-                Async::Ready(Change::Remove(..)) => panic!("unexpected remove"),
-                Async::Ready(Change::Insert(a, mut svc)) => {
-                    assert_eq!(a, addr1);
-
-                    assert!(svc.poll_ready().unwrap().is_ready());
-                    let mut fut = svc.call(());
-                    assert!(fut.poll().unwrap().is_not_ready());
-                    rsp1_tx.send(1).unwrap();
-                    assert_eq!(fut.poll().unwrap(), Async::Ready(1));
-                }
+        let (rsp1_tx, rsp1_rx) = oneshot::channel();
+        make1_tx
+            .send(Svc(vec![rsp1_rx]))
+            .expect("make must receive service");
+        match assert_ready!(discover.poll_next())
+            .expect("discover stream mustn't end")
+            .expect("discover can't fail")
+        {
+            Change::Remove(..) => panic!("unexpected remove"),
+            Change::Insert(a, svc) => {
+                assert_eq!(a, addr1);
+                let mut svc = mock::Spawn::new(svc);
+                assert_ready_ok!(svc.poll_ready());
+                let mut fut = task::spawn(svc.call(()));
+                assert_pending!(fut.poll());
+                rsp1_tx.send(1).unwrap();
+                assert_eq!(assert_ready_ok!(fut.poll()), 1);
             }
-            assert_eq!(
-                discover.make_futures.futures.len(),
-                1,
-                "must be only one pending make"
-            );
-            assert_eq!(
-                discover.make_futures.cancelations.len(),
-                1,
-                "no pending cancelation"
-            );
+        }
+        assert_eq!(
+            discover.make_futures.futures.len(),
+            1,
+            "must be only one pending make"
+        );
+        assert_eq!(
+            discover.make_futures.cancelations.len(),
+            1,
+            "no pending cancelation"
+        );
 
-            let (rsp0_tx, rsp0_rx) = oneshot::channel();
-            make0_tx
-                .send(Svc(vec![rsp0_rx]))
-                .expect("make must receive service");
-            match discover.poll().expect("discover can't fail") {
-                Async::NotReady => panic!("not processed"),
-                Async::Ready(Change::Remove(..)) => panic!("unexpected remove"),
-                Async::Ready(Change::Insert(a, mut svc)) => {
-                    assert_eq!(a, addr0);
-
-                    assert!(svc.poll_ready().unwrap().is_ready());
-                    let mut fut = svc.call(());
-                    assert!(fut.poll().unwrap().is_not_ready());
-                    rsp0_tx.send(0).unwrap();
-                    assert_eq!(fut.poll().unwrap(), Async::Ready(0));
-                }
+        let (rsp0_tx, rsp0_rx) = oneshot::channel();
+        make0_tx
+            .send(Svc(vec![rsp0_rx]))
+            .expect("make must receive service");
+        match assert_ready!(discover.poll_next())
+            .expect("discover stream mustn't end")
+            .expect("discover can't fail")
+        {
+            Change::Remove(..) => panic!("unexpected remove"),
+            Change::Insert(a, svc) => {
+                assert_eq!(a, addr0);
+                let mut svc = mock::Spawn::new(svc);
+                assert_ready_ok!(svc.poll_ready());
+                let mut fut = task::spawn(svc.call(()));
+                assert_pending!(fut.poll());
+                rsp0_tx.send(0).unwrap();
+                assert_eq!(assert_ready_ok!(fut.poll()), 0);
             }
-            assert!(discover.make_futures.futures.is_empty(), "futures remain");
-            assert!(
-                discover.make_futures.cancelations.is_empty(),
-                "cancelation remains"
-            );
-        });
+        }
+        assert!(discover.make_futures.futures.is_empty(), "futures remain");
+        assert!(
+            discover.make_futures.cancelations.is_empty(),
+            "cancelation remains"
+        );
     }
 
     #[test]
     fn overwriting_insert_cancels_original() {
-        with_task(move || {
-            let (mut reso_tx, reso_rx) = mpsc::channel(2);
-            let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
-            let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
+        let (mut reso_tx, reso_rx) = mpsc::channel(2);
+        let (make0_tx, make0_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
+        let (make1_tx, make1_rx) = oneshot::channel::<Svc<oneshot::Receiver<usize>>>();
 
-            let mut discover = Discover::new(Dx(reso_rx), Svc(vec![make1_rx, make0_rx]));
-            assert!(
-                discover.poll().expect("discover can't fail").is_not_ready(),
-                "ready without updates"
-            );
+        let mut discover = task::spawn(Discover::new(Dx(reso_rx), Svc(vec![make1_rx, make0_rx])));
+        assert_pending!(discover.poll_next(), "ready without updates");
 
-            let addr = SocketAddr::from(([127, 0, 0, 1], 80));
-            reso_tx.try_send(Change::Insert(addr, ())).ok().unwrap();
-            assert!(
-                discover.poll().expect("discover can't fail").is_not_ready(),
-                "ready without service being made"
-            );
-            assert_eq!(
-                discover.make_futures.futures.len(),
-                1,
-                "must be only one pending make"
-            );
-            assert_eq!(
-                discover.make_futures.cancelations.len(),
-                1,
-                "no pending cancelation"
-            );
+        let addr = SocketAddr::from(([127, 0, 0, 1], 80));
+        reso_tx.try_send(Change::Insert(addr, ())).ok().unwrap();
+        assert_pending!(discover.poll_next(), "ready without service being made");
+        assert_eq!(
+            discover.make_futures.futures.len(),
+            1,
+            "must be only one pending make"
+        );
+        assert_eq!(
+            discover.make_futures.cancelations.len(),
+            1,
+            "no pending cancelation"
+        );
 
-            reso_tx
-                .try_send(Change::Insert(addr, ()))
-                .ok()
-                .expect("update must be sent");
-            assert!(
-                discover.poll().expect("discover can't fail").is_not_ready(),
-                "ready without service being made"
-            );
-            assert_eq!(
-                discover.make_futures.futures.len(),
-                1,
-                "must be only one pending make"
-            );
-            assert_eq!(
-                discover.make_futures.cancelations.len(),
-                1,
-                "no pending cancelation"
-            );
+        reso_tx
+            .try_send(Change::Insert(addr, ()))
+            .ok()
+            .expect("update must be sent");
+        assert_pending!(discover.poll_next(), "ready without service being made");
+        assert_eq!(
+            discover.make_futures.futures.len(),
+            1,
+            "must be only one pending make"
+        );
+        assert_eq!(
+            discover.make_futures.cancelations.len(),
+            1,
+            "no pending cancelation"
+        );
 
-            make0_tx
-                .send(Svc(vec![]))
-                .expect_err("receiver must have been dropped");
+        make0_tx
+            .send(Svc(vec![]))
+            .expect_err("receiver must have been dropped");
 
-            let (rsp1_tx, rsp1_rx) = oneshot::channel();
-            make1_tx
-                .send(Svc(vec![rsp1_rx]))
-                .expect("make must receive service");
-            match discover.poll().expect("discover can't fail") {
-                Async::NotReady => panic!("not processed"),
-                Async::Ready(Change::Remove(..)) => panic!("unexpected remove"),
-                Async::Ready(Change::Insert(a, mut svc)) => {
-                    assert_eq!(a, addr);
-
-                    assert!(svc.poll_ready().unwrap().is_ready());
-                    let mut fut = svc.call(());
-                    assert!(fut.poll().unwrap().is_not_ready());
-                    rsp1_tx.send(1).unwrap();
-                    assert_eq!(fut.poll().unwrap(), Async::Ready(1));
-                }
+        let (rsp1_tx, rsp1_rx) = oneshot::channel();
+        make1_tx
+            .send(Svc(vec![rsp1_rx]))
+            .expect("make must receive service");
+        match assert_ready!(discover.poll_next())
+            .expect("discover stream mustn't end")
+            .expect("discover can't fail")
+        {
+            Change::Remove(..) => panic!("unexpected remove"),
+            Change::Insert(a, svc) => {
+                assert_eq!(a, addr);
+                let mut svc = mock::Spawn::new(svc);
+                assert_ready_ok!(svc.poll_ready());
+                let mut fut = task::spawn(svc.call(()));
+                assert_pending!(fut.poll());
+                rsp1_tx.send(1).unwrap();
+                assert_eq!(assert_ready_ok!(fut.poll()), 1);
             }
-            assert!(
-                discover.make_futures.cancelations.is_empty(),
-                "cancelation remains"
-            );
-        });
+        }
+        assert!(
+            discover.make_futures.cancelations.is_empty(),
+            "cancelation remains"
+        );
     }
 
     #[test]
     fn cancelation_of_pending_service() {
-        with_task(move || {
-            let (mut tx, reso_rx) = mpsc::channel(1);
+        let (mut tx, reso_rx) = mpsc::channel(1);
 
-            let mut discover = Discover::new(
-                Dx(reso_rx),
-                service_fn(|()| future::empty::<Svc<()>, Error>()),
-            );
-            assert!(
-                discover.poll().expect("discover can't fail").is_not_ready(),
-                "ready without updates"
-            );
+        let mut discover = task::spawn(Discover::new(
+            Dx(reso_rx),
+            service_fn(|()| future::pending::<Result<Svc<()>, Error>>()),
+        ));
+        assert_pending!(discover.poll_next(), "ready without updates");
 
-            let addr = SocketAddr::from(([127, 0, 0, 1], 80));
-            tx.try_send(Change::Insert(addr, ())).ok().unwrap();
-            assert!(
-                discover.poll().expect("discover can't fail").is_not_ready(),
-                "ready without service being made"
-            );
-            assert_eq!(
-                discover.make_futures.cancelations.len(),
-                1,
-                "no pending cancelation"
-            );
+        let addr = SocketAddr::from(([127, 0, 0, 1], 80));
+        tx.try_send(Change::Insert(addr, ())).ok().unwrap();
+        assert_pending!(discover.poll_next(), "ready without service being made");
+        assert_eq!(
+            discover.make_futures.cancelations.len(),
+            1,
+            "no pending cancelation"
+        );
 
-            tx.try_send(Change::Remove(addr)).ok().unwrap();
-            match discover.poll().expect("discover can't fail") {
-                Async::NotReady => panic!("remove not processed"),
-                Async::Ready(Change::Insert(..)) => panic!("unexpected insert"),
-                Async::Ready(Change::Remove(a)) => assert_eq!(a, addr),
-            }
-            assert!(
-                discover.make_futures.cancelations.is_empty(),
-                "cancelation remains"
-            );
-        });
-    }
-
-    fn with_task<F: FnOnce() -> U, U>(f: F) -> U {
-        future::lazy(|| Ok::<_, ()>(f())).wait().unwrap()
+        tx.try_send(Change::Remove(addr)).ok().unwrap();
+        match assert_ready!(discover.poll_next())
+            .expect("discover stream mustn't end")
+            .expect("discover can't fail")
+        {
+            Change::Insert(..) => panic!("unexpected insert"),
+            Change::Remove(a) => assert_eq!(a, addr),
+        }
+        assert!(
+            discover.make_futures.cancelations.is_empty(),
+            "cancelation remains"
+        );
     }
 }

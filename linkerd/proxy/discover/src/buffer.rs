@@ -1,13 +1,16 @@
-use futures::{try_ready, Async, Future, Poll, Stream};
+use futures::{ready, Stream, TryFuture};
 use linkerd2_error::{Error, Never};
+use pin_project::pin_project;
 use std::fmt;
-use std::time::{Duration, Instant};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
-use tokio::timer::Delay;
+use tokio::time::{self, Delay};
 use tower::discover;
 use tracing::warn;
 use tracing_futures::Instrument;
-
 #[derive(Clone, Debug)]
 pub struct Buffer<M> {
     capacity: usize,
@@ -15,23 +18,31 @@ pub struct Buffer<M> {
     inner: M,
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub struct Discover<K, S> {
+    #[pin]
     rx: mpsc::Receiver<discover::Change<K, S>>,
     _disconnect_tx: oneshot::Sender<Never>,
 }
 
+#[pin_project]
 pub struct DiscoverFuture<F, D> {
+    #[pin]
     future: F,
     capacity: usize,
     watchdog_timeout: Duration,
     _marker: std::marker::PhantomData<fn() -> D>,
 }
 
+#[pin_project]
 pub struct Daemon<D: discover::Discover> {
+    #[pin]
     discover: D,
+    #[pin]
     disconnect_rx: oneshot::Receiver<Never>,
     tx: mpsc::Sender<discover::Change<D::Key, D::Service>>,
+    #[pin]
     watchdog: Option<Delay>,
     watchdog_timeout: Duration,
 }
@@ -65,8 +76,8 @@ where
     type Error = M::Error;
     type Future = DiscoverFuture<M::Future, M::Response>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, req: T) -> Self::Future {
@@ -82,97 +93,124 @@ where
 
 impl<F, D> Future for DiscoverFuture<F, D>
 where
-    F: Future<Item = D>,
+    F: TryFuture<Ok = D>,
     D: discover::Discover + Send + 'static,
     D::Error: Into<Error>,
     D::Key: Send,
     D::Service: Send,
 {
-    type Item = Discover<D::Key, D::Service>;
-    type Error = F::Error;
+    type Output = Result<Discover<D::Key, D::Service>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let discover = try_ready!(self.future.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let discover = ready!(this.future.try_poll(cx))?;
 
-        let (tx, rx) = mpsc::channel(self.capacity);
+        let (tx, rx) = mpsc::channel(*this.capacity);
         let (_disconnect_tx, disconnect_rx) = oneshot::channel();
         let fut = Daemon {
             discover,
             disconnect_rx,
             tx,
-            watchdog_timeout: self.watchdog_timeout,
+            watchdog_timeout: *this.watchdog_timeout,
             watchdog: None,
         };
         tokio::spawn(fut.in_current_span());
 
-        Ok(Discover { rx, _disconnect_tx }.into())
+        Poll::Ready(Ok(Discover { rx, _disconnect_tx }))
     }
 }
+
+// impl<D> Daemon<D>
+// where
+//     D: discover::Discover,
+//     D::Error: Into<Error>,
+// {
+//     async fn run(self) {
+//         loop {
+//             tokio::select! {
+//                 _ = self.disconnect => return,
+
+//             }
+//         }
+//     }
 
 impl<D> Future for Daemon<D>
 where
     D: discover::Discover,
     D::Error: Into<Error>,
 {
-    type Item = ();
-    type Error = ();
+    type Output = ();
 
-    fn poll(&mut self) -> Poll<(), ()> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
-            match self.disconnect_rx.poll() {
-                Ok(Async::NotReady) => {}
-                Err(_lost) => return Ok(().into()),
-                Ok(Async::Ready(n)) => match n {},
+            let mut this = self.as_mut().project();
+            match this.disconnect_rx.poll(cx) {
+                Poll::Pending => {}
+                Poll::Ready(Err(_lost)) => return Poll::Ready(()),
+                Poll::Ready(Ok(n)) => match n {},
             }
 
             // The watchdog bounds the amount of time that the send buffer stays
             // full. This is designed to release the `discover` resources, i.e.
             // if we expect that the receiver has leaked.
-            match self.tx.poll_ready() {
-                Ok(Async::Ready(())) => {
-                    self.watchdog = None;
+            match this.tx.poll_ready(cx) {
+                Poll::Ready(Ok(())) => {
+                    this.watchdog.as_mut().set(None);
                 }
-                Err(_) => {
+                Poll::Ready(Err(_)) => {
                     tracing::trace!("lost sender");
-                    return Err(());
+                    return Poll::Ready(());
                 }
-                Ok(Async::NotReady) => {
-                    let mut watchdog = self
+                Poll::Pending => {
+                    if this.watchdog.as_mut().as_pin_mut().is_none() {
+                        this.watchdog
+                            .as_mut()
+                            .set(Some(time::delay_for(*this.watchdog_timeout)));
+                    }
+
+                    if this
                         .watchdog
-                        .take()
-                        .unwrap_or_else(|| Delay::new(Instant::now() + self.watchdog_timeout));
-                    if watchdog.poll().expect("timer must not fail").is_ready() {
+                        .as_pin_mut()
+                        .expect("should have been set if none")
+                        .poll(cx)
+                        .is_ready()
+                    {
                         warn!(
-                            timeout = ?self.watchdog_timeout,
+                            timeout = ?this.watchdog_timeout,
                             "Dropping resolution due to watchdog",
                         );
-                        return Err(());
+                        return Poll::Ready(());
                     }
-                    self.watchdog = Some(watchdog);
-                    return Ok(Async::NotReady);
+                    return Poll::Pending;
                 }
             }
 
-            let up = try_ready!(self.discover.poll().map_err(|e| {
-                let error: Error = e.into();
-                warn!(%error, "Discovery task failed");
-            }));
+            let up = match ready!(this.discover.poll_discover(cx)) {
+                Some(Ok(up)) => up,
+                Some(Err(e)) => {
+                    let error: Error = e.into();
+                    warn!(%error, "Discovery task failed");
+                    return Poll::Ready(());
+                }
+                None => {
+                    warn!("Discovery stream ended!");
+                    return Poll::Ready(());
+                }
+            };
 
-            self.tx.try_send(up).ok().expect("sender must be ready");
+            this.tx.try_send(up).ok().expect("sender must be ready");
         }
     }
 }
 
-impl<K: std::hash::Hash + Eq, S> tower::discover::Discover for Discover<K, S> {
-    type Key = K;
-    type Service = S;
-    type Error = Error;
+impl<K: std::hash::Hash + Eq, S> Stream for Discover<K, S> {
+    type Item = Result<tower::discover::Change<K, S>, Error>;
 
-    fn poll(&mut self) -> Poll<tower::discover::Change<K, S>, Self::Error> {
-        return match self.rx.poll() {
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Ok(Async::Ready(Some(change))) => Ok(Async::Ready(change)),
-            Err(_) | Ok(Async::Ready(None)) => Err(Lost(()).into()),
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        return match self.project().rx.poll_next(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(change)) => Poll::Ready(Some(Ok(change))),
+            Poll::Ready(None) => Poll::Ready(Some(Err(Lost(()).into()))),
         };
     }
 }
