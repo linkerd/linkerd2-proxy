@@ -36,10 +36,7 @@ tokio = "0.1"
 tokio_02 = { package = "tokio", version = "0.2" }
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-timer = "0.2"   # for tokio_timer::clock
-tower = { version = "0.3", default-features = false }
-tower-balance = { git = "https://github.com/tower-rs/tower" }
-tower-discover = "0.1"
-tower-load = { git = "https://github.com/tower-rs/tower" }
+tower = { version = "0.3", default-features = false, features = ["balance", "load", "discover"] }
 # tower-util = "0.1"
 tracing = "0.1.9"
 tracing-futures = { version = "0.1", features = ["std-future"] }
