@@ -342,17 +342,17 @@ impl tls::HasPeerIdentity for TcpEndpoint {
     }
 }
 
-// impl Into<EndpointLabels> for TcpEndpoint {
-//     fn into(self) -> EndpointLabels {
-//         use linkerd2_app_core::metric_labels::{Direction, TlsId};
-//         EndpointLabels {
-//             direction: Direction::Out,
-//             tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
-//             authority: None,
-//             labels: None,
-//         }
-//     }
-// }
+impl Into<EndpointLabels> for TcpEndpoint {
+    fn into(self) -> EndpointLabels {
+        use linkerd2_app_core::metric_labels::{Direction, TlsId};
+        EndpointLabels {
+            direction: Direction::Out,
+            tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
+            authority: None,
+            labels: None,
+        }
+    }
+}
 
 // === impl LogicalPerRequest ===
 
