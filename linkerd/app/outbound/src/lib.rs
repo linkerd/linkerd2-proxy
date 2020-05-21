@@ -12,11 +12,11 @@ pub use self::endpoint::{
 use ::http::header::HOST;
 use futures::future;
 use linkerd2_app_core::{
-    // classify,
+    classify,
     config::{ProxyConfig, ServerConfig},
     dns,
     drain,
-    // dst,
+    dst,
     // errors,
     metric_labels,
     opencensus::proto::trace::v1 as oc,
@@ -89,14 +89,14 @@ impl Config {
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Result<Outbound, Error>
-where
-        // R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
-        //     + Clone
-        //     + Send
-        //     + Sync
-        //     + 'static,
-        // R::Future: Send,
-        // R::Resolution: Send,
+    where
+        R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        R::Future: Send,
+        R::Resolution: Send,
         // P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         // P::Future: Send,
     {
@@ -130,8 +130,7 @@ where
                 .push(tls::client::ConnectLayer::new(local_identity))
                 // Limits the time we wait for a connection to be established.
                 .push_timeout(connect.timeout)
-                // .push(metrics.transport.layer_connect(TransportLabels))
-                ;
+                .push(metrics.transport.layer_connect(TransportLabels));
 
             // Forwards TCP streams that cannot be decoded as HTTP.
             let tcp_forward = tcp_connect
@@ -141,98 +140,100 @@ where
                 })
                 .push(svc::layer::mk(tcp::Forward::new));
 
-            // // Registers the stack with Tap, Metrics, and OpenCensus tracing
-            // // export.
-            // let http_endpoint = {
-            //     let observability = svc::layers()
-            //         .push(tap_layer.clone())
-            //         .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            //         .push_on_response(TraceContextLayer::new(
-            //             span_sink
-            //                 .clone()
-            //                 .map(|sink| SpanConverter::client(sink, trace_labels())),
-            //         ));
+            // Registers the stack with Tap, Metrics, and OpenCensus tracing
+            // export.
+            let http_endpoint = {
+                let observability = svc::layers()
+                    // .push(tap_layer.clone())
+                    .push(metrics.http_endpoint.into_layer::<classify::Response>())
+                    // .push_on_response(TraceContextLayer::new(
+                    //     span_sink
+                    //         .clone()
+                    //         .map(|sink| SpanConverter::client(sink, trace_labels())),
+                    // ))
+                    ;
 
-            //     // Checks the headers to validate that a client-specified required
-            //     // identity matches the configured identity.
-            //     let identity_headers = svc::layers()
-            //         .push_on_response(
-            //             svc::layers()
-            //                 .push(http::strip_header::response::layer(L5D_REMOTE_IP))
-            //                 .push(http::strip_header::response::layer(L5D_SERVER_ID))
-            //                 .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
-            //         )
-            //         .push(MakeRequireIdentityLayer::new());
+                // Checks the headers to validate that a client-specified required
+                // identity matches the configured identity.
+                let identity_headers = svc::layers()
+                    .push_on_response(
+                        svc::layers()
+                            // .push(http::strip_header::response::layer(L5D_REMOTE_IP))
+                            // .push(http::strip_header::response::layer(L5D_SERVER_ID))
+                            // .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
+                    )
+                    // .push(MakeRequireIdentityLayer::new())
+                    ;
 
-            //     tcp_connect
-            //         .clone()
-            //         // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
-            //         // is typically used (i.e. when communicating with other proxies); though
-            //         // HTTP/1.x fallback is supported as needed.
-            //         .push(http::MakeClientLayer::new(connect.h2_settings))
-            //         // Re-establishes a connection when the client fails.
-            //         .push(reconnect::layer({
-            //             let backoff = connect.backoff.clone();
-            //             move |_| Ok(backoff.stream())
-            //         }))
-            //         .push(observability.clone())
-            //         .push(identity_headers.clone())
-            //         .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
-            //         // Ensures that the request's URI is in the proper form.
-            //         .push(http::normalize_uri::layer())
-            //         // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
-            //         //
-            //         // This sets headers so that the inbound proxy can downgrade the request
-            //         // properly.
-            //         .push(OrigProtoUpgradeLayer::new())
-            //         .check_service::<Target<HttpEndpoint>>()
-            //         .instrument(|endpoint: &Target<HttpEndpoint>| {
-            //             info_span!("endpoint", peer.addr = %endpoint.inner.addr)
-            //         })
-            // };
+                tcp_connect
+                    .clone()
+                    // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
+                    // is typically used (i.e. when communicating with other proxies); though
+                    // HTTP/1.x fallback is supported as needed.
+                    .push(http::MakeClientLayer::new(connect.h2_settings))
+                    // Re-establishes a connection when the client fails.
+                    // .push(reconnect::layer({
+                    //     let backoff = connect.backoff.clone();
+                    //     move |_| Ok(backoff.stream())
+                    // }))
+                    .push(observability.clone())
+                    .push(identity_headers.clone())
+                    // .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
+                    // Ensures that the request's URI is in the proper form.
+                    .push(http::normalize_uri::layer())
+                    // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
+                    //
+                    // This sets headers so that the inbound proxy can downgrade the request
+                    // properly.
+                    // .push(OrigProtoUpgradeLayer::new())
+                    // .check_service::<Target<HttpEndpoint>>()
+                    .instrument(|endpoint: &Target<HttpEndpoint>| {
+                        info_span!("endpoint", peer.addr = %endpoint.inner.addr)
+                    })
+            };
 
-            // // Resolves each target via the control plane on a background task, buffering results.
-            // //
-            // // This buffer controls how many discovery updates may be pending/unconsumed by the
-            // // balancer before backpressure is applied on the resolution stream. If the buffer is
-            // // full for `cache_max_idle_age`, then the resolution task fails.
-            // let discover = {
-            //     const BUFFER_CAPACITY: usize = 1_000;
-            //     let resolve = map_endpoint::Resolve::new(endpoint::FromMetadata, resolve.clone());
-            //     discover::Layer::new(BUFFER_CAPACITY, cache_max_idle_age, resolve)
-            // };
+            // Resolves each target via the control plane on a background task, buffering results.
+            //
+            // This buffer controls how many discovery updates may be pending/unconsumed by the
+            // balancer before backpressure is applied on the resolution stream. If the buffer is
+            // full for `cache_max_idle_age`, then the resolution task fails.
+            let discover = {
+                const BUFFER_CAPACITY: usize = 1_000;
+                let resolve = map_endpoint::Resolve::new(endpoint::FromMetadata, resolve.clone());
+                discover::Layer::new(BUFFER_CAPACITY, cache_max_idle_age, resolve)
+            };
 
-            // // Builds a balancer for each concrete destination.
-            // let http_balancer = http_endpoint
-            //     .clone()
-            //     .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
-            //     .push_on_response(
-            //         svc::layers()
-            //             .push(metrics.stack.layer(stack_labels("balance.endpoint")))
-            //             .box_http_request(),
-            //     )
-            //     .push_spawn_ready()
-            //     .check_service::<Target<HttpEndpoint>>()
-            //     .push(discover)
-            //     .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            //     .into_new_service()
-            //     .cache(
-            //         svc::layers().push_on_response(
-            //             svc::layers()
-            //                 // If the balancer has been ready & unused for `cache_max_idle_age`,
-            //                 // fail the balancer.
-            //                 .push_idle_timeout(cache_max_idle_age)
-            //                 // If the balancer has been empty/unavailable for 10s, eagerly fail
-            //                 // requests.
-            //                 .push_failfast(dispatch_timeout)
-            //                 // Shares the balancer, ensuring discovery errors are propagated.
-            //                 .push_spawn_buffer(buffer_capacity)
-            //                 .push(metrics.stack.layer(stack_labels("balance"))),
-            //         ),
-            //     )
-            //     .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
-            //     // Ensure that buffers don't hold the cache's lock in poll_ready.
-            //     .push_oneshot();
+            // Builds a balancer for each concrete destination.
+            let http_balancer = http_endpoint
+                .clone()
+                .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
+                .push_on_response(
+                    svc::layers()
+                        .push(metrics.stack.layer(stack_labels("balance.endpoint")))
+                        .box_http_request(),
+                )
+                .push_spawn_ready()
+                .check_service::<Target<HttpEndpoint>>()
+                .push(discover)
+                .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                .into_new_service()
+                .cache(
+                    svc::layers().push_on_response(
+                        svc::layers()
+                            // If the balancer has been ready & unused for `cache_max_idle_age`,
+                            // fail the balancer.
+                            .push_idle_timeout(cache_max_idle_age)
+                            // If the balancer has been empty/unavailable for 10s, eagerly fail
+                            // requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the balancer, ensuring discovery errors are propagated.
+                            .push_spawn_buffer(buffer_capacity)
+                            .push(metrics.stack.layer(stack_labels("balance"))),
+                    ),
+                )
+                .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
+                // Ensure that buffers don't hold the cache's lock in poll_ready.
+                .push_oneshot();
 
             // // Caches clients that bypass discovery/balancing.
             // //
@@ -473,9 +474,9 @@ where
     }
 }
 
-// fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
-//     metric_labels::StackLabels::outbound(name)
-// }
+fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
+    metric_labels::StackLabels::outbound(name)
+}
 
 #[derive(Copy, Clone, Debug)]
 struct TransportLabels;
