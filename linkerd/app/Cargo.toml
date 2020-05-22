@@ -31,7 +31,7 @@ futures_03 = { package = "futures", version = "0.3" }
 tokio-compat = "0.1"
 tokio_02 = {package = "tokio", version = "0.2", features = ["rt-util"] }
 http-body = "0.3"
-
+tower = "0.3"
 
 [dev-dependencies]
 bytes = "0.5"
@@ -48,5 +48,5 @@ tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-io = "0.1.6"
 tokio-current-thread = "0.1.4"
 tokio-rustls = "0.13"
-tower = "0.1"
+# tower = "0.1"
 webpki = "=0.21.0"

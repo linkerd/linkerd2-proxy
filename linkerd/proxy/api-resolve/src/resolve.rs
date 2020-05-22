@@ -69,8 +69,7 @@ impl<T, S> Service<T> for Resolve<S>
 where
     T: ToString,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    DestinationClient<S>: Service<T, Error = grpc::Status>,
-    S::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
+    S::Error: Into<Box<dyn Error + Send + Sync>> + Send,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
     <S::ResponseBody as HttpBody>::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
@@ -82,7 +81,8 @@ where
         Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(cx)
+        // The future returned by the Tonic generated `DestinationClient`'s `get` method will drive the service to readiness before calling it, so we can always return `Ready` here.
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {

@@ -3,7 +3,7 @@ use ipnet::{Contains, IpNet};
 use linkerd2_app_core::{
     dns::Suffix,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    proxy::{api_resolve as api, resolve::recover},
+    proxy::{api_resolve as api, resolve::{self, recover}},
     request_filter, Addr, DiscoveryRejected, Error, Recover,
 };
 use linkerd2_app_outbound::Target;
@@ -19,7 +19,7 @@ use tonic::{
 
 pub type Resolve<S> = request_filter::Service<
     PermitConfiguredDsts,
-    recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<S>>,
+    recover::Resolve<BackoffUnlessInvalidArgument, resolve::make_unpin::Resolve<api::Resolve<S>>>,
 >;
 
 pub fn new<S>(
@@ -41,7 +41,7 @@ where
         PermitConfiguredDsts::new(suffixes, nets),
         recover::Resolve::new(
             backoff.into(),
-            api::Resolve::new(service).with_context_token(token),
+            resolve::make_unpin(api::Resolve::new(service).with_context_token(token)),
         ),
     )
 }

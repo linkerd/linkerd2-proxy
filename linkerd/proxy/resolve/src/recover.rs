@@ -75,7 +75,12 @@ enum State<F, R: resolve::Resolution, B> {
 
 // === impl Resolve ===
 
-impl<E, R> Resolve<E, R> {
+impl<E, R> Resolve<E, R> 
+where
+R: Clone,
+E: Recover + Clone,
+E::Backoff: Unpin,
+{
     pub fn new(recover: E, resolve: R) -> Self {
         Self { resolve, recover }
     }

@@ -183,7 +183,7 @@ impl Config {
             let metrics = metrics.outbound;
             // let oc = oc_collector.span_sink();
             info_span!("outbound").in_scope(move || {
-                outbound.build(
+                outbound.build::<_, ()>(
                     identity, 
                     dst.resolve,
                     dns,      // dst.profiles,
