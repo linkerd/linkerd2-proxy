@@ -48,7 +48,7 @@ impl std::fmt::Display for LoopPrevented {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "inboudn requests must not target localhost:{}",
+            "inbound requests must not target localhost:{}",
             self.port
         )
     }
