@@ -57,10 +57,10 @@ use tracing::info_span;
 // #[allow(dead_code)] // TODO #2597
 // mod add_server_id_on_rsp;
 mod endpoint;
-// mod orig_proto_upgrade;
+mod orig_proto_upgrade;
 // mod require_identity_on_endpoint;
 
-// use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
+use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
 // use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
@@ -183,10 +183,10 @@ impl Config {
                     // Ensures that the request's URI is in the proper form.
                     .push(http::normalize_uri::layer())
                     // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
-                    //
+                    
                     // This sets headers so that the inbound proxy can downgrade the request
                     // properly.
-                    // .push(OrigProtoUpgradeLayer::new())
+                    .push(OrigProtoUpgradeLayer::new())
                     // .check_service::<Target<HttpEndpoint>>()
                     .instrument(|endpoint: &Target<HttpEndpoint>| {
                         info_span!("endpoint", peer.addr = %endpoint.inner.addr)

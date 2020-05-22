@@ -4,9 +4,13 @@ use crate::proxy::http::{
 };
 use crate::svc::stack;
 use crate::{HttpEndpoint, Target};
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
+use std::future::Future;
+use std::task::{Context, Poll};
+use std::pin::Pin;
 use tower::util::Either;
 use tracing::trace;
+use pin_project::pin_project;
 
 #[derive(Clone, Debug, Default)]
 pub struct OrigProtoUpgradeLayer(());
@@ -16,8 +20,10 @@ pub struct OrigProtoUpgrade<M> {
     inner: M,
 }
 
+#[pin_project]
 pub struct UpgradeFuture<F> {
     can_upgrade: bool,
+    #[pin]
     inner: F,
     was_absolute: bool,
 }
@@ -63,58 +69,58 @@ where
     }
 }
 
-// impl<M> tower::Service<Target<HttpEndpoint>> for OrigProtoUpgrade<M>
-// where
-//     M: tower::Service<Target<HttpEndpoint>>,
-// {
-//     type Response = Either<orig_proto::Upgrade<M::Response>, M::Response>;
-//     type Error = M::Error;
-//     type Future = UpgradeFuture<M::Future>;
+impl<M> tower::Service<Target<HttpEndpoint>> for OrigProtoUpgrade<M>
+where
+    M: tower::Service<Target<HttpEndpoint>>,
+{
+    type Response = Either<orig_proto::Upgrade<M::Response>, M::Response>;
+    type Error = M::Error;
+    type Future = UpgradeFuture<M::Future>;
 
-//     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-//         self.inner.poll_ready()
-//     }
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
 
-//     fn call(&mut self, mut endpoint: Target<HttpEndpoint>) -> Self::Future {
-//         let can_upgrade = endpoint.inner.can_use_orig_proto();
+    fn call(&mut self, mut endpoint: Target<HttpEndpoint>) -> Self::Future {
+        let can_upgrade = endpoint.inner.can_use_orig_proto();
 
-//         let was_absolute = endpoint.http_settings().was_absolute_form();
+        let was_absolute = endpoint.http_settings().was_absolute_form();
 
-//         if can_upgrade {
-//             trace!(
-//                 header = %orig_proto::L5D_ORIG_PROTO,
-//                 %was_absolute,
-//                 "Endpoint supports transparent HTTP/2 upgrades",
-//             );
-//             endpoint.inner.settings = Settings::Http2;
-//         }
+        if can_upgrade {
+            trace!(
+                header = %orig_proto::L5D_ORIG_PROTO,
+                %was_absolute,
+                "Endpoint supports transparent HTTP/2 upgrades",
+            );
+            endpoint.inner.settings = Settings::Http2;
+        }
 
-//         let inner = self.inner.call(endpoint);
-//         UpgradeFuture {
-//             can_upgrade,
-//             inner,
-//             was_absolute,
-//         }
-//     }
-// }
+        let inner = self.inner.call(endpoint);
+        UpgradeFuture {
+            can_upgrade,
+            inner,
+            was_absolute,
+        }
+    }
+}
 
-// // === impl UpgradeFuture ===
+// === impl UpgradeFuture ===
 
-// impl<F> Future for UpgradeFuture<F>
-// where
-//     F: Future,
-// {
-//     type Item = Either<orig_proto::Upgrade<F::Item>, F::Item>;
-//     type Error = F::Error;
+impl<F> Future for UpgradeFuture<F>
+where
+    F: TryFuture,
+{
+    type Output = Result<Either<orig_proto::Upgrade<F::Ok>, F::Ok>, F::Error>;
 
-//     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-//         let inner = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
 
-//         if self.can_upgrade {
-//             let upgrade = orig_proto::Upgrade::new(inner, self.was_absolute);
-//             Ok(Either::A(upgrade).into())
-//         } else {
-//             Ok(Either::B(inner).into())
-//         }
-//     }
-// }
+        if *this.can_upgrade {
+            let upgrade = orig_proto::Upgrade::new(inner, *this.was_absolute);
+            Poll::Ready(Ok(Either::A(upgrade)))
+        } else {
+           Poll::Ready(Ok(Either::B(inner)))
+        }
+    }
+}
