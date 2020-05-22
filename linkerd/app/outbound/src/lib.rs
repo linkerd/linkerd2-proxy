@@ -12,7 +12,7 @@ pub use self::endpoint::{
 use ::http::header::HOST;
 use futures::future;
 use linkerd2_app_core::{
-    classify,
+    admit, classify,
     config::{ProxyConfig, ServerConfig},
     dns, drain, dst, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
@@ -40,9 +40,11 @@ mod add_remote_ip_on_rsp;
 mod add_server_id_on_rsp;
 mod endpoint;
 mod orig_proto_upgrade;
+mod prevent_loop;
 mod require_identity_on_endpoint;
 
 use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
+use self::prevent_loop::PreventLoop;
 use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
@@ -156,6 +158,7 @@ impl Config {
                         let backoff = connect.backoff.clone();
                         move |_| Ok(backoff.stream())
                     }))
+                    .push(admit::AdmitLayer::new(PreventLoop::new(listen_addr.port())))
                     .push(observability.clone())
                     .push(identity_headers.clone())
                     .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
