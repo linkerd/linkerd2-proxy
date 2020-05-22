@@ -12,6 +12,7 @@ pub use self::endpoint::{
 use ::http::header::HOST;
 use futures::future;
 use linkerd2_app_core::{
+    admit,
     classify,
     config::{ProxyConfig, ServerConfig},
     dns,
@@ -59,9 +60,11 @@ use tracing::info_span;
 mod endpoint;
 mod orig_proto_upgrade;
 // mod require_identity_on_endpoint;
+mod prevent_loop;
 
 use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
 // use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
+use self::prevent_loop::PreventLoop;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -177,6 +180,7 @@ impl Config {
                         let backoff = connect.backoff.clone();
                         move |_| Ok(backoff.stream())
                     }))
+                    .push(admit::AdmitLayer::new(PreventLoop::new(listen_addr.port())))
                     .push(observability.clone())
                     .push(identity_headers.clone())
                     .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))

@@ -13,7 +13,6 @@ bytes = "0.5"
 http = "0.2"
 futures = "0.1"
 indexmap = "1.0"
-linkerd2-admit = { path = "../../admit" }
 linkerd2-app-core = { path = "../core" }
 tokio = "0.1.14"
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }

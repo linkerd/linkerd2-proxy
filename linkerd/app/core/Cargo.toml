@@ -22,6 +22,7 @@ hyper = "0.13"
 futures = "0.1"
 indexmap = "1.0"
 linkerd2-addr = { path = "../../addr" }
+linkerd2-admit = { path = "../../admit" }
 linkerd2-cache = { path = "../../cache" }
 linkerd2-box = { path = "../../box" }
 linkerd2-buffer = { path = "../../buffer" }
