@@ -3,7 +3,10 @@ use ipnet::{Contains, IpNet};
 use linkerd2_app_core::{
     dns::Suffix,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    proxy::{api_resolve as api, resolve::{self, recover}},
+    proxy::{
+        api_resolve as api,
+        resolve::{self, recover},
+    },
     request_filter, Addr, DiscoveryRejected, Error, Recover,
 };
 use linkerd2_app_outbound::Target;

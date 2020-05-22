@@ -1,10 +1,9 @@
-
-use linkerd2_proxy_core::resolve::{Resolution, self, Update};
-use std::pin::Pin;
-use std::task::{Poll, Context};
-use std::future::Future;
 use futures::TryFuture;
+use linkerd2_proxy_core::resolve::{self, Resolution, Update};
 use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 pub fn make_unpin<R>(r: R) -> Resolve<R> {
     Resolve(r)
@@ -33,7 +32,6 @@ where
     }
 }
 
-
 impl<T> MakeUnpin<T> {
     fn new(t: T) -> Self {
         Self(Box::pin(t))
@@ -54,10 +52,7 @@ impl<T: Resolution> Resolution for MakeUnpin<T> {
 
 impl<T: TryFuture> Future for MakeUnpin<T> {
     type Output = Result<MakeUnpin<T::Ok>, T::Error>;
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let res = futures::ready!(Pin::as_mut(self.project().0).try_poll(cx))?;
         Poll::Ready(Ok(MakeUnpin::new(res)))
     }

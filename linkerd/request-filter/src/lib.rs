@@ -3,11 +3,11 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use std::future::Future;
-use std::task::{Poll, Context};
-use std::pin::Pin;
 use linkerd2_error::Error;
-use pin_project::{project, pin_project};
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 pub trait RequestFilter<T> {
     type Error: Into<Error>;

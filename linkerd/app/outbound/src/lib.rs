@@ -211,7 +211,7 @@ impl Config {
                 .push_on_response(
                     svc::layers()
                         .push(metrics.stack.layer(stack_labels("balance.endpoint")))
-                        .box_http_request()
+                        .box_http_request(),
                 )
                 .push_spawn_ready()
                 .check_service::<Target<HttpEndpoint>>()
@@ -230,14 +230,12 @@ impl Config {
                             .push_failfast(dispatch_timeout)
                             // Shares the balancer, ensuring discovery errors are propagated.
                             .push_spawn_buffer(buffer_capacity)
-                            .push(metrics.stack.layer(stack_labels("balance")))
-
+                            .push(metrics.stack.layer(stack_labels("balance"))),
                     ),
                 )
                 .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
                 // Ensure that buffers don't hold the cache's lock in poll_ready.
-                .push_oneshot()
-                ;
+                .push_oneshot();
 
             // Caches clients that bypass discovery/balancing.
             //
@@ -399,20 +397,20 @@ impl Config {
                 })
                 .push_on_response(svc::layers().box_http_response().box_http_request())
                 .check_service::<Logical<HttpEndpoint>>()
-            //     .check_service::<Logical<HttpEndpoint>>()
-            //     // Sets the canonical-dst header on all outbound requests.
-            //     .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
-            //     // Strips headers that may be set by this proxy.
-            //     .push(http::canonicalize::Layer::new(
-            //         dns_refine_cache,
-            //         canonicalize_timeout,
-            //     ))
-            //     .push_on_response(
-            //         // Strips headers that may be set by this proxy.
-            //         svc::layers()
-            //             .push(http::strip_header::request::layer(L5D_CLIENT_ID))
-            //             .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
-            //     )
+                //     .check_service::<Logical<HttpEndpoint>>()
+                //     // Sets the canonical-dst header on all outbound requests.
+                //     .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+                //     // Strips headers that may be set by this proxy.
+                //     .push(http::canonicalize::Layer::new(
+                //         dns_refine_cache,
+                //         canonicalize_timeout,
+                //     ))
+                //     .push_on_response(
+                //         // Strips headers that may be set by this proxy.
+                //         svc::layers()
+                //             .push(http::strip_header::request::layer(L5D_CLIENT_ID))
+                //             .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
+                //     )
                 .check_service::<Logical<HttpEndpoint>>()
                 .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr));
 
