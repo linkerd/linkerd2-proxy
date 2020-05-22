@@ -139,6 +139,7 @@ impl Config {
             // Forwards TCP streams that cannot be decoded as HTTP.
             let tcp_forward = tcp_connect
                 .clone()
+                .push(admit::AdmitLayer::new(PreventLoop::new(listen_addr.port())))
                 .push_map_target(|meta: tls::accept::Meta| {
                     TcpEndpoint::from(meta.addrs.target_addr())
                 })

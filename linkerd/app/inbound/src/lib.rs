@@ -39,11 +39,14 @@ use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
 mod endpoint;
+mod prevent_loop;
 mod require_identity_for_ports;
 // #[allow(dead_code)] // TODO #2597
 // mod set_client_id_on_req;
 // #[allow(dead_code)] // TODO #2597
 // mod set_remote_ip_on_req;
+
+use self::prevent_loop::PreventLoop;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -89,6 +92,8 @@ impl Config {
         let listen = bind.bind().map_err(Error::from)?;
         let listen_addr = listen.listen_addr();
 
+        let prevent_loop = PreventLoop::new(listen_addr.port());
+
         // The stack is served lazily since some layers (notably buffer) spawn
         // tasks from their constructor. This helps to ensure that tasks are
         // spawned on the same runtime as the proxy.
@@ -103,6 +108,7 @@ impl Config {
             // Forwards TCP streams that cannot be decoded as HTTP.
             let tcp_forward = tcp_connect
                 .clone()
+                .push(admit::AdmitLayer::new(prevent_loop))
                 .push_map_target(|meta: tls::accept::Meta| {
                     TcpEndpoint::from(meta.addrs.target_addr())
                 })
@@ -144,6 +150,7 @@ impl Config {
             let http_target_cache = http_endpoint
                 .push_map_target(HttpEndpoint::from)
                 .check_service_unpin::<Target>()
+                .push(admit::AdmitLayer::new(prevent_loop))
                 // Normalizes the URI, i.e. if it was originally in
                 // absolute-form on the outbound side.
                 .push(normalize_uri::layer())
