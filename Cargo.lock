@@ -1316,7 +1316,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.12"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=8b400dee750671b41cb24dcea23e5cceb6188301#8b400dee750671b41cb24dcea23e5cceb6188301"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8#c2dba642c7301b5b562c75fd6e2bd0a12ec763e8"
 dependencies = [
  "h2 0.2.4",
  "http 0.2.1",
@@ -1335,7 +1335,7 @@ dependencies = [
  "http-body 0.3.1",
  "indexmap",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=8b400dee750671b41cb24dcea23e5cceb6188301)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
  "linkerd2-proxy-core",
  "pin-project",
  "prost 0.6.1",
