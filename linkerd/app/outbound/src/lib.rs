@@ -155,13 +155,12 @@ where
 
             //     // Checks the headers to validate that a client-specified required
             //     // identity matches the configured identity.
-            //     let identity_headers = svc::layers()
-            //         .push_on_response(
-            //             svc::layers()
-            //                 .push(http::strip_header::response::layer(L5D_REMOTE_IP))
-            //                 .push(http::strip_header::response::layer(L5D_SERVER_ID))
-            //                 .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
-            //         )
+            let identity_headers = svc::layers().push_on_response(
+                svc::layers()
+                    .push(http::strip_header::response::layer(L5D_REMOTE_IP))
+                    .push(http::strip_header::response::layer(L5D_SERVER_ID))
+                    .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
+            );
             //         .push(MakeRequireIdentityLayer::new());
 
             //     tcp_connect
