@@ -32,6 +32,7 @@ pub use self::{
     version::Version,
 };
 pub use http::{header, uri, Request, Response};
+pub use hyper::body::Payload;
 pub use linkerd2_http_box as boxed;
 
 pub trait HasH2Reason {
