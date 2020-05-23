@@ -83,29 +83,34 @@ impl Config {
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
-        let listen = self.bind()?;
-        let prevent_loop = PreventLoop::new(listen.listen_addr().port());
-        let tcp_connect = self.build_tcp_connect(local_identity, &metrics);
-        let http = self.build_http_logical_router(
-            prevent_loop.clone(),
-            tcp_connect.clone(),
-            resolve,
-            dns_resolver,
-            profiles_client,
-            tap_layer,
-            metrics.clone(),
-            span_sink.clone(),
-        );
-        let server = self.build_server(
-            listen,
-            prevent_loop,
-            tcp_connect,
-            http,
-            metrics,
-            span_sink,
-            drain,
-        );
-        Ok(server)
+        let listen = self.proxy.server.bind.bind().map_err(Error::from)?;
+        let listen_addr = listen.listen_addr();
+        let serve = Box::new(future::lazy(move || {
+            let tcp_connect = self.build_tcp_connect(local_identity, &metrics);
+
+            let prevent_loop = PreventLoop::new(listen_addr.port());
+            let http = self.build_http_logical_router(
+                prevent_loop.clone(),
+                tcp_connect.clone(),
+                resolve,
+                dns_resolver,
+                profiles_client,
+                tap_layer,
+                metrics.clone(),
+                span_sink.clone(),
+            );
+            self.build_server(
+                listen,
+                prevent_loop,
+                tcp_connect,
+                http,
+                metrics,
+                span_sink,
+                drain,
+            )
+        }));
+
+        Ok(Outbound { listen_addr, serve })
     }
 
     pub fn bind(&self) -> Result<transport::Listen<transport::DefaultOrigDstAddr>, Error> {
@@ -453,7 +458,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Outbound
+    ) -> serve::Task
     where
         C: tower::Service<TcpEndpoint, Error = Error> + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
@@ -484,48 +489,43 @@ impl Config {
             ..
         } = self;
 
-        let listen_addr = listen.listen_addr();
-
         // The stack is served lazily since caching layers spawn tasks from
         // their constructor. This helps to ensure that tasks are spawned on the
         // same runtime as the proxy.
-        let serve = Box::new(future::lazy(move || {
-            // Forwards TCP streams that cannot be decoded as HTTP.
-            let tcp_forward = svc::stack(tcp_connect)
-                .push(admit::AdmitLayer::new(prevent_loop))
-                .push_map_target(|meta: tls::accept::Meta| {
-                    TcpEndpoint::from(meta.addrs.target_addr())
-                })
-                .push(svc::layer::mk(tcp::Forward::new));
+        // Forwards TCP streams that cannot be decoded as HTTP.
+        let tcp_forward = svc::stack(tcp_connect)
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
+            .push(svc::layer::mk(tcp::Forward::new));
 
-            let http_admit_request = svc::layers()
-                // Limits the number of in-flight requests.
-                .push_concurrency_limit(max_in_flight_requests)
-                // Eagerly fail requests when the proxy is out of capacity for a
-                // dispatch_timeout.
-                .push_failfast(dispatch_timeout)
-                .push(metrics.http_errors.clone())
-                // Synthesizes responses for proxy errors.
-                .push(errors::layer())
-                // Initiates OpenCensus tracing.
-                .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
-                    SpanConverter::server(span_sink, trace_labels())
-                })))
-                // Tracks proxy handletime.
-                .push(metrics.clone().http_handle_time.layer());
+        let http_admit_request = svc::layers()
+            // Limits the number of in-flight requests.
+            .push_concurrency_limit(max_in_flight_requests)
+            // Eagerly fail requests when the proxy is out of capacity for a
+            // dispatch_timeout.
+            .push_failfast(dispatch_timeout)
+            .push(metrics.http_errors.clone())
+            // Synthesizes responses for proxy errors.
+            .push(errors::layer())
+            // Initiates OpenCensus tracing.
+            .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+                SpanConverter::server(span_sink, trace_labels())
+            })))
+            // Tracks proxy handletime.
+            .push(metrics.clone().http_handle_time.layer());
 
-            // let http_logical_router = self.build_http_logical_router(
-            //     listen_addr.port(),
-            //     tcp_connect,
-            //     resolve,
-            //     dns_resolver,
-            //     profiles_client,
-            //     tap_layer,
-            //     metrics.clone(),
-            //     span_sink,
-            // );
+        // let http_logical_router = self.build_http_logical_router(
+        //     listen_addr.port(),
+        //     tcp_connect,
+        //     resolve,
+        //     dns_resolver,
+        //     profiles_client,
+        //     tap_layer,
+        //     metrics.clone(),
+        //     span_sink,
+        // );
 
-            let http_server = svc::stack(http_logical_router)
+        let http_server = svc::stack(http_logical_router)
                 .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
                 .push_make_ready()
                 .push_timeout(dispatch_timeout)
@@ -541,36 +541,33 @@ impl Config {
                 )
                 .check_new_service::<tls::accept::Meta>();
 
-            let tcp_server = Server::new(
-                TransportLabels,
-                metrics.transport,
-                tcp_forward.into_inner(),
-                http_server.into_inner(),
-                h2_settings,
-                drain.clone(),
-            );
+        let tcp_server = Server::new(
+            TransportLabels,
+            metrics.transport,
+            tcp_forward.into_inner(),
+            http_server.into_inner(),
+            h2_settings,
+            drain.clone(),
+        );
 
-            let no_tls: tls::Conditional<identity::Local> =
-                Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
+        let no_tls: tls::Conditional<identity::Local> =
+            Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
 
-            let tcp_detect = svc::stack(tcp_server)
-                .push(DetectProtocolLayer::new(ProtocolDetect::new(
-                    disable_protocol_detection_for_ports.clone(),
-                )))
-                // The local application never establishes mTLS with the proxy, so don't try to
-                // terminate TLS, just annotate with the connection with the reason.
-                .push(tls::AcceptTls::layer(
-                    no_tls,
-                    disable_protocol_detection_for_ports,
-                ))
-                // Limits the amount of time that the TCP server spends waiting for protocol
-                // detection. Ensures that connections that never emit data are dropped eventually.
-                .push_timeout(detect_protocol_timeout);
+        let tcp_detect = svc::stack(tcp_server)
+            .push(DetectProtocolLayer::new(ProtocolDetect::new(
+                disable_protocol_detection_for_ports.clone(),
+            )))
+            // The local application never establishes mTLS with the proxy, so don't try to
+            // terminate TLS, just annotate with the connection with the reason.
+            .push(tls::AcceptTls::layer(
+                no_tls,
+                disable_protocol_detection_for_ports,
+            ))
+            // Limits the amount of time that the TCP server spends waiting for protocol
+            // detection. Ensures that connections that never emit data are dropped eventually.
+            .push_timeout(detect_protocol_timeout);
 
-            serve::serve(listen, tcp_detect.into_inner(), drain)
-        }));
-
-        Outbound { listen_addr, serve }
+        serve::serve(listen, tcp_detect.into_inner(), drain)
     }
 }
 
