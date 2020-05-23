@@ -10,19 +10,16 @@ use tracing_subscriber::{
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
 
+type JsonFormatter = Formatter<format::JsonFields, format::Format<format::Json, Uptime>>;
+type PlainFormatter = Formatter<format::DefaultFields, format::Format<format::Full, Uptime>>;
+
 #[derive(Clone)]
 pub enum LevelHandle {
     Json {
-        inner: reload::Handle<
-            EnvFilter,
-            Formatter<format::JsonFields, format::Format<format::Json, Uptime>>,
-        >,
+        inner: reload::Handle<EnvFilter, JsonFormatter>,
     },
     Plain {
-        inner: reload::Handle<
-            EnvFilter,
-            Formatter<format::DefaultFields, format::Format<format::Full, Uptime>>,
-        >,
+        inner: reload::Handle<EnvFilter, PlainFormatter>,
     },
 }
 
