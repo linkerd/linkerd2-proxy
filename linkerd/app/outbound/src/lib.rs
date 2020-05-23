@@ -18,8 +18,8 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self, core::resolve::Resolve, detect::DetectProtocolLayer, discover, http, identity,
-        resolve::map_endpoint, server::ProtocolDetect, tap, tcp, Server,
+        self, core::resolve::Resolve, core::Listen, detect::DetectProtocolLayer, discover, http,
+        identity, resolve::map_endpoint, server::ProtocolDetect, tap, tcp, Server,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
@@ -77,13 +77,13 @@ impl Config {
         R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
             + Clone
             + Send
-            + Sync
             + 'static,
         R::Future: Send,
         R::Resolution: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
+<<<<<<< HEAD
         use proxy::core::listen::{Bind, Listen};
         let Config {
             proxy:
@@ -194,16 +194,177 @@ impl Config {
                 // Limits the amount of time that the TCP server spends waiting for protocol
                 // detection. Ensures that connections that never emit data are dropped eventually.
                 .push_timeout(detect_protocol_timeout);
+||||||| parent of 75d050da... Split outbound proxy construction using impl-trait
+        use proxy::core::listen::{Bind, Listen};
+        let Config {
+            proxy:
+                ProxyConfig {
+                    server: ServerConfig { bind, h2_settings },
+                    connect,
+                    disable_protocol_detection_for_ports,
+                    dispatch_timeout,
+                    max_in_flight_requests,
+                    detect_protocol_timeout,
+                    ..
+                },
+            ..
+        } = self.clone();
 
-            serve::serve(listen, tcp_detect.into_inner(), drain)
-        }));
+        let listen = bind.bind().map_err(Error::from)?;
+        let listen_addr = listen.listen_addr();
 
-        Ok(Outbound { listen_addr, serve })
+        // The stack is served lazily since caching layers spawn tasks from
+        // their constructor. This helps to ensure that tasks are spawned on the
+        // same runtime as the proxy.
+        let serve = Box::new(future::lazy(move || {
+            // Establishes connections to remote peers (for both TCP
+            // forwarding and HTTP proxying).
+            let tcp_connect = svc::connect(connect.keepalive)
+                // Initiates mTLS if the target is configured with identity.
+                .push(tls::client::ConnectLayer::new(local_identity.clone()))
+                // Limits the time we wait for a connection to be established.
+                .push_timeout(connect.timeout)
+                .push(metrics.transport.layer_connect(TransportLabels));
+
+            // Forwards TCP streams that cannot be decoded as HTTP.
+            let tcp_forward = tcp_connect
+                .clone()
+                .push(admit::AdmitLayer::new(PreventLoop::new(listen_addr.port())))
+                .push_map_target(|meta: tls::accept::Meta| {
+                    TcpEndpoint::from(meta.addrs.target_addr())
+                })
+                .push(svc::layer::mk(tcp::Forward::new));
+
+            let http_admit_request = svc::layers()
+                // Limits the number of in-flight requests.
+                .push_concurrency_limit(max_in_flight_requests)
+                // Eagerly fail requests when the proxy is out of capacity for a
+                // dispatch_timeout.
+                .push_failfast(dispatch_timeout)
+                .push(metrics.http_errors.clone())
+                // Synthesizes responses for proxy errors.
+                .push(errors::layer())
+                // Initiates OpenCensus tracing.
+                .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+                    SpanConverter::server(span_sink, trace_labels())
+                })))
+                // Tracks proxy handletime.
+                .push(metrics.clone().http_handle_time.layer());
+
+            let http_logical_router = self.build_http_logical_router(
+                listen_addr.port(),
+                tcp_connect,
+                resolve,
+                dns_resolver,
+                profiles_client,
+                tap_layer,
+                metrics.clone(),
+                span_sink,
+            );
+
+            let http_server = svc::stack(http_logical_router)
+                .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
+                .push_make_ready()
+                .push_timeout(dispatch_timeout)
+                .push(router::Layer::new(LogicalPerRequest::from))
+                // Used by tap.
+                .push_http_insert_target()
+                .push_on_response(http_admit_request)
+                .push_on_response(metrics.stack.layer(stack_labels("source")))
+                .instrument(
+                    |src: &tls::accept::Meta| {
+                        info_span!("source", target.addr = %src.addrs.target_addr())
+                    },
+                )
+                .check_new_service::<tls::accept::Meta>();
+
+            let tcp_server = Server::new(
+                TransportLabels,
+                metrics.transport,
+                tcp_forward.into_inner(),
+                http_server.into_inner(),
+                h2_settings,
+                drain.clone(),
+            );
+
+            let no_tls: tls::Conditional<identity::Local> =
+                Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
+
+            let tcp_detect = svc::stack(tcp_server)
+                .push(DetectProtocolLayer::new(ProtocolDetect::new(
+                    disable_protocol_detection_for_ports.clone(),
+                )))
+                // The local application never establishes mTLS with the proxy, so don't try to
+                // terminate TLS, just annotate with the connection with the reason.
+                .push(tls::AcceptTls::layer(
+                    no_tls,
+                    disable_protocol_detection_for_ports,
+                ))
+                // Limits the amount of time that the TCP server spends waiting for protocol
+                // detection. Ensures that connections that never emit data are dropped eventually.
+                .push_timeout(detect_protocol_timeout);
+=======
+        let listen = self.bind()?;
+        let prevent_loop = PreventLoop::new(listen.listen_addr().port());
+        let tcp_connect = self.build_tcp_connect(local_identity, &metrics);
+        let http = self.build_http_logical_router(
+            prevent_loop.clone(),
+            tcp_connect.clone(),
+            resolve,
+            dns_resolver,
+            profiles_client,
+            tap_layer,
+            metrics.clone(),
+            span_sink.clone(),
+        );
+        let server = self.build_server(
+            listen,
+            prevent_loop,
+            tcp_connect,
+            http,
+            metrics,
+            span_sink,
+            drain,
+        );
+        Ok(server)
+    }
+>>>>>>> 75d050da... Split outbound proxy construction using impl-trait
+
+    pub fn bind(&self) -> Result<transport::Listen<transport::DefaultOrigDstAddr>, Error> {
+        use proxy::core::listen::Bind;
+        self.proxy.server.bind.bind().map_err(Error::from)
+    }
+
+    pub fn build_tcp_connect(
+        &self,
+        local_identity: tls::Conditional<identity::Local>,
+        metrics: &ProxyMetrics,
+    ) -> impl tower::Service<
+        TcpEndpoint,
+        Error = Error,
+        Future = impl future::Future + Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+    > + tower::Service<
+        Target<HttpEndpoint>,
+        Error = Error,
+        Future = impl future::Future + Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+    > + Clone
+           + Send {
+        // Establishes connections to remote peers (for both TCP
+        // forwarding and HTTP proxying).
+        svc::connect(self.proxy.connect.keepalive)
+            // Initiates mTLS if the target is configured with identity.
+            .push(tls::client::ConnectLayer::new(local_identity))
+            // Limits the time we wait for a connection to be established.
+            .push_timeout(self.proxy.connect.timeout)
+            .push(metrics.transport.layer_connect(TransportLabels))
+            .into_inner()
     }
 
     pub fn build_http_logical_router<B, C, R, P>(
-        self,
-        listen_port: u16,
+        &self,
+        prevent_loop: PreventLoop,
         tcp_connect: C,
         resolve: R,
         dns_resolver: dns::Resolver,
@@ -211,18 +372,20 @@ impl Config {
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
-    ) -> impl tower::Service<
+    ) -> impl Clone
+           + Send
+           + tower::Service<
         Target<HttpEndpoint>,
         Error = Error,
         Future = impl future::Future + Send,
-        Response = impl tower::Service<
+        Response = impl Send
+                       + tower::Service<
             http::Request<B>,
             Response = http::Response<http::boxed::Payload>,
             Error = Error,
             Future = impl future::Future + Send,
-        > + Send,
-    > + Clone
-           + Send
+        >,
+    >
     where
         B: http::Payload + std::fmt::Debug + Default + Send + 'static,
         C: tower::Service<Target<HttpEndpoint>, Error = Error> + Clone + Send + Sync + 'static,
@@ -247,7 +410,7 @@ impl Config {
                     dispatch_timeout,
                     ..
                 },
-        } = self;
+        } = self.clone();
 
         let http_endpoint = {
             // Registers the stack with Tap, Metrics, and OpenCensus tracing
@@ -273,30 +436,30 @@ impl Config {
                 .push(MakeRequireIdentityLayer::new());
 
             svc::stack(tcp_connect.clone())
-                    // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
-                    // is typically used (i.e. when communicating with other proxies); though
-                    // HTTP/1.x fallback is supported as needed.
-                    .push(http::MakeClientLayer::new(connect.h2_settings))
-                    // Re-establishes a connection when the client fails.
-                    .push(reconnect::layer({
-                        let backoff = connect.backoff.clone();
-                        move |_| Ok(backoff.stream())
-                    }))
-                    .push(admit::AdmitLayer::new(PreventLoop::new(listen_port)))
-                    .push(observability.clone())
-                    .push(identity_headers.clone())
-                    .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
-                    // Ensures that the request's URI is in the proper form.
-                    .push(http::normalize_uri::layer())
-                    // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
-                    //
-                    // This sets headers so that the inbound proxy can downgrade the request
-                    // properly.
-                    .push(OrigProtoUpgradeLayer::new())
-                    .check_service::<Target<HttpEndpoint>>()
-                    .instrument(|endpoint: &Target<HttpEndpoint>| {
-                        info_span!("endpoint", peer.addr = %endpoint.inner.addr)
-                    })
+                // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
+                // is typically used (i.e. when communicating with other proxies); though
+                // HTTP/1.x fallback is supported as needed.
+                .push(http::MakeClientLayer::new(connect.h2_settings))
+                // Re-establishes a connection when the client fails.
+                .push(reconnect::layer({
+                    let backoff = connect.backoff.clone();
+                    move |_| Ok(backoff.stream())
+                }))
+                .push(admit::AdmitLayer::new(prevent_loop))
+                .push(observability.clone())
+                .push(identity_headers.clone())
+                .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
+                // Ensures that the request's URI is in the proper form.
+                .push(http::normalize_uri::layer())
+                // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
+                //
+                // This sets headers so that the inbound proxy can downgrade the request
+                // properly.
+                .push(OrigProtoUpgradeLayer::new())
+                .check_service::<Target<HttpEndpoint>>()
+                .instrument(|endpoint: &Target<HttpEndpoint>| {
+                    info_span!("endpoint", peer.addr = %endpoint.inner.addr)
+                })
         };
 
         // Resolves each target via the control plane on a background task, buffering results.
@@ -501,6 +664,135 @@ impl Config {
             .check_service::<Logical<HttpEndpoint>>()
             .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr))
             .into_inner()
+    }
+
+    pub fn build_server<C, H, S>(
+        self,
+        listen: transport::Listen<transport::DefaultOrigDstAddr>,
+        prevent_loop: PreventLoop,
+        tcp_connect: C,
+        http_logical_router: H,
+        metrics: ProxyMetrics,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
+        drain: drain::Watch,
+    ) -> Outbound
+    where
+        C: tower::Service<TcpEndpoint, Error = Error> + Clone + Send + Sync + 'static,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+        C::Future: Send,
+        H: tower::Service<Target<HttpEndpoint>, Error = Error, Response = S>
+            + Send
+            + Clone
+            + 'static,
+        H::Future: Send,
+        S: tower::Service<
+                http::Request<http::glue::HttpBody>,
+                Response = http::Response<http::boxed::Payload>,
+                Error = Error,
+            > + Send
+            + 'static,
+        S::Future: Send,
+    {
+        let Config {
+            proxy:
+                ProxyConfig {
+                    server: ServerConfig { h2_settings, .. },
+                    disable_protocol_detection_for_ports,
+                    dispatch_timeout,
+                    max_in_flight_requests,
+                    detect_protocol_timeout,
+                    ..
+                },
+            ..
+        } = self;
+
+        let listen_addr = listen.listen_addr();
+
+        // The stack is served lazily since caching layers spawn tasks from
+        // their constructor. This helps to ensure that tasks are spawned on the
+        // same runtime as the proxy.
+        let serve = Box::new(future::lazy(move || {
+            // Forwards TCP streams that cannot be decoded as HTTP.
+            let tcp_forward = svc::stack(tcp_connect)
+                .push(admit::AdmitLayer::new(prevent_loop))
+                .push_map_target(|meta: tls::accept::Meta| {
+                    TcpEndpoint::from(meta.addrs.target_addr())
+                })
+                .push(svc::layer::mk(tcp::Forward::new));
+
+            let http_admit_request = svc::layers()
+                // Limits the number of in-flight requests.
+                .push_concurrency_limit(max_in_flight_requests)
+                // Eagerly fail requests when the proxy is out of capacity for a
+                // dispatch_timeout.
+                .push_failfast(dispatch_timeout)
+                .push(metrics.http_errors.clone())
+                // Synthesizes responses for proxy errors.
+                .push(errors::layer())
+                // Initiates OpenCensus tracing.
+                .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+                    SpanConverter::server(span_sink, trace_labels())
+                })))
+                // Tracks proxy handletime.
+                .push(metrics.clone().http_handle_time.layer());
+
+            // let http_logical_router = self.build_http_logical_router(
+            //     listen_addr.port(),
+            //     tcp_connect,
+            //     resolve,
+            //     dns_resolver,
+            //     profiles_client,
+            //     tap_layer,
+            //     metrics.clone(),
+            //     span_sink,
+            // );
+
+            let http_server = svc::stack(http_logical_router)
+                .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
+                .push_make_ready()
+                .push_timeout(dispatch_timeout)
+                .push(router::Layer::new(LogicalPerRequest::from))
+                // Used by tap.
+                .push_http_insert_target()
+                .push_on_response(http_admit_request)
+                .push_on_response(metrics.stack.layer(stack_labels("source")))
+                .instrument(
+                    |src: &tls::accept::Meta| {
+                        info_span!("source", target.addr = %src.addrs.target_addr())
+                    },
+                )
+                .check_new_service::<tls::accept::Meta>();
+
+            let tcp_server = Server::new(
+                TransportLabels,
+                metrics.transport,
+                tcp_forward.into_inner(),
+                http_server.into_inner(),
+                h2_settings,
+                drain.clone(),
+            );
+
+            let no_tls: tls::Conditional<identity::Local> =
+                Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
+
+            let tcp_detect = svc::stack(tcp_server)
+                .push(DetectProtocolLayer::new(ProtocolDetect::new(
+                    disable_protocol_detection_for_ports.clone(),
+                )))
+                // The local application never establishes mTLS with the proxy, so don't try to
+                // terminate TLS, just annotate with the connection with the reason.
+                .push(tls::AcceptTls::layer(
+                    no_tls,
+                    disable_protocol_detection_for_ports,
+                ))
+                // Limits the amount of time that the TCP server spends waiting for protocol
+                // detection. Ensures that connections that never emit data are dropped eventually.
+                .push_timeout(detect_protocol_timeout);
+
+            serve::serve(listen, tcp_detect.into_inner(), drain)
+        }));
+
+        Outbound { listen_addr, serve }
     }
 }
 
