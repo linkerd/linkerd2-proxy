@@ -47,12 +47,11 @@ pub fn with_filter_and_format(
     format: impl AsRef<str>,
 ) -> (Dispatch, LevelHandle) {
     let filter = filter.as_ref();
-    let format = format.as_ref();
 
     // Set up the subscriber
     let start_time = clock::now();
 
-    match format {
+    match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
             let builder = FmtSubscriber::builder()
                 .json()
