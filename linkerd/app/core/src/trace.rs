@@ -58,8 +58,7 @@ pub fn with_filter_and_format(
                 .json()
                 .with_timer(Uptime { start_time })
                 .with_env_filter(filter)
-                .with_filter_reloading()
-                .with_ansi(cfg!(test));
+                .with_filter_reloading();
 
             let handle = LevelHandle::Json {
                 inner: builder.reload_handle(),
@@ -71,10 +70,10 @@ pub fn with_filter_and_format(
         }
         "PLAIN" | _ => {
             let builder = FmtSubscriber::builder()
+                .with_ansi(cfg!(test))
                 .with_timer(Uptime { start_time })
                 .with_env_filter(filter)
-                .with_filter_reloading()
-                .with_ansi(cfg!(test));
+                .with_filter_reloading();
 
             let handle = LevelHandle::Plain {
                 inner: builder.reload_handle(),
