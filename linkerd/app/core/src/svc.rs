@@ -264,7 +264,7 @@ impl<S> Stack<S> {
         self.push(stack::FallbackLayer::new(fallback))
     }
 
-    pub fn push_fallback_on_error<F, E>(self, fallback: F) -> Stack<stack::Fallback<S, F>>
+    pub fn push_fallback_on_error<E, F>(self, fallback: F) -> Stack<stack::Fallback<S, F>>
     where
         F: Clone,
         E: std::error::Error + 'static,

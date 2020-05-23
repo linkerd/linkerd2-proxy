@@ -73,11 +73,12 @@ impl Config {
     {
         let listen = self.proxy.server.bind.bind().map_err(Error::from)?;
         let listen_addr = listen.listen_addr();
-        let prevent_loop = PreventLoop::new(listen_addr.port());
         let serve = Box::new(future::lazy(move || {
             let tcp_connect = self.build_tcp_connect(&metrics);
+            let prevent_loop = PreventLoop::new(listen_addr.port());
             let http_router = self.build_http_router(
                 tcp_connect.clone(),
+                prevent_loop,
                 prevent_loop,
                 profiles_client,
                 tap_layer,
@@ -103,12 +104,12 @@ impl Config {
         metrics: &ProxyMetrics,
     ) -> impl tower::Service<
         TcpEndpoint,
-        Error = Error,
+        Error = impl Into<Error>,
         Future = impl future::Future + Send,
         Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
     > + tower::Service<
         HttpEndpoint,
-        Error = Error,
+        Error = impl Into<Error>,
         Future = impl future::Future + Send,
         Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
     > + Clone
@@ -123,32 +124,45 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<C, P>(
+    pub fn build_http_router<C, P, L, S>(
         &self,
         tcp_connect: C,
         prevent_loop: PreventLoop,
+        http_loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl tower::Service<
         Target,
-        Error = Error,
+        Error = impl Into<Error>,
         Future = impl Send,
         Response = impl tower::Service<
             http::Request<http::glue::HttpBody>,
             Response = http::Response<http::boxed::Payload>,
-            Error = Error,
+            Error = impl Into<Error>,
             Future = impl Send,
         > + Send,
     > + Clone
            + Send
     where
-        C: tower::Service<HttpEndpoint, Error = Error> + Clone + Send + Sync + 'static,
+        C: tower::Service<HttpEndpoint> + Clone + Send + Sync + 'static,
+        C::Error: Into<Error>,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
         C::Future: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
+        // The loopback router processes requests sent to the inbound port.
+        L: tower::Service<Target, Response = S> + Send + Clone + 'static,
+        L::Error: Into<Error>,
+        L::Future: Send,
+        S: tower::Service<
+                http::Request<http::glue::HttpBody>,
+                Response = http::Response<http::boxed::Payload>,
+            > + Send
+            + 'static,
+        S::Error: Into<Error>,
+        S::Future: Send,
     {
         let Config {
             proxy:
@@ -196,7 +210,6 @@ impl Config {
         // An HTTP client is created for each target via the endpoint stack.
         let http_target_cache = http_endpoint
             .push_map_target(HttpEndpoint::from)
-            .push(admit::AdmitLayer::new(prevent_loop))
             // Normalizes the URI, i.e. if it was originally in
             // absolute-form on the outbound side.
             .push(normalize_uri::layer())
@@ -259,6 +272,8 @@ impl Config {
                 http_target_cache
                     .push_on_response(svc::layers().box_http_response().box_http_request()),
             )
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_fallback_on_error::<prevent_loop::LoopPrevented, L>(http_loopback)
             .check_service::<Target>()
             .into_inner()
     }
@@ -275,18 +290,19 @@ impl Config {
         drain: drain::Watch,
     ) -> serve::Task
     where
-        C: tower::Service<TcpEndpoint, Error = Error> + Clone + Send + Sync + 'static,
-        <C as tower::Service<TcpEndpoint>>::Response:
-            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-        <C as tower::Service<TcpEndpoint>>::Future: Send,
-        H: tower::Service<Target, Error = Error, Response = S> + Send + Clone + 'static,
+        C: tower::Service<TcpEndpoint> + Clone + Send + Sync + 'static,
+        C::Error: Into<Error>,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+        C::Future: Send,
+        H: tower::Service<Target, Response = S> + Send + Clone + 'static,
+        H::Error: Into<Error>,
         H::Future: Send,
         S: tower::Service<
                 http::Request<http::glue::HttpBody>,
                 Response = http::Response<http::boxed::Payload>,
-                Error = Error,
             > + Send
             + 'static,
+        S::Error: Into<Error>,
         S::Future: Send,
     {
         let Config {
