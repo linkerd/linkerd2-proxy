@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self,
+        core::listen::{Bind, Listen},
         detect::DetectProtocolLayer,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
@@ -71,11 +71,80 @@ impl Config {
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
-        use proxy::core::listen::{Bind, Listen};
+        let listen = self.proxy.server.bind.bind().map_err(Error::from)?;
+        let prevent_loop = PreventLoop::new(listen.listen_addr().port());
+        let tcp_connect = self.build_tcp_connect(&metrics);
+        let server = self.build_server(
+            listen,
+            prevent_loop,
+            tcp_connect,
+            local_identity,
+            profiles_client,
+            tap_layer,
+            metrics,
+            span_sink,
+            drain,
+        );
+        Ok(server)
+    }
+
+    pub fn build_tcp_connect(
+        &self,
+        metrics: &ProxyMetrics,
+    ) -> impl tower::Service<
+        TcpEndpoint,
+        Error = Error,
+        Future = impl future::Future + Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+    > + tower::Service<
+        HttpEndpoint,
+        Error = Error,
+        Future = impl future::Future + Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+    > + Clone
+           + Send {
+        // Establishes connections to remote peers (for both TCP
+        // forwarding and HTTP proxying).
+        svc::connect(self.proxy.connect.keepalive)
+            .push_map_response(BoxedIo::new) // Ensures the transport propagates shutdown properly.
+            // Limits the time we wait for a connection to be established.
+            .push_timeout(self.proxy.connect.timeout)
+            .push(metrics.transport.layer_connect(TransportLabels))
+            .into_inner()
+    }
+
+    pub fn build_server<C, P>(
+        self,
+        listen: transport::Listen<transport::DefaultOrigDstAddr>,
+        prevent_loop: PreventLoop,
+        tcp_connect: C,
+        local_identity: tls::Conditional<identity::Local>,
+        profiles_client: P,
+        tap_layer: tap::Layer,
+        metrics: ProxyMetrics,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
+        drain: drain::Watch,
+    ) -> Inbound
+    where
+        C: tower::Service<HttpEndpoint, Error = Error>
+            + tower::Service<TcpEndpoint, Error = Error>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        <C as tower::Service<HttpEndpoint>>::Response:
+            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+        <C as tower::Service<HttpEndpoint>>::Future: Send,
+        <C as tower::Service<TcpEndpoint>>::Response:
+            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+        <C as tower::Service<TcpEndpoint>>::Future: Send,
+        P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
+        P::Future: Send,
+    {
         let Config {
             proxy:
                 ProxyConfig {
-                    server: ServerConfig { bind, h2_settings },
+                    server: ServerConfig { h2_settings, .. },
                     connect,
                     buffer_capacity,
                     cache_max_idle_age,
@@ -87,25 +156,14 @@ impl Config {
             require_identity_for_inbound_ports,
         } = self;
 
-        let listen = bind.bind().map_err(Error::from)?;
         let listen_addr = listen.listen_addr();
-
-        let prevent_loop = PreventLoop::new(listen_addr.port());
 
         // The stack is served lazily since some layers (notably buffer) spawn
         // tasks from their constructor. This helps to ensure that tasks are
         // spawned on the same runtime as the proxy.
         let serve = Box::new(future::lazy(move || {
-            // Establishes connections to the local application (for both
-            // TCP forwarding and HTTP proxying).
-            let tcp_connect = svc::connect(connect.keepalive)
-                .push_map_response(BoxedIo::new) // Ensures the transport propagates shutdown properly.
-                .push_timeout(connect.timeout)
-                .push(metrics.transport.layer_connect(TransportLabels));
-
             // Forwards TCP streams that cannot be decoded as HTTP.
-            let tcp_forward = tcp_connect
-                .clone()
+            let tcp_forward = svc::stack(tcp_connect.clone())
                 .push(admit::AdmitLayer::new(prevent_loop))
                 .push_map_target(|meta: tls::accept::Meta| {
                     TcpEndpoint::from(meta.addrs.target_addr())
@@ -113,7 +171,7 @@ impl Config {
                 .push(svc::layer::mk(tcp::Forward::new));
 
             // Creates HTTP clients for each inbound port & HTTP settings.
-            let http_endpoint = tcp_connect
+            let http_endpoint = svc::stack(tcp_connect)
                 .push(http::MakeClientLayer::new(connect.h2_settings))
                 .push(reconnect::layer({
                     let backoff = connect.backoff.clone();
@@ -208,6 +266,15 @@ impl Config {
                 .check_new_service_routes::<(), Target>()
                 .new_service(());
 
+            let http_router = svc::stack(http_profile_cache)
+                .push_on_response(svc::layers().box_http_response())
+                .push_make_ready()
+                .push_fallback(
+                    http_target_cache
+                        .push_on_response(svc::layers().box_http_response().box_http_request()),
+                )
+                .check_service::<Target>();
+
             // Strips headers that may be set by the inbound router.
             let http_strip_headers = svc::layers()
                 .push(strip_header::request::layer(L5D_REMOTE_IP))
@@ -234,14 +301,7 @@ impl Config {
                 // Tracks proxy handletime.
                 .push(metrics.http_handle_time.layer());
 
-            let http_server = svc::stack(http_profile_cache)
-                .push_on_response(svc::layers().box_http_response())
-                .push_make_ready()
-                .push_fallback(
-                    http_target_cache
-                        .push_on_response(svc::layers().box_http_response().box_http_request()),
-                )
-                .check_service::<Target>()
+            let http_server = http_router
                 // Ensures that the built service is ready before it is returned
                 // to the router to dispatch a request.
                 .push_make_ready()
@@ -297,7 +357,7 @@ impl Config {
             serve::serve(listen, tcp_detect.into_inner(), drain)
         }));
 
-        Ok(Inbound { listen_addr, serve })
+        Inbound { listen_addr, serve }
     }
 }
 
