@@ -89,7 +89,7 @@ impl Config {
             let tcp_connect = self.build_tcp_connect(local_identity, &metrics);
 
             let prevent_loop = PreventLoop::new(listen_addr.port());
-            let http = self.build_http_logical_router(
+            let http = self.build_http_router(
                 prevent_loop.clone(),
                 tcp_connect.clone(),
                 resolve,
@@ -145,7 +145,7 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_logical_router<B, C, R, P>(
+    pub fn build_http_router<B, C, R, P>(
         &self,
         prevent_loop: PreventLoop,
         tcp_connect: C,
@@ -155,20 +155,18 @@ impl Config {
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
-    ) -> impl Clone
-           + Send
-           + tower::Service<
+    ) -> impl tower::Service<
         Target<HttpEndpoint>,
         Error = Error,
-        Future = impl future::Future + Send,
-        Response = impl Send
-                       + tower::Service<
+        Future = impl Send,
+        Response = impl tower::Service<
             http::Request<B>,
             Response = http::Response<http::boxed::Payload>,
             Error = Error,
-            Future = impl future::Future + Send,
-        >,
-    >
+            Future = impl Send,
+        > + Send,
+    > + Clone
+           + Send
     where
         B: http::Payload + std::fmt::Debug + Default + Send + 'static,
         C: tower::Service<Target<HttpEndpoint>, Error = Error> + Clone + Send + Sync + 'static,
@@ -454,7 +452,7 @@ impl Config {
         listen: transport::Listen<transport::DefaultOrigDstAddr>,
         prevent_loop: PreventLoop,
         tcp_connect: C,
-        http_logical_router: H,
+        http_router: H,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
@@ -514,18 +512,7 @@ impl Config {
             // Tracks proxy handletime.
             .push(metrics.clone().http_handle_time.layer());
 
-        // let http_logical_router = self.build_http_logical_router(
-        //     listen_addr.port(),
-        //     tcp_connect,
-        //     resolve,
-        //     dns_resolver,
-        //     profiles_client,
-        //     tap_layer,
-        //     metrics.clone(),
-        //     span_sink,
-        // );
-
-        let http_server = svc::stack(http_logical_router)
+        let http_server = svc::stack(http_router)
                 .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
                 .push_make_ready()
                 .push_timeout(dispatch_timeout)

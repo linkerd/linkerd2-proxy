@@ -76,13 +76,20 @@ impl Config {
         let prevent_loop = PreventLoop::new(listen_addr.port());
         let serve = Box::new(future::lazy(move || {
             let tcp_connect = self.build_tcp_connect(&metrics);
+            let http_router = self.build_http_router(
+                tcp_connect.clone(),
+                prevent_loop,
+                profiles_client,
+                tap_layer,
+                metrics.clone(),
+                span_sink.clone(),
+            );
             self.build_server(
                 listen,
                 prevent_loop,
                 tcp_connect,
+                http_router,
                 local_identity,
-                profiles_client,
-                tap_layer,
                 metrics,
                 span_sink,
                 drain,
@@ -116,57 +123,44 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<C, P>(
-        self,
-        listen: transport::Listen<transport::DefaultOrigDstAddr>,
-        prevent_loop: PreventLoop,
+    pub fn build_http_router<C, P>(
+        &self,
         tcp_connect: C,
-        local_identity: tls::Conditional<identity::Local>,
+        prevent_loop: PreventLoop,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
-        drain: drain::Watch,
-    ) -> serve::Task
+    ) -> impl tower::Service<
+        Target,
+        Error = Error,
+        Future = impl Send,
+        Response = impl tower::Service<
+            http::Request<http::glue::HttpBody>,
+            Response = http::Response<http::boxed::Payload>,
+            Error = Error,
+            Future = impl Send,
+        > + Send,
+    > + Clone
+           + Send
     where
-        C: tower::Service<HttpEndpoint, Error = Error>
-            + tower::Service<TcpEndpoint, Error = Error>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        <C as tower::Service<HttpEndpoint>>::Response:
-            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-        <C as tower::Service<HttpEndpoint>>::Future: Send,
-        <C as tower::Service<TcpEndpoint>>::Response:
-            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-        <C as tower::Service<TcpEndpoint>>::Future: Send,
+        C: tower::Service<HttpEndpoint, Error = Error> + Clone + Send + Sync + 'static,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+        C::Future: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
         let Config {
             proxy:
                 ProxyConfig {
-                    server: ServerConfig { h2_settings, .. },
                     connect,
                     buffer_capacity,
                     cache_max_idle_age,
-                    disable_protocol_detection_for_ports,
                     dispatch_timeout,
-                    max_in_flight_requests,
-                    detect_protocol_timeout,
+                    ..
                 },
-            require_identity_for_inbound_ports,
-        } = self;
-
-        // The stack is served lazily since some layers (notably buffer) spawn
-        // tasks from their constructor. This helps to ensure that tasks are
-        // spawned on the same runtime as the proxy.
-        // Forwards TCP streams that cannot be decoded as HTTP.
-        let tcp_forward = svc::stack(tcp_connect.clone())
-            .push(admit::AdmitLayer::new(prevent_loop))
-            .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
-            .push(svc::layer::mk(tcp::Forward::new));
+            ..
+        } = self.clone();
 
         // Creates HTTP clients for each inbound port & HTTP settings.
         let http_endpoint = svc::stack(tcp_connect)
@@ -258,14 +252,64 @@ impl Config {
             .check_new_service_routes::<(), Target>()
             .new_service(());
 
-        let http_router = svc::stack(http_profile_cache)
+        svc::stack(http_profile_cache)
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
             .push_fallback(
                 http_target_cache
                     .push_on_response(svc::layers().box_http_response().box_http_request()),
             )
-            .check_service::<Target>();
+            .check_service::<Target>()
+            .into_inner()
+    }
+
+    pub fn build_server<C, H, S>(
+        self,
+        listen: transport::Listen<transport::DefaultOrigDstAddr>,
+        prevent_loop: PreventLoop,
+        tcp_connect: C,
+        http_router: H,
+        local_identity: tls::Conditional<identity::Local>,
+        metrics: ProxyMetrics,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
+        drain: drain::Watch,
+    ) -> serve::Task
+    where
+        C: tower::Service<TcpEndpoint, Error = Error> + Clone + Send + Sync + 'static,
+        <C as tower::Service<TcpEndpoint>>::Response:
+            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+        <C as tower::Service<TcpEndpoint>>::Future: Send,
+        H: tower::Service<Target, Error = Error, Response = S> + Send + Clone + 'static,
+        H::Future: Send,
+        S: tower::Service<
+                http::Request<http::glue::HttpBody>,
+                Response = http::Response<http::boxed::Payload>,
+                Error = Error,
+            > + Send
+            + 'static,
+        S::Future: Send,
+    {
+        let Config {
+            proxy:
+                ProxyConfig {
+                    server: ServerConfig { h2_settings, .. },
+                    disable_protocol_detection_for_ports,
+                    dispatch_timeout,
+                    max_in_flight_requests,
+                    detect_protocol_timeout,
+                    ..
+                },
+            require_identity_for_inbound_ports,
+        } = self;
+
+        // The stack is served lazily since some layers (notably buffer) spawn
+        // tasks from their constructor. This helps to ensure that tasks are
+        // spawned on the same runtime as the proxy.
+        // Forwards TCP streams that cannot be decoded as HTTP.
+        let tcp_forward = svc::stack(tcp_connect.clone())
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
+            .push(svc::layer::mk(tcp::Forward::new));
 
         // Strips headers that may be set by the inbound router.
         let http_strip_headers = svc::layers()
@@ -293,7 +337,7 @@ impl Config {
             // Tracks proxy handletime.
             .push(metrics.http_handle_time.layer());
 
-        let http_server = http_router
+        let http_server = svc::stack(http_router)
             // Ensures that the built service is ready before it is returned
             // to the router to dispatch a request.
             .push_make_ready()
