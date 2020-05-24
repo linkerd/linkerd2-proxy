@@ -51,35 +51,25 @@ pub fn with_filter_and_format(
     // Set up the subscriber
     let start_time = clock::now();
 
+    let builder = FmtSubscriber::builder()
+        .with_timer(Uptime { start_time })
+        .with_env_filter(filter);
+
     match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
-            let builder = FmtSubscriber::builder()
-                .json()
-                .with_timer(Uptime { start_time })
-                .with_env_filter(filter)
-                .with_filter_reloading();
-
+            let builder = builder.json().with_filter_reloading();
             let handle = LevelHandle::Json {
                 inner: builder.reload_handle(),
             };
-
             let dispatch = Dispatch::new(builder.finish());
-
             (dispatch, handle)
         }
         "PLAIN" | _ => {
-            let builder = FmtSubscriber::builder()
-                .with_ansi(cfg!(test))
-                .with_timer(Uptime { start_time })
-                .with_env_filter(filter)
-                .with_filter_reloading();
-
+            let builder = builder.with_ansi(cfg!(test)).with_filter_reloading();
             let handle = LevelHandle::Plain {
                 inner: builder.reload_handle(),
             };
-
             let dispatch = Dispatch::new(builder.finish());
-
             (dispatch, handle)
         }
     }
