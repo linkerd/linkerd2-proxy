@@ -69,7 +69,7 @@ impl Config {
         let listen_addr = listen.listen_addr();
         Box::new(future::lazy(move || {
             let tcp_connect = self.build_tcp_connect(&metrics);
-            let prevent_loop = PreventLoop::new(listen_addr.port());
+            let prevent_loop = PreventLoop::from(listen_addr.port());
             let http_router = self.build_http_router(
                 tcp_connect.clone(),
                 prevent_loop,
@@ -120,7 +120,7 @@ impl Config {
     pub fn build_http_router<C, P, L, S>(
         &self,
         tcp_connect: C,
-        prevent_loop: PreventLoop,
+        prevent_loop: impl Into<PreventLoop>,
         http_loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
@@ -168,6 +168,8 @@ impl Config {
                 },
             ..
         } = self.clone();
+
+        let prevent_loop = prevent_loop.into();
 
         // Creates HTTP clients for each inbound port & HTTP settings.
         let http_endpoint = svc::stack(tcp_connect)
@@ -274,7 +276,7 @@ impl Config {
     pub fn build_server<C, H, S>(
         self,
         listen: transport::Listen<transport::DefaultOrigDstAddr>,
-        prevent_loop: PreventLoop,
+        prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         http_router: H,
         local_identity: tls::Conditional<identity::Local>,
@@ -316,7 +318,7 @@ impl Config {
         // spawned on the same runtime as the proxy.
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect.clone())
-            .push(admit::AdmitLayer::new(prevent_loop))
+            .push(admit::AdmitLayer::new(prevent_loop.into()))
             .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
             .push(svc::layer::mk(tcp::Forward::new));
 

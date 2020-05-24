@@ -18,8 +18,8 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self, core::resolve::Resolve, core::Listen, detect::DetectProtocolLayer, discover, http,
-        identity, resolve::map_endpoint, server::ProtocolDetect, tap, tcp, Server,
+        self, core::resolve::Resolve, detect::DetectProtocolLayer, discover, http, identity,
+        resolve::map_endpoint, server::ProtocolDetect, tap, tcp, Server,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
@@ -56,60 +56,6 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build<R, P>(
-        self,
-        listen: transport::Listen<transport::DefaultOrigDstAddr>,
-        local_identity: tls::Conditional<identity::Local>,
-        resolve: R,
-        dns_resolver: dns::Resolver,
-        profiles_client: P,
-        tap_layer: tap::Layer,
-        metrics: ProxyMetrics,
-        span_sink: Option<mpsc::Sender<oc::Span>>,
-        drain: drain::Watch,
-    ) -> serve::Task
-    where
-        R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
-            + Clone
-            + Send
-            + 'static,
-        R::Future: Send,
-        R::Resolution: Send,
-        P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
-        P::Future: Send,
-    {
-        let listen_addr = listen.listen_addr();
-        Box::new(future::lazy(move || {
-            let tcp_connect = self.build_tcp_connect(local_identity, &metrics);
-
-            let prevent_loop = PreventLoop::new(listen_addr.port());
-            let http = self.build_http_router(
-                prevent_loop.clone(),
-                tcp_connect.clone(),
-                resolve,
-                dns_resolver,
-                profiles_client,
-                tap_layer,
-                metrics.clone(),
-                span_sink.clone(),
-            );
-            self.build_server(
-                listen,
-                prevent_loop,
-                tcp_connect,
-                http,
-                metrics,
-                span_sink,
-                drain,
-            )
-        }))
-    }
-
-    pub fn bind(&self) -> Result<transport::Listen<transport::DefaultOrigDstAddr>, Error> {
-        use proxy::core::listen::Bind;
-        self.proxy.server.bind.bind().map_err(Error::from)
-    }
-
     pub fn build_tcp_connect(
         &self,
         local_identity: tls::Conditional<identity::Local>,
@@ -139,7 +85,7 @@ impl Config {
 
     pub fn build_http_router<B, C, R, P>(
         &self,
-        prevent_loop: PreventLoop,
+        prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         resolve: R,
         dns_resolver: dns::Resolver,
@@ -184,6 +130,8 @@ impl Config {
                     ..
                 },
         } = self.clone();
+
+        let prevent_loop = prevent_loop.into();
 
         let http_endpoint = {
             // Registers the stack with Tap, Metrics, and OpenCensus tracing
@@ -442,7 +390,7 @@ impl Config {
     pub fn build_server<C, H, S>(
         self,
         listen: transport::Listen<transport::DefaultOrigDstAddr>,
-        prevent_loop: PreventLoop,
+        prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -484,7 +432,7 @@ impl Config {
         // same runtime as the proxy.
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect)
-            .push(admit::AdmitLayer::new(prevent_loop))
+            .push(admit::AdmitLayer::new(prevent_loop.into()))
             .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
             .push(svc::layer::mk(tcp::Forward::new));
 
