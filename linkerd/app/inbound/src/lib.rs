@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        core::listen::{Bind, Listen},
+        core::Listen,
         detect::DetectProtocolLayer,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
@@ -32,7 +32,6 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
@@ -52,28 +51,23 @@ pub struct Config {
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
 }
 
-pub struct Inbound {
-    pub listen_addr: SocketAddr,
-    pub serve: serve::Task,
-}
-
 impl Config {
     pub fn build<P>(
         self,
+        listen: transport::Listen<transport::DefaultOrigDstAddr>,
         local_identity: tls::Conditional<identity::Local>,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Result<Inbound, Error>
+    ) -> serve::Task
     where
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
-        let listen = self.proxy.server.bind.bind().map_err(Error::from)?;
         let listen_addr = listen.listen_addr();
-        let serve = Box::new(future::lazy(move || {
+        Box::new(future::lazy(move || {
             let tcp_connect = self.build_tcp_connect(&metrics);
             let prevent_loop = PreventLoop::new(listen_addr.port());
             let http_router = self.build_http_router(
@@ -95,8 +89,7 @@ impl Config {
                 span_sink,
                 drain,
             )
-        }));
-        Ok(Inbound { listen_addr, serve })
+        }))
     }
 
     pub fn build_tcp_connect(

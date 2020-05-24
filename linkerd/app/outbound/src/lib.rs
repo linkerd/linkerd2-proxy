@@ -29,7 +29,6 @@ use linkerd2_app_core::{
     DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::info_span;
@@ -56,14 +55,10 @@ pub struct Config {
     pub canonicalize_timeout: Duration,
 }
 
-pub struct Outbound {
-    pub listen_addr: SocketAddr,
-    pub serve: serve::Task,
-}
-
 impl Config {
     pub fn build<R, P>(
         self,
+        listen: transport::Listen<transport::DefaultOrigDstAddr>,
         local_identity: tls::Conditional<identity::Local>,
         resolve: R,
         dns_resolver: dns::Resolver,
@@ -72,7 +67,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Result<Outbound, Error>
+    ) -> serve::Task
     where
         R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
             + Clone
@@ -83,9 +78,8 @@ impl Config {
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
-        let listen = self.proxy.server.bind.bind().map_err(Error::from)?;
         let listen_addr = listen.listen_addr();
-        let serve = Box::new(future::lazy(move || {
+        Box::new(future::lazy(move || {
             let tcp_connect = self.build_tcp_connect(local_identity, &metrics);
 
             let prevent_loop = PreventLoop::new(listen_addr.port());
@@ -108,9 +102,7 @@ impl Config {
                 span_sink,
                 drain,
             )
-        }));
-
-        Ok(Outbound { listen_addr, serve })
+        }))
     }
 
     pub fn bind(&self) -> Result<transport::Listen<transport::DefaultOrigDstAddr>, Error> {

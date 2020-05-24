@@ -16,6 +16,8 @@ pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
+    proxy::core::listen::{Bind, Listen},
+    serve,
     svc::{self, NewService},
     Error,
 };
@@ -56,9 +58,11 @@ pub struct App {
     drain: drain::Signal,
     dst: ControlAddr,
     identity: identity::Identity,
-    inbound: inbound::Inbound,
+    inbound_task: serve::Task,
+    inbound_addr: SocketAddr,
     oc_collector: oc_collector::OcCollector,
-    outbound: outbound::Outbound,
+    outbound_task: serve::Task,
+    outbound_addr: SocketAddr,
     tap: tap::Tap,
 }
 
@@ -141,35 +145,45 @@ impl Config {
         };
 
         let dst_addr = dst.addr.clone();
-        let inbound = {
-            let inbound = inbound;
-            let identity = identity.local();
+
+        let inbound_listen = inbound.proxy.server.bind.bind()?;
+        let inbound_addr = inbound_listen.listen_addr();
+        let inbound_task = {
             let profiles = dst.profiles.clone();
             let tap = tap.layer();
             let metrics = metrics.inbound;
             let oc = oc_collector.span_sink();
             let drain = drain_rx.clone();
-            info_span!("inbound")
-                .in_scope(move || inbound.build(identity, profiles, tap, metrics, oc, drain))?
+            inbound.build(
+                inbound_listen,
+                identity.local(),
+                profiles,
+                tap,
+                metrics,
+                oc,
+                drain,
+            )
         };
-        let outbound = {
+
+        let outbound_listen = outbound.proxy.server.bind.bind()?;
+        let outbound_addr = outbound_listen.listen_addr();
+        let outbound_task = {
             let identity = identity.local();
             let dns = dns.resolver;
             let tap = tap.layer();
             let metrics = metrics.outbound;
             let oc = oc_collector.span_sink();
-            info_span!("outbound").in_scope(move || {
-                outbound.build(
-                    identity,
-                    dst.resolve,
-                    dns,
-                    dst.profiles,
-                    tap,
-                    metrics,
-                    oc,
-                    drain_rx,
-                )
-            })?
+            outbound.build(
+                outbound_listen,
+                identity,
+                dst.resolve,
+                dns,
+                dst.profiles,
+                tap,
+                metrics,
+                oc,
+                drain_rx,
+            )
         };
 
         Ok(App {
@@ -178,9 +192,11 @@ impl Config {
             dst: dst_addr,
             drain: drain_tx,
             identity,
-            inbound,
+            inbound_task,
+            inbound_addr,
             oc_collector,
-            outbound,
+            outbound_task,
+            outbound_addr,
             tap,
         })
     }
@@ -192,11 +208,11 @@ impl App {
     }
 
     pub fn inbound_addr(&self) -> SocketAddr {
-        self.inbound.listen_addr
+        self.inbound_addr
     }
 
     pub fn outbound_addr(&self) -> SocketAddr {
-        self.outbound.listen_addr
+        self.outbound_addr
     }
 
     pub fn tap_addr(&self) -> Option<SocketAddr> {
@@ -237,9 +253,9 @@ impl App {
             dns,
             drain,
             identity,
-            inbound,
+            inbound_task,
             oc_collector,
-            outbound,
+            outbound_task,
             tap,
             ..
         } = self;
@@ -327,14 +343,12 @@ impl App {
             .expect("admin");
 
         tokio::spawn(
-            outbound
-                .serve
+            outbound_task
                 .map_err(|e| panic!("outbound died: {}", e))
                 .instrument(info_span!("outbound")),
         );
         tokio::spawn(
-            inbound
-                .serve
+            inbound_task
                 .map_err(|e| panic!("inbound died: {}", e))
                 .instrument(info_span!("inbound")),
         );
