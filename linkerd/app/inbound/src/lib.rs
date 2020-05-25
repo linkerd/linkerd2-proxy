@@ -66,30 +66,28 @@ impl Config {
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
-        let listen_addr = listen.listen_addr();
-        Box::new(future::lazy(move || {
-            let tcp_connect = self.build_tcp_connect(&metrics);
-            let prevent_loop = PreventLoop::from(listen_addr.port());
-            let http_router = self.build_http_router(
-                tcp_connect.clone(),
-                prevent_loop,
-                prevent_loop,
-                profiles_client,
-                tap_layer,
-                metrics.clone(),
-                span_sink.clone(),
-            );
-            self.build_server(
-                listen,
-                prevent_loop,
-                tcp_connect,
-                http_router,
-                local_identity,
-                metrics,
-                span_sink,
-                drain,
-            )
-        }))
+        let tcp_connect = self.build_tcp_connect(&metrics);
+        let prevent_loop = PreventLoop::from(listen.listen_addr().port());
+        let http_loopback = prevent_loop.clone();
+        let http_router = self.build_http_router(
+            tcp_connect.clone(),
+            prevent_loop,
+            http_loopback,
+            profiles_client,
+            tap_layer,
+            metrics.clone(),
+            span_sink.clone(),
+        );
+        self.build_server(
+            listen,
+            prevent_loop,
+            tcp_connect,
+            http_router,
+            local_identity,
+            metrics,
+            span_sink,
+            drain,
+        )
     }
 
     pub fn build_tcp_connect(
