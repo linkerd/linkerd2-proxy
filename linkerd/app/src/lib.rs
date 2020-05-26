@@ -161,11 +161,13 @@ impl Config {
             let outbound_connect =
                 outbound.build_tcp_connect(local_identity.clone(), &outbound_metrics);
 
+            let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
+
             let outbound_http = outbound.build_http_router(
                 outbound_addr.port(),
                 outbound_connect.clone(),
                 dst.resolve,
-                resolver,
+                refine,
                 dst.profiles.clone(),
                 tap_layer.clone(),
                 outbound_metrics.clone(),

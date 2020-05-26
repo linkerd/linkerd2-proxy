@@ -25,8 +25,9 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, tls},
-    Conditional, DiscoveryRejected, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
-    DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
+    Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID,
+    L5D_SERVER_ID,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -83,12 +84,50 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<B, C, R, P>(
+    pub fn build_dns_refine(
+        &self,
+        dns_resolver: dns::Resolver,
+        metrics: &StackMetrics,
+    ) -> impl tower::Service<
+        dns::Name,
+        Response = (dns::Name, dns::IpAddrs),
+        Error = Error,
+        Future = impl Send,
+    > + Clone
+           + Send {
+        // Caches DNS refinements from relative names to canonical names.
+        //
+        // For example, a client may send requests to `foo` or `foo.ns`; and the canonical form
+        // of these names is `foo.ns.svc.cluster.local
+        svc::stack(dns_resolver.into_make_refine())
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        // If the service has been unavailable for an extended time, eagerly
+                        // fail requests.
+                        .push_failfast(self.proxy.dispatch_timeout)
+                        // Shares the service, ensuring discovery errors are propagated.
+                        .push_spawn_buffer_with_idle_timeout(
+                            self.proxy.buffer_capacity,
+                            self.proxy.cache_max_idle_age,
+                        )
+                        .push(metrics.layer(stack_labels("refine"))),
+                ),
+            )
+            .instrument(|name: &dns::Name| info_span!("refine", %name))
+            // Obtains the service, advances the state of the resolution
+            .push(svc::make_response::Layer)
+            // Ensures that the cache isn't locked when polling readiness.
+            .push_oneshot()
+            .into_inner()
+    }
+
+    pub fn build_http_router<B, C, R, F, P>(
         &self,
         prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         resolve: R,
-        dns_resolver: dns::Resolver,
+        refine: F,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
@@ -116,6 +155,11 @@ impl Config {
             + 'static,
         R::Future: Send,
         R::Resolution: Send,
+        F: tower::Service<dns::Name, Error = Error, Response = (dns::Name, dns::IpAddrs)>
+            + Clone
+            + Send
+            + 'static,
+        F::Future: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
@@ -328,30 +372,6 @@ impl Config {
             .check_new_service_routes::<(), Logical<HttpEndpoint>>()
             .new_service(());
 
-        // Caches DNS refinements from relative names to canonical names.
-        //
-        // For example, a client may send requests to `foo` or `foo.ns`; and the canonical form
-        // of these names is `foo.ns.svc.cluster.local
-        let dns_refine_cache = svc::stack(dns_resolver.into_make_refine())
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
-                        .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("canonicalize"))),
-                ),
-            )
-            .instrument(|name: &dns::Name| info_span!("canonicalize", %name))
-            // Obtains the service, advances the state of the resolution
-            .push(svc::make_response::Layer)
-            // Ensures that the cache isn't locked when polling readiness.
-            .push_oneshot()
-            .check_service_response::<dns::Name, dns::Name>()
-            .into_inner();
-
         // Routes requests to their logical target.
         svc::stack(http_logical_profile_cache)
             .check_service::<Logical<HttpEndpoint>>()
@@ -373,7 +393,9 @@ impl Config {
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             // Strips headers that may be set by this proxy.
             .push(http::canonicalize::Layer::new(
-                dns_refine_cache,
+                svc::stack(refine)
+                    .push_map_response(|(n, _)| n)
+                    .into_inner(),
                 canonicalize_timeout,
             ))
             .push_on_response(
