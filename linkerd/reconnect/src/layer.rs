@@ -1,7 +1,7 @@
 use super::Service;
 use futures::future;
-use std::task::{Poll, Context};
 use linkerd2_error::{Error, Never, Recover};
+use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
 pub struct Layer<R: Recover> {

@@ -1,7 +1,7 @@
 use futures::{future, ready, TryFuture, TryFutureExt, TryStreamExt};
-use std::task::{Context, Poll};
-use std::pin::Pin;
 use linkerd2_error::{Error, Recover};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 pub struct Service<T, R, M>
 where
@@ -104,7 +104,7 @@ where
                             error: Some(error),
                             backoff: None,
                         }
-                    },
+                    }
                     Ok(ready) => return Poll::Ready(Ok(ready)),
                 },
 
@@ -134,9 +134,7 @@ where
                         None => None,
                     };
 
-                    State::Disconnected {
-                        backoff,
-                    }
+                    State::Disconnected { backoff }
                 }
             }
         }
