@@ -1089,6 +1089,8 @@ fn http1_requests_without_host_have_unique_connections() {
 }
 
 #[tokio::test]
+// Re-enable when transport metrics are put back.
+#[cfg_attr(not(feature = "nyi"), ignore)]
 async fn retry_reconnect_errors() {
     let _ = trace_init();
 
