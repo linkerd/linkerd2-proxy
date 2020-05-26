@@ -2,8 +2,6 @@ use futures::{future, try_ready, Future, Poll};
 use linkerd2_dns_name::Name;
 use linkerd2_stack::NewService;
 use std::convert::TryFrom;
-use std::net::IpAddr;
-use std::sync::Arc;
 use std::time::Instant;
 use trust_dns_resolver::{error::ResolveError, lookup_ip::LookupIp, AsyncResolver};
 
@@ -18,16 +16,10 @@ pub struct Refine {
     state: State,
 }
 
-pub type IpAddrs = Arc<Vec<IpAddr>>;
-
 enum State {
     Init,
     Pending(Box<dyn Future<Item = LookupIp, Error = ResolveError> + Send + 'static>),
-    Refined {
-        name: Name,
-        ips: IpAddrs,
-        valid_until: Instant,
-    },
+    Refined { name: Name, valid_until: Instant },
 }
 
 #[derive(Debug)]
@@ -46,7 +38,7 @@ impl NewService<Name> for MakeRefine {
 }
 
 impl tower::Service<()> for Refine {
-    type Response = (Name, Arc<Vec<IpAddr>>);
+    type Response = Name;
     type Error = RefineError;
     type Future = future::FutureResult<Self::Response, Self::Error>;
 
@@ -63,12 +55,7 @@ impl tower::Service<()> for Refine {
                     let n = lookup.query().name();
                     let name = Name::try_from(n.to_ascii().as_bytes())
                         .expect("Name returned from resolver must be valid");
-                    let ips = Arc::new(lookup.iter().collect::<Vec<_>>());
-                    State::Refined {
-                        name,
-                        ips,
-                        valid_until,
-                    }
+                    State::Refined { name, valid_until }
                 }
                 State::Refined { valid_until, .. } => {
                     if Instant::now() < valid_until {
@@ -81,11 +68,8 @@ impl tower::Service<()> for Refine {
     }
 
     fn call(&mut self, _: ()) -> Self::Future {
-        if let State::Refined {
-            ref name, ref ips, ..
-        } = self.state
-        {
-            return future::ok((name.clone(), ips.clone()));
+        if let State::Refined { ref name, .. } = self.state {
+            return future::ok(name.clone());
         }
 
         unreachable!("called before ready");

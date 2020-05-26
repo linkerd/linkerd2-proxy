@@ -1,6 +1,6 @@
-use super::endpoint::Target;
+use super::endpoint::{Target, TcpEndpoint};
 use futures::{future, Poll};
-use linkerd2_app_core::{admit, proxy::http, transport::connect};
+use linkerd2_app_core::{admit, proxy::http};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -16,6 +16,32 @@ pub struct LoopPrevented {
 impl From<u16> for PreventLoop {
     fn from(port: u16) -> Self {
         Self { port }
+    }
+}
+
+impl admit::Admit<Target> for PreventLoop {
+    type Error = LoopPrevented;
+
+    fn admit(&mut self, ep: &Target) -> Result<(), Self::Error> {
+        tracing::debug!(port = %ep.addr.port(), self.port);
+        if ep.addr.port() == self.port {
+            return Err(LoopPrevented { port: self.port });
+        }
+
+        Ok(())
+    }
+}
+
+impl admit::Admit<TcpEndpoint> for PreventLoop {
+    type Error = LoopPrevented;
+
+    fn admit(&mut self, ep: &TcpEndpoint) -> Result<(), Self::Error> {
+        tracing::debug!(port = %ep.port, self.port);
+        if ep.port == self.port {
+            return Err(LoopPrevented { port: self.port });
+        }
+
+        Ok(())
     }
 }
 
@@ -44,20 +70,6 @@ impl<B> tower::Service<http::Request<B>> for PreventLoop {
 
     fn call(&mut self, _: http::Request<B>) -> Self::Future {
         future::err(LoopPrevented { port: self.port })
-    }
-}
-
-impl<T: connect::ConnectAddr> admit::Admit<T> for PreventLoop {
-    type Error = LoopPrevented;
-
-    fn admit(&mut self, ep: &T) -> Result<(), Self::Error> {
-        let port = ep.connect_addr().port();
-        tracing::debug!(port, self.port);
-        if port == self.port {
-            return Err(LoopPrevented { port: self.port });
-        }
-
-        Ok(())
     }
 }
 

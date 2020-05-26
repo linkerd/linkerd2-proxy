@@ -2,7 +2,7 @@
 
 mod refine;
 
-pub use self::refine::{IpAddrs, MakeRefine, Refine};
+pub use self::refine::{MakeRefine, Refine};
 use futures::{prelude::*, try_ready};
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::{fmt, net};

@@ -88,12 +88,8 @@ impl Config {
         &self,
         dns_resolver: dns::Resolver,
         metrics: &StackMetrics,
-    ) -> impl tower::Service<
-        dns::Name,
-        Response = (dns::Name, dns::IpAddrs),
-        Error = Error,
-        Future = impl Send,
-    > + Clone
+    ) -> impl tower::Service<dns::Name, Response = dns::Name, Error = Error, Future = impl Send>
+           + Clone
            + Send {
         // Caches DNS refinements from relative names to canonical names.
         //
@@ -155,10 +151,7 @@ impl Config {
             + 'static,
         R::Future: Send,
         R::Resolution: Send,
-        F: tower::Service<dns::Name, Error = Error, Response = (dns::Name, dns::IpAddrs)>
-            + Clone
-            + Send
-            + 'static,
+        F: tower::Service<dns::Name, Error = Error, Response = dns::Name> + Clone + Send + 'static,
         F::Future: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
@@ -393,9 +386,7 @@ impl Config {
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             // Strips headers that may be set by this proxy.
             .push(http::canonicalize::Layer::new(
-                svc::stack(refine)
-                    .push_map_response(|(n, _)| n)
-                    .into_inner(),
+                svc::stack(refine).into_inner(),
                 canonicalize_timeout,
             ))
             .push_on_response(

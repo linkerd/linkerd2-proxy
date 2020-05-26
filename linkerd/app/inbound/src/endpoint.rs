@@ -222,12 +222,6 @@ impl tap::Inspect for Target {
     }
 }
 
-impl connect::ConnectAddr for Target {
-    fn connect_addr(&self) -> SocketAddr {
-        ([127, 0, 0, 1], self.addr.port()).into()
-    }
-}
-
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.addr.fmt(f)
