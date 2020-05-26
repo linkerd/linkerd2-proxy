@@ -1,6 +1,7 @@
-use futures::{future, try_ready, Async, Future, Poll, TryStream};
+use futures::{future, ready, TryFuture, TryFutureExt, TryStreamExt};
+use std::task::{Context, Poll};
+use std::pin::Pin;
 use linkerd2_error::{Error, Recover};
-use tracing;
 
 pub struct Service<T, R, M>
 where
@@ -13,15 +14,15 @@ where
     state: State<M::Future, R::Backoff>,
 }
 
-enum State<F: Future, B> {
+enum State<F: TryFuture, B> {
     Disconnected {
         backoff: Option<B>,
     },
     Pending {
-        future: F,
+        future: Pin<Box<F>>,
         backoff: Option<B>,
     },
-    Service(F::Item),
+    Service(F::Ok),
     Recover {
         error: Option<Error>,
         backoff: Option<B>,
@@ -35,6 +36,7 @@ impl<T, R, M> Service<T, R, M>
 where
     T: Clone,
     R: Recover,
+    R::Backoff: Unpin,
     M: tower::Service<T>,
     M::Error: Into<Error>,
 {
@@ -52,6 +54,7 @@ impl<Req, T, R, M, S> tower::Service<Req> for Service<T, R, M>
 where
     T: Clone,
     R: Recover,
+    R::Backoff: Unpin,
     M: tower::Service<T, Response = S>,
     M::Error: Into<Error>,
     S: tower::Service<Req>,
@@ -61,16 +64,16 @@ where
     type Error = Error;
     type Future = future::MapErr<S::Future, fn(S::Error) -> Error>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
             self.state = match self.state {
                 State::Disconnected { ref mut backoff } => {
                     // When disconnected, try to build a new inner sevice. If
                     // this call fails, we must not recover, since
                     // `make_service` is now unusable.
-                    try_ready!(self.make_service.poll_ready().map_err(Into::into));
+                    ready!(self.make_service.poll_ready(cx)).map_err(Into::into)?;
                     State::Pending {
-                        future: self.make_service.call(self.target.clone()),
+                        future: Box::pin(self.make_service.call(self.target.clone())),
                         backoff: backoff.take(),
                     }
                 }
@@ -78,9 +81,8 @@ where
                 State::Pending {
                     ref mut future,
                     ref mut backoff,
-                } => match future.poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Ok(Async::Ready(service)) => State::Service(service),
+                } => match ready!(Pin::new(future).try_poll(cx)) {
+                    Ok(service) => State::Service(service),
                     Err(e) => {
                         // If the service cannot be built, try to recover using
                         // the existing backoff.
@@ -93,8 +95,7 @@ where
                     }
                 },
 
-                State::Service(ref mut service) => match service.poll_ready() {
-                    Ok(ready) => return Ok(ready),
+                State::Service(ref mut service) => match ready!(service.poll_ready(cx)) {
                     Err(e) => {
                         // If the service fails, try to recover.
                         let error: Error = e.into();
@@ -103,7 +104,8 @@ where
                             error: Some(error),
                             backoff: None,
                         }
-                    }
+                    },
+                    Ok(ready) => return Poll::Ready(Ok(ready)),
                 },
 
                 State::Recover {
@@ -120,14 +122,20 @@ where
 
                 State::Backoff(ref mut backoff) => {
                     // Do not try to recover if the backoff stream fails.
-                    let more = try_ready!(backoff
+                    let more = ready!(backoff
                         .as_mut()
                         .expect("backoff must be set")
-                        .try_poll(cx)
-                        .map_err(Into::into));
+                        .try_poll_next_unpin(cx));
+
+                    // Only reuse the backoff if the backoff stream did not complete.
+                    let backoff = match more {
+                        Some(Ok(())) => backoff.take(),
+                        Some(Err(e)) => return Poll::Ready(Err(e.into())),
+                        None => None,
+                    };
+
                     State::Disconnected {
-                        // Only reuse the backoff if the backoff stream did not complete.
-                        backoff: more.and_then(move |()| backoff.take()),
+                        backoff,
                     }
                 }
             }
