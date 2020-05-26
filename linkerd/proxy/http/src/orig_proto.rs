@@ -1,12 +1,12 @@
 use super::h1;
 use futures_03::{future, ready, TryFuture, TryFutureExt};
-use http;
-use http::header::{HeaderValue, TRANSFER_ENCODING};
-use pin_project::pin_project;
+use std::task::{Context, Poll};
 use std::future::Future;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use http;
+use http::header::{HeaderValue, TRANSFER_ENCODING};
 use tracing::{debug, warn};
+use pin_project::pin_project;
 
 pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 

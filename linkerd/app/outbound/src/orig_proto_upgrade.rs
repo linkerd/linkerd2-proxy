@@ -5,12 +5,12 @@ use crate::proxy::http::{
 use crate::svc::stack;
 use crate::{HttpEndpoint, Target};
 use futures::{ready, TryFuture};
-use pin_project::pin_project;
 use std::future::Future;
-use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::pin::Pin;
 use tower::util::Either;
 use tracing::trace;
+use pin_project::pin_project;
 
 #[derive(Clone, Debug, Default)]
 pub struct OrigProtoUpgradeLayer(());
@@ -120,7 +120,7 @@ where
             let upgrade = orig_proto::Upgrade::new(inner, *this.was_absolute);
             Poll::Ready(Ok(Either::A(upgrade)))
         } else {
-            Poll::Ready(Ok(Either::B(inner)))
+           Poll::Ready(Ok(Either::B(inner)))
         }
     }
 }
