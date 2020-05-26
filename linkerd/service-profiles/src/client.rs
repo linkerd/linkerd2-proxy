@@ -1,23 +1,34 @@
 use crate::http as profiles;
-use futures::{try_ready, Async, Future, Poll, Stream};
+use api::destination_client::DestinationClient;
+use futures::{future, ready, Stream, TryStreamExt};
 use http;
+use http_body::Body as HttpBody;
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_dns as dns;
 use linkerd2_error::{Error, Never, Recover};
 use linkerd2_proxy_api::destination as api;
+use pin_project::{pin_project, project};
 use regex::Regex;
+use std::convert::TryInto;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
-use tokio::timer::Delay;
+use tokio::time::{self, Delay};
+use tonic::{
+    self as grpc,
+    body::{Body, BoxBody},
+    client::GrpcService,
+};
 use tower::retry::budget::Budget;
-use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::{debug, error, info, info_span, trace, warn};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Client<S, R> {
-    service: api::client::Destination<S>,
+    service: DestinationClient<S>,
     recover: R,
     initial_timeout: Duration,
     context_token: String,
@@ -31,21 +42,24 @@ type Sender = watch::Sender<profiles::Routes>;
 #[derive(Clone, Debug)]
 pub struct InvalidProfileAddr(Addr);
 
+#[pin_project]
 pub struct ProfileFuture<S, R>
 where
     S: GrpcService<BoxBody>,
     R: Recover,
 {
+    #[pin]
     inner: ProfileFutureInner<S, R>,
 }
 
+#[pin_project]
 enum ProfileFutureInner<S, R>
 where
     S: GrpcService<BoxBody>,
     R: Recover,
 {
     Invalid(Addr),
-    Pending(Option<Inner<S, R>>, Delay),
+    Pending(#[pin] Option<Inner<S, R>>, #[pin] Delay),
 }
 
 struct Daemon<S, R>
@@ -57,29 +71,39 @@ where
     inner: Inner<S, R>,
 }
 
+#[pin_project]
 struct Inner<S, R>
 where
     S: GrpcService<BoxBody>,
     R: Recover,
 {
-    service: api::client::Destination<S>,
+    service: DestinationClient<S>,
     recover: R,
-    state: State<S, R::Backoff>,
+    #[pin]
+    state: State<R::Backoff>,
     request: api::GetDestination,
 }
 
-enum State<S, B>
-where
-    S: GrpcService<BoxBody>,
-{
+#[pin_project]
+enum State<B> {
     Disconnected {
         backoff: Option<B>,
     },
     Waiting {
-        future: grpc::client::server_streaming::ResponseFuture<api::DestinationProfile, S::Future>,
+        future: Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            tonic::Response<tonic::Streaming<api::DestinationProfile>>,
+                            grpc::Status,
+                        >,
+                    > + Send
+                    + 'static,
+            >,
+        >,
         backoff: Option<B>,
     },
-    Streaming(grpc::Streaming<api::DestinationProfile, S::ResponseBody>),
+    Streaming(#[pin] grpc::Streaming<api::DestinationProfile>),
     Backoff(Option<B>),
 }
 
@@ -93,8 +117,11 @@ where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
+    <S::ResponseBody as HttpBody>::Error:
+        Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
     R: Recover,
+    R::Backoff: Unpin,
 {
     pub fn new(
         service: S,
@@ -104,7 +131,7 @@ where
         suffixes: impl IntoIterator<Item = dns::Suffix>,
     ) -> Self {
         Self {
-            service: api::client::Destination::new(service),
+            service: DestinationClient::new(service),
             recover,
             initial_timeout,
             context_token,
@@ -118,16 +145,19 @@ where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
+    <S::ResponseBody as HttpBody>::Error:
+        Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
     R: Recover + Send + Clone + 'static,
-    R::Backoff: Send,
+    R::Backoff: Unpin + Send,
 {
     type Response = Receiver;
     type Error = Error;
     type Future = ProfileFuture<S, R>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // Tonic will internally drive the client service to readiness.
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, dst: Addr) -> Self::Future {
@@ -162,7 +192,7 @@ where
             ..Default::default()
         };
 
-        let timeout = Delay::new(Instant::now() + self.initial_timeout);
+        let timeout = time::delay_for(self.initial_timeout);
 
         let inner = Inner {
             service,
@@ -181,43 +211,78 @@ where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
+    <S::ResponseBody as HttpBody>::Error:
+        Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
     R: Recover + Send + 'static,
+    R::Backoff: Unpin,
     R::Backoff: Send,
 {
-    type Item = Receiver;
-    type Error = Error;
+    type Output = Result<Receiver, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.inner {
-            ProfileFutureInner::Invalid(ref addr) => Err(InvalidProfileAddr(addr.clone()).into()),
-            ProfileFutureInner::Pending(ref mut inner, ref mut timeout) => {
-                let profile = match inner.as_mut().expect("polled after ready").poll_profile() {
-                    Err(error) => {
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        match self.project().inner.project() {
+            ProfileFutureInner::Invalid(addr) => {
+                Poll::Ready(Err(InvalidProfileAddr(addr.clone()).into()))
+            }
+            ProfileFutureInner::Pending(mut inner, timeout) => {
+                let profile = match inner
+                    .as_mut()
+                    .as_pin_mut()
+                    .expect("polled after ready")
+                    .poll_profile(cx)
+                {
+                    Poll::Ready(Err(error)) => {
                         trace!(%error, "failed to fetch profile");
-                        return Err(error);
+                        return Poll::Ready(Err(error));
                     }
-                    Ok(Async::NotReady) => {
-                        if timeout.poll().expect("timer must not fail").is_not_ready() {
-                            return Ok(Async::NotReady);
+                    Poll::Pending => {
+                        if timeout.poll(cx).is_pending() {
+                            return Poll::Pending;
                         }
 
                         info!("Using default service profile after timeout");
                         profiles::Routes::default()
                     }
-                    Ok(Async::Ready(profile)) => profile,
+                    Poll::Ready(Ok(profile)) => profile,
                 };
 
                 trace!("daemonizing");
-                let (tx, rx) = watch::channel(profile);
+                let (mut tx, rx) = watch::channel(profile);
                 let inner = inner.take().expect("polled after ready");
-                tokio::spawn(
-                    Daemon { inner, tx }
-                        .in_current_span()
-                        .map_err(|n| match n {}),
-                );
+                let daemon = async move {
+                    tokio::pin!(inner);
+                    loop {
+                        tokio::select! {
+                            _ = tx.closed() => {
+                                trace!("profile observation dropped");
+                                return;
+                            },
+                            profile = future::poll_fn(|cx|
+                                inner.as_mut().poll_profile(cx)
+                             ) => {
+                                match profile {
+                                    Err(error) => {
+                                        error!(%error, "profile client died");
+                                        return;
+                                    }
+                                    Ok(profile) => {
+                                        trace!(?profile, "publishing");
+                                        if tx.broadcast(profile).is_err() {
+                                            trace!("failed to publish profile");
+                                            return
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+                tokio::spawn(daemon.in_current_span());
 
-                Ok(rx.into())
+                Poll::Ready(Ok(rx))
             }
         }
     }
@@ -227,131 +292,100 @@ where
 
 impl<S, R> Inner<S, R>
 where
-    S: GrpcService<BoxBody>,
+    S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S::ResponseBody: Send,
+    <S::ResponseBody as Body>::Data: Send + 'static,
+    <S::ResponseBody as HttpBody>::Error:
+        Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
+    S::Future: Send,
     R: Recover,
+    R::Backoff: Unpin,
 {
     fn poll_rx(
-        rx: &mut grpc::Streaming<api::DestinationProfile, S::ResponseBody>,
-    ) -> Poll<Option<profiles::Routes>, grpc::Status> {
+        rx: Pin<&mut grpc::Streaming<api::DestinationProfile>>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<profiles::Routes, grpc::Status>>> {
         trace!("poll");
-        let profile = try_ready!(rx.poll()).map(|proto| {
-            debug!("profile received: {:?}", proto);
-            let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-            let routes = proto
-                .routes
-                .into_iter()
-                .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
-                .collect();
-            let dst_overrides = proto
-                .dst_overrides
-                .into_iter()
-                .filter_map(convert_dst_override)
-                .collect();
-            profiles::Routes {
-                routes,
-                dst_overrides,
-            }
+        let profile = ready!(rx.poll_next(cx)).map(|res| {
+            res.map(|proto| {
+                debug!("profile received: {:?}", proto);
+                let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
+                let routes = proto
+                    .routes
+                    .into_iter()
+                    .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
+                    .collect();
+                let dst_overrides = proto
+                    .dst_overrides
+                    .into_iter()
+                    .filter_map(convert_dst_override)
+                    .collect();
+                profiles::Routes {
+                    routes,
+                    dst_overrides,
+                }
+            })
         });
-        Ok(profile.into())
+        Poll::Ready(profile)
     }
 
-    fn poll_profile(&mut self) -> Poll<profiles::Routes, Error> {
+    #[project]
+    fn poll_profile(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<profiles::Routes, Error>> {
         let span = info_span!("poll_profile");
         let _enter = span.enter();
+
         loop {
-            self.state = match self.state {
-                State::Disconnected { ref mut backoff } => {
+            let mut this = self.as_mut().project();
+            #[project]
+            match this.state.as_mut().project() {
+                State::Disconnected { backoff } => {
                     trace!("disconnected");
-                    try_ready!(self.service.poll_ready().map_err(Into::<Error>::into));
-                    let future = self
-                        .service
-                        .get_profile(grpc::Request::new(self.request.clone()));
-                    State::Waiting {
-                        future,
-                        backoff: backoff.take(),
-                    }
+                    let mut svc = this.service.clone();
+                    let req = this.request.clone();
+                    let future =
+                        Box::pin(async move { svc.get_profile(grpc::Request::new(req)).await });
+                    let backoff = backoff.take();
+                    this.state.as_mut().set(State::Waiting { future, backoff });
                 }
-                State::Waiting {
-                    ref mut future,
-                    ref mut backoff,
-                } => {
+                State::Waiting { future, backoff } => {
                     trace!("waiting");
-                    match future.poll() {
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Ok(Async::Ready(rsp)) => State::Streaming(rsp.into_inner()),
+                    match ready!(Pin::new(future).poll(cx)) {
+                        Ok(rsp) => this.state.set(State::Streaming(rsp.into_inner())),
                         Err(e) => {
                             let error = e.into();
                             warn!(%error, "Could not fetch profile");
-                            let new_backoff = self.recover.recover(error)?;
-                            State::Disconnected {
-                                backoff: Some(backoff.take().unwrap_or(new_backoff)),
-                            }
+                            let new_backoff = this.recover.recover(error)?;
+                            let backoff = Some(backoff.take().unwrap_or(new_backoff));
+                            this.state.set(State::Disconnected { backoff });
                         }
                     }
                 }
-                State::Streaming(ref mut s) => {
+                State::Streaming(s) => {
                     trace!("streaming");
-                    let status = match Self::poll_rx(s) {
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Ok(Async::Ready(Some(profile))) => return Ok(profile.into()),
-                        Ok(Async::Ready(None)) => grpc::Status::new(grpc::Code::Ok, ""),
-                        Err(status) => status,
+                    let status = match ready!(Self::poll_rx(s, cx)) {
+                        Some(Ok(profile)) => return Poll::Ready(Ok(profile.into())),
+                        None => grpc::Status::new(grpc::Code::Ok, ""),
+                        Some(Err(status)) => status,
                     };
                     trace!(?status);
-                    let backoff = self.recover.recover(status.into())?;
-                    State::Backoff(Some(backoff))
+                    let backoff = this.recover.recover(status.into())?;
+                    this.state.set(State::Backoff(Some(backoff)));
                 }
                 State::Backoff(ref mut backoff) => {
                     trace!("backoff");
-                    let backoff = match backoff.as_mut().unwrap().poll().map_err(Into::into)? {
-                        Async::NotReady => return Ok(Async::NotReady),
-                        Async::Ready(Some(())) => backoff.take(),
-                        Async::Ready(None) => None,
+                    let backoff = match ready!(backoff.as_mut().unwrap().try_poll_next_unpin(cx)) {
+                        Some(e) => {
+                            e.map_err(Into::into)?;
+                            backoff.take()
+                        }
+                        None => None,
                     };
-                    State::Disconnected { backoff }
+                    this.state.set(State::Disconnected { backoff });
                 }
             };
-        }
-    }
-}
-
-// === impl Daemon ===
-
-impl<S, R> Future for Daemon<S, R>
-where
-    S: GrpcService<BoxBody>,
-    R: Recover,
-{
-    type Item = ();
-    type Error = Never;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let span = info_span!("daemon");
-        let _enter = span.enter();
-        trace!("poll");
-        loop {
-            match self.tx.poll_close() {
-                Ok(Async::NotReady) => {}
-                Ok(Async::Ready(())) | Err(()) => {
-                    trace!("profile observation dropped");
-                    return Ok(().into());
-                }
-            }
-
-            let profile = match self.inner.poll_profile() {
-                Ok(Async::NotReady) => return Ok(Async::NotReady),
-                Ok(Async::Ready(profile)) => profile,
-                Err(error) => {
-                    error!(%error, "profile client died");
-                    return Ok(().into());
-                }
-            };
-
-            trace!(?profile, "publishing");
-            if self.tx.broadcast(profile).is_err() {
-                trace!("failed to publish profile");
-                return Ok(().into());
-            }
         }
     }
 }
@@ -371,7 +405,7 @@ fn convert_route(
         set_route_retry(&mut route, retry_budget);
     }
     if let Some(timeout) = orig.timeout {
-        set_route_timeout(&mut route, timeout.into());
+        set_route_timeout(&mut route, timeout.try_into());
     }
     Some((req_match, route))
 }
@@ -439,7 +473,7 @@ fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> 
             profiles::RequestMatch::Path(re)
         }
         api::request_match::Match::Method(mm) => {
-            let m = mm.r#type.and_then(|m| m.try_as_http().ok())?;
+            let m = mm.r#type.and_then(|m| (&m).try_into().ok())?;
             profiles::RequestMatch::Method(m)
         }
     };
@@ -506,7 +540,7 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
         return None;
     }
     let ttl = match orig.ttl {
-        Some(pb_dur) => match pb_dur.into() {
+        Some(pb_dur) => match pb_dur.try_into() {
             Ok(dur) => {
                 if dur > Duration::from_secs(60) || dur < Duration::from_secs(1) {
                     warn!("retry_budget ttl invalid: {:?}", dur);
