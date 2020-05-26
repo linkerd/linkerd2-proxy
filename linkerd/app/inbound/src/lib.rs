@@ -68,11 +68,9 @@ impl Config {
     {
         let tcp_connect = self.build_tcp_connect(&metrics);
         let prevent_loop = PreventLoop::from(listen.listen_addr().port());
-        let http_loopback = prevent_loop.clone();
         let http_router = self.build_http_router(
             tcp_connect.clone(),
             prevent_loop,
-            http_loopback,
             profiles_client,
             tap_layer,
             metrics.clone(),
@@ -115,11 +113,10 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<C, P, L, S>(
+    pub fn build_http_router<C, P>(
         &self,
         tcp_connect: C,
         prevent_loop: impl Into<PreventLoop>,
-        http_loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
@@ -143,17 +140,6 @@ impl Config {
         C::Future: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
-        // The loopback router processes requests sent to the inbound port.
-        L: tower::Service<Target, Response = S> + Send + Clone + 'static,
-        L::Error: Into<Error>,
-        L::Future: Send,
-        S: tower::Service<
-                http::Request<http::glue::HttpBody>,
-                Response = http::Response<http::boxed::Payload>,
-            > + Send
-            + 'static,
-        S::Error: Into<Error>,
-        S::Future: Send,
     {
         let Config {
             proxy:
@@ -266,7 +252,6 @@ impl Config {
                     .push_on_response(svc::layers().box_http_response().box_http_request()),
             )
             .push(admit::AdmitLayer::new(prevent_loop))
-            .push_fallback_on_error::<prevent_loop::LoopPrevented, L>(http_loopback)
             .check_service::<Target>()
             .into_inner()
     }
