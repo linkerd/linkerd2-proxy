@@ -123,6 +123,8 @@ impl Config {
         let listen = bind.bind().map_err(Error::from)?;
         let listen_addr = listen.listen_addr();
 
+        let prevent_loop = PreventLoop::new(listen_addr.port());
+
         // The stack is served lazily since caching layers spawn tasks from
         // their constructor. This helps to ensure that tasks are spawned on the
         // same runtime as the proxy.
@@ -139,7 +141,7 @@ impl Config {
             // Forwards TCP streams that cannot be decoded as HTTP.
             let tcp_forward = tcp_connect
                 .clone()
-                .push(admit::AdmitLayer::new(PreventLoop::new(listen_addr.port())))
+                .push(admit::AdmitLayer::new(prevent_loop))
                 .push_map_target(|meta: tls::accept::Meta| {
                     TcpEndpoint::from(meta.addrs.target_addr())
                 })
@@ -181,7 +183,6 @@ impl Config {
                         let backoff = connect.backoff.clone();
                         move |_| Ok(backoff.stream())
                     }))
-                    .push(admit::AdmitLayer::new(PreventLoop::new(listen_addr.port())))
                     .push(observability.clone())
                     .push(identity_headers.clone())
                     .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
@@ -262,6 +263,8 @@ impl Config {
                                 .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
                         ),
                 )
+                // Avoid caching if it would loop.
+                .push(admit::AdmitLayer::new(prevent_loop))
                 .instrument(|endpoint: &Target<HttpEndpoint>| {
                     info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.inner.identity)
                 })
