@@ -79,6 +79,11 @@ impl Proxy {
         self
     }
 
+    pub fn inbound_ip(mut self, s: SocketAddr) -> Self {
+        self.inbound = Some(s);
+        self
+    }
+
     /// Adjust the server's 'addr'. This won't actually re-bind the server,
     /// it will just affect what the proxy think is the so_original_dst.
     ///
