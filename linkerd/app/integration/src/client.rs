@@ -132,11 +132,11 @@ impl Client {
             .to_string()
     }
 
-    pub async fn request_async(
+    pub fn request_async(
         &self,
         builder: http::request::Builder,
-    ) -> Result<Response, ClientError> {
-        self.send_req(builder.body(Bytes::new()).unwrap()).await
+    ) -> impl Future<Output = Result<Response, ClientError>> + Send + Sync + 'static {
+        self.send_req(builder.body(Bytes::new()).unwrap())
     }
 
     #[tokio::main]
