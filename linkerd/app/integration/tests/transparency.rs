@@ -6,7 +6,6 @@ use std::error::Error as _;
 use std::sync::mpsc;
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn outbound_http1() {
     let _ = trace_init();
 
@@ -22,7 +21,6 @@ fn outbound_http1() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn inbound_http1() {
     let _ = trace_init();
 
@@ -629,7 +627,6 @@ macro_rules! http1_tests {
         }
 
         #[tokio::test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         async fn http1_request_with_body_chunked() {
             let _ = trace_init();
 
@@ -742,7 +739,6 @@ macro_rules! http1_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn http1_bodyless_responses() {
             let _ = trace_init();
 
@@ -805,7 +801,6 @@ macro_rules! http1_tests {
         }
 
         #[tokio::test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         async fn http1_head_responses() {
             let _ = trace_init();
 
@@ -840,7 +835,6 @@ macro_rules! http1_tests {
         }
 
         #[tokio::test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         async fn http1_response_end_of_file() {
             let _ = trace_init();
 
@@ -990,7 +984,6 @@ fn http10_without_host() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn http1_one_connection_per_host() {
     let _ = trace_init();
 
@@ -1037,7 +1030,6 @@ fn http1_one_connection_per_host() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn http1_requests_without_host_have_unique_connections() {
     let _ = trace_init();
 
@@ -1164,7 +1156,6 @@ async fn http2_request_without_authority() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 async fn http2_rst_stream_is_propagated() {
     let _ = trace_init();
 

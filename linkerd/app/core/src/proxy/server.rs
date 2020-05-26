@@ -141,7 +141,7 @@ where
         + 'static,
     <H::Service as Service<http::Request<Body>>>::Future: Send + 'static,
     B: hyper::body::HttpBody + Default + Send + 'static,
-    B::Error: std::error::Error + Send + Sync + 'static,
+    B::Error: Into<Error>,
     B::Data: Send + 'static,
 {
     type Response = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;

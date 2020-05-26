@@ -851,7 +851,7 @@ dependencies = [
  "tokio-io",
  "tokio-rustls",
  "tonic",
- "tower 0.1.1",
+ "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
  "webpki",
@@ -1299,19 +1299,6 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.12"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic#b7dc966731ffc1223d2cde4472686ae2c7bb05d6"
-dependencies = [
- "h2 0.2.4",
- "http 0.2.1",
- "prost 0.6.1",
- "prost-types 0.6.1",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "linkerd2-proxy-api"
-version = "0.1.12"
 source = "git+https://github.com/linkerd/linkerd2-proxy-api#59d91c1d8787f907fbab2de5ca844c25e7aeb9f7"
 dependencies = [
  "bytes 0.4.11",
@@ -1327,6 +1314,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-proxy-api"
+version = "0.1.12"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8#c2dba642c7301b5b562c75fd6e2bd0a12ec763e8"
+dependencies = [
+ "h2 0.2.4",
+ "http 0.2.1",
+ "prost 0.6.1",
+ "prost-types 0.6.1",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
@@ -1335,7 +1335,7 @@ dependencies = [
  "http-body 0.3.1",
  "indexmap",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tonic)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
  "linkerd2-proxy-core",
  "pin-project",
  "prost 0.6.1",
@@ -1540,8 +1540,10 @@ dependencies = [
 name = "linkerd2-request-filter"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
- "tower 0.1.1",
+ "futures 0.3.4",
+ "linkerd2-error",
+ "pin-project",
+ "tower 0.3.1",
  "tracing",
 ]
 
