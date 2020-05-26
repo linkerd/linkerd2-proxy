@@ -81,42 +81,6 @@ fn inbound_tcp() {
     assert_eq!(tcp_client.read(), msg2.as_bytes());
 }
 
-#[test]
-#[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn loop_outbound_http1() {
-    let _ = trace_init();
-
-    let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10751));
-
-    let mut env = TestEnv::new();
-    env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, listen_addr.to_string());
-    let _proxy = proxy::new()
-        .outbound_ip(listen_addr)
-        .run_with_test_env_and_keep_ports(env);
-
-    let client = client::http1(listen_addr, "some.invalid.example.com");
-    let rsp = client.request(client.request_builder("/").method("GET"));
-    assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
-}
-
-#[test]
-#[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn loop_inbound_http1() {
-    let _ = trace_init();
-
-    let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10752));
-
-    let mut env = TestEnv::new();
-    env.put(app::env::ENV_INBOUND_LISTEN_ADDR, listen_addr.to_string());
-    let _proxy = proxy::new()
-        .inbound_ip(listen_addr)
-        .run_with_test_env_and_keep_ports(env);
-
-    let client = client::http1(listen_addr, listen_addr.to_string());
-    let rsp = client.request(client.request_builder("/").method("GET"));
-    assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
-}
-
 fn test_server_speaks_first(env: TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
