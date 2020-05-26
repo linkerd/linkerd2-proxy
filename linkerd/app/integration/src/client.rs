@@ -203,7 +203,8 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
         mpsc::unbounded_channel::<(Request, oneshot::Sender<Result<Response, ClientError>>)>();
     let (running_tx, running_rx) = running();
 
-    let tname = format!("support {:?} server (test={})", version, thread_name(),);
+    let test_name = thread_name();
+    let tname = format!("support {:?} client (test={})", version, test_name);
 
     ::std::thread::Builder::new()
         .name(tname)
@@ -235,12 +236,13 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
                 Run::Http2 => true,
             };
 
-            let span = info_span!("test client", peer_addr = %addr);
+            let span = info_span!("test client", peer_addr = %addr, ?version, test = %test_name);
             let client = hyper::Client::builder()
                 .http2_only(http2_only)
                 .build::<Conn, hyper::Body>(conn);
 
             let work = async move {
+                tracing::trace!("client task started");
                 let mut rx = rx;
                 while let Some((req, cb)) = rx.recv().await {
                     let req = req.map(hyper::Body::from);
