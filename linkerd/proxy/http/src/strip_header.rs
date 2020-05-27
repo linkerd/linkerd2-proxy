@@ -157,7 +157,7 @@ pub mod response {
             let this = self.project();
             let mut res = ready!(this.inner.try_poll(cx))?;
             res.headers_mut().remove(this.header.clone());
-            Poll::Ready(Ok(res.into()))
+            Poll::Ready(Ok(res))
         }
     }
 }
