@@ -23,7 +23,7 @@ use linkerd2_app_core::{
     proxy::{
         self,
         detect::DetectProtocolLayer,
-        http::{self, normalize_uri, orig_proto /* strip_header*/},
+        http::{self, normalize_uri, orig_proto, strip_header},
         identity,
         server::{Protocol as ServerProtocol, ProtocolDetect, Server},
         tap, tcp,
@@ -221,10 +221,10 @@ impl Config {
                 ;
 
             // Strips headers that may be set by the inbound router.
-            // let http_strip_headers = svc::layers()
-            //     .push(strip_header::request::layer(L5D_REMOTE_IP))
-            //     .push(strip_header::request::layer(L5D_CLIENT_ID))
-            //     .push(strip_header::response::layer(L5D_SERVER_ID));
+            let http_strip_headers = svc::layers()
+                .push(strip_header::request::layer(L5D_REMOTE_IP))
+                .push(strip_header::request::layer(L5D_CLIENT_ID))
+                .push(strip_header::response::layer(L5D_SERVER_ID));
 
             // Handles requests as they are initially received by the proxy.
             let http_admit_request = svc::layers()
@@ -263,7 +263,7 @@ impl Config {
                 .push_timeout(dispatch_timeout)
                 // Removes the override header after it has been used to
                 // determine a reuquest target.
-                // .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+                .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
                 // Routes each request to a target, obtains a service for that
                 // target, and dispatches the request.
                 .instrument_from_target()
@@ -271,7 +271,7 @@ impl Config {
                 .check_new_service::<tls::accept::Meta>()
                 // Used by tap.
                 // .push_http_insert_target()
-                // .push_on_response(http_strip_headers)
+                .push_on_response(http_strip_headers)
                 .push_on_response(http_admit_request)
                 // .push_on_response(http_server_observability)
                 .push_on_response(metrics.stack.layer(stack_labels("source")))

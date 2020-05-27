@@ -18,7 +18,7 @@ pub mod normalize_uri;
 pub mod orig_proto;
 // pub mod override_authority;
 pub mod settings;
-// pub mod strip_header;
+pub mod strip_header;
 pub mod timeout;
 pub mod upgrade;
 mod version;
