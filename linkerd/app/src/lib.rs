@@ -16,8 +16,9 @@ pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
+    proxy::core::listen::{Bind, Listen},
     svc::{self, NewService},
-    Error,
+    Error, Never,
 };
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
@@ -56,9 +57,10 @@ pub struct App {
     drain: drain::Signal,
     dst: ControlAddr,
     identity: identity::Identity,
-    inbound: inbound::Inbound,
+    inbound_addr: SocketAddr,
     oc_collector: oc_collector::OcCollector,
-    outbound: outbound::Outbound,
+    outbound_addr: SocketAddr,
+    start_proxy: Box<dyn Future<Item = (), Error = Never> + Send + 'static>,
     tap: tap::Tap,
 }
 
@@ -141,36 +143,69 @@ impl Config {
         };
 
         let dst_addr = dst.addr.clone();
-        let inbound = {
-            let inbound = inbound;
-            let identity = identity.local();
-            let profiles = dst.profiles.clone();
-            let tap = tap.layer();
-            let metrics = metrics.inbound;
-            let oc = oc_collector.span_sink();
-            let drain = drain_rx.clone();
-            info_span!("inbound")
-                .in_scope(move || inbound.build(identity, profiles, tap, metrics, oc, drain))?
-        };
-        let outbound = {
-            let identity = identity.local();
-            let dns = dns.resolver;
-            let tap = tap.layer();
-            let metrics = metrics.outbound;
-            let oc = oc_collector.span_sink();
-            info_span!("outbound").in_scope(move || {
-                outbound.build(
-                    identity,
-                    dst.resolve,
-                    dns,
-                    dst.profiles,
-                    tap,
-                    metrics,
-                    oc,
-                    drain_rx,
-                )
-            })?
-        };
+
+        let inbound_listen = inbound.proxy.server.bind.bind()?;
+        let inbound_addr = inbound_listen.listen_addr();
+        let inbound_metrics = metrics.inbound;
+
+        let outbound_listen = outbound.proxy.server.bind.bind()?;
+        let outbound_addr = outbound_listen.listen_addr();
+        let outbound_metrics = metrics.outbound;
+
+        let resolver = dns.resolver;
+        let local_identity = identity.local();
+        let tap_layer = tap.layer();
+        let oc_span_sink = oc_collector.span_sink();
+
+        let start_proxy = Box::new(future::lazy(move || {
+            let outbound_connect =
+                outbound.build_tcp_connect(local_identity.clone(), &outbound_metrics);
+
+            let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
+
+            let outbound_http = outbound.build_http_router(
+                outbound_addr.port(),
+                outbound_connect.clone(),
+                dst.resolve,
+                refine,
+                dst.profiles.clone(),
+                tap_layer.clone(),
+                outbound_metrics.clone(),
+                oc_span_sink.clone(),
+            );
+
+            tokio::spawn(
+                outbound
+                    .build_server(
+                        outbound_listen,
+                        outbound_addr.port(),
+                        outbound_connect,
+                        outbound_http,
+                        outbound_metrics,
+                        oc_span_sink.clone(),
+                        drain_rx.clone(),
+                    )
+                    .map_err(|e| panic!("outbound failed: {}", e))
+                    .instrument(info_span!("outbound")),
+            );
+
+            tokio::spawn(
+                inbound
+                    .build(
+                        inbound_listen,
+                        local_identity,
+                        dst.profiles,
+                        tap_layer.clone(),
+                        inbound_metrics,
+                        oc_span_sink,
+                        drain_rx,
+                    )
+                    .map_err(|e| panic!("inbound failed: {}", e))
+                    .instrument(info_span!("inbound")),
+            );
+
+            Ok::<(), Never>(())
+        }));
 
         Ok(App {
             admin,
@@ -178,9 +213,10 @@ impl Config {
             dst: dst_addr,
             drain: drain_tx,
             identity,
-            inbound,
+            inbound_addr,
             oc_collector,
-            outbound,
+            outbound_addr,
+            start_proxy,
             tap,
         })
     }
@@ -192,11 +228,11 @@ impl App {
     }
 
     pub fn inbound_addr(&self) -> SocketAddr {
-        self.inbound.listen_addr
+        self.inbound_addr
     }
 
     pub fn outbound_addr(&self) -> SocketAddr {
-        self.outbound.listen_addr
+        self.outbound_addr
     }
 
     pub fn tap_addr(&self) -> Option<SocketAddr> {
@@ -237,9 +273,8 @@ impl App {
             dns,
             drain,
             identity,
-            inbound,
             oc_collector,
-            outbound,
+            start_proxy,
             tap,
             ..
         } = self;
@@ -326,18 +361,7 @@ impl App {
             })
             .expect("admin");
 
-        tokio::spawn(
-            outbound
-                .serve
-                .map_err(|e| panic!("outbound died: {}", e))
-                .instrument(info_span!("outbound")),
-        );
-        tokio::spawn(
-            inbound
-                .serve
-                .map_err(|e| panic!("inbound died: {}", e))
-                .instrument(info_span!("inbound")),
-        );
+        tokio::spawn(start_proxy.map_err(|n| match n {}));
 
         drain
     }

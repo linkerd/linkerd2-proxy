@@ -85,13 +85,13 @@ impl<O: OrigDstAddr> listen::Bind for Bind<O> {
     type Connection = Connection;
     type Listen = Listen<O>;
 
-    fn bind(self) -> std::io::Result<Listen<O>> {
+    fn bind(&self) -> std::io::Result<Listen<O>> {
         let tcp = std::net::TcpListener::bind(self.bind_addr)?;
         let listen_addr = tcp.local_addr()?;
         Ok(Listen {
             listen_addr,
             keepalive: self.keepalive,
-            orig_dst_addr: self.orig_dst_addr,
+            orig_dst_addr: self.orig_dst_addr.clone(),
             state: State::Init(Some(tcp)),
         })
     }
