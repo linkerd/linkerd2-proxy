@@ -173,10 +173,10 @@ impl Config {
                     // HTTP/1.x fallback is supported as needed.
                     .push(http::MakeClientLayer::new(connect.h2_settings))
                     // Re-establishes a connection when the client fails.
-                    // .push(reconnect::layer({
-                    //     let backoff = connect.backoff.clone();
-                    //     move |_| Ok(backoff.stream())
-                    // }))
+                    .push(reconnect::layer({
+                        let backoff = connect.backoff.clone();
+                        move |_| Ok(backoff.stream())
+                    }))
                     .push(observability.clone())
                     .push(identity_headers.clone())
                     // .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))

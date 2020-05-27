@@ -122,10 +122,10 @@ impl Config {
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http_endpoint = tcp_connect
                 .push(http::MakeClientLayer::new(connect.h2_settings))
-                // .push(reconnect::layer({
-                //     let backoff = connect.backoff.clone();
-                //     move |_| Ok(backoff.stream())
-                // }))
+                .push(reconnect::layer({
+                    let backoff = connect.backoff.clone();
+                    move |_| Ok(backoff.stream())
+                }))
                 .check_service::<HttpEndpoint>();
 
             let http_target_observability = svc::layers()

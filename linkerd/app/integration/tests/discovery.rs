@@ -228,7 +228,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_error_reconnects_after_backoff() {
             let env = TestEnv::new();
 
