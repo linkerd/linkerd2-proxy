@@ -15,7 +15,7 @@ use tokio::sync::watch;
 use tower::retry::budget::Budget;
 
 mod concrete;
-// mod requests;
+mod requests;
 // pub mod service;
 
 // pub use self::service::Layer;
