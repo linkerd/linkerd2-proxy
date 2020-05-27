@@ -397,14 +397,13 @@ impl Config {
                 })
                 .push_on_response(svc::layers().box_http_response().box_http_request())
                 .check_service::<Logical<HttpEndpoint>>()
-                //     .check_service::<Logical<HttpEndpoint>>()
                 //     // Sets the canonical-dst header on all outbound requests.
                 //     .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
                 //     // Strips headers that may be set by this proxy.
-                //     .push(http::canonicalize::Layer::new(
-                //         dns_refine_cache,
-                //         canonicalize_timeout,
-                //     ))
+                .push(http::canonicalize::Layer::new(
+                    dns_refine_cache,
+                    canonicalize_timeout,
+                ))
                 //     .push_on_response(
                 //         // Strips headers that may be set by this proxy.
                 //         svc::layers()
