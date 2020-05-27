@@ -13,10 +13,14 @@
 use super::concrete;
 use super::requests::Requests;
 use super::{GetRoutes, OverrideDestination, Route, Routes, WithRoute};
-use futures::{try_ready, Async, Future, Poll, Stream};
+use futures::{ready, TryFuture};
 use linkerd2_error::Error;
 use linkerd2_stack::{NewService, ProxyService};
+use pin_project::pin_project;
 use rand::{rngs::SmallRng, SeedableRng};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio::sync::watch;
 use tracing::{debug, trace};
 
@@ -39,7 +43,9 @@ pub struct MakeSvc<G, R, CMake, O = ()> {
     dst_override: O,
 }
 
+#[pin_project]
 pub struct MakeFuture<T, F, R, CMake, O> {
+    #[pin]
     future: F,
     inner: Option<Inner<T, R, CMake, O>>,
 }
@@ -122,8 +128,8 @@ where
     type Error = Error;
     type Future = MakeFuture<T, G::Future, R, C, ()>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.get_routes.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.get_routes.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -153,8 +159,8 @@ where
     type Error = Error;
     type Future = MakeFuture<T, G::Future, R, C, SmallRng>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.get_routes.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(ready!(self.get_routes.poll_ready(cx)).map_err(Into::into))
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -176,16 +182,16 @@ where
 impl<T, F, R, C> Future for MakeFuture<T, F, R, C, ()>
 where
     T: WithRoute + Clone,
-    F: Future<Item = watch::Receiver<Routes>>,
+    F: TryFuture<Ok = watch::Receiver<Routes>>,
     F::Error: Into<Error>,
     R: NewService<T::Route>,
 {
-    type Item = Service<T, R, Forward<C>>;
-    type Error = Error;
+    type Output = Result<Service<T, R, Forward<C>>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         trace!("poll");
-        let profiles = try_ready!(self.future.poll().map_err(Into::into));
+        let this = self.project();
+        let profiles = ready!(this.future.try_poll(cx)).map_err(Into::into)?;
 
         let Inner {
             target,
@@ -193,7 +199,7 @@ where
             default_route,
             make_concrete,
             dst_override: (),
-        } = self.inner.take().unwrap();
+        } = this.inner.take().unwrap();
 
         let requests = Requests::new(target.clone(), make_route, default_route);
         let svc = Service {
@@ -203,23 +209,23 @@ where
         };
 
         trace!("forwarding profile service ready");
-        Ok(svc.into())
+        Poll::Ready(Ok(svc))
     }
 }
 
 impl<T, F, R, C> Future for MakeFuture<T, F, R, C, SmallRng>
 where
     T: WithRoute + Clone,
-    F: Future<Item = watch::Receiver<Routes>>,
+    F: TryFuture<Ok = watch::Receiver<Routes>>,
     F::Error: Into<Error>,
     R: NewService<T::Route> + Clone,
 {
-    type Item = Service<T, R, Override<C>>;
-    type Error = Error;
+    type Output = Result<Service<T, R, Override<C>>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         trace!("poll");
-        let profiles = try_ready!(self.future.poll().map_err(Into::into));
+        let this = self.project();
+        let profiles = ready!(this.future.try_poll(cx)).map_err(Into::into)?;
 
         let Inner {
             target,
@@ -227,7 +233,7 @@ where
             default_route,
             make_concrete,
             dst_override: rng,
-        } = self.inner.take().unwrap();
+        } = this.inner.take().unwrap();
 
         let requests = Requests::new(target.clone(), make_route, default_route);
         let (service, update) = concrete::default(make_concrete, rng);
@@ -238,13 +244,15 @@ where
         };
 
         trace!("overriding profile service ready");
-        Ok(svc.into())
+        Poll::Ready(Ok(svc))
     }
 }
 
 mod sealed {
+    use std::task::Context;
+
     pub trait PollUpdate {
-        fn poll_update(&mut self);
+        fn poll_update(&mut self, cx: &mut Context<'_>);
     }
 }
 
@@ -255,10 +263,10 @@ where
 {
     // Drive the profiles stream to notready or completion, capturing the
     // most recent update.
-    fn poll_update(&mut self) {
+    fn poll_update(&mut self, cx: &mut Context<'_>) {
         let mut profile = None;
-        while let Some(Async::Ready(Some(update))) = self.profiles.poll().ok() {
-            profile = Some(update);
+        while let Poll::Ready(Some(update)) = self.profiles.poll_recv_ref(cx) {
+            profile = Some(update.clone());
         }
 
         if let Some(profile) = profile {
@@ -289,10 +297,10 @@ where
 {
     // Drive the profiles stream to notready or completion, capturing the
     // most recent update.
-    fn poll_update(&mut self) {
+    fn poll_update(&mut self, cx: &mut Context<'_>) {
         let mut profile = None;
-        while let Some(Async::Ready(Some(update))) = self.profiles.poll().ok() {
-            profile = Some(update);
+        while let Poll::Ready(Some(update)) = self.profiles.poll_recv_ref(cx) {
+            profile = Some(update.clone());
         }
 
         if let Some(profile) = profile {
@@ -314,9 +322,9 @@ where
     type Error = C::Error;
     type Future = ProxyConcrete<Requests<T, R>, C::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        sealed::PollUpdate::poll_update(self);
-        self.concrete.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        sealed::PollUpdate::poll_update(self, cx);
+        self.concrete.poll_ready(cx)
     }
 
     fn call(&mut self, target: U) -> Self::Future {
@@ -329,19 +337,21 @@ where
     }
 }
 
+#[pin_project]
 pub struct ProxyConcrete<P, F> {
     proxy: Option<P>,
+    #[pin]
     future: F,
 }
 
-impl<F: Future, P> Future for ProxyConcrete<P, F> {
-    type Item = ProxyService<P, F::Item>;
-    type Error = F::Error;
+impl<F: TryFuture, P> Future for ProxyConcrete<P, F> {
+    type Output = Result<ProxyService<P, F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.future.poll());
-        let service = ProxyService::new(self.proxy.take().unwrap(), inner);
-        Ok(service.into())
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.future.try_poll(cx))?;
+        let service = ProxyService::new(this.proxy.take().unwrap(), inner);
+        Poll::Ready(Ok(service))
     }
 }
 
@@ -350,8 +360,8 @@ impl<T, M: tower::Service<T>> tower::Service<T> for Forward<M> {
     type Error = M::Error;
     type Future = M::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
     }
 
     fn call(&mut self, req: T) -> Self::Future {
@@ -369,8 +379,8 @@ where
     type Error = Error;
     type Future = <concrete::Service<M> as tower::Service<T>>::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx)
     }
 
     fn call(&mut self, req: T) -> Self::Future {

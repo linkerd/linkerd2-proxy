@@ -16,9 +16,9 @@ use tower::retry::budget::Budget;
 
 mod concrete;
 mod requests;
-// pub mod service;
+pub mod service;
 
-// pub use self::service::Layer;
+pub use self::service::Layer;
 
 #[derive(Clone, Debug)]
 pub struct WeightedAddr {

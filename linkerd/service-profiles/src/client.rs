@@ -5,7 +5,7 @@ use http;
 use http_body::Body as HttpBody;
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_dns as dns;
-use linkerd2_error::{Error, Never, Recover};
+use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
 use pin_project::{pin_project, project};
 use regex::Regex;
@@ -14,7 +14,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::watch;
 use tokio::time::{self, Delay};
 use tonic::{
