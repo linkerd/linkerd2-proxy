@@ -939,11 +939,12 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.1.26",
+ "futures 0.3.4",
  "http 0.2.1",
  "indexmap",
  "linkerd2-app-core",
  "quickcheck",
- "tokio 0.1.22",
+ "tokio 0.2.21",
  "tower 0.3.1",
  "tower-grpc",
  "tracing",
@@ -995,6 +996,7 @@ name = "linkerd2-app-outbound"
 version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
+ "futures 0.1.26",
  "futures 0.3.4",
  "http 0.1.21",
  "indexmap",
@@ -1003,7 +1005,7 @@ dependencies = [
  "linkerd2-retry",
  "pin-project",
  "quickcheck",
- "tokio 0.1.22",
+ "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
 ]

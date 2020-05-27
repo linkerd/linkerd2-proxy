@@ -1,4 +1,3 @@
-use indexmap::IndexMap;
 use linkerd2_app_core::{
     // classify,
     dst,
@@ -7,7 +6,7 @@ use linkerd2_app_core::{
     http_request_l5d_override_dst_addr,
     metric_labels,
     profiles,
-    proxy::{http, identity, tap},
+    proxy::http,
     router,
     stack_tracing,
     transport::{connect, tls},
@@ -19,7 +18,6 @@ use linkerd2_app_core::{
 };
 use std::fmt;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

@@ -15,6 +15,7 @@ mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
 
 [dependencies]
 futures = "0.1"
+futures_03 = { package = "futures", version = "0.3" }
 indexmap = "1.0"
 ipnet = "1.0"
 linkerd2-app-core = { path = "./core" }
@@ -27,7 +28,6 @@ tokio = "0.1.14"
 tonic = { version = "0.2", default-features = false, features = ["prost"] }
 tracing = "0.1.9"
 tracing-futures = { version = "0.1", features = ["std-future"]}
-futures_03 = { package = "futures", version = "0.3" }
 tokio-compat = "0.1"
 tokio_02 = {package = "tokio", version = "0.2", features = ["rt-util"] }
 http-body = "0.3"
