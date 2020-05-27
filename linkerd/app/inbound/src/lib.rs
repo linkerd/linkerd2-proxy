@@ -23,7 +23,7 @@ use linkerd2_app_core::{
     proxy::{
         self,
         detect::DetectProtocolLayer,
-        http::{self, normalize_uri /* orig_proto, strip_header*/},
+        http::{self, normalize_uri, orig_proto, strip_header},
         identity,
         server::{Protocol as ServerProtocol, ProtocolDetect, Server},
         tap, tcp,
@@ -122,10 +122,10 @@ impl Config {
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http_endpoint = tcp_connect
                 .push(http::MakeClientLayer::new(connect.h2_settings))
-                // .push(reconnect::layer({
-                //     let backoff = connect.backoff.clone();
-                //     move |_| Ok(backoff.stream())
-                // }))
+                .push(reconnect::layer({
+                    let backoff = connect.backoff.clone();
+                    move |_| Ok(backoff.stream())
+                }))
                 .check_service::<HttpEndpoint>();
 
             let http_target_observability = svc::layers()
@@ -221,23 +221,24 @@ impl Config {
                 ;
 
             // Strips headers that may be set by the inbound router.
-            // let http_strip_headers = svc::layers()
-            //     .push(strip_header::request::layer(L5D_REMOTE_IP))
-            //     .push(strip_header::request::layer(L5D_CLIENT_ID))
-            //     .push(strip_header::response::layer(L5D_SERVER_ID));
+            let http_strip_headers = svc::layers()
+                .push(strip_header::request::layer(L5D_REMOTE_IP))
+                .push(strip_header::request::layer(L5D_CLIENT_ID))
+                .push(strip_header::response::layer(L5D_SERVER_ID));
 
             // Handles requests as they are initially received by the proxy.
             let http_admit_request = svc::layers()
                 // Downgrades the protocol if upgraded by an outbound proxy.
-                // .push(svc::layer::mk(orig_proto::Downgrade::new))
-                // // Limits the number of in-flight requests.
+                .push(svc::layer::mk(orig_proto::Downgrade::new))
+                // Limits the number of in-flight requests.
                 // .push_concurrency_limit(max_in_flight_requests)
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
                 .push_failfast(dispatch_timeout)
                 // .push(metrics.http_errors)
                 // Synthesizes responses for proxy errors.
-                .push(errors::layer());
+                // .push(errors::layer())
+                ;
 
             // let http_server_observability = svc::layers()
             //     .push(TraceContextLayer::new(span_sink.map(|span_sink| {
@@ -262,7 +263,7 @@ impl Config {
                 .push_timeout(dispatch_timeout)
                 // Removes the override header after it has been used to
                 // determine a reuquest target.
-                // .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+                .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
                 // Routes each request to a target, obtains a service for that
                 // target, and dispatches the request.
                 .instrument_from_target()
@@ -270,7 +271,7 @@ impl Config {
                 .check_new_service::<tls::accept::Meta>()
                 // Used by tap.
                 // .push_http_insert_target()
-                // .push_on_response(http_strip_headers)
+                .push_on_response(http_strip_headers)
                 .push_on_response(http_admit_request)
                 // .push_on_response(http_server_observability)
                 .push_on_response(metrics.stack.layer(stack_labels("source")))
@@ -283,7 +284,7 @@ impl Config {
 
             let tcp_server = Server::new(
                 TransportLabels,
-                // metrics.transport,
+                metrics.transport,
                 tcp_forward.into_inner(),
                 http_server.into_inner(),
                 h2_settings,

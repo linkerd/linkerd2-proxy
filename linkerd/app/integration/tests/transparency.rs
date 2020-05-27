@@ -1089,7 +1089,6 @@ fn http1_requests_without_host_have_unique_connections() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 async fn retry_reconnect_errors() {
     let _ = trace_init();
 
@@ -1108,7 +1107,7 @@ async fn retry_reconnect_errors() {
     // wait until metrics has seen our connection, this can be flaky depending on
     // all the other threads currently running...
     assert_eventually_contains!(
-        metrics.get("/metrics"),
+        metrics.get_async("/metrics").await,
         "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
     );
 
