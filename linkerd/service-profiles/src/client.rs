@@ -37,8 +37,6 @@ pub struct Client<S, R> {
 
 pub type Receiver = watch::Receiver<profiles::Routes>;
 
-type Sender = watch::Sender<profiles::Routes>;
-
 #[derive(Clone, Debug)]
 pub struct InvalidProfileAddr(Addr);
 
@@ -60,15 +58,6 @@ where
 {
     Invalid(Addr),
     Pending(#[pin] Option<Inner<S, R>>, #[pin] Delay),
-}
-
-struct Daemon<S, R>
-where
-    S: GrpcService<BoxBody>,
-    R: Recover,
-{
-    tx: Sender,
-    inner: Inner<S, R>,
 }
 
 #[pin_project]
@@ -155,7 +144,7 @@ where
     type Error = Error;
     type Future = ProfileFuture<S, R>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // Tonic will internally drive the client service to readiness.
         Poll::Ready(Ok(()))
     }
