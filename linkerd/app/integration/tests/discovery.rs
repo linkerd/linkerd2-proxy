@@ -8,7 +8,6 @@ macro_rules! generate_tests {
         use linkerd2_proxy_api as pb;
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_asks_controller_api() {
             let _ = trace_init();
             let srv = $make_server().route("/", "hello").route("/bye", "bye").run();
@@ -25,7 +24,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_reconnects_if_controller_stream_ends() {
             let _ = trace_init();
 
@@ -88,7 +86,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_falls_back_to_orig_dst_when_outside_search_path() {
             let _ = trace_init();
 
@@ -107,7 +104,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_falls_back_to_orig_dst_after_invalid_argument() {
             let _ = trace_init();
 
@@ -208,7 +204,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_asks_controller_without_orig_dst() {
             let _ = TestEnv::new();
 

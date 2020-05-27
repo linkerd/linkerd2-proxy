@@ -11,7 +11,7 @@ Implements the Resolve trait using the proxy's gRPC API
 [dependencies]
 futures = "0.3"
 linkerd2-identity = { path = "../../identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tonic" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "c2dba642c7301b5b562c75fd6e2bd0a12ec763e8" }
 linkerd2-proxy-core = { path = "../core" }
 prost = "0.6"
 http = "0.2"
