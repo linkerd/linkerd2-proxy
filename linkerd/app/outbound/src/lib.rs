@@ -420,7 +420,7 @@ impl Config {
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
                 .push_failfast(dispatch_timeout)
-                .push(metrics.http_errors)
+                // .push(metrics.http_errors)
                 // Synthesizes responses for proxy errors.
                 // .push(errors::layer())
                 // Initiates OpenCensus tracing.
@@ -440,7 +440,7 @@ impl Config {
 
                 // // Used by tap.
                 // .push_http_insert_target()
-                // .push_on_response(http_admit_request)
+                .push_on_response(http_admit_request)
                 .push_on_response(metrics.stack.layer(stack_labels("source")))
                 .instrument(
                     |src: &tls::accept::Meta| {
