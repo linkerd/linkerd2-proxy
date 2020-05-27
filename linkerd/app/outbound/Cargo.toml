@@ -11,14 +11,14 @@ Configures and runs the outbound proxy
 [dependencies]
 bytes = "0.4"
 http = "0.1"
-futures = "0.1"
+futures = "0.3"
 indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-retry = { path = "../../retry" }
 tokio = "0.1.14"
-tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 tracing = "0.1.9"
+pin-project = "0.4"
 
 [dependencies.tower]
 version = "0.3"

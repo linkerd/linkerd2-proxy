@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 linkerd2-error = { path = "../error" }
-futures = "0.1"
-tower = "0.1"
+futures = "0.3"
+tower = { version = "0.3", default-features = false }
 tracing = "0.1"
+pin-project = "0.4"

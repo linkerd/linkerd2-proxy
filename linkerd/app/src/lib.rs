@@ -126,10 +126,10 @@ impl Config {
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns))
-                    // .push(reconnect::layer({
-                    //     let backoff = dst.control.connect.backoff;
-                    //     move |_| Ok(backoff.stream())
-                    // }))
+                    .push(reconnect::layer({
+                        let backoff = dst.control.connect.backoff;
+                        move |_| Ok(backoff.stream())
+                    }))
                     .push(metrics.into_layer::<classify::Response>())
                     .push(control::add_origin::Layer::new())
                     .into_new_service()

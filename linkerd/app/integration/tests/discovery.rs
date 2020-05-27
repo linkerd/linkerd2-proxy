@@ -228,7 +228,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_error_reconnects_after_backoff() {
             let env = TestEnv::new();
 
@@ -274,7 +273,6 @@ macro_rules! generate_tests {
             const IP_2: &'static str = "127.0.0.1";
 
             #[test]
-            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn outbound_should_strip() {
                 let _ = trace_init();
                 let header = HeaderValue::from_static(IP_1);
@@ -295,7 +293,6 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn inbound_should_strip() {
                 let _ = trace_init();
                 let header = HeaderValue::from_static(IP_1);
@@ -561,7 +558,6 @@ macro_rules! generate_tests {
             }
 
             #[tokio::test]
-            #[cfg_attr(not(feature = "nyi"), ignore)]
             async fn inbound_still_routes_to_orig_dst() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
@@ -738,7 +734,6 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_should_strip_l5d_client_id() {
         let _ = trace_init();
 
@@ -765,7 +760,6 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_should_strip_l5d_client_id() {
         let _ = trace_init();
 
@@ -793,7 +787,6 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_should_strip_l5d_server_id() {
         let _ = trace_init();
 
@@ -823,7 +816,6 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_should_strip_l5d_server_id() {
         let _ = trace_init();
 

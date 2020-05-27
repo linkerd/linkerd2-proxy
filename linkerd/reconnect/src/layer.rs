@@ -1,6 +1,7 @@
 use super::Service;
-use futures::{future, Poll};
+use futures::future;
 use linkerd2_error::{Error, Never, Recover};
+use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
 pub struct Layer<R: Recover> {
@@ -41,15 +42,16 @@ impl<T, R, M> tower::Service<T> for MakeService<R, M>
 where
     T: Clone,
     R: Recover + Clone,
+    R::Backoff: Unpin,
     M: tower::Service<T> + Clone,
     M::Error: Into<Error>,
 {
     type Response = Service<T, R, M>;
     type Error = Never;
-    type Future = future::FutureResult<Self::Response, Self::Error>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {

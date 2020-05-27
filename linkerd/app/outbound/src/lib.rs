@@ -57,10 +57,10 @@ use tracing::info_span;
 // #[allow(dead_code)] // TODO #2597
 // mod add_server_id_on_rsp;
 mod endpoint;
-// mod orig_proto_upgrade;
+mod orig_proto_upgrade;
 // mod require_identity_on_endpoint;
 
-// use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
+use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
 // use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
@@ -159,9 +159,9 @@ impl Config {
                 let identity_headers = svc::layers()
                     .push_on_response(
                         svc::layers()
-                            // .push(http::strip_header::response::layer(L5D_REMOTE_IP))
-                            // .push(http::strip_header::response::layer(L5D_SERVER_ID))
-                            // .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
+                            .push(http::strip_header::response::layer(L5D_REMOTE_IP))
+                            .push(http::strip_header::response::layer(L5D_SERVER_ID))
+                            .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
                     )
                     // .push(MakeRequireIdentityLayer::new())
                     ;
@@ -173,10 +173,10 @@ impl Config {
                     // HTTP/1.x fallback is supported as needed.
                     .push(http::MakeClientLayer::new(connect.h2_settings))
                     // Re-establishes a connection when the client fails.
-                    // .push(reconnect::layer({
-                    //     let backoff = connect.backoff.clone();
-                    //     move |_| Ok(backoff.stream())
-                    // }))
+                    .push(reconnect::layer({
+                        let backoff = connect.backoff.clone();
+                        move |_| Ok(backoff.stream())
+                    }))
                     .push(observability.clone())
                     .push(identity_headers.clone())
                     // .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
@@ -186,7 +186,7 @@ impl Config {
                     //
                     // This sets headers so that the inbound proxy can downgrade the request
                     // properly.
-                    // .push(OrigProtoUpgradeLayer::new())
+                    .push(OrigProtoUpgradeLayer::new())
                     // .check_service::<Target<HttpEndpoint>>()
                     .instrument(|endpoint: &Target<HttpEndpoint>| {
                         info_span!("endpoint", peer.addr = %endpoint.inner.addr)
@@ -399,17 +399,16 @@ impl Config {
                 .check_service::<Logical<HttpEndpoint>>()
                 //     // Sets the canonical-dst header on all outbound requests.
                 //     .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
-                //     // Strips headers that may be set by this proxy.
                 .push(http::canonicalize::Layer::new(
                     dns_refine_cache,
                     canonicalize_timeout,
                 ))
-                //     .push_on_response(
-                //         // Strips headers that may be set by this proxy.
-                //         svc::layers()
-                //             .push(http::strip_header::request::layer(L5D_CLIENT_ID))
-                //             .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
-                //     )
+                .push_on_response(
+                    // Strips headers that may be set by this proxy.
+                    svc::layers()
+                        .push(http::strip_header::request::layer(L5D_CLIENT_ID))
+                        .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
+                )
                 .check_service::<Logical<HttpEndpoint>>()
                 .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr));
 
@@ -450,7 +449,7 @@ impl Config {
 
             let tcp_server = Server::new(
                 TransportLabels,
-                // metrics.transport,
+                metrics.transport,
                 tcp_forward.into_inner(),
                 http_server.into_inner(),
                 h2_settings,
