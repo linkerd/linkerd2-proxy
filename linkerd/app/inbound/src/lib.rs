@@ -23,7 +23,7 @@ use linkerd2_app_core::{
     proxy::{
         self,
         detect::DetectProtocolLayer,
-        http::{self, normalize_uri /* orig_proto, strip_header*/},
+        http::{self, normalize_uri, orig_proto /* strip_header*/},
         identity,
         server::{Protocol as ServerProtocol, ProtocolDetect, Server},
         tap, tcp,
@@ -229,15 +229,16 @@ impl Config {
             // Handles requests as they are initially received by the proxy.
             let http_admit_request = svc::layers()
                 // Downgrades the protocol if upgraded by an outbound proxy.
-                // .push(svc::layer::mk(orig_proto::Downgrade::new))
+                .push(svc::layer::mk(orig_proto::Downgrade::new))
                 // Limits the number of in-flight requests.
-                .push_concurrency_limit(max_in_flight_requests)
+                // .push_concurrency_limit(max_in_flight_requests)
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
                 .push_failfast(dispatch_timeout)
-                .push(metrics.http_errors)
+                // .push(metrics.http_errors)
                 // Synthesizes responses for proxy errors.
-                .push(errors::layer());
+                // .push(errors::layer())
+                ;
 
             // let http_server_observability = svc::layers()
             //     .push(TraceContextLayer::new(span_sink.map(|span_sink| {
@@ -271,7 +272,7 @@ impl Config {
                 // Used by tap.
                 // .push_http_insert_target()
                 // .push_on_response(http_strip_headers)
-                // .push_on_response(http_admit_request)
+                .push_on_response(http_admit_request)
                 // .push_on_response(http_server_observability)
                 .push_on_response(metrics.stack.layer(stack_labels("source")))
                 .instrument(|src: &tls::accept::Meta| {

@@ -995,16 +995,16 @@ name = "linkerd2-app-outbound"
 version = "0.1.0"
 dependencies = [
  "bytes 0.4.11",
- "futures 0.1.26",
+ "futures 0.3.4",
  "http 0.1.21",
  "indexmap",
  "linkerd2-app-core",
  "linkerd2-identity",
  "linkerd2-retry",
+ "pin-project",
  "quickcheck",
  "tokio 0.1.22",
  "tower 0.3.1",
- "tower-grpc",
  "tracing",
 ]
 
