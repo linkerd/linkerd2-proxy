@@ -405,12 +405,12 @@ impl Config {
                 //         dns_refine_cache,
                 //         canonicalize_timeout,
                 //     ))
-                //     .push_on_response(
-                //         // Strips headers that may be set by this proxy.
-                //         svc::layers()
-                //             .push(http::strip_header::request::layer(L5D_CLIENT_ID))
-                //             .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
-                //     )
+                .push_on_response(
+                    // Strips headers that may be set by this proxy.
+                    svc::layers()
+                        .push(http::strip_header::request::layer(L5D_CLIENT_ID))
+                        .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
+                )
                 .check_service::<Logical<HttpEndpoint>>()
                 .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr));
 

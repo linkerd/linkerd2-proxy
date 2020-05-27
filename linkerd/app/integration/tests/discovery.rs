@@ -672,6 +672,7 @@ mod proxy_to_proxy {
     use super::*;
 
     #[test]
+    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_http1() {
         let _ = trace_init();
 
