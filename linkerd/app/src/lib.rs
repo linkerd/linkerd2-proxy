@@ -160,18 +160,15 @@ impl Config {
         let inbound = {
             let inbound = inbound;
             let identity = identity.local();
-            // let profiles = dst.profiles.clone();
+            let profiles = dst.profiles.clone();
             // let tap = tap.layer();
             let metrics = metrics.inbound;
             // let oc = oc_collector.span_sink();
             let drain = drain_rx.clone();
             info_span!("inbound").in_scope(move || {
                 inbound.build(
-                    identity,
-                    (), // profiles,
-                    // tap,
-                    metrics,
-                    None, // oc,
+                    identity, profiles, // tap,
+                    metrics, None, // oc,
                     drain,
                 )
             })?
@@ -183,10 +180,11 @@ impl Config {
             let metrics = metrics.outbound;
             // let oc = oc_collector.span_sink();
             info_span!("outbound").in_scope(move || {
-                outbound.build::<_, ()>(
+                outbound.build(
                     identity,
                     dst.resolve,
-                    dns, // dst.profiles,
+                    dns,
+                    dst.profiles,
                     //tap,
                     metrics,
                     None, //oc,
