@@ -102,11 +102,11 @@ impl<T: http::settings::HasSettings> http::normalize_uri::ShouldNormalizeUri for
     }
 }
 
-// impl<T> profiles::OverrideDestination for Target<T> {
-//     fn dst_mut(&mut self) -> &mut Addr {
-//         &mut self.addr
-//     }
-// }
+impl<T> profiles::OverrideDestination for Target<T> {
+    fn dst_mut(&mut self) -> &mut Addr {
+        &mut self.addr
+    }
+}
 
 impl<T: http::settings::HasSettings> http::settings::HasSettings for Target<T> {
     fn http_settings(&self) -> http::Settings {
@@ -426,20 +426,20 @@ impl<T> router::Recognize<Target<T>> for ProfilePerTarget {
 
 // === impl Profile ===
 
-// impl profiles::HasDestination for Profile {
-//     fn destination(&self) -> Addr {
-//         self.0.clone()
-//     }
-// }
+impl profiles::HasDestination for Profile {
+    fn destination(&self) -> Addr {
+        self.0.clone()
+    }
+}
 
-// impl profiles::WithRoute for Profile {
-//     type Route = dst::Route;
+impl profiles::WithRoute for Profile {
+    type Route = dst::Route;
 
-//     fn with_route(self, route: profiles::Route) -> Self::Route {
-//         dst::Route {
-//             route,
-//             target: self.0.clone(),
-//             direction: metric_labels::Direction::Out,
-//         }
-//     }
-// }
+    fn with_route(self, route: profiles::Route) -> Self::Route {
+        dst::Route {
+            route,
+            target: self.0.clone(),
+            direction: metric_labels::Direction::Out,
+        }
+    }
+}
