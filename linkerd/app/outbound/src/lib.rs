@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     dns,
     drain,
     dst,
-    // errors,
+    errors,
     metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
@@ -416,13 +416,13 @@ impl Config {
 
             let http_admit_request = svc::layers()
                 // Limits the number of in-flight requests.
-                .push_concurrency_limit(max_in_flight_requests)
+                // .push_concurrency_limit(max_in_flight_requests)
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
                 .push_failfast(dispatch_timeout)
-                .push(metrics.http_errors)
+                // .push(metrics.http_errors)
                 // Synthesizes responses for proxy errors.
-                // .push(errors::layer())
+                .push(errors::layer())
                 // Initiates OpenCensus tracing.
                 // .push(TraceContextLayer::new(span_sink.map(|span_sink| {
                 //     SpanConverter::server(span_sink, trace_labels())
@@ -437,10 +437,9 @@ impl Config {
                 .push_timeout(dispatch_timeout)
                 .push(router::Layer::new(LogicalPerRequest::from))
                 .check_new_service::<tls::accept::Meta>()
-
                 // // Used by tap.
                 // .push_http_insert_target()
-                // .push_on_response(http_admit_request)
+                .push_on_response(http_admit_request)
                 .push_on_response(metrics.stack.layer(stack_labels("source")))
                 .instrument(
                     |src: &tls::accept::Meta| {

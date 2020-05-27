@@ -1138,9 +1138,10 @@ dependencies = [
 name = "linkerd2-error-respond"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "linkerd2-error",
- "tower 0.1.1",
+ "pin-project",
+ "tower 0.3.1",
 ]
 
 [[package]]
