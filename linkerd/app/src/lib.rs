@@ -1,5 +1,6 @@
 //! Configures and executes the proxy
 
+#![recursion_limit = "256"]
 #![deny(warnings, rust_2018_idioms)]
 
 pub mod admin;
