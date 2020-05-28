@@ -230,12 +230,12 @@ impl Config {
                 // .push(errors::layer())
                 ;
 
-            // let http_server_observability = svc::layers()
-            //     .push(TraceContextLayer::new(span_sink.map(|span_sink| {
-            //         SpanConverter::server(span_sink, trace_labels())
-            //     })))
-            //     // Tracks proxy handletime.
-            //     .push(metrics.http_handle_time.layer());
+            let http_server_observability = svc::layers()
+                //     .push(TraceContextLayer::new(span_sink.map(|span_sink| {
+                //         SpanConverter::server(span_sink, trace_labels())
+                //     })))
+                // Tracks proxy handletime.
+                .push(metrics.http_handle_time.layer());
 
             let http_server = svc::stack(http_profile_cache)
                 .push_on_response(svc::layers().box_http_response())
@@ -263,7 +263,7 @@ impl Config {
                 .push_http_insert_target()
                 .push_on_response(http_strip_headers)
                 .push_on_response(http_admit_request)
-                // .push_on_response(http_server_observability)
+                .push_on_response(http_server_observability)
                 .push_on_response(metrics.stack.layer(stack_labels("source")))
                 .instrument(|src: &tls::accept::Meta| {
                     info_span!(

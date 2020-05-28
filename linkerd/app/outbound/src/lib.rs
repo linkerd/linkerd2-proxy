@@ -419,8 +419,7 @@ impl Config {
                 //     SpanConverter::server(span_sink, trace_labels())
                 // })))
                 // Tracks proxy handletime.
-                // .push(metrics.http_handle_time.layer())
-                ;
+                .push(metrics.http_handle_time.layer());
 
             let http_server = http_logical_router
                 .check_service::<Logical<HttpEndpoint>>()
