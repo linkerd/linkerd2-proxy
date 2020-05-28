@@ -1,7 +1,11 @@
-use futures::{try_ready, Future, Poll};
+use futures_03::{ready, TryFuture};
 use http;
 use http::header::{HeaderValue, IntoHeaderName};
 use linkerd2_stack::NewService;
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Wraps HTTP `Service`s  so that a displayable `T` is cloned into each request's
 /// extensions.
@@ -12,9 +16,11 @@ pub struct Layer<H> {
 
 /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
 /// each request's headers.
+#[pin_project]
 #[derive(Clone, Debug)]
 pub struct MakeSvc<H, M> {
     header: H,
+    #[pin]
     inner: M,
 }
 
@@ -82,8 +88,8 @@ where
     type Error = M::Error;
     type Future = MakeSvc<(H, HeaderValue), M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), M::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, t: T) -> Self::Future {
@@ -101,20 +107,19 @@ where
 impl<H, F> Future for MakeSvc<(H, HeaderValue), F>
 where
     H: Clone,
-    F: Future,
+    F: TryFuture,
 {
-    type Item = Service<H, F::Item>;
-    type Error = F::Error;
+    type Output = Result<Service<H, F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
-        let (header, value) = self.header.clone();
-        Ok(Service {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
+        let (header, value) = this.header.clone();
+        Poll::Ready(Ok(Service {
             header,
             inner,
             value,
-        }
-        .into())
+        }))
     }
 }
 
@@ -129,8 +134,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
