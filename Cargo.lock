@@ -1901,12 +1901,12 @@ dependencies = [
 name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
- "futures 0.1.26",
- "prost 0.5.0",
- "prost-types 0.5.0",
- "tower-grpc",
- "tower-grpc-build",
+ "bytes 0.5.4",
+ "futures 0.3.4",
+ "prost 0.6.1",
+ "prost-types 0.6.1",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
