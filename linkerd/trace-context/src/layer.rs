@@ -1,6 +1,10 @@
 use super::{propagation, Span, SpanSink};
-use futures::{try_ready, Async, Future, Poll};
+use futures::{ready, TryFuture};
+use pin_project::pin_project;
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::SystemTime;
 use tracing::{trace, warn};
 
@@ -24,8 +28,10 @@ pub struct TraceContext<Svc, S> {
     sink: Option<S>,
 }
 
+#[pin_project]
 pub struct ResponseFuture<F, S> {
     trace: Option<(Span, S)>,
+    #[pin]
     inner: F,
 }
 
@@ -62,8 +68,8 @@ where
     type Error = Svc::Error;
     type Future = ResponseFuture<Svc::Future, S>;
 
-    fn poll_ready(&mut self) -> Poll<(), Svc::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Svc::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut request: http::Request<B1>) -> Self::Future {
@@ -119,15 +125,15 @@ where
 
 impl<F, S, B2> Future for ResponseFuture<F, S>
 where
-    F: Future<Item = http::Response<B2>>,
+    F: TryFuture<Ok = http::Response<B2>>,
     S: SpanSink,
 {
-    type Item = F::Item;
-    type Error = F::Error;
+    type Output = Result<F::Ok, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
-        if let Some((mut span, mut sink)) = self.trace.take() {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
+        if let Some((mut span, mut sink)) = this.trace.take() {
             span.end = SystemTime::now();
             response_labels(&mut span.labels, &inner);
             trace!(message = "emitting span", ?span);
@@ -135,7 +141,7 @@ where
                 warn!(message = "span dropped", %error);
             }
         }
-        Ok(Async::Ready(inner))
+        Poll::Ready(Ok(inner))
     }
 }
 
@@ -147,7 +153,7 @@ fn request_labels<Body>(labels: &mut HashMap<String, String>, req: &http::Reques
         .map(|pq| pq.as_str().to_owned())
         .unwrap_or_default();
     labels.insert("http.path".to_string(), path);
-    if let Some(authority) = req.uri().authority_part() {
+    if let Some(authority) = req.uri().authority() {
         labels.insert("http.authority".to_string(), authority.as_str().to_string());
     }
     if let Some(host) = req.headers().get("host") {

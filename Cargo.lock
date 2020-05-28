@@ -1677,13 +1677,15 @@ name = "linkerd2-trace-context"
 version = "0.1.0"
 dependencies = [
  "base64 0.10.1",
- "bytes 0.4.11",
- "futures 0.1.26",
+ "bytes 0.5.4",
+ "futures 0.3.4",
  "hex",
- "http 0.1.21",
+ "http 0.2.1",
  "linkerd2-error",
+ "pin-project",
  "rand 0.7.2",
- "tower 0.1.1",
+ "tokio 0.2.20",
+ "tower 0.3.1",
  "tracing",
 ]
 
