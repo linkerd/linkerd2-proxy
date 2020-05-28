@@ -9,7 +9,6 @@ pub mod balance;
 pub mod canonicalize;
 pub mod client;
 pub mod glue;
-// pub mod grpc;
 pub mod h1;
 pub mod h2;
 pub mod header_from_target;
