@@ -552,6 +552,5 @@ fn is_discovery_rejected(err: &Error) -> bool {
         return is_discovery_rejected(e.inner());
     }
 
-    err.is::<DiscoveryRejected>()
-    //  || err.is::<profiles::InvalidProfileAddr>()
+    err.is::<DiscoveryRejected>() || err.is::<profiles::InvalidProfileAddr>()
 }
