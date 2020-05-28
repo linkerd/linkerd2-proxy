@@ -270,7 +270,7 @@ impl Config {
                 .push(router::Layer::new(RequestTarget::from))
                 .check_new_service::<tls::accept::Meta>()
                 // Used by tap.
-                // .push_http_insert_target()
+                .push_http_insert_target()
                 .push_on_response(http_strip_headers)
                 .push_on_response(http_admit_request)
                 // .push_on_response(http_server_observability)

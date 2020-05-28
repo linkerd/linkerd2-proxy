@@ -248,9 +248,9 @@ impl<S> Stack<S> {
         self.push(stack::MapResponseLayer::new(map_response))
     }
 
-    // pub fn push_http_insert_target(self) -> Stack<http::insert::target::NewService<S>> {
-    //     self.push(http::insert::target::layer())
-    // }
+    pub fn push_http_insert_target(self) -> Stack<http::insert::target::NewService<S>> {
+        self.push(http::insert::target::layer())
+    }
 
     pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
     where
