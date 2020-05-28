@@ -6,10 +6,14 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 linkerd2-error = { path = "../error" }
 linkerd2-metrics = { path = "../metrics" }
 opencensus-proto = { path = "../../opencensus-proto" }
-tokio = "0.1"
-tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
+tokio = "0.2"
+tonic = { version = "0.2", default-features = false, features = ["prost", "codegen"] }
 tracing = "0.1"
+pin-project = "0.4"
+http = "0.2"
+http-body = "0.3"
+tower = { version = "0.3", default-features = false }

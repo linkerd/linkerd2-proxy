@@ -1260,12 +1260,16 @@ dependencies = [
 name = "linkerd2-opencensus"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
+ "http 0.2.1",
+ "http-body 0.3.1",
  "linkerd2-error",
  "linkerd2-metrics",
  "opencensus-proto",
- "tokio 0.1.22",
- "tower-grpc",
+ "pin-project",
+ "tokio 0.2.20",
+ "tonic",
+ "tower 0.3.1",
  "tracing",
 ]
 
