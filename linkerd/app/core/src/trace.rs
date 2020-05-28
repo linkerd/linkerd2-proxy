@@ -10,6 +10,9 @@ use tracing_subscriber::{
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
 
+const DEFAULT_LOG_LEVEL: &str = "warn,linkerd2_proxy=info";
+const DEFAULT_LOG_FORMAT: &str = "PLAIN";
+
 type JsonFormatter = Formatter<format::JsonFields, format::Format<format::Json, Uptime>>;
 type PlainFormatter = Formatter<format::DefaultFields, format::Format<format::Full, Uptime>>;
 
@@ -26,8 +29,8 @@ pub enum LevelHandle {
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
 pub fn init() -> Result<LevelHandle, Error> {
-    let log_level = env::var(ENV_LOG_LEVEL).unwrap_or_default();
-    let log_format = env::var(ENV_LOG_FORMAT).unwrap_or_default();
+    let log_level = env::var(ENV_LOG_LEVEL).unwrap_or(DEFAULT_LOG_LEVEL.to_string());
+    let log_format = env::var(ENV_LOG_FORMAT).unwrap_or(DEFAULT_LOG_FORMAT.to_string());
 
     let (dispatch, handle) = with_filter_and_format(log_level, log_format);
 
