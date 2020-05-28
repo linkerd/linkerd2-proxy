@@ -20,6 +20,7 @@ use linkerd2_app_core::{
     svc::{self, NewService},
     Error, Never,
 };
+use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
@@ -42,6 +43,7 @@ use tracing_futures::Instrument;
 pub struct Config {
     pub outbound: outbound::Config,
     pub inbound: inbound::Config,
+    pub gateway: gateway::Config,
 
     pub dns: dns::Config,
     pub identity: identity::Config,
@@ -82,6 +84,7 @@ impl Config {
             inbound,
             oc_collector,
             outbound,
+            gateway,
             tap,
         } = self;
         debug!("building app");
@@ -167,7 +170,6 @@ impl Config {
                 outbound_addr.port(),
                 outbound_connect.clone(),
                 dst.resolve,
-                refine,
                 dst.profiles.clone(),
                 tap_layer.clone(),
                 outbound_metrics.clone(),
@@ -179,8 +181,11 @@ impl Config {
                     .build_server(
                         outbound_listen,
                         outbound_addr.port(),
+                        svc::stack(refine.clone())
+                            .push_map_response(|(n, _)| n)
+                            .into_inner(),
                         outbound_connect,
-                        outbound_http,
+                        outbound_http.clone(),
                         outbound_metrics,
                         oc_span_sink.clone(),
                         drain_rx.clone(),
@@ -189,11 +194,14 @@ impl Config {
                     .instrument(info_span!("outbound")),
             );
 
+            let http_gateway = gateway.build(refine, outbound_http);
+
             tokio::spawn(
                 inbound
                     .build(
                         inbound_listen,
                         local_identity,
+                        http_gateway,
                         dst.profiles,
                         tap_layer.clone(),
                         inbound_metrics,

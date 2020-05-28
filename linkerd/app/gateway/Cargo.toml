@@ -1,0 +1,17 @@
+[package]
+name = "linkerd2-app-gateway"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+http = "0.1"
+futures = "0.1"
+indexmap = "1.0"
+linkerd2-app-core = { path = "../core" }
+linkerd2-app-inbound = { path = "../inbound" }
+linkerd2-app-outbound = { path = "../outbound" }
+tokio = "0.1"
+tower = "0.1"
+tracing = "0.1"

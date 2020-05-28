@@ -30,6 +30,7 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::info_span;
@@ -38,7 +39,7 @@ use tracing::info_span;
 mod add_remote_ip_on_rsp;
 #[allow(dead_code)] // TODO #2597
 mod add_server_id_on_rsp;
-mod endpoint;
+pub mod endpoint;
 mod orig_proto_upgrade;
 mod prevent_loop;
 mod require_identity_on_endpoint;
@@ -88,8 +89,12 @@ impl Config {
         &self,
         dns_resolver: dns::Resolver,
         metrics: &StackMetrics,
-    ) -> impl tower::Service<dns::Name, Response = dns::Name, Error = Error, Future = impl Send>
-           + Clone
+    ) -> impl tower::Service<
+        dns::Name,
+        Response = (dns::Name, IpAddr),
+        Error = Error,
+        Future = impl Send,
+    > + Clone
            + Send {
         // Caches DNS refinements from relative names to canonical names.
         //
@@ -118,12 +123,11 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<B, C, R, F, P>(
+    pub fn build_http_router<B, C, R, P>(
         &self,
         prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         resolve: R,
-        refine: F,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
@@ -151,13 +155,10 @@ impl Config {
             + 'static,
         R::Future: Send,
         R::Resolution: Send,
-        F: tower::Service<dns::Name, Error = Error, Response = dns::Name> + Clone + Send + 'static,
-        F::Future: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
         let Config {
-            canonicalize_timeout,
             proxy:
                 ProxyConfig {
                     connect,
@@ -166,6 +167,7 @@ impl Config {
                     dispatch_timeout,
                     ..
                 },
+            ..
         } = self.clone();
 
         let prevent_loop = prevent_loop.into();
@@ -265,31 +267,33 @@ impl Config {
         // This is effectively the same as the endpoint stack; but the client layer captures the
         // requst body type (via PhantomData), so the stack cannot be shared directly.
         let http_forward_cache = http_endpoint
-        .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
-        .into_new_service()
-        .cache(
-            svc::layers()
-                .push_on_response(
-                    svc::layers()
-                        // If the endpoint has been unavailable for an extended time, eagerly
-                        // fail requests.
-                        .push_failfast(dispatch_timeout)
-                        // Shares the balancer, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .box_http_request()
-                        .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
-                ),
-        )
-        .instrument(|endpoint: &Target<HttpEndpoint>| {
-            info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.inner.identity)
-        })
-        .push_map_target(|t: Concrete<HttpEndpoint>| Target {
-            addr: t.addr.into(),
-            inner: t.inner.inner,
-        })
-        .check_service::<Concrete<HttpEndpoint>>()
-        // Ensure that buffers don't hold the cache's lock in poll_ready.
-        .push_oneshot();
+            .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
+            .into_new_service()
+            .cache(
+                svc::layers()
+                    .push_on_response(
+                        svc::layers()
+                            // If the endpoint has been unavailable for an extended time, eagerly
+                            // fail requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the balancer, ensuring discovery errors are propagated.
+                            .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                            .box_http_request()
+                            .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
+                    ),
+            )
+            // Avoid caching if it would loop.
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .instrument(|endpoint: &Target<HttpEndpoint>| {
+                info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.inner.identity)
+            })
+            .push_map_target(|t: Concrete<HttpEndpoint>| Target {
+                addr: t.addr.into(),
+                inner: t.inner.inner,
+            })
+            .check_service::<Concrete<HttpEndpoint>>()
+            // Ensure that buffers don't hold the cache's lock in poll_ready.
+            .push_oneshot();
 
         // If the balancer fails to be created, i.e., because it is unresolvable, fall back to
         // using a router that dispatches request to the application-selected original destination.
@@ -382,28 +386,24 @@ impl Config {
                 is_discovery_rejected,
             )
             .check_service::<Logical<HttpEndpoint>>()
-            // Sets the canonical-dst header on all outbound requests.
-            .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
-            // Strips headers that may be set by this proxy.
-            .push(http::canonicalize::Layer::new(
-                svc::stack(refine).into_inner(),
-                canonicalize_timeout,
-            ))
             .push_on_response(
                 // Strips headers that may be set by this proxy.
                 svc::layers()
                     .push(http::strip_header::request::layer(L5D_CLIENT_ID))
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
             )
+            // Sets the canonical-dst header on all outbound requests.
+            .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             .check_service::<Logical<HttpEndpoint>>()
             .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr))
             .into_inner()
     }
 
-    pub fn build_server<C, H, S>(
+    pub fn build_server<C, R, H, S>(
         self,
         listen: transport::Listen<transport::DefaultOrigDstAddr>,
         prevent_loop: impl Into<PreventLoop>,
+        refine: R,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -411,6 +411,8 @@ impl Config {
         drain: drain::Watch,
     ) -> serve::Task
     where
+        R: tower::Service<dns::Name, Error = Error, Response = dns::Name> + Clone + Send + 'static,
+        R::Future: Send,
         C: tower::Service<TcpEndpoint, Error = Error> + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
         C::Future: Send,
@@ -428,6 +430,7 @@ impl Config {
         S::Future: Send,
     {
         let Config {
+            canonicalize_timeout,
             proxy:
                 ProxyConfig {
                     server: ServerConfig { h2_settings, .. },
@@ -437,7 +440,6 @@ impl Config {
                     detect_protocol_timeout,
                     ..
                 },
-            ..
         } = self;
 
         // The stack is served lazily since caching layers spawn tasks from
@@ -466,20 +468,25 @@ impl Config {
             .push(metrics.clone().http_handle_time.layer());
 
         let http_server = svc::stack(http_router)
-                .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
-                .push_make_ready()
-                .push_timeout(dispatch_timeout)
-                .push(router::Layer::new(LogicalPerRequest::from))
-                // Used by tap.
-                .push_http_insert_target()
-                .push_on_response(http_admit_request)
-                .push_on_response(metrics.stack.layer(stack_labels("source")))
-                .instrument(
-                    |src: &tls::accept::Meta| {
-                        info_span!("source", target.addr = %src.addrs.target_addr())
-                    },
-                )
-                .check_new_service::<tls::accept::Meta>();
+            // Resolve the application-emitted destination via DNS to determine
+            // it's canonical FQDN to use for routing.
+            .push(http::canonicalize::Layer::new(refine,
+                canonicalize_timeout,
+            ))
+            .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
+            .push_make_ready()
+            .push_timeout(dispatch_timeout)
+            .push(router::Layer::new(LogicalPerRequest::from))
+            // Used by tap.
+            .push_http_insert_target()
+            .push_on_response(http_admit_request)
+            .push_on_response(metrics.stack.layer(stack_labels("source")))
+            .instrument(
+                |src: &tls::accept::Meta| {
+                    info_span!("source", target.addr = %src.addrs.target_addr())
+                },
+            )
+            .check_new_service::<tls::accept::Meta>();
 
         let tcp_server = Server::new(
             TransportLabels,

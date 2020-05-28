@@ -5,7 +5,7 @@ use crate::core::{
     transport::{listen, tls},
     Addr,
 };
-use crate::{dns, identity, inbound, oc_collector, outbound};
+use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -120,6 +120,11 @@ pub const ENV_DESTINATION_GET_NETWORKS: &str = "LINKERD2_PROXY_DESTINATION_GET_N
 ///
 /// If unspecified, a default value is used.
 pub const ENV_DESTINATION_PROFILE_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_PROFILE_SUFFIXES";
+
+/// Constrains which destination names are permitted.
+///
+/// If unspecified or empty, no inbound gateway s configured.
+pub const ENV_INBOUND_GATEWAY_SUFFIXES: &str = "LINKERD2_PROXY_INBOUND_GATEWAY_SUFFIXES";
 
 // These *disable* our protocol detection for connections whose SO_ORIGINAL_DST
 // has a port in the provided list.
@@ -315,6 +320,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
+    let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
     let dst_get_suffixes = parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
     let dst_get_networks = parse(strings, ENV_DESTINATION_GET_NETWORKS, parse_networks);
     let dst_profile_initial_timeout = parse(
@@ -407,6 +413,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 detect_protocol_timeout: dispatch_timeout,
             },
         }
+    };
+
+    let gateway = gateway::Config {
+        suffixes: gateway_suffixes?.unwrap_or_default(),
     };
 
     let inbound = {
@@ -573,6 +583,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         oc_collector,
         identity,
         outbound,
+        gateway,
         inbound,
     })
 }
