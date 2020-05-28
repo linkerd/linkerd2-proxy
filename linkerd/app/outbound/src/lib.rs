@@ -422,7 +422,7 @@ impl Config {
             + 'static,
         H::Future: Send,
         S: tower::Service<
-                http::Request<http::glue::HttpBody>,
+                http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
                 Error = Error,
             > + Send
@@ -479,8 +479,11 @@ impl Config {
             .push(router::Layer::new(LogicalPerRequest::from))
             // Used by tap.
             .push_http_insert_target()
-            .push_on_response(http_admit_request)
-            .push_on_response(metrics.stack.layer(stack_labels("source")))
+            .push_on_response(svc::layers()
+                .push(http_admit_request)
+                .push(metrics.stack.layer(stack_labels("source")))
+                .box_http_request()
+            )
             .instrument(
                 |src: &tls::accept::Meta| {
                     info_span!("source", target.addr = %src.addrs.target_addr())

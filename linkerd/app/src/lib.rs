@@ -201,7 +201,9 @@ impl Config {
                     .build(
                         inbound_listen,
                         local_identity,
-                        http_gateway,
+                        svc::stack(http_gateway)
+                            .push_on_response(svc::layers().box_http_request())
+                            .into_inner(),
                         dst.profiles,
                         tap_layer.clone(),
                         inbound_metrics,

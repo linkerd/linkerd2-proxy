@@ -68,7 +68,7 @@ impl Config {
         L::Error: Into<Error>,
         L::Future: Send,
         S: tower::Service<
-                http::Request<http::glue::HttpBody>,
+                http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
             > + Send
             + 'static,
@@ -139,7 +139,7 @@ impl Config {
         Error = impl Into<Error>,
         Future = impl Send,
         Response = impl tower::Service<
-            http::Request<http::glue::HttpBody>,
+            http::Request<http::boxed::Payload>,
             Response = http::Response<http::boxed::Payload>,
             Error = impl Into<Error>,
             Future = impl Send,
@@ -158,7 +158,7 @@ impl Config {
         L::Error: Into<Error>,
         L::Future: Send,
         S: tower::Service<
-                http::Request<http::glue::HttpBody>,
+                http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
             > + Send
             + 'static,
@@ -216,7 +216,15 @@ impl Config {
             // Normalizes the URI, i.e. if it was originally in
             // absolute-form on the outbound side.
             .push(normalize_uri::layer())
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_on_response(svc::layers().box_http_response())
+            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
+                svc::stack(http_loopback)
+                    .push_on_response(svc::layers().box_http_request())
+                    .into_inner(),
+            )
             .push(http_target_observability)
+            .check_service::<Target>()
             .into_new_service()
             .cache(
                 svc::layers().push_on_response(
@@ -271,12 +279,13 @@ impl Config {
         svc::stack(http_profile_cache)
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
+            // Don't resolve profiles for inbound-targetted requests. They'll be
+            // resolved on the outbound side if necsesary.
+            .push(admit::AdmitLayer::new(prevent_loop))
             .push_fallback(
                 http_target_cache
                     .push_on_response(svc::layers().box_http_response().box_http_request()),
             )
-            .push(admit::AdmitLayer::new(prevent_loop))
-            .push_fallback_on_error::<prevent_loop::LoopPrevented, L>(http_loopback)
             .check_service::<Target>()
             .into_inner()
     }
@@ -301,7 +310,7 @@ impl Config {
         H::Error: Into<Error>,
         H::Future: Send,
         S: tower::Service<
-                http::Request<http::glue::HttpBody>,
+                http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
             > + Send
             + 'static,
@@ -373,10 +382,14 @@ impl Config {
             .check_new_service::<tls::accept::Meta>()
             // Used by tap.
             .push_http_insert_target()
-            .push_on_response(http_strip_headers)
-            .push_on_response(http_admit_request)
-            .push_on_response(http_server_observability)
-            .push_on_response(metrics.stack.layer(stack_labels("source")))
+            .push_on_response(
+                svc::layers()
+                    .push(http_strip_headers)
+                    .push(http_admit_request)
+                    .push(http_server_observability)
+                    .push(metrics.stack.layer(stack_labels("source")))
+                    .box_http_request(),
+            )
             .instrument(|src: &tls::accept::Meta| {
                 info_span!(
                     "source",

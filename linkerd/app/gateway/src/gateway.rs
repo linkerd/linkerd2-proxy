@@ -16,12 +16,10 @@ pub(crate) enum Gateway<O> {
     },
 }
 
-impl<O> tower::Service<http::Request<http::glue::HttpBody>> for Gateway<O>
+impl<B, O> tower::Service<http::Request<B>> for Gateway<O>
 where
-    O: tower::Service<
-        http::Request<http::glue::HttpBody>,
-        Response = http::Response<http::boxed::Payload>,
-    >,
+    B: http::Payload + 'static,
+    O: tower::Service<http::Request<B>, Response = http::Response<http::boxed::Payload>>,
     O::Error: Send + 'static,
     O::Future: Send + 'static,
 {
@@ -36,7 +34,7 @@ where
         }
     }
 
-    fn call(&mut self, request: http::Request<http::glue::HttpBody>) -> Self::Future {
+    fn call(&mut self, request: http::Request<B>) -> Self::Future {
         match self {
             Self::Forbidden => {
                 let rsp = http::Response::builder()

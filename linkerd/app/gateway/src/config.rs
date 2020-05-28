@@ -23,7 +23,7 @@ impl Config {
         Future = impl Send + 'static,
         Response = impl Send
                        + tower::Service<
-            http::Request<http::glue::HttpBody>,
+            http::Request<http::boxed::Payload>,
             Response = http::Response<http::boxed::Payload>,
             Error = impl Into<Error>,
             Future = impl Send,
@@ -41,7 +41,7 @@ impl Config {
         O::Future: Send + 'static,
         S: Send
             + tower::Service<
-                http::Request<http::glue::HttpBody>,
+                http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
             > + 'static,
         S::Error: Into<Error> + Send + 'static,
