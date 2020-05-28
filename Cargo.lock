@@ -1392,7 +1392,6 @@ name = "linkerd2-proxy-http"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.1.26",
  "futures 0.3.4",
  "h2 0.2.4",
  "http 0.2.1",
@@ -1413,10 +1412,7 @@ dependencies = [
  "pin-project",
  "rand 0.7.2",
  "task-compat",
- "tokio 0.1.22",
  "tokio 0.2.21",
- "tokio-connect",
- "tokio-timer",
  "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",

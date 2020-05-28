@@ -1,4 +1,4 @@
-use futures_03::{ready, TryFuture};
+use futures::{ready, TryFuture};
 use linkerd2_stack::NewService;
 use linkerd2_timeout::Timeout;
 use pin_project::pin_project;

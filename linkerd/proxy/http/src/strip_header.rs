@@ -98,7 +98,7 @@ pub mod request {
 }
 
 pub mod response {
-    use futures_03::{ready, Future, TryFuture};
+    use futures::{ready, Future, TryFuture};
     use http;
     use http::header::AsHeaderName;
     use linkerd2_error::Error;

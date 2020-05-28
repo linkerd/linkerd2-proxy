@@ -1,4 +1,4 @@
-use futures_03::{ready, TryFuture};
+use futures::{ready, TryFuture};
 use http::header::{AsHeaderName, HeaderValue};
 use pin_project::pin_project;
 use std::future::Future;
@@ -172,7 +172,7 @@ pub mod request {
 }
 
 pub mod response {
-    use futures_03::{ready, TryFuture};
+    use futures::{ready, TryFuture};
     use http;
     use http::header::{AsHeaderName, HeaderValue, IntoHeaderName};
     use pin_project::pin_project;

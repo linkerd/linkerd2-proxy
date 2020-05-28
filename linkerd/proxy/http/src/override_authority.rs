@@ -1,5 +1,5 @@
 use super::h1;
-use futures_03::{ready, TryFuture};
+use futures::{ready, TryFuture};
 use http::{self, header::AsHeaderName, uri::Authority};
 use pin_project::pin_project;
 use std::fmt;

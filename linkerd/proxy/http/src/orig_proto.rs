@@ -1,5 +1,5 @@
 use super::h1;
-use futures_03::{future, ready, TryFuture, TryFutureExt};
+use futures::{future, ready, TryFuture, TryFutureExt};
 use http;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
 use pin_project::pin_project;

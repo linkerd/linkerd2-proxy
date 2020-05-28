@@ -12,8 +12,7 @@ This should probably be decomposed into smaller, decoupled crates.
 
 [dependencies]
 bytes = "0.5"
-futures = "0.1"
-futures_03 = { package = "futures", version = "0.3", features = ["compat"]}
+futures = { package = "futures", version = "0.3" }
 h2 = "0.2"
 http = "0.2"
 http-body = "0.3"
@@ -32,12 +31,8 @@ linkerd2-stack = { path  = "../../stack" }
 linkerd2-timeout = { path  = "../../timeout" }
 rand = "0.7"
 task-compat = "0.1"
-tokio = "0.1"
-tokio_02 = { package = "tokio", version = "0.2" }
-tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
-tokio-timer = "0.2"   # for tokio_timer::clock
+tokio = { version = "0.2", features = ["time", "rt-core"] }
 tower = { version = "0.3", default-features = false, features = ["balance", "load", "discover"] }
-# tower-util = "0.1"
 tracing = "0.1.9"
 tracing-futures = { version = "0.1", features = ["std-future"] }
 try-lock = "0.2"

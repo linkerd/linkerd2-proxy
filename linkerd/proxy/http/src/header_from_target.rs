@@ -1,4 +1,4 @@
-use futures_03::{ready, TryFuture};
+use futures::{ready, TryFuture};
 use http;
 use http::header::{HeaderValue, IntoHeaderName};
 use linkerd2_stack::NewService;
