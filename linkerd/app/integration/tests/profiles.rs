@@ -247,7 +247,6 @@ fn does_not_retry_if_missing_retry_budget() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn ignores_invalid_retry_budget_ttl() {
     profile_test! {
         routes: [
