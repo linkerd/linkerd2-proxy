@@ -8,13 +8,13 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub(crate) struct GatewayMake<R, O> {
+pub(crate) struct MakeGateway<R, O> {
     suffixes: Arc<Vec<dns::Suffix>>,
     resolve: R,
     outbound: O,
 }
 
-impl<R, O> GatewayMake<R, O> {
+impl<R, O> MakeGateway<R, O> {
     pub fn new(resolve: R, outbound: O, suffixes: impl IntoIterator<Item = dns::Suffix>) -> Self {
         Self {
             resolve,
@@ -24,7 +24,7 @@ impl<R, O> GatewayMake<R, O> {
     }
 }
 
-impl<R, O> tower::Service<inbound::Target> for GatewayMake<R, O>
+impl<R, O> tower::Service<inbound::Target> for MakeGateway<R, O>
 where
     R: tower::Service<dns::Name, Response = (dns::Name, IpAddr)>,
     R::Error: Into<Error> + 'static,

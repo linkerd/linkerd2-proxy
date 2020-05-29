@@ -1,4 +1,4 @@
-use super::make::GatewayMake;
+use super::make::MakeGateway;
 use indexmap::IndexSet;
 use linkerd2_app_core::{dns, proxy::http, Error};
 use linkerd2_app_inbound::endpoint as inbound;
@@ -47,6 +47,6 @@ impl Config {
         S::Error: Into<Error> + Send + 'static,
         S::Future: Send,
     {
-        GatewayMake::new(resolve, outbound, self.suffixes.clone())
+        MakeGateway::new(resolve, outbound, self.suffixes.clone())
     }
 }
