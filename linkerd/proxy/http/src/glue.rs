@@ -3,7 +3,7 @@ use bytes::{
     buf::{Buf, BufMut},
     Bytes,
 };
-use futures_03::TryFuture;
+use futures::TryFuture;
 use http;
 use hyper::client::connect as hyper_connect;
 use hyper::{self, body::HttpBody};
@@ -14,7 +14,7 @@ use std::io;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio_02::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
@@ -75,7 +75,7 @@ impl HttpBody for Body {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let body = self.project().body.as_mut().expect("only taken in drop");
-        let poll = futures_03::ready!(Pin::new(body) // `hyper::Body` is Unpin
+        let poll = futures::ready!(Pin::new(body) // `hyper::Body` is Unpin
             .poll_data(cx));
         Poll::Ready(poll.map(|x| {
             x.map_err(|e| {
@@ -196,7 +196,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let transport = futures_03::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
+        let transport = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
         Poll::Ready(Ok(Connection {
             transport,
             absolute_form: *this.absolute_form,

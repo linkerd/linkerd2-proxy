@@ -1,7 +1,11 @@
 use super::h1;
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
 use http::{self, header::AsHeaderName, uri::Authority};
+use pin_project::pin_project;
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tracing::debug;
 
 pub trait CanOverrideAuthority {
@@ -19,9 +23,11 @@ pub struct MakeSvc<H, M> {
     inner: M,
 }
 
+#[pin_project]
 pub struct MakeSvcFut<M, H> {
     authority: Option<Authority>,
     headers_to_strip: Vec<H>,
+    #[pin]
     inner: M,
 }
 
@@ -75,8 +81,8 @@ where
     type Error = M::Error;
     type Future = MakeSvcFut<M::Future, H>;
 
-    fn poll_ready(&mut self) -> Poll<(), M::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, t: T) -> Self::Future {
@@ -92,20 +98,19 @@ where
 
 impl<F, H> Future for MakeSvcFut<F, H>
 where
-    F: Future,
+    F: TryFuture,
     H: AsHeaderName + Clone,
 {
-    type Item = Service<F::Item, H>;
-    type Error = F::Error;
+    type Output = Result<Service<F::Ok, H>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
-        Ok(Service {
-            authority: self.authority.clone(),
-            headers_to_strip: self.headers_to_strip.clone(),
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
+        Poll::Ready(Ok(Service {
+            authority: this.authority.clone(),
+            headers_to_strip: this.headers_to_strip.clone(),
             inner,
-        }
-        .into())
+        }))
     }
 }
 
@@ -120,8 +125,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {

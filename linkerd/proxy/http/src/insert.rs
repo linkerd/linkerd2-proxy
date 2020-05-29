@@ -1,7 +1,10 @@
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
 use http;
 use linkerd2_stack::{layer, Proxy};
+use std::future::Future;
 use std::marker::PhantomData;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 pub trait Lazy<V>: Clone {
     fn value(&self) -> V;
@@ -102,8 +105,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
@@ -145,13 +148,16 @@ where
 pub mod target {
     use super::*;
     use linkerd2_stack as stack;
+    use pin_project::pin_project;
 
     /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
     /// each request's extensions.
     #[derive(Clone, Debug)]
     pub struct NewService<M>(M);
 
+    #[pin_project]
     pub struct MakeFuture<F, T> {
+        #[pin]
         inner: F,
         target: T,
     }
@@ -186,8 +192,8 @@ pub mod target {
         type Error = M::Error;
         type Future = MakeFuture<M::Future, T>;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.0.poll_ready()
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.0.poll_ready(cx)
         }
 
         fn call(&mut self, target: T) -> Self::Future {
@@ -200,16 +206,16 @@ pub mod target {
 
     impl<F, T> Future for MakeFuture<F, T>
     where
-        F: Future,
+        F: TryFuture,
         T: Clone,
     {
-        type Item = Insert<F::Item, ValLazy<T>, T>;
-        type Error = F::Error;
+        type Output = Result<Insert<F::Ok, ValLazy<T>, T>, F::Error>;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            let inner = try_ready!(self.inner.poll());
-            let svc = Insert::new(inner, super::ValLazy(self.target.clone()));
-            Ok(svc.into())
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let this = self.project();
+            let inner = ready!(this.inner.try_poll(cx))?;
+            let svc = Insert::new(inner, super::ValLazy(this.target.clone()));
+            Poll::Ready(Ok(svc))
         }
     }
 }

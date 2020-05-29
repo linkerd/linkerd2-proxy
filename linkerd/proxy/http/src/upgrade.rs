@@ -1,7 +1,7 @@
 //! HTTP/1.1 Upgrades
 use super::{h1, Body};
 
-use futures_03::{
+use futures::{
     future::{self, Either},
     TryFutureExt,
 };
@@ -139,8 +139,7 @@ impl Drop for Inner {
             let client_upgrade = client.map_err(|e| debug!("client HTTP upgrade error: {}", e));
 
             let both_upgrades = async move {
-                let (server_conn, client_conn) =
-                    tokio_02::try_join!(server_upgrade, client_upgrade)?;
+                let (server_conn, client_conn) = tokio::try_join!(server_upgrade, client_upgrade)?;
                 trace!("HTTP upgrade successful");
                 if let Err(e) = Duplex::new(server_conn, client_conn).await {
                     info!("tcp duplex error: {}", e)
@@ -150,7 +149,7 @@ impl Drop for Inner {
             // There's nothing to do when drain is signaled, we just have to hope
             // the sockets finish soon. However, the drain signal still needs to
             // 'watch' the TCP future so that the process doesn't close early.
-            tokio_02::spawn(
+            tokio::spawn(
                 self.upgrade_drain_signal
                     .take()
                     .expect("only taken in drop")

@@ -4,7 +4,7 @@ use super::{
     h1, h2,
     settings::{HasSettings, Settings},
 };
-use futures_03::{ready, TryFuture};
+use futures::{ready, TryFuture};
 use http;
 use hyper;
 use linkerd2_error::Error;
@@ -42,7 +42,7 @@ where
     B::Error: Into<Error> + Send + Sync,
     C: tower::make::MakeConnection<T> + 'static,
     C::Error: Into<Error>,
-    C::Connection: tokio_02::io::AsyncRead + tokio_02::io::AsyncWrite + Unpin + Send + 'static,
+    C::Connection: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     C::Future: Send + 'static,
 {
     Http1(Option<HyperMakeClient<C, T, B>>),

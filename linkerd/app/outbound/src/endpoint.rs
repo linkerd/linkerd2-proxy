@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        // http::override_authority::CanOverrideAuthority,
+        http::override_authority::CanOverrideAuthority,
         http::{self, identity_from_header, Settings},
         identity,
         resolve::map_endpoint::MapEndpoint,
@@ -82,9 +82,9 @@ impl<T> http::canonicalize::Target for Target<T> {
     }
 }
 
-impl<'t, T> From<&'t Target<T>> for ::http::header::HeaderValue {
+impl<'t, T> From<&'t Target<T>> for http::header::HeaderValue {
     fn from(target: &'t Target<T>) -> Self {
-        ::http::header::HeaderValue::from_str(&target.addr.to_string())
+        http::header::HeaderValue::from_str(&target.addr.to_string())
             .expect("addr must be a valid header")
     }
 }
@@ -297,11 +297,11 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
     }
 }
 
-// impl CanOverrideAuthority for Target<HttpEndpoint> {
-//     fn override_authority(&self) -> Option<Authority> {
-//         self.inner.metadata.authority_override().cloned()
-//     }
-// }
+impl CanOverrideAuthority for Target<HttpEndpoint> {
+    fn override_authority(&self) -> Option<Authority> {
+        self.inner.metadata.authority_override().cloned()
+    }
+}
 
 impl Into<EndpointLabels> for Target<HttpEndpoint> {
     fn into(self) -> EndpointLabels {

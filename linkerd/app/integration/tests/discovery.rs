@@ -457,7 +457,6 @@ macro_rules! generate_tests {
             }
 
             #[tokio::test]
-            #[cfg_attr(not(feature = "nyi"), ignore)]
             async fn outbound_honors_override_header() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy().run();
@@ -506,7 +505,6 @@ macro_rules! generate_tests {
             }
 
             #[tokio::test]
-            #[cfg_attr(not(feature = "nyi"), ignore)]
             async fn outbound_honors_override_header_with_orig_dst() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()

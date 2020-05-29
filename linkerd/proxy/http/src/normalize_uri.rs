@@ -1,5 +1,5 @@
 use super::h1;
-use futures_03::{ready, TryFuture};
+use futures::{ready, TryFuture};
 use http::uri::Authority;
 use linkerd2_stack::{layer, NewService};
 use pin_project::pin_project;

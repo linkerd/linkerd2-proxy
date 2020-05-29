@@ -6,7 +6,7 @@
 //! this module may build its inner stack with either `web.example.com.:8080`,
 //! `web.example.net.:8080`, or `web:8080`, depending on the state of DNS.
 
-use futures_03::{ready, TryFuture};
+use futures::{ready, TryFuture};
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_dns::Name;
 use linkerd2_error::Error;
@@ -15,7 +15,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio_02::time::{self, Timeout};
+use tokio::time::{self, Timeout};
 use tracing::{debug, info};
 
 pub trait Target {

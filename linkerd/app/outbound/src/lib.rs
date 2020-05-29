@@ -179,7 +179,7 @@ impl Config {
                     }))
                     .push(observability.clone())
                     .push(identity_headers.clone())
-                    // .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
+                    .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
                     // Ensures that the request's URI is in the proper form.
                     .push(http::normalize_uri::layer())
                     // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
@@ -390,8 +390,8 @@ impl Config {
                     is_discovery_rejected,
                 )
                 .check_service::<Logical<HttpEndpoint>>()
-                //     // Sets the canonical-dst header on all outbound requests.
-                //     .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+                // Sets the canonical-dst header on all outbound requests.
+                .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
                 .push(http::canonicalize::Layer::new(
                     dns_refine_cache,
                     canonicalize_timeout,
@@ -428,8 +428,8 @@ impl Config {
                 .push_timeout(dispatch_timeout)
                 .push(router::Layer::new(LogicalPerRequest::from))
                 .check_new_service::<tls::accept::Meta>()
-                // // Used by tap.
-                // .push_http_insert_target()
+                // Used by tap.
+                .push_http_insert_target()
                 .push_on_response(http_admit_request)
                 .push_on_response(metrics.stack.layer(stack_labels("source")))
                 .instrument(

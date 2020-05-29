@@ -1,5 +1,5 @@
 use super::Body;
-use futures_03::{ready, TryFuture, TryFutureExt};
+use futures::{ready, TryFuture, TryFutureExt};
 use http;
 use hyper::{
     body::HttpBody,
@@ -11,7 +11,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio_02::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, info_span};
 use tracing_futures::Instrument;
 
@@ -164,7 +164,7 @@ where
                 ConnectState::Handshake(hs) => {
                     let (tx, conn) = ready!(hs.poll(cx))?;
 
-                    tokio_02::spawn(
+                    tokio::spawn(
                         conn.map_err(|error| debug!(%error, "failed").instrument(info_span!("h2"))),
                     );
 
