@@ -123,7 +123,7 @@ pub const ENV_DESTINATION_PROFILE_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_P
 
 /// Constrains which destination names are permitted.
 ///
-/// If unspecified or empty, no inbound gateway s configured.
+/// If unspecified or empty, no inbound gateway is configured.
 pub const ENV_INBOUND_GATEWAY_SUFFIXES: &str = "LINKERD2_PROXY_INBOUND_GATEWAY_SUFFIXES";
 
 // These *disable* our protocol detection for connections whose SO_ORIGINAL_DST
