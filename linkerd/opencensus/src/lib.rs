@@ -162,7 +162,7 @@ where
 impl<T, S> Future for SpanExporter<T, S>
 where
     T: NewService<()>,
-    T::Service: GrpcService<BoxBody> + Clone + Send + 'static,
+    T::Service: GrpcService<BoxBody> + Send + 'static,
     S: Stream<Item = Span>,
     <<T as NewService<()>>::Service as GrpcService<BoxBody>>::Error: Into<Error> + Send,
     <<T as NewService<()>>::Service as GrpcService<BoxBody>>::ResponseBody: Send + 'static,
@@ -181,8 +181,6 @@ where
             *this.state = match this.state {
                 State::Idle => {
                     let (request_tx, request_rx) = mpsc::channel(1);
-                    // XXX: wish we didn't have to clone here, but Tonic's RPCs
-                    // borrow the service into the future...
                     let mut svc = TraceServiceClient::new(this.client.new_service(()));
                     let req = grpc::Request::new(request_rx);
                     trace!("Establishing new TraceService::export request");
