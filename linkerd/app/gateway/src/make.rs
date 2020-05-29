@@ -76,6 +76,7 @@ where
                 .and_then(move |(name, dst_ip)| {
                     tracing::debug!(%name, %dst_ip, "Resolved");
                     if !suffixes.iter().any(|s| s.contains(&name)) {
+                        tracing::debug!(%name, ?suffixes, "No matches");
                         return future::Either::A(future::ok(Gateway::BadDomain(name)));
                     }
 
