@@ -23,7 +23,7 @@ pub enum Config {
     },
 }
 
-pub type Task = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 pub type SpanSink = mpsc::Sender<proto::trace::v1::Span>;
 
