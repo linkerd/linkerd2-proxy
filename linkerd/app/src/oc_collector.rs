@@ -126,7 +126,7 @@ impl<T> NewService<()> for WithAddr<T>
 where
     T: NewService<ControlAddr>,
 {
-    type Service = S::Service;
+    type Service = T::Service;
 
     fn new_service(&self, target: ()) -> Self::Service {
         self.inner.new_service(self.addr.clone())
