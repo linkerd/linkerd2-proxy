@@ -10,7 +10,7 @@
 
 // mod accept;
 // mod daemon;
-// mod grpc;
+mod grpc;
 // mod service;
 
 // pub use self::accept::AcceptPermittedClients;

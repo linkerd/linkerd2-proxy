@@ -1,19 +1,21 @@
 use super::match_::Match;
 use crate::{iface, Inspect};
 use bytes::Buf;
-use futures::sync::mpsc;
-use futures::{future, Async, Future, Poll, Stream};
 use hyper::body::Payload;
 use linkerd2_conditional::Conditional;
 use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
 use linkerd2_proxy_http::HasH2Reason;
 use std::convert::TryFrom;
+use std::future::Future;
 use std::iter;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
+use std::task::{Context, Poll};
 use std::time::Instant;
-use tokio_timer::clock;
-use tower_grpc::{self as grpc, Response};
+use tokio::stream::Stream;
+use tokio::sync::mpsc;
+use tonic::{self as grpc, Response};
 use tracing::{debug, trace, warn};
 
 #[derive(Clone, Debug)]

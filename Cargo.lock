@@ -749,6 +749,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51268c3a27ad46afd1cca0bbf423a5be2e9fd3e6a7534736c195f0f834b763ef"
 
 [[package]]
+name = "ipnet"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47be2f14c678be2fdcab04ab1171db51b2762ce6f0a8ee87c8dd4a04ed216135"
+
+[[package]]
 name = "itertools"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -830,7 +836,7 @@ dependencies = [
  "http-body 0.3.1",
  "hyper 0.13.5",
  "indexmap",
- "ipnet",
+ "ipnet 1.0.0",
  "linkerd2-app-core",
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
@@ -1459,27 +1465,27 @@ dependencies = [
 name = "linkerd2-proxy-tap"
 version = "0.1.0"
 dependencies = [
- "bytes 0.4.11",
- "futures 0.1.26",
- "http 0.1.21",
- "hyper 0.12.34",
+ "bytes 0.5.4",
+ "futures 0.3.4",
+ "http 0.2.1",
+ "hyper 0.13.5",
  "indexmap",
- "ipnet",
+ "ipnet 2.3.0",
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
  "linkerd2-proxy-core",
  "linkerd2-proxy-http",
  "linkerd2-proxy-transport",
  "linkerd2-stack",
- "prost-types 0.5.0",
+ "pin-project",
+ "prost-types 0.6.1",
  "quickcheck",
  "rand 0.7.2",
- "tokio 0.1.22",
- "tokio-timer",
- "tower 0.1.1",
- "tower-grpc",
+ "tokio 0.2.21",
+ "tonic",
+ "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
 ]
