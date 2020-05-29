@@ -35,7 +35,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
-mod endpoint;
+pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
 #[allow(dead_code)] // TODO #2597
@@ -52,10 +52,11 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build<P>(
+    pub fn build<L, S, P>(
         self,
         listen: transport::Listen<transport::DefaultOrigDstAddr>,
         local_identity: tls::Conditional<identity::Local>,
+        http_loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
@@ -63,6 +64,16 @@ impl Config {
         drain: drain::Watch,
     ) -> serve::Task
     where
+        L: tower::Service<Target, Response = S> + Send + Clone + 'static,
+        L::Error: Into<Error>,
+        L::Future: Send,
+        S: tower::Service<
+                http::Request<http::boxed::Payload>,
+                Response = http::Response<http::boxed::Payload>,
+            > + Send
+            + 'static,
+        S::Error: Into<Error>,
+        S::Future: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
     {
@@ -71,6 +82,7 @@ impl Config {
         let http_router = self.build_http_router(
             tcp_connect.clone(),
             prevent_loop,
+            http_loopback,
             profiles_client,
             tap_layer,
             metrics.clone(),
@@ -113,10 +125,11 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<C, P>(
+    pub fn build_http_router<C, P, L, S>(
         &self,
         tcp_connect: C,
         prevent_loop: impl Into<PreventLoop>,
+        http_loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
@@ -126,7 +139,7 @@ impl Config {
         Error = impl Into<Error>,
         Future = impl Send,
         Response = impl tower::Service<
-            http::Request<http::glue::HttpBody>,
+            http::Request<http::boxed::Payload>,
             Response = http::Response<http::boxed::Payload>,
             Error = impl Into<Error>,
             Future = impl Send,
@@ -140,6 +153,17 @@ impl Config {
         C::Future: Send,
         P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
         P::Future: Send,
+        // The loopback router processes requests sent to the inbound port.
+        L: tower::Service<Target, Response = S> + Send + Clone + 'static,
+        L::Error: Into<Error>,
+        L::Future: Send,
+        S: tower::Service<
+                http::Request<http::boxed::Payload>,
+                Response = http::Response<http::boxed::Payload>,
+            > + Send
+            + 'static,
+        S::Error: Into<Error>,
+        S::Future: Send,
     {
         let Config {
             proxy:
@@ -192,7 +216,15 @@ impl Config {
             // Normalizes the URI, i.e. if it was originally in
             // absolute-form on the outbound side.
             .push(normalize_uri::layer())
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_on_response(svc::layers().box_http_response())
+            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
+                svc::stack(http_loopback)
+                    .push_on_response(svc::layers().box_http_request())
+                    .into_inner(),
+            )
             .push(http_target_observability)
+            .check_service::<Target>()
             .into_new_service()
             .cache(
                 svc::layers().push_on_response(
@@ -247,11 +279,13 @@ impl Config {
         svc::stack(http_profile_cache)
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
+            // Don't resolve profiles for inbound-targetted requests. They'll be
+            // resolved on the outbound side if necsesary.
+            .push(admit::AdmitLayer::new(prevent_loop))
             .push_fallback(
                 http_target_cache
                     .push_on_response(svc::layers().box_http_response().box_http_request()),
             )
-            .push(admit::AdmitLayer::new(prevent_loop))
             .check_service::<Target>()
             .into_inner()
     }
@@ -276,7 +310,7 @@ impl Config {
         H::Error: Into<Error>,
         H::Future: Send,
         S: tower::Service<
-                http::Request<http::glue::HttpBody>,
+                http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
             > + Send
             + 'static,
@@ -348,10 +382,14 @@ impl Config {
             .check_new_service::<tls::accept::Meta>()
             // Used by tap.
             .push_http_insert_target()
-            .push_on_response(http_strip_headers)
-            .push_on_response(http_admit_request)
-            .push_on_response(http_server_observability)
-            .push_on_response(metrics.stack.layer(stack_labels("source")))
+            .push_on_response(
+                svc::layers()
+                    .push(http_strip_headers)
+                    .push(http_admit_request)
+                    .push(http_server_observability)
+                    .push(metrics.stack.layer(stack_labels("source")))
+                    .box_http_request(),
+            )
             .instrument(|src: &tls::accept::Meta| {
                 info_span!(
                     "source",

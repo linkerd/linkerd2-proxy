@@ -114,7 +114,7 @@ fn loop_inbound_http1() {
 
     let client = client::http1(listen_addr, listen_addr.to_string());
     let rsp = client.request(client.request_builder("/").method("GET"));
-    assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
+    assert_eq!(rsp.status(), http::StatusCode::FORBIDDEN);
 }
 
 fn test_server_speaks_first(env: TestEnv) {

@@ -98,7 +98,8 @@ where
             ret => {
                 match self.state {
                     State::Open => {}
-                    _ => debug!("Recovered"),
+                    State::Waiting(_) => trace!("Ready"),
+                    State::FailFast => debug!("Recovered"),
                 }
                 self.state = State::Open;
                 ret.map_err(Into::into)

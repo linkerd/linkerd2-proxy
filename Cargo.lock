@@ -600,6 +600,7 @@ dependencies = [
  "indexmap",
  "ipnet",
  "linkerd2-app-core",
+ "linkerd2-app-gateway",
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
  "linkerd2-metrics",
@@ -691,6 +692,21 @@ dependencies = [
  "tracing-futures",
  "tracing-log",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "linkerd2-app-gateway"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "indexmap",
+ "linkerd2-app-core",
+ "linkerd2-app-inbound",
+ "linkerd2-app-outbound",
+ "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
