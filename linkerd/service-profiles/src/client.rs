@@ -200,8 +200,7 @@ where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
-        Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
+    <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
     R: Recover + Send + 'static,
     R::Backoff: Unpin,
@@ -284,8 +283,7 @@ where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send + 'static,
-    <S::ResponseBody as HttpBody>::Error:
-        Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
+    <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
     R: Recover,
     R::Backoff: Unpin,
