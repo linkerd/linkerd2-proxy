@@ -9,8 +9,9 @@ pub(crate) enum Gateway<O> {
     NoIdentity,
     BadDomain(dns::Name),
     Outbound {
-        // Source-metadata is available via request extensions set by the
-        // inbound, but we
+        // Other source-metadata is available via request extensions. This is
+        // here mostly as static proof that the innbound connection had
+        // identity.
         source_identity: identity::Name,
         dst_name: NameAddr,
         dst_addr: SocketAddr,
