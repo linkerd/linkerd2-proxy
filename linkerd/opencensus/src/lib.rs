@@ -156,18 +156,16 @@ where
     }
 }
 
-impl<T, S> Future for SpanExporter<T, S>
+impl<T, S, Svc> Future for SpanExporter<T, S>
 where
-    T: NewService<()>,
-    T::Service: GrpcService<BoxBody> + Send + 'static,
+    T: NewService<(), Service = Svc>,
+    Svc: GrpcService<BoxBody> + Send + 'static,
     S: Stream<Item = Span>,
-    <<T as NewService<()>>::Service as GrpcService<BoxBody>>::Error: Into<Error> + Send,
-    <<T as NewService<()>>::Service as GrpcService<BoxBody>>::ResponseBody: Send + 'static,
-    <<<T as NewService<()>>::Service as GrpcService<BoxBody>>::ResponseBody as GrpcBody>::Data:
-        Send,
-    <<<T as NewService<()>>::Service as GrpcService<BoxBody>>::ResponseBody as HttpBody>::Error:
-        Into<Error> + Send,
-    <<T as NewService<()>>::Service as GrpcService<BoxBody>>::Future: Send,
+    Svc::Error: Into<Error> + Send,
+    Svc::ResponseBody: Send + 'static,
+    <Svc::ResponseBody as GrpcBody>::Data: Send,
+    <Svc::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+    Svc::Future: Send,
 {
     type Output = ();
 
