@@ -7,7 +7,7 @@ pub mod dst;
 pub mod env;
 pub mod identity;
 pub mod metrics;
-// pub mod oc_collector;
+pub mod oc_collector;
 pub mod tap;
 
 use self::metrics::Metrics;
@@ -48,7 +48,7 @@ pub struct Config {
     pub dst: dst::Config,
     pub admin: admin::Config,
     pub tap: tap::Config,
-    // pub oc_collector: oc_collector::Config,
+    pub oc_collector: oc_collector::Config,
 }
 
 pub struct App {
@@ -58,7 +58,7 @@ pub struct App {
     dst: ControlAddr,
     identity: identity::Identity,
     inbound: inbound::Inbound,
-    // oc_collector: oc_collector::OcCollector,
+    oc_collector: oc_collector::OcCollector,
     outbound: outbound::Outbound,
     // tap: tap::Tap,
 }
@@ -79,7 +79,7 @@ impl Config {
             dst,
             identity,
             inbound,
-            // oc_collector,
+            oc_collector,
             outbound,
             tap,
         } = self;
@@ -139,12 +139,12 @@ impl Config {
             })
         }?;
 
-        // let oc_collector = {
-        //     let identity = identity.local();
-        //     let dns = dns.resolver.clone();
-        //     let metrics = metrics.opencensus;
-        //     info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
-        // }?;
+        let oc_collector = {
+            let identity = identity.local();
+            let dns = dns.resolver.clone();
+            let metrics = metrics.opencensus;
+            info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
+        }?;
 
         let admin = {
             let identity = identity.local();
@@ -159,13 +159,12 @@ impl Config {
             let profiles = dst.profiles.clone();
             // let tap = tap.layer();
             let metrics = metrics.inbound;
-            // let oc = oc_collector.span_sink();
+            let oc = oc_collector.span_sink();
             let drain = drain_rx.clone();
             info_span!("inbound").in_scope(move || {
                 inbound.build(
                     identity, profiles, // tap,
-                    metrics, None, // oc,
-                    drain,
+                    metrics, oc, drain,
                 )
             })?
         };
@@ -174,7 +173,7 @@ impl Config {
             let dns = dns.resolver;
             // let tap = tap.layer();
             let metrics = metrics.outbound;
-            // let oc = oc_collector.span_sink();
+            let oc = oc_collector.span_sink();
             info_span!("outbound").in_scope(move || {
                 outbound.build(
                     identity,
@@ -183,7 +182,7 @@ impl Config {
                     dst.profiles,
                     //tap,
                     metrics,
-                    None, //oc,
+                    oc,
                     drain_rx,
                 )
             })?
@@ -196,7 +195,7 @@ impl Config {
             drain: drain_tx,
             identity,
             inbound,
-            // oc_collector,
+            oc_collector,
             outbound,
             // tap,
         })

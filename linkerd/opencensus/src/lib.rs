@@ -2,6 +2,7 @@
 use futures::{ready, Stream, TryStream, TryStreamExt};
 use http_body::Body as HttpBody;
 use linkerd2_error::Error;
+use linkerd2_stack::NewService;
 use metrics::Registry;
 pub use opencensus_proto as proto;
 use opencensus_proto::agent::common::v1::Node;
@@ -27,10 +28,7 @@ pub mod metrics;
 
 /// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
 #[pin_project]
-pub struct SpanExporter<T, S>
-where
-    T: GrpcService<BoxBody>,
-{
+pub struct SpanExporter<T, S> {
     client: T,
     node: Node,
     state: State,
@@ -72,7 +70,8 @@ enum StreamError {
 
 impl<T, S> SpanExporter<T, S>
 where
-    T: GrpcService<BoxBody>,
+    T: NewService<()>,
+    T::Service: GrpcService<BoxBody>,
     S: Stream<Item = Span>,
 {
     const DEFAULT_MAX_BATCH_SIZE: usize = 100;
@@ -162,13 +161,16 @@ where
 
 impl<T, S> Future for SpanExporter<T, S>
 where
-    T: GrpcService<BoxBody> + Clone + Send + 'static,
+    T: NewService<()>,
+    T::Service: GrpcService<BoxBody> + Clone + Send + 'static,
     S: Stream<Item = Span>,
-    <T as GrpcService<BoxBody>>::Error: Into<Error> + Send,
-    T::ResponseBody: Send + 'static,
-    <T::ResponseBody as GrpcBody>::Data: Send,
-    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-    T::Future: Send,
+    <<T as NewService<()>>::Service as GrpcService<BoxBody>>::Error: Into<Error> + Send,
+    <<T as NewService<()>>::Service as GrpcService<BoxBody>>::ResponseBody: Send + 'static,
+    <<<T as NewService<()>>::Service as GrpcService<BoxBody>>::ResponseBody as GrpcBody>::Data:
+        Send,
+    <<<T as NewService<()>>::Service as GrpcService<BoxBody>>::ResponseBody as HttpBody>::Error:
+        Into<Error> + Send,
+    <<T as NewService<()>>::Service as GrpcService<BoxBody>>::Future: Send,
 {
     type Output = Result<(), Error>;
 
@@ -181,7 +183,7 @@ where
                     let (request_tx, request_rx) = mpsc::channel(1);
                     // XXX: wish we didn't have to clone here, but Tonic's RPCs
                     // borrow the service into the future...
-                    let mut svc = TraceServiceClient::new(IntoService(this.client.clone()));
+                    let mut svc = TraceServiceClient::new(this.client.new_service(()));
                     let req = grpc::Request::new(request_rx);
                     trace!("Establishing new TraceService::export request");
                     this.metrics.start_stream();
