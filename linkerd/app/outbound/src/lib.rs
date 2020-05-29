@@ -187,7 +187,7 @@ impl Config {
                     // This sets headers so that the inbound proxy can downgrade the request
                     // properly.
                     .push(OrigProtoUpgradeLayer::new())
-                    // .check_service::<Target<HttpEndpoint>>()
+                    .check_service::<Target<HttpEndpoint>>()
                     .instrument(|endpoint: &Target<HttpEndpoint>| {
                         info_span!("endpoint", peer.addr = %endpoint.inner.addr)
                     })
@@ -389,7 +389,7 @@ impl Config {
                         .into_inner(),
                     is_discovery_rejected,
                 )
-                //     .check_service::<Logical<HttpEndpoint>>()
+                .check_service::<Logical<HttpEndpoint>>()
                 //     // Sets the canonical-dst header on all outbound requests.
                 //     .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
                 .push(http::canonicalize::Layer::new(
