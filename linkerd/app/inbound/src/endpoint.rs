@@ -1,11 +1,11 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     // classify,
-    // dst,
+    dst,
     http_request_authority_addr,
     http_request_host_addr,
     http_request_l5d_override_dst_addr,
-    // metric_labels,
+    metric_labels,
     profiles,
     proxy::{http, identity, tap},
     router,
@@ -120,23 +120,23 @@ impl Profile {
     }
 }
 
-// impl profiles::HasDestination for Profile {
-//     fn destination(&self) -> Addr {
-//         self.0.clone()
-//     }
-// }
+impl profiles::HasDestination for Profile {
+    fn destination(&self) -> Addr {
+        self.0.clone()
+    }
+}
 
-// impl profiles::WithRoute for Profile {
-//     type Route = dst::Route;
+impl profiles::WithRoute for Profile {
+    type Route = dst::Route;
 
-//     fn with_route(self, route: profiles::Route) -> Self::Route {
-//         dst::Route {
-//             route,
-//             target: self.0.clone(),
-//             direction: metric_labels::Direction::In,
-//         }
-//     }
-// }
+    fn with_route(self, route: profiles::Route) -> Self::Route {
+        dst::Route {
+            route,
+            target: self.0.clone(),
+            direction: metric_labels::Direction::In,
+        }
+    }
+}
 
 // // === impl Target ===
 

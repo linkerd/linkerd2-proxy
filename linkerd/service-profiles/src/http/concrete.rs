@@ -1,9 +1,10 @@
 use super::{OverrideDestination, WeightedAddr};
-use futures::{future, Async, Future, Poll};
+use futures::{future, TryFutureExt};
 use linkerd2_addr::NameAddr;
 use linkerd2_error::Error;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::rngs::SmallRng;
+use std::task::{Context, Poll};
 use tokio::sync::watch;
 pub use tokio::sync::watch::error::SendError;
 use tracing::{debug, trace};
@@ -74,18 +75,18 @@ where
     type Error = Error;
     type Future = future::MapErr<S::Future, fn(S::Error) -> Self::Error>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
-            match self.updates.poll_ref().map_err(Error::from)? {
-                Async::NotReady | Async::Ready(None) => break,
-                Async::Ready(Some(routes)) => {
+            match self.updates.poll_recv_ref(cx) {
+                Poll::Pending | Poll::Ready(None) => break,
+                Poll::Ready(Some(routes)) => {
                     debug!(?routes, "updated");
                     self.routes = (*routes).clone();
                 }
             }
         }
 
-        self.make.poll_ready().map_err(Into::into)
+        self.make.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, mut target: T) -> Self::Future {
