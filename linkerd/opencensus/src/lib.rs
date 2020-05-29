@@ -61,10 +61,7 @@ enum State {
     },
 }
 
-enum StreamError {
-    Receiver,
-    SenderLost,
-}
+struct StreamError;
 
 // ===== impl SpanExporter =====
 
@@ -92,7 +89,7 @@ where
         sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
         node: &mut Option<Node>,
         metrics: &mut Registry,
-    ) -> Result<(), StreamError> {
+    ) -> Result<(), ()> {
         if spans.is_empty() {
             return Ok(());
         }
@@ -106,7 +103,7 @@ where
             resource: None,
         };
         trace!(message = "Transmitting", ?req);
-        sender.try_send(req).map_err(|_| StreamError::SenderLost)
+        sender.try_send(req).map_err(|_| ())
     }
 
     /// Attempt to read spans from the spans stream and write it to
@@ -127,8 +124,8 @@ where
         max_batch_size: usize,
         metrics: &mut Registry,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<(), StreamError>> {
-        ready!(sender.poll_ready(cx)).map_err(|_| StreamError::SenderLost)?;
+    ) -> Poll<Result<(), ()>> {
+        ready!(sender.poll_ready(cx)).map_err(|_| ())?;
 
         let mut spans = Vec::new();
         loop {
@@ -172,7 +169,7 @@ where
         Into<Error> + Send,
     <<T as NewService<()>>::Service as GrpcService<BoxBody>>::Future: Send,
 {
-    type Output = Result<(), Error>;
+    type Output = ();
 
     #[project]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -207,15 +204,8 @@ where
                         metrics,
                         cx,
                     )) {
-                        Ok(ready) => return Poll::Ready(Ok(ready)),
-                        Err(StreamError::Receiver) => {
-                            return Poll::Ready(Err(grpc::Status::new(
-                                grpc::Code::Cancelled,
-                                "cancelled",
-                            )
-                            .into()))
-                        }
-                        Err(StreamError::SenderLost) => State::Idle,
+                        Ok(()) => return Poll::Ready(()),
+                        Err(()) => State::Idle,
                     }
                 }
             };
