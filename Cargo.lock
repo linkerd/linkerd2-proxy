@@ -1598,7 +1598,7 @@ dependencies = [
  "quickcheck",
  "rand 0.7.2",
  "regex 1.0.0",
- "tokio 0.2.20",
+ "tokio 0.2.21",
  "tonic",
  "tower 0.3.1",
  "tracing",
