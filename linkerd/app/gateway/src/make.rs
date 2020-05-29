@@ -76,6 +76,7 @@ where
                 .call(orig_dst.name().clone())
                 .map_err(Into::into)
                 .and_then(move |(name, dst_ip)| {
+                    tracing::debug!(%name, %dst_ip, "Resolved");
                     if !suffixes.iter().any(|s| s.contains(&name)) {
                         tracing::debug!(%name, "Not in permitted suffixes");
                         return future::Either::A(future::ok(Gateway::Forbidden));

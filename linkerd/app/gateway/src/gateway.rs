@@ -29,21 +29,13 @@ where
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match self {
-            Self::Forbidden => Ok(().into()),
             Self::Outbound { outbound, .. } => outbound.poll_ready(),
+            Self::Forbidden => Ok(().into()),
         }
     }
 
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
         match self {
-            Self::Forbidden => {
-                let rsp = http::Response::builder()
-                    .status(http::StatusCode::FORBIDDEN)
-                    .body(Default::default())
-                    .unwrap();
-                Box::new(future::ok(rsp))
-            }
-
             Self::Outbound {
                 outbound,
                 //source_identity,
@@ -51,7 +43,16 @@ where
             } => {
                 // let headers = request.headers_mut();
                 // headers.get_all(http::header::FORWARDED)
+                tracing::debug!(headers = ?request.headers(), "Passing request to outbound");
                 Box::new(outbound.call(request))
+            }
+            Self::Forbidden => {
+                tracing::debug!("Forbidden");
+                let rsp = http::Response::builder()
+                    .status(http::StatusCode::FORBIDDEN)
+                    .body(Default::default())
+                    .unwrap();
+                Box::new(future::ok(rsp))
             }
         }
     }
