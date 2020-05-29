@@ -63,8 +63,7 @@ linkerd2-stack-tracing = { path = "../../stack/tracing" }
 linkerd2-trace-context = { path = "../../trace-context" }
 rand = { version = "0.7", features = ["small_rng"] }
 regex = "1.0.0"
-tokio = "0.1.14"
-tokio-02 = { package = "tokio", version = "0.2", features = ["macros"]}
+tokio = { version = "0.2", features = ["macros", "sync"]}
 tokio-timer = "0.2"
 tokio-compat = "0.1"
 tower-balance = { git = "https://github.com/tower-rs/tower" }

@@ -1,5 +1,4 @@
 use crate::{dns, identity::LocalIdentity};
-use futures::{future, Future};
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
     control, proxy, reconnect,
@@ -8,8 +7,10 @@ use linkerd2_app_core::{
     Error,
 };
 use linkerd2_opencensus::{metrics, proto, SpanExporter};
+use std::future::Future;
+use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};
-use tokio::sync::mpsc;
+use tokio_02::sync::mpsc;
 use tracing::debug;
 
 #[derive(Clone, Debug)]
@@ -22,7 +23,7 @@ pub enum Config {
     },
 }
 
-pub type Task = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
+pub type Task = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 
 pub type SpanSink = mpsc::Sender<proto::trace::v1::Span>;
 
@@ -53,7 +54,7 @@ impl Config {
                 attributes,
             } => {
                 let addr = control.addr;
-                let svc = svc::connect(control.connect.keepalive)
+                let inner = svc::connect(control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity))
                     .push_timeout(control.connect.timeout)
                     // TODO: perhaps rename from "control" to "grpc"
@@ -67,9 +68,11 @@ impl Config {
                         move |_| Ok(backoff.stream())
                     }))
                     .push(control::add_origin::Layer::new())
-                    .into_new_service()
-                    .new_service(addr.clone());
-
+                    .into_new_service();
+                let svc = WithAddr {
+                    inner,
+                    addr: addr.clone(),
+                };
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
 
                 let task = {
@@ -89,10 +92,10 @@ impl Config {
                     };
 
                     let addr = addr.clone();
-                    Box::new(future::lazy(move || {
+                    Box::pin(async move {
                         debug!(peer.addr = ?addr, "running");
-                        SpanExporter::new(svc, node, spans_rx, metrics)
-                    }))
+                        SpanExporter::new(svc, node, spans_rx, metrics).await
+                    })
                 };
 
                 Ok(OcCollector::Enabled {
@@ -111,5 +114,21 @@ impl OcCollector {
             OcCollector::Disabled => None,
             OcCollector::Enabled { ref span_sink, .. } => Some(span_sink.clone()),
         }
+    }
+}
+
+struct WithAddr<T> {
+    inner: T,
+    addr: ControlAddr,
+}
+
+impl<T> NewService<()> for WithAddr<T>
+where
+    T: NewService<ControlAddr>,
+{
+    type Service = S::Service;
+
+    fn new_service(&self, target: ()) -> Self::Service {
+        self.inner.new_service(self.addr.clone())
     }
 }

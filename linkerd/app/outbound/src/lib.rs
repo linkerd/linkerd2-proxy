@@ -131,12 +131,11 @@ impl Config {
                 let observability = svc::layers()
                     // .push(tap_layer.clone())
                     .push(metrics.http_endpoint.into_layer::<classify::Response>())
-                    // .push_on_response(TraceContextLayer::new(
-                    //     span_sink
-                    //         .clone()
-                    //         .map(|sink| SpanConverter::client(sink, trace_labels())),
-                    // ))
-                    ;
+                    .push_on_response(TraceContextLayer::new(
+                        span_sink
+                            .clone()
+                            .map(|sink| SpanConverter::client(sink, trace_labels())),
+                    ));
 
                 // Checks the headers to validate that a client-specified required
                 // identity matches the configured identity.
@@ -399,9 +398,9 @@ impl Config {
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
                 // Initiates OpenCensus tracing.
-                // .push(TraceContextLayer::new(span_sink.map(|span_sink| {
-                //     SpanConverter::server(span_sink, trace_labels())
-                // })))
+                .push(TraceContextLayer::new(span_sink.map(|span_sink| {
+                    SpanConverter::server(span_sink, trace_labels())
+                })))
                 // Tracks proxy handletime.
                 .push(metrics.http_handle_time.layer());
 
