@@ -386,6 +386,7 @@ impl Config {
                 is_discovery_rejected,
             )
             .check_service::<Logical<HttpEndpoint>>()
+            .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             .push_on_response(
                 // Strips headers that may be set by this proxy.
                 svc::layers()
@@ -393,7 +394,6 @@ impl Config {
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
             )
             // Sets the canonical-dst header on all outbound requests.
-            .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             .check_service::<Logical<HttpEndpoint>>()
             .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr))
             .into_inner()
