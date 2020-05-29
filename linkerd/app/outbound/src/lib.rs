@@ -37,6 +37,7 @@ use linkerd2_app_core::{
     DiscoveryRejected,
     Error,
     ProxyMetrics,
+    StackMetrics,
     TraceContextLayer,
     CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER,
@@ -47,6 +48,7 @@ use linkerd2_app_core::{
 };
 use std::collections::HashMap;
 use std::future::Future;
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -56,7 +58,7 @@ use tracing::info_span;
 // mod add_remote_ip_on_rsp;
 // #[allow(dead_code)] // TODO #2597
 // mod add_server_id_on_rsp;
-mod endpoint;
+pub mod endpoint;
 mod orig_proto_upgrade;
 // mod require_identity_on_endpoint;
 mod prevent_loop;
@@ -106,9 +108,13 @@ impl Config {
     pub fn build_dns_refine(
         &self,
         dns_resolver: dns::Resolver,
-        //metrics: &StackMetrics,
-    ) -> impl tower::Service<dns::Name, Response = dns::Name, Error = Error, Future = impl Send>
-           + Unpin
+        metrics: &StackMetrics,
+    ) -> impl tower::Service<
+        dns::Name,
+        Response = (dns::Name, IpAddr),
+        Error = Error,
+        Future = impl Unpin + Send,
+    > + Unpin
            + Clone
            + Send {
         // Caches DNS refinements from relative names to canonical names.
@@ -137,12 +143,11 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<B, C, R, F, P>(
+    pub fn build_http_router<B, C, R, P>(
         &self,
         prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         resolve: R,
-        refine: F,
         profiles_client: P,
         // tap_layer: tap::Layer,
         metrics: ProxyMetrics,
@@ -179,17 +184,10 @@ impl Config {
             + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
-        F: tower::Service<dns::Name, Error = Error, Response = dns::Name>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
-        F::Future: Unpin + Send,
         P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
     {
         let Config {
-            canonicalize_timeout,
             proxy:
                 ProxyConfig {
                     connect,
@@ -198,6 +196,7 @@ impl Config {
                     dispatch_timeout,
                     ..
                 },
+            ..
         } = self.clone();
 
         let prevent_loop = prevent_loop.into();
@@ -413,28 +412,24 @@ impl Config {
                 is_discovery_rejected,
             )
             .check_service::<Logical<HttpEndpoint>>()
-            // Sets the canonical-dst header on all outbound requests.
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
-            // Strips headers that may be set by this proxy.
-            .push(http::canonicalize::Layer::new(
-                svc::stack(refine).into_inner(),
-                canonicalize_timeout,
-            ))
             .push_on_response(
                 // Strips headers that may be set by this proxy.
                 svc::layers()
                     .push(http::strip_header::request::layer(L5D_CLIENT_ID))
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
             )
+            // Sets the canonical-dst header on all outbound requests.
             .check_service::<Logical<HttpEndpoint>>()
             .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr))
             .into_inner()
     }
 
-    pub fn build_server<C, H, S>(
+    pub fn build_server<C, R, H, S>(
         self,
         listen: transport::Listen<transport::DefaultOrigDstAddr>,
         prevent_loop: impl Into<PreventLoop>,
+        refine: R,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -442,6 +437,12 @@ impl Config {
         drain: drain::Watch,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>
     where
+        R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
+        R::Future: Unpin + Send,
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
@@ -452,7 +453,7 @@ impl Config {
             + 'static,
         H::Future: Unpin + Send,
         S: tower::Service<
-                http::Request<http::glue::Body>,
+                http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
                 Error = Error,
             > + Send
@@ -460,6 +461,7 @@ impl Config {
         S::Future: Send,
     {
         let Config {
+            canonicalize_timeout,
             proxy:
                 ProxyConfig {
                     server: ServerConfig { h2_settings, .. },
@@ -469,7 +471,6 @@ impl Config {
                     detect_protocol_timeout,
                     ..
                 },
-            ..
         } = self;
 
         // The stack is served lazily since caching layers spawn tasks from
@@ -498,6 +499,9 @@ impl Config {
         // //.push(metrics.clone().http_handle_time.layer());
 
         let http_server = svc::stack(http_router)
+            // Resolve the application-emitted destination via DNS to determine                                                                                                                      
+            // its canonical FQDN to use for routing.                                                                                                                                                
+            .push(http::canonicalize::Layer::new(refine, canonicalize_timeout))
             .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
             .push_make_ready()
             .push_timeout(dispatch_timeout)
@@ -509,6 +513,7 @@ impl Config {
                  svc::layers()
                     .push(http_admit_request)
                     .push(metrics.stack.layer(stack_labels("source")))
+                    .box_http_request()
             )
             .instrument(
                 |src: &tls::accept::Meta| {

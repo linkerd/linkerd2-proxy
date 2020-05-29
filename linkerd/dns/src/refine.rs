@@ -4,6 +4,7 @@ use linkerd2_dns_name::Name;
 use linkerd2_stack::NewService;
 use std::convert::TryFrom;
 use std::future::Future;
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -23,7 +24,12 @@ pub struct Refine {
 enum State {
     Init,
     Pending(Pin<Box<dyn Future<Output = Result<LookupIp, ResolveError>> + Send + 'static>>),
-    Refined { name: Name, valid_until: Instant },
+    Refined {
+        name: Name,
+        ips: Vec<IpAddr>,
+        index: usize,
+        valid_until: Instant,
+    },
 }
 
 #[derive(Debug)]
@@ -42,7 +48,7 @@ impl NewService<Name> for MakeRefine {
 }
 
 impl tower::Service<()> for Refine {
-    type Response = Name;
+    type Response = (Name, IpAddr);
     type Error = RefineError;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
@@ -62,7 +68,14 @@ impl tower::Service<()> for Refine {
                     let n = lookup.query().name();
                     let name = Name::try_from(n.to_ascii().as_bytes())
                         .expect("Name returned from resolver must be valid");
-                    State::Refined { name, valid_until }
+                    let ips = lookup.iter().collect::<Vec<_>>();
+                    assert!(ips.len() > 0);
+                    State::Refined {
+                        name,
+                        ips,
+                        index: 0,
+                        valid_until,
+                    }
                 }
                 State::Refined { valid_until, .. } => {
                     if Instant::now() < valid_until {
@@ -75,8 +88,16 @@ impl tower::Service<()> for Refine {
     }
 
     fn call(&mut self, _: ()) -> Self::Future {
-        if let State::Refined { ref name, .. } = self.state {
-            return future::ok(name.clone());
+        if let State::Refined {
+            ref name,
+            ref ips,
+            ref mut index,
+            ..
+        } = self.state
+        {
+            let ip = ips[*index % ips.len()];
+            *index += 1;
+            return future::ok((name.clone(), ip));
         }
 
         unreachable!("called before ready");
