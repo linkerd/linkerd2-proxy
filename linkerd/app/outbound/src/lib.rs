@@ -469,7 +469,7 @@ impl Config {
 
         let http_server = svc::stack(http_router)
             // Resolve the application-emitted destination via DNS to determine
-            // it's canonical FQDN to use for routing.
+            // its canonical FQDN to use for routing.
             .push(http::canonicalize::Layer::new(refine,
                 canonicalize_timeout,
             ))
