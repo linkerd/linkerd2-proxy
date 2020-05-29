@@ -53,16 +53,14 @@ where
         let source_identity = match tls_client_id {
             tls::Conditional::Some(id) => id,
             tls::Conditional::None(_) => {
-                tracing::warn!("Request from un-meshed connection");
-                return Box::new(future::ok(Gateway::Forbidden));
+                return Box::new(future::ok(Gateway::NoIdentity));
             }
         };
 
         let orig_dst = match dst_name {
             Some(n) => n,
             None => {
-                tracing::warn!("Request has no host/authority");
-                return Box::new(future::ok(Gateway::Forbidden));
+                return Box::new(future::ok(Gateway::NoAuthority));
             }
         };
 
@@ -78,8 +76,7 @@ where
                 .and_then(move |(name, dst_ip)| {
                     tracing::debug!(%name, %dst_ip, "Resolved");
                     if !suffixes.iter().any(|s| s.contains(&name)) {
-                        tracing::debug!(%name, "Not in permitted suffixes");
-                        return future::Either::A(future::ok(Gateway::Forbidden));
+                        return future::Either::A(future::ok(Gateway::BadDomain(name)));
                     }
 
                     // Create an outbound target using the resolved IP & name.

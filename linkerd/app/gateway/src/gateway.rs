@@ -1,11 +1,13 @@
 use futures::{future, Future, Poll};
 use linkerd2_app_core::proxy::{http, identity};
-use linkerd2_app_core::NameAddr;
+use linkerd2_app_core::{dns, NameAddr};
 use std::net::SocketAddr;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Gateway<O> {
-    Forbidden,
+    NoAuthority,
+    NoIdentity,
+    BadDomain(dns::Name),
     Outbound {
         // Source-metadata is available via request extensions set by the
         // inbound, but we
@@ -30,7 +32,7 @@ where
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
         match self {
             Self::Outbound { outbound, .. } => outbound.poll_ready(),
-            Self::Forbidden => Ok(().into()),
+            _ => Ok(().into()),
         }
     }
 
@@ -46,14 +48,25 @@ where
                 tracing::debug!(headers = ?request.headers(), "Passing request to outbound");
                 Box::new(outbound.call(request))
             }
-            Self::Forbidden => {
-                tracing::debug!("Forbidden");
-                let rsp = http::Response::builder()
-                    .status(http::StatusCode::FORBIDDEN)
-                    .body(Default::default())
-                    .unwrap();
-                Box::new(future::ok(rsp))
+            Self::NoAuthority => {
+                tracing::info!("No authority");
+                Box::new(future::ok(forbidden()))
+            }
+            Self::NoIdentity => {
+                tracing::info!("No identity");
+                Box::new(future::ok(forbidden()))
+            }
+            Self::BadDomain(dst) => {
+                tracing::info!(%dst, "Bad domain");
+                Box::new(future::ok(forbidden()))
             }
         }
     }
+}
+
+fn forbidden<B: Default>() -> http::Response<B> {
+    http::Response::builder()
+        .status(http::StatusCode::FORBIDDEN)
+        .body(Default::default())
+        .unwrap()
 }
