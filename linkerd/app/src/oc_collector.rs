@@ -54,7 +54,7 @@ impl Config {
                 attributes,
             } => {
                 let addr = control.addr;
-                let inner = svc::connect(control.connect.keepalive)
+                let svc = svc::connect(control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity))
                     .push_timeout(control.connect.timeout)
                     // TODO: perhaps rename from "control" to "grpc"
@@ -68,11 +68,9 @@ impl Config {
                         move |_| Ok(backoff.stream())
                     }))
                     .push(control::add_origin::Layer::new())
-                    .into_new_service();
-                let svc = WithAddr {
-                    inner,
-                    addr: addr.clone(),
-                };
+                    .into_new_service()
+                    .with_fixed_target(addr.clone());
+
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
 
                 let task = {
@@ -114,21 +112,5 @@ impl OcCollector {
             OcCollector::Disabled => None,
             OcCollector::Enabled { ref span_sink, .. } => Some(span_sink.clone()),
         }
-    }
-}
-
-struct WithAddr<T> {
-    inner: T,
-    addr: ControlAddr,
-}
-
-impl<T> NewService<()> for WithAddr<T>
-where
-    T: NewService<ControlAddr>,
-{
-    type Service = T::Service;
-
-    fn new_service(&self, target: ()) -> Self::Service {
-        self.inner.new_service(self.addr.clone())
     }
 }
