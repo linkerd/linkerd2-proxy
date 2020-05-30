@@ -1,6 +1,7 @@
 use super::make::MakeGateway;
 use indexmap::IndexSet;
-use linkerd2_app_core::{dns, proxy::http, Error};
+use linkerd2_app_core::proxy::http;
+use linkerd2_app_core::{dns, transport::tls, Error};
 use linkerd2_app_inbound::endpoint as inbound;
 use linkerd2_app_outbound::endpoint as outbound;
 use std::net::IpAddr;
@@ -15,6 +16,7 @@ impl Config {
         self,
         resolve: R,
         outbound: O,
+        local_id: tls::PeerIdentity,
     ) -> impl Clone
            + Send
            + tower::Service<
@@ -47,6 +49,6 @@ impl Config {
         S::Error: Into<Error> + Send + 'static,
         S::Future: Send,
     {
-        MakeGateway::new(resolve, outbound, self.suffixes.clone())
+        MakeGateway::new(resolve, outbound, local_id, self.suffixes.clone())
     }
 }

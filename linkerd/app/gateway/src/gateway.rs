@@ -1,7 +1,6 @@
 use futures::{future, Future, Poll};
 use linkerd2_app_core::proxy::{http, identity};
 use linkerd2_app_core::{dns, NameAddr};
-use std::net::SocketAddr;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Gateway<O> {
@@ -9,14 +8,28 @@ pub(crate) enum Gateway<O> {
     NoIdentity,
     BadDomain(dns::Name),
     Outbound {
-        // Other source-metadata is available via request extensions. This is
-        // here mostly as static proof that the innbound connection had
-        // identity.
+        outbound: O,
+        forwarded_header: http::header::HeaderValue,
+    },
+}
+
+impl<O> Gateway<O> {
+    pub fn new(
+        outbound: O,
         source_identity: identity::Name,
         dst_name: NameAddr,
-        dst_addr: SocketAddr,
-        outbound: O,
-    },
+        local_identity: identity::Name,
+    ) -> Self {
+        let fwd = format!(
+            "by={};for={};host={};proto=https",
+            local_identity, source_identity, dst_name
+        );
+        Gateway::Outbound {
+            outbound,
+            forwarded_header: http::header::HeaderValue::from_str(&fwd)
+                .expect("Forwarded header value must be valid"),
+        }
+    }
 }
 
 impl<B, O> tower::Service<http::Request<B>> for Gateway<O>
@@ -37,16 +50,19 @@ where
         }
     }
 
-    fn call(&mut self, request: http::Request<B>) -> Self::Future {
+    fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
         match self {
             Self::Outbound {
-                outbound,
-                //source_identity,
-                ..
+                ref mut outbound,
+                ref forwarded_header,
             } => {
-                // let headers = request.headers_mut();
-                // headers.get_all(http::header::FORWARDED)
-                tracing::debug!(headers = ?request.headers(), "Passing request to outbound");
+                request
+                    .headers_mut()
+                    .append(http::header::FORWARDED, forwarded_header.clone());
+                tracing::debug!(
+                    headers = ?request.headers(),
+                    "Passing request to outbound"
+                );
                 Box::new(outbound.call(request))
             }
             Self::NoAuthority => {
