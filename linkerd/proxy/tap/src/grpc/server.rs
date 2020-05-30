@@ -1,10 +1,12 @@
 use super::match_::Match;
 use crate::{iface, Inspect};
 use bytes::Buf;
-use hyper::body::Payload;
+use futures::{future, ready};
+use hyper::body::HttpBody;
 use linkerd2_conditional::Conditional;
 use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
 use linkerd2_proxy_http::HasH2Reason;
+use pin_project::pin_project;
 use std::convert::TryFrom;
 use std::future::Future;
 use std::iter;
@@ -24,15 +26,10 @@ pub struct Server<T> {
     base_id: Arc<AtomicUsize>,
 }
 
-#[derive(Debug)]
-pub struct ResponseFuture<F> {
-    subscribe: F,
-    events_rx: Option<mpsc::Receiver<api::TapEvent>>,
-    shared: Option<Arc<Shared>>,
-}
-
+#[pin_project]
 #[derive(Debug)]
 pub struct ResponseStream {
+    #[pin]
     events_rx: mpsc::Receiver<api::TapEvent>,
     shared: Option<Arc<Shared>>,
 }
@@ -109,25 +106,27 @@ impl<T: iface::Subscribe<Tap>> Server<T> {
     }
 }
 
-impl<T> api::server::Tap for Server<T>
+#[tonic::async_trait]
+impl<T> api::tap_server::Tap for Server<T>
 where
-    T: iface::Subscribe<Tap> + Clone,
+    T: iface::Subscribe<Tap> + Clone + Send + Sync + 'static,
+    T::Future: Send,
 {
     type ObserveStream = ResponseStream;
-    type ObserveFuture = future::Either<
-        future::FutureResult<Response<Self::ObserveStream>, grpc::Status>,
-        ResponseFuture<T::Future>,
-    >;
 
-    fn observe(&mut self, req: grpc::Request<api::ObserveRequest>) -> Self::ObserveFuture {
+    #[tracing::instrument(skip(self), level = "debug")]
+    async fn observe(
+        &self,
+        req: grpc::Request<api::ObserveRequest>,
+    ) -> Result<grpc::Response<Self::ObserveStream>, grpc::Status> {
         let req = req.into_inner();
 
         let limit = req.limit as usize;
         if limit == 0 {
             let err = Self::invalid_arg("limit must be positive".into());
-            return future::Either::A(future::err(err));
+            return Err(err);
         };
-        trace!("tap: limit={}", limit);
+        trace!(limit);
 
         // Read the match logic into a type we can use to evaluate against
         // requests. This match will be shared (weakly) by all registered
@@ -137,9 +136,9 @@ where
         let match_ = match Match::try_new(req.r#match) {
             Ok(m) => m,
             Err(e) => {
-                warn!("invalid tap request: {} ", e);
+                warn!(err = %e, "invalid tap request");
                 let err = Self::invalid_arg(e.to_string());
-                return future::Either::A(future::err(err));
+                return Err(err);
             }
         };
 
@@ -179,57 +178,34 @@ where
         let tap = Tap {
             shared: Arc::downgrade(&shared),
         };
-        let subscribe = self.subscribe.subscribe(tap);
 
-        // Reads up to `limit` requests from from `taps_rx` and satisfies them
-        // with a cpoy of `events_tx`.
-
-        future::Either::B(ResponseFuture {
-            subscribe,
-            shared: Some(shared),
-            events_rx: Some(events_rx),
-        })
-    }
-}
-
-impl<F: Future<Item = ()>> Future for ResponseFuture<F> {
-    type Item = Response<ResponseStream>;
-    type Error = grpc::Status;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         // Ensure that tap registers successfully.
-        match self.subscribe.poll() {
-            Ok(Async::NotReady) => return Ok(Async::NotReady),
-            Ok(Async::Ready(())) => {}
-            Err(_) => {
-                let status =
-                    grpc::Status::new(grpc::Code::ResourceExhausted, "Too many active taps");
-                return Err(status);
-            }
-        }
+        self.subscribe.subscribe(tap).await.map_err(|_| {
+            grpc::Status::new(grpc::Code::ResourceExhausted, "Too many active taps")
+        })?;
 
         let rsp = ResponseStream {
-            shared: self.shared.take(),
-            events_rx: self.events_rx.take().expect("events_rx must be set"),
+            shared: Some(shared),
+            events_rx,
         };
 
-        Ok(Response::new(rsp).into())
+        Ok(Response::new(rsp))
     }
 }
 
 // === impl ResponseStream ===
 
 impl Stream for ResponseStream {
-    type Item = api::TapEvent;
-    type Error = grpc::Status;
+    type Item = Result<api::TapEvent, grpc::Status>;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
         // Drop the Shared handle once at our limit so that services do not do
         // any more matching against this tap.
         //
         // Furthermore, this drops the event sender so that `events_rx` closes
         // gracefully when all open taps are complete.
-        self.shared = self.shared.take().and_then(|shared| {
+        *this.shared = this.shared.take().and_then(|shared| {
             if shared.is_under_limit() {
                 Some(shared)
             } else {
@@ -239,7 +215,7 @@ impl Stream for ResponseStream {
 
         // Read events from taps. The receiver can't actually error, but we need
         // to satisfy the type signature, so we coerce errors into EOS.
-        self.events_rx.poll().or_else(|_| Ok(None.into()))
+        Poll::Ready(ready!(this.events_rx.poll_next(cx)).map(Ok))
     }
 }
 
@@ -271,7 +247,7 @@ impl iface::Tap for Tap {
         inspect: &I,
     ) -> Option<(TapRequestPayload, TapResponse)>
     where
-        B: Payload,
+        B: HttpBody,
         I: Inspect,
     {
         let shared = self.shared.upgrade()?;
@@ -299,7 +275,7 @@ impl iface::Tap for Tap {
         };
         let mut events_tx = shared.events_tx.clone();
 
-        let request_init_at = clock::now();
+        let request_init_at = Instant::now();
 
         let base_event = base_event(req, inspect);
 
@@ -347,7 +323,7 @@ impl iface::Tap for Tap {
         let init = api::tap_event::http::RequestInit {
             id: Some(id.clone()),
             method: Some(req.method().into()),
-            scheme: req.uri().scheme_part().map(http_types::Scheme::from),
+            scheme: req.uri().scheme().map(http_types::Scheme::from),
             authority,
             path: req.uri().path().into(),
             headers,
@@ -384,8 +360,8 @@ impl iface::Tap for Tap {
 impl iface::TapResponse for TapResponse {
     type TapPayload = TapResponsePayload;
 
-    fn tap<B: Payload>(mut self, rsp: &http::Response<B>) -> TapResponsePayload {
-        let response_init_at = clock::now();
+    fn tap<B: HttpBody>(mut self, rsp: &http::Response<B>) -> TapResponsePayload {
+        let response_init_at = Instant::now();
 
         let headers = if self.extract_headers {
             let headers = if rsp.version() == http::Version::HTTP_2 {
@@ -433,7 +409,7 @@ impl iface::TapResponse for TapResponse {
     }
 
     fn fail<E: HasH2Reason>(mut self, err: &E) {
-        let response_end_at = clock::now();
+        let response_end_at = Instant::now();
         let reason = err.h2_reason();
         let end = api::tap_event::http::Event::ResponseEnd(api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id.clone()),
@@ -495,7 +471,7 @@ impl iface::TapPayload for TapResponsePayload {
 
 impl TapResponsePayload {
     fn send(mut self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
-        let response_end_at = clock::now();
+        let response_end_at = Instant::now();
         let trailers = if self.extract_headers {
             trls.map(|trls| headers_to_pb(iter::empty(), trls))
         } else {

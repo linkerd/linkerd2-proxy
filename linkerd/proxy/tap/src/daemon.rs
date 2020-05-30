@@ -1,7 +1,11 @@
 use super::iface::Tap;
-use futures::sync::{mpsc, oneshot};
-use futures::{try_ready, Async, Future, Poll, Stream};
+use futures::{ready, Stream};
 use linkerd2_error::Never;
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, trace, warn};
 
 pub fn new<T>() -> (Daemon<T>, Register<T>, Subscribe<T>) {
@@ -24,12 +28,15 @@ pub fn new<T>() -> (Daemon<T>, Register<T>, Subscribe<T>) {
 /// The daemon provides `Register` to allow proxy services to listen for new
 /// taps; and it provides `Subscribe` to allow the tap server to advertise new
 /// taps to proxy services.
+#[pin_project]
 #[must_use = "daemon must be polled"]
 #[derive(Debug)]
 pub struct Daemon<T> {
+    #[pin]
     svc_rx: mpsc::Receiver<mpsc::Sender<T>>,
     svcs: Vec<mpsc::Sender<T>>,
 
+    #[pin]
     tap_rx: mpsc::Receiver<(T, oneshot::Sender<()>)>,
     taps: Vec<T>,
 }
@@ -40,47 +47,49 @@ pub struct Register<T>(mpsc::Sender<mpsc::Sender<T>>);
 #[derive(Debug)]
 pub struct Subscribe<T>(mpsc::Sender<(T, oneshot::Sender<()>)>);
 
+#[pin_project]
 #[derive(Debug)]
-pub struct SubscribeFuture<T>(FutState<T>);
+pub struct SubscribeFuture<T>(#[pin] FutState<T>);
 
+#[pin_project]
 #[derive(Debug)]
 enum FutState<T> {
     Subscribe {
         tap: Option<T>,
         tap_tx: mpsc::Sender<(T, oneshot::Sender<()>)>,
     },
-    Pending(oneshot::Receiver<()>),
+    Pending(#[pin] oneshot::Receiver<()>),
 }
 
 impl<T: Tap> Future for Daemon<T> {
-    type Item = ();
-    type Error = Never;
+    type Output = ();
 
-    fn poll(&mut self) -> Poll<(), Never> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
         // Drop taps that are no longer active (i.e. the response stream has
         // been dropped).
-        let tap_count = self.taps.len();
-        self.taps.retain(|t| t.can_tap_more());
-        trace!("retained {} of {} taps", self.taps.len(), tap_count);
+        let tap_count = this.taps.len();
+        this.taps.retain(|t| t.can_tap_more());
+        trace!("retained {} of {} taps", this.len(), tap_count);
 
         // Drop services that are no longer active.
-        for idx in (0..self.svcs.len()).rev() {
+        for idx in (0..this.svcs.len()).rev() {
             // It's "okay" if a service isn't ready to receive taps. We just
             // fall back to being lossy rather than dropping the service
             // entirely.
-            if self.svcs[idx].poll_ready().is_err() {
+            if this.svcs[idx].poll_ready(cx).is_err() {
                 trace!("removing a service");
-                self.svcs.swap_remove(idx);
+                this.svcs.swap_remove(idx);
             }
         }
 
         // Connect newly-created services to active taps.
-        while let Ok(Async::Ready(Some(mut svc))) = self.svc_rx.poll() {
+        while let Poll::Ready(Some(mut svc)) = this.svc_rx.as_mut().poll_next(cx) {
             trace!("registering a service");
 
             // Notify the service of all active taps.
             let mut dropped = false;
-            for tap in &self.taps {
+            for tap in &this.taps {
                 debug_assert!(!dropped);
 
                 let err = svc.try_send(tap.clone()).err();
@@ -101,9 +110,9 @@ impl<T: Tap> Future for Daemon<T> {
         }
 
         // Connect newly-created taps to existing services.
-        while let Ok(Async::Ready(Some((tap, ack)))) = self.tap_rx.poll() {
+        while let Poll::Ready(Some((tap, ack))) = this.tap_rx.as_mut().poll_next(cx) {
             trace!("subscribing a tap");
-            if self.taps.len() == super::TAP_CAPACITY {
+            if this.taps.len() == super::TAP_CAPACITY {
                 warn!("tap capacity exceeded");
                 drop(ack);
                 continue;
@@ -117,20 +126,20 @@ impl<T: Tap> Future for Daemon<T> {
             // Notify services of the new tap. If the service has been dropped,
             // it's removed from the registry. If it's full, it isn't notified
             // of the tap.
-            for idx in (0..self.svcs.len()).rev() {
-                let err = self.svcs[idx].try_send(tap.clone()).err();
+            for idx in (0..this.svcs.len()).rev() {
+                let err = this.svcs[idx].try_send(tap.clone()).err();
                 if err.map(|e| e.is_disconnected()).unwrap_or(false) {
                     trace!("removing a service");
                     self.svcs.swap_remove(idx);
                 }
             }
 
-            self.taps.push(tap);
+            this.taps.push(tap);
             let _ = ack.send(());
             trace!("tap subscribed");
         }
 
-        Ok(Async::NotReady)
+        Poll::Pending
     }
 }
 
@@ -162,7 +171,7 @@ impl<T: Tap> Clone for Subscribe<T> {
 impl<T: Tap> super::iface::Subscribe<T> for Subscribe<T> {
     type Future = SubscribeFuture<T>;
 
-    fn subscribe(&mut self, tap: T) -> Self::Future {
+    fn subscribe(&self, tap: T) -> Self::Future {
         SubscribeFuture(FutState::Subscribe {
             tap: Some(tap),
             tap_tx: self.0.clone(),
@@ -171,17 +180,16 @@ impl<T: Tap> super::iface::Subscribe<T> for Subscribe<T> {
 }
 
 impl<T: Tap> Future for SubscribeFuture<T> {
-    type Item = ();
-    type Error = super::iface::NoCapacity;
+    type Output = Result<(), super::iface::NoCapacity>;
 
-    fn poll(&mut self) -> Poll<(), Self::Error> {
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
         loop {
-            self.0 = match self.0 {
-                FutState::Subscribe {
-                    ref mut tap,
-                    ref mut tap_tx,
-                } => {
-                    try_ready!(tap_tx.poll_ready().map_err(|_| super::iface::NoCapacity));
+            #[project]
+            match this.0.as_mut().project() {
+                FutState::Subscribe { tap, tap_tx } => {
+                    ready!(tap_tx.poll_ready(cx)).map_err(|_| super::iface::NoCapacity)?;
 
                     let tap = tap.take().expect("tap must be set");
                     let (tx, rx) = oneshot::channel();
@@ -189,10 +197,10 @@ impl<T: Tap> Future for SubscribeFuture<T> {
                         .try_send((tap, tx))
                         .map_err(|_| super::iface::NoCapacity)?;
 
-                    FutState::Pending(rx)
+                    this.0.as_mut().set(FutState::Pending(rx))
                 }
-                FutState::Pending(ref mut rx) => {
-                    return rx.poll().map_err(|_| super::iface::NoCapacity);
+                FutState::Pending(rx) => {
+                    return Poll::Ready(ready!(rx.poll(cx)).map_err(|_| super::iface::NoCapacity));
                 }
             }
         }
