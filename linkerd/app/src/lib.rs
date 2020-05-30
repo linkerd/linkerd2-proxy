@@ -207,7 +207,11 @@ impl Config {
                     .instrument(info_span!("outbound")),
             );
 
-            let http_gateway = gateway.build(refine, outbound_http);
+            let http_gateway = gateway.build(
+                refine,
+                outbound_http,
+                local_identity.as_ref().map(|l| l.name().clone()),
+            );
 
             tokio_02::task::spawn_local(
                 inbound
