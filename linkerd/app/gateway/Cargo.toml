@@ -15,3 +15,8 @@ linkerd2-app-outbound = { path = "../outbound" }
 tokio = "0.2"
 tower = { version = "0.3", default-features = false }
 tracing = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.2"
+tower = { version = "0.3", default-features = false, features = ["util"] }
+tower-test = "0.3"
