@@ -1,5 +1,5 @@
 use super::gateway::Gateway;
-use futures::{future, ready, TryFutureExt};
+use futures::{future, ready};
 use linkerd2_app_core::proxy::api_resolve::Metadata;
 use linkerd2_app_core::proxy::identity;
 use linkerd2_app_core::{dns, transport::tls, Error, NameAddr};
@@ -108,50 +108,36 @@ where
                 let mut outbound = outbound.clone();
                 let local_identity = local_identity.clone();
                 let suffixes = suffixes.clone();
-                Box::pin(
+                let resolve = resolve.call(orig_dst.name().clone());
+                Box::pin(async move {
                     // First, resolve the original name. This determines both the
                     // canonical name as well as an IP that can be used as the outbound
                     // original dst.
-                    resolve
-                        .call(orig_dst.name().clone())
-                        .map_err(Into::into)
-                        .and_then(move |(name, dst_ip)| {
-                            tracing::debug!(%name, %dst_ip, "Resolved");
-                            if !suffixes.iter().any(|s| s.contains(&name)) {
-                                tracing::debug!(%name, ?suffixes, "No matches");
-                                return future::Either::Left(future::ok(Gateway::BadDomain(name)));
-                            }
+                    let (name, dst_ip) = resolve.await.map_err(Into::into)?;
+                    tracing::debug!(%name, %dst_ip, "Resolved");
+                    if !suffixes.iter().any(|s| s.contains(&name)) {
+                        tracing::debug!(%name, ?suffixes, "No matches");
+                        return Ok(Gateway::BadDomain(name));
+                    }
 
-                            // Create an outbound target using the resolved IP & name.
-                            let dst_addr = (dst_ip, orig_dst.port()).into();
-                            let dst_name = NameAddr::new(name, orig_dst.port());
-                            let endpoint = outbound::Logical {
-                                addr: dst_name.clone().into(),
-                                inner: outbound::HttpEndpoint {
-                                    addr: dst_addr,
-                                    settings: http_settings,
-                                    metadata: Metadata::empty(),
-                                    identity: tls::PeerIdentity::None(
-                                        tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery
-                                            .into(),
-                                    ),
-                                },
-                            };
+                    // Create an outbound target using the resolved IP & name.
+                    let dst_addr = (dst_ip, orig_dst.port()).into();
+                    let dst_name = NameAddr::new(name, orig_dst.port());
+                    let endpoint = outbound::Logical {
+                        addr: dst_name.clone().into(),
+                        inner: outbound::HttpEndpoint {
+                            addr: dst_addr,
+                            settings: http_settings,
+                            metadata: Metadata::empty(),
+                            identity: tls::PeerIdentity::None(
+                                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+                            ),
+                        },
+                    };
 
-                            future::Either::Right(
-                                outbound.call(endpoint).map_err(Into::into).map_ok(
-                                    move |outbound| {
-                                        Gateway::new(
-                                            outbound,
-                                            source_identity,
-                                            dst_name,
-                                            local_identity,
-                                        )
-                                    },
-                                ),
-                            )
-                        }),
-                )
+                    let svc = outbound.call(endpoint).await.map_err(Into::into)?;
+                    Ok(Gateway::new(svc, source_identity, dst_name, local_identity))
+                })
             }
         }
     }
