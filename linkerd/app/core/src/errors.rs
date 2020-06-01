@@ -386,7 +386,7 @@ impl HttpError {
     pub fn identity_required(message: &'static str) -> Self {
         Self {
             message,
-            http: http::StatusCode::PROXY_AUTHENTICATION_REQUIRED,
+            http: http::StatusCode::FORBIDDEN,
             grpc: Code::Unauthenticated,
             reason: Reason::IdentityRequired,
         }
