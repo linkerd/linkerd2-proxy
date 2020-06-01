@@ -43,6 +43,7 @@ pub enum Reason {
     IdentityRequired,
     Io(Option<Errno>),
     FailFast,
+    GatewayLoop,
     NotFound,
     Unexpected,
 }
@@ -373,6 +374,7 @@ impl metrics::FmtLabels for Reason {
                 Reason::DispatchTimeout => "dispatch timeout",
                 Reason::ResponseTimeout => "response timeout",
                 Reason::IdentityRequired => "identity required",
+                Reason::GatewayLoop => "gateway loop",
                 Reason::NotFound => "not found",
                 Reason::Io(_) => "i/o",
                 Reason::Unexpected => "unexpected",
@@ -419,6 +421,15 @@ impl HttpError {
             http: http::StatusCode::NOT_FOUND,
             grpc: Code::NotFound,
             reason: Reason::NotFound,
+        }
+    }
+
+    pub fn gateway_loop() -> Self {
+        Self {
+            message: "gateway loop detcted",
+            http: http::StatusCode::LOOP_DETECTED,
+            grpc: Code::Aborted,
+            reason: Reason::GatewayLoop,
         }
     }
 }

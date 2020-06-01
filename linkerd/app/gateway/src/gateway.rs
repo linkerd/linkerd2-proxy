@@ -75,7 +75,7 @@ where
                 {
                     if let Some(by) = fwd_by(fwd) {
                         if by == local_identity.as_ref() {
-                            return Box::new(future::err(HttpError::gateway_loop().into()));
+                            return Box::pin(future::err(HttpError::gateway_loop().into()));
                         }
                     }
                 }
@@ -89,13 +89,13 @@ where
                     headers = ?request.headers(),
                     "Passing request to outbound"
                 );
-                Box::new(outbound.call(request).map_err(Into::into))
+                Box::pin(outbound.call(request).map_err(Into::into))
             }
-            Self::NoAuthority => Box::new(future::err(HttpError::not_found("no authority").into())),
-            Self::NoIdentity => Box::new(future::err(
+            Self::NoAuthority => Box::pin(future::err(HttpError::not_found("no authority").into())),
+            Self::NoIdentity => Box::pin(future::err(
                 HttpError::identity_required("no identity").into(),
             )),
-            Self::BadDomain(..) => Box::new(future::err(HttpError::not_found("bad domain").into())),
+            Self::BadDomain(..) => Box::pin(future::err(HttpError::not_found("bad domain").into())),
         }
     }
 }
