@@ -1,6 +1,7 @@
 use super::gateway::Gateway;
 use futures::{future, Future, Poll};
 use linkerd2_app_core::proxy::api_resolve::Metadata;
+use linkerd2_app_core::proxy::identity;
 use linkerd2_app_core::{dns, transport::tls, Error, NameAddr};
 use linkerd2_app_inbound::endpoint as inbound;
 use linkerd2_app_outbound::endpoint as outbound;
@@ -8,18 +9,37 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub(crate) struct MakeGateway<R, O> {
-    suffixes: Arc<Vec<dns::Suffix>>,
-    resolve: R,
-    outbound: O,
+pub(crate) enum MakeGateway<R, O> {
+    NoIdentity,
+    NoSuffixes,
+    Enabled {
+        resolve: R,
+        outbound: O,
+        suffixes: Arc<Vec<dns::Suffix>>,
+        local_identity: identity::Name,
+    },
 }
 
 impl<R, O> MakeGateway<R, O> {
-    pub fn new(resolve: R, outbound: O, suffixes: impl IntoIterator<Item = dns::Suffix>) -> Self {
-        Self {
+    pub fn new(
+        resolve: R,
+        outbound: O,
+        local_identity: tls::PeerIdentity,
+        suffixes: impl IntoIterator<Item = dns::Suffix>,
+    ) -> Self {
+        let suffixes = match suffixes.into_iter().collect::<Vec<_>>() {
+            s if s.is_empty() => return Self::NoSuffixes,
+            s => Arc::new(s),
+        };
+        let local_identity = match local_identity {
+            tls::Conditional::None(_) => return Self::NoIdentity,
+            tls::Conditional::Some(id) => id,
+        };
+        MakeGateway::Enabled {
             resolve,
             outbound,
-            suffixes: Arc::new(suffixes.into_iter().collect()),
+            local_identity,
+            suffixes,
         }
     }
 }
@@ -39,7 +59,10 @@ where
     type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
 
     fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.resolve.poll_ready().map_err(Into::into)
+        match self {
+            Self::Enabled { resolve, .. } => resolve.poll_ready().map_err(Into::into),
+            _ => Ok(().into()),
+        }
     }
 
     fn call(&mut self, target: inbound::Target) -> Self::Future {
@@ -64,46 +87,65 @@ where
             }
         };
 
-        let suffixes = self.suffixes.clone();
-        let mut outbound = self.outbound.clone();
-        Box::new(
-            // First, resolve the original name. This determines both the
-            // canonical name as well as an IP that can be used as the outbound
-            // original dst.
-            self.resolve
-                .call(orig_dst.name().clone())
-                .map_err(Into::into)
-                .and_then(move |(name, dst_ip)| {
-                    tracing::debug!(%name, %dst_ip, "Resolved");
-                    if !suffixes.iter().any(|s| s.contains(&name)) {
-                        tracing::debug!(%name, ?suffixes, "No matches");
-                        return future::Either::A(future::ok(Gateway::BadDomain(name)));
-                    }
+        match self {
+            Self::NoSuffixes => {
+                return Box::new(future::ok(Gateway::BadDomain(orig_dst.name().clone())));
+            }
+            Self::NoIdentity => {
+                return Box::new(future::ok(Gateway::NoIdentity));
+            }
+            Self::Enabled {
+                ref mut resolve,
+                outbound,
+                suffixes,
+                local_identity,
+            } => {
+                let mut outbound = outbound.clone();
+                let local_identity = local_identity.clone();
+                let suffixes = suffixes.clone();
+                Box::new(
+                    // First, resolve the original name. This determines both the
+                    // canonical name as well as an IP that can be used as the outbound
+                    // original dst.
+                    resolve
+                        .call(orig_dst.name().clone())
+                        .map_err(Into::into)
+                        .and_then(move |(name, dst_ip)| {
+                            tracing::debug!(%name, %dst_ip, "Resolved");
+                            if !suffixes.iter().any(|s| s.contains(&name)) {
+                                tracing::debug!(%name, ?suffixes, "No matches");
+                                return future::Either::A(future::ok(Gateway::BadDomain(name)));
+                            }
 
-                    // Create an outbound target using the resolved IP & name.
-                    let dst_addr = (dst_ip, orig_dst.port()).into();
-                    let dst_name = NameAddr::new(name, orig_dst.port());
-                    let endpoint = outbound::Logical {
-                        addr: dst_name.clone().into(),
-                        inner: outbound::HttpEndpoint {
-                            addr: dst_addr,
-                            settings: http_settings,
-                            metadata: Metadata::empty(),
-                            identity: tls::PeerIdentity::None(
-                                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
-                            ),
-                        },
-                    };
+                            // Create an outbound target using the resolved IP & name.
+                            let dst_addr = (dst_ip, orig_dst.port()).into();
+                            let dst_name = NameAddr::new(name, orig_dst.port());
+                            let endpoint = outbound::Logical {
+                                addr: dst_name.clone().into(),
+                                inner: outbound::HttpEndpoint {
+                                    addr: dst_addr,
+                                    settings: http_settings,
+                                    metadata: Metadata::empty(),
+                                    identity: tls::PeerIdentity::None(
+                                        tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery
+                                            .into(),
+                                    ),
+                                },
+                            };
 
-                    future::Either::B(outbound.call(endpoint).map_err(Into::into).map(
-                        move |outbound| Gateway::Outbound {
-                            dst_addr,
-                            dst_name,
-                            outbound,
-                            source_identity,
-                        },
-                    ))
-                }),
-        )
+                            future::Either::B(outbound.call(endpoint).map_err(Into::into).map(
+                                move |outbound| {
+                                    Gateway::new(
+                                        outbound,
+                                        source_identity,
+                                        dst_name,
+                                        local_identity,
+                                    )
+                                },
+                            ))
+                        }),
+                )
+            }
+        }
     }
 }
