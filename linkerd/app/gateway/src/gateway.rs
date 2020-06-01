@@ -10,6 +10,7 @@ pub(crate) enum Gateway<O> {
     Outbound {
         outbound: O,
         forwarded_header: http::header::HeaderValue,
+        local_identity: identity::Name,
     },
 }
 
@@ -26,6 +27,7 @@ impl<O> Gateway<O> {
         );
         Gateway::Outbound {
             outbound,
+            local_identity,
             forwarded_header: http::header::HeaderValue::from_str(&fwd)
                 .expect("Forwarded header value must be valid"),
         }
@@ -54,11 +56,29 @@ where
         match self {
             Self::Outbound {
                 ref mut outbound,
+                ref local_identity,
                 ref forwarded_header,
             } => {
+                // Check forwarded headers to see if this request has already
+                // transited through this gateway.
+                for fwd in request
+                    .headers()
+                    .get_all(http::header::FORWARDED)
+                    .into_iter()
+                    .filter_map(|h| h.to_str().ok())
+                {
+                    if let Some(by) = fwd_by(fwd) {
+                        if by == local_identity.as_ref() {
+                            return Box::new(future::err(HttpError::gateway_loop().into()));
+                        }
+                    }
+                }
+
+                // Add a forwarded header.
                 request
                     .headers_mut()
                     .append(http::header::FORWARDED, forwarded_header.clone());
+
                 tracing::debug!(
                     headers = ?request.headers(),
                     "Passing request to outbound"
@@ -72,4 +92,14 @@ where
             Self::BadDomain(..) => Box::new(future::err(HttpError::not_found("bad domain").into())),
         }
     }
+}
+
+fn fwd_by(fwd: &str) -> Option<&str> {
+    for kv in fwd.split(';') {
+        let mut kv = kv.split('=');
+        if let Some("by") = kv.next() {
+            return kv.next();
+        }
+    }
+    None
 }
