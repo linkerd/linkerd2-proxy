@@ -14,35 +14,19 @@ use futures::future;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
-    dns,
-    drain,
-    dst,
-    errors,
-    metric_labels,
+    dns, drain, dst, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
         self, core::resolve::Resolve, detect::DetectProtocolLayer, discover, http, identity,
         resolve::map_endpoint, server::ProtocolDetect, tap, tcp, Server,
     },
-    reconnect,
-    // retry,
-    router,
-    serve,
+    reconnect, retry, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, tls},
-    Conditional,
-    DiscoveryRejected,
-    Error,
-    ProxyMetrics,
-    TraceContextLayer,
-    CANONICAL_DST_HEADER,
-    DST_OVERRIDE_HEADER,
-    L5D_CLIENT_ID,
-    L5D_REMOTE_IP,
-    L5D_REQUIRE_ID,
-    L5D_SERVER_ID,
+    Conditional, DiscoveryRejected, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
+    DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID, L5D_SERVER_ID,
 };
 use std::collections::HashMap;
 use std::future::Future;
@@ -287,7 +271,7 @@ impl Config {
                 .check_new_clone_service::<dst::Route>()
                 .push(metrics.http_route_actual.into_layer::<classify::Response>())
                 // Sets an optional retry policy.
-                // .push(retry::layer(metrics.http_route_retry))
+                .push(retry::layer(metrics.http_route_retry))
                 .check_new_clone_service::<dst::Route>()
                 // Sets an optional request timeout.
                 .push(http::MakeTimeoutLayer::default())
