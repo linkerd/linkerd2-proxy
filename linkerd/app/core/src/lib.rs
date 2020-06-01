@@ -34,7 +34,7 @@ pub mod control;
 pub mod dns;
 pub mod dst;
 pub mod errors;
-// pub mod handle_time;
+pub mod handle_time;
 pub mod metric_labels;
 pub mod proxy;
 pub mod retry;
@@ -91,7 +91,7 @@ pub type StackMetrics = stack_metrics::Registry<metric_labels::StackLabels>;
 
 #[derive(Clone)]
 pub struct ProxyMetrics {
-    // pub http_handle_time: handle_time::Scope,
+    pub http_handle_time: handle_time::Scope,
     pub http_route: HttpRouteMetrics,
     pub http_route_actual: HttpRouteMetrics,
     pub http_route_retry: HttpRouteRetry,
