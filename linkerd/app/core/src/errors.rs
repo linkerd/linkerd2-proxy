@@ -26,6 +26,14 @@ pub struct LabelError(super::metric_labels::Direction);
 
 pub type Label = (super::metric_labels::Direction, Reason);
 
+#[derive(Copy, Clone, Debug)]
+pub struct HttpError {
+    http: http::StatusCode,
+    grpc: Code,
+    message: &'static str,
+    reason: Reason,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Reason {
     DispatchTimeout,
@@ -33,6 +41,7 @@ pub enum Reason {
     IdentityRequired,
     Io(Option<Errno>),
     FailFast,
+    NotFound,
     Unexpected,
 }
 
@@ -181,7 +190,9 @@ impl<RspB: Default + hyper::body::Payload> respond::Respond<http::Response<RspB>
 }
 
 fn http_status(error: &(dyn std::error::Error + 'static)) -> StatusCode {
-    if error.is::<ResponseTimeout>() {
+    if let Some(HttpError { http, .. }) = error.downcast_ref::<HttpError>() {
+        *http
+    } else if error.is::<ResponseTimeout>() {
         http::StatusCode::GATEWAY_TIMEOUT
     } else if error.is::<FailFastError>() {
         http::StatusCode::SERVICE_UNAVAILABLE
@@ -203,7 +214,11 @@ fn set_grpc_status(
     const GRPC_STATUS: &'static str = "grpc-status";
     const GRPC_MESSAGE: &'static str = "grpc-message";
 
-    if error.is::<ResponseTimeout>() {
+    if let Some(HttpError { grpc, message, .. }) = error.downcast_ref::<HttpError>() {
+        headers.insert(GRPC_STATUS, code_header(*grpc));
+        headers.insert(GRPC_MESSAGE, HeaderValue::from_static(message));
+        *grpc
+    } else if error.is::<ResponseTimeout>() {
         let code = Code::DeadlineExceeded;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("request timed out"));
@@ -299,7 +314,9 @@ impl std::error::Error for IdentityRequired {}
 
 impl LabelError {
     fn reason(err: &(dyn std::error::Error + 'static)) -> Reason {
-        if err.is::<ResponseTimeout>() {
+        if let Some(HttpError { reason, .. }) = err.downcast_ref::<HttpError>() {
+            *reason
+        } else if err.is::<ResponseTimeout>() {
             Reason::ResponseTimeout
         } else if err.is::<FailFastError>() {
             Reason::FailFast
@@ -335,6 +352,7 @@ impl metrics::FmtLabels for Reason {
                 Reason::DispatchTimeout => "dispatch timeout",
                 Reason::ResponseTimeout => "response timeout",
                 Reason::IdentityRequired => "identity required",
+                Reason::NotFound => "not found",
                 Reason::Io(_) => "i/o",
                 Reason::Unexpected => "unexpected",
             }
@@ -363,3 +381,31 @@ impl Metrics {
         self.0.clone()
     }
 }
+
+impl HttpError {
+    pub fn identity_required(message: &'static str) -> Self {
+        Self {
+            message,
+            http: http::StatusCode::PROXY_AUTHENTICATION_REQUIRED,
+            grpc: Code::Unauthenticated,
+            reason: Reason::IdentityRequired,
+        }
+    }
+
+    pub fn not_found(message: &'static str) -> Self {
+        Self {
+            message,
+            http: http::StatusCode::NOT_FOUND,
+            grpc: Code::NotFound,
+            reason: Reason::NotFound,
+        }
+    }
+}
+
+impl std::fmt::Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.message.fmt(f)
+    }
+}
+
+impl std::error::Error for HttpError {}
