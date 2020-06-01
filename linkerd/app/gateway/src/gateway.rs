@@ -1,6 +1,6 @@
-use futures::future;
+use futures::{future, ready, TryFutureExt};
 use linkerd2_app_core::proxy::{http, identity};
-use linkerd2_app_core::{dns, NameAddr};
+use linkerd2_app_core::{dns, errors::HttpError, Error, NameAddr};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -16,9 +16,6 @@ pub(crate) enum Gateway<O> {
         local_identity: identity::Name,
     },
 }
-
-type ResponseFuture<E> =
-    Pin<Box<dyn Future<Output = Result<http::Response<http::boxed::Payload>, E>> + Send + 'static>>;
 
 impl<O> Gateway<O> {
     pub fn new(
@@ -44,16 +41,19 @@ impl<B, O> tower::Service<http::Request<B>> for Gateway<O>
 where
     B: http::HttpBody + 'static,
     O: tower::Service<http::Request<B>, Response = http::Response<http::boxed::Payload>>,
-    O::Error: Send + 'static,
+    O::Error: Into<Error> + 'static,
     O::Future: Send + 'static,
 {
     type Response = O::Response;
-    type Error = O::Error;
-    type Future = ResponseFuture<Self::Error>;
+    type Error = Error;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
-            Self::Outbound { outbound, .. } => outbound.poll_ready(cx),
+            Self::Outbound { outbound, .. } => {
+                Poll::Ready(ready!(outbound.poll_ready(cx)).map_err(Into::into))
+            }
             _ => Poll::Ready(Ok(())),
         }
     }
@@ -75,8 +75,7 @@ where
                 {
                     if let Some(by) = fwd_by(fwd) {
                         if by == local_identity.as_ref() {
-                            tracing::info!(fwd, "Loop detected");
-                            return rsp(http::StatusCode::LOOP_DETECTED);
+                            return Box::new(future::err(HttpError::gateway_loop().into()));
                         }
                     }
                 }
@@ -90,20 +89,13 @@ where
                     headers = ?request.headers(),
                     "Passing request to outbound"
                 );
-                Box::pin(outbound.call(request))
+                Box::new(outbound.call(request).map_err(Into::into))
             }
-            Self::NoAuthority => {
-                tracing::info!("No authority");
-                rsp(http::StatusCode::FORBIDDEN)
-            }
-            Self::NoIdentity => {
-                tracing::info!("No identity");
-                rsp(http::StatusCode::FORBIDDEN)
-            }
-            Self::BadDomain(dst) => {
-                tracing::info!(%dst, "Bad domain");
-                rsp(http::StatusCode::FORBIDDEN)
-            }
+            Self::NoAuthority => Box::new(future::err(HttpError::not_found("no authority").into())),
+            Self::NoIdentity => Box::new(future::err(
+                HttpError::identity_required("no identity").into(),
+            )),
+            Self::BadDomain(..) => Box::new(future::err(HttpError::not_found("bad domain").into())),
         }
     }
 }
@@ -116,13 +108,4 @@ fn fwd_by(fwd: &str) -> Option<&str> {
         }
     }
     None
-}
-
-fn rsp<E: Send + 'static>(status: http::StatusCode) -> ResponseFuture<E> {
-    Box::pin(future::ok(
-        http::Response::builder()
-            .status(status)
-            .body(Default::default())
-            .unwrap(),
-    ))
 }
