@@ -65,19 +65,19 @@ impl<T: Tap> Future for Daemon<T> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
+        let mut this = self.project();
         // Drop taps that are no longer active (i.e. the response stream has
         // been dropped).
         let tap_count = this.taps.len();
         this.taps.retain(|t| t.can_tap_more());
-        trace!("retained {} of {} taps", this.len(), tap_count);
+        trace!("retained {} of {} taps", this.taps.len(), tap_count);
 
         // Drop services that are no longer active.
         for idx in (0..this.svcs.len()).rev() {
             // It's "okay" if a service isn't ready to receive taps. We just
             // fall back to being lossy rather than dropping the service
             // entirely.
-            if this.svcs[idx].poll_ready(cx).is_err() {
+            if let Poll::Ready(Err(_)) = this.svcs[idx].poll_ready(cx) {
                 trace!("removing a service");
                 this.svcs.swap_remove(idx);
             }
@@ -89,13 +89,19 @@ impl<T: Tap> Future for Daemon<T> {
 
             // Notify the service of all active taps.
             let mut dropped = false;
-            for tap in &this.taps {
+            for tap in &*this.taps {
                 debug_assert!(!dropped);
 
                 let err = svc.try_send(tap.clone()).err();
 
                 // If the service has been dropped, make sure that it's not added.
-                dropped = err.as_ref().map(|e| e.is_disconnected()).unwrap_or(false);
+                dropped = err
+                    .as_ref()
+                    .map(|e| match e {
+                        tokio::sync::mpsc::error::TrySendError::Closed(_) => true,
+                        _ => false,
+                    })
+                    .unwrap_or(false);
 
                 // If service can't receive any more taps, stop trying.
                 if err.is_some() {
@@ -104,7 +110,7 @@ impl<T: Tap> Future for Daemon<T> {
             }
 
             if !dropped {
-                self.svcs.push(svc);
+                this.svcs.push(svc);
                 trace!("service registered");
             }
         }
@@ -128,9 +134,15 @@ impl<T: Tap> Future for Daemon<T> {
             // of the tap.
             for idx in (0..this.svcs.len()).rev() {
                 let err = this.svcs[idx].try_send(tap.clone()).err();
-                if err.map(|e| e.is_disconnected()).unwrap_or(false) {
+                if err
+                    .map(|e| match e {
+                        tokio::sync::mpsc::error::TrySendError::Closed(_) => true,
+                        _ => false,
+                    })
+                    .unwrap_or(false)
+                {
                     trace!("removing a service");
-                    self.svcs.swap_remove(idx);
+                    this.svcs.swap_remove(idx);
                 }
             }
 
@@ -184,7 +196,7 @@ impl<T: Tap> Future for SubscribeFuture<T> {
 
     #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
+        let mut this = self.project();
         loop {
             #[project]
             match this.0.as_mut().project() {
