@@ -50,12 +50,16 @@ impl Config {
                     .push_timeout(control.connect.timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns))
-                    .push(reconnect::layer({
-                        let backoff = control.connect.backoff;
-                        move |_| Ok(backoff.stream())
-                    }))
+                    // .push(reconnect::layer({
+                    //     let backoff = control.connect.backoff;
+                    //     move |_: Box<dyn std::error::Error + Send + Sync + 'static>| -> Result<
+                    //             _,
+                    //             Box<dyn std::error::Error + Send + Sync + 'static>,
+                    //         > {
+                    //             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(backoff.stream())
+                    //         }
+                    // }))
                     .push(metrics.into_layer::<classify::Response>())
-                    .push_on_response(proxy::grpc::req_body_as_payload::layer())
                     .push(control::add_origin::Layer::new())
                     .into_new_service()
                     .new_service(addr.clone());
@@ -85,7 +89,7 @@ impl Identity {
 
     pub fn task(self) -> Task {
         match self {
-            Identity::Disabled => Box::new(futures::future::ok(())),
+            Identity::Disabled => Box::pin(async {}),
             Identity::Enabled { task, .. } => task,
         }
     }
