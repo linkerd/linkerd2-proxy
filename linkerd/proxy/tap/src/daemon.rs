@@ -1,6 +1,5 @@
 use super::iface::Tap;
 use futures::{ready, Stream};
-use linkerd2_error::Never;
 use pin_project::{pin_project, project};
 use std::future::Future;
 use std::pin::Pin;

@@ -84,7 +84,7 @@ impl Service<Connection> for AcceptPermittedClients {
 }
 
 pub mod unauthenticated {
-    use futures::{future, stream};
+    use futures::stream;
     use linkerd2_proxy_api::tap as api;
     use tonic::{Code, Request, Response, Status};
 

@@ -1,14 +1,13 @@
 use super::match_::Match;
 use crate::{iface, Inspect};
 use bytes::Buf;
-use futures::{future, ready};
+use futures::ready;
 use hyper::body::HttpBody;
 use linkerd2_conditional::Conditional;
 use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
 use linkerd2_proxy_http::HasH2Reason;
 use pin_project::pin_project;
 use std::convert::TryFrom;
-use std::future::Future;
 use std::iter;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
