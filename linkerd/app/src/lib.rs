@@ -60,7 +60,7 @@ pub struct App {
     inbound: inbound::Inbound,
     oc_collector: oc_collector::OcCollector,
     outbound: outbound::Outbound,
-    // tap: tap::Tap,
+    tap: tap::Tap,
 }
 
 impl Config {
