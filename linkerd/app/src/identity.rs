@@ -1,4 +1,3 @@
-use futures::{future, Future};
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
@@ -10,6 +9,8 @@ use linkerd2_app_core::{
     transport::tls,
     ControlHttpMetrics as Metrics, Error, Never,
 };
+use std::future::Future;
+use std::pin::Pin;
 use tracing::debug;
 
 #[derive(Clone, Debug)]
@@ -30,7 +31,7 @@ pub enum Identity {
     },
 }
 
-pub type Task = Box<dyn Future<Item = (), Error = Never> + Send + 'static>;
+pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 pub type LocalIdentity = tls::Conditional<Local>;
 
@@ -42,31 +43,30 @@ impl Config {
                 let (local, crt_store) = Local::new(&certify);
 
                 let addr = control.addr;
-                // let svc = svc::connect(control.connect.keepalive)
-                //     .push(tls::ConnectLayer::new(tls::Conditional::Some(
-                //         certify.trust_anchors.clone(),
-                //     )))
-                //     .push_timeout(control.connect.timeout)
-                //     .push(control::client::layer())
-                //     .push(control::resolve::layer(dns))
-                //     .push(reconnect::layer({
-                //         let backoff = control.connect.backoff;
-                //         move |_| Ok(backoff.stream())
-                //     }))
-                //     .push(metrics.into_layer::<classify::Response>())
-                //     .push_on_response(proxy::grpc::req_body_as_payload::layer())
-                //     .push(control::add_origin::Layer::new())
-                //     .into_new_service()
-                //     .new_service(addr.clone());
+                let svc = svc::connect(control.connect.keepalive)
+                    .push(tls::ConnectLayer::new(tls::Conditional::Some(
+                        certify.trust_anchors.clone(),
+                    )))
+                    .push_timeout(control.connect.timeout)
+                    .push(control::client::layer())
+                    .push(control::resolve::layer(dns))
+                    .push(reconnect::layer({
+                        let backoff = control.connect.backoff;
+                        move |_| Ok(backoff.stream())
+                    }))
+                    .push(metrics.into_layer::<classify::Response>())
+                    .push_on_response(proxy::grpc::req_body_as_payload::layer())
+                    .push(control::add_origin::Layer::new())
+                    .into_new_service()
+                    .new_service(addr.clone());
 
                 // Save to be spawned on an auxiliary runtime.
                 let task = {
                     let addr = addr.clone();
-                    Box::new(future::lazy(move || {
+                    Box::pin(async move {
                         debug!(peer.addr = ?addr, "running");
-                        // certify::Daemon::new(certify, crt_store, svc)
-                        Ok(())
-                    }))
+                        certify::daemon(certify, crt_store, svc).await
+                    })
                 };
 
                 Ok(Identity::Enabled { addr, local, task })
