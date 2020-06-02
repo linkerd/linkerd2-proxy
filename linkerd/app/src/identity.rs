@@ -1,10 +1,13 @@
+use futures_03::stream::TryStream;
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
 use linkerd2_app_core::{
     classify,
     config::{ControlAddr, ControlConfig},
-    control, dns, proxy, reconnect,
+    control, dns,
+    exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
+    proxy, reconnect,
     svc::{self, NewService},
     transport::tls,
     ControlHttpMetrics as Metrics, Error, Never,
@@ -31,6 +34,9 @@ pub enum Identity {
     },
 }
 
+#[derive(Clone, Debug)]
+struct Recover(ExponentialBackoff);
+
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 pub type LocalIdentity = tls::Conditional<Local>;
@@ -50,15 +56,7 @@ impl Config {
                     .push_timeout(control.connect.timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns))
-                    // .push(reconnect::layer({
-                    //     let backoff = control.connect.backoff;
-                    //     move |_: Box<dyn std::error::Error + Send + Sync + 'static>| -> Result<
-                    //             _,
-                    //             Box<dyn std::error::Error + Send + Sync + 'static>,
-                    //         > {
-                    //             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(backoff.stream())
-                    //         }
-                    // }))
+                    .push(reconnect::layer(Recover(control.connect.backoff)))
                     .push(metrics.into_layer::<classify::Response>())
                     .push(control::add_origin::Layer::new())
                     .into_new_service()
@@ -92,5 +90,14 @@ impl Identity {
             Identity::Disabled => Box::pin(async {}),
             Identity::Enabled { task, .. } => task,
         }
+    }
+}
+
+impl<E: Into<Error>> linkerd2_error::Recover<E> for Recover {
+    type Error = <ExponentialBackoffStream as TryStream>::Error;
+    type Backoff = ExponentialBackoffStream;
+
+    fn recover(&self, _: E) -> Result<Self::Backoff, E> {
+        Ok(self.0.stream())
     }
 }
