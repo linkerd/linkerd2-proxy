@@ -117,8 +117,13 @@ async fn inbound_http1() {
 
     // Wait for the server proxy to become ready
     let client = client::http1(srv_proxy.metrics, "localhost");
-    let ready = || client.request(client.request_builder("/ready").method("GET"));
-    assert_eventually!(ready().status() == http::StatusCode::OK);
+    let ready = || async {
+        client
+            .request_async(client.request_builder("/ready").method("GET"))
+            .await
+            .unwrap()
+    };
+    assert_eventually!(ready().await.status() == http::StatusCode::OK);
 
     let mut tap = tap::client_with_auth(client_proxy.outbound, srv_proxy_authority);
     let events = tap
