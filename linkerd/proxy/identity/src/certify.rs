@@ -1,13 +1,19 @@
 use crate::{Crt, CrtKey, Csr, Key, Name, TokenSource, TrustAnchors};
-use futures::{try_ready, Async, Future, Poll};
-use linkerd2_error::Never;
+use http_body::Body as HttpBody;
+use linkerd2_error::Error;
 use linkerd2_proxy_api::identity as api;
 use linkerd2_proxy_transport::tls;
+use pin_project::pin_project;
+use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
-use tokio_timer::{clock, Delay};
-use tower_grpc::{self as grpc, generic::client::GrpcService, BoxBody};
+use tokio::time::{self, Delay};
+use tonic::{
+    self as grpc,
+    body::{Body, BoxBody},
+    client::GrpcService,
+};
 use tracing::{debug, error, trace};
 
 /// Configures the Identity service and local identity.
@@ -25,6 +31,7 @@ pub struct Config {
 /// Holds the process's local TLS identity state.
 ///
 /// Updates dynamically as certificates are provisioned from the Identity service.
+#[pin_project]
 #[derive(Clone, Debug)]
 pub struct Local {
     trust_anchors: TrustAnchors,
@@ -41,30 +48,74 @@ pub struct LostDaemon;
 
 pub type CrtKeySender = watch::Sender<Option<CrtKey>>;
 
-/// Drives updates.
-pub struct Daemon<T>
+pub async fn daemon<T>(config: Config, crt_key_watch: watch::Sender<Option<CrtKey>>, client: T)
 where
     T: GrpcService<BoxBody>,
-    T::ResponseBody: grpc::Body,
+    T::ResponseBody: Send + 'static,
+    <T::ResponseBody as Body>::Data: Send,
+    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
 {
-    config: Config,
-    client: api::client::Identity<T>,
-    crt_key: watch::Sender<Option<CrtKey>>,
-    expiry: SystemTime,
-    inner: Inner<T>,
+    let mut curr_expiry = UNIX_EPOCH;
+    let mut client = api::identity_client::IdentityClient::new(client);
+
+    loop {
+        match config.token.load() {
+            Ok(token) => {
+                let req = grpc::Request::new(api::CertifyRequest {
+                    token,
+                    identity: config.local_name.as_ref().to_owned(),
+                    certificate_signing_request: config.csr.to_vec(),
+                });
+                trace!("daemon certifying");
+                let rsp = client.certify(req).await;
+                match rsp {
+                    Err(e) => error!("Failed to certify identity: {}", e),
+                    Ok(rsp) => {
+                        let api::CertifyResponse {
+                            leaf_certificate,
+                            intermediate_certificates,
+                            valid_until,
+                        } = rsp.into_inner();
+                        match valid_until.and_then(|d| SystemTime::try_from(d).ok()) {
+                            None => {
+                                error!("Identity service did not specify a certificate expiration.")
+                            }
+                            Some(expiry) => {
+                                let key = config.key.clone();
+                                let crt = Crt::new(
+                                    config.local_name.clone(),
+                                    leaf_certificate,
+                                    intermediate_certificates,
+                                    expiry,
+                                );
+
+                                match config.trust_anchors.certify(key, crt) {
+                                    Err(e) => {
+                                        error!("Received invalid ceritficate: {}", e);
+                                    }
+                                    Ok(crt_key) => {
+                                        debug!("daemon certified until {:?}", expiry);
+                                        if crt_key_watch.broadcast(Some(crt_key)).is_err() {
+                                            // If we can't store a value, than all observations
+                                            // have been dropped and we can stop refreshing.
+                                            return;
+                                        }
+
+                                        curr_expiry = expiry;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => error!("Failed to read authentication token: {}", e),
+        }
+        config.refresh(curr_expiry).await;
+    }
 }
 
-enum Inner<T>
-where
-    T: GrpcService<BoxBody>,
-    T::ResponseBody: grpc::Body,
-{
-    Waiting(Delay),
-    ShouldRefresh,
-    Pending(grpc::client::unary::ResponseFuture<api::CertifyResponse, T::Future, T::ResponseBody>),
-}
-
-// === impl Config ===
+// // === impl Config ===
 
 impl Config {
     /// Returns a future that fires when a refresh should occur.
@@ -72,8 +123,6 @@ impl Config {
     /// A refresh is scheduled at 70% of the current certificate's lifetime;
     /// though it is never less than min_refresh or larger than max_refresh.
     fn refresh(&self, expiry: SystemTime) -> Delay {
-        let now = clock::now();
-
         let refresh = match expiry
             .duration_since(SystemTime::now())
             .ok()
@@ -85,7 +134,7 @@ impl Config {
             Some(lifetime) => lifetime,
         };
         trace!("will refresh in {:?}", refresh);
-        Delay::new(now + refresh)
+        time::delay_for(refresh)
     }
 }
 
@@ -106,14 +155,20 @@ impl Local {
         &self.name
     }
 
-    pub fn await_crt(self) -> AwaitCrt {
-        AwaitCrt(Some(self))
+    pub async fn await_crt(mut self) -> Result<Self, LostDaemon> {
+        while self.crt_key.borrow().is_none() {
+            // If the sender is dropped, the daemon task has ended.
+            if let None = self.crt_key.recv().await {
+                return Err(LostDaemon);
+            }
+        }
+        return Ok(self);
     }
 }
 
 impl tls::client::HasConfig for Local {
     fn tls_client_config(&self) -> Arc<tls::client::Config> {
-        if let Some(ref c) = *self.crt_key.get_ref() {
+        if let Some(ref c) = *self.crt_key.borrow() {
             return c.tls_client_config();
         }
 
@@ -127,150 +182,10 @@ impl tls::accept::HasConfig for Local {
     }
 
     fn tls_server_config(&self) -> Arc<tls::accept::Config> {
-        if let Some(ref c) = *self.crt_key.get_ref() {
+        if let Some(ref c) = *self.crt_key.borrow() {
             return c.tls_server_config();
         }
 
         tls::accept::empty_config()
-    }
-}
-
-// === impl Daemon ===
-
-impl<T> Daemon<T>
-where
-    T: GrpcService<BoxBody>,
-{
-    pub fn new(config: Config, crt_key: CrtKeySender, client: T) -> Self {
-        Self {
-            config,
-            crt_key,
-            inner: Inner::ShouldRefresh,
-            expiry: UNIX_EPOCH,
-            client: api::client::Identity::new(client),
-        }
-    }
-}
-
-impl<T> Future for Daemon<T>
-where
-    T: GrpcService<BoxBody>,
-{
-    type Item = ();
-    type Error = Never;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            self.inner = match self.inner {
-                Inner::Waiting(ref mut d) => {
-                    trace!("daemon waiting");
-                    if let Ok(Async::NotReady) = d.poll() {
-                        return Ok(Async::NotReady);
-                    }
-                    Inner::ShouldRefresh
-                }
-                Inner::ShouldRefresh => {
-                    trace!("daemon refreshing");
-                    try_ready!(self
-                        .client
-                        .poll_ready()
-                        .map_err(|e| panic!("identity::poll_ready must not fail: {}", e)));
-
-                    match self.config.token.load() {
-                        Ok(token) => {
-                            let req = grpc::Request::new(api::CertifyRequest {
-                                token,
-                                identity: self.config.local_name.as_ref().to_owned(),
-                                certificate_signing_request: self.config.csr.to_vec(),
-                            });
-                            trace!("daemon certifying");
-                            Inner::Pending(self.client.certify(req))
-                        }
-                        Err(e) => {
-                            error!("Failed to read authentication token: {}", e);
-                            Inner::Waiting(self.config.refresh(self.expiry))
-                        }
-                    }
-                }
-                Inner::Pending(ref mut p) => {
-                    trace!("daemon pending certification");
-                    match p.poll() {
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Ok(Async::Ready(rsp)) => {
-                            let api::CertifyResponse {
-                                leaf_certificate,
-                                intermediate_certificates,
-                                valid_until,
-                            } = rsp.into_inner();
-
-                            match valid_until
-                                .and_then(|d| Result::<SystemTime, Duration>::from(d).ok())
-                            {
-                                None => error!(
-                                    "Identity service did not specify a certificate expiration."
-                                ),
-                                Some(expiry) => {
-                                    let key = self.config.key.clone();
-                                    let crt = Crt::new(
-                                        self.config.local_name.clone(),
-                                        leaf_certificate,
-                                        intermediate_certificates,
-                                        expiry,
-                                    );
-
-                                    match self.config.trust_anchors.certify(key, crt) {
-                                        Err(e) => {
-                                            error!("Received invalid ceritficate: {}", e);
-                                        }
-                                        Ok(crt_key) => {
-                                            debug!("daemon certified until {:?}", expiry);
-                                            if self.crt_key.broadcast(Some(crt_key)).is_err() {
-                                                // If we can't store a value, than all observations
-                                                // have been dropped and we can stop refreshing.
-                                                return Ok(Async::Ready(()));
-                                            }
-
-                                            self.expiry = expiry;
-                                        }
-                                    }
-                                }
-                            }
-
-                            Inner::Waiting(self.config.refresh(self.expiry))
-                        }
-                        Err(e) => {
-                            error!("Failed to certify identity: {}", e);
-                            Inner::Waiting(self.config.refresh(self.expiry))
-                        }
-                    }
-                }
-            };
-        }
-    }
-}
-
-// === impl AwaitCrt ===
-
-impl Future for AwaitCrt {
-    type Item = Local;
-    type Error = LostDaemon;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut local = self.0.take().expect("polled after ready");
-        loop {
-            if (*local.crt_key.get_ref()).is_some() {
-                return Ok(Async::Ready(local));
-            }
-
-            let poll = local.crt_key.poll_ref().map(|a| a.map(|v| v.map(|_| ())));
-            match poll {
-                Ok(Async::Ready(Some(()))) => {} // continue
-                Ok(Async::NotReady) => {
-                    self.0 = Some(local);
-                    return Ok(Async::NotReady);
-                }
-                Err(_) | Ok(Async::Ready(None)) => return Err(LostDaemon),
-            }
-        }
     }
 }

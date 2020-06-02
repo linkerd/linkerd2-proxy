@@ -1425,14 +1425,15 @@ dependencies = [
 name = "linkerd2-proxy-identity"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
+ "http-body 0.3.1",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
  "linkerd2-proxy-transport",
- "tokio 0.1.22",
- "tokio-timer",
- "tower-grpc",
+ "pin-project",
+ "tokio 0.2.21",
+ "tonic",
  "tracing",
 ]
 
