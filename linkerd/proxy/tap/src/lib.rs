@@ -1,5 +1,4 @@
-// #![deny(warnings, rust_2018_idioms)]
-// #![type_length_limit = "1586225"] // possibly needed for `task_compat`?
+#![deny(warnings, rust_2018_idioms)]
 use http;
 use indexmap::IndexMap;
 use linkerd2_conditional::Conditional;
@@ -11,19 +10,19 @@ use std::sync::Arc;
 mod accept;
 mod daemon;
 mod grpc;
-// mod service;
+mod service;
 
 pub use self::accept::AcceptPermittedClients;
 
-// /// Instruments service stacks so that requests may be tapped.
-// pub type Layer = service::Layer<daemon::Register<grpc::Tap>>;
+/// Instruments service stacks so that requests may be tapped.
+pub type Layer = service::Layer<daemon::Register<grpc::Tap>>;
 
 /// A gRPC tap server.
 pub type Server = grpc::Server<daemon::Subscribe<grpc::Tap>>;
 
-// /// A Future that dispatches new tap requests to services and ensures that new
-// /// services are notified of active tap requests.
-// pub type Daemon = daemon::Daemon<grpc::Tap>;
+/// A Future that dispatches new tap requests to services and ensures that new
+/// services are notified of active tap requests.
+pub type Daemon = daemon::Daemon<grpc::Tap>;
 
 // The maximum number of taps that may be live in the system at once.
 const TAP_CAPACITY: usize = 100;
@@ -35,13 +34,13 @@ const REGISTER_CHANNEL_CAPACITY: usize = 10_000;
 // The number of events that may be buffered for a given response.
 const PER_RESPONSE_EVENT_BUFFER_CAPACITY: usize = 400;
 
-// /// Build the tap subsystem.
-// pub fn new() -> (Layer, Server, Daemon) {
-//     let (daemon, register, subscribe) = daemon::new();
-//     let layer = Layer::new(register);
-//     let server = Server::new(subscribe);
-//     (layer, server, daemon)
-// }
+/// Build the tap subsystem.
+pub fn new() -> (Layer, Server, Daemon) {
+    let (daemon, register, subscribe) = daemon::new();
+    let layer = Layer::new(register);
+    let server = Server::new(subscribe);
+    (layer, server, daemon)
+}
 
 /// Inspects a request for a `Stack`.
 ///
