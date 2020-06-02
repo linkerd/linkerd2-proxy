@@ -6,7 +6,6 @@ use linkerd2_app_integration::*;
 use std::time::SystemTime;
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn tap_enabled_when_identity_enabled() {
     let _ = trace_init();
 
@@ -21,7 +20,6 @@ fn tap_enabled_when_identity_enabled() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn tap_disabled_when_identity_disabled() {
     let _ = trace_init();
     let proxy = proxy::new().disable_identity().run();
@@ -42,7 +40,6 @@ fn can_disable_tap() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 async fn rejects_incorrect_identity_when_identity_is_expected() {
     let _ = trace_init();
 
@@ -77,7 +74,7 @@ async fn rejects_incorrect_identity_when_identity_is_expected() {
 // Flaky: sometimes the admin thread hasn't had a chance to register
 // the Taps before the `client.get` is called.
 #[tokio::test]
-#[cfg_attr(all(not(feature = "nyi"), not(feature = "flaky_tests")), ignore)]
+#[cfg_attr(not(feature = "flaky_tests"), ignore)]
 async fn inbound_http1() {
     let _ = trace_init();
 
@@ -149,7 +146,6 @@ async fn inbound_http1() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 async fn grpc_headers_end() {
     let _ = trace_init();
 
