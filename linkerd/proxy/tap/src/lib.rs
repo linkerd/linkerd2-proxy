@@ -8,18 +8,18 @@ use linkerd2_proxy_transport::tls::ReasonForNoIdentity;
 use std::net;
 use std::sync::Arc;
 
-// mod accept;
+mod accept;
 mod daemon;
 mod grpc;
 // mod service;
 
-// pub use self::accept::AcceptPermittedClients;
+pub use self::accept::AcceptPermittedClients;
 
 // /// Instruments service stacks so that requests may be tapped.
 // pub type Layer = service::Layer<daemon::Register<grpc::Tap>>;
 
-// /// A gRPC tap server.
-// pub type Server = grpc::Server<daemon::Subscribe<grpc::Tap>>;
+/// A gRPC tap server.
+pub type Server = grpc::Server<daemon::Subscribe<grpc::Tap>>;
 
 // /// A Future that dispatches new tap requests to services and ensures that new
 // /// services are notified of active tap requests.
