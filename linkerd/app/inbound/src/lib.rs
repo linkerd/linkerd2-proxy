@@ -216,13 +216,6 @@ impl Config {
             // Normalizes the URI, i.e. if it was originally in
             // absolute-form on the outbound side.
             .push(normalize_uri::layer())
-            .push(admit::AdmitLayer::new(prevent_loop))
-            .push_on_response(svc::layers().box_http_response())
-            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
-                svc::stack(http_loopback)
-                    .push_on_response(svc::layers().box_http_request())
-                    .into_inner(),
-            )
             .push(http_target_observability)
             .check_service::<Target>()
             .into_new_service()
@@ -279,12 +272,19 @@ impl Config {
         svc::stack(http_profile_cache)
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
-            // Don't resolve profiles for inbound-targetted requests. They'll be
-            // resolved on the outbound side if necsesary.
-            .push(admit::AdmitLayer::new(prevent_loop))
             .push_fallback(
                 http_target_cache
                     .push_on_response(svc::layers().box_http_response().box_http_request()),
+            )
+            // If the traffic is targeted at the inbound port, send it through
+            // the loopback service (i.e. as a gateway). This is done before
+            // caching so that the loopback stack can determine whether it
+            // should cache or not.
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
+                svc::stack(http_loopback)
+                    .push_on_response(svc::layers().box_http_request())
+                    .into_inner(),
             )
             .check_service::<Target>()
             .into_inner()
