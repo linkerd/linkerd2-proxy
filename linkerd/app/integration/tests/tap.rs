@@ -213,11 +213,14 @@ async fn grpc_headers_end() {
 
     // Send a request that will be observed via the tap client
     let client = client::http2(srv_proxy.inbound, "localhost");
-    let res = client.request(
-        client
-            .request_builder("/")
-            .header("content-type", "application/grpc+nope"),
-    );
+    let res = client
+        .request_async(
+            client
+                .request_builder("/")
+                .header("content-type", "application/grpc+nope"),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), 200);
     assert_eq!(res.headers()["grpc-status"], "1");
     assert_eq!(
