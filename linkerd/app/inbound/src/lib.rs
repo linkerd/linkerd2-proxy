@@ -276,6 +276,10 @@ impl Config {
                 http_target_cache
                     .push_on_response(svc::layers().box_http_response().box_http_request()),
             )
+            // If the traffic is targeted at the inbound port, send it through
+            // the loopback service (i.e. as a gateway). This is done before
+            // caching so that the loopback stack can determine whether it
+            // should cache or not.
             .push(admit::AdmitLayer::new(prevent_loop))
             .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
                 svc::stack(http_loopback)
