@@ -28,7 +28,6 @@ fn tap_disabled_when_identity_disabled() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn can_disable_tap() {
     let _ = trace_init();
     let mut env = TestEnv::new();
