@@ -224,7 +224,7 @@ impl Config {
                         dst.profiles,
                         //tap_layer.clone(),
                         inbound_metrics,
-                        //oc_span_sink,
+                        ///oc_span_sink,
                         drain_rx,
                     )
                     .map_err(|e| panic!("inbound failed: {}", e))
