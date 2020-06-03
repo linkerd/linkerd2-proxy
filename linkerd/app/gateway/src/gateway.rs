@@ -67,13 +67,14 @@ where
             } => {
                 // Check forwarded headers to see if this request has already
                 // transited through this gateway.
-                for fwd in request
+                for forwarded in request
                     .headers()
                     .get_all(http::header::FORWARDED)
                     .into_iter()
                     .filter_map(|h| h.to_str().ok())
                 {
-                    if let Some(by) = fwd_by(fwd) {
+                    if let Some(by) = fwd_by(forwarded) {
+                        tracing::info!(%forwarded);
                         if by == local_identity.as_ref() {
                             return Box::pin(future::err(HttpError::gateway_loop().into()));
                         }

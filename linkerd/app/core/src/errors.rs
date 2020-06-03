@@ -426,7 +426,7 @@ impl HttpError {
 
     pub fn gateway_loop() -> Self {
         Self {
-            message: "gateway loop detcted",
+            message: "gateway loop detected",
             http: http::StatusCode::LOOP_DETECTED,
             grpc: Code::Aborted,
             reason: Reason::GatewayLoop,
