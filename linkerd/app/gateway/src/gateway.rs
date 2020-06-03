@@ -68,7 +68,7 @@ where
                     .filter_map(|h| h.to_str().ok())
                 {
                     if let Some(by) = fwd_by(forwarded) {
-                        tracing::info!(%forwarded, "Loop detected");
+                        tracing::info!(%forwarded);
                         if by == local_identity.as_ref() {
                             return Box::new(future::err(HttpError::gateway_loop().into()));
                         }
