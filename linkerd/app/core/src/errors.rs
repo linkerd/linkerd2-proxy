@@ -432,6 +432,10 @@ impl HttpError {
             reason: Reason::GatewayLoop,
         }
     }
+
+    pub fn status(&self) -> http::StatusCode {
+        self.http
+    }
 }
 
 impl std::fmt::Display for HttpError {

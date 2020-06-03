@@ -10,7 +10,7 @@ pub use self::config::Config;
 mod test {
     use super::*;
     use linkerd2_app_core::proxy::{http, identity};
-    use linkerd2_app_core::{dns, transport::tls, NameAddr, Never};
+    use linkerd2_app_core::{dns, errors::HttpError, transport::tls, Error, NameAddr, Never};
     use linkerd2_app_inbound::endpoint as inbound;
     //use linkerd2_app_outbound::endpoint as outbound;
     use std::{
@@ -23,54 +23,74 @@ mod test {
 
     #[tokio::test]
     async fn gateway() {
-        Test::default().run().await;
+        assert!(Test::default().run().await.is_ok());
     }
 
     #[tokio::test]
     async fn bad_domain() {
-        Test {
+        let test = Test {
             suffix: "bad.example.com",
-            status: http::StatusCode::FORBIDDEN,
             ..Default::default()
-        }
-        .run()
-        .await;
+        };
+        let status = test
+            .run()
+            .await
+            .unwrap_err()
+            .downcast_ref::<HttpError>()
+            .unwrap()
+            .status();
+        assert_eq!(status, http::StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn no_authority() {
-        Test {
+        let test = Test {
             dst_name: None,
-            status: http::StatusCode::FORBIDDEN,
             ..Default::default()
-        }
-        .run()
-        .await;
+        };
+        let status = test
+            .run()
+            .await
+            .unwrap_err()
+            .downcast_ref::<HttpError>()
+            .unwrap()
+            .status();
+        assert_eq!(status, http::StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn no_identity() {
         let peer_id = tls::PeerIdentity::None(tls::ReasonForNoPeerName::NotProvidedByRemote.into());
-        Test {
+        let test = Test {
             peer_id,
-            status: http::StatusCode::FORBIDDEN,
             ..Default::default()
-        }
-        .run()
-        .await;
+        };
+        let status = test
+            .run()
+            .await
+            .unwrap_err()
+            .downcast_ref::<HttpError>()
+            .unwrap()
+            .status();
+        assert_eq!(status, http::StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
     async fn forward_loop() {
-        Test {
+        let test = Test {
             orig_fwd: Some(
                 "by=gateway.id.test;for=client.id.test;host=dst.test.example.com:4321;proto=https",
             ),
-            status: http::StatusCode::LOOP_DETECTED,
             ..Default::default()
-        }
-        .run()
-        .await;
+        };
+        let status = test
+            .run()
+            .await
+            .unwrap_err()
+            .downcast_ref::<HttpError>()
+            .unwrap()
+            .status();
+        assert_eq!(status, http::StatusCode::LOOP_DETECTED);
     }
 
     struct Test {
@@ -78,7 +98,6 @@ mod test {
         dst_name: Option<&'static str>,
         peer_id: tls::PeerIdentity,
         orig_fwd: Option<&'static str>,
-        status: http::StatusCode,
     }
 
     impl Default for Test {
@@ -90,19 +109,17 @@ mod test {
                     dns::Name::try_from("client.id.test".as_bytes()).unwrap(),
                 )),
                 orig_fwd: None,
-                status: http::StatusCode::NO_CONTENT,
             }
         }
     }
 
     impl Test {
-        async fn run(self) {
+        async fn run(self) -> Result<http::Response<http::boxed::Payload>, Error> {
             let Self {
                 suffix,
                 dst_name,
                 peer_id,
                 orig_fwd,
-                status,
             } = self;
 
             let (outbound, mut handle) = mock::pair::<
@@ -158,12 +175,10 @@ mod test {
                 .uri(format!("http://{}", dst_name.unwrap_or("127.0.0.1:4321")));
             let req = orig_fwd
                 .into_iter()
-                .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd));
-            let rsp = gateway
-                .oneshot(req.body(Default::default()).unwrap())
-                .await
+                .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd))
+                .body(Default::default())
                 .unwrap();
-            assert_eq!(rsp.status(), status);
+            gateway.oneshot(req).await
         }
     }
 }
