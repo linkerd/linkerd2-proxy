@@ -294,7 +294,7 @@ pub mod resolve {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 Error::Dns(dns::Error::NoAddressesFound) => write!(f, "no addresses found"),
-                Error::Dns(dns::Error::ResolutionFailed(e)) => fmt::Display::fmt(&e, f),
+                Error::Dns(e) => fmt::Display::fmt(&e, f),
                 Error::Inner(ref e) => fmt::Display::fmt(&e, f),
             }
         }

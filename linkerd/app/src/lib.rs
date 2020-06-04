@@ -58,8 +58,8 @@ pub struct Config {
 
 pub struct App {
     admin: admin::Admin,
-    admin_rt: tokio_02::runtime::Runtime,
     drain: drain::Signal,
+    dns: dns::Task,
     dst: ControlAddr,
     identity: identity::Identity,
     inbound_addr: SocketAddr,
@@ -93,22 +93,7 @@ impl Config {
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
-        // Because constructing a `trust-dns` resolver is an async fn that
-        // spawns the DNS background task on the runtime that executes it,
-        // wehave to construct the admin runtime early and use it to build the
-        // DNS resolver. When we spawn the admin thread, we will move the
-        // runtime constructed here to that thread and have it execute the admin
-        // workloads.
-        let admin_rt = tokio_02::runtime::Builder::new()
-            .basic_scheduler()
-            .enable_all()
-            .build()
-            .expect("admin runtime");
-
-        let dns = dns
-            .build(admin_rt.handle().clone())
-            .instrument(info_span!("dns"))
-            .await;
+        let dns = dns.build();
 
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
@@ -234,9 +219,9 @@ impl Config {
 
         Ok(App {
             admin,
-            admin_rt,
             dst: dst_addr,
             drain: drain_tx,
+            dns: dns.task,
             identity,
             inbound_addr,
             oc_collector,
@@ -295,8 +280,8 @@ impl App {
     pub fn spawn(self) -> drain::Signal {
         let App {
             admin,
-            mut admin_rt,
             drain,
+            dns,
             identity,
             oc_collector,
             start_proxy,
@@ -314,7 +299,12 @@ impl App {
         std::thread::Builder::new()
             .name("admin".into())
             .spawn(move || {
-                admin_rt.block_on(
+                let mut rt = tokio_02::runtime::Builder::new()
+                    .basic_scheduler()
+                    .enable_all()
+                    .build()
+                    .expect("building admin runtime must succeed");
+                rt.block_on(
                     async move {
                         debug!("running admin thread");
 
@@ -347,6 +337,9 @@ impl App {
                         } else {
                             admin.latch.release()
                         }
+
+                        // Spawn the DNS resolver background task.
+                        tokio_02::spawn(dns.instrument(info_span!("dns")));
 
                         if let tap::Tap::Enabled { daemon, serve, .. } = tap {
                             tokio_02::spawn(daemon.instrument(info_span!("tap")));
