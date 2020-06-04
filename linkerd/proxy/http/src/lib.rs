@@ -19,6 +19,7 @@ pub mod override_authority;
 pub mod settings;
 pub mod strip_header;
 pub mod timeout;
+pub mod trace;
 pub mod upgrade;
 mod version;
 

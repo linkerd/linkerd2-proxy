@@ -1,4 +1,5 @@
 use super::*;
+use linkerd2_app_core::proxy::http::trace;
 use rustls::ClientConfig;
 use std::io;
 use std::sync::Arc;
@@ -237,11 +238,11 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
             };
 
             let span = info_span!("test client", peer_addr = %addr, ?version, test = %test_name);
-            let client = hyper::Client::builder()
-                .http2_only(http2_only)
-                .build::<Conn, hyper::Body>(conn);
-
             let work = async move {
+                let client = hyper::Client::builder()
+                    .http2_only(http2_only)
+                    .executor(trace::Executor::new())
+                    .build::<Conn, hyper::Body>(conn);
                 tracing::trace!("client task started");
                 let mut rx = rx;
                 while let Some((req, cb)) = rx.recv().await {
