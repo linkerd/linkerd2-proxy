@@ -229,6 +229,6 @@ async fn grpc_headers_end() {
         0
     );
 
-    let event = events.skip(1).next().await.expect("2nd").expect("stream");
+    let event = events.skip(2).next().await.expect("2nd").expect("stream");
     assert_eq!(event.response_end_eos_grpc(), 1);
 }
