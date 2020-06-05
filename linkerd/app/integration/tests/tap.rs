@@ -208,7 +208,9 @@ async fn grpc_headers_end() {
     assert_eventually!(ready().await.status() == http::StatusCode::OK);
 
     let mut tap = tap::client_with_auth(client_proxy.outbound, srv_proxy_authority);
-    let events = tap.observe_with_require_id(tap::observe_request(), srv_proxy_authority);
+    let events = tap
+        .observe_with_require_id(tap::observe_request(), srv_proxy_authority)
+        .await;
 
     // Send a request that will be observed via the tap client
     let client = client::http2(srv_proxy.inbound, "localhost");
@@ -223,21 +225,10 @@ async fn grpc_headers_end() {
     assert_eq!(res.status(), 200);
     assert_eq!(res.headers()["grpc-status"], "1");
     assert_eq!(
-        hyper::body::aggregate(res.into_body())
-            .await
-            .unwrap()
-            .to_bytes()
-            .len(),
+        hyper::body::to_bytes(res.into_body()).await.unwrap().len(),
         0
     );
 
-    let event = events
-        .await
-        .skip(1)
-        .next()
-        .await
-        .expect("2nd")
-        .expect("stream");
-
+    let event = events.skip(1).next().await.expect("2nd").expect("stream");
     assert_eq!(event.response_end_eos_grpc(), 1);
 }
