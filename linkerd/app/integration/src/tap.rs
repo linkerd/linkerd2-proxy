@@ -140,35 +140,35 @@ impl TapEventExt for pb::TapEvent {
                 //TODO: ugh
                 unimplemented!("method");
             }
-            _ => panic!("not RequestInit event"),
+            e => panic!("not RequestInit event: {:?}", e),
         }
     }
 
     fn request_init_authority(&self) -> &str {
         match self.event() {
             pb::tap_event::http::Event::RequestInit(ev) => &ev.authority,
-            _ => panic!("not RequestInit event"),
+            e => panic!("not RequestInit event: {:?}", e),
         }
     }
 
     fn request_init_path(&self) -> &str {
         match self.event() {
             pb::tap_event::http::Event::RequestInit(ev) => &ev.path,
-            _ => panic!("not RequestInit event"),
+            e => panic!("not RequestInit event: {:?}", e),
         }
     }
 
     fn response_init_status(&self) -> u16 {
         match self.event() {
             pb::tap_event::http::Event::ResponseInit(ev) => ev.http_status as u16,
-            _ => panic!("not ResponseInit event"),
+            e => panic!("not ResponseInit event: {:?}", e),
         }
     }
 
     fn response_end_bytes(&self) -> u64 {
         match self.event() {
             pb::tap_event::http::Event::ResponseEnd(ev) => ev.response_bytes,
-            _ => panic!("not ResponseEnd event"),
+            e => panic!("not ResponseEnd event: {:?}", e),
         }
     }
 
@@ -180,7 +180,7 @@ impl TapEventExt for pb::TapEvent {
                 }) => code,
                 _ => panic!("not Eos GrpcStatusCode: {:?}", ev.eos),
             },
-            _ => panic!("not ResponseEnd event"),
+            ev => panic!("not ResponseEnd event: {:?}", ev),
         }
     }
 }
