@@ -12,7 +12,7 @@ pub mod tap;
 
 use self::metrics::Metrics;
 use futures::{future, Async, Future};
-use futures_03::{compat::Future01CompatExt, TryFutureExt};
+use futures_03::{compat::Future01CompatExt, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
@@ -287,19 +287,13 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         if let identity::Identity::Enabled { local, task, .. } = identity {
-                            tokio_02::spawn(
-                                task.map_err(|e| {
-                                    panic!("identity task failed: {}", e);
-                                })
-                                .instrument(info_span!("identity"))
-                                .compat(),
-                            );
+                            tokio_02::spawn(task.instrument(info_span!("identity")));
 
                             let latch = admin.latch;
                             tokio_02::spawn(
                                 local
                                     .await_crt()
-                                    .map(move |id| {
+                                    .map_ok(move |id| {
                                         latch.release();
                                         info!("Certified identity: {}", id.name().as_ref());
                                     })
@@ -307,8 +301,7 @@ impl App {
                                         // The daemon task was lost?!
                                         panic!("Failed to certify identity!");
                                     })
-                                    .instrument(info_span!("identity"))
-                                    .compat(),
+                                    .instrument(info_span!("identity")),
                             );
                         } else {
                             admin.latch.release()
