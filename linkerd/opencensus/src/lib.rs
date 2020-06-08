@@ -1,5 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
-use futures::{ready, Stream, TryStream, TryStreamExt};
+use futures::{ready, Stream};
 use http_body::Body as HttpBody;
 use linkerd2_error::Error;
 use linkerd2_stack::NewService;
@@ -60,8 +60,6 @@ enum State {
         metrics: Registry,
     },
 }
-
-struct StreamError;
 
 // ===== impl SpanExporter =====
 
