@@ -1,4 +1,4 @@
-// #![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms)]
 use futures::{ready, Stream, TryStream, TryStreamExt};
 use http_body::Body as HttpBody;
 use linkerd2_error::Error;
