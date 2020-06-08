@@ -42,10 +42,10 @@ use tracing::info_span;
 // mod add_server_id_on_rsp;
 mod endpoint;
 mod orig_proto_upgrade;
-// mod require_identity_on_endpoint;
+mod require_identity_on_endpoint;
 
 use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
-// use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
+use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -147,8 +147,7 @@ impl Config {
                             .push(http::strip_header::response::layer(L5D_SERVER_ID))
                             .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
                     )
-                    // .push(MakeRequireIdentityLayer::new())
-                    ;
+                    .push(MakeRequireIdentityLayer::new());
 
                 tcp_connect
                     .clone()
