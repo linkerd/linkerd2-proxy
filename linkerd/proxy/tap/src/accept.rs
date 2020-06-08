@@ -5,7 +5,7 @@ use linkerd2_identity as identity;
 use linkerd2_proxy_api::tap::server::{Tap, TapServer};
 use linkerd2_proxy_http::{
     grpc::{req_box_body, res_body_as_payload},
-    HyperServerSvc,
+    trace, HyperServerSvc,
 };
 use linkerd2_proxy_transport::io::BoxedIo;
 use linkerd2_proxy_transport::tls::{
@@ -39,10 +39,10 @@ impl AcceptPermittedClients {
         let svc =
             res_body_as_payload::Service::new(req_box_body::Service::new(TapServer::new(tap)));
 
-        // TODO do we need to set a contextual tracing executor on Hyper?
         ServeFuture(Box::new(
             hyper::server::conn::Http::new()
                 .http2_only(true)
+                .with_executor(trace::Executor::new())
                 .serve_connection(io, HyperServerSvc::new(svc))
                 .map_err(Into::into),
         ))

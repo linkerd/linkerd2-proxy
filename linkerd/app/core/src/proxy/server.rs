@@ -6,7 +6,7 @@ use crate::{
         http::{
             glue::{Body, HyperServerSvc},
             h2::Settings as H2Settings,
-            upgrade, Version as HttpVersion,
+            trace, upgrade, Version as HttpVersion,
         },
     },
     svc::{NewService, Service, ServiceExt},
@@ -89,7 +89,7 @@ where
     H: NewService<tls::accept::Meta>,
     H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
 {
-    http: hyper::server::conn::Http,
+    http: hyper::server::conn::Http<trace::Executor>,
     h2_settings: H2Settings,
     transport_labels: L,
     transport_metrics: transport::Metrics,
@@ -115,7 +115,7 @@ where
         drain: drain::Watch,
     ) -> Self {
         Self {
-            http: hyper::server::conn::Http::new(),
+            http: hyper::server::conn::Http::new().with_executor(trace::Executor::new()),
             h2_settings,
             transport_labels,
             transport_metrics,
@@ -199,7 +199,7 @@ where
                         .http1_only(true)
                         .serve_connection(io, HyperServerSvc::new(svc))
                         .with_upgrades()
-                        .instrument(info_span!("h2"));
+                        .instrument(info_span!("h1"));
 
                     Ok(Box::pin(async move {
                         drain

@@ -1,3 +1,4 @@
+use super::trace;
 use super::Body;
 use futures::{ready, TryFuture, TryFutureExt};
 use http;
@@ -156,6 +157,7 @@ where
                         .http2_initial_connection_window_size(
                             this.h2_settings.initial_connection_window_size,
                         )
+                        .executor(trace::Executor::new())
                         .handshake(io)
                         .instrument(info_span!("h2"));
 
