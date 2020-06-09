@@ -123,12 +123,12 @@ impl Config {
                 .push(tap_layer)
                 // Records metrics for each `Target`.
                 .push(metrics.http_endpoint.into_layer::<classify::Response>())
-                // .push_on_response(TraceContextLayer::new(
-                //     span_sink
-                //         .clone()
-                //         .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
-                // ));
-                ;
+                .push_on_response(TraceContextLayer::new(
+                    span_sink
+                        .clone()
+                        .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
+                ));
+
             let http_profile_route_proxy = svc::proxies()
                 // Sets the route as a request extension so that it can be used
                 // by tap.
@@ -230,9 +230,9 @@ impl Config {
                 ;
 
             let http_server_observability = svc::layers()
-                // .push(TraceContextLayer::new(span_sink.map(|span_sink| {
-                //     SpanConverter::server(span_sink, trace_labels())
-                // })))
+                .push(TraceContextLayer::new(span_sink.map(|span_sink| {
+                    SpanConverter::server(span_sink, trace_labels())
+                })))
                 // Tracks proxy handletime.
                 .push(metrics.http_handle_time.layer());
 
