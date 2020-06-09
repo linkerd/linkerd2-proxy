@@ -203,7 +203,7 @@ where
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         // this is okay to do because the body should always be complete, we
-        // jyst can't prove it.
+        // just can't prove it.
         let req = futures::executor::block_on(async move {
             let (parts, body) = req.into_parts();
             let body = match hyper::body::to_bytes(body).await {
