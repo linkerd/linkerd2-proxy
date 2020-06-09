@@ -13,17 +13,17 @@ done
 # rewrites all addresses to localhost, since docker-compose assigns IP addresses
 # to all containers running on its network: we open a SSH tunnel to the server's
 # container to port-forward the target port for the test to localhost.
-ssh -o "StrictHostKeyChecking=no" \
+ssh -o 'StrictHostKeyChecking=no' \
     -f -N -4 \
     -L "$SERVER_PORT:127.0.0.1:$SERVER_PORT" \
     "$SERVER" &
 
-if [[ ! -z "$PROXY_PERF" ]]; then
+if [[ -n "$PROXY_PERF" ]]; then
     (perf record -F 2000 -g /usr/lib/linkerd/linkerd2-proxy) > perf.data
     (perf script | inferno-collapse-perf) > "/out/${NAME}.folded"
     inferno-flamegraph --width 4000 "/out/${NAME}.folded" > "/out/${NAME}_flamegraph.svg"
-elif [[ ! -z "$PROXY_HEAP" ]]; then
-    MEMORY_PROFILER_PORT="8999"
+elif [[ -n "$PROXY_HEAP" ]]; then
+    MEMORY_PROFILER_PORT=8999
     LD_PRELOAD=/usr/lib/libmemory_profiler.so /usr/lib/linkerd/linkerd2-proxy
     mv memory-profiling_*.dat "/out/${NAME}_heap.dat"
 
