@@ -34,9 +34,13 @@ pub(crate) async fn run<S, Req, I>(
             let error = ServiceError(Arc::new(e.into()));
             trace!(%error, "Service failed");
             let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
-            while let Some(InFlight { tx, .. }) = requests.recv().await {
-                let _ = tx.send(Err(error.clone().into()));
-            }
+            debug_assert!(
+                match requests.try_recv() {
+                    Err(mpsc::error::TryRecvError::Empty) => true,
+                    _ => false,
+                },
+                "no requests should have been sent before the service was ready"
+            );
         }
     };
 
