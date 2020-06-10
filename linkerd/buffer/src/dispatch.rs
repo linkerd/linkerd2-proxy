@@ -24,41 +24,48 @@ pub(crate) async fn run<S, Req, I>(
     I: std::future::Future,
     I::Output: Into<Error>,
 {
-    // Drive requests from the queue to the inner service.
-    let res = loop {
-        {
-            // Wait until the service becomes ready, and announce readiness to
-            // the senders.
-            let svc = match service.ready_and().await {
-                Ok(svc) => svc,
-                Err(e) => break Err(e),
-            };
+    // Wait until the service becomes ready for the first time before announcing
+    // that it can recieve requests.
+    match service.ready_and().await {
+        Ok(_) => {
             let _ = ready.broadcast(Poll::Ready(Ok(())));
-
-            // If there is a request ready *now*, we can consume the existing
-            // readiness immediately.
-            if let Ok(InFlight { request, tx }) = requests.try_recv() {
-                trace!("Dispatching request immediately");
-                let _ = tx.send(Ok(svc.call(request)));
-                continue;
+        }
+        Err(e) => {
+            let error = ServiceError(Arc::new(e.into()));
+            trace!(%error, "Service failed");
+            let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
+            while let Some(InFlight { tx, .. }) = requests.recv().await {
+                let _ = tx.send(Err(error.clone().into()));
             }
         }
+    };
 
-        // Otherwise, we need to wait for a request...
+    // Drive requests from the queue to the inner service.
+    loop {
         select_biased! {
             req = requests.recv().fuse() => {
                 match req {
-                    None => break Ok(()),
+                    None => return,
                     Some(InFlight { request, tx }) => {
-                        // The service needs to be driven to readiness again,
-                        // since we may have been waiting a long time since
-                        // it was last polled to readiness.
-                        let svc = match service.ready_and().await {
-                            Ok(svc) => svc,
-                            Err(e) => break Err(e),
+                       match service.ready_and().await {
+                            Ok(svc) => {
+                                trace!("Dispatching request");
+                                let _ = tx.send(Ok(svc.call(request)));
+                            }
+                            Err(e) =>{
+                                let error = ServiceError(Arc::new(e.into()));
+                                trace!(%error, "Service failed");
+                                let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
+                                // Fail this request.
+                                let _ = tx.send(Err(error.clone().into()));
+                                // Drain the queue and fail all remaining requests.
+                                while let Some(InFlight { tx, .. }) = requests.recv().await {
+                                    let _ = tx.send(Err(error.clone().into()));
+                                }
+                                return;
+                            }
                         };
-                        trace!("Dispatching request");
-                        let _ = tx.send(Ok(svc.call(request)));
+
                     }
                 }
             }
@@ -67,21 +74,10 @@ pub(crate) async fn run<S, Req, I>(
                 let error = ServiceError(Arc::new(e.into()));
                 trace!(%error, "Idling out inner service");
                 let _ = ready.broadcast(Poll::Ready(Err(error)));
-                break Ok(());
+                return;
             }
         }
-    };
-
-    if let Err(e) = res {
-        let error = ServiceError(Arc::new(e.into()));
-        trace!(%error, "Service failed");
-        let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
-        while let Some(InFlight { tx, .. }) = requests.recv().await {
-            let _ = tx.send(Err(error.clone().into()));
-        }
     }
-
-    trace!("Complete");
 }
 
 #[cfg(test)]
