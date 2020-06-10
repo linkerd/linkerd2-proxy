@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 use linkerd2_error::Error;
 use std::task::Poll;
 use std::time::Duration;
