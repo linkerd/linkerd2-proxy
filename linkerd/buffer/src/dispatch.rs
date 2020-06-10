@@ -35,10 +35,7 @@ pub(crate) async fn run<S, Req, I>(
             trace!(%error, "Service failed");
             let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
             debug_assert!(
-                match requests.try_recv() {
-                    Err(mpsc::error::TryRecvError::Empty) => true,
-                    _ => false,
-                },
+                matches!(requests.try_recv(), Err(mpsc::error::TryRecvError::Empty)),
                 "no requests should have been sent before the service was ready"
             );
         }
