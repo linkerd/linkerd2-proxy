@@ -41,13 +41,11 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_fails_fast_when_destination_has_no_endpoints() {
             outbound_fails_fast(controller::destination_exists_with_no_endpoints())
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_fails_fast_when_destination_does_not_exist() {
             outbound_fails_fast(controller::destination_does_not_exist())
         }
@@ -129,7 +127,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_destinations_reset_on_reconnect_followed_by_empty() {
             outbound_destinations_reset_on_reconnect(
                 controller::destination_exists_with_no_endpoints()
@@ -137,7 +134,6 @@ macro_rules! generate_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn outbound_destinations_reset_on_reconnect_followed_by_dne() {
             outbound_destinations_reset_on_reconnect(
                 controller::destination_does_not_exist()
@@ -595,7 +591,6 @@ mod http2 {
     generate_tests! { server: server::new, client: client::new }
 
     #[tokio::test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     async fn outbound_balancer_waits_for_ready_endpoint() {
         // See https://github.com/linkerd/linkerd2/issues/2550
         let _ = trace_init();
