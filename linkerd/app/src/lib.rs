@@ -1,6 +1,7 @@
 //! Configures and executes the proxy
 
-// #![deny(warnings, rust_2018_idioms)]
+#![recursion_limit = "256"]
+//#![deny(warnings, rust_2018_idioms)]
 
 pub mod admin;
 pub mod dst;
@@ -12,17 +13,20 @@ pub mod tap;
 
 use self::metrics::Metrics;
 use futures::{future, Async, Future};
-use futures_03::{compat::Future01CompatExt, FutureExt, TryFutureExt};
+use futures_03::{compat::Future01CompatExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
+    proxy::core::listen::{Bind, Listen},
     svc::{self, NewService},
     Error,
 };
+use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
@@ -42,6 +46,7 @@ use tracing_futures::Instrument;
 pub struct Config {
     pub outbound: outbound::Config,
     pub inbound: inbound::Config,
+    pub gateway: gateway::Config,
 
     pub dns: dns::Config,
     pub identity: identity::Config,
@@ -57,9 +62,10 @@ pub struct App {
     drain: drain::Signal,
     dst: ControlAddr,
     identity: identity::Identity,
-    inbound: inbound::Inbound,
+    inbound_addr: SocketAddr,
     oc_collector: oc_collector::OcCollector,
-    outbound: outbound::Outbound,
+    outbound_addr: SocketAddr,
+    start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
 }
 
@@ -81,6 +87,7 @@ impl Config {
             inbound,
             oc_collector,
             outbound,
+            gateway,
             tap,
         } = self;
         debug!("building app");
@@ -92,7 +99,7 @@ impl Config {
         // DNS resolver. When we spawn the admin thread, we will move the
         // runtime constructed here to that thread and have it execute the admin
         // workloads.
-        let mut admin_rt = tokio_02::runtime::Builder::new()
+        let admin_rt = tokio_02::runtime::Builder::new()
             .basic_scheduler()
             .enable_all()
             .build()
@@ -109,7 +116,6 @@ impl Config {
         let (drain_tx, drain_rx) = drain::channel();
 
         let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
-        let dst_addr = dst.control.addr.clone();
         let dst = {
             use linkerd2_app_core::{classify, control, reconnect, transport::tls};
 
@@ -152,37 +158,79 @@ impl Config {
             info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
         };
 
-        // let dst_addr = dst.addr.clone();
-        let inbound = {
-            let inbound = inbound;
-            let identity = identity.local();
-            let profiles = dst.profiles.clone();
-            let tap = tap.layer();
-            let metrics = metrics.inbound;
-            let oc = oc_collector.span_sink();
-            let drain = drain_rx.clone();
-            info_span!("inbound")
-                .in_scope(move || inbound.build(identity, profiles, tap, metrics, oc, drain))?
-        };
-        let outbound = {
-            let identity = identity.local();
-            let dns = dns.resolver;
-            let tap = tap.layer();
-            let metrics = metrics.outbound;
-            let oc = oc_collector.span_sink();
-            info_span!("outbound").in_scope(move || {
-                outbound.build(
-                    identity,
-                    dst.resolve,
-                    dns,
-                    dst.profiles,
-                    tap,
-                    metrics,
-                    oc,
-                    drain_rx,
-                )
-            })?
-        };
+        let dst_addr = dst.addr.clone();
+
+        let inbound_listen = inbound.proxy.server.bind.bind()?;
+        let inbound_addr = inbound_listen.listen_addr();
+        let inbound_metrics = metrics.inbound;
+
+        let outbound_listen = outbound.proxy.server.bind.bind()?;
+        let outbound_addr = outbound_listen.listen_addr();
+        let outbound_metrics = metrics.outbound;
+
+        let resolver = dns.resolver;
+        let local_identity = identity.local();
+        let tap_layer = tap.layer();
+        let oc_span_sink = oc_collector.span_sink();
+
+        let start_proxy = Box::pin(async move {
+            let outbound_connect =
+                outbound.build_tcp_connect(local_identity.clone(), &outbound_metrics);
+
+            let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
+
+            let outbound_http = outbound.build_http_router(
+                outbound_addr.port(),
+                outbound_connect.clone(),
+                dst.resolve,
+                dst.profiles.clone(),
+                tap_layer.clone(),
+                outbound_metrics.clone(),
+                oc_span_sink.clone(),
+            );
+
+            tokio_02::task::spawn_local(
+                outbound
+                    .build_server(
+                        outbound_listen,
+                        outbound_addr.port(),
+                        svc::stack(refine.clone())
+                            .push_map_response(|(n, _)| n)
+                            .into_inner(),
+                        outbound_connect,
+                        outbound_http.clone(),
+                        outbound_metrics,
+                        oc_span_sink.clone(),
+                        drain_rx.clone(),
+                    )
+                    .map_err(|e| panic!("outbound failed: {}", e))
+                    .instrument(info_span!("outbound")),
+            );
+
+            let http_gateway = gateway.build(
+                refine,
+                outbound_http,
+                local_identity.as_ref().map(|l| l.name().clone()),
+            );
+
+            tokio_02::task::spawn_local(
+                inbound
+                    .build(
+                        inbound_listen,
+                        local_identity,
+                        svc::stack(http_gateway)
+                            .push_on_response(svc::layers().box_http_request())
+                            .into_inner(),
+                        dst.profiles,
+                        tap_layer,
+                        inbound_metrics,
+                        oc_span_sink,
+                        drain_rx,
+                    )
+                    .map_err(|e| panic!("inbound failed: {}", e))
+                    .instrument(info_span!("inbound")),
+            );
+        });
 
         Ok(App {
             admin,
@@ -190,9 +238,10 @@ impl Config {
             dst: dst_addr,
             drain: drain_tx,
             identity,
-            inbound,
+            inbound_addr,
             oc_collector,
-            outbound,
+            outbound_addr,
+            start_proxy,
             tap,
         })
     }
@@ -204,11 +253,11 @@ impl App {
     }
 
     pub fn inbound_addr(&self) -> SocketAddr {
-        self.inbound.listen_addr
+        self.inbound_addr
     }
 
     pub fn outbound_addr(&self) -> SocketAddr {
-        self.outbound.listen_addr
+        self.outbound_addr
     }
 
     pub fn tap_addr(&self) -> Option<SocketAddr> {
@@ -237,11 +286,10 @@ impl App {
     }
 
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
-        // match self.oc_collector {
-        //     oc_collector::OcCollector::Disabled { .. } => None,
-        //     oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
-        // }
-        None
+        match self.oc_collector {
+            oc_collector::OcCollector::Disabled { .. } => None,
+            oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
+        }
     }
 
     pub fn spawn(self) -> drain::Signal {
@@ -250,9 +298,8 @@ impl App {
             mut admin_rt,
             drain,
             identity,
-            inbound,
-            // oc_collector,
-            outbound,
+            oc_collector,
+            start_proxy,
             tap,
             ..
         } = self;
@@ -310,12 +357,9 @@ impl App {
                             );
                         }
 
-                        // if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
-                        //     tokio::spawn(
-                        //         task.map_err(|error| error!(%error, "client died"))
-                        //             .instrument(info_span!("opencensus")),
-                        //     );
-                        // }
+                        if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
+                            tokio_02::spawn(task.instrument(info_span!("opencensus")));
+                        }
 
                         // we don't care if the admin shutdown channel is
                         // dropped or actually triggered.
@@ -326,18 +370,7 @@ impl App {
             })
             .expect("admin");
 
-        tokio_02::task::spawn_local(
-            outbound
-                .serve
-                .map_err(|e| panic!("outbound died: {}", e))
-                .instrument(info_span!("outbound")),
-        );
-        tokio_02::task::spawn_local(
-            inbound
-                .serve
-                .map_err(|e| panic!("inbound died: {}", e))
-                .instrument(info_span!("inbound")),
-        );
+        tokio_02::task::spawn_local(start_proxy);
 
         drain
     }

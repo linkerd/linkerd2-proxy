@@ -10,7 +10,7 @@ pub trait Bind {
     type Connection;
     type Listen: Listen<Connection = Self::Connection>;
 
-    fn bind(self) -> std::io::Result<Self::Listen>;
+    fn bind(&self) -> std::io::Result<Self::Listen>;
 }
 
 pub trait Listen {

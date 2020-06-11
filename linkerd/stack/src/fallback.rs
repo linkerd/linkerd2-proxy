@@ -69,8 +69,19 @@ impl<B> FallbackLayer<B> {
     where
         E: std::error::Error + 'static,
     {
-        self.with_predicate(|e| e.is::<E>() || e.source().map(|s| s.is::<E>()).unwrap_or(false))
+        self.with_predicate(|e| is_error::<E>(e.as_ref()))
     }
+}
+
+fn is_error<E>(err: &(dyn std::error::Error + 'static)) -> bool
+where
+    E: std::error::Error + 'static,
+{
+    if err.is::<E>() {
+        return true;
+    }
+
+    err.source().map(is_error::<E>).unwrap_or(false)
 }
 
 impl<A, B, P> tower::layer::Layer<A> for FallbackLayer<B, P>

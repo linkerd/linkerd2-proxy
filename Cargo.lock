@@ -838,6 +838,7 @@ dependencies = [
  "indexmap",
  "ipnet 1.0.0",
  "linkerd2-app-core",
+ "linkerd2-app-gateway",
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
  "linkerd2-error",
@@ -876,6 +877,7 @@ dependencies = [
  "indexmap",
  "libc",
  "linkerd2-addr",
+ "linkerd2-admit",
  "linkerd2-box",
  "linkerd2-buffer",
  "linkerd2-cache",
@@ -938,14 +940,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-app-gateway"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.4",
+ "http 0.2.1",
+ "indexmap",
+ "linkerd2-app-core",
+ "linkerd2-app-inbound",
+ "linkerd2-app-outbound",
+ "tokio 0.2.21",
+ "tokio-test",
+ "tower 0.3.1",
+ "tower-test",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd2-app-inbound"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.1.26",
+ "futures 0.3.4",
  "http 0.2.1",
  "indexmap",
- "linkerd2-admit",
  "linkerd2-app-core",
  "quickcheck",
  "tokio 0.2.21",

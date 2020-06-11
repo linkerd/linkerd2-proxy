@@ -1,7 +1,9 @@
 //! Shared infrastructure for integration tests
 
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![recursion_limit = "256"]
+#![type_length_limit = "16287993"]
+
 mod test_env;
 
 pub use self::test_env::TestEnv;

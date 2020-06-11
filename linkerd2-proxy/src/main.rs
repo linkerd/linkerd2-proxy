@@ -1,6 +1,8 @@
 //! The main entrypoint for the proxy.
 
 #![deny(warnings, rust_2018_idioms)]
+#![recursion_limit = "256"]
+#![type_length_limit = "16287993"]
 
 use futures::compat::Future01CompatExt;
 use linkerd2_app::{trace, Config};
