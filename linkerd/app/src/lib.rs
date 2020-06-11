@@ -13,14 +13,14 @@ pub mod tap;
 
 use self::metrics::Metrics;
 use futures::{future, Async, Future};
-use futures_03::{compat::Future01CompatExt, FutureExt, TryFutureExt};
+use futures_03::{compat::Future01CompatExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
     proxy::core::listen::{Bind, Listen},
     svc::{self, NewService},
-    Error, Never,
+    Error,
 };
 use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
@@ -66,7 +66,7 @@ pub struct App {
     oc_collector: oc_collector::OcCollector,
     outbound_addr: SocketAddr,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
-    //tap: tap::Tap,
+    tap: tap::Tap,
 }
 
 impl Config {
@@ -99,7 +99,7 @@ impl Config {
         // DNS resolver. When we spawn the admin thread, we will move the
         // runtime constructed here to that thread and have it execute the admin
         // workloads.
-        let mut admin_rt = tokio_02::runtime::Builder::new()
+        let admin_rt = tokio_02::runtime::Builder::new()
             .basic_scheduler()
             .enable_all()
             .build()
@@ -115,8 +115,7 @@ impl Config {
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        // let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
-        let dst_addr = dst.control.addr.clone();
+        let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
         let dst = {
             use linkerd2_app_core::{classify, control, reconnect, transport::tls};
 
@@ -171,7 +170,7 @@ impl Config {
 
         let resolver = dns.resolver;
         let local_identity = identity.local();
-        //let tap_layer = tap.layer();
+        let tap_layer = tap.layer();
         let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
@@ -185,7 +184,7 @@ impl Config {
                 outbound_connect.clone(),
                 dst.resolve,
                 dst.profiles.clone(),
-                //tap_layer.clone(),
+                tap_layer.clone(),
                 outbound_metrics.clone(),
                 oc_span_sink.clone(),
             );
@@ -223,7 +222,7 @@ impl Config {
                             .push_on_response(svc::layers().box_http_request())
                             .into_inner(),
                         dst.profiles,
-                        //tap_layer.clone(),
+                        tap_layer,
                         inbound_metrics,
                         oc_span_sink,
                         drain_rx,
@@ -243,7 +242,7 @@ impl Config {
             oc_collector,
             outbound_addr,
             start_proxy,
-            //tap,
+            tap,
         })
     }
 }
@@ -262,11 +261,10 @@ impl App {
     }
 
     pub fn tap_addr(&self) -> Option<SocketAddr> {
-        // match self.tap {
-        //     tap::Tap::Disabled { .. } => None,
-        //     tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),
-        // }
-        None
+        match self.tap {
+            tap::Tap::Disabled { .. } => None,
+            tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),
+        }
     }
 
     pub fn dst_addr(&self) -> &ControlAddr {
@@ -302,7 +300,7 @@ impl App {
             identity,
             oc_collector,
             start_proxy,
-            //tap,
+            tap,
             ..
         } = self;
 
@@ -350,18 +348,14 @@ impl App {
                             admin.latch.release()
                         }
 
-                        // if let tap::Tap::Enabled { daemon, serve, .. } = tap {
-                        //     tokio::spawn(
-                        //         daemon
-                        //             .map_err(|never| match never {})
-                        //             .instrument(info_span!("tap")),
-                        //     );
-                        //     tokio_02::task::spawn_local(
-                        //         serve
-                        //             .map_err(|error| error!(%error, "server died"))
-                        //             .instrument(info_span!("tap")),
-                        //     );
-                        // }
+                        if let tap::Tap::Enabled { daemon, serve, .. } = tap {
+                            tokio_02::spawn(daemon.instrument(info_span!("tap")));
+                            tokio_02::task::spawn(
+                                serve
+                                    .map_err(|error| error!(%error, "server died"))
+                                    .instrument(info_span!("tap")),
+                            );
+                        }
 
                         if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
                             tokio_02::spawn(task.instrument(info_span!("opencensus")));

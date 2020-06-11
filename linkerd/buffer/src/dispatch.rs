@@ -24,30 +24,49 @@ pub(crate) async fn run<S, Req, I>(
     I: std::future::Future,
     I::Output: Into<Error>,
 {
+    // Wait until the service becomes ready for the first time before announcing
+    // that it can recieve requests.
+    match service.ready_and().await {
+        Ok(_) => {
+            let _ = ready.broadcast(Poll::Ready(Ok(())));
+        }
+        Err(e) => {
+            let error = ServiceError(Arc::new(e.into()));
+            trace!(%error, "Service failed");
+            let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
+            debug_assert!(
+                matches!(requests.try_recv(), Err(mpsc::error::TryRecvError::Empty)),
+                "no requests should have been sent before the service was ready"
+            );
+        }
+    };
+
     // Drive requests from the queue to the inner service.
     loop {
-        let svc = match service.ready_and().await {
-            Ok(svc) => svc,
-            Err(e) => {
-                let error = ServiceError(Arc::new(e.into()));
-                trace!(%error, "Service failed");
-                let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
-                while let Some(InFlight { tx, .. }) = requests.recv().await {
-                    let _ = tx.send(Err(error.clone().into()));
-                }
-                break;
-            }
-        };
-
-        let _ = ready.broadcast(Poll::Ready(Ok(())));
-
         select_biased! {
             req = requests.recv().fuse() => {
                 match req {
-                    None => break,
+                    None => return,
                     Some(InFlight { request, tx }) => {
-                        trace!("Dispatching request");
-                        let _ = tx.send(Ok(svc.call(request)));
+                       match service.ready_and().await {
+                            Ok(svc) => {
+                                trace!("Dispatching request");
+                                let _ = tx.send(Ok(svc.call(request)));
+                            }
+                            Err(e) =>{
+                                let error = ServiceError(Arc::new(e.into()));
+                                trace!(%error, "Service failed");
+                                let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
+                                // Fail this request.
+                                let _ = tx.send(Err(error.clone().into()));
+                                // Drain the queue and fail all remaining requests.
+                                while let Some(InFlight { tx, .. }) = requests.recv().await {
+                                    let _ = tx.send(Err(error.clone().into()));
+                                }
+                                return;
+                            }
+                        };
+
                     }
                 }
             }
@@ -56,12 +75,10 @@ pub(crate) async fn run<S, Req, I>(
                 let error = ServiceError(Arc::new(e.into()));
                 trace!(%error, "Idling out inner service");
                 let _ = ready.broadcast(Poll::Ready(Err(error)));
-                break;
+                return;
             }
         }
     }
-
-    trace!("Complete");
 }
 
 #[cfg(test)]

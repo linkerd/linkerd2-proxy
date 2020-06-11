@@ -133,7 +133,7 @@ impl Config {
         tcp_connect: C,
         resolve: R,
         profiles_client: P,
-        // tap_layer: tap::Layer,
+        tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl tower::Service<
@@ -189,7 +189,7 @@ impl Config {
             // Registers the stack with Tap, Metrics, and OpenCensus tracing
             // export.
             let observability = svc::layers()
-                // .push(tap_layer.clone())
+                .push(tap_layer.clone())
                 .push(metrics.http_endpoint.into_layer::<classify::Response>())
                 .push_on_response(TraceContextLayer::new(
                     span_sink

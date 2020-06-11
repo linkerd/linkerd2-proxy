@@ -34,6 +34,7 @@ linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
 linkerd2-test-util = { path = "../../test-util" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
+linkerd2-proxy-api-tonic = { package = "linkerd2-proxy-api", git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], rev = "c2dba642c7301b5b562c75fd6e2bd0a12ec763e8" }
 regex = "0.1"
 net2 = "0.2"
 quickcheck = { version = "0.9", default-features = false }
@@ -48,6 +49,7 @@ task-compat = "0.1"
 tower = "0.3"
 tower_01 = { package = "tower", version = "0.1" }
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
+tonic = { version = "0.2", default-features = false }
 tracing = "0.1.9"
 tracing-futures = "0.1"
 tracing-subscriber = "0.2.5"

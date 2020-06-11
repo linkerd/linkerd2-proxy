@@ -1,13 +1,15 @@
+use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, metric_labels, profiles,
-    proxy::http,
+    proxy::{http, identity, tap},
     router, stack_tracing,
     transport::{connect, tls},
     Addr, Conditional, NameAddr, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::fmt;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -177,48 +179,48 @@ impl classify::CanClassify for Target {
     }
 }
 
-// impl tap::Inspect for Target {
-//     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-//         req.extensions()
-//             .get::<tls::accept::Meta>()
-//             .map(|s| s.addrs.peer())
-//     }
+impl tap::Inspect for Target {
+    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+        req.extensions()
+            .get::<tls::accept::Meta>()
+            .map(|s| s.addrs.peer())
+    }
 
-//     fn src_tls<'a, B>(
-//         &self,
-//         req: &'a http::Request<B>,
-//     ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
-//         req.extensions()
-//             .get::<tls::accept::Meta>()
-//             .map(|s| s.peer_identity.as_ref())
-//             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled))
-//     }
+    fn src_tls<'a, B>(
+        &self,
+        req: &'a http::Request<B>,
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
+        req.extensions()
+            .get::<tls::accept::Meta>()
+            .map(|s| s.peer_identity.as_ref())
+            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled))
+    }
 
-//     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
-//         Some(self.addr)
-//     }
+    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
+        Some(self.addr)
+    }
 
-//     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
-//         None
-//     }
+    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
+        None
+    }
 
-//     fn dst_tls<B>(
-//         &self,
-//         _: &http::Request<B>,
-//     ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
-//         Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
-//     }
+    fn dst_tls<B>(
+        &self,
+        _: &http::Request<B>,
+    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+    }
 
-//     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
-//         req.extensions()
-//             .get::<dst::Route>()
-//             .map(|r| r.route.labels().clone())
-//     }
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+        req.extensions()
+            .get::<dst::Route>()
+            .map(|r| r.route.labels().clone())
+    }
 
-//     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
-//         false
-//     }
-// }
+    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
+        false
+    }
+}
 
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
