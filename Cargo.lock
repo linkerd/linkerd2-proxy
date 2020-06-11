@@ -1154,10 +1154,11 @@ dependencies = [
 name = "linkerd2-error-metrics"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.4",
  "indexmap",
  "linkerd2-metrics",
- "tower 0.1.1",
+ "pin-project",
+ "tower 0.3.1",
 ]
 
 [[package]]
