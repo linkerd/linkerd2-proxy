@@ -63,7 +63,7 @@ impl Config {
     pub fn build_tcp_connect(
         &self,
         local_identity: tls::Conditional<identity::Local>,
-        //metrics: &ProxyMetrics,
+        metrics: &ProxyMetrics,
     ) -> impl tower::Service<
         TcpEndpoint,
         Error = Error,
@@ -84,7 +84,7 @@ impl Config {
             .push(tls::client::ConnectLayer::new(local_identity))
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
-            //.push(metrics.transport.layer_connect(TransportLabels))
+            .push(metrics.transport.layer_connect(TransportLabels))
             .into_inner()
     }
 
@@ -115,7 +115,8 @@ impl Config {
                         .push_spawn_buffer_with_idle_timeout(
                             self.proxy.buffer_capacity,
                             self.proxy.cache_max_idle_age,
-                        ), //.push(metrics.layer(stack_labels("refine"))),
+                        )
+                        .push(metrics.layer(stack_labels("refine"))),
                 ),
             )
             .instrument(|name: &dns::Name| info_span!("refine", %name))
@@ -189,7 +190,7 @@ impl Config {
             // export.
             let observability = svc::layers()
                 // .push(tap_layer.clone())
-                // .push(metrics.http_endpoint.into_layer::<classify::Response>())
+                .push(metrics.http_endpoint.into_layer::<classify::Response>())
                 .push_on_response(TraceContextLayer::new(
                     span_sink
                         .clone()
@@ -324,7 +325,7 @@ impl Config {
             .check_new_clone_service::<dst::Route>()
             .push(metrics.http_route_actual.into_layer::<classify::Response>())
             // Sets an optional retry policy.
-            //.push(retry::layer(metrics.http_route_retry))
+            .push(retry::layer(metrics.http_route_retry))
             .check_new_clone_service::<dst::Route>()
             // Sets an optional request timeout.
             .push(http::MakeTimeoutLayer::default())

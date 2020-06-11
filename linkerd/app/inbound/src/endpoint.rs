@@ -1,20 +1,10 @@
 use linkerd2_app_core::{
-    // classify,
-    dst,
-    http_request_authority_addr,
-    http_request_host_addr,
-    http_request_l5d_override_dst_addr,
-    metric_labels,
-    profiles,
+    classify, dst, http_request_authority_addr, http_request_host_addr,
+    http_request_l5d_override_dst_addr, metric_labels, profiles,
     proxy::http,
-    router,
-    stack_tracing,
+    router, stack_tracing,
     transport::{connect, tls},
-    Addr,
-    Conditional,
-    NameAddr,
-    CANONICAL_DST_HEADER,
-    DST_OVERRIDE_HEADER,
+    Addr, Conditional, NameAddr, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::fmt;
 use std::net::SocketAddr;
@@ -168,24 +158,24 @@ impl tls::HasPeerIdentity for Target {
     }
 }
 
-// impl Into<metric_labels::EndpointLabels> for Target {
-//     fn into(self) -> metric_labels::EndpointLabels {
-//         metric_labels::EndpointLabels {
-//             authority: self.dst_name.map(|d| d.as_http_authority()),
-//             direction: metric_labels::Direction::In,
-//             tls_id: self.tls_client_id.map(metric_labels::TlsId::ClientId),
-//             labels: None,
-//         }
-//     }
-// }
+impl Into<metric_labels::EndpointLabels> for Target {
+    fn into(self) -> metric_labels::EndpointLabels {
+        metric_labels::EndpointLabels {
+            authority: self.dst_name.map(|d| d.as_http_authority()),
+            direction: metric_labels::Direction::In,
+            tls_id: self.tls_client_id.map(metric_labels::TlsId::ClientId),
+            labels: None,
+        }
+    }
+}
 
-// impl classify::CanClassify for Target {
-//     type Classify = classify::Request;
+impl classify::CanClassify for Target {
+    type Classify = classify::Request;
 
-//     fn classify(&self) -> classify::Request {
-//         classify::Request::default()
-//     }
-// }
+    fn classify(&self) -> classify::Request {
+        classify::Request::default()
+    }
+}
 
 // impl tap::Inspect for Target {
 //     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {

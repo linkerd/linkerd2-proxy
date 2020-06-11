@@ -198,8 +198,8 @@ impl Config {
         let http_target_observability = svc::layers()
             //     // Registers the stack to be tapped.
             //     .push(tap_layer)
-            //     // Records metrics for each `Target`.
-            //     .push(metrics.http_endpoint.into_layer::<classify::Response>())
+            // Records metrics for each `Target`.
+            .push(metrics.http_endpoint.into_layer::<classify::Response>())
             .push_on_response(TraceContextLayer::new(
                 span_sink
                     .clone()
@@ -364,11 +364,12 @@ impl Config {
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
-        let http_server_observability = svc::layers().push(TraceContextLayer::new(
-            span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels())),
-        ));
-        // Tracks proxy handletime.
-        //.push(metrics.http_handle_time.layer());
+        let http_server_observability = svc::layers()
+            .push(TraceContextLayer::new(span_sink.map(|span_sink| {
+                SpanConverter::server(span_sink, trace_labels())
+            })))
+            // Tracks proxy handletime.
+            .push(metrics.http_handle_time.layer());
 
         let http_server = svc::stack(http_router)
             // Ensures that the built service is ready before it is returned
@@ -384,9 +385,9 @@ impl Config {
             // target, and dispatches the request.
             .instrument_from_target()
             .push(router::Layer::new(RequestTarget::from))
-            .check_new_service::<tls::accept::Meta>()
             // Used by tap.
             .push_http_insert_target()
+            .check_new_service::<tls::accept::Meta>()
             .push_on_response(
                 svc::layers()
                     .push(http_strip_headers)
@@ -395,6 +396,7 @@ impl Config {
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request(),
             )
+            .check_new_service::<tls::accept::Meta>()
             .instrument(|src: &tls::accept::Meta| {
                 info_span!(
                     "source",
