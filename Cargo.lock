@@ -944,7 +944,7 @@ name = "linkerd2-app-gateway"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.4",
- "http 0.1.21",
+ "http 0.2.1",
  "indexmap",
  "linkerd2-app-core",
  "linkerd2-app-inbound",

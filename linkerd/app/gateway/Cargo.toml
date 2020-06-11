@@ -6,7 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-http = "0.1"
+http = "0.2"
 futures = "0.3"
 indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
