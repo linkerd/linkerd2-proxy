@@ -479,9 +479,9 @@ impl Config {
             // Initiates OpenCensus tracing.
             .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
                 SpanConverter::server(span_sink, trace_labels())
-            })));
-        // // Tracks proxy handletime.
-        // //.push(metrics.clone().http_handle_time.layer());
+            })))
+            // Tracks proxy handletime.
+            .push(metrics.clone().http_handle_time.layer());
 
         let http_server = svc::stack(http_router)
             // Resolve the application-emitted destination via DNS to determine                                                                                                                      
