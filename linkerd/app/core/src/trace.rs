@@ -57,17 +57,13 @@ pub fn with_filter_and_format(
     match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
             let builder = builder.json().with_filter_reloading();
-            let handle = LevelHandle::Json {
-                inner: builder.reload_handle(),
-            };
+            let handle = LevelHandle::Json(builder.reload_handle());
             let dispatch = Dispatch::new(builder.finish());
             (dispatch, handle)
         }
         "PLAIN" | _ => {
             let builder = builder.with_ansi(cfg!(test)).with_filter_reloading();
-            let handle = LevelHandle::Plain {
-                inner: builder.reload_handle(),
-            };
+            let handle = LevelHandle::Plain(builder.reload_handle());
             let dispatch = Dispatch::new(builder.finish());
             (dispatch, handle)
         }
@@ -99,8 +95,8 @@ impl LevelHandle {
         let level = level.as_ref();
         let filter = level.parse::<EnvFilter>()?;
         match self {
-            Self::Json { inner } => inner.reload(filter)?,
-            Self::Plain { inner } => inner.reload(filter)?,
+            Self::Json(level) => level.reload(filter)?,
+            Self::Plain(level) => level.reload(filter)?,
         }
         tracing::info!(%level, "set new log level");
         Ok(())
@@ -108,8 +104,12 @@ impl LevelHandle {
 
     pub fn current(&self) -> Result<String, Error> {
         match self {
-            Self::Json { inner } => inner.with_current(|f| format!("{}", f)).map_err(Into::into),
-            Self::Plain { inner } => inner.with_current(|f| format!("{}", f)).map_err(Into::into),
+            Self::Json(with_current) => with_current
+                .with_current(|f| format!("{}", f))
+                .map_err(Into::into),
+            Self::Plain(with_current) => with_current
+                .with_current(|f| format!("{}", f))
+                .map_err(Into::into),
         }
     }
 }
@@ -117,7 +117,7 @@ impl LevelHandle {
 impl fmt::Debug for LevelHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json { inner } => inner
+            Self::Json(with_current) => with_current
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
                         .field("current", &format_args!("{}", c))
@@ -128,7 +128,7 @@ impl fmt::Debug for LevelHandle {
                         .field("current", &format_args!("{}", e))
                         .finish()
                 }),
-            Self::Plain { inner } => inner
+            Self::Plain(with_current) => with_current
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
                         .field("current", &format_args!("{}", c))
