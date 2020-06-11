@@ -215,7 +215,7 @@ pub fn running() -> (oneshot::Sender<()>, Running) {
     (tx, rx)
 }
 
-pub type Running = Pin<Box<dyn Future<Output = ()> + Send>>;
+pub type Running = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
 
 pub fn s(bytes: &[u8]) -> &str {
     ::std::str::from_utf8(bytes.as_ref()).unwrap()

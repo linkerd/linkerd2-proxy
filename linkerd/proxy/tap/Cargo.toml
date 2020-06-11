@@ -6,29 +6,29 @@ edition = "2018"
 publish = false
 
 [dependencies]
-bytes = "0.4"
-http = "0.1"
-hyper = "0.12"
-futures = "0.1"
+bytes = "0.5"
+http = "0.2"
+hyper = "0.13"
+futures = "0.3"
 indexmap = "1.0"
-ipnet = "1.0"
+ipnet = "2.0"
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-error = { path = "../../error" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-proxy-core = { path = "../core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.12" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "c2dba642c7301b5b562c75fd6e2bd0a12ec763e8" }
 linkerd2-proxy-http = { path = "../http" }
 linkerd2-proxy-transport = { path = "../transport" }
 linkerd2-stack = { path = "../../stack" }
 rand = { version = "0.7", features = ["small_rng"] }
-tokio = "0.1.14"
-tokio-timer = "0.2"
-tower = "0.1"
-tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
+tokio = { version = "0.2", features = ["time"]}
+tower = {version = "0.3", default-features = false }
+tonic = { version = "0.2", default-features = false }
 tracing = "0.1.9"
 tracing-futures = "0.1"
+pin-project = "0.4"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
-prost-types = "0.5.0"
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], rev = "c2dba642c7301b5b562c75fd6e2bd0a12ec763e8"  }
+prost-types = "0.6.0"
 quickcheck = { version = "0.9", default-features = false }

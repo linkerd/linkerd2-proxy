@@ -68,7 +68,7 @@ impl Config {
         resolve: R,
         dns_resolver: dns::Resolver,
         profiles_client: P,
-        // tap_layer: tap::Layer,
+        tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
@@ -129,7 +129,7 @@ impl Config {
             // export.
             let http_endpoint = {
                 let observability = svc::layers()
-                    // .push(tap_layer.clone())
+                    .push(tap_layer.clone())
                     .push(metrics.http_endpoint.into_layer::<classify::Response>())
                     .push_on_response(TraceContextLayer::new(
                         span_sink

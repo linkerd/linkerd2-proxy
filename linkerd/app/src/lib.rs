@@ -60,7 +60,7 @@ pub struct App {
     inbound: inbound::Inbound,
     oc_collector: oc_collector::OcCollector,
     outbound: outbound::Outbound,
-    // tap: tap::Tap,
+    tap: tap::Tap,
 }
 
 impl Config {
@@ -108,7 +108,7 @@ impl Config {
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        // let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
+        let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
         let dst_addr = dst.control.addr.clone();
         let dst = {
             use linkerd2_app_core::{classify, control, reconnect, transport::tls};
@@ -157,21 +157,17 @@ impl Config {
             let inbound = inbound;
             let identity = identity.local();
             let profiles = dst.profiles.clone();
-            // let tap = tap.layer();
+            let tap = tap.layer();
             let metrics = metrics.inbound;
             let oc = oc_collector.span_sink();
             let drain = drain_rx.clone();
-            info_span!("inbound").in_scope(move || {
-                inbound.build(
-                    identity, profiles, // tap,
-                    metrics, oc, drain,
-                )
-            })?
+            info_span!("inbound")
+                .in_scope(move || inbound.build(identity, profiles, tap, metrics, oc, drain))?
         };
         let outbound = {
             let identity = identity.local();
             let dns = dns.resolver;
-            // let tap = tap.layer();
+            let tap = tap.layer();
             let metrics = metrics.outbound;
             let oc = oc_collector.span_sink();
             info_span!("outbound").in_scope(move || {
@@ -180,7 +176,7 @@ impl Config {
                     dst.resolve,
                     dns,
                     dst.profiles,
-                    //tap,
+                    tap,
                     metrics,
                     oc,
                     drain_rx,
@@ -197,7 +193,7 @@ impl Config {
             inbound,
             oc_collector,
             outbound,
-            // tap,
+            tap,
         })
     }
 }
@@ -216,11 +212,10 @@ impl App {
     }
 
     pub fn tap_addr(&self) -> Option<SocketAddr> {
-        // match self.tap {
-        //     tap::Tap::Disabled { .. } => None,
-        //     tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),
-        // }
-        None
+        match self.tap {
+            tap::Tap::Disabled { .. } => None,
+            tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),
+        }
     }
 
     pub fn dst_addr(&self) -> &ControlAddr {
@@ -258,7 +253,7 @@ impl App {
             inbound,
             // oc_collector,
             outbound,
-            // tap,
+            tap,
             ..
         } = self;
 
@@ -306,18 +301,14 @@ impl App {
                             admin.latch.release()
                         }
 
-                        // if let tap::Tap::Enabled { daemon, serve, .. } = tap {
-                        //     tokio::spawn(
-                        //         daemon
-                        //             .map_err(|never| match never {})
-                        //             .instrument(info_span!("tap")),
-                        //     );
-                        //     tokio_02::task::spawn_local(
-                        //         serve
-                        //             .map_err(|error| error!(%error, "server died"))
-                        //             .instrument(info_span!("tap")),
-                        //     );
-                        // }
+                        if let tap::Tap::Enabled { daemon, serve, .. } = tap {
+                            tokio_02::spawn(daemon.instrument(info_span!("tap")));
+                            tokio_02::task::spawn(
+                                serve
+                                    .map_err(|error| error!(%error, "server died"))
+                                    .instrument(info_span!("tap")),
+                            );
+                        }
 
                         // if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
                         //     tokio::spawn(

@@ -62,7 +62,7 @@ impl Config {
         self,
         local_identity: tls::Conditional<identity::Local>,
         profiles_client: P,
-        // tap_layer: tap::Layer,
+        tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
@@ -119,21 +119,20 @@ impl Config {
                 .check_service::<HttpEndpoint>();
 
             let http_target_observability = svc::layers()
-            //     // Registers the stack to be tapped.
-            //     .push(tap_layer)
-            //     // Records metrics for each `Target`.
-            //     .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            //     .push_on_response(TraceContextLayer::new(
-            //         span_sink
-            //             .clone()
-            //             .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
-            //     ));
-            ;
+                // Registers the stack to be tapped.
+                .push(tap_layer)
+                // Records metrics for each `Target`.
+                .push(metrics.http_endpoint.into_layer::<classify::Response>())
+                .push_on_response(TraceContextLayer::new(
+                    span_sink
+                        .clone()
+                        .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
+                ));
 
             let http_profile_route_proxy = svc::proxies()
-                // // Sets the route as a request extension so that it can be used
-                // // by tap.
-                // .push_http_insert_target()
+                // Sets the route as a request extension so that it can be used
+                // by tap.
+                .push_http_insert_target()
                 // Records per-route metrics.
                 .push(metrics.http_route.into_layer::<classify::Response>())
                 // Sets the per-route response classifier as a request
@@ -148,7 +147,7 @@ impl Config {
                 // Normalizes the URI, i.e. if it was originally in
                 // absolute-form on the outbound side.
                 .push(normalize_uri::layer())
-                // .push(http_target_observability)
+                .push(http_target_observability)
                 .into_new_service()
                 .check_new_service::<Target>()
                 .check_clone()
@@ -231,9 +230,9 @@ impl Config {
                 ;
 
             let http_server_observability = svc::layers()
-                //     .push(TraceContextLayer::new(span_sink.map(|span_sink| {
-                //         SpanConverter::server(span_sink, trace_labels())
-                //     })))
+                .push(TraceContextLayer::new(span_sink.map(|span_sink| {
+                    SpanConverter::server(span_sink, trace_labels())
+                })))
                 // Tracks proxy handletime.
                 .push(metrics.http_handle_time.layer());
 
