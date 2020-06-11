@@ -1,7 +1,7 @@
 use super::HttpEndpoint;
 use futures::{
-    future::{self, Either, FutureResult},
-    try_ready, Async, Future, Poll,
+    future::{self, Either},
+    ready, TryFuture, TryFutureExt,
 };
 use linkerd2_app_core::{
     errors::IdentityRequired,
@@ -10,6 +10,10 @@ use linkerd2_app_core::{
     transport::tls::{self, HasPeerIdentity},
     Conditional, Error, L5D_REQUIRE_ID,
 };
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tracing::debug;
 
 #[derive(Clone, Debug, Default)]
@@ -20,8 +24,10 @@ pub struct MakeRequireIdentity<M> {
     inner: M,
 }
 
+#[pin_project]
 pub struct MakeFuture<F> {
     peer_identity: tls::PeerIdentity,
+    #[pin]
     inner: F,
 }
 
@@ -74,8 +80,8 @@ where
     type Error = M::Error;
     type Future = MakeFuture<M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -95,23 +101,23 @@ where
 
 impl<F> Future for MakeFuture<F>
 where
-    F: Future,
+    F: TryFuture,
 {
-    type Item = RequireIdentity<F::Item>;
-    type Error = F::Error;
+    type Output = Result<RequireIdentity<F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
 
         // The inner service is ready and we now create a new service
         // that filters based off `peer_identity` and `l5d-require-id`
         // header
         let svc = RequireIdentity {
-            peer_identity: self.peer_identity.clone(),
+            peer_identity: this.peer_identity.clone(),
             inner,
         };
 
-        Ok(Async::Ready(svc))
+        Poll::Ready(Ok(svc))
     }
 }
 
@@ -125,12 +131,12 @@ where
     type Response = M::Response;
     type Error = Error;
     type Future = Either<
-        FutureResult<Self::Response, Self::Error>,
+        future::Ready<Result<Self::Response, Self::Error>>,
         future::MapErr<M::Future, fn(M::Error) -> Error>,
     >;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, request: http::Request<A>) -> Self::Future {
@@ -146,7 +152,7 @@ where
                             required: require_identity,
                             found: Some(peer_identity.clone()),
                         };
-                        return Either::A(future::err(e.into()));
+                        return Either::Left(future::err(e.into()));
                     }
                 }
                 Conditional::None(_) => {
@@ -154,11 +160,11 @@ where
                         required: require_identity,
                         found: None,
                     };
-                    return Either::A(future::err(e.into()));
+                    return Either::Left(future::err(e.into()));
                 }
             }
         }
 
-        Either::B(self.inner.call(request).map_err(Into::into))
+        Either::Right(self.inner.call(request).map_err(Into::into))
     }
 }

@@ -43,12 +43,12 @@ use tracing::info_span;
 // mod add_server_id_on_rsp;
 pub mod endpoint;
 mod orig_proto_upgrade;
-// mod require_identity_on_endpoint;
 mod prevent_loop;
+mod require_identity_on_endpoint;
 
 use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
-// use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 use self::prevent_loop::PreventLoop;
+use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -134,7 +134,7 @@ impl Config {
         profiles_client: P,
         // tap_layer: tap::Layer,
         metrics: ProxyMetrics,
-        //span_sink: Option<mpsc::Sender<oc::Span>>,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl tower::Service<
         Target<HttpEndpoint>,
         Error = Error,
@@ -187,24 +187,25 @@ impl Config {
         let http_endpoint = {
             // Registers the stack with Tap, Metrics, and OpenCensus tracing
             // export.
-            let observability = svc::layers();
-            // .push(tap_layer.clone())
-            // .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            // .push_on_response(TraceContextLayer::new(
-            //     span_sink
-            //         .clone()
-            //         .map(|sink| SpanConverter::client(sink, trace_labels())),
-            // ));
+            let observability = svc::layers()
+                // .push(tap_layer.clone())
+                // .push(metrics.http_endpoint.into_layer::<classify::Response>())
+                .push_on_response(TraceContextLayer::new(
+                    span_sink
+                        .clone()
+                        .map(|sink| SpanConverter::client(sink, trace_labels())),
+                ));
 
             // Checks the headers to validate that a client-specified required
             // identity matches the configured identity.
-            let identity_headers = svc::layers().push_on_response(
-                svc::layers()
-                    .push(http::strip_header::response::layer(L5D_REMOTE_IP))
-                    .push(http::strip_header::response::layer(L5D_SERVER_ID))
-                    .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
-            );
-            //.push(MakeRequireIdentityLayer::new());
+            let identity_headers = svc::layers()
+                .push_on_response(
+                    svc::layers()
+                        .push(http::strip_header::response::layer(L5D_REMOTE_IP))
+                        .push(http::strip_header::response::layer(L5D_SERVER_ID))
+                        .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
+                )
+                .push(MakeRequireIdentityLayer::new());
 
             svc::stack(tcp_connect.clone())
                 // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
@@ -416,7 +417,7 @@ impl Config {
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
-        //span_sink: Option<mpsc::Sender<oc::Span>>,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>
     where
@@ -473,11 +474,11 @@ impl Config {
             .push_failfast(dispatch_timeout)
             //.push(metrics.http_errors.clone())
             // Synthesizes responses for proxy errors.
-            .push(errors::layer());
-        // // Initiates OpenCensus tracing.
-        // // .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
-        // //     SpanConverter::server(span_sink, trace_labels())
-        // // })))
+            .push(errors::layer())
+            // Initiates OpenCensus tracing.
+            .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+                SpanConverter::server(span_sink, trace_labels())
+            })));
         // // Tracks proxy handletime.
         // //.push(metrics.clone().http_handle_time.layer());
 

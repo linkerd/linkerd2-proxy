@@ -1,6 +1,7 @@
 use super::*;
 use futures::TryFuture;
 use http::Response;
+use linkerd2_app_core::proxy::http::trace;
 use rustls::ServerConfig;
 use std::collections::HashMap;
 use std::future::Future;
@@ -186,7 +187,8 @@ impl Server {
                 let _subscriber = subscriber.set_default();
                 tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
-                let mut http = hyper::server::conn::Http::new();
+                let mut http =
+                    hyper::server::conn::Http::new().with_executor(trace::Executor::new());
                 match self.version {
                     Run::Http1 => http.http1_only(true),
                     Run::Http2 => http.http2_only(true),

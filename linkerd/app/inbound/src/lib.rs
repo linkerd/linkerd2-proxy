@@ -62,7 +62,7 @@ impl Config {
         profiles_client: P,
         //tap_layer: tap::Layer,
         metrics: ProxyMetrics,
-        //span_sink: Option<mpsc::Sender<oc::Span>>,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>
     where
@@ -89,7 +89,7 @@ impl Config {
             profiles_client,
             //tap_layer,
             metrics.clone(),
-            //span_sink.clone(),
+            span_sink.clone(),
         );
         self.build_server(
             listen,
@@ -98,7 +98,7 @@ impl Config {
             http_router,
             local_identity,
             metrics,
-            //span_sink,
+            span_sink,
             drain,
         )
     }
@@ -137,7 +137,7 @@ impl Config {
         profiles_client: P,
         //tap_layer: tap::Layer,
         metrics: ProxyMetrics,
-        //span_sink: Option<mpsc::Sender<oc::Span>>,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl tower::Service<
         Target,
         Error = Error,
@@ -195,16 +195,16 @@ impl Config {
             }))
             .check_service::<HttpEndpoint>();
 
-        let http_target_observability = svc::layers();
-        //     // Registers the stack to be tapped.
-        //     .push(tap_layer)
-        //     // Records metrics for each `Target`.
-        //     .push(metrics.http_endpoint.into_layer::<classify::Response>())
-        //     .push_on_response(TraceContextLayer::new(
-        //         span_sink
-        //             .clone()
-        //             .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
-        //     ));
+        let http_target_observability = svc::layers()
+            //     // Registers the stack to be tapped.
+            //     .push(tap_layer)
+            //     // Records metrics for each `Target`.
+            //     .push(metrics.http_endpoint.into_layer::<classify::Response>())
+            .push_on_response(TraceContextLayer::new(
+                span_sink
+                    .clone()
+                    .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
+            ));
 
         let http_profile_route_proxy = svc::proxies()
             // Sets the route as a request extension so that it can be used
@@ -305,7 +305,7 @@ impl Config {
         http_router: H,
         local_identity: tls::Conditional<identity::Local>,
         metrics: ProxyMetrics,
-        //span_sink: Option<mpsc::Sender<oc::Span>>,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>
     where
@@ -364,10 +364,9 @@ impl Config {
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
-        let http_server_observability = svc::layers();
-        // .push(TraceContextLayer::new(span_sink.map(|span_sink| {
-        //     SpanConverter::server(span_sink, trace_labels())
-        // })))
+        let http_server_observability = svc::layers().push(TraceContextLayer::new(
+            span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels())),
+        ));
         // Tracks proxy handletime.
         //.push(metrics.http_handle_time.layer());
 

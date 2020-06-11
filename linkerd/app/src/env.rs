@@ -5,14 +5,7 @@ use crate::core::{
     transport::{listen, tls},
     Addr,
 };
-use crate::{
-    dns,
-    gateway,
-    identity,
-    inbound,
-    // oc_collector,
-    outbound,
-};
+use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -525,33 +518,33 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             .into(),
     };
 
-    // let oc_collector = match trace_collector_addr? {
-    //     None => oc_collector::Config::Disabled,
-    //     Some(addr) => {
-    //         let connect = if addr.addr.is_loopback() {
-    //             inbound.proxy.connect.clone()
-    //         } else {
-    //             outbound.proxy.connect.clone()
-    //         };
+    let oc_collector = match trace_collector_addr? {
+        None => oc_collector::Config::Disabled,
+        Some(addr) => {
+            let connect = if addr.addr.is_loopback() {
+                inbound.proxy.connect.clone()
+            } else {
+                outbound.proxy.connect.clone()
+            };
 
-    //         let attributes = oc_attributes_file_path
-    //             .map(|path| match path {
-    //                 Some(path) => oc_trace_attributes(path),
-    //                 None => HashMap::new(),
-    //             })
-    //             .unwrap_or_default();
+            let attributes = oc_attributes_file_path
+                .map(|path| match path {
+                    Some(path) => oc_trace_attributes(path),
+                    None => HashMap::new(),
+                })
+                .unwrap_or_default();
 
-    //         oc_collector::Config::Enabled {
-    //             attributes,
-    //             hostname: hostname?,
-    //             control: ControlConfig {
-    //                 addr,
-    //                 connect,
-    //                 buffer_capacity: 10,
-    //             },
-    //         }
-    //     }
-    // };
+            oc_collector::Config::Enabled {
+                attributes,
+                hostname: hostname?,
+                control: ControlConfig {
+                    addr,
+                    connect,
+                    buffer_capacity: 10,
+                },
+            }
+        }
+    };
 
     let tap = tap?
         .map(|(addr, ids)| super::tap::Config::Enabled {
@@ -587,7 +580,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         dns,
         dst,
         tap,
-        // oc_collector,
+        oc_collector,
         identity,
         outbound,
         gateway,

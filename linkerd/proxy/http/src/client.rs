@@ -3,6 +3,7 @@ use super::upgrade::{Http11Upgrade, HttpConnect};
 use super::{
     h1, h2,
     settings::{HasSettings, Settings},
+    trace,
 };
 use futures::{ready, TryFuture};
 use http;
@@ -145,6 +146,7 @@ where
                 }
                 // hyper should only try to automatically
                 // set the host if the request was in absolute_form
+                .executor(trace::Executor::new())
                 .set_host(was_absolute_form)
                 .build(HyperConnect::new(connect, target, was_absolute_form));
                 MakeFuture::Http1(Some(h1))

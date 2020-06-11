@@ -8,12 +8,12 @@ pub mod dst;
 pub mod env;
 pub mod identity;
 pub mod metrics;
-// pub mod oc_collector;
+pub mod oc_collector;
 pub mod tap;
 
 use self::metrics::Metrics;
 use futures::{future, Async, Future};
-use futures_03::{compat::Future01CompatExt, TryFutureExt};
+use futures_03::{compat::Future01CompatExt, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
@@ -53,7 +53,7 @@ pub struct Config {
     pub dst: dst::Config,
     pub admin: admin::Config,
     pub tap: tap::Config,
-    // pub oc_collector: oc_collector::Config,
+    pub oc_collector: oc_collector::Config,
 }
 
 pub struct App {
@@ -63,7 +63,7 @@ pub struct App {
     dst: ControlAddr,
     identity: identity::Identity,
     inbound_addr: SocketAddr,
-    //oc_collector: oc_collector::OcCollector,
+    oc_collector: oc_collector::OcCollector,
     outbound_addr: SocketAddr,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     //tap: tap::Tap,
@@ -85,7 +85,7 @@ impl Config {
             dst,
             identity,
             inbound,
-            // oc_collector,
+            oc_collector,
             outbound,
             gateway,
             tap,
@@ -146,12 +146,12 @@ impl Config {
             })
         }?;
 
-        // let oc_collector = {
-        //     let identity = identity.local();
-        //     let dns = dns.resolver.clone();
-        //     let metrics = metrics.opencensus;
-        //     info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
-        // }?;
+        let oc_collector = {
+            let identity = identity.local();
+            let dns = dns.resolver.clone();
+            let metrics = metrics.opencensus;
+            info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
+        }?;
 
         let admin = {
             let identity = identity.local();
@@ -172,7 +172,7 @@ impl Config {
         let resolver = dns.resolver;
         let local_identity = identity.local();
         //let tap_layer = tap.layer();
-        //let oc_span_sink = oc_collector.span_sink();
+        let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
             let outbound_connect = outbound.build_tcp_connect(local_identity.clone()); //, &outbound_metrics);
@@ -186,7 +186,7 @@ impl Config {
                 dst.profiles.clone(),
                 //tap_layer.clone(),
                 outbound_metrics.clone(),
-                //oc_span_sink.clone(),
+                oc_span_sink.clone(),
             );
 
             tokio_02::task::spawn_local(
@@ -200,7 +200,7 @@ impl Config {
                         outbound_connect,
                         outbound_http.clone(),
                         outbound_metrics,
-                        //oc_span_sink.clone(),
+                        oc_span_sink.clone(),
                         drain_rx.clone(),
                     )
                     .map_err(|e| panic!("outbound failed: {}", e))
@@ -224,7 +224,7 @@ impl Config {
                         dst.profiles,
                         //tap_layer.clone(),
                         inbound_metrics,
-                        ///oc_span_sink,
+                        oc_span_sink,
                         drain_rx,
                     )
                     .map_err(|e| panic!("inbound failed: {}", e))
@@ -239,7 +239,7 @@ impl Config {
             drain: drain_tx,
             identity,
             inbound_addr,
-            //oc_collector,
+            oc_collector,
             outbound_addr,
             start_proxy,
             //tap,
@@ -287,11 +287,10 @@ impl App {
     }
 
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
-        // match self.oc_collector {
-        //     oc_collector::OcCollector::Disabled { .. } => None,
-        //     oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
-        // }
-        None
+        match self.oc_collector {
+            oc_collector::OcCollector::Disabled { .. } => None,
+            oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
+        }
     }
 
     pub fn spawn(self) -> drain::Signal {
@@ -300,7 +299,7 @@ impl App {
             mut admin_rt,
             drain,
             identity,
-            //oc_collector,
+            oc_collector,
             start_proxy,
             //tap,
             ..
@@ -330,19 +329,13 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         if let identity::Identity::Enabled { local, task, .. } = identity {
-                            tokio_02::spawn(
-                                task.map_err(|e| {
-                                    panic!("identity task failed: {}", e);
-                                })
-                                .instrument(info_span!("identity"))
-                                .compat(),
-                            );
+                            tokio_02::spawn(task.instrument(info_span!("identity")));
 
                             let latch = admin.latch;
                             tokio_02::spawn(
                                 local
                                     .await_crt()
-                                    .map(move |id| {
+                                    .map_ok(move |id| {
                                         latch.release();
                                         info!("Certified identity: {}", id.name().as_ref());
                                     })
@@ -350,8 +343,7 @@ impl App {
                                         // The daemon task was lost?!
                                         panic!("Failed to certify identity!");
                                     })
-                                    .instrument(info_span!("identity"))
-                                    .compat(),
+                                    .instrument(info_span!("identity")),
                             );
                         } else {
                             admin.latch.release()
@@ -370,12 +362,9 @@ impl App {
                         //     );
                         // }
 
-                        // if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
-                        //     tokio::spawn(
-                        //         task.map_err(|error| error!(%error, "client died"))
-                        //             .instrument(info_span!("opencensus")),
-                        //     );
-                        // }
+                        if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
+                            tokio_02::spawn(task.instrument(info_span!("opencensus")));
+                        }
 
                         // we don't care if the admin shutdown channel is
                         // dropped or actually triggered.
