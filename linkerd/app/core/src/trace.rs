@@ -104,10 +104,10 @@ impl LevelHandle {
 
     pub fn current(&self) -> Result<String, Error> {
         match self {
-            Self::Json(with_current) => with_current
+            Self::Json(handle) => handle
                 .with_current(|f| format!("{}", f))
                 .map_err(Into::into),
-            Self::Plain(with_current) => with_current
+            Self::Plain(handle) => handle
                 .with_current(|f| format!("{}", f))
                 .map_err(Into::into),
         }
@@ -117,7 +117,7 @@ impl LevelHandle {
 impl fmt::Debug for LevelHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json(with_current) => with_current
+            Self::Json(handle) => handle
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
                         .field("current", &format_args!("{}", c))
@@ -128,7 +128,7 @@ impl fmt::Debug for LevelHandle {
                         .field("current", &format_args!("{}", e))
                         .finish()
                 }),
-            Self::Plain(with_current) => with_current
+            Self::Plain(handle) => handle
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
                         .field("current", &format_args!("{}", c))
