@@ -18,12 +18,8 @@ type PlainFormatter = Formatter<format::DefaultFields, format::Format<format::Fu
 
 #[derive(Clone)]
 pub enum LevelHandle {
-    Json {
-        inner: reload::Handle<EnvFilter, JsonFormatter>,
-    },
-    Plain {
-        inner: reload::Handle<EnvFilter, PlainFormatter>,
-    },
+    Json(reload::Handle<EnvFilter, JsonFormatter>),
+    Plain(reload::Handle<EnvFilter, PlainFormatter>),
 }
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
