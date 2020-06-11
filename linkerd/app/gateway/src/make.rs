@@ -93,12 +93,8 @@ where
         };
 
         match self {
-            Self::NoSuffixes => {
-                return Box::pin(future::ok(Gateway::BadDomain(orig_dst.name().clone())));
-            }
-            Self::NoIdentity => {
-                return Box::pin(future::ok(Gateway::NoIdentity));
-            }
+            Self::NoSuffixes => Box::pin(future::ok(Gateway::BadDomain(orig_dst.name().clone()))),
+            Self::NoIdentity => Box::pin(future::ok(Gateway::NoIdentity)),
             Self::Enabled {
                 ref mut resolve,
                 outbound,
