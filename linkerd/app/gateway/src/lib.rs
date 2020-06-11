@@ -156,7 +156,7 @@ mod test {
             assert_ready_ok!(make_gateway.poll_ready());
             let gateway = make_gateway.call(target).await.unwrap();
 
-            tokio::spawn(async move {
+            let bg = tokio::spawn(async move {
                 handle.allow(1);
                 let (req, rsp) = handle.next_request().await.unwrap();
                 assert_eq!(
@@ -178,7 +178,9 @@ mod test {
                 .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd))
                 .body(Default::default())
                 .unwrap();
-            gateway.oneshot(req).await
+            let rsp = gateway.oneshot(req).await?;
+            bg.await?;
+            Ok(rsp)
         }
     }
 }
