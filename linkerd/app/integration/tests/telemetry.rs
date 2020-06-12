@@ -760,7 +760,7 @@ mod transport {
         drop(client);
         assert_eventually_contains!(
             metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"ENOTCONN\"} 1"
+            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
         );
 
         // create a new client to force a new connection
@@ -776,7 +776,7 @@ mod transport {
         drop(client);
         assert_eventually_contains!(
             metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"ENOTCONN\"} 2"
+            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 2"
         );
     }
 
@@ -826,7 +826,7 @@ mod transport {
         // drop the client to force the connection to close.
         drop(client);
         assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"ENOTCONN\"} 1"
+            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1"
         );
 
         // create a new client to force a new connection
@@ -841,7 +841,7 @@ mod transport {
         // drop the client to force the connection to close.
         drop(client);
         assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"ENOTCONN\"} 2"
+            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2"
         );
     }
 
