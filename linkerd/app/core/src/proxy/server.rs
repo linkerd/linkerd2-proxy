@@ -198,17 +198,12 @@ where
                     let conn = builder
                         .http1_only(true)
                         .serve_connection(io, HyperServerSvc::new(svc))
-                        .with_upgrades()
-                        .instrument(info_span!("h1"));
+                        .with_upgrades();
 
                     Ok(Box::pin(async move {
                         drain
-                            .watch(conn, |conn| {
-                                // XXX(eliza): `compat` prevents us from calling
-                                // `graceful_shutdown` because it wraps the future!
-                                // conn.graceful_shutdown()
-                                ()
-                            })
+                            .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                            .instrument(info_span!("h1"))
                             .await?;
                         Ok(())
                     }) as Self::Response)
@@ -219,16 +214,11 @@ where
                         .http2_only(true)
                         .http2_initial_stream_window_size(initial_stream_window_size)
                         .http2_initial_connection_window_size(initial_conn_window_size)
-                        .serve_connection(io, HyperServerSvc::new(http_svc))
-                        .instrument(info_span!("h2"));
+                        .serve_connection(io, HyperServerSvc::new(http_svc));
                     Ok(Box::pin(async move {
                         drain
-                            .watch(conn, |conn| {
-                                // XXX(eliza): `compat` prevents us from calling
-                                // `graceful_shutdown` because it wraps the future!
-                                // conn.graceful_shutdown()
-                                ()
-                            })
+                            .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                            .instrument(info_span!("h2"))
                             .await?;
                         Ok(())
                     }) as Self::Response)
