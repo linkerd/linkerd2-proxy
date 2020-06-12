@@ -1217,7 +1217,6 @@ async fn http2_rst_stream_is_propagated() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 async fn http1_orig_proto_does_not_propagate_rst_stream() {
     let _ = trace_init();
 

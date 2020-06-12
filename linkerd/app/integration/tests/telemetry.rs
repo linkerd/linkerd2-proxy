@@ -112,7 +112,6 @@ impl TcpFixture {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn metrics_endpoint_inbound_request_count() {
     let _ = trace_init();
     let Fixture {
@@ -133,7 +132,6 @@ fn metrics_endpoint_inbound_request_count() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn metrics_endpoint_outbound_request_count() {
     let _ = trace_init();
     let Fixture {
@@ -694,7 +692,6 @@ mod outbound_dst_labels {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn metrics_have_no_double_commas() {
     // Test for regressions to linkerd/linkerd2#600.
     let _ = trace_init();
@@ -734,7 +731,6 @@ fn metrics_have_no_double_commas() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 fn metrics_has_start_time() {
     let Fixture {
         metrics,
@@ -1337,7 +1333,6 @@ mod transport {
 
 // linkerd/linkerd2#613
 #[tokio::test]
-#[cfg_attr(not(feature = "nyi"), ignore)]
 async fn metrics_compression() {
     let _ = trace_init();
 
