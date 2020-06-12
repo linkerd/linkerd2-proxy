@@ -217,7 +217,6 @@ mod response_classification {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_http() {
         let _ = trace_init();
         let Fixture {
@@ -247,7 +246,6 @@ mod response_classification {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_http() {
         let _ = trace_init();
         let Fixture {
@@ -287,7 +285,7 @@ mod response_classification {
 // Eventually, we can add some kind of mock timer system for simulating latency
 // more reliably, and re-enable this test.
 #[test]
-#[cfg_attr(all(not(feature = "nyi"), not(feature = "flaky_tests")), ignore)]
+#[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn metrics_endpoint_inbound_response_latency() {
     let _ = trace_init();
 
@@ -366,7 +364,7 @@ fn metrics_endpoint_inbound_response_latency() {
 // Eventually, we can add some kind of mock timer system for simulating latency
 // more reliably, and re-enable this test.
 #[test]
-#[cfg_attr(all(not(feature = "nyi"), not(feature = "flaky_tests")), ignore)]
+#[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn metrics_endpoint_outbound_response_latency() {
     let _ = trace_init();
 
@@ -470,7 +468,6 @@ mod outbound_dst_labels {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn multiple_addr_labels() {
         let _ = trace_init();
         let (
@@ -502,7 +499,6 @@ mod outbound_dst_labels {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn multiple_addrset_labels() {
         let _ = trace_init();
         let (
@@ -534,7 +530,6 @@ mod outbound_dst_labels {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn labeled_addr_and_addrset() {
         let _ = trace_init();
         let (
@@ -570,7 +565,7 @@ mod outbound_dst_labels {
     // the mock controller before the first request has finished.
     // See linkerd/linkerd2#751
     #[test]
-    #[cfg_attr(all(not(feature = "nyi"), not(feature = "flaky_tests")), ignore)]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_addr_labels() {
         let _ = trace_init();
         info!("running test server");
@@ -634,7 +629,7 @@ mod outbound_dst_labels {
     // the mock controller before the first request has finished.
     // See linkerd/linkerd2#751
     #[test]
-    #[cfg_attr(all(not(feature = "nyi"), not(feature = "flaky_tests")), ignore)]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_set_labels() {
         let _ = trace_init();
         info!("running test server");
@@ -747,7 +742,6 @@ mod transport {
     use linkerd2_app_integration::*;
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_http_accept() {
         let _ = trace_init();
         let Fixture {
@@ -787,7 +781,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_http_connect() {
         let _ = trace_init();
         let Fixture {
@@ -816,7 +809,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_http_accept() {
         let _ = trace_init();
         let Fixture {
@@ -854,7 +846,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_http_connect() {
         let _ = trace_init();
         let Fixture {
@@ -879,7 +870,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_tcp_connect() {
         let _ = trace_init();
         let TcpFixture {
@@ -897,7 +887,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     #[cfg(macos)]
     fn inbound_tcp_connect_err() {
         let _ = trace_init();
@@ -928,7 +917,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     #[cfg(macos)]
     fn outbound_tcp_connect_err() {
         let _ = trace_init();
@@ -957,7 +945,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_tcp_accept() {
         let _ = trace_init();
         let TcpFixture {
@@ -1000,7 +987,7 @@ mod transport {
 
     // linkerd/linkerd2#831
     #[test]
-    #[cfg_attr(all(not(feature = "nyi"), not(feature = "flaky_tests")), ignore)]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_duration() {
         let _ = trace_init();
         let TcpFixture {
@@ -1040,7 +1027,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_tcp_write_bytes_total() {
         let _ = trace_init();
         let TcpFixture {
@@ -1069,7 +1055,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_tcp_read_bytes_total() {
         let _ = trace_init();
         let TcpFixture {
@@ -1098,7 +1083,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_tcp_connect() {
         let _ = trace_init();
         let TcpFixture {
@@ -1116,7 +1100,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_tcp_accept() {
         let _ = trace_init();
         let TcpFixture {
@@ -1154,7 +1137,7 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(all(not(feature = "nyi"), not(feature = "flaky_tests")), ignore)]
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn outbound_tcp_duration() {
         let _ = trace_init();
         let TcpFixture {
@@ -1194,7 +1177,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_tcp_write_bytes_total() {
         let _ = trace_init();
         let TcpFixture {
@@ -1223,7 +1205,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_tcp_read_bytes_total() {
         let _ = trace_init();
         let TcpFixture {
@@ -1252,7 +1233,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_tcp_open_connections() {
         let _ = trace_init();
         let TcpFixture {
@@ -1291,7 +1271,6 @@ mod transport {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_http_tcp_open_connections() {
         let _ = trace_init();
         let Fixture {

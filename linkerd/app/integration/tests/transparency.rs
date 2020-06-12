@@ -255,7 +255,6 @@ fn tcp_connections_close_if_client_closes() {
 macro_rules! http1_tests {
     (proxy: $proxy:expr) => {
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn inbound_http1() {
             let _ = trace_init();
 
@@ -267,8 +266,6 @@ macro_rules! http1_tests {
         }
 
         #[test]
-        // Re-enable when the header-stripping stuff is ported to std::future
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn http1_removes_connection_headers() {
             let _ = trace_init();
 
@@ -303,7 +300,7 @@ macro_rules! http1_tests {
             );
 
             assert_eq!(res.status(), http::StatusCode::OK);
-            // assert!(!res.headers().contains_key("x-server-quux"));
+            assert!(!res.headers().contains_key("x-server-quux"));
         }
 
         #[test]
@@ -364,7 +361,6 @@ macro_rules! http1_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn http11_upgrades() {
             let _ = trace_init();
 
@@ -461,8 +457,6 @@ macro_rules! http1_tests {
         }
 
         #[test]
-        // Re-enable when the header-stripping stuff is ported to std::future
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn http11_upgrade_h2_stripped() {
             let _ = trace_init();
 
@@ -502,7 +496,6 @@ macro_rules! http1_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn http11_connect() {
             let _ = trace_init();
 
@@ -578,7 +571,6 @@ macro_rules! http1_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn http11_connect_bad_requests() {
             let _ = trace_init();
 
@@ -708,7 +700,6 @@ macro_rules! http1_tests {
         }
 
         #[test]
-        #[cfg_attr(not(feature = "nyi"), ignore)]
         fn http1_requests_without_body_doesnt_add_transfer_encoding() {
             let _ = trace_init();
 
