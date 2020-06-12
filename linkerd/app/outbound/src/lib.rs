@@ -473,7 +473,7 @@ impl Config {
             // Eagerly fail requests when the proxy is out of capacity for a
             // dispatch_timeout.
             .push_failfast(dispatch_timeout)
-            //.push(metrics.http_errors.clone())
+            .push(metrics.http_errors.clone())
             // Synthesizes responses for proxy errors.
             .push(errors::layer())
             // Initiates OpenCensus tracing.
