@@ -10,8 +10,8 @@ description = "The main proxy executable"
 mock-orig-dst  = ["linkerd2-app/mock-orig-dst"]
 
 [dependencies]
-futures = { version = "0.3", features = ["compat"]}
+futures = "0.3"
 linkerd2-app = { path = "../linkerd/app" }
 linkerd2-signal = { path = "../linkerd/signal" }
-tokio-compat = "0.1"
+tokio = { version = "0.2", features = ["rt-core"] }
 tracing = "0.1"
