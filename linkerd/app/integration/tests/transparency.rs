@@ -399,7 +399,7 @@ macro_rules! http1_tests {
                         sock.write_all(upgrade_res.as_bytes()).await?;
 
                         // Read the message in 'chatproto' format
-                        vec.clear();
+                        let mut vec = vec![0; 512];
                         let n = sock.read(&mut vec).await?;
                         assert_eq!(s(&vec[..n]), chatproto_req);
 
@@ -534,7 +534,7 @@ macro_rules! http1_tests {
                         sock.write_all(&connect_res[..]).await?;
 
                         // Read the message after tunneling...
-                        vec.clear();
+                        let mut vec = vec![0; 512];
                         let n = sock.read(&mut vec).await?;
                         assert_eq!(s(&vec[..n]), s(&tunneled_req[..]));
 
