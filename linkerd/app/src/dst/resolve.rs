@@ -11,7 +11,6 @@ use linkerd2_app_core::{
 };
 use linkerd2_app_outbound::Target;
 use linkerd2_error::Never;
-use std::error;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tonic::{

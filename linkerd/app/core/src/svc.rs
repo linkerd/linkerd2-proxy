@@ -70,7 +70,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, target: ()) -> Self::Future {
+    fn call(&mut self, _: ()) -> Self::Future {
         self.inner.call(self.target.clone())
     }
 }
@@ -82,7 +82,7 @@ where
 {
     type Service = S::Service;
 
-    fn new_service(&self, target: ()) -> Self::Service {
+    fn new_service(&self, _: ()) -> Self::Service {
         self.inner.new_service(self.target.clone())
     }
 }

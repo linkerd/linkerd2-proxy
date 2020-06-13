@@ -123,7 +123,7 @@ where
                     State::Bound(listener)
                 }
                 State::Bound(ref mut listener) => {
-                    let (tcp, peer_addr) = futures_03::ready!(Pin::new(listener).poll_accept(cx))?;
+                    let (tcp, peer_addr) = futures::ready!(Pin::new(listener).poll_accept(cx))?;
                     let orig_dst = self.orig_dst_addr.orig_dst_addr(&tcp);
                     trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "accepted");
                     // TODO: On Linux and most other platforms it would be better

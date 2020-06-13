@@ -15,8 +15,7 @@ mock-orig-dst  = []
 
 [dependencies]
 bytes = "0.5"
-futures = "0.1"
-futures_03 = { package = "futures", version = "0.3", features = ["compat", "io-compat"]}
+futures = "0.3"
 indexmap = "1.0.0"
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns-name = { path = "../../dns/name" }

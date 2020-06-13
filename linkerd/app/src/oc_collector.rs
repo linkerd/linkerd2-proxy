@@ -1,8 +1,7 @@
 use crate::{dns, identity::LocalIdentity};
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
-    control, proxy, reconnect,
-    svc::{self, NewService},
+    control, reconnect, svc,
     transport::tls,
     Error,
 };

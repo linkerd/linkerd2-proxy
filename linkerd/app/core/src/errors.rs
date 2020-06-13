@@ -125,7 +125,7 @@ where
     fn size_hint(&self) -> http_body::SizeHint {
         match self {
             Self::NonGrpc(inner) => inner.size_hint(),
-            Self::Grpc { inner, trailers } => inner.size_hint(),
+            Self::Grpc { inner, .. } => inner.size_hint(),
         }
     }
 }

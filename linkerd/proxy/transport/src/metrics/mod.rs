@@ -1,4 +1,4 @@
-use futures_03::{ready, TryFuture};
+use futures::{ready, TryFuture};
 use indexmap::IndexMap;
 use linkerd2_errno::Errno;
 use linkerd2_metrics::{

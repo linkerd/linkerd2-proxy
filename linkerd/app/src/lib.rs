@@ -12,7 +12,7 @@ pub mod oc_collector;
 pub mod tap;
 
 use self::metrics::Metrics;
-use futures::{future, Future, FutureExt, TryFutureExt};
+use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
@@ -26,7 +26,6 @@ use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::task::Poll;
 use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 

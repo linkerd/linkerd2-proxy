@@ -13,7 +13,7 @@ use crate::{
     transport::{self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls},
     Error,
 };
-use futures::{compat::Future01CompatExt, FutureExt, TryFutureExt};
+use futures::TryFutureExt;
 use http;
 use hyper;
 use indexmap::IndexSet;

@@ -5,7 +5,7 @@
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
 
-use futures_03::FutureExt;
+use futures::FutureExt;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
 use linkerd2_proxy_core::listen::{Accept, Bind as _Bind, Listen as CoreListen};
@@ -153,7 +153,7 @@ where
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());
                 let future = server((meta, conn)).instrument(tracing::info_span!("test_svc"));
-                futures_03::future::ok::<_, Never>(async move {
+                futures::future::ok::<_, Never>(async move {
                     let result = future.await;
                     sender
                         .send(Transported {
@@ -166,7 +166,7 @@ where
             }),
         );
         let server = async move {
-            let conn = futures_03::future::poll_fn(|cx| listen.poll_accept(cx))
+            let conn = futures::future::poll_fn(|cx| listen.poll_accept(cx))
                 .await
                 .expect("listen failed");
             tracing::debug!("incoming connection");
@@ -218,7 +218,7 @@ where
     };
 
     tokio_compat::runtime::current_thread::run_std(
-        futures_03::future::join(server, client).map(|_| ()),
+        futures::future::join(server, client).map(|_| ()),
     );
 
     let client_result = client_result.try_recv().expect("client complete");

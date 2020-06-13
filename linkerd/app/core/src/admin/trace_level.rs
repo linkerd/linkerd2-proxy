@@ -1,12 +1,10 @@
 use super::{rsp, ClientAddr};
 pub use crate::trace::LevelHandle as TraceLevel;
 use bytes::buf::Buf;
-use futures::{
-    future::{self, Future},
-    Stream,
-};
+use futures::future;
 use http::{Method, StatusCode};
 use hyper::{service::Service, Body, Request, Response};
+use std::future::Future;
 use std::task::{Context, Poll};
 use std::{io, pin::Pin, str};
 use tracing::{error, trace, warn};
