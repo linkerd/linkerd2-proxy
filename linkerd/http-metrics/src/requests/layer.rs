@@ -1,5 +1,5 @@
 use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
-use futures_03::TryFuture;
+use futures::{ready, TryFuture};
 use http;
 use http_body::Body;
 use linkerd2_error::Error;
@@ -239,7 +239,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let inner = futures_03::ready!(this.inner.try_poll(cx))?;
+        let inner = ready!(this.inner.try_poll(cx))?;
         let service = Service {
             inner,
             metrics: this.metrics.clone(),
@@ -375,7 +375,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let rsp = futures_03::ready!(this.inner.try_poll(cx));
+        let rsp = ready!(this.inner.try_poll(cx));
 
         let classify = this.classify.take();
         let metrics = this.metrics.take();
@@ -424,7 +424,7 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.project();
-        let frame = futures_03::ready!(this.inner.poll_data(cx));
+        let frame = ready!(this.inner.poll_data(cx));
 
         if let Some(lock) = this.metrics.take() {
             let now = clock::now();
@@ -576,7 +576,7 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let poll = futures_03::ready!(self.as_mut().project().inner.poll_data(cx));
+        let poll = ready!(self.as_mut().project().inner.poll_data(cx));
         let frame = poll.map(|opt| opt.map_err(|e| self.as_mut().measure_err(e.into())));
 
         if !(*self.as_mut().project().latency_recorded) {
@@ -590,7 +590,7 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let trls = futures_03::ready!(self.as_mut().project().inner.poll_trailers(cx))
+        let trls = ready!(self.as_mut().project().inner.poll_trailers(cx))
             .map_err(|e| self.as_mut().measure_err(e.into()))?;
 
         if let Some(c) = self

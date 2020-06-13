@@ -1215,7 +1215,6 @@ name = "linkerd2-http-metrics"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.1.26",
  "futures 0.3.5",
  "h2 0.1.26",
  "http 0.2.1",
