@@ -21,9 +21,9 @@ fn main() {
         }
     };
 
-    tokio::runtime::Runtime::new()
+    tokio_compat::runtime::current_thread::Runtime::new()
         .expect("main runtime")
-        .block_on(async move {
+        .block_on_std(async move {
             let app = match async move { config.build(trace?).await }.await {
                 Ok(app) => app,
                 Err(e) => {
