@@ -879,7 +879,6 @@ name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.1.26",
  "futures 0.3.5",
  "http 0.2.1",
  "http-body 0.3.1",
@@ -935,7 +934,6 @@ dependencies = [
  "rand 0.7.2",
  "regex 1.0.0",
  "tokio 0.2.21",
- "tokio-compat",
  "tokio-timer",
  "tonic",
  "tower 0.3.1",
@@ -3416,7 +3414,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab7bb6f14721aa00656086e9335d363c5c8747bae02ebe32ea2c7dece5689b4c"
 dependencies = [
- "futures 0.1.26",
+ "futures 0.3.5",
  "pin-project",
  "tracing",
 ]

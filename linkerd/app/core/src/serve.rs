@@ -90,7 +90,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         #[project]
         match self.project().0.project() {
-            State::Serving(serve) => match futures_03::ready!(serve.poll(cx)) {
+            State::Serving(serve) => match futures::ready!(serve.poll(cx)) {
                 Ok(_never) => unreachable!(
                     "this is supposed to be a `never` but rustc can't seem to figure that out?"
                 ),

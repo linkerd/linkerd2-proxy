@@ -16,7 +16,7 @@ impl fmt::Display for ControlAddr {
 /// Sets the request's URI from `Config`.
 pub mod add_origin {
     use super::ControlAddr;
-    use futures_03::{ready, TryFuture};
+    use futures::{ready, TryFuture};
     use linkerd2_error::Error;
     use pin_project::pin_project;
     use std::future::Future;
@@ -149,7 +149,7 @@ pub mod add_origin {
 pub mod resolve {
     use super::{client, ControlAddr};
     use crate::svc;
-    use futures_03::{ready, TryFuture};
+    use futures::{ready, TryFuture};
     use linkerd2_addr::Addr;
     use linkerd2_dns as dns;
     use pin_project::{pin_project, project};

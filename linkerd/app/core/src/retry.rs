@@ -5,7 +5,7 @@ use super::http_metrics::retries::Handle;
 use super::transport::tls;
 use super::HttpRouteRetry;
 use crate::profiles;
-use futures_03::future;
+use futures::future;
 use hyper::body::HttpBody;
 use linkerd2_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd2_retry::NewRetryLayer;

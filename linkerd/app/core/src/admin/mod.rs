@@ -4,7 +4,7 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{svc, transport::tls::accept::Connection};
-use futures_03::{future, TryFutureExt};
+use futures::{future, TryFutureExt};
 use http::StatusCode;
 use hyper::{Body, Request, Response};
 use linkerd2_error::Error;
@@ -133,7 +133,7 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_03::compat::Future01CompatExt;
+    use futures::compat::Future01CompatExt;
     use http::method::Method;
     use linkerd2_test_util::BlockOnFor;
     use std::time::Duration;

@@ -1,7 +1,7 @@
 use super::{rsp, ClientAddr};
 pub use crate::trace::LevelHandle as TraceLevel;
 use bytes::buf::Buf;
-use futures_03::{
+use futures::{
     future::{self, Future},
     Stream,
 };
