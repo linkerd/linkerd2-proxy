@@ -173,7 +173,7 @@ impl Config {
                 oc_span_sink.clone(),
             );
 
-            tokio::task::spawn_local(
+            tokio::spawn(
                 outbound
                     .build_server(
                         outbound_listen,
@@ -197,7 +197,7 @@ impl Config {
                 local_identity.as_ref().map(|l| l.name().clone()),
             );
 
-            tokio::task::spawn_local(
+            tokio::spawn(
                 inbound
                     .build(
                         inbound_listen,
@@ -362,7 +362,7 @@ impl App {
             })
             .expect("admin");
 
-        tokio::task::spawn_local(start_proxy);
+        tokio::spawn(start_proxy);
 
         drain
     }

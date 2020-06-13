@@ -64,7 +64,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
     where
         L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
         L::Error: Into<Error>,
@@ -307,7 +307,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
     where
         C: tower::Service<TcpEndpoint> + Unpin + Clone + Send + Sync + 'static,
         C::Error: Into<Error>,
