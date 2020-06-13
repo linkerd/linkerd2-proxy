@@ -14,8 +14,8 @@ This is used by tests and the executable.
 mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
 
 [dependencies]
-futures = "0.1"
-futures_03 = { package = "futures", version = "0.3" }
+futures = { version = "0.3" }
+http-body = "0.3"
 indexmap = "1.0"
 ipnet = "1.0"
 linkerd2-app-core = { path = "./core" }
@@ -25,14 +25,11 @@ linkerd2-app-outbound = { path = "./outbound" }
 linkerd2-opencensus = { path = "../opencensus" }
 linkerd2-error = { path = "../error" }
 regex = "1.0.0"
-tokio = "0.1.14"
+tokio = { version = "0.2", features = ["rt-util"] }
 tonic = { version = "0.2", default-features = false, features = ["prost"] }
-tracing = "0.1.9"
-tracing-futures = { version = "0.1", features = ["std-future"]}
-tokio-compat = "0.1"
-tokio_02 = {package = "tokio", version = "0.2", features = ["rt-util"] }
-http-body = "0.3"
 tower = "0.3"
+tracing = "0.1.9"
+tracing-futures = { version = "0.2", features = ["std-future"]}
 
 [dev-dependencies]
 bytes = "0.5"

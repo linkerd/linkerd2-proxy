@@ -12,8 +12,7 @@ pub mod oc_collector;
 pub mod tap;
 
 use self::metrics::Metrics;
-use futures::{future, Async, Future};
-use futures_03::{compat::Future01CompatExt, TryFutureExt};
+use futures::{future, Future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
@@ -27,6 +26,7 @@ use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::task::Poll;
 use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
@@ -174,7 +174,7 @@ impl Config {
                 oc_span_sink.clone(),
             );
 
-            tokio_02::task::spawn_local(
+            tokio::task::spawn_local(
                 outbound
                     .build_server(
                         outbound_listen,
@@ -198,7 +198,7 @@ impl Config {
                 local_identity.as_ref().map(|l| l.name().clone()),
             );
 
-            tokio_02::task::spawn_local(
+            tokio::task::spawn_local(
                 inbound
                     .build(
                         inbound_listen,
@@ -295,11 +295,11 @@ impl App {
         // the task. This causes the daemon reactor to stop.
         let (admin_shutdown_tx, admin_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
         debug!("spawning daemon thread");
-        tokio::spawn(future::poll_fn(|| Ok(Async::NotReady)).map(|()| drop(admin_shutdown_tx)));
+        tokio::spawn(future::pending().map(|()| drop(admin_shutdown_tx)));
         std::thread::Builder::new()
             .name("admin".into())
             .spawn(move || {
-                let mut rt = tokio_02::runtime::Builder::new()
+                let mut rt = tokio::runtime::Builder::new()
                     .basic_scheduler()
                     .enable_all()
                     .build()
@@ -309,7 +309,7 @@ impl App {
                         debug!("running admin thread");
 
                         // Start the admin server to serve the readiness endpoint.
-                        tokio_02::spawn(
+                        tokio::spawn(
                             admin
                                 .serve
                                 .map_err(|e| panic!("admin server died: {}", e))
@@ -318,10 +318,10 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         if let identity::Identity::Enabled { local, task, .. } = identity {
-                            tokio_02::spawn(task.instrument(info_span!("identity")));
+                            tokio::spawn(task.instrument(info_span!("identity")));
 
                             let latch = admin.latch;
-                            tokio_02::spawn(
+                            tokio::spawn(
                                 local
                                     .await_crt()
                                     .map_ok(move |id| {
@@ -339,11 +339,11 @@ impl App {
                         }
 
                         // Spawn the DNS resolver background task.
-                        tokio_02::spawn(dns.instrument(info_span!("dns")));
+                        tokio::spawn(dns.instrument(info_span!("dns")));
 
                         if let tap::Tap::Enabled { daemon, serve, .. } = tap {
-                            tokio_02::spawn(daemon.instrument(info_span!("tap")));
-                            tokio_02::task::spawn(
+                            tokio::spawn(daemon.instrument(info_span!("tap")));
+                            tokio::task::spawn(
                                 serve
                                     .map_err(|error| error!(%error, "server died"))
                                     .instrument(info_span!("tap")),
@@ -351,19 +351,19 @@ impl App {
                         }
 
                         if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
-                            tokio_02::spawn(task.instrument(info_span!("opencensus")));
+                            tokio::spawn(task.instrument(info_span!("opencensus")));
                         }
 
                         // we don't care if the admin shutdown channel is
                         // dropped or actually triggered.
-                        let _ = admin_shutdown_rx.compat().await;
+                        let _ = admin_shutdown_rx.await;
                     }
                     .instrument(info_span!("daemon")),
                 )
             })
             .expect("admin");
 
-        tokio_02::task::spawn_local(start_proxy);
+        tokio::task::spawn_local(start_proxy);
 
         drain
     }

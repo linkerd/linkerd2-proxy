@@ -10,7 +10,7 @@ use linkerd2_opencensus::{metrics, proto, SpanExporter};
 use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};
-use tokio_02::sync::mpsc;
+use tokio::sync::mpsc;
 use tracing::debug;
 
 #[derive(Clone, Debug)]

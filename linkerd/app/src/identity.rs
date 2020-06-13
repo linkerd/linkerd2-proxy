@@ -1,4 +1,4 @@
-use futures_03::stream::TryStream;
+use futures::stream::TryStream;
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
