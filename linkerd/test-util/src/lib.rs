@@ -1,7 +1,7 @@
-use futures::Future;
+use std::future::Future;
 use std::time::Duration;
-use tokio::timer::Timeout;
-use tokio_compat::runtime::current_thread::Runtime;
+use tokio::runtime::Runtime;
+use tokio::time;
 
 /// A trait that allows an executor to execute a future for up to a given
 /// time limit, and then panics if the future has not finished.
@@ -15,30 +15,23 @@ use tokio_compat::runtime::current_thread::Runtime;
 pub trait BlockOnFor {
     /// Runs the provided future for up to `timeout`, blocking the thread
     /// until the future completes.
-    fn block_on_for<F>(&mut self, timeout: Duration, f: F) -> Result<F::Item, F::Error>
+    fn block_on_for<F>(&mut self, timeout: Duration, f: F) -> F::Output
     where
         F: Future;
 }
 
 impl BlockOnFor for Runtime {
-    fn block_on_for<F>(&mut self, timeout: Duration, f: F) -> Result<F::Item, F::Error>
+    fn block_on_for<F>(&mut self, timeout: Duration, f: F) -> F::Output
     where
         F: Future,
     {
-        let f = Timeout::new(f, timeout);
-        match self.block_on(f) {
-            Ok(item) => Ok(item),
-            Err(e) => {
-                if e.is_inner() {
-                    return Err(e.into_inner().unwrap());
-                } else if e.is_timer() {
-                    panic!("timer error: {}", e.into_timer().unwrap());
-                } else {
-                    panic!(
-                        "assertion failed: future did not finish within {:?}",
-                        timeout
-                    );
-                }
+        match self.block_on(time::timeout(timeout, f)) {
+            Ok(res) => res,
+            Err(_) => {
+                panic!(
+                    "assertion failed: future did not finish within {:?}",
+                    timeout
+                );
             }
         }
     }
