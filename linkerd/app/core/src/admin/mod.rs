@@ -135,18 +135,16 @@ mod tests {
     use super::*;
     use futures::compat::Future01CompatExt;
     use http::method::Method;
-    use linkerd2_test_util::BlockOnFor;
     use std::time::Duration;
-    use tokio_compat::runtime::current_thread::Runtime;
+    use tokio::time::timeout;
 
     const TIMEOUT: Duration = Duration::from_secs(1);
 
-    #[test]
-    fn ready_when_latches_dropped() {
+    #[tokio::test]
+    async fn ready_when_latches_dropped() {
         let (r, l0) = Readiness::new();
         let l1 = l0.clone();
 
-        let mut rt = Runtime::new().unwrap();
         let mut srv = Admin::new((), r, TraceLevel::dangling());
         macro_rules! call {
             () => {{
@@ -155,8 +153,8 @@ mod tests {
                     .uri("http://4.3.2.1:5678/ready")
                     .body(Body::empty())
                     .unwrap();
-                let f = srv.call(r).compat();
-                rt.block_on_for(TIMEOUT, f).expect("call")
+                let f = srv.call(r);
+                timeout(TIMEOUT, f).await.expect("timeout").expect("call")
             };};
         }
 

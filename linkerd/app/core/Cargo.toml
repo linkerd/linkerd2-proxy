@@ -19,7 +19,7 @@ bytes = "0.5"
 http = "0.2"
 http-body = "0.3"
 hyper = "0.13"
-futures = { version = "0.3" }
+futures = "0.3"
 indexmap = "1.0"
 linkerd2-addr = { path = "../../addr" }
 linkerd2-admit = { path = "../../admit" }
@@ -99,7 +99,8 @@ libc = "0.2"
 procinfo = "0.4.2"
 
 [dev-dependencies]
-linkerd2-test-util = { path = "../../test-util" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], tag = "v0.1.12" }
 prost-types = "0.5.0"
 quickcheck = { version = "0.9", default-features = false }
+tokio = { version = "0.2", features = ["time"] }
+tokio-test = "0.2"

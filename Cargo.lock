@@ -920,7 +920,6 @@ dependencies = [
  "linkerd2-stack",
  "linkerd2-stack-metrics",
  "linkerd2-stack-tracing",
- "linkerd2-test-util",
  "linkerd2-timeout",
  "linkerd2-trace-context",
  "pin-project",
@@ -930,6 +929,7 @@ dependencies = [
  "rand 0.7.2",
  "regex 1.0.0",
  "tokio 0.2.21",
+ "tokio-test",
  "tokio-timer",
  "tonic",
  "tower 0.3.1",
@@ -998,7 +998,6 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
- "linkerd2-test-util",
  "net2",
  "quickcheck",
  "regex 0.1.80",
@@ -1622,7 +1621,6 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
  "linkerd2-stack",
- "linkerd2-test-util",
  "pin-project",
  "prost-types 0.6.1",
  "quickcheck",
@@ -1675,15 +1673,6 @@ dependencies = [
  "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
-]
-
-[[package]]
-name = "linkerd2-test-util"
-version = "0.1.0"
-dependencies = [
- "futures 0.1.26",
- "tokio 0.1.22",
- "tokio-compat",
 ]
 
 [[package]]
