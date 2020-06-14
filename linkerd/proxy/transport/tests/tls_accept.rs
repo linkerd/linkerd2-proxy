@@ -217,9 +217,9 @@ where
         (client, receiver)
     };
 
-    tokio_compat::runtime::current_thread::run_std(
-        futures::future::join(server, client).map(|_| ()),
-    );
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(futures::future::join(server, client).map(|_| ()));
 
     let client_result = client_result.try_recv().expect("client complete");
 
