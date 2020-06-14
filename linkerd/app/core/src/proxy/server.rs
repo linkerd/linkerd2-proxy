@@ -193,8 +193,7 @@ where
             match http_version {
                 HttpVersion::Http1 => {
                     // Enable support for HTTP upgrades (CONNECT and websockets).
-                    // TODO(eliza): port upgrades!
-                    let svc = /* upgrade::Service::new(http_svc, drain.clone()) */ http_svc;
+                    let svc = upgrade::Service::new(http_svc, drain.clone());
                     let conn = builder
                         .http1_only(true)
                         .serve_connection(io, HyperServerSvc::new(svc))

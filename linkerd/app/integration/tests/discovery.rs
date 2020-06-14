@@ -481,7 +481,6 @@ macro_rules! generate_tests {
             }
 
             #[tokio::test]
-            #[cfg_attr(not(feature = "nyi"), ignore)]
             async fn outbound_overrides_profile() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy().run();
@@ -531,7 +530,6 @@ macro_rules! generate_tests {
             }
 
             #[test]
-            #[cfg_attr(not(feature = "nyi"), ignore)]
             fn inbound_overrides_profile() {
                 let mut fixture = Fixture::new();
                 let proxy = fixture.proxy()
@@ -664,7 +662,6 @@ mod proxy_to_proxy {
     use super::*;
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn outbound_http1() {
         let _ = trace_init();
 
@@ -694,7 +691,6 @@ mod proxy_to_proxy {
     }
 
     #[test]
-    #[cfg_attr(not(feature = "nyi"), ignore)]
     fn inbound_http1() {
         let _ = trace_init();
 
