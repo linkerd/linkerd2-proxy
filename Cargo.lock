@@ -1311,7 +1311,7 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-app",
  "linkerd2-signal",
- "tokio-compat",
+ "tokio 0.2.21",
  "tracing",
 ]
 
