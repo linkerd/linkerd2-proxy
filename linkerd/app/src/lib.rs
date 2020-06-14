@@ -342,7 +342,7 @@ impl App {
 
                         if let tap::Tap::Enabled { daemon, serve, .. } = tap {
                             tokio::spawn(daemon.instrument(info_span!("tap")));
-                            tokio::task::spawn(
+                            tokio::spawn(
                                 serve
                                     .map_err(|error| error!(%error, "server died"))
                                     .instrument(info_span!("tap")),
