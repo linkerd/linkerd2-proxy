@@ -3,7 +3,7 @@
 //! The outound proxy is responsible for routing traffic from the local
 //! application to external network endpoints.
 
-// #![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms)]
 
 pub use self::endpoint::{
     Concrete, HttpEndpoint, Logical, LogicalPerRequest, Profile, ProfilePerTarget, Target,

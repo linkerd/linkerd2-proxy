@@ -3,7 +3,7 @@
 //! The inbound proxy is responsible for terminating traffic from other network
 //! endpoints inbound to the local application.
 
-// #![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms)]
 
 pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
