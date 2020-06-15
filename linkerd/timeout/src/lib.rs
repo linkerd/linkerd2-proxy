@@ -15,12 +15,8 @@ use tokio_connect::Connect;
 
 pub mod error;
 mod failfast;
-mod probe_ready;
 
-pub use self::{
-    failfast::{FailFast, FailFastError, FailFastLayer},
-    probe_ready::{ProbeReady, ProbeReadyLayer},
-};
+pub use self::failfast::{FailFast, FailFastError, FailFastLayer};
 
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]
