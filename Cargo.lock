@@ -1019,7 +1019,7 @@ dependencies = [
  "tower 0.3.1",
  "tower-grpc",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
  "tracing-subscriber",
  "webpki",
 ]
@@ -1070,7 +1070,7 @@ dependencies = [
  "tower 0.3.1",
  "tower-test",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
 ]
 
 [[package]]
@@ -1084,7 +1084,7 @@ dependencies = [
  "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
 ]
 
 [[package]]
@@ -1113,7 +1113,7 @@ dependencies = [
  "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
  "trust-dns-resolver",
 ]
 
@@ -1425,7 +1425,7 @@ dependencies = [
  "tower 0.3.1",
  "tower-test",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
 ]
 
 [[package]]
@@ -1455,7 +1455,7 @@ dependencies = [
  "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
  "try-lock",
 ]
 
@@ -1515,7 +1515,7 @@ dependencies = [
  "tonic",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
 ]
 
 [[package]]
@@ -1555,7 +1555,7 @@ dependencies = [
  "tokio-util",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
  "tracing-subscriber",
  "untrusted",
  "webpki",
@@ -1631,7 +1631,7 @@ dependencies = [
  "tonic",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
 ]
 
 [[package]]
@@ -1673,7 +1673,7 @@ dependencies = [
  "pin-project",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
 ]
 
 [[package]]
