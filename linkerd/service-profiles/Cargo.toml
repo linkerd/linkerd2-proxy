@@ -24,7 +24,7 @@ regex = "1.0.0"
 tokio = { version = "0.2", features = ["time", "sync"] }
 tonic = { version = "0.2", default-features = false }
 tracing = "0.1.9"
-tracing-futures = { version = "0.1", features = ["std-future"] }
+tracing-futures = { version = "0.2", features = ["std-future"] }
 pin-project = "0.4"
 
 [dependencies.tower]
