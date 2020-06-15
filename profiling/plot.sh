@@ -1,11 +1,11 @@
 #!/bin/bash
-PLOT_IMAGE="linkerd2_profiling_plot"
+PLOT_IMAGE='linkerd2_profiling_plot'
 ARGS=()
 
 usage() {
     cat <<USAGE
 
-    Usage: $(basename $0) [--logy] [-h] <data1> <data2> <graph-name-prefix>
+    Usage: ${0##*/} [--logy] [-h] <data1> <data2> <graph-name-prefix>
 
     --logy      use logarithmic scaling for y-axis
     -h          print this help message
