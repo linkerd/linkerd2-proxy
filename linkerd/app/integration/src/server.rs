@@ -10,7 +10,6 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::thread;
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
 use tokio_rustls::TlsAcceptor;
@@ -50,6 +49,7 @@ pub struct Listening {
     pub addr: SocketAddr,
     pub(super) _shutdown: Shutdown,
     pub(super) conn_count: Arc<AtomicUsize>,
+    pub(super) jh: tokio::task::JoinHandle<Result<(), io::Error>>,
 }
 
 pub fn mock_listening(a: SocketAddr) -> Listening {
@@ -59,6 +59,7 @@ pub fn mock_listening(a: SocketAddr) -> Listening {
         addr: a,
         _shutdown: tx,
         conn_count,
+        jh: tokio::spawn(async { Ok(()) }),
     }
 }
 
@@ -66,11 +67,13 @@ impl Listening {
     pub fn connections(&self) -> usize {
         self.conn_count.load(Ordering::Acquire)
     }
-}
 
-impl Drop for Listening {
-    fn drop(&mut self) {
-        println!("server Listening dropped; addr={}", self.addr);
+    pub async fn join(self) {
+        let Listening { jh, _shutdown, .. } = self;
+        drop(_shutdown);
+        jh.await
+            .expect("support server panicked")
+            .expect("support server failed")
     }
 }
 
@@ -109,7 +112,7 @@ impl Server {
     /// to send back.
     pub fn route_fn<F>(self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + 'static,
+        F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + Sync + 'static,
     {
         self.route_async(path, move |req| {
             let res = cb(req);
@@ -121,7 +124,7 @@ impl Server {
     /// a response to send back.
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<ReqBody>) -> U + Send + 'static,
+        F: Fn(Request<ReqBody>) -> U + Send + Sync + 'static,
         U: TryFuture<Ok = Response<Bytes>> + Send + Sync + 'static,
         U::Error: Into<BoxError> + Send + 'static,
     {
@@ -142,27 +145,32 @@ impl Server {
 
     pub fn route_with_latency(self, path: &str, resp: &str, latency: Duration) -> Self {
         let resp = Bytes::from(resp.to_string());
-        self.route_fn(path, move |_| {
-            thread::sleep(latency);
-            http::Response::builder()
-                .status(200)
-                .body(resp.clone())
-                .unwrap()
+        self.route_async(path, move |_| {
+            let resp = resp.clone();
+            async move {
+                tokio::time::delay_for(latency).await;
+                Ok::<_, BoxError>(
+                    http::Response::builder()
+                        .status(200)
+                        .body(resp.clone())
+                        .unwrap(),
+                )
+            }
         })
     }
 
-    pub fn delay_listen<F>(self, f: F) -> Listening
+    pub async fn delay_listen<F>(self, f: F) -> Listening
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        self.run_inner(Some(Box::pin(f)))
+        self.run_inner(Some(Box::pin(f))).await
     }
 
-    pub fn run(self) -> Listening {
-        self.run_inner(None)
+    pub async fn run(self) -> Listening {
+        self.run_inner(None).await
     }
 
-    fn run_inner(
+    async fn run_inner(
         self,
         delay: Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
     ) -> Listening {
@@ -172,7 +180,6 @@ impl Server {
         let conn_count = Arc::new(AtomicUsize::from(0));
         let srv_conn_count = Arc::clone(&conn_count);
         let version = self.version;
-        let tname = format!("support {:?} server (test={})", version, thread_name(),);
 
         let addr = SocketAddr::from(([127, 0, 0, 1], 0));
         let listener = net2::TcpBuilder::new_v4().expect("Tcp::new_v4");
@@ -180,10 +187,8 @@ impl Server {
         let addr = listener.local_addr().expect("Tcp::local_addr");
 
         let tls_config = self.tls.clone();
-        ::std::thread::Builder::new()
-            .name(tname)
-            .spawn(move || {
-                let _trace = trace_init();
+        let jh = tokio::spawn(
+            async move {
                 tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
                 let mut http =
@@ -192,7 +197,8 @@ impl Server {
                     Run::Http1 => http.http1_only(true),
                     Run::Http2 => http.http2_only(true),
                 };
-                let serve = async move {
+
+                let serve = tokio::spawn(async move {
                     if let Some(delay) = delay {
                         let _ = listening_tx.take().unwrap().send(());
                         delay.await;
@@ -213,7 +219,7 @@ impl Server {
                         let http = http.clone();
                         let srv_conn_count = srv_conn_count.clone();
                         let svc = new_svc.call(());
-                        tokio::task::spawn_local(
+                        tokio::spawn(
                             async move {
                                 tracing::trace!("serving...");
                                 let svc = svc.await;
@@ -232,27 +238,18 @@ impl Server {
                             .instrument(span.clone()),
                         );
                     }
-                };
+                })
+                .in_current_span();
 
-                let mut rt = tokio::runtime::Builder::new()
-                    .basic_scheduler()
-                    .enable_all()
-                    .build()
-                    .expect("initialize support server runtime");
-                tokio::task::LocalSet::new().block_on(
-                    &mut rt,
-                    async move {
-                        tokio::select! {
-                            res = serve => res,
-                            _ = rx => { Ok::<(), io::Error>(())},
-                        }
-                    }
-                    .instrument(tracing::info_span!("test_server", ?version, %addr)),
-                )
-            })
-            .unwrap();
+                tokio::select! {
+                    res = serve => res.unwrap(),
+                    _ = rx => { Ok::<(), io::Error>(())},
+                }
+            }
+            .instrument(tracing::info_span!("test_server", ?version, %addr, test = %thread_name())),
+        );
 
-        futures::executor::block_on(listening_rx).expect("listening_rx");
+        listening_rx.await.expect("listening_rx");
 
         // printlns will show if the test fails...
         println!("{:?} server running; addr={}", version, addr,);
@@ -261,6 +258,7 @@ impl Server {
             addr,
             _shutdown: tx,
             conn_count,
+            jh,
         }
     }
 }
@@ -282,7 +280,8 @@ struct Route(
                         + Sync
                         + 'static,
                 >,
-            > + Send,
+            > + Send
+            + Sync,
     >,
 );
 

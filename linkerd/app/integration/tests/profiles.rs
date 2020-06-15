@@ -132,8 +132,8 @@ macro_rules! profile_test {
     }
 }
 
-#[test]
-fn retry_if_profile_allows() {
+#[tokio::test]
+async fn retry_if_profile_allows() {
     profile_test! {
         routes: [
             controller::route()
@@ -148,8 +148,8 @@ fn retry_if_profile_allows() {
     }
 }
 
-#[test]
-fn retry_uses_budget() {
+#[tokio::test]
+async fn retry_uses_budget() {
     profile_test! {
         routes: [
             controller::route()
@@ -172,8 +172,8 @@ fn retry_uses_budget() {
     }
 }
 
-#[test]
-fn does_not_retry_if_request_does_not_match() {
+#[tokio::test]
+async fn does_not_retry_if_request_does_not_match() {
     profile_test! {
         routes: [
             controller::route()
@@ -189,8 +189,8 @@ fn does_not_retry_if_request_does_not_match() {
     }
 }
 
-#[test]
-fn does_not_retry_if_earlier_response_class_is_success() {
+#[tokio::test]
+async fn does_not_retry_if_earlier_response_class_is_success() {
     profile_test! {
         routes: [
             controller::route()
@@ -208,8 +208,8 @@ fn does_not_retry_if_earlier_response_class_is_success() {
     }
 }
 
-#[test]
-fn does_not_retry_if_request_has_body() {
+#[tokio::test]
+async fn does_not_retry_if_request_has_body() {
     profile_test! {
         routes: [
             controller::route()
@@ -229,8 +229,8 @@ fn does_not_retry_if_request_has_body() {
     }
 }
 
-#[test]
-fn does_not_retry_if_missing_retry_budget() {
+#[tokio::test]
+async fn does_not_retry_if_missing_retry_budget() {
     profile_test! {
         routes: [
             controller::route()
@@ -246,8 +246,8 @@ fn does_not_retry_if_missing_retry_budget() {
     }
 }
 
-#[test]
-fn ignores_invalid_retry_budget_ttl() {
+#[tokio::test]
+async fn ignores_invalid_retry_budget_ttl() {
     profile_test! {
         routes: [
             controller::route()
@@ -263,8 +263,8 @@ fn ignores_invalid_retry_budget_ttl() {
     }
 }
 
-#[test]
-fn ignores_invalid_retry_budget_ratio() {
+#[tokio::test]
+async fn ignores_invalid_retry_budget_ratio() {
     profile_test! {
         routes: [
             controller::route()
@@ -280,8 +280,8 @@ fn ignores_invalid_retry_budget_ratio() {
     }
 }
 
-#[test]
-fn ignores_invalid_retry_budget_negative_ratio() {
+#[tokio::test]
+async fn ignores_invalid_retry_budget_negative_ratio() {
     profile_test! {
         routes: [
             controller::route()
@@ -297,8 +297,8 @@ fn ignores_invalid_retry_budget_negative_ratio() {
     }
 }
 
-#[test]
-fn http2_failures_dont_leak_connection_window() {
+#[tokio::test]
+async fn http2_failures_dont_leak_connection_window() {
     profile_test! {
         http: http2,
         routes: [
@@ -318,8 +318,8 @@ fn http2_failures_dont_leak_connection_window() {
     }
 }
 
-#[test]
-fn timeout() {
+#[tokio::test]
+async fn timeout() {
     profile_test! {
         routes: [
             controller::route()

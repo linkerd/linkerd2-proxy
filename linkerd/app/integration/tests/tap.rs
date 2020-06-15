@@ -5,8 +5,8 @@ use linkerd2_app_integration::tap::TapEventExt;
 use linkerd2_app_integration::*;
 use std::time::SystemTime;
 
-#[test]
-fn tap_enabled_when_identity_enabled() {
+#[tokio::test]
+async fn tap_enabled_when_identity_enabled() {
     let _trace = trace_init();
 
     let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
@@ -19,16 +19,16 @@ fn tap_enabled_when_identity_enabled() {
     assert!(proxy.tap.is_some())
 }
 
-#[test]
-fn tap_disabled_when_identity_disabled() {
+#[tokio::test]
+async fn tap_disabled_when_identity_disabled() {
     let _trace = trace_init();
     let proxy = proxy::new().disable_identity().run();
 
     assert!(proxy.tap.is_none())
 }
 
-#[test]
-fn can_disable_tap() {
+#[tokio::test]
+async fn can_disable_tap() {
     let _trace = trace_init();
     let mut env = TestEnv::new();
     env.put(app::env::ENV_TAP_DISABLED, "true".to_owned());

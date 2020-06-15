@@ -109,8 +109,8 @@ impl TcpServer {
         self
     }
 
-    pub fn run(self) -> server::Listening {
-        run_server(self)
+    pub async fn run(self) -> server::Listening {
+        run_server(self).await
     }
 }
 
@@ -218,7 +218,7 @@ fn run_client(addr: SocketAddr) -> TcpSender {
     tx
 }
 
-fn run_server(tcp: TcpServer) -> server::Listening {
+async fn run_server(tcp: TcpServer) -> server::Listening {
     let (tx, rx) = shutdown_signal();
     let (started_tx, started_rx) = oneshot::channel();
     let conn_count = Arc::new(AtomicUsize::from(0));
@@ -226,43 +226,31 @@ fn run_server(tcp: TcpServer) -> server::Listening {
     let any_port = SocketAddr::from(([127, 0, 0, 1], 0));
     let std_listener = StdTcpListener::bind(&any_port).expect("bind");
     let addr = std_listener.local_addr().expect("local_addr");
-    let tname = format!("support tcp server (addr={})", addr);
-    ::std::thread::Builder::new()
-        .name(tname)
-        .spawn(move || {
-            let mut core = tokio::runtime::Builder::new()
-                .enable_all()
-                .basic_scheduler()
-                .build()
-                .unwrap();
+    let jh = tokio::spawn(async move {
+        let mut accepts = tcp.accepts;
 
-            let mut accepts = tcp.accepts;
+        let listen = async move {
+            let mut listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
 
-            let listen = async move {
-                let mut listener =
-                    TcpListener::from_std(std_listener).expect("TcpListener::from_std");
+            loop {
+                let (sock, _) = listener.accept().await.unwrap();
+                let cb = accepts.pop_front().expect("no more accepts");
+                srv_conn_count.fetch_add(1, Ordering::Release);
 
-                loop {
-                    let (sock, _) = listener.accept().await.unwrap();
-                    let cb = accepts.pop_front().expect("no more accepts");
-                    srv_conn_count.fetch_add(1, Ordering::Release);
+                let fut = cb.call_box(sock);
+                tokio::task::spawn_local(fut);
+            }
+        };
 
-                    let fut = cb.call_box(sock);
-                    tokio::task::spawn_local(fut);
-                }
-            };
+        let _ = started_tx.send(());
+        tokio::select! {
+            _ = rx => { },
+            _ = listen => { },
+        }
+        Ok(())
+    });
 
-            let _ = started_tx.send(());
-            tokio::task::LocalSet::new().block_on(&mut core, async move {
-                tokio::select! {
-                    _ = rx => { },
-                    _ = listen => { },
-                }
-            });
-        })
-        .unwrap();
-
-    futures::executor::block_on(started_rx).expect("support tcp server started");
+    started_rx.await.expect("support tcp server started");
 
     // printlns will show if the test fails...
     println!("tcp server (addr={}): running", addr);
@@ -271,5 +259,6 @@ fn run_server(tcp: TcpServer) -> server::Listening {
         addr,
         _shutdown: tx,
         conn_count,
+        jh,
     }
 }

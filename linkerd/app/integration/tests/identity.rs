@@ -9,8 +9,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-#[test]
-fn nonblocking_identity_detection() {
+#[tokio::test]
+async fn nonblocking_identity_detection() {
     let _trace = trace_init();
 
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
@@ -111,29 +111,29 @@ macro_rules! generate_tls_reject_test {
     };
 }
 
-#[test]
-fn http1_accepts_tls_after_identity_is_certified() {
+#[tokio::test]
+async fn http1_accepts_tls_after_identity_is_certified() {
     generate_tls_accept_test! {
        client_non_tls:  client::http1,
        client_tls: client::http1_tls
     }
 }
 
-#[test]
-fn http1_rejects_tls_before_identity_is_certified() {
+#[tokio::test]
+async fn http1_rejects_tls_before_identity_is_certified() {
     generate_tls_reject_test! {client: client::http1_tls}
 }
 
-#[test]
-fn http2_accepts_tls_after_identity_is_certified() {
+#[tokio::test]
+async fn http2_accepts_tls_after_identity_is_certified() {
     generate_tls_accept_test! {
        client_non_tls:  client::http2,
        client_tls: client::http2_tls
     }
 }
 
-#[test]
-fn http2_rejects_tls_before_identity_is_certified() {
+#[tokio::test]
+async fn http2_rejects_tls_before_identity_is_certified() {
     generate_tls_reject_test! {client: client::http2_tls}
 }
 
@@ -173,24 +173,24 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
     };
 }
 
-#[test]
-fn http1_outbound_tls_works_before_identity_is_certified() {
+#[tokio::test]
+async fn http1_outbound_tls_works_before_identity_is_certified() {
     generate_outbound_tls_accept_not_cert_identity_test! {
         server: server::http1_tls,
         client: client::http1_tls
     }
 }
 
-#[test]
-fn http2_outbound_tls_works_before_identity_is_certified() {
+#[tokio::test]
+async fn http2_outbound_tls_works_before_identity_is_certified() {
     generate_outbound_tls_accept_not_cert_identity_test! {
         server: server::http2_tls,
         client: client::http2_tls
     }
 }
 
-#[test]
-fn ready() {
+#[tokio::test]
+async fn ready() {
     let _trace = trace_init();
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity::Identity {

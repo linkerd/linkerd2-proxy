@@ -111,8 +111,8 @@ impl TcpFixture {
     }
 }
 
-#[test]
-fn metrics_endpoint_inbound_request_count() {
+#[tokio::test]
+async fn metrics_endpoint_inbound_request_count() {
     let _trace = trace_init();
     let Fixture {
         client,
@@ -131,8 +131,8 @@ fn metrics_endpoint_inbound_request_count() {
     assert_eventually_contains!(metrics.get("/metrics"), "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\"} 1");
 }
 
-#[test]
-fn metrics_endpoint_outbound_request_count() {
+#[tokio::test]
+async fn metrics_endpoint_outbound_request_count() {
     let _trace = trace_init();
     let Fixture {
         client,
@@ -686,8 +686,8 @@ mod outbound_dst_labels {
     }
 }
 
-#[test]
-fn metrics_have_no_double_commas() {
+#[tokio::test]
+async fn metrics_have_no_double_commas() {
     // Test for regressions to linkerd/linkerd2#600.
     let _trace = trace_init();
 
@@ -725,8 +725,8 @@ fn metrics_have_no_double_commas() {
     assert!(!scrape.contains(",,"), "outbound metrics had double comma");
 }
 
-#[test]
-fn metrics_has_start_time() {
+#[tokio::test]
+async fn metrics_has_start_time() {
     let Fixture {
         metrics,
         proxy: _proxy,

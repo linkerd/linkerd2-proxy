@@ -5,11 +5,11 @@ use linkerd2_app_integration::*;
 use std::error::Error as _;
 use std::sync::mpsc;
 
-#[test]
-fn outbound_http1() {
+#[tokio::test]
+async fn outbound_http1() {
     let _trace = trace_init();
 
-    let srv = server::http1().route("/", "hello h1").run();
+    let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
     ctrl.profile_tx_default("transparency.test.svc.cluster.local");
     ctrl.destination_tx("transparency.test.svc.cluster.local")
@@ -17,14 +17,16 @@ fn outbound_http1() {
     let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
     let client = client::http1(proxy.outbound, "transparency.test.svc.cluster.local");
 
-    assert_eq!(client.get("/"), "hello h1");
+    assert_eq!(client.get_async("/").await, "hello h1");
+
+    srv.join().await
 }
 
-#[test]
-fn inbound_http1() {
+#[tokio::test]
+async fn inbound_http1() {
     let _trace = trace_init();
 
-    let srv = server::http1().route("/", "hello h1").run();
+    let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
     ctrl.profile_tx_default("transparency.test.svc.cluster.local");
     let proxy = proxy::new()
@@ -33,11 +35,13 @@ fn inbound_http1() {
         .run();
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-    assert_eq!(client.get("/"), "hello h1");
+    assert_eq!(client.get_async("/").await, "hello h1");
+
+    srv.join().await
 }
 
-#[test]
-fn outbound_tcp() {
+#[tokio::test]
+async fn outbound_tcp() {
     let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
@@ -48,7 +52,8 @@ fn outbound_tcp() {
             assert_eq!(read, msg1.as_bytes());
             msg2
         })
-        .run();
+        .run()
+        .await;
     let proxy = proxy::new().outbound(srv).run();
 
     let client = client::tcp(proxy.outbound);
@@ -57,10 +62,12 @@ fn outbound_tcp() {
 
     tcp_client.write(msg1);
     assert_eq!(tcp_client.read(), msg2.as_bytes());
+
+    srv.join().await;
 }
 
-#[test]
-fn inbound_tcp() {
+#[tokio::test]
+async fn inbound_tcp() {
     let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
@@ -71,7 +78,8 @@ fn inbound_tcp() {
             assert_eq!(read, msg1.as_bytes());
             msg2
         })
-        .run();
+        .run()
+        .await;
     let proxy = proxy::new().inbound_fuzz_addr(srv).run();
 
     let client = client::tcp(proxy.inbound);
@@ -80,11 +88,13 @@ fn inbound_tcp() {
 
     tcp_client.write(msg1);
     assert_eq!(tcp_client.read(), msg2.as_bytes());
+
+    srv.join().await;
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn loop_outbound_http1() {
+async fn loop_outbound_http1() {
     let _trace = trace_init();
 
     let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10751));
@@ -96,7 +106,9 @@ fn loop_outbound_http1() {
         .run_with_test_env_and_keep_ports(env);
 
     let client = client::http1(listen_addr, "some.invalid.example.com");
-    let rsp = client.request(client.request_builder("/").method("GET"));
+    let rsp = client
+        .request_async(client.request_builder("/").method("GET"))
+        .await;
     assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
 }
 
@@ -118,7 +130,7 @@ fn loop_inbound_http1() {
     assert_eq!(rsp.status(), http::StatusCode::FORBIDDEN);
 }
 
-fn test_server_speaks_first(env: TestEnv) {
+async fn test_server_speaks_first(env: TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     let _trace = trace_init();
@@ -142,7 +154,8 @@ fn test_server_speaks_first(env: TestEnv) {
                 Ok(()) => {}
             })
         })
-        .run();
+        .run()
+        .await;
 
     let proxy = proxy::new()
         .disable_inbound_ports_protocol_detection(vec![srv.addr.port()])
@@ -156,15 +169,17 @@ fn test_server_speaks_first(env: TestEnv) {
     assert_eq!(s(&tcp_client.read_timeout(TIMEOUT)), msg1);
     tcp_client.write(msg2);
     rx.recv_timeout(TIMEOUT).unwrap();
+
+    srv.join().await;
 }
 
-#[test]
-fn tcp_server_first() {
-    test_server_speaks_first(TestEnv::new());
+#[tokio::test]
+async fn tcp_server_first() {
+    test_server_speaks_first(TestEnv::new()).await;
 }
 
-#[test]
-fn tcp_server_first_tls() {
+#[tokio::test]
+async fn tcp_server_first_tls() {
     use std::path::PathBuf;
 
     let (_cert, _key, _trust_anchors) = {
@@ -203,11 +218,11 @@ fn tcp_server_first_tls() {
     //    "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
     //);
 
-    test_server_speaks_first(env)
+    test_server_speaks_first(env).await
 }
 
-#[test]
-fn tcp_connections_close_if_client_closes() {
+#[tokio::test]
+async fn tcp_connections_close_if_client_closes() {
     use std::sync::mpsc;
 
     let _trace = trace_init();
@@ -235,7 +250,8 @@ fn tcp_connections_close_if_client_closes() {
                 Ok(()) => {}
             })
         })
-        .run();
+        .run()
+        .await;
     let proxy = proxy::new().inbound(srv).run();
 
     let client = client::tcp(proxy.inbound);
@@ -250,23 +266,27 @@ fn tcp_connections_close_if_client_closes() {
     // a socket disconnect, which is what we are testing for.
     // the timeout here is just to prevent this test from hanging
     rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    srv.join().await;
 }
 
 macro_rules! http1_tests {
     (proxy: $proxy:expr) => {
-        #[test]
-        fn inbound_http1() {
+        #[tokio::test]
+        async fn inbound_http1() {
             let _trace = trace_init();
 
-            let srv = server::http1().route("/", "hello h1").run();
+            let srv = server::http1().route("/", "hello h1").run().await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            assert_eq!(client.get("/"), "hello h1");
+            assert_eq!(client.get_async("/").await, "hello h1");
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http1_removes_connection_headers() {
+        #[tokio::test]
+        async fn http1_removes_connection_headers() {
             let _trace = trace_init();
 
             let srv = server::http1()
@@ -280,31 +300,36 @@ macro_rules! http1_tests {
                         .body(Default::default())
                         .unwrap()
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let res = client.request(
-                client
-                    .request_builder("/")
-                    .header("x-foo-bar", "baz")
-                    .header("connection", "x-foo-bar, close")
-                    // These headers will fail in the proxy_to_proxy case if
-                    // they are not stripped.
-                    //
-                    // normally would be stripped by `connection: keep-alive`,
-                    // but test its removed even if the connection header forgot
-                    // about it.
-                    .header("keep-alive", "500")
-                    .header("proxy-connection", "a"),
-            );
+            let res = client
+                .request_async(
+                    client
+                        .request_builder("/")
+                        .header("x-foo-bar", "baz")
+                        .header("connection", "x-foo-bar, close")
+                        // These headers will fail in the proxy_to_proxy case if
+                        // they are not stripped.
+                        //
+                        // normally would be stripped by `connection: keep-alive`,
+                        // but test its removed even if the connection header forgot
+                        // about it.
+                        .header("keep-alive", "500")
+                        .header("proxy-connection", "a"),
+                )
+                .await;
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert!(!res.headers().contains_key("x-server-quux"));
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http10_with_host() {
+        #[tokio::test]
+        async fn http10_with_host() {
             let _trace = trace_init();
 
             let host = "transparency.test.svc.cluster.local";
@@ -317,23 +342,28 @@ macro_rules! http1_tests {
                         .body("".into())
                         .unwrap()
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, host);
 
-            let res = client.request(
-                client
-                    .request_builder("/")
-                    .version(http::Version::HTTP_10)
-                    .header("host", host),
-            );
+            let res = client
+                .request_async(
+                    client
+                        .request_builder("/")
+                        .version(http::Version::HTTP_10)
+                        .header("host", host),
+                )
+                .await;
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_10);
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http11_absolute_uri_differs_from_host() {
+        #[tokio::test]
+        async fn http11_absolute_uri_differs_from_host() {
             let _trace = trace_init();
 
             // We shouldn't touch the URI or the Host, just pass directly as we got.
@@ -345,23 +375,28 @@ macro_rules! http1_tests {
                     assert_eq!(req.uri().to_string(), format!("http://{}/", auth));
                     Response::new("".into())
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1_absolute_uris(proxy.inbound, auth);
 
-            let res = client.request(
-                client
-                    .request_builder("/")
-                    .version(http::Version::HTTP_11)
-                    .header("host", host),
-            );
+            let res = client
+                .request_async(
+                    client
+                        .request_builder("/")
+                        .version(http::Version::HTTP_11)
+                        .header("host", host),
+                )
+                .await;
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_11);
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http11_upgrades() {
+        #[tokio::test]
+        async fn http11_upgrades() {
             let _trace = trace_init();
 
             // To simplify things for this test, we just use the test TCP
@@ -411,7 +446,8 @@ macro_rules! http1_tests {
                         Err(e) => panic!("tcp server error: {}", e),
                     })
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
 
             let client = client::tcp(proxy.inbound);
@@ -434,10 +470,12 @@ macro_rules! http1_tests {
             // Did anyone respond?
             let chat_resp = tcp_client.read();
             assert_eq!(s(&chat_resp), chatproto_res);
+
+            srv.join().await;
         }
 
-        #[test]
-        fn l5d_orig_proto_header_isnt_leaked() {
+        #[tokio::test]
+        async fn l5d_orig_proto_header_isnt_leaked() {
             let _trace = trace_init();
 
             let srv = server::http1()
@@ -445,19 +483,22 @@ macro_rules! http1_tests {
                     assert_eq!(req.headers().get("l5d-orig-proto"), None, "request");
                     Response::new(Default::default())
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
 
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
 
-            let res = client.request(client.request_builder("/"));
+            let res = client.request_async(client.request_builder("/")).await;
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http11_upgrade_h2_stripped() {
+        #[tokio::test]
+        async fn http11_upgrade_h2_stripped() {
             let _trace = trace_init();
 
             // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
@@ -477,12 +518,13 @@ macro_rules! http1_tests {
                     assert!(!req.headers().contains_key("http2-settings"));
                     Response::default()
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let res = client.request(
+            let res = client.request_async(
                 client
                     .request_builder("/")
                     .header("upgrade", "h2c")
@@ -493,10 +535,12 @@ macro_rules! http1_tests {
             // If the assertion is trigger in the above test route, the proxy will
             // just send back a 500.
             assert_eq!(res.status(), http::StatusCode::OK);
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http11_connect() {
+        #[tokio::test]
+        async fn http11_connect() {
             let _trace = trace_init();
 
             // To simplify things for this test, we just use the test TCP
@@ -546,7 +590,8 @@ macro_rules! http1_tests {
                         Err(e) => panic!("tcp server error: {}", e),
                     })
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
 
             let client = client::tcp(proxy.inbound);
@@ -568,17 +613,20 @@ macro_rules! http1_tests {
             // Did anyone respond?
             let resp2 = tcp_client.read();
             assert_eq!(s(&resp2), s(&tunneled_res[..]));
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http11_connect_bad_requests() {
+        #[tokio::test]
+        async fn http11_connect_bad_requests() {
             let _trace = trace_init();
 
             let srv = server::tcp()
                 .accept(move |_sock| -> Vec<u8> {
                     unreachable!("shouldn't get through the proxy");
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
 
             // A TCP client is used since the HTTP client would stop these requests
@@ -628,6 +676,8 @@ macro_rules! http1_tests {
                 "HTTP/1.0 CONNECT should get 400 response: {:?}",
                 resp_str
             );
+
+            srv.join().await;
         }
 
         #[tokio::test]
@@ -639,7 +689,8 @@ macro_rules! http1_tests {
                     assert_eq!(req.headers()["content-length"], "5");
                     Response::default()
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -652,6 +703,8 @@ macro_rules! http1_tests {
             let resp = client.request_body_async(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
+
+            srv.join().await;
         }
 
         #[tokio::test]
@@ -675,7 +728,8 @@ macro_rules! http1_tests {
                             .unwrap(),
                     )
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -697,10 +751,12 @@ macro_rules! http1_tests {
                 .expect("rsp is utf8")
                 .to_owned();
             assert_eq!(body, "world");
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http1_requests_without_body_doesnt_add_transfer_encoding() {
+        #[tokio::test]
+        async fn http1_requests_without_body_doesnt_add_transfer_encoding() {
             let _trace = trace_init();
 
             let srv = server::http1()
@@ -716,21 +772,26 @@ macro_rules! http1_tests {
                     *res.status_mut() = status;
                     res
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
 
             for &method in methods {
-                let resp = client.request(client.request_builder("/").method(method));
+                let resp = client
+                    .request_async(client.request_builder("/").method(method))
+                    .await;
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
             }
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http1_content_length_zero_is_preserved() {
+        #[tokio::test]
+        async fn http1_content_length_zero_is_preserved() {
             let _trace = trace_init();
 
             let srv = server::http1()
@@ -746,27 +807,32 @@ macro_rules! http1_tests {
                         .body("".into())
                         .unwrap()
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
 
             for &method in methods {
-                let resp = client.request(
-                    client
-                        .request_builder("/")
-                        .method(method)
-                        .header("content-length", "0"),
-                );
+                let resp = client
+                    .request_async(
+                        client
+                            .request_builder("/")
+                            .method(method)
+                            .header("content-length", "0"),
+                    )
+                    .await;
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
                 assert_eq!(resp.headers()["content-length"], "0", "method={:?}", method);
             }
+
+            srv.join().await;
         }
 
-        #[test]
-        fn http1_bodyless_responses() {
+        #[tokio::test]
+        async fn http1_bodyless_responses() {
             let _trace = trace_init();
 
             let req_status_header = "x-test-status-requested";
@@ -786,7 +852,8 @@ macro_rules! http1_tests {
 
                     Response::builder().status(status).body("".into()).unwrap()
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -812,11 +879,13 @@ macro_rules! http1_tests {
             ];
 
             for &status in statuses {
-                let resp = client.request(
-                    client
-                        .request_builder("/")
-                        .header(req_status_header, status.as_str()),
-                );
+                let resp = client
+                    .request_async(
+                        client
+                            .request_builder("/")
+                            .header(req_status_header, status.as_str()),
+                    )
+                    .await;
 
                 assert_eq!(resp.status(), status);
                 assert!(
@@ -825,6 +894,8 @@ macro_rules! http1_tests {
                     status
                 );
             }
+
+            srv.join().await;
         }
 
         #[tokio::test]
@@ -839,7 +910,8 @@ macro_rules! http1_tests {
                         .body("".into())
                         .unwrap()
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -859,6 +931,8 @@ macro_rules! http1_tests {
                 .to_owned();
 
             assert_eq!(body, "");
+
+            srv.join().await;
         }
 
         #[tokio::test]
@@ -881,7 +955,8 @@ macro_rules! http1_tests {
                      body till eof\
                      "
                 })
-                .run();
+                .run()
+                .await;
             let proxy = $proxy(srv);
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
@@ -926,6 +1001,8 @@ macro_rules! http1_tests {
 
                 assert_eq!(body, "body till eof", "HTTP/{} body", v);
             }
+
+            srv.join().await;
         }
     };
 }
@@ -955,7 +1032,7 @@ mod proxy_to_proxy {
     http1_tests! { proxy: |srv| {
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
-        let inbound = proxy::new().controller(ctrl.run()).inbound(srv).run();
+        let inbound = proxy::new().controller(ctrl.run()).inbound(srv).run().await;
 
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
@@ -964,7 +1041,7 @@ mod proxy_to_proxy {
 
         let outbound = proxy::new()
             .controller(ctrl.run())
-            .run();
+            .run().await;
 
         let addr = outbound.outbound;
         ProxyToProxy {
@@ -976,8 +1053,8 @@ mod proxy_to_proxy {
     } }
 }
 
-#[test]
-fn http10_without_host() {
+#[tokio::test]
+async fn http10_without_host() {
     // Without a host or authority, there's no way to route this test,
     // so its not part of the proxy_to_proxy set.
     let _trace = trace_init();
@@ -992,8 +1069,9 @@ fn http10_without_host() {
                 .body("".into())
                 .unwrap()
         })
-        .run();
-    let proxy = proxy::new().inbound(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::tcp(proxy.inbound);
 
@@ -1008,17 +1086,19 @@ fn http10_without_host() {
 
     let expected = "HTTP/1.0 200 OK\r\n";
     assert_eq!(s(&tcp_client.read()[..expected.len()]), expected);
+    srv.join().await;
 }
 
-#[test]
-fn http1_one_connection_per_host() {
+#[tokio::test]
+async fn http1_one_connection_per_host() {
     let _trace = trace_init();
 
     let srv = server::http1()
         .route("/body", "hello hosts")
         .route("/no-body", "")
-        .run();
-    let proxy = proxy::new().inbound(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
@@ -1054,14 +1134,16 @@ fn http1_one_connection_per_host() {
     // Make a request with a different Host header. This request must use a new
     // connection.
     run_request("quuuux.com", 3);
+
+    srv.join().await;
 }
 
-#[test]
-fn http1_requests_without_host_have_unique_connections() {
+#[tokio::test]
+async fn http1_requests_without_host_have_unique_connections() {
     let _trace = trace_init();
 
-    let srv = server::http1().route("/", "unique hosts").run();
-    let proxy = proxy::new().inbound(srv).run();
+    let srv = server::http1().route("/", "unique hosts").run().await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
@@ -1113,6 +1195,8 @@ fn http1_requests_without_host_have_unique_connections() {
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 4);
+
+    srv.join().await;
 }
 
 #[tokio::test]
@@ -1124,8 +1208,9 @@ async fn retry_reconnect_errors() {
 
     let srv = server::http2()
         .route("/", "hello retry")
-        .delay_listen(rx.map(|_| ()));
-    let proxy = proxy::new().inbound(srv).run();
+        .delay_listen(rx.map(|_| ()))
+        .await;
+    let proxy = proxy::new().inbound(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
     let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -1144,6 +1229,8 @@ async fn retry_reconnect_errors() {
 
     let res = fut.await.expect("response");
     assert_eq!(res.status(), http::StatusCode::OK);
+
+    srv.join().await;
 }
 
 #[tokio::test]
@@ -1155,8 +1242,9 @@ async fn http2_request_without_authority() {
             assert_eq!(req.uri().authority(), None);
             Response::new("".into())
         })
-        .run();
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
 
     // Make a single HTTP/2 request without an :authority header.
     //
@@ -1182,6 +1270,7 @@ async fn http2_request_without_authority() {
     let res = client.send_request(req).await.expect("client error");
 
     assert_eq!(res.status(), http::StatusCode::OK);
+    srv.join().await;
 }
 
 #[tokio::test]
@@ -1192,8 +1281,9 @@ async fn http2_rst_stream_is_propagated() {
 
     let srv = server::http2()
         .route_async("/", move |_req| async move { Err(h2::Error::from(reason)) })
-        .run();
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
 
     let err: hyper::Error = client
@@ -1208,6 +1298,7 @@ async fn http2_rst_stream_is_propagated() {
         .expect("source should be h2::Error");
 
     assert_eq!(rst.reason(), Some(reason));
+    srv.join().await;
 }
 
 #[tokio::test]
@@ -1221,12 +1312,13 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
             assert!(req.headers().contains_key("l5d-orig-proto"));
             Err(h2::Error::from(h2::Reason::ENHANCE_YOUR_CALM))
         })
-        .run();
+        .run()
+        .await;
     let ctrl = controller::new();
     let host = "transparency.test.svc.cluster.local";
     let dst = ctrl.destination_tx(host);
     dst.send_h2_hinted(srv.addr);
-    let proxy = proxy::new().controller(ctrl.run()).run();
+    let proxy = proxy::new().controller(ctrl.run()).run().await;
     let addr = proxy.outbound;
 
     let client = client::http1(addr, host);
@@ -1236,4 +1328,5 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
         .expect("client request");
 
     assert_eq!(res.status(), http::StatusCode::BAD_GATEWAY);
+    srv.join().await;
 }

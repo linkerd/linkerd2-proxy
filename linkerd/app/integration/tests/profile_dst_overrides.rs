@@ -62,8 +62,8 @@ fn wait_for_profile_stage(client: &client::Client, metrics: &client::Client, sta
     }
 }
 
-#[test]
-fn add_a_dst_override() {
+#[tokio::test]
+async fn add_a_dst_override() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 
@@ -107,8 +107,8 @@ fn add_a_dst_override() {
     assert_eq!(leaf_svc.response_counter.load(Ordering::SeqCst), n);
 }
 
-#[test]
-fn add_multiple_dst_overrides() {
+#[tokio::test]
+async fn add_multiple_dst_overrides() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 
@@ -163,8 +163,8 @@ fn add_multiple_dst_overrides() {
     assert!(leaf_b_svc.response_counter.load(Ordering::SeqCst) > 0);
 }
 
-#[test]
-fn set_a_dst_override_weight_to_zero() {
+#[tokio::test]
+async fn set_a_dst_override_weight_to_zero() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 
@@ -228,8 +228,8 @@ fn set_a_dst_override_weight_to_zero() {
     assert_eq!(leaf_b_svc.response_counter.load(Ordering::SeqCst), n);
 }
 
-#[test]
-fn set_all_dst_override_weights_to_zero() {
+#[tokio::test]
+async fn set_all_dst_override_weights_to_zero() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 
@@ -295,8 +295,8 @@ fn set_all_dst_override_weights_to_zero() {
     assert_eq!(leaf_b_svc.response_counter.load(Ordering::SeqCst), 0);
 }
 
-#[test]
-fn remove_a_dst_override() {
+#[tokio::test]
+async fn remove_a_dst_override() {
     let _trace = trace_init();
 
     let apex = "apex";
