@@ -86,7 +86,7 @@ macro_rules! profile_test {
                         .unwrap()
                 }
             })
-            .run();
+            .run().await;
         let ctrl = controller::new();
 
         let dst_tx = ctrl.destination_tx(host);
@@ -117,13 +117,13 @@ macro_rules! profile_test {
 
         // Poll metrics until we recognize the profile is loaded...
         loop {
-            assert_eq!(client.get("/load-profile"), "");
-            let m = metrics.get("/metrics");
+            assert_eq!(client.get_async("/load-profile").await, "");
+            let m = metrics.get_async("/metrics").await;
             if m.contains("rt_load_profile=\"test\"") {
                 break;
             }
 
-            ::std::thread::sleep(::std::time::Duration::from_millis(200));
+            tokio::time::delay_for(std::time::Duration::from_millis(200)).await;
         }
 
         $with_client(client);

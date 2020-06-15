@@ -112,9 +112,9 @@ async fn loop_outbound_http1() {
     assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn loop_inbound_http1() {
+async fn loop_inbound_http1() {
     let _trace = trace_init();
 
     let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10752));
