@@ -1,8 +1,7 @@
 use crate::{dns, identity::LocalIdentity};
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
-    control, proxy, reconnect,
-    svc::{self, NewService},
+    control, reconnect, svc,
     transport::tls,
     Error,
 };
@@ -10,7 +9,7 @@ use linkerd2_opencensus::{metrics, proto, SpanExporter};
 use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};
-use tokio_02::sync::mpsc;
+use tokio::sync::mpsc;
 use tracing::debug;
 
 #[derive(Clone, Debug)]

@@ -1,8 +1,7 @@
 use super::Sensor;
 use bytes::{Buf, BufMut};
-use futures_03::ready;
+use futures::ready;
 use pin_project::pin_project;
-use std::future::Future;
 use std::io;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
@@ -34,7 +33,7 @@ impl<T: AsyncRead + AsyncWrite> AsyncRead for Io<T> {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.project();
-        let bytes = futures_03::ready!(this.sensor.sense_err(this.io.poll_read(cx, buf)))?;
+        let bytes = ready!(this.sensor.sense_err(this.io.poll_read(cx, buf)))?;
         this.sensor.record_read(bytes);
         Poll::Ready(Ok(bytes))
     }
@@ -45,7 +44,7 @@ impl<T: AsyncRead + AsyncWrite> AsyncRead for Io<T> {
         buf: &mut B,
     ) -> Poll<io::Result<usize>> {
         let this = self.project();
-        let bytes = futures_03::ready!(this.sensor.sense_err(this.io.poll_read_buf(cx, buf)))?;
+        let bytes = ready!(this.sensor.sense_err(this.io.poll_read_buf(cx, buf)))?;
         this.sensor.record_read(bytes);
         Poll::Ready(Ok(bytes))
     }
@@ -72,7 +71,7 @@ impl<T: AsyncRead + AsyncWrite> AsyncWrite for Io<T> {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.project();
-        let bytes = futures_03::ready!(this.sensor.sense_err(this.io.poll_write(cx, buf)))?;
+        let bytes = ready!(this.sensor.sense_err(this.io.poll_write(cx, buf)))?;
         this.sensor.record_write(bytes);
         Poll::Ready(Ok(bytes))
     }
@@ -83,7 +82,7 @@ impl<T: AsyncRead + AsyncWrite> AsyncWrite for Io<T> {
         buf: &mut B,
     ) -> Poll<io::Result<usize>> {
         let this = self.project();
-        let bytes = futures_03::ready!(this.sensor.sense_err(this.io.poll_write_buf(cx, buf)))?;
+        let bytes = ready!(this.sensor.sense_err(this.io.poll_write_buf(cx, buf)))?;
         this.sensor.record_write(bytes);
         Poll::Ready(Ok(bytes))
     }

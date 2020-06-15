@@ -1,7 +1,6 @@
-use futures_03::compat::{Compat01As03, Future01CompatExt};
 use std::task::{Context, Poll};
 use std::{future::Future, io, net::SocketAddr, pin::Pin, time::Duration};
-use tokio::net::{tcp, TcpStream};
+use tokio::net::TcpStream;
 use tracing::debug;
 
 pub trait ConnectAddr {

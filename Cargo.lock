@@ -510,7 +510,6 @@ dependencies = [
  "proc-macro-hack",
  "proc-macro-nested",
  "slab",
- "tokio-io",
 ]
 
 [[package]]
@@ -845,7 +844,6 @@ name = "linkerd2-app"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.1.26",
  "futures 0.3.5",
  "h2 0.2.5",
  "http 0.2.1",
@@ -866,9 +864,7 @@ dependencies = [
  "regex 1.0.0",
  "ring",
  "rustls",
- "tokio 0.1.22",
  "tokio 0.2.21",
- "tokio-compat",
  "tokio-connect",
  "tokio-current-thread",
  "tokio-io",
@@ -876,7 +872,7 @@ dependencies = [
  "tonic",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures 0.2.4",
  "webpki",
 ]
 
@@ -885,7 +881,6 @@ name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.1.26",
  "futures 0.3.5",
  "http 0.2.1",
  "http-body 0.3.1",
@@ -931,7 +926,6 @@ dependencies = [
  "linkerd2-stack",
  "linkerd2-stack-metrics",
  "linkerd2-stack-tracing",
- "linkerd2-test-util",
  "linkerd2-timeout",
  "linkerd2-trace-context",
  "pin-project",
@@ -941,7 +935,7 @@ dependencies = [
  "rand 0.7.2",
  "regex 1.0.0",
  "tokio 0.2.21",
- "tokio-compat",
+ "tokio-test",
  "tokio-timer",
  "tonic",
  "tower 0.3.1",
@@ -1010,13 +1004,11 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
- "linkerd2-test-util",
  "net2",
  "quickcheck",
  "regex 0.1.80",
  "ring",
  "rustls",
- "task-compat",
  "tokio 0.1.22",
  "tokio 0.2.21",
  "tokio-compat",
@@ -1227,7 +1219,6 @@ name = "linkerd2-http-metrics"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.1.26",
  "futures 0.3.5",
  "h2 0.1.26",
  "http 0.2.1",
@@ -1324,7 +1315,7 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-app",
  "linkerd2-signal",
- "tokio-compat",
+ "tokio 0.2.21",
  "tracing",
 ]
 
@@ -1461,7 +1452,6 @@ dependencies = [
  "linkerd2-timeout",
  "pin-project",
  "rand 0.7.2",
- "task-compat",
  "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
@@ -1545,7 +1535,6 @@ name = "linkerd2-proxy-transport"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.1.26",
  "futures 0.3.5",
  "indexmap",
  "libc",
@@ -1561,9 +1550,7 @@ dependencies = [
  "pin-project",
  "ring",
  "rustls",
- "task-compat",
  "tokio 0.2.21",
- "tokio-compat",
  "tokio-rustls",
  "tokio-util",
  "tower 0.3.1",
@@ -1616,7 +1603,6 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project",
- "tokio-compat",
  "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
@@ -1636,7 +1622,6 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
  "linkerd2-stack",
- "linkerd2-test-util",
  "pin-project",
  "prost-types 0.6.1",
  "quickcheck",
@@ -1689,15 +1674,6 @@ dependencies = [
  "tower 0.3.1",
  "tracing",
  "tracing-futures 0.1.0",
-]
-
-[[package]]
-name = "linkerd2-test-util"
-version = "0.1.0"
-dependencies = [
- "futures 0.1.26",
- "tokio 0.1.22",
- "tokio-compat",
 ]
 
 [[package]]
@@ -2683,16 +2659,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "task-compat"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0328783c46b98ea9e2747a49761313f483cf7bba40e51d6f0b05bf31b988d578"
-dependencies = [
- "futures 0.1.26",
- "futures 0.3.5",
-]
-
-[[package]]
 name = "tempfile"
 version = "3.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2837,9 +2803,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-compat"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55ae6e8f0b3bf2c9908bd050ec35598ca71990185e5618fa7a2bbd98771c3e53"
+checksum = "107b625135aa7b9297dd2d99ccd6ca6ab124a5d1230778e159b9095adca4c722"
 dependencies = [
  "futures 0.1.26",
  "futures-core",
@@ -3418,7 +3384,6 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab7bb6f14721aa00656086e9335d363c5c8747bae02ebe32ea2c7dece5689b4c"
 dependencies = [
- "futures 0.1.26",
  "pin-project",
  "tracing",
 ]

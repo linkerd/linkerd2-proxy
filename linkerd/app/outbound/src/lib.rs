@@ -420,7 +420,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
     where
         R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
             + Unpin

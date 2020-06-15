@@ -70,7 +70,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, target: ()) -> Self::Future {
+    fn call(&mut self, _: ()) -> Self::Future {
         self.inner.call(self.target.clone())
     }
 }
@@ -82,7 +82,7 @@ where
 {
     type Service = S::Service;
 
-    fn new_service(&self, target: ()) -> Self::Service {
+    fn new_service(&self, _: ()) -> Self::Service {
         self.inner.new_service(self.target.clone())
     }
 }
@@ -456,7 +456,7 @@ where
 pub mod make_response {
     use super::Oneshot;
     use crate::Error;
-    use futures_03::TryFuture;
+    use futures::TryFuture;
     use pin_project::{pin_project, project};
     use std::future::Future;
     use std::pin::Pin;
@@ -524,7 +524,7 @@ pub mod make_response {
                 #[project]
                 match this.state.as_mut().project() {
                     State::Make(fut) => {
-                        let svc = futures_03::ready!(fut.try_poll(cx)).map_err(Into::into)?;
+                        let svc = futures::ready!(fut.try_poll(cx)).map_err(Into::into)?;
                         this.state.set(State::Respond(Oneshot::new(svc, ())))
                     }
                     State::Respond(fut) => return fut.poll(cx).map_err(Into::into),

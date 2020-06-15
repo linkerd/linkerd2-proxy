@@ -1,8 +1,5 @@
 use crate::io::BoxedIo;
-use futures_03::{
-    compat::{Compat01As03, Future01CompatExt},
-    TryFuture,
-};
+use futures::TryFuture;
 use linkerd2_conditional::Conditional;
 use linkerd2_identity as identity;
 use pin_project::{pin_project, project};
@@ -118,7 +115,7 @@ where
             #[project]
             match this.state.as_mut().project() {
                 ConnectState::Init { future, tls } => {
-                    let io = futures_03::ready!(future.try_poll(cx))?;
+                    let io = futures::ready!(future.try_poll(cx))?;
 
                     match tls {
                         Conditional::Some((peer_identity, local_tls)) => {
@@ -135,7 +132,7 @@ where
                     }
                 }
                 ConnectState::Handshake(fut) => {
-                    let io = futures_03::ready!(fut.poll(cx))?;
+                    let io = futures::ready!(fut.poll(cx))?;
                     trace!("established TLS");
                     return Poll::Ready(Ok(Connection::new(io)));
                 }

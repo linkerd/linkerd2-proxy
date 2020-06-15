@@ -1,4 +1,4 @@
-use futures_03::{future, FutureExt, TryFutureExt};
+use futures::{future, FutureExt, TryFutureExt};
 use linkerd2_error::{Error, Never};
 use linkerd2_proxy_core::listen::Accept;
 use std::task::{Context, Poll};
@@ -37,7 +37,7 @@ where
     >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(futures_03::ready!(self.0.poll_ready(cx))
+        Poll::Ready(Ok(futures::ready!(self.0.poll_ready(cx))
             .map_err(Into::into)
             .expect("poll_ready must never fail on accept")))
     }

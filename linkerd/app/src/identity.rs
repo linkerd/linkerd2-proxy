@@ -1,4 +1,4 @@
-use futures_03::stream::TryStream;
+use futures::stream::TryStream;
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
@@ -7,10 +7,10 @@ use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    proxy, reconnect,
+    reconnect,
     svc::{self, NewService},
     transport::tls,
-    ControlHttpMetrics as Metrics, Error, Never,
+    ControlHttpMetrics as Metrics, Error,
 };
 use std::future::Future;
 use std::pin::Pin;

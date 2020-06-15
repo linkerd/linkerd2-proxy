@@ -1,4 +1,3 @@
-use futures::compat::{Compat01As03, Future01CompatExt};
 use linkerd2_error::Error;
 use linkerd2_io::{BoxedIo, Peek};
 use linkerd2_proxy_core as core;

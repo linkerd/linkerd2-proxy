@@ -2,7 +2,6 @@ use super::{conditional_accept, ReasonForNoPeerName};
 use crate::io::{BoxedIo, PrefixedIo};
 use crate::listen::{self, Addrs};
 use bytes::BytesMut;
-use futures_03::compat::{Compat01As03, Future01CompatExt};
 use indexmap::IndexSet;
 use linkerd2_conditional::Conditional;
 use linkerd2_dns_name as dns;
@@ -193,12 +192,12 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
             match this.state.as_mut().project() {
                 AcceptState::Accept(future) => return future.poll(cx).map_err(Into::into),
                 AcceptState::ReadyAccept(accept, conn) => {
-                    futures_03::ready!(accept.poll_ready(cx).map_err(Into::into))?;
+                    futures::ready!(accept.poll_ready(cx).map_err(Into::into))?;
                     let conn = accept.accept(conn.take().expect("polled after complete"));
                     this.state.set(AcceptState::Accept(conn))
                 }
                 AcceptState::TryTls(ref mut try_tls) => {
-                    let match_ = futures_03::ready!(try_tls
+                    let match_ = futures::ready!(try_tls
                         .as_mut()
                         .expect("polled after complete")
                         .poll_match_client_hello(cx))?;
@@ -246,7 +245,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                     }
                 }
                 AcceptState::TerminateTls(future, meta) => {
-                    let io = futures_03::ready!(future.poll(cx))?;
+                    let io = futures::ready!(future.poll(cx))?;
                     let peer_identity =
                         client_identity(&io)
                             .map(Conditional::Some)
@@ -286,8 +285,7 @@ impl<A: Accept<Connection>> TryTls<A> {
     ) -> Poll<Result<conditional_accept::Match, Error>> {
         use crate::io::AsyncRead;
 
-        let sz =
-            futures_03::ready!(Pin::new(&mut self.socket).poll_read_buf(cx, &mut self.peek_buf))?;
+        let sz = futures::ready!(Pin::new(&mut self.socket).poll_read_buf(cx, &mut self.peek_buf))?;
         trace!(%sz, "read");
         if sz == 0 {
             // XXX: It is ambiguous whether this is the start of a Tls handshake or not.

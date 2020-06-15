@@ -38,7 +38,6 @@ features = [
 ]
 
 [dev-dependencies]
-linkerd2-test-util = { path = "../test-util" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"], rev = "c2dba642c7301b5b562c75fd6e2bd0a12ec763e8"  }
 prost-types = "0.6.0"
 quickcheck = { version = "0.9", default-features = false }
