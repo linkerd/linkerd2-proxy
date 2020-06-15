@@ -4,7 +4,6 @@
 #![recursion_limit = "256"]
 #![type_length_limit = "16289823"]
 
-use futures::compat::Future01CompatExt;
 use linkerd2_app::{trace, Config};
 use linkerd2_signal as signal;
 pub use tracing::{debug, error, info, warn};
@@ -66,9 +65,8 @@ async fn main() {
             Some(identity) => info!("OpenCensus tracing collector at {} ({})", oc.addr, identity),
         }
     }
-
+  
     let drain = app.spawn();
-    signal::shutdown().compat().await.expect("shutdown");
-    debug!("Draining");
+    signal::shutdown().await;
     drain.drain().await;
 }

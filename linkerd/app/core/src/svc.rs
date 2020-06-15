@@ -139,11 +139,6 @@ impl<L> Layers<L> {
         self.push(timeout::FailFastLayer::new(timeout))
     }
 
-    // Polls the inner service at least once per interval.
-    pub fn push_probe_ready(self, interval: Duration) -> Layers<Pair<L, timeout::ProbeReadyLayer>> {
-        self.push(timeout::ProbeReadyLayer::new(interval))
-    }
-
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
         self.push(stack::OnResponseLayer::new(layer))
     }
@@ -269,11 +264,6 @@ impl<S> Stack<S> {
     // Makes the service eagerly process and fail requests after the given timeout.
     pub fn push_failfast(self, timeout: Duration) -> Stack<timeout::FailFast<S>> {
         self.push(timeout::FailFastLayer::new(timeout))
-    }
-
-    // Polls the inner service at least once per interval.
-    pub fn push_probe_ready(self, interval: Duration) -> Stack<timeout::ProbeReady<S>> {
-        self.push(timeout::ProbeReadyLayer::new(interval))
     }
 
     pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {

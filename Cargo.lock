@@ -39,7 +39,7 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee49baf6cb617b853aa8d93bf420db2383fab46d314482ca2803b40d5fde979b"
 dependencies = [
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -47,6 +47,12 @@ name = "anyhow"
 version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85bb70cc08ec97ca5450e6eba421deeea5f172c0fc61f78b5357b2a8e8be195f"
+
+[[package]]
+name = "arc-swap"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d25d88fd6b8041580a654f9d0c581a047baee2b3efee13275f2fc392fc75034"
 
 [[package]]
 name = "arrayvec"
@@ -553,9 +559,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "377038bf3c89d18d6ca1431e7a5027194fbd724ca10592b9487ede5e8e144f42"
+checksum = "79b7246d7e4b979c03fa093da39cfb3617a96bbeee6310af63991668d7e843ff"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
@@ -593,7 +599,7 @@ checksum = "3c731c3e10504cc8ed35cfe2f1db4c9274c3d35fa486e3b31df46f068ef3e867"
 dependencies = [
  "libc",
  "match_cfg",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -648,9 +654,9 @@ checksum = "cd179ae861f0c2e53da70d892f5f3029f9594be0c41dc5269cd371691b1dc2f9"
 
 [[package]]
 name = "hyper"
-version = "0.12.34"
+version = "0.12.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898a87371a3999b2f731b9af636cd76aa20de10e69c2daf3e71388326b619fe0"
+checksum = "9dbe6ed1438e1f8ad955a4701e9a944938e9519f6888d12d8558b645e247d5f6"
 dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
@@ -686,7 +692,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.2.4",
+ "h2 0.2.5",
  "http 0.2.1",
  "http-body 0.3.1",
  "httparse",
@@ -747,7 +753,7 @@ checksum = "f7e2f18aece9709094573a9f24f483c4f65caa4298e2f7ae1b71cc65d853fad7"
 dependencies = [
  "socket2",
  "widestring",
- "winapi 0.3.7",
+ "winapi 0.3.8",
  "winreg",
 ]
 
@@ -839,7 +845,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.3.5",
- "h2 0.2.4",
+ "h2 0.2.5",
  "http 0.2.1",
  "http-body 0.3.1",
  "hyper 0.13.5",
@@ -986,12 +992,12 @@ dependencies = [
  "flate2",
  "futures 0.1.26",
  "futures 0.3.5",
- "h2 0.2.4",
+ "h2 0.2.5",
  "http 0.1.21",
  "http 0.2.1",
  "http-body 0.1.0",
  "http-body 0.3.1",
- "hyper 0.12.34",
+ "hyper 0.12.35",
  "hyper 0.13.5",
  "linkerd2-app",
  "linkerd2-app-core",
@@ -1352,7 +1358,7 @@ name = "linkerd2-proxy-api"
 version = "0.1.12"
 source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8#c2dba642c7301b5b562c75fd6e2bd0a12ec763e8"
 dependencies = [
- "h2 0.2.4",
+ "h2 0.2.5",
  "http 0.2.1",
  "prost 0.6.1",
  "prost-types 0.6.1",
@@ -1428,7 +1434,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.3.5",
- "h2 0.2.4",
+ "h2 0.2.5",
  "http 0.2.1",
  "http-body 0.3.1",
  "httparse",
@@ -1632,8 +1638,8 @@ dependencies = [
 name = "linkerd2-signal"
 version = "0.1.0"
 dependencies = [
- "futures 0.1.26",
- "tokio-signal",
+ "futures 0.3.5",
+ "tokio 0.2.21",
  "tracing",
 ]
 
@@ -1859,7 +1865,7 @@ checksum = "9044faf1413a1057267be51b5afba8eb1090bd2231c693664aa1db716fe1eae0"
 dependencies = [
  "cfg-if",
  "libc",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -1964,7 +1970,7 @@ dependencies = [
  "redox_syscall",
  "rustc_version",
  "smallvec 0.6.10",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2228,7 +2234,7 @@ dependencies = [
  "rand_os",
  "rand_pcg 0.1.2",
  "rand_xorshift",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2324,7 +2330,7 @@ checksum = "1166d5c91dc97b88d1decc3285bb0a99ed84b05cfd0bc2341bdf2d43fc41e39b"
 dependencies = [
  "libc",
  "rand_core 0.4.0",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2338,7 +2344,7 @@ dependencies = [
  "libc",
  "rand_core 0.4.0",
  "rdrand",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2439,7 +2445,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfc5b3ce5d5ea144bb04ebd093a9e14e9765bcfec866aecda9b6dec43b3d1e24"
 dependencies = [
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2464,7 +2470,7 @@ dependencies = [
  "spin",
  "untrusted",
  "web-sys",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2559,6 +2565,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94f478ede9f64724c5d173d7bb56099ec3e2d9fc2774aac65d34b8b890405f41"
+dependencies = [
+ "arc-swap",
+ "libc",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2584,7 +2600,7 @@ checksum = "ff606e0486e88f5fc6cfeb3966e434fb409abbc7a3ab495238f70a1ca97f789d"
 dependencies = [
  "cfg-if",
  "libc",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2653,7 +2669,7 @@ dependencies = [
  "rand 0.6.5",
  "redox_syscall",
  "remove_dir_all",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2713,7 +2729,7 @@ checksum = "a15375f1df02096fb3317256ce2cee6a1f42fc84ea5ad5fc8c421cfe40c73098"
 dependencies = [
  "libc",
  "redox_syscall",
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2757,8 +2773,10 @@ dependencies = [
  "mio-uds",
  "num_cpus",
  "pin-project-lite",
+ "signal-hook-registry",
  "slab",
  "tokio-macros",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2891,22 +2909,6 @@ dependencies = [
  "rustls",
  "tokio 0.2.21",
  "webpki",
-]
-
-[[package]]
-name = "tokio-signal"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a6a5bf935a0151cc8899aa806ce6a425bdaec79ed4034de1a1e6bfa247e2def"
-dependencies = [
- "futures 0.1.26",
- "libc",
- "mio",
- "mio-uds",
- "tokio-executor",
- "tokio-io",
- "tokio-reactor",
- "winapi 0.3.7",
 ]
 
 [[package]]
@@ -3717,9 +3719,9 @@ checksum = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
 
 [[package]]
 name = "winapi"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f10e386af2b13e47c89e7236a7a14a086791a2b88ebad6df9bf42040195cf770"
+checksum = "8093091eeb260906a183e6ae1abdba2ef5ef2257a21801128899c3fc699229c6"
 dependencies = [
  "winapi-i686-pc-windows-gnu",
  "winapi-x86_64-pc-windows-gnu",
@@ -3749,7 +3751,7 @@ version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2986deb581c4fe11b621998a5e53361efe6b48a151178d0cd9eeffa4dc6acc9"
 dependencies = [
- "winapi 0.3.7",
+ "winapi 0.3.8",
 ]
 
 [[package]]
