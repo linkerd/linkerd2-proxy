@@ -65,7 +65,7 @@ async fn main() {
             Some(identity) => info!("OpenCensus tracing collector at {} ({})", oc.addr, identity),
         }
     }
-  
+
     let drain = app.spawn();
     signal::shutdown().await;
     drain.drain().await;
