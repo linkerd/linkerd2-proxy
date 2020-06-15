@@ -15,7 +15,7 @@ use linkerd2_proxy_transport::tls::{
     client::Connection as ClientConnection,
     Conditional,
 };
-use linkerd2_proxy_transport::{connect, Bind, Listen};
+use linkerd2_proxy_transport::{connect, Bind};
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::{
@@ -172,7 +172,12 @@ where
             tracing::debug!("incoming connection");
             let accept = accept.ready_and().await.expect("accept failed");
             tracing::debug!("accept ready");
-            let res = accept.accept(conn).await.expect("connection failed").await;
+            accept
+                .accept(conn)
+                .await
+                .expect("connection failed")
+                .await
+                .expect("connection future failed");
             tracing::debug!("done");
         }
         .instrument(tracing::info_span!("run_server", %listen_addr));
@@ -234,7 +239,7 @@ where
 /// Writes `to_write` and shuts down the write side, then reads until EOF,
 /// returning the bytes read.
 async fn write_then_read(
-    mut conn: impl AsyncRead + AsyncWrite + Unpin,
+    conn: impl AsyncRead + AsyncWrite + Unpin,
     to_write: &'static [u8],
 ) -> Result<Vec<u8>, io::Error> {
     let conn = write_and_shutdown(conn, to_write).await;

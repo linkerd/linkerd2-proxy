@@ -133,7 +133,6 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::compat::Future01CompatExt;
     use http::method::Method;
     use std::time::Duration;
     use tokio::time::timeout;
