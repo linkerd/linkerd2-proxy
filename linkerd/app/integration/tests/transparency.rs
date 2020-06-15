@@ -1139,7 +1139,7 @@ async fn retry_reconnect_errors() {
     );
 
     drop(tx); // start `listen` now
-    // This may be flaky on CI.
+              // This may be flaky on CI.
     tokio::time::delay_for(std::time::Duration::from_millis(100)).await;
 
     let res = fut.await.expect("response");
