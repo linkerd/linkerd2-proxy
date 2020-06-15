@@ -1003,7 +1003,6 @@ dependencies = [
  "regex 0.1.80",
  "ring",
  "rustls",
- "task-compat",
  "tokio 0.1.22",
  "tokio 0.2.21",
  "tokio-compat",
@@ -1447,7 +1446,6 @@ dependencies = [
  "linkerd2-timeout",
  "pin-project",
  "rand 0.7.2",
- "task-compat",
  "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
@@ -1546,7 +1544,6 @@ dependencies = [
  "pin-project",
  "ring",
  "rustls",
- "task-compat",
  "tokio 0.2.21",
  "tokio-rustls",
  "tokio-util",
@@ -2643,16 +2640,6 @@ dependencies = [
  "quote 0.6.11",
  "syn 0.15.29",
  "unicode-xid 0.1.0",
-]
-
-[[package]]
-name = "task-compat"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0328783c46b98ea9e2747a49761313f483cf7bba40e51d6f0b05bf31b988d578"
-dependencies = [
- "futures 0.1.26",
- "futures 0.3.5",
 ]
 
 [[package]]

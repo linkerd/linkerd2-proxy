@@ -30,7 +30,6 @@ linkerd2-identity = { path  = "../../identity" }
 linkerd2-stack = { path  = "../../stack" }
 linkerd2-timeout = { path  = "../../timeout" }
 rand = "0.7"
-task-compat = "0.1"
 tokio = { version = "0.2", features = ["time", "rt-core"] }
 tower = { version = "0.3", default-features = false, features = ["balance", "load", "discover"] }
 tracing = "0.1.9"
