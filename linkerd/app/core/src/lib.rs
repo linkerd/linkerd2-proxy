@@ -7,7 +7,7 @@
 //! - Tap
 //! - Metric labeling
 #![type_length_limit = "1586225"]
-// #![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms)]
 
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};
 pub use linkerd2_admit as admit;
