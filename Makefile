@@ -39,6 +39,9 @@ ifdef CARGO_DEBUG
 	RUSTCFLAGS += -C debuginfo=2
 endif
 
+SHELLCHECK ?= shellcheck
+SHELLCHECK_CMD = $(SHELLCHECK) -x -P "$(CURDIR)/profiling"
+
 $(TARGET_BIN): fetch
 	$(CARGO_BUILD) -p linkerd2-proxy
 
@@ -79,6 +82,11 @@ check-fmt:
 fmt:
 	$(CARGO_FMT)
 
+.PHONY: shellcheck
+shellcheck:
+	$(SHELLCHECK_CMD) $$(find "$(CURDIR)" -type f \
+		! -path "$(CURDIR)"/.git/hooks/\*.sample \
+		| while read -r f; do [ "$$(file -b --mime-type "$$f")" = 'text/x-shellscript' ] && printf '%s\0' "$$f"; done | xargs -0)
 
 .PHONY: test-lib
 test-lib:: fetch
