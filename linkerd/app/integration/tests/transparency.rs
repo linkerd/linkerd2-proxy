@@ -18,8 +18,6 @@ async fn outbound_http1() {
     let client = client::http1(proxy.outbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get_async("/").await, "hello h1");
-
-    srv.join().await
 }
 
 #[tokio::test]
@@ -36,8 +34,6 @@ async fn inbound_http1() {
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get_async("/").await, "hello h1");
-
-    srv.join().await
 }
 
 #[tokio::test]
@@ -62,8 +58,6 @@ async fn outbound_tcp() {
 
     tcp_client.write(msg1);
     assert_eq!(tcp_client.read(), msg2.as_bytes());
-
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -88,8 +82,6 @@ async fn inbound_tcp() {
 
     tcp_client.write(msg1);
     assert_eq!(tcp_client.read(), msg2.as_bytes());
-
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -108,7 +100,8 @@ async fn loop_outbound_http1() {
     let client = client::http1(listen_addr, "some.invalid.example.com");
     let rsp = client
         .request_async(client.request_builder("/").method("GET"))
-        .await;
+        .await
+        .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
 }
 
@@ -126,7 +119,10 @@ async fn loop_inbound_http1() {
         .run_with_test_env_and_keep_ports(env);
 
     let client = client::http1(listen_addr, listen_addr.to_string());
-    let rsp = client.request(client.request_builder("/").method("GET"));
+    let rsp = client
+        .request_async(client.request_builder("/").method("GET"))
+        .await
+        .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::FORBIDDEN);
 }
 
@@ -169,8 +165,6 @@ async fn test_server_speaks_first(env: TestEnv) {
     assert_eq!(s(&tcp_client.read_timeout(TIMEOUT)), msg1);
     tcp_client.write(msg2);
     rx.recv_timeout(TIMEOUT).unwrap();
-
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -266,8 +260,6 @@ async fn tcp_connections_close_if_client_closes() {
     // a socket disconnect, which is what we are testing for.
     // the timeout here is just to prevent this test from hanging
     rx.recv_timeout(Duration::from_secs(5)).unwrap();
-
-    srv.join().await;
 }
 
 macro_rules! http1_tests {
@@ -281,8 +273,6 @@ macro_rules! http1_tests {
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             assert_eq!(client.get_async("/").await, "hello h1");
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -320,12 +310,11 @@ macro_rules! http1_tests {
                         .header("keep-alive", "500")
                         .header("proxy-connection", "a"),
                 )
-                .await;
+                .await
+                .unwrap();
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert!(!res.headers().contains_key("x-server-quux"));
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -354,12 +343,11 @@ macro_rules! http1_tests {
                         .version(http::Version::HTTP_10)
                         .header("host", host),
                 )
-                .await;
+                .await
+                .unwrap();
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_10);
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -387,12 +375,11 @@ macro_rules! http1_tests {
                         .version(http::Version::HTTP_11)
                         .header("host", host),
                 )
-                .await;
+                .await
+                .unwrap();
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_11);
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -470,8 +457,6 @@ macro_rules! http1_tests {
             // Did anyone respond?
             let chat_resp = tcp_client.read();
             assert_eq!(s(&chat_resp), chatproto_res);
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -490,11 +475,12 @@ macro_rules! http1_tests {
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
 
-            let res = client.request_async(client.request_builder("/")).await;
+            let res = client
+                .request_async(client.request_builder("/"))
+                .await
+                .unwrap();
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -524,19 +510,20 @@ macro_rules! http1_tests {
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let res = client.request_async(
-                client
-                    .request_builder("/")
-                    .header("upgrade", "h2c")
-                    .header("http2-settings", "")
-                    .header("connection", "upgrade, http2-settings"),
-            );
+            let res = client
+                .request_async(
+                    client
+                        .request_builder("/")
+                        .header("upgrade", "h2c")
+                        .header("http2-settings", "")
+                        .header("connection", "upgrade, http2-settings"),
+                )
+                .await
+                .unwrap();
 
             // If the assertion is trigger in the above test route, the proxy will
             // just send back a 500.
             assert_eq!(res.status(), http::StatusCode::OK);
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -613,8 +600,6 @@ macro_rules! http1_tests {
             // Did anyone respond?
             let resp2 = tcp_client.read();
             assert_eq!(s(&resp2), s(&tunneled_res[..]));
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -676,8 +661,6 @@ macro_rules! http1_tests {
                 "HTTP/1.0 CONNECT should get 400 response: {:?}",
                 resp_str
             );
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -703,8 +686,6 @@ macro_rules! http1_tests {
             let resp = client.request_body_async(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -751,8 +732,6 @@ macro_rules! http1_tests {
                 .expect("rsp is utf8")
                 .to_owned();
             assert_eq!(body, "world");
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -782,12 +761,11 @@ macro_rules! http1_tests {
             for &method in methods {
                 let resp = client
                     .request_async(client.request_builder("/").method(method))
-                    .await;
+                    .await
+                    .unwrap();
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
             }
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -822,13 +800,12 @@ macro_rules! http1_tests {
                             .method(method)
                             .header("content-length", "0"),
                     )
-                    .await;
+                    .await
+                    .unwrap();
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
                 assert_eq!(resp.headers()["content-length"], "0", "method={:?}", method);
             }
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -864,7 +841,10 @@ macro_rules! http1_tests {
             //they should be tested here as well. As RFC7230 says, a 2xx response to
             //a CONNECT request is not allowed to contain a body (but 4xx, 5xx can!).
 
-            let resp = client.request(client.request_builder("/").method("HEAD"));
+            let resp = client
+                .request_async(client.request_builder("/").method("HEAD"))
+                .await
+                .unwrap();
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert!(!resp.headers().contains_key("transfer-encoding"));
@@ -885,7 +865,8 @@ macro_rules! http1_tests {
                             .request_builder("/")
                             .header(req_status_header, status.as_str()),
                     )
-                    .await;
+                    .await
+                    .unwrap();
 
                 assert_eq!(resp.status(), status);
                 assert!(
@@ -894,8 +875,6 @@ macro_rules! http1_tests {
                     status
                 );
             }
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -931,8 +910,6 @@ macro_rules! http1_tests {
                 .to_owned();
 
             assert_eq!(body, "");
-
-            srv.join().await;
         }
 
         #[tokio::test]
@@ -1001,8 +978,6 @@ macro_rules! http1_tests {
 
                 assert_eq!(body, "body till eof", "HTTP/{} body", v);
             }
-
-            srv.join().await;
         }
     };
 }
@@ -1032,7 +1007,7 @@ mod proxy_to_proxy {
     http1_tests! { proxy: |srv| {
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
-        let inbound = proxy::new().controller(ctrl.run()).inbound(srv).run().await;
+        let inbound = proxy::new().controller(ctrl.run()).inbound(srv).run();
 
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
@@ -1041,7 +1016,7 @@ mod proxy_to_proxy {
 
         let outbound = proxy::new()
             .controller(ctrl.run())
-            .run().await;
+            .run();
 
         let addr = outbound.outbound;
         ProxyToProxy {
@@ -1071,7 +1046,7 @@ async fn http10_without_host() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound(srv).run().await;
+    let proxy = proxy::new().inbound(srv).run();
 
     let client = client::tcp(proxy.inbound);
 
@@ -1086,7 +1061,6 @@ async fn http10_without_host() {
 
     let expected = "HTTP/1.0 200 OK\r\n";
     assert_eq!(s(&tcp_client.read()[..expected.len()]), expected);
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -1098,44 +1072,48 @@ async fn http1_one_connection_per_host() {
         .route("/no-body", "")
         .run()
         .await;
-    let proxy = proxy::new().inbound(srv).run().await;
+    let proxy = proxy::new().inbound(srv).run();
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
     let inbound = &proxy.inbound_server.as_ref().expect("no inbound server!");
 
     // Run each case with and without a body.
-    let run_request = move |host, expected_conn_cnt| {
-        for path in &["/no-body", "/body"][..] {
-            let res = client.request(
-                client
-                    .request_builder(path)
-                    .version(http::Version::HTTP_11)
-                    .header("host", host),
-            );
-            assert_eq!(res.status(), http::StatusCode::OK);
-            assert_eq!(res.version(), http::Version::HTTP_11);
-            assert_eq!(inbound.connections(), expected_conn_cnt);
+    let run_request = |host, expected_conn_cnt| {
+        let c = &client;
+        let i = &inbound;
+        async move {
+            for path in &["/no-body", "/body"][..] {
+                let res = c
+                    .request_async(
+                        c.request_builder(path)
+                            .version(http::Version::HTTP_11)
+                            .header("host", host),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(res.status(), http::StatusCode::OK);
+                assert_eq!(res.version(), http::Version::HTTP_11);
+                assert_eq!(i.connections(), expected_conn_cnt);
+            }
         }
     };
 
     // Make a request with the header "Host: foo.bar". After the request, the
     // server should have seen one connection.
-    run_request("foo.bar", 1);
+    run_request("foo.bar", 1).await;
 
     // Another request with the same host. The proxy may reuse the connection.
-    run_request("foo.bar", 1);
+    run_request("foo.bar", 1).await;
 
     // Make a request with a different Host header. This request must use a new
     // connection.
-    run_request("bar.baz", 2);
-    run_request("bar.baz", 2);
+    run_request("bar.baz", 2).await;
+    run_request("bar.baz", 2).await;
 
     // Make a request with a different Host header. This request must use a new
     // connection.
-    run_request("quuuux.com", 3);
-
-    srv.join().await;
+    run_request("quuuux.com", 3).await;
 }
 
 #[tokio::test]
@@ -1143,60 +1121,70 @@ async fn http1_requests_without_host_have_unique_connections() {
     let _trace = trace_init();
 
     let srv = server::http1().route("/", "unique hosts").run().await;
-    let proxy = proxy::new().inbound(srv).run().await;
+    let proxy = proxy::new().inbound(srv).run();
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
     let inbound = &proxy.inbound_server.as_ref().expect("no inbound server!");
 
     // Make a request with no Host header and no authority in the request path.
-    let res = client.request(
-        client
-            .request_builder("/")
-            .version(http::Version::HTTP_11)
-            .header("host", ""),
-    );
+    let res = client
+        .request_async(
+            client
+                .request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", ""),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 1);
 
     // Another request with no Host. The proxy must open a new connection
     // for that request.
-    let res = client.request(
-        client
-            .request_builder("/")
-            .version(http::Version::HTTP_11)
-            .header("host", ""),
-    );
+    let res = client
+        .request_async(
+            client
+                .request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", ""),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 2);
 
     // Make a request with a host header. It must also receive its
     // own connection.
-    let res = client.request(
-        client
-            .request_builder("/")
-            .version(http::Version::HTTP_11)
-            .header("host", "foo.bar"),
-    );
+    let res = client
+        .request_async(
+            client
+                .request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", "foo.bar"),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 3);
 
     // Another request with no Host. The proxy must open a new connection
     // for that request.
-    let res = client.request(
-        client
-            .request_builder("/")
-            .version(http::Version::HTTP_11)
-            .header("host", ""),
-    );
+    let res = client
+        .request_async(
+            client
+                .request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", ""),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 4);
-
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -1210,7 +1198,7 @@ async fn retry_reconnect_errors() {
         .route("/", "hello retry")
         .delay_listen(rx.map(|_| ()))
         .await;
-    let proxy = proxy::new().inbound(srv).run().await;
+    let proxy = proxy::new().inbound(srv).run();
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
     let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -1229,8 +1217,6 @@ async fn retry_reconnect_errors() {
 
     let res = fut.await.expect("response");
     assert_eq!(res.status(), http::StatusCode::OK);
-
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -1244,7 +1230,7 @@ async fn http2_request_without_authority() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
 
     // Make a single HTTP/2 request without an :authority header.
     //
@@ -1270,7 +1256,6 @@ async fn http2_request_without_authority() {
     let res = client.send_request(req).await.expect("client error");
 
     assert_eq!(res.status(), http::StatusCode::OK);
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -1283,7 +1268,7 @@ async fn http2_rst_stream_is_propagated() {
         .route_async("/", move |_req| async move { Err(h2::Error::from(reason)) })
         .run()
         .await;
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
 
     let err: hyper::Error = client
@@ -1298,7 +1283,6 @@ async fn http2_rst_stream_is_propagated() {
         .expect("source should be h2::Error");
 
     assert_eq!(rst.reason(), Some(reason));
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -1318,7 +1302,7 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
     let host = "transparency.test.svc.cluster.local";
     let dst = ctrl.destination_tx(host);
     dst.send_h2_hinted(srv.addr);
-    let proxy = proxy::new().controller(ctrl.run()).run().await;
+    let proxy = proxy::new().controller(ctrl.run()).run();
     let addr = proxy.outbound;
 
     let client = client::http1(addr, host);
@@ -1328,5 +1312,4 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
         .expect("client request");
 
     assert_eq!(res.status(), http::StatusCode::BAD_GATEWAY);
-    srv.join().await;
 }
