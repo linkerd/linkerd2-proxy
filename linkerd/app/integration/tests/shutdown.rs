@@ -9,7 +9,7 @@ async fn h2_goaways_connections() {
 
     let (shdn, rx) = shutdown_signal();
 
-    let srv = server::http2().route("/", "hello").run();
+    let srv = server::http2().route("/", "hello").run().await;
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
     let client = client::http2(proxy.inbound, "shutdown.test.svc.cluster.local");
 
@@ -67,7 +67,7 @@ async fn h2_exercise_goaways_connections() {
 
 #[tokio::test]
 async fn http1_closes_idle_connections() {
-    use std::cell::RefCell;
+    use std::sync::{Arc, Mutex};
     let _trace = trace_init();
 
     let (shdn, rx) = shutdown_signal();
@@ -75,12 +75,16 @@ async fn http1_closes_idle_connections() {
     const RESPONSE_SIZE: usize = 1024 * 16;
     let body = Bytes::from(vec![b'1'; RESPONSE_SIZE]);
 
-    let shdn = RefCell::new(Some(shdn));
+    let shdn = Arc::new(Mutex::new(Some(shdn)));
     let srv = server::http1()
         .route_fn("/", move |_req| {
             // Trigger a shutdown signal while the request is made
             // but a response isn't returned yet.
-            shdn.borrow_mut().take().expect("only 1 request").signal();
+            shdn.lock()
+                .unwrap()
+                .take()
+                .expect("only 1 request")
+                .signal();
             Response::builder().body(body.clone()).unwrap()
         })
         .run()
@@ -88,7 +92,7 @@ async fn http1_closes_idle_connections() {
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
     let client = client::http1(proxy.inbound, "shutdown.test.svc.cluster.local");
 
-    let res_body = client.get("/");
+    let res_body = client.get_async("/").await;
     assert_eq!(res_body.len(), RESPONSE_SIZE);
 
     client.wait_for_closed();
