@@ -111,7 +111,7 @@ macro_rules! assert_eventually {
                         format_args!($($arg)+)
                     )
                 } else {
-                    ::std::thread::sleep(patience);
+                    tokio::time::delay_for(patience).await;
                 }
             }
         }
