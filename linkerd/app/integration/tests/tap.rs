@@ -49,7 +49,7 @@ async fn rejects_incorrect_identity_when_identity_is_expected() {
     let mut expected_identity_env = identity_env.env.clone();
     expected_identity_env.put(app::env::ENV_TAP_SVC_NAME, expected_identity.to_owned());
 
-    let srv = server::http1().route("/", "hello").run();
+    let srv = server::http1().route("/", "hello").run().await;
 
     let in_proxy = proxy::new()
         .inbound(srv)
@@ -100,7 +100,7 @@ async fn inbound_http1() {
         client_proxy_authority.to_owned(),
     );
 
-    let srv = server::http1().route("/", "hello").run();
+    let srv = server::http1().route("/", "hello").run().await;
 
     // Run server proxy with server proxy identity service
     let srv_proxy = proxy::new()
@@ -183,7 +183,8 @@ async fn grpc_headers_end() {
                 .body(Default::default())
                 .unwrap()
         })
-        .run();
+        .run()
+        .await;
 
     // Run server proxy with server proxy identity service
     let srv_proxy = proxy::new()
