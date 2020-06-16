@@ -102,12 +102,12 @@ different test runs. For example:
 
 ```console
 $ cd profiling/
-$ ./benchmark.sh ; git checkout master && ./benchmark.sh
+$ ./benchmark.sh ; git checkout main && ./benchmark.sh
 $ ./plot.sh \
     ../target/profile/2019Jun19_15h13m12s/summary.txt \
     ../target/profile/.2019Jun19_15h34m26s/summary.txt \
-    mybranch-vs-master-
-$ eog mybranch-vs-master-*png
+    mybranch-vs-main-
+$ eog mybranch-vs-main-*png
 ```
 
 Consider using `./plot.sh --logy ...` to switch the Y-axis to a logarithmic

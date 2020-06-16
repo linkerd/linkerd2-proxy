@@ -33,7 +33,7 @@ Do you have an improvement?
 1. Submit an [issue][issue] describing your proposed change.
 2. We will try to respond to your issue promptly.
 3. Fork this repo, develop and test your code changes. See the project's [README](README.md) for further information about working in this repository.
-4. Submit a pull request against this repo's `master` branch.
+4. Submit a pull request against this repo's `main` branch.
 5. Your branch may be merged once all configured checks pass, including:
     - The branch has passed tests in CI.
     - A review from appropriate maintainers (see [MAINTAINERS.md](MAINTAINERS.md) and [GOVERNANCE.md](GOVERNANCE.md))
@@ -41,7 +41,7 @@ Do you have an improvement?
 ## Committing ##
 
 We prefer squash or rebase commits so that all changes from a branch are
-committed to master as a single commit. All pull requests are squashed when
+committed to `main` as a single commit. All pull requests are squashed when
 merged, but rebasing prior to merge gives you better control over the commit
 message.
 
