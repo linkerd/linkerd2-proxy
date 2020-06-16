@@ -59,7 +59,9 @@ macro_rules! generate_tls_accept_test {
         let non_tls_client = $make_client_non_tls(proxy.metrics, "localhost");
         assert_eventually!(
             non_tls_client
-                .request(non_tls_client.request_builder("/ready").method("GET"))
+                .request_async(non_tls_client.request_builder("/ready").method("GET"))
+                .await
+                .unwrap()
                 .status()
                 == http::StatusCode::OK
         );
@@ -72,7 +74,9 @@ macro_rules! generate_tls_accept_test {
         );
         assert_eventually!(
             tls_client
-                .request(tls_client.request_builder("/ready").method("GET"))
+                .request_async(tls_client.request_builder("/ready").method("GET"))
+                .await
+                .unwrap()
                 .status()
                 == http::StatusCode::OK
         );
@@ -103,12 +107,12 @@ macro_rules! generate_tls_reject_test {
             client::TlsConfig::new(client_config, id),
         );
 
-        assert!(futures::executor::block_on(
-            client.request_async(client.request_builder("/ready").method("GET"))
-        )
-        .err()
-        .unwrap()
-        .is_connect());
+        assert!(client
+            .request_async(client.request_builder("/ready").method("GET"))
+            .await
+            .err()
+            .unwrap()
+            .is_connect());
     };
 }
 
@@ -152,7 +156,8 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
         let app_identity = identity::Identity::new("bar-ns1", app_id.to_string());
         let srv = $make_server(app_identity.server_config)
             .route("/", "hello")
-            .run();
+            .run()
+            .await;
 
         let proxy = proxy::new()
             .outbound(srv)
@@ -167,7 +172,9 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
 
         assert_eventually!(
             client
-                .request(client.request_builder("/").method("GET"))
+                .request_async(client.request_builder("/").method("GET"))
+                .await
+                .unwrap()
                 .status()
                 == http::StatusCode::OK
         );
@@ -276,10 +283,10 @@ mod require_id_header {
             server: $make_server:path,
             tls_server: $make_tls_server:path,
         ) => {
-            #[test]
+            #[tokio::test]
             #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-            fn orig_dst_client_connects_to_tls_server() {
-                let _trace = trace_init();
+            async fn orig_dst_client_connects_to_tls_server() {
+                let _trace = trace_init()
 
                 let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
                 let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
@@ -290,7 +297,8 @@ mod require_id_header {
                 // Make a server that expects `app_identity` identity
                 let srv = $make_tls_server(app_identity.server_config)
                     .route("/", "hello")
-                    .run();
+                    .run()
+                    .await;
 
                 // Make a proxy that has `proxy_identity` identity
                 let proxy = proxy::new()
@@ -305,12 +313,14 @@ mod require_id_header {
                 // succeeds
                 assert_eq!(
                     client
-                        .request(
+                        .request_async(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", app_name)
                                 .method("GET")
                         )
+                        .await
+                        .unwrap()
                         .status(),
                     http::StatusCode::OK
                 );
@@ -322,21 +332,23 @@ mod require_id_header {
                 // 502
                 assert_eq!(
                     client
-                        .request(
+                        .request_async(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", "hey-its-me")
                                 .method("GET")
                         )
+                        .await
+                        .unwrap()
                         .status(),
                     $connect_error
                 );
             }
 
-            #[test]
+            #[tokio::test]
             #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-            fn disco_client_connects_to_tls_server() {
-                let _trace = trace_init();
+            async fn disco_client_connects_to_tls_server() {
+                let _trace = trace_init()
 
                 let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
                 let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
@@ -347,7 +359,8 @@ mod require_id_header {
                 // Make a server that expects `app_identity` identity
                 let srv = $make_tls_server(app_identity.server_config)
                     .route("/", "hello")
-                    .run();
+                    .run()
+                    .await;
 
                 // Add `srv` to discovery service
                 let ctrl = controller::new();
@@ -367,7 +380,9 @@ mod require_id_header {
                 // Assert a request to `srv` through discovery succeeds
                 assert_eq!(
                     client
-                        .request(client.request_builder("/").method("GET"))
+                        .request_async(client.request_builder("/").method("GET"))
+                        .await
+                        .unwrap()
                         .status(),
                     http::StatusCode::OK
                 );
@@ -376,12 +391,14 @@ mod require_id_header {
                 // `l5d-require-id` fails
                 assert_eq!(
                     client
-                        .request(
+                        .request_async(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", "hey-its-me")
                                 .method("GET")
                         )
+                        .await
+                        .unwrap()
                         .status(),
                     http::StatusCode::FORBIDDEN
                 );
@@ -390,27 +407,29 @@ mod require_id_header {
                 // `l5d-require-id` succeeds
                 assert_eq!(
                     client
-                        .request(
+                        .request_async(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", app_name)
                                 .method("GET")
                         )
+                        .await
+                        .unwrap()
                         .status(),
                     http::StatusCode::OK
                 );
             }
 
-            #[test]
+            #[tokio::test]
             #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-            fn orig_dst_client_cannot_connect_to_plaintext_server() {
-                let _trace = trace_init();
+            async fn orig_dst_client_cannot_connect_to_plaintext_server() {
+                let _trace = trace_init()
 
                 let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
                 let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
 
                 // Make a non-TLS server
-                let srv = $make_server().route("/", "hello").run();
+                let srv = $make_server().route("/", "hello").run().await;
 
                 // Make a proxy that has `proxy_identity` identity
                 let proxy = proxy::new()
@@ -424,12 +443,14 @@ mod require_id_header {
                 // Assert a request to `srv` with `l5d-require-id` header fails
                 assert_eq!(
                     client
-                        .request(
+                        .request_async(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", "hey-its-me")
                                 .method("GET")
                         )
+                        .await
+                        .unwrap()
                         .status(),
                     $connect_error
                 );
@@ -438,7 +459,9 @@ mod require_id_header {
                 // succeeds
                 assert_eq!(
                     client
-                        .request(client.request_builder("/").method("GET"))
+                        .request_async(client.request_builder("/").method("GET"))
+                        .await
+                        .unwrap()
                         .status(),
                     http::StatusCode::OK
                 );
