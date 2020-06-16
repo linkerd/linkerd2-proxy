@@ -1,7 +1,10 @@
-use futures::{try_ready, Future, Poll};
 use linkerd2_error::{Error, Never};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio;
 use tower::Service;
+use tracing_futures::Instrument;
 
 pub trait Bind {
     type Connection;
@@ -16,20 +19,16 @@ pub trait Listen {
 
     fn listen_addr(&self) -> std::net::SocketAddr;
 
-    fn poll_accept(&mut self) -> Poll<Self::Connection, Self::Error>;
+    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<Result<Self::Connection, Self::Error>>;
 
-    fn serve<A: Accept<Self::Connection>>(
-        self,
-        accept: A,
-    ) -> Serve<Self, A, tokio::executor::DefaultExecutor>
+    fn serve<A: Accept<Self::Connection>>(self, accept: A) -> Serve<Self, A>
     where
         Self: Sized,
-        Serve<Self, A, tokio::executor::DefaultExecutor>: Future,
+        Serve<Self, A>: Future,
     {
         Serve {
             listen: self,
             accept,
-            executor: tokio::executor::DefaultExecutor::current(),
         }
     }
 }
@@ -37,11 +36,11 @@ pub trait Listen {
 /// Handles an accepted connection.
 pub trait Accept<C> {
     type ConnectionError: Into<Error>;
-    type ConnectionFuture: Future<Item = (), Error = Self::ConnectionError>;
+    type ConnectionFuture: Future<Output = Result<(), Self::ConnectionError>>;
     type Error: Into<Error>;
-    type Future: Future<Item = Self::ConnectionFuture, Error = Self::Error>;
+    type Future: Future<Output = Result<Self::ConnectionFuture, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error>;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
     fn accept(&mut self, connection: C) -> Self::Future;
 
@@ -60,7 +59,7 @@ impl<C, S, E> Accept<C> for S
 where
     E: Into<Error>,
     S: Service<C>,
-    S::Response: Future<Item = (), Error = E>,
+    S::Response: Future<Output = Result<(), E>>,
     S::Error: Into<Error>,
 {
     type ConnectionError = E;
@@ -68,8 +67,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Service::poll_ready(self)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Service::poll_ready(self, cx)
     }
 
     fn accept(&mut self, connection: C) -> Self::Future {
@@ -82,8 +81,8 @@ impl<C, S: Accept<C>> Service<C> for AcceptService<S> {
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
     }
 
     fn call(&mut self, connection: C) -> Self::Future {
@@ -91,49 +90,40 @@ impl<C, S: Accept<C>> Service<C> for AcceptService<S> {
     }
 }
 
-pub struct Serve<L, A, E> {
+#[pin_project::pin_project]
+pub struct Serve<L, A> {
     listen: L,
     accept: A,
-    executor: E,
 }
 
-impl<L, A> Serve<L, A, tokio::executor::DefaultExecutor>
-where
-    L: Listen,
-    A: Accept<L::Connection>,
-    A::Future: Send + 'static,
-{
-    pub fn with_executor<E: tokio::executor::Executor>(self, executor: E) -> Serve<L, A, E> {
-        Serve {
-            listen: self.listen,
-            accept: self.accept,
-            executor,
-        }
-    }
-}
-
-impl<L, A, E> Future for Serve<L, A, E>
+impl<L, A> Future for Serve<L, A>
 where
     L: Listen,
     A: Accept<L::Connection, Error = Never, ConnectionError = Never>,
     A::ConnectionFuture: Send + 'static,
-    A::ConnectionError: Into<Error>,
     A::Future: Send + 'static,
-    E: tokio::executor::Executor,
 {
-    type Item = Never;
-    type Error = Error;
+    type Output = Result<Never, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
         loop {
-            try_ready!(self.accept.poll_ready());
-            let conn = try_ready!(self.listen.poll_accept().map_err(Into::into));
-            let accept = self.accept.accept(conn).map_err(|e| match e {});
-            self.executor
-                .spawn(Box::new(
-                    accept.and_then(|conn_future| conn_future.map_err(|e| match e {})),
-                ))
-                .map_err(Error::from)?;
+            futures::ready!(this.accept.poll_ready(cx))?;
+            let conn = futures::ready!(this.listen.poll_accept(cx).map_err(Into::into))?;
+            let accept = (this.accept).accept(conn);
+            tokio::spawn(
+                async move {
+                    let conn_future = match accept.await {
+                        Ok(f) => f,
+                        Err(e) => match e {},
+                    };
+                    match conn_future.await {
+                        Ok(_) => {}
+                        Err(e) => match e {},
+                    };
+                }
+                .in_current_span(),
+            );
         }
     }
 }

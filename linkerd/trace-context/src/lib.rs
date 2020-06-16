@@ -1,13 +1,13 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use bytes::Bytes;
-use futures::Sink;
 use linkerd2_error::Error;
 use rand::Rng;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
+use tokio::sync::mpsc;
 
 pub mod layer;
 mod propagation;
@@ -40,13 +40,9 @@ pub trait SpanSink {
     fn try_send(&mut self, span: Span) -> Result<(), Error>;
 }
 
-impl<S> SpanSink for S
-where
-    S: Sink<SinkItem = Span>,
-    S::SinkError: Into<Error>,
-{
+impl SpanSink for mpsc::Sender<Span> {
     fn try_send(&mut self, span: Span) -> Result<(), Error> {
-        self.start_send(span).map(|_| ()).map_err(Into::into)
+        self.try_send(span).map_err(Into::into)
     }
 }
 

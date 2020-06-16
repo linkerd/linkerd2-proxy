@@ -1,7 +1,11 @@
 use super::h1;
-use futures::{future, try_ready, Future, Poll};
+use futures::{future, ready, TryFuture, TryFutureExt};
 use http;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tracing::{debug, warn};
 
 pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
@@ -39,8 +43,8 @@ where
     type Error = S::Error;
     type Future = UpgradeFuture<S::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
@@ -77,20 +81,22 @@ where
     }
 }
 
+#[pin_project]
 pub struct UpgradeFuture<F> {
     version: http::Version,
+    #[pin]
     inner: F,
 }
 
 impl<F, B> Future for UpgradeFuture<F>
 where
-    F: Future<Item = http::Response<B>>,
+    F: TryFuture<Ok = http::Response<B>>,
 {
-    type Item = F::Item;
-    type Error = F::Error;
+    type Output = Result<F::Ok, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut res = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let mut res = ready!(this.inner.try_poll(cx))?;
         let version = res
             .headers_mut()
             .remove(L5D_ORIG_PROTO)
@@ -103,10 +109,10 @@ where
                     None
                 }
             })
-            .unwrap_or(self.version);
+            .unwrap_or(*this.version);
         debug!("Downgrading response to {:?}", version);
         *res.version_mut() = version;
-        Ok(res.into())
+        Poll::Ready(Ok(res.into()))
     }
 }
 
@@ -127,10 +133,10 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = future::Map<S::Future, fn(S::Response) -> S::Response>;
+    type Future = future::MapOk<S::Future, fn(S::Response) -> S::Response>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
@@ -160,7 +166,7 @@ where
         let fut = self.inner.call(req);
 
         if upgrade_response {
-            fut.map(|mut res| {
+            fut.map_ok(|mut res| {
                 let orig_proto = if res.version() == http::Version::HTTP_11 {
                     "HTTP/1.1"
                 } else if res.version() == http::Version::HTTP_10 {
@@ -179,7 +185,7 @@ where
                 res
             })
         } else {
-            fut.map(|res| res)
+            fut.map_ok(|res| res)
         }
     }
 }

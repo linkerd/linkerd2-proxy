@@ -1,8 +1,12 @@
-use futures::{try_ready, Async, Future, Poll};
+use futures::{ready, Stream, TryFuture};
 use indexmap::IndexSet;
 use linkerd2_proxy_core::resolve::{Resolution, Resolve, Update};
+use pin_project::pin_project;
 use std::collections::VecDeque;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tower::discover::Change;
 
 #[derive(Clone, Debug)]
@@ -10,14 +14,18 @@ pub struct FromResolve<R> {
     resolve: R,
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub struct DiscoverFuture<F> {
+    #[pin]
     future: F,
 }
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
+#[pin_project]
 pub struct Discover<R: Resolution> {
+    #[pin]
     resolution: R,
     active: IndexSet<SocketAddr>,
     pending: VecDeque<Change<SocketAddr, R::Endpoint>>,
@@ -43,8 +51,8 @@ where
     type Future = DiscoverFuture<R::Future>;
 
     #[inline]
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.resolve.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.resolve.poll_ready(cx)
     }
 
     #[inline]
@@ -59,15 +67,14 @@ where
 
 impl<F> Future for DiscoverFuture<F>
 where
-    F: Future,
-    F::Item: Resolution,
+    F: TryFuture,
+    F::Ok: Resolution,
 {
-    type Item = Discover<F::Item>;
-    type Error = F::Error;
+    type Output = Result<Discover<F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let resolution = try_ready!(self.future.poll());
-        Ok(Async::Ready(Discover::new(resolution)))
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let resolution = ready!(self.project().future.try_poll(cx))?;
+        Poll::Ready(Ok(Discover::new(resolution)))
     }
 }
 
@@ -83,34 +90,33 @@ impl<R: Resolution> Discover<R> {
     }
 }
 
-impl<R: Resolution> tower::discover::Discover for Discover<R> {
-    type Key = SocketAddr;
-    type Service = R::Endpoint;
-    type Error = R::Error;
+impl<R: Resolution> Stream for Discover<R> {
+    type Item = Result<Change<SocketAddr, R::Endpoint>, R::Error>;
 
-    fn poll(&mut self) -> Poll<Change<Self::Key, Self::Service>, Self::Error> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
-            if let Some(change) = self.pending.pop_front() {
-                return Ok(change.into());
+            let this = self.as_mut().project();
+            if let Some(change) = this.pending.pop_front() {
+                return Poll::Ready(Some(Ok(change)));
             }
 
-            match try_ready!(self.resolution.poll()) {
+            match ready!(this.resolution.poll(cx))? {
                 Update::Add(endpoints) => {
                     for (addr, endpoint) in endpoints.into_iter() {
-                        self.active.insert(addr);
-                        self.pending.push_back(Change::Insert(addr, endpoint));
+                        this.active.insert(addr);
+                        this.pending.push_back(Change::Insert(addr, endpoint));
                     }
                 }
                 Update::Remove(addrs) => {
                     for addr in addrs.into_iter() {
-                        if self.active.remove(&addr) {
-                            self.pending.push_back(Change::Remove(addr));
+                        if this.active.remove(&addr) {
+                            this.pending.push_back(Change::Remove(addr));
                         }
                     }
                 }
                 Update::DoesNotExist | Update::Empty => {
-                    self.pending
-                        .extend(self.active.drain(..).map(Change::Remove));
+                    this.pending
+                        .extend(this.active.drain(..).map(Change::Remove));
                 }
             }
         }

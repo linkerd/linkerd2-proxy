@@ -1,9 +1,9 @@
-use futures::{try_ready, Poll};
 use linkerd2_proxy_core::listen;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::reactor;
 use tracing::trace;
 
 /// A mockable source for address info, i.e., for tests.
@@ -108,24 +108,22 @@ where
         self.listen_addr
     }
 
-    fn poll_accept(&mut self) -> Poll<Self::Connection, Self::Error> {
+    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<Result<Self::Connection, Self::Error>> {
         loop {
             self.state = match self.state {
                 State::Init(ref mut std) => {
                     // Create the TCP listener lazily, so that it's not bound to a
                     // reactor until the future is run. This will avoid
-                    // `Handle::current()` creating a new thread for the global
+                    // `Handle::default()` creating a new thread for the global
                     // background reactor if `polled before the runtime is
                     // initialized.
                     trace!("listening");
-                    let listener = tokio::net::TcpListener::from_std(
-                        std.take().expect("illegal state"),
-                        &reactor::Handle::current(),
-                    )?;
+                    let listener =
+                        tokio::net::TcpListener::from_std(std.take().expect("illegal state"))?;
                     State::Bound(listener)
                 }
                 State::Bound(ref mut listener) => {
-                    let (tcp, peer_addr) = try_ready!(listener.poll_accept());
+                    let (tcp, peer_addr) = futures::ready!(Pin::new(listener).poll_accept(cx))?;
                     let orig_dst = self.orig_dst_addr.orig_dst_addr(&tcp);
                     trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "accepted");
                     // TODO: On Linux and most other platforms it would be better
@@ -139,7 +137,7 @@ where
 
                     let addrs = Addrs::new(tcp.local_addr()?, peer_addr, orig_dst);
 
-                    return Ok((addrs, tcp).into());
+                    return Poll::Ready(Ok((addrs, tcp)));
                 }
             };
         }

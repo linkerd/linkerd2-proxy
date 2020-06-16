@@ -4,13 +4,16 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{svc, transport::tls::accept::Connection};
-use futures::{future, Future, Poll};
+use futures::{future, TryFutureExt};
 use http::StatusCode;
-use hyper::service::{service_fn, Service};
 use hyper::{Body, Request, Response};
 use linkerd2_error::Error;
 use linkerd2_metrics::{self as metrics, FmtMetrics};
+use std::future::Future;
 use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tower::{service_fn, Service};
 
 mod readiness;
 mod trace_level;
@@ -32,7 +35,7 @@ pub struct Accept<M: FmtMetrics>(Admin<M>, hyper::server::conn::Http);
 pub struct ClientAddr(std::net::SocketAddr);
 
 pub type ResponseFuture =
-    Box<dyn Future<Item = Response<Body>, Error = io::Error> + Send + 'static>;
+    Pin<Box<dyn Future<Output = Result<Response<Body>, io::Error>> + Send + 'static>>;
 
 impl<M: FmtMetrics> Admin<M> {
     pub fn new(m: M, ready: Readiness, trace_level: TraceLevel) -> Self {
@@ -69,30 +72,33 @@ impl<M: FmtMetrics> Admin<M> {
     }
 }
 
-impl<M: FmtMetrics> Service for Admin<M> {
-    type ReqBody = Body;
-    type ResBody = Body;
+impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
+    type Response = Response<Body>;
     type Error = io::Error;
     type Future = ResponseFuture;
 
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         match req.uri().path() {
-            "/metrics" => Box::new(self.metrics.call(req)),
+            "/metrics" => Box::pin(self.metrics.call(req)),
             "/proxy-log-level" => self.trace_level.call(req),
-            "/ready" => Box::new(future::ok(self.ready_rsp())),
-            "/live" => Box::new(future::ok(self.live_rsp())),
-            _ => Box::new(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
+            "/ready" => Box::pin(future::ok(self.ready_rsp())),
+            "/live" => Box::pin(future::ok(self.live_rsp())),
+            _ => Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
     }
 }
 
 impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
-    type Response = Box<dyn Future<Item = (), Error = hyper::error::Error> + Send + 'static>;
+    type Response = Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'static>>;
     type Error = Error;
-    type Future = future::FutureResult<Self::Response, Self::Error>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, (meta, io): Connection) -> Self::Future {
@@ -101,13 +107,13 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept
         // that adds the remote IP as a request extension.
         let peer = meta.addrs.peer();
         let mut svc = self.0.clone();
-        let svc = service_fn(move |mut req| {
+        let svc = service_fn(move |mut req: Request<Body>| {
             req.extensions_mut().insert(ClientAddr(peer));
             svc.call(req)
         });
 
-        let connection_future = Box::new(self.1.serve_connection(io, svc));
-        future::ok(connection_future)
+        let connection_future = self.1.serve_connection(io, svc).map_err(Into::into);
+        future::ok(Box::pin(connection_future))
     }
 }
 
@@ -128,18 +134,16 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
 mod tests {
     use super::*;
     use http::method::Method;
-    use linkerd2_test_util::BlockOnFor;
     use std::time::Duration;
-    use tokio::runtime::current_thread::Runtime;
+    use tokio::time::timeout;
 
     const TIMEOUT: Duration = Duration::from_secs(1);
 
-    #[test]
-    fn ready_when_latches_dropped() {
+    #[tokio::test]
+    async fn ready_when_latches_dropped() {
         let (r, l0) = Readiness::new();
         let l1 = l0.clone();
 
-        let mut rt = Runtime::new().unwrap();
         let mut srv = Admin::new((), r, TraceLevel::dangling());
         macro_rules! call {
             () => {{
@@ -149,7 +153,7 @@ mod tests {
                     .body(Body::empty())
                     .unwrap();
                 let f = srv.call(r);
-                rt.block_on_for(TIMEOUT, f).expect("call")
+                timeout(TIMEOUT, f).await.expect("timeout").expect("call")
             };};
         }
 

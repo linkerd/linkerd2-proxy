@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![type_length_limit = "1586225"]
 
 use linkerd2_app_integration::*;
 use std::error::Error as _;
@@ -127,14 +128,19 @@ fn test_server_speaks_first(env: TestEnv) {
 
     let (tx, rx) = mpsc::channel();
     let srv = server::tcp()
-        .accept_fut(move |sock| {
-            tokio_io::io::write_all(sock, msg1.as_bytes())
-                .and_then(move |(sock, _)| tokio_io::io::read(sock, vec![0; 512]))
-                .map(move |(_sock, vec, n)| {
-                    assert_eq!(&vec[..n], msg2.as_bytes());
-                    tx.send(()).unwrap();
-                })
-                .map_err(|e| panic!("tcp server error: {}", e))
+        .accept_fut(move |mut sock| {
+            async move {
+                sock.write_all(msg1.as_bytes()).await?;
+                let mut vec = vec![0; 512];
+                let n = sock.read(&mut vec).await?;
+                assert_eq!(s(&vec[..n]), msg2);
+                tx.send(()).unwrap();
+                Ok(())
+            }
+            .map(|res: std::io::Result<()>| match res {
+                Err(e) => panic!("tcp server error: {}", e),
+                Ok(()) => {}
+            })
         })
         .run();
 
@@ -147,7 +153,7 @@ fn test_server_speaks_first(env: TestEnv) {
 
     let tcp_client = client.connect();
 
-    assert_eq!(tcp_client.read_timeout(TIMEOUT), msg1.as_bytes());
+    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT)), msg1);
     tcp_client.write(msg2);
     rx.recv_timeout(TIMEOUT).unwrap();
 }
@@ -212,21 +218,22 @@ fn tcp_connections_close_if_client_closes() {
     let (tx, rx) = mpsc::channel();
 
     let srv = server::tcp()
-        .accept_fut(move |sock| {
-            tokio_io::io::read(sock, vec![0; 1024])
-                .and_then(move |(sock, vec, n)| {
-                    assert_eq!(&vec[..n], msg1.as_bytes());
-                    tokio_io::io::write_all(sock, msg2.as_bytes())
-                })
-                .and_then(|(sock, _)| {
-                    // lets read again, but we should get eof
-                    tokio_io::io::read(sock, [0; 16])
-                })
-                .map(move |(_sock, _vec, n)| {
-                    assert_eq!(n, 0);
-                    tx.send(()).unwrap();
-                })
-                .map_err(|e| panic!("tcp server error: {}", e))
+        .accept_fut(move |mut sock| {
+            async move {
+                let mut vec = vec![0; 1024];
+                let n = sock.read(&mut vec).await?;
+
+                assert_eq!(s(&vec[..n]), msg1);
+                sock.write_all(msg2.as_bytes()).await?;
+                let n = sock.read(&mut [0; 16]).await?;
+                assert_eq!(n, 0);
+                tx.send(()).unwrap();
+                Ok(())
+            }
+            .map(|res: std::io::Result<()>| match res {
+                Err(e) => panic!("tcp server error: {}", e),
+                Ok(()) => {}
+            })
         })
         .run();
     let proxy = proxy::new().inbound(srv).run();
@@ -235,7 +242,7 @@ fn tcp_connections_close_if_client_closes() {
 
     let tcp_client = client.connect();
     tcp_client.write(msg1);
-    assert_eq!(tcp_client.read(), msg2.as_bytes());
+    assert_eq!(s(&tcp_client.read()[..]), msg2);
 
     drop(tcp_client);
 
@@ -270,7 +277,7 @@ macro_rules! http1_tests {
                         .header("connection", "close, x-server-quux")
                         .header("keep-alive", "500")
                         .header("proxy-connection", "a")
-                        .body("".into())
+                        .body(Default::default())
                         .unwrap()
                 })
                 .run();
@@ -381,28 +388,28 @@ macro_rules! http1_tests {
             let chatproto_res = "[chatproto-s]{recv}: welcome!\n";
 
             let srv = server::tcp()
-                .accept_fut(move |sock| {
-                    // Read upgrade_req...
-                    tokio_io::io::read(sock, vec![0; 512])
-                        .and_then(move |(sock, vec, n)| {
-                            let head = s(&vec[..n]);
-                            assert_contains!(head, upgrade_needle);
+                .accept_fut(move |mut sock| {
+                    async move {
+                        // Read upgrade_req...
+                        let mut vec = vec![0; 512];
+                        let n = sock.read(&mut vec).await?;
+                        assert_contains!(s(&vec[..n]), upgrade_needle);
 
-                            // Write upgrade_res back...
-                            tokio_io::io::write_all(sock, upgrade_res)
-                        })
-                        .and_then(move |(sock, _)| {
-                            // Read the message in 'chatproto' format
-                            tokio_io::io::read(sock, vec![0; 512])
-                        })
-                        .and_then(move |(sock, vec, n)| {
-                            assert_eq!(s(&vec[..n]), chatproto_req);
+                        // Write upgrade_res back...
+                        sock.write_all(upgrade_res.as_bytes()).await?;
 
-                            // Some processing... and then write back in chatproto...
-                            tokio_io::io::write_all(sock, chatproto_res)
-                        })
-                        .map(|_| ())
-                        .map_err(|e| panic!("tcp server error: {}", e))
+                        // Read the message in 'chatproto' format
+                        let mut vec = vec![0; 512];
+                        let n = sock.read(&mut vec).await?;
+                        assert_eq!(s(&vec[..n]), chatproto_req);
+
+                        // Some processing... and then write back in chatproto...
+                        sock.write_all(chatproto_res.as_bytes()).await
+                    }
+                    .map(|res: std::io::Result<()>| match res {
+                        Ok(()) => {}
+                        Err(e) => panic!("tcp server error: {}", e),
+                    })
                 })
                 .run();
             let proxy = $proxy(srv);
@@ -444,7 +451,7 @@ macro_rules! http1_tests {
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
 
-            let res = client.request(&mut client.request_builder("/"));
+            let res = client.request(client.request_builder("/"));
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
         }
@@ -498,45 +505,46 @@ macro_rules! http1_tests {
             // We don't *actually* perfom a new connect to requested host,
             // but client doesn't need to know that for our tests.
 
-            let connect_req = "\
+            let connect_req = b"\
                                CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n\
                                Host: transparency.test.svc.cluster.local\r\n\
                                \r\n\
                                ";
-            let connect_res = "\
+            let connect_res = b"\
                                HTTP/1.1 200 OK\r\n\
                                \r\n\
                                ";
 
-            let tunneled_req = "{send}: hi all\n";
-            let tunneled_res = "{recv}: welcome!\n";
+            let tunneled_req = b"{send}: hi all\n";
+            let tunneled_res = b"{recv}: welcome!\n";
 
             let srv = server::tcp()
-                .accept_fut(move |sock| {
-                    // Read connect_req...
-                    tokio_io::io::read(sock, vec![0; 512])
-                        .and_then(move |(sock, vec, n)| {
-                            let head = s(&vec[..n]);
-                            assert_contains!(
-                                head,
-                                "CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n"
-                            );
+                .accept_fut(move |mut sock| {
+                    async move {
+                        // Read connect_req...
+                        let mut vec = vec![0; 512];
+                        let n = sock.read(&mut vec).await?;
+                        let head = s(&vec[..n]);
+                        assert_contains!(
+                            head,
+                            "CONNECT transparency.test.svc.cluster.local HTTP/1.1\r\n"
+                        );
 
-                            // Write connect_res back...
-                            tokio_io::io::write_all(sock, connect_res)
-                        })
-                        .and_then(move |(sock, _)| {
-                            // Read the message after tunneling...
-                            tokio_io::io::read(sock, vec![0; 512])
-                        })
-                        .and_then(move |(sock, vec, n)| {
-                            assert_eq!(s(&vec[..n]), tunneled_req);
+                        // Write connect_res back...
+                        sock.write_all(&connect_res[..]).await?;
 
-                            // Some processing... and then write back tunneled res...
-                            tokio_io::io::write_all(sock, tunneled_res)
-                        })
-                        .map(|_| ())
-                        .map_err(|e| panic!("tcp server error: {}", e))
+                        // Read the message after tunneling...
+                        let mut vec = vec![0; 512];
+                        let n = sock.read(&mut vec).await?;
+                        assert_eq!(s(&vec[..n]), s(&tunneled_req[..]));
+
+                        // Some processing... and then write back tunneled res...
+                        sock.write_all(&tunneled_res[..]).await
+                    }
+                    .map(|res: std::io::Result<()>| match res {
+                        Ok(()) => {}
+                        Err(e) => panic!("tcp server error: {}", e),
+                    })
                 })
                 .run();
             let proxy = $proxy(srv);
@@ -545,7 +553,7 @@ macro_rules! http1_tests {
 
             let tcp_client = client.connect();
 
-            tcp_client.write(connect_req);
+            tcp_client.write(&connect_req[..]);
 
             let resp = tcp_client.read();
             let resp_str = s(&resp);
@@ -556,10 +564,10 @@ macro_rules! http1_tests {
             );
 
             // We've CONNECTed from HTTP to foo.bar! Say hi!
-            tcp_client.write(tunneled_req);
+            tcp_client.write(&tunneled_req[..]);
             // Did anyone respond?
             let resp2 = tcp_client.read();
-            assert_eq!(s(&resp2), tunneled_res);
+            assert_eq!(s(&resp2), s(&tunneled_res[..]));
         }
 
         #[test]
@@ -622,8 +630,8 @@ macro_rules! http1_tests {
             );
         }
 
-        #[test]
-        fn http1_request_with_body_content_length() {
+        #[tokio::test]
+        async fn http1_request_with_body_content_length() {
             let _ = trace_init();
 
             let srv = server::http1()
@@ -641,28 +649,31 @@ macro_rules! http1_tests {
                 .body("hello".into())
                 .unwrap();
 
-            let resp = client.request_body(req);
+            let resp = client.request_body_async(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
         }
 
-        #[test]
-        fn http1_request_with_body_chunked() {
+        #[tokio::test]
+        async fn http1_request_with_body_chunked() {
             let _ = trace_init();
 
             let srv = server::http1()
-                .route_async("/", |req| {
+                .route_async("/", |req| async move {
                     assert_eq!(req.headers()["transfer-encoding"], "chunked");
-                    req.into_body()
-                        .concat2()
-                        .map_err(|()| "req concat error")
-                        .map(|body| {
-                            assert_eq!(body, "hello");
-                            Response::builder()
-                                .header("transfer-encoding", "chunked")
-                                .body("world".into())
-                                .unwrap()
+                    let body = req
+                        .into_body()
+                        .fold(String::new(), |s, mut chunk| {
+                            s + std::str::from_utf8(chunk.to_bytes().as_ref()).expect("req is utf8")
                         })
+                        .await;
+                    assert_eq!(body, "hello");
+                    Ok::<_, std::io::Error>(
+                        Response::builder()
+                            .header("transfer-encoding", "chunked")
+                            .body("world".into())
+                            .unwrap(),
+                    )
                 })
                 .run();
             let proxy = $proxy(srv);
@@ -675,11 +686,16 @@ macro_rules! http1_tests {
                 .body("hello".into())
                 .unwrap();
 
-            let resp = client.request_body(req);
+            let resp = client.request_body_async(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["transfer-encoding"], "chunked");
-            let body = resp.into_body().concat2().wait().unwrap();
+            let mut body = hyper::body::aggregate(resp.into_body())
+                .await
+                .expect("rsp aggregate");
+            let body = std::str::from_utf8(body.to_bytes().as_ref())
+                .expect("rsp is utf8")
+                .to_owned();
             assert_eq!(body, "world");
         }
 
@@ -811,8 +827,8 @@ macro_rules! http1_tests {
             }
         }
 
-        #[test]
-        fn http1_head_responses() {
+        #[tokio::test]
+        async fn http1_head_responses() {
             let _ = trace_init();
 
             let srv = server::http1()
@@ -827,22 +843,26 @@ macro_rules! http1_tests {
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let resp = client.request(client.request_builder("/").method("HEAD"));
+            let resp = client
+                .request_async(client.request_builder("/").method("HEAD"))
+                .await
+                .expect("request");
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["content-length"], "55");
 
-            let body = resp
-                .into_body()
-                .concat2()
-                .wait()
-                .expect("response body concat");
+            let mut body = hyper::body::aggregate(resp.into_body())
+                .await
+                .expect("response body aggregate");
+            let body = std::str::from_utf8(body.to_bytes().as_ref())
+                .expect("empty body is utf8")
+                .to_owned();
 
             assert_eq!(body, "");
         }
 
-        #[test]
-        fn http1_response_end_of_file() {
+        #[tokio::test]
+        async fn http1_response_end_of_file() {
             let _ = trace_init();
 
             // test both http/1.0 and 1.1
@@ -880,7 +900,10 @@ macro_rules! http1_tests {
             ];
 
             for v in versions {
-                let resp = client.request(client.request_builder("/").method("GET"));
+                let resp = client
+                    .request_async(client.request_builder("/").method("GET"))
+                    .await
+                    .expect("response");
 
                 assert_eq!(resp.status(), StatusCode::OK, "HTTP/{}", v);
                 assert!(
@@ -894,11 +917,12 @@ macro_rules! http1_tests {
                     v
                 );
 
-                let body = resp
-                    .into_body()
-                    .concat2()
-                    .wait()
-                    .expect("response body concat");
+                let mut body = hyper::body::aggregate(resp.into_body())
+                    .await
+                    .expect("aggregate response body");
+                let body = std::str::from_utf8(body.to_bytes().as_ref())
+                    .expect("body is utf8")
+                    .to_owned();
 
                 assert_eq!(body, "body till eof", "HTTP/{} body", v);
             }
@@ -1091,16 +1115,16 @@ fn http1_requests_without_host_have_unique_connections() {
     assert_eq!(inbound.connections(), 4);
 }
 
-#[test]
-fn retry_reconnect_errors() {
+#[tokio::test]
+async fn retry_reconnect_errors() {
     let _ = trace_init();
 
     // Used to delay `listen` in the server, to force connection refused errors.
-    let (tx, rx) = oneshot::channel();
+    let (tx, rx) = oneshot::channel::<()>();
 
     let srv = server::http2()
         .route("/", "hello retry")
-        .delay_listen(rx.map_err(|_| ()));
+        .delay_listen(rx.map(|_| ()));
     let proxy = proxy::new().inbound(srv).run();
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
     let metrics = client::http1(proxy.metrics, "localhost");
@@ -1110,22 +1134,25 @@ fn retry_reconnect_errors() {
     // wait until metrics has seen our connection, this can be flaky depending on
     // all the other threads currently running...
     assert_eventually_contains!(
-        metrics.get("/metrics"),
+        metrics.get_async("/metrics").await,
         "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
     );
 
     drop(tx); // start `listen` now
-    let res = fut.wait().expect("response");
+              // This may be flaky on CI.
+    tokio::time::delay_for(std::time::Duration::from_millis(100)).await;
+
+    let res = fut.await.expect("response");
     assert_eq!(res.status(), http::StatusCode::OK);
 }
 
-#[test]
-fn http2_request_without_authority() {
+#[tokio::test]
+async fn http2_request_without_authority() {
     let _ = trace_init();
 
     let srv = server::http2()
         .route_fn("/", |req| {
-            assert_eq!(req.uri().authority_part(), None);
+            assert_eq!(req.uri().authority(), None);
             Response::new("".into())
         })
         .run();
@@ -1137,46 +1164,41 @@ fn http2_request_without_authority() {
     // easier to customize this one case than to make the support::client more
     // complicated.
     let addr = proxy.inbound;
-    let future = futures::future::lazy(move || tokio::net::TcpStream::connect(&addr))
-        .map_err(|e| panic!("connect error: {:?}", e))
-        .and_then(|io| {
-            hyper::client::conn::Builder::new()
-                .http2_only(true)
-                .handshake(io)
-                .map_err(|e| panic!("handshake error: {:?}", e))
-        })
-        .and_then(|(mut client, conn)| {
-            tokio::spawn(conn.map_err(|e| println!("conn error: {:?}", e)));
-            let req = Request::new(hyper::Body::empty());
-            // these properties are specifically what we want, and set by default
-            assert_eq!(req.uri(), "/");
-            assert_eq!(req.version(), http::Version::HTTP_11);
-            client
-                .send_request(req)
-                .map_err(|e| panic!("client error: {:?}", e))
-        })
-        .map(|res| {
-            assert_eq!(res.status(), http::StatusCode::OK);
-        });
+    let io = tokio::net::TcpStream::connect(&addr)
+        .await
+        .expect("connect error");
+    let (mut client, conn) = hyper::client::conn::Builder::new()
+        .http2_only(true)
+        .handshake(io)
+        .await
+        .expect("handshake error");
 
-    tokio::runtime::current_thread::run(future);
+    tokio::spawn(conn.map_err(|e| println!("conn error: {:?}", e)));
+
+    let req = Request::new(hyper::Body::empty());
+    // these properties are specifically what we want, and set by default
+    assert_eq!(req.uri(), "/");
+    assert_eq!(req.version(), http::Version::HTTP_11);
+    let res = client.send_request(req).await.expect("client error");
+
+    assert_eq!(res.status(), http::StatusCode::OK);
 }
 
-#[test]
-fn http2_rst_stream_is_propagated() {
+#[tokio::test]
+async fn http2_rst_stream_is_propagated() {
     let _ = trace_init();
 
     let reason = h2::Reason::ENHANCE_YOUR_CALM;
 
     let srv = server::http2()
-        .route_async("/", move |_req| Err(h2::Error::from(reason)))
+        .route_async("/", move |_req| async move { Err(h2::Error::from(reason)) })
         .run();
     let proxy = proxy::new().inbound_fuzz_addr(srv).run();
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
 
     let err: hyper::Error = client
-        .request_async(&mut client.request_builder("/"))
-        .wait()
+        .request_async(client.request_builder("/"))
+        .await
         .expect_err("client request should error");
 
     let rst = err
@@ -1188,14 +1210,14 @@ fn http2_rst_stream_is_propagated() {
     assert_eq!(rst.reason(), Some(reason));
 }
 
-#[test]
-fn http1_orig_proto_does_not_propagate_rst_stream() {
+#[tokio::test]
+async fn http1_orig_proto_does_not_propagate_rst_stream() {
     let _ = trace_init();
 
     // Use a custom http2 server to "act" as an inbound proxy so we
     // can trigger a RST_STREAM.
     let srv = server::http2()
-        .route_async("/", move |req| {
+        .route_async("/", move |req| async move {
             assert!(req.headers().contains_key("l5d-orig-proto"));
             Err(h2::Error::from(h2::Reason::ENHANCE_YOUR_CALM))
         })
@@ -1209,8 +1231,8 @@ fn http1_orig_proto_does_not_propagate_rst_stream() {
 
     let client = client::http1(addr, host);
     let res = client
-        .request_async(&mut client.request_builder("/"))
-        .wait()
+        .request_async(client.request_builder("/"))
+        .await
         .expect("client request");
 
     assert_eq!(res.status(), http::StatusCode::BAD_GATEWAY);

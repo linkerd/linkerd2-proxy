@@ -16,10 +16,13 @@ impl fmt::Display for ControlAddr {
 /// Sets the request's URI from `Config`.
 pub mod add_origin {
     use super::ControlAddr;
-    use futures::try_ready;
-    use futures::{Future, Poll};
+    use futures::{ready, TryFuture};
     use linkerd2_error::Error;
+    use pin_project::pin_project;
+    use std::future::Future;
     use std::marker::PhantomData;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
     use tower_request_modifier::{Builder, RequestModifier};
 
     #[derive(Debug)]
@@ -33,7 +36,9 @@ pub mod add_origin {
         _marker: PhantomData<fn(B)>,
     }
 
+    #[pin_project]
     pub struct MakeFuture<F, B> {
+        #[pin]
         inner: F,
         authority: http::uri::Authority,
         _marker: PhantomData<fn(B)>,
@@ -79,8 +84,8 @@ pub mod add_origin {
         type Error = Error;
         type Future = MakeFuture<M::Future, B>;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready().map_err(Into::into)
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx).map_err(Into::into)
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
@@ -110,20 +115,21 @@ pub mod add_origin {
 
     impl<F, B> Future for MakeFuture<F, B>
     where
-        F: Future,
+        F: TryFuture,
         F::Error: Into<Error>,
     {
-        type Item = RequestModifier<F::Item, B>;
-        type Error = Error;
+        type Output = Result<RequestModifier<F::Ok, B>, Error>;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            let inner = try_ready!(self.inner.poll().map_err(Into::into));
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let this = self.project();
+            let inner = ready!(this.inner.try_poll(cx).map_err(Into::into))?;
 
-            Builder::new()
-                .set_origin(format!("http://{}", self.authority))
-                .build(inner)
-                .map_err(|_| BuildError.into())
-                .map(|a| a.into())
+            Poll::Ready(
+                Builder::new()
+                    .set_origin(format!("http://{}", this.authority))
+                    .build(inner)
+                    .map_err(|_| BuildError.into()),
+            )
         }
     }
 
@@ -143,10 +149,14 @@ pub mod add_origin {
 pub mod resolve {
     use super::{client, ControlAddr};
     use crate::svc;
-    use futures::{try_ready, Future, Poll};
+    use futures::{ready, TryFuture};
     use linkerd2_addr::Addr;
     use linkerd2_dns as dns;
+    use pin_project::{pin_project, project};
+    use std::future::Future;
     use std::net::SocketAddr;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
     use std::{error, fmt};
 
     #[derive(Clone, Debug)]
@@ -160,20 +170,23 @@ pub mod resolve {
         inner: M,
     }
 
+    #[pin_project]
     pub struct Init<M>
     where
         M: tower::Service<client::Target>,
     {
+        #[pin]
         state: State<M>,
     }
 
+    #[pin_project]
     enum State<M>
     where
         M: tower::Service<client::Target>,
     {
-        Resolve(dns::IpAddrFuture, Option<(M, ControlAddr)>),
+        Resolve(#[pin] dns::IpAddrFuture, Option<(M, ControlAddr)>),
         NotReady(M, Option<(SocketAddr, ControlAddr)>),
-        Inner(M::Future),
+        Inner(#[pin] M::Future),
     }
 
     #[derive(Debug)]
@@ -201,11 +214,11 @@ pub mod resolve {
         M: tower::Service<client::Target> + Clone,
     {
         type Response = M::Response;
-        type Error = <Init<M> as Future>::Error;
+        type Error = <Init<M> as TryFuture>::Error;
         type Future = Init<M>;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready().map_err(Error::Inner)
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx).map_err(Error::Inner)
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
@@ -233,24 +246,29 @@ pub mod resolve {
     where
         M: tower::Service<client::Target>,
     {
-        type Item = M::Response;
-        type Error = Error<M::Error>;
+        type Output = Result<M::Response, Error<M::Error>>;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        #[project]
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let mut this = self.project();
             loop {
-                self.state = match self.state {
-                    State::Resolve(ref mut fut, ref mut stack) => {
-                        let ip = try_ready!(fut.poll().map_err(Error::Dns));
+                #[project]
+                match this.state.as_mut().project() {
+                    State::Resolve(fut, stack) => {
+                        let ip = ready!(fut.poll(cx).map_err(Error::Dns))?;
                         let (svc, config) = stack.take().unwrap();
                         let addr = SocketAddr::from((ip, config.addr.port()));
-                        State::NotReady(svc, Some((addr, config)))
+                        this.state
+                            .as_mut()
+                            .set(State::NotReady(svc, Some((addr, config))));
                     }
-                    State::NotReady(ref mut svc, ref mut cfg) => {
-                        try_ready!(svc.poll_ready().map_err(Error::Inner));
+                    State::NotReady(svc, cfg) => {
+                        ready!(svc.poll_ready(cx).map_err(Error::Inner))?;
                         let (addr, config) = cfg.take().unwrap();
-                        State::make_inner(addr, &config, svc)
+                        let state = State::make_inner(addr, &config, svc);
+                        this.state.as_mut().set(state);
                     }
-                    State::Inner(ref mut fut) => return fut.poll().map_err(Error::Inner),
+                    State::Inner(fut) => return fut.poll(cx).map_err(Error::Inner),
                 };
             }
         }
@@ -276,7 +294,7 @@ pub mod resolve {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 Error::Dns(dns::Error::NoAddressesFound) => write!(f, "no addresses found"),
-                Error::Dns(dns::Error::ResolutionFailed(e)) => fmt::Display::fmt(&e, f),
+                Error::Dns(e) => fmt::Display::fmt(&e, f),
                 Error::Inner(ref e) => fmt::Display::fmt(&e, f),
             }
         }
@@ -289,9 +307,9 @@ pub mod resolve {
 pub mod client {
     use crate::transport::{connect, tls};
     use crate::{proxy::http, svc};
-    use futures::Poll;
     use linkerd2_proxy_http::h2::Settings as H2Settings;
     use std::net::SocketAddr;
+    use std::task::{Context, Poll};
 
     #[derive(Clone, Debug)]
     pub struct Target {
@@ -341,8 +359,8 @@ pub mod client {
         type Future = <http::h2::Connect<C, B> as tower::Service<Target>>::Future;
 
         #[inline]
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
         }
 
         #[inline]

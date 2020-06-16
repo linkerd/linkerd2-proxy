@@ -1,37 +1,44 @@
 #![deny(warnings, rust_2018_idioms)]
-
-use futures::{task, try_ready, Async, Future, Poll, Stream};
+use futures::{ready, Stream};
+use http_body::Body as HttpBody;
 use linkerd2_error::Error;
+use linkerd2_stack::NewService;
 use metrics::Registry;
 pub use opencensus_proto as proto;
 use opencensus_proto::agent::common::v1::Node;
 use opencensus_proto::agent::trace::v1::{
-    client::TraceService, ExportTraceServiceRequest, ExportTraceServiceResponse,
+    trace_service_client::TraceServiceClient, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
 use opencensus_proto::trace::v1::Span;
+use pin_project::{pin_project, project};
 use std::convert::TryInto;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio::sync::mpsc;
-use tower_grpc::{
-    self as grpc, client::streaming::ResponseFuture, generic::client::GrpcService, BoxBody,
+use tonic::{
+    self as grpc,
+    body::{Body as GrpcBody, BoxBody},
+    client::GrpcService,
+    Streaming,
 };
 use tracing::trace;
 
 pub mod metrics;
 
 /// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
-pub struct SpanExporter<T, S>
-where
-    T: GrpcService<BoxBody>,
-{
+#[pin_project]
+pub struct SpanExporter<T, S> {
     client: T,
     node: Node,
-    state: State<T>,
+    state: State,
+    #[pin]
     spans: S,
     max_batch_size: usize,
     metrics: Registry,
 }
 
-enum State<T: GrpcService<BoxBody>> {
+enum State {
     Idle,
     Sending {
         sender: mpsc::Sender<ExportTraceServiceRequest>,
@@ -39,21 +46,27 @@ enum State<T: GrpcService<BoxBody>> {
         // request.
         node: Option<Node>,
         // We hold the response future, but never poll it.
-        _rsp: ResponseFuture<ExportTraceServiceResponse, T::Future>,
+        _rsp: Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            grpc::Response<Streaming<ExportTraceServiceResponse>>,
+                            grpc::Status,
+                        >,
+                    > + Send
+                    + 'static,
+            >,
+        >,
         metrics: Registry,
     },
-}
-
-enum StreamError<E> {
-    Receiver(E),
-    SenderLost,
 }
 
 // ===== impl SpanExporter =====
 
 impl<T, S> SpanExporter<T, S>
 where
-    T: GrpcService<BoxBody>,
+    T: NewService<()>,
+    T::Service: GrpcService<BoxBody>,
     S: Stream<Item = Span>,
 {
     const DEFAULT_MAX_BATCH_SIZE: usize = 100;
@@ -74,7 +87,7 @@ where
         sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
         node: &mut Option<Node>,
         metrics: &mut Registry,
-    ) -> Result<(), StreamError<S::Error>> {
+    ) -> Result<(), ()> {
         if spans.is_empty() {
             return Ok(());
         }
@@ -88,7 +101,7 @@ where
             resource: None,
         };
         trace!(message = "Transmitting", ?req);
-        sender.try_send(req).map_err(|_| StreamError::SenderLost)
+        sender.try_send(req).map_err(|_| ())
     }
 
     /// Attempt to read spans from the spans stream and write it to
@@ -103,75 +116,74 @@ where
     ///
     /// Otherwise NotReady is returned.
     fn poll_send_spans(
-        receiver: &mut S,
+        mut receiver: Pin<&mut S>,
         sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
         node: &mut Option<Node>,
         max_batch_size: usize,
         metrics: &mut Registry,
-    ) -> Poll<(), StreamError<S::Error>> {
-        try_ready!(sender.poll_ready().map_err(|_| StreamError::SenderLost));
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), ()>> {
+        ready!(sender.poll_ready(cx)).map_err(|_| ())?;
 
         let mut spans = Vec::new();
         loop {
-            match receiver.poll() {
-                Ok(Async::NotReady) => {
+            match receiver.as_mut().poll_next(cx) {
+                Poll::Pending => {
                     // If any spans have been collected send them, potentially consuming `node.
                     Self::do_send(spans, sender, node, metrics)?;
-                    return Ok(Async::NotReady);
+                    return Poll::Pending;
                 }
-                Ok(Async::Ready(Some(span))) => {
+                Poll::Ready(Some(span)) => {
                     spans.push(span);
                     if spans.len() == max_batch_size {
                         Self::do_send(spans, sender, node, metrics)?;
                         // Because we've voluntarily stopped work due to a batch
                         // size limitation, notify the task to be polled again
                         // immediately.
-                        task::current().notify();
-                        return Ok(Async::NotReady);
+                        cx.waker().wake_by_ref();
+                        return Poll::Pending;
                     }
                 }
-                Ok(Async::Ready(None)) => {
+                Poll::Ready(None) => {
                     let _ = Self::do_send(spans, sender, node, metrics);
                     // The span receiver stream completed, so signal completion.
-                    return Ok(Async::Ready(()));
-                }
-                Err(e) => {
-                    let _ = Self::do_send(spans, sender, node, metrics);
-                    return Err(StreamError::Receiver(e));
+                    return Poll::Ready(Ok(()));
                 }
             }
         }
     }
 }
 
-impl<T, S> Future for SpanExporter<T, S>
+impl<T, S, Svc> Future for SpanExporter<T, S>
 where
-    T: GrpcService<BoxBody>,
+    T: NewService<(), Service = Svc>,
+    Svc: GrpcService<BoxBody> + Send + 'static,
     S: Stream<Item = Span>,
-    S::Error: Into<Error>,
+    Svc::Error: Into<Error> + Send,
+    Svc::ResponseBody: Send + 'static,
+    <Svc::ResponseBody as GrpcBody>::Data: Send,
+    <Svc::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+    Svc::Future: Send,
 {
-    type Item = ();
-    type Error = Error;
+    type Output = ();
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    #[project]
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
-            self.state = match self.state {
+            let this = self.as_mut().project();
+            *this.state = match this.state {
                 State::Idle => {
                     let (request_tx, request_rx) = mpsc::channel(1);
-                    let mut svc = TraceService::new(self.client.as_service());
-                    try_ready!(svc.poll_ready());
-                    let req = grpc::Request::new(
-                        request_rx
-                            .map_err(|_| grpc::Status::new(grpc::Code::Cancelled, "cancelled")),
-                    );
+                    let mut svc = TraceServiceClient::new(this.client.new_service(()));
+                    let req = grpc::Request::new(request_rx);
                     trace!("Establishing new TraceService::export request");
-                    self.metrics.start_stream();
-                    let _rsp = svc.export(req);
+                    this.metrics.start_stream();
+                    let _rsp = Box::pin(async move { svc.export(req).await });
                     State::Sending {
                         sender: request_tx,
-                        node: Some(self.node.clone()),
+                        node: Some(this.node.clone()),
                         _rsp,
-                        metrics: self.metrics.clone(),
+                        metrics: this.metrics.clone(),
                     }
                 }
                 State::Sending {
@@ -180,19 +192,37 @@ where
                     ref mut metrics,
                     ..
                 } => {
-                    match Self::poll_send_spans(
-                        &mut self.spans,
+                    match ready!(Self::poll_send_spans(
+                        this.spans,
                         sender,
                         node,
-                        self.max_batch_size,
+                        *this.max_batch_size,
                         metrics,
-                    ) {
-                        Ok(ready) => return Ok(ready),
-                        Err(StreamError::Receiver(e)) => return Err(e.into()),
-                        Err(StreamError::SenderLost) => State::Idle,
+                        cx,
+                    )) {
+                        Ok(()) => return Poll::Ready(()),
+                        Err(()) => State::Idle,
                     }
                 }
             };
         }
+    }
+}
+
+struct IntoService<T>(T);
+
+impl<T, R> tower::Service<http::Request<R>> for IntoService<T>
+where
+    T: GrpcService<R>,
+{
+    type Response = http::Response<T::ResponseBody>;
+    type Future = T::Future;
+    type Error = T::Error;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: http::Request<R>) -> Self::Future {
+        self.0.call(req)
     }
 }

@@ -1,15 +1,21 @@
 use crate::{AsyncRead, AsyncWrite, PrefixedIo};
 use bytes::BytesMut;
-use futures::{try_ready, Future, Poll};
+use pin_project::pin_project;
+use std::future::Future;
 use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// A future of when some `Peek` fulfills with some bytes.
 #[derive(Debug)]
 pub struct Peek<T>(Option<Inner<T>>);
 
+#[pin_project]
 #[derive(Debug)]
 struct Inner<T> {
     buf: BytesMut,
+
+    #[pin]
     io: T,
 }
 
@@ -25,24 +31,28 @@ impl<T: AsyncRead + AsyncWrite> Peek<T> {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite> Future for Peek<T> {
-    type Item = PrefixedIo<T>;
-    type Error = io::Error;
+impl<T: AsyncRead + AsyncWrite + Unpin> Future for Peek<T> {
+    type Output = Result<PrefixedIo<T>, io::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        try_ready!(self.0.as_mut().expect("polled after complete").poll_peek());
-        let Inner { buf, io } = self.0.take().expect("polled after complete");
-        Ok(PrefixedIo::new(buf.freeze(), io).into())
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.as_mut();
+        futures::ready!(this
+            .0
+            .as_mut()
+            .expect("polled after complete")
+            .poll_peek(cx))?;
+        let Inner { buf, io } = this.0.take().expect("polled after complete");
+        Poll::Ready(Ok(PrefixedIo::new(buf.freeze(), io)))
     }
 }
 
 // === impl Inner ===
 
-impl<T: AsyncRead> Inner<T> {
-    fn poll_peek(&mut self) -> Poll<usize, io::Error> {
+impl<T: AsyncRead + Unpin> Inner<T> {
+    fn poll_peek(&mut self, cx: &mut Context<'_>) -> Poll<Result<usize, io::Error>> {
         if self.buf.capacity() == 0 {
-            return Ok(self.buf.len().into());
+            return Poll::Ready(Ok(self.buf.len()));
         }
-        self.io.read_buf(&mut self.buf)
+        Pin::new(&mut self.io).poll_read_buf(cx, &mut self.buf)
     }
 }

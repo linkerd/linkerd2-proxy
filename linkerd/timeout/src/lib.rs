@@ -1,20 +1,22 @@
 #![deny(warnings, rust_2018_idioms)]
-
-use futures::{Future, Poll};
+use futures::{
+    compat::{Compat, Compat01As03, Future01CompatExt},
+    TryFutureExt,
+};
 use linkerd2_error::Error;
 use linkerd2_stack::Proxy;
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
+use tokio::time;
 use tokio_connect::Connect;
-use tokio_timer as timer;
 
 pub mod error;
 mod failfast;
-mod probe_ready;
 
-pub use self::{
-    failfast::{FailFast, FailFastError, FailFastLayer},
-    probe_ready::{ProbeReady, ProbeReadyLayer},
-};
+pub use self::failfast::{FailFast, FailFastError, FailFastLayer};
 
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]
@@ -23,9 +25,10 @@ pub struct Timeout<T> {
     duration: Option<Duration>,
 }
 
+#[pin_project]
 pub enum TimeoutFuture<F> {
-    Passthru(F),
-    Timeout(timer::Timeout<F>, Duration),
+    Passthru(#[pin] F),
+    Timeout(#[pin] time::Timeout<F>, Duration),
 }
 
 //===== impl Timeout =====
@@ -61,7 +64,7 @@ where
         let inner = self.inner.proxy(svc, req);
         match self.duration {
             None => TimeoutFuture::Passthru(inner),
-            Some(t) => TimeoutFuture::Timeout(timer::Timeout::new(inner, t), t),
+            Some(t) => TimeoutFuture::Timeout(time::timeout(t, inner), t),
         }
     }
 }
@@ -75,15 +78,15 @@ where
     type Error = Error;
     type Future = TimeoutFuture<S::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
         let inner = self.inner.call(req);
         match self.duration {
             None => TimeoutFuture::Passthru(inner),
-            Some(t) => TimeoutFuture::Timeout(timer::Timeout::new(inner, t), t),
+            Some(t) => TimeoutFuture::Timeout(time::timeout(t, inner), t),
         }
     }
 }
@@ -95,45 +98,40 @@ where
 {
     type Connected = C::Connected;
     type Error = Error;
-    type Future = TimeoutFuture<C::Future>;
+    type Future = Compat<TimeoutFuture<Compat01As03<C::Future>>>;
 
     fn connect(&self) -> Self::Future {
         let inner = self.inner.connect();
         match self.duration {
-            None => TimeoutFuture::Passthru(inner),
-            Some(t) => TimeoutFuture::Timeout(timer::Timeout::new(inner, t), t),
+            None => TimeoutFuture::Passthru(inner.compat()),
+            Some(t) => TimeoutFuture::Timeout(time::timeout(t, inner.compat()), t),
         }
+        .compat()
     }
 }
 
-impl<F> Future for TimeoutFuture<F>
+impl<F, T, E> Future for TimeoutFuture<F>
 where
-    F: Future,
-    F::Error: Into<Error>,
+    F: Future<Output = Result<T, E>>,
+    E: Into<Error>,
 {
-    type Item = F::Item;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self {
-            TimeoutFuture::Passthru(f) => f.poll().map_err(Into::into),
-            TimeoutFuture::Timeout(f, duration) => f.poll().map_err(|error| {
-                if error.is_timer() {
-                    return error
-                        .into_timer()
-                        .expect("error.into_timer() must succeed if error.is_timer()")
-                        .into();
-                }
-
-                if error.is_elapsed() {
-                    return error::ResponseTimeout(*duration).into();
-                }
-
-                error
-                    .into_inner()
-                    .expect("if error is not elapsed or timer, must be inner")
-                    .into()
-            }),
+    type Output = Result<T, Error>;
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        match self.project() {
+            TimeoutFuture::Passthru(f) => f.poll(cx).map_err(Into::into),
+            TimeoutFuture::Timeout(f, duration) => {
+                // If the `timeout` future failed, the error is aways "elapsed";
+                // errors from the underlying future will be in the success arm.
+                let ready = futures::ready!(f.poll(cx))
+                    .map_err(|_| error::ResponseTimeout(*duration).into());
+                // If the inner future failed but the timeout was not elapsed,
+                // then `ready` will be an `Ok(Err(e))`, so we need to convert
+                // the inner error as well.
+                let ready = ready.and_then(|x| x.map_err(Into::into));
+                Poll::Ready(ready)
+            }
         }
     }
 }

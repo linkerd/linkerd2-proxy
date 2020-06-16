@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![type_length_limit = "1586225"]
 
 use linkerd2_app_integration::tap::TapEventExt;
 use linkerd2_app_integration::*;
@@ -37,8 +38,8 @@ fn can_disable_tap() {
     assert!(proxy.tap.is_none())
 }
 
-#[test]
-fn rejects_incorrect_identity_when_identity_is_expected() {
+#[tokio::test]
+async fn rejects_incorrect_identity_when_identity_is_expected() {
     let _ = trace_init();
 
     let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
@@ -61,20 +62,19 @@ fn rejects_incorrect_identity_when_identity_is_expected() {
         .run_with_test_env(identity_env.env.clone());
 
     let mut tap = tap::client(tap_proxy.outbound);
-    let events = tap.observe(tap::observe_request());
+    let mut events = tap.observe(tap::observe_request()).await.take(1);
 
     let client = client::http1(in_proxy.inbound, "localhost");
-    assert_eq!(client.get("/"), "hello");
+    assert_eq!(client.get_async("/").await, "hello");
 
-    let mut events = events.wait().take(1);
-    assert!(events.next().expect("next1").is_err());
+    assert!(events.next().await.expect("next1").is_err());
 }
 
 // Flaky: sometimes the admin thread hasn't had a chance to register
 // the Taps before the `client.get` is called.
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn inbound_http1() {
+async fn inbound_http1() {
     let _ = trace_init();
 
     // Setup server proxy authority and identity
@@ -116,34 +116,41 @@ fn inbound_http1() {
 
     // Wait for the server proxy to become ready
     let client = client::http1(srv_proxy.metrics, "localhost");
-    let ready = || client.request(client.request_builder("/ready").method("GET"));
-    assert_eventually!(ready().status() == http::StatusCode::OK);
+    let ready = || async {
+        client
+            .request_async(client.request_builder("/ready").method("GET"))
+            .await
+            .unwrap()
+    };
+    assert_eventually!(ready().await.status() == http::StatusCode::OK);
 
     let mut tap = tap::client_with_auth(client_proxy.outbound, srv_proxy_authority);
-    let events = tap.observe_with_require_id(tap::observe_request(), srv_proxy_authority);
+    let events = tap
+        .observe_with_require_id(tap::observe_request(), srv_proxy_authority)
+        .await;
 
     // Send a request that will be observed via the tap client
     let client = client::http1(srv_proxy.inbound, "localhost");
-    assert_eq!(client.get("/"), "hello");
+    assert_eq!(client.get_async("/").await, "hello");
 
-    let mut events = events.wait().take(3);
+    let mut events = events.take(3);
 
-    let ev1 = events.next().expect("next1").expect("stream1");
+    let ev1 = events.next().await.expect("next1").expect("stream1");
     assert!(ev1.is_inbound());
     assert_eq!(ev1.request_init_authority(), "localhost");
     assert_eq!(ev1.request_init_path(), "/");
 
-    let ev2 = events.next().expect("next2").expect("stream2");
+    let ev2 = events.next().await.expect("next2").expect("stream2");
     assert!(ev2.is_inbound());
     assert_eq!(ev2.response_init_status(), 200);
 
-    let ev3 = events.next().expect("next3").expect("stream3");
+    let ev3 = events.next().await.expect("next3").expect("stream3");
     assert!(ev3.is_inbound());
     assert_eq!(ev3.response_end_bytes(), 5);
 }
 
-#[test]
-fn grpc_headers_end() {
+#[tokio::test]
+async fn grpc_headers_end() {
     let _ = trace_init();
 
     // Setup server proxy authority and identity
@@ -192,24 +199,36 @@ fn grpc_headers_end() {
 
     // Wait for the server proxy to become ready
     let client = client::http2(srv_proxy.metrics, "localhost");
-    let ready = || client.request(client.request_builder("/ready").method("GET"));
-    assert_eventually!(ready().status() == http::StatusCode::OK);
+    let ready = || async {
+        client
+            .request_async(client.request_builder("/ready").method("GET"))
+            .await
+            .expect("ready")
+    };
+    assert_eventually!(ready().await.status() == http::StatusCode::OK);
 
     let mut tap = tap::client_with_auth(client_proxy.outbound, srv_proxy_authority);
-    let events = tap.observe_with_require_id(tap::observe_request(), srv_proxy_authority);
+    let events = tap
+        .observe_with_require_id(tap::observe_request(), srv_proxy_authority)
+        .await;
 
     // Send a request that will be observed via the tap client
     let client = client::http2(srv_proxy.inbound, "localhost");
-    let res = client.request(
-        client
-            .request_builder("/")
-            .header("content-type", "application/grpc+nope"),
-    );
+    let res = client
+        .request_async(
+            client
+                .request_builder("/")
+                .header("content-type", "application/grpc+nope"),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), 200);
     assert_eq!(res.headers()["grpc-status"], "1");
-    assert_eq!(res.into_body().concat2().wait().unwrap().len(), 0);
+    assert_eq!(
+        hyper::body::to_bytes(res.into_body()).await.unwrap().len(),
+        0
+    );
 
-    let event = events.wait().nth(2).expect("nth").expect("stream");
-
+    let event = events.skip(2).next().await.expect("2nd").expect("stream");
     assert_eq!(event.response_end_eos_grpc(), 1);
 }

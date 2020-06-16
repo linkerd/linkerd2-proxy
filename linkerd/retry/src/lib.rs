@@ -1,8 +1,11 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{Future, Poll};
 use linkerd2_error::Error;
 use linkerd2_stack::{NewService, Proxy, ProxyService};
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 pub use tower::retry::{budget::Budget, Policy};
 use tower::util::{Oneshot, ServiceExt};
 use tracing::trace;
@@ -34,6 +37,7 @@ pub struct Retry<P, S> {
     inner: S,
 }
 
+#[pin_project]
 pub enum ResponseFuture<R, P, S, Req>
 where
     R: tower::retry::Policy<Req, P::Response, Error> + Clone,
@@ -41,8 +45,8 @@ where
     S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
 {
-    Disabled(P::Future),
-    Retry(Oneshot<tower::retry::Retry<R, ProxyService<P, S>>, Req>),
+    Disabled(#[pin] P::Future),
+    Retry(#[pin] Oneshot<tower::retry::Retry<R, ProxyService<P, S>>, Req>),
 }
 
 // === impl NewRetryLayer ===
@@ -116,13 +120,14 @@ where
     S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
 {
-    type Item = P::Response;
-    type Error = Error;
+    type Output = Result<P::Response, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self {
-            ResponseFuture::Disabled(ref mut f) => f.poll().map_err(Into::into),
-            ResponseFuture::Retry(ref mut f) => f.poll().map_err(Into::into),
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        match self.project() {
+            ResponseFuture::Disabled(f) => f.poll(cx).map_err(Into::into),
+            ResponseFuture::Retry(f) => f.poll(cx).map_err(Into::into),
         }
     }
 }

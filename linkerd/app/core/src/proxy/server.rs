@@ -4,20 +4,23 @@ use crate::{
         core::Accept,
         detect,
         http::{
-            glue::{HttpBody, HyperServerSvc},
+            glue::{Body, HyperServerSvc},
             h2::Settings as H2Settings,
-            upgrade, Version as HttpVersion,
+            trace, upgrade, Version as HttpVersion,
         },
     },
     svc::{NewService, Service, ServiceExt},
     transport::{self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls},
     Error,
 };
-use futures::{Future, Poll};
+use futures::TryFutureExt;
 use http;
 use hyper;
 use indexmap::IndexSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use tracing::{info_span, trace};
 use tracing_futures::Instrument;
 
@@ -84,9 +87,9 @@ impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
 pub struct Server<L, F, H, B>
 where
     H: NewService<tls::accept::Meta>,
-    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
+    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
 {
-    http: hyper::server::conn::Http,
+    http: hyper::server::conn::Http<trace::Executor>,
     h2_settings: H2Settings,
     transport_labels: L,
     transport_metrics: transport::Metrics,
@@ -99,7 +102,7 @@ impl<L, F, H, B> Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey>,
     H: NewService<tls::accept::Meta>,
-    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
+    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
     Self: Accept<Connection>,
 {
     /// Creates a new `Server`.
@@ -112,7 +115,7 @@ where
         drain: drain::Watch,
     ) -> Self {
         Self {
-            http: hyper::server::conn::Http::new(),
+            http: hyper::server::conn::Http::new().with_executor(trace::Executor::new()),
             h2_settings,
             transport_labels,
             transport_metrics,
@@ -130,18 +133,22 @@ where
     F::Future: Send + 'static,
     F::ConnectionFuture: Send + 'static,
     H: NewService<tls::accept::Meta> + Send + 'static,
-    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>, Error = Error>
+    H::Service: Service<http::Request<Body>, Response = http::Response<B>, Error = Error>
+        + Unpin
         + Send
         + 'static,
-    <H::Service as Service<http::Request<HttpBody>>>::Future: Send + 'static,
-    B: hyper::body::Payload + Default + Send + 'static,
+    <H::Service as Service<http::Request<Body>>>::Future: Send + 'static,
+    B: hyper::body::HttpBody + Default + Send + 'static,
+    B::Error: Into<Error>,
+    B::Data: Send + 'static,
 {
-    type Response = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
+    type Response = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
     type Error = Error;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Error> + Send + 'static>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(().into()))
     }
 
     /// Handle a new connection.
@@ -163,61 +170,60 @@ where
             None => {
                 trace!("did not detect protocol; forwarding TCP");
 
-                let fwd = self
+                let accept = self
                     .forward_tcp
                     .clone()
                     .into_service()
-                    .oneshot((proto.tls, io))
-                    .map(|conn| {
-                        Box::new(drain.watch(conn, |_| {}).map_err(Into::into)) as Self::Response
-                    });
+                    .oneshot((proto.tls, io));
+                let fwd = async move {
+                    let conn = accept.await.map_err(Into::into)?;
+                    Ok(Box::pin(drain.after(conn).map_err(Into::into)) as Self::Response)
+                };
 
-                return Box::new(fwd.map_err(Into::into));
+                return Box::pin(fwd);
             }
         };
 
         let http_svc = self.make_http.new_service(proto.tls);
 
-        let builder = self.http.clone();
+        let mut builder = self.http.clone();
         let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
         let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
-        Box::new(futures::future::ok::<Self::Response, Error>(
+        Box::pin(async move {
             match http_version {
                 HttpVersion::Http1 => {
                     // Enable support for HTTP upgrades (CONNECT and websockets).
                     let svc = upgrade::Service::new(http_svc, drain.clone());
-                    let exec =
-                        tokio::executor::DefaultExecutor::current().instrument(info_span!("http1"));
                     let conn = builder
-                        .with_executor(exec)
                         .http1_only(true)
                         .serve_connection(io, HyperServerSvc::new(svc))
                         .with_upgrades();
-                    Box::new(
+
+                    Ok(Box::pin(async move {
                         drain
-                            .watch(conn, |conn| conn.graceful_shutdown())
-                            .map(|_| ())
-                            .map_err(Into::into),
-                    )
+                            .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                            .instrument(info_span!("h1"))
+                            .await?;
+                        Ok(())
+                    }) as Self::Response)
                 }
+
                 HttpVersion::H2 => {
-                    let exec =
-                        tokio::executor::DefaultExecutor::current().instrument(info_span!("h2"));
                     let conn = builder
-                        .with_executor(exec)
                         .http2_only(true)
                         .http2_initial_stream_window_size(initial_stream_window_size)
                         .http2_initial_connection_window_size(initial_conn_window_size)
                         .serve_connection(io, HyperServerSvc::new(http_svc));
-                    Box::new(
+                    Ok(Box::pin(async move {
                         drain
-                            .watch(conn, |conn| conn.graceful_shutdown())
-                            .map(|_| ())
-                            .map_err(Into::into),
-                    )
+                            .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                            .instrument(info_span!("h2"))
+                            .await?;
+                        Ok(())
+                    }) as Self::Response)
                 }
-            },
-        ))
+            }
+        })
     }
 }
 
@@ -226,8 +232,8 @@ where
     L: TransportLabels<Protocol, Labels = TransportKey> + Clone,
     F: Clone,
     H: NewService<tls::accept::Meta> + Clone,
-    H::Service: Service<http::Request<HttpBody>, Response = http::Response<B>>,
-    B: hyper::body::Payload,
+    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
+    B: hyper::body::HttpBody,
 {
     fn clone(&self) -> Self {
         Self {

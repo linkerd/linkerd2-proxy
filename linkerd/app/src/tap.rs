@@ -11,6 +11,7 @@ use linkerd2_app_core::{
     Error,
 };
 use std::net::SocketAddr;
+use std::pin::Pin;
 
 #[derive(Clone, Debug)]
 pub enum Config {
@@ -29,7 +30,7 @@ pub enum Tap {
         listen_addr: SocketAddr,
         layer: tap::Layer,
         daemon: tap::Daemon,
-        serve: serve::Task,
+        serve: Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'static>>,
     },
 }
 
@@ -58,7 +59,7 @@ impl Config {
                     tap::AcceptPermittedClients::new(permitted_peer_identities.into(), grpc),
                 );
 
-                let serve = serve::serve(listen, accept, drain);
+                let serve = Box::pin(serve::serve(listen, accept, drain));
 
                 Ok(Tap::Enabled {
                     layer,

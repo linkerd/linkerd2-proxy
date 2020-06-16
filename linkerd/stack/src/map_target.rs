@@ -1,4 +1,4 @@
-use futures::Poll;
+use std::task::{Context, Poll};
 
 pub trait MapTarget<T> {
     type Target;
@@ -53,8 +53,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {

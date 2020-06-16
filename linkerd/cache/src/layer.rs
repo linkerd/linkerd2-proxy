@@ -1,7 +1,7 @@
 use crate::Cache;
 use crate::Handle;
-use futures::Poll;
 use linkerd2_stack::NewService;
+use std::task::{Context, Poll};
 
 pub struct CacheLayer<T, L> {
     track_layer: L,
@@ -27,7 +27,7 @@ impl<L: Clone, T> Clone for CacheLayer<T, L> {
 
 impl<T, L, N> tower::layer::Layer<N> for CacheLayer<T, L>
 where
-    T: Eq + std::hash::Hash,
+    T: Eq + std::hash::Hash + Send + 'static,
     N: NewService<T> + Clone,
     L: tower::layer::Layer<Track<N>> + Clone,
     L::Service: NewService<T>,
@@ -85,8 +85,8 @@ impl<T, S: tower::Service<T>> tower::Service<T> for Track<S> {
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, req: T) -> Self::Future {

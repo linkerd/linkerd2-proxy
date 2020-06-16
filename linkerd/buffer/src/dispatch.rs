@@ -1,149 +1,81 @@
 use crate::error::{IdleError, ServiceError};
 use crate::InFlight;
-use futures::{Async, Future, Poll, Stream};
-use linkerd2_error::{Error, Never};
+use futures::{future::FutureExt, select_biased};
+use linkerd2_error::Error;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::task::Poll;
 use tokio::sync::{mpsc, watch};
-use tokio::timer::Delay;
+use tower::util::ServiceExt;
 use tracing::trace;
 
-/// A future that drives the inner service.
-pub struct Dispatch<S, Req, F> {
-    inner: S,
-    rx: mpsc::Receiver<InFlight<Req, F>>,
-    ready: watch::Sender<Poll<(), ServiceError>>,
-    ready_set: bool,
-    max_idle: Option<Duration>,
-    current_idle: Option<Delay>,
+pub(crate) async fn idle(max: std::time::Duration) -> IdleError {
+    tokio::time::delay_for(max).await;
+    IdleError(max)
 }
 
-impl<S, Req> Dispatch<S, Req, S::Future>
-where
+pub(crate) async fn run<S, Req, I>(
+    mut service: S,
+    mut requests: mpsc::Receiver<InFlight<Req, S::Future>>,
+    ready: watch::Sender<Poll<Result<(), ServiceError>>>,
+    idle: impl Fn() -> I,
+) where
     S: tower::Service<Req>,
     S::Error: Into<Error>,
-    S::Response: Send + 'static,
-    S::Future: Send + 'static,
+    I: std::future::Future,
+    I::Output: Into<Error>,
 {
-    pub(crate) fn new(
-        inner: S,
-        rx: mpsc::Receiver<InFlight<Req, S::Future>>,
-        ready: watch::Sender<Poll<(), ServiceError>>,
-        max_idle: Option<Duration>,
-    ) -> Self {
-        Self {
-            inner,
-            rx,
-            ready,
-            ready_set: false,
-            max_idle,
-            current_idle: None,
+    // Wait until the service becomes ready for the first time before announcing
+    // that it can recieve requests.
+    match service.ready_and().await {
+        Ok(_) => {
+            let _ = ready.broadcast(Poll::Ready(Ok(())));
         }
-    }
-
-    /// Sets an idle timeout if one does not exist and a `max_idle` value is set.
-    fn set_idle(&mut self) {
-        if let Some(timeout) = self.max_idle {
-            if self.current_idle.is_none() {
-                self.current_idle = Some(Delay::new(Instant::now() + timeout));
-            }
+        Err(e) => {
+            let error = ServiceError(Arc::new(e.into()));
+            trace!(%error, "Service failed");
+            let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
+            debug_assert!(
+                matches!(requests.try_recv(), Err(mpsc::error::TryRecvError::Empty)),
+                "no requests should have been sent before the service was ready"
+            );
         }
-    }
+    };
 
-    /// Check the idle timeout and, if it is expired, return an error.
-    fn check_idle(&mut self) -> Result<(), IdleError> {
-        if let Some(idle) = self.current_idle.as_mut() {
-            if idle.poll().expect("timer must not fail").is_ready() {
-                return Err(IdleError(self.max_idle.unwrap()));
-            }
-        }
-        Ok(())
-    }
+    // Drive requests from the queue to the inner service.
+    loop {
+        select_biased! {
+            req = requests.recv().fuse() => {
+                match req {
+                    None => return,
+                    Some(InFlight { request, tx }) => {
+                       match service.ready_and().await {
+                            Ok(svc) => {
+                                trace!("Dispatching request");
+                                let _ = tx.send(Ok(svc.call(request)));
+                            }
+                            Err(e) =>{
+                                let error = ServiceError(Arc::new(e.into()));
+                                trace!(%error, "Service failed");
+                                let _ = ready.broadcast(Poll::Ready(Err(error.clone())));
+                                // Fail this request.
+                                let _ = tx.send(Err(error.clone().into()));
+                                // Drain the queue and fail all remaining requests.
+                                while let Some(InFlight { tx, .. }) = requests.recv().await {
+                                    let _ = tx.send(Err(error.clone().into()));
+                                }
+                                return;
+                            }
+                        };
 
-    /// Transitions the buffer to failing, notifying all consumers and pending
-    /// requests of the failure.
-    fn fail(&mut self, error: impl Into<Error>) {
-        let shared = ServiceError(Arc::new(error.into()));
-        trace!(%shared, "Inner service failed");
-
-        // First, notify services of the readiness change to prevent new requests from
-        // being buffered.
-        let _ = self.ready.broadcast(Err(shared.clone()));
-
-        // Propagate the error to all in-flight requests.
-        while let Ok(Async::Ready(Some(InFlight { tx, .. }))) = self.rx.poll() {
-            let _ = tx.send(Err(shared.clone().into()));
-        }
-    }
-}
-
-impl<S, Req> Future for Dispatch<S, Req, S::Future>
-where
-    S: tower::Service<Req>,
-    S::Error: Into<Error>,
-    S::Response: Send + 'static,
-    S::Future: Send + 'static,
-{
-    type Item = ();
-    type Error = Never;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        // Drive requests from the queue to the inner service.
-        loop {
-            match self.inner.poll_ready() {
-                // If it's not ready, wait for it..
-                Ok(Async::NotReady) => {
-                    // `ready` stays in whatever state it's in. If we've already
-                    // become ready, permit messages as long as there's buffer
-                    // capacity.
-
-                    trace!("Waiting for inner service");
-                    return Ok(Async::NotReady);
-                }
-
-                // If the service fails, propagate the failure to all pending
-                // requests and then complete.
-                Err(error) => {
-                    self.fail(error);
-                    return Ok(Async::Ready(()));
-                }
-
-                // If the inner service can receive requests, start polling the channel.
-                Ok(Async::Ready(())) => {
-                    if !self.ready_set {
-                        let _ = self.ready.broadcast(Ok(Async::Ready(())));
-                        self.ready_set = true;
                     }
                 }
             }
 
-            // The inner service is ready, so poll for new requests.
-            match self.rx.poll() {
-                Ok(Async::NotReady) => {
-                    // There are no requests available, so track idleness.
-                    self.set_idle();
-                    if let Err(error) = self.check_idle() {
-                        self.fail(error);
-                        return Ok(Async::Ready(()));
-                    }
-
-                    return Ok(Async::NotReady);
-                }
-
-                // All senders have been dropped, complete.
-                Err(_) | Ok(Async::Ready(None)) => {
-                    trace!("Senders dropped");
-                    return Ok(Async::Ready(()));
-                }
-
-                // If a request was ready, dispatch it and return the future to the caller.
-                Ok(Async::Ready(Some(InFlight { request, tx }))) => {
-                    trace!("Dispatching a request");
-                    let fut = self.inner.call(request);
-                    let _ = tx.send(Ok(fut));
-
-                    self.current_idle = None;
-                }
+            e = idle().fuse() => {
+                let error = ServiceError(Arc::new(e.into()));
+                trace!(%error, "Idling out inner service");
+                let _ = ready.broadcast(Poll::Ready(Err(error)));
+                return;
             }
         }
     }
@@ -151,140 +83,104 @@ where
 
 #[cfg(test)]
 mod test {
-    use futures::{future, Async, Future};
-    use std::time::{Duration, Instant};
+    use super::*;
+    use std::task::Poll;
+    use std::time::Duration;
     use tokio::sync::{mpsc, oneshot, watch};
-    use tokio::timer::Delay;
+    use tokio::time::delay_for;
+    use tokio_test::{assert_pending, assert_ready, task};
     use tower_test::mock;
 
-    #[test]
-    fn ready_when_senders_dropped() {
-        run(|| {
-            let max_idle = Duration::from_millis(100);
+    #[tokio::test]
+    async fn idle_when_unused() {
+        let max_idle = Duration::from_millis(100);
 
-            let (tx, rx) = mpsc::channel(1);
-            let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
-            let (inner, mut handle) = mock::pair::<(), ()>();
-            let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
-            handle.allow(1);
+        let (tx, rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
+        let (inner, mut handle) = mock::pair::<(), ()>();
+        let mut dispatch = task::spawn(run(inner, rx, ready_tx, || idle(max_idle)));
+        handle.allow(1);
 
-            assert!(dispatch.poll().unwrap().is_not_ready());
-            assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
-            let tx1 = tx.clone();
-            drop(tx);
-            assert!(dispatch.poll().unwrap().is_not_ready());
-            assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
-            drop(tx1);
-            assert!(dispatch.poll().unwrap().is_ready());
+        // Service ready without requests. Idle counter starts ticking.
+        assert_pending!(dispatch.poll());
+        assert!(matches!(*ready_rx.borrow(), Poll::Ready(Ok(()))));
 
-            Ok::<_, ()>(())
-        })
+        delay_for(max_idle).await;
+
+        assert_ready!(dispatch.poll());
+        assert!(
+            matches!(*ready_rx.borrow(), Poll::Ready(Err(_))),
+            "Did not advertise an error to consumers."
+        );
+        drop((tx, handle));
     }
 
-    #[test]
-    fn idle_when_unused() {
-        run(|| {
-            let max_idle = Duration::from_millis(100);
+    #[tokio::test]
+    async fn not_idle_when_pending() {
+        let max_idle = Duration::from_millis(100);
 
-            let (tx, rx) = mpsc::channel(1);
-            let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
-            let (inner, mut handle) = mock::pair::<(), ()>();
-            let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
-            handle.allow(1);
+        let (tx, rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
+        let (inner, mut handle) = mock::pair::<(), ()>();
+        let mut dispatch = task::spawn(run(inner, rx, ready_tx, || idle(max_idle)));
+        handle.allow(0);
 
-            // Service ready without requests. Idle counter starts ticking.
-            assert!(dispatch.poll().unwrap().is_not_ready());
-            assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
-            Delay::new(Instant::now() + max_idle).map(move |()| {
-                assert!(dispatch.poll().unwrap().is_ready());
-                assert!(
-                    ready_rx.get_ref().is_err(),
-                    "Did not advertise an error to consumers."
-                );
-                drop((tx, handle));
-            })
-        })
+        // Service ready without requests. Idle counter starts ticking.
+        assert_pending!(dispatch.poll());
+        assert!(ready_rx.borrow().is_pending());
+
+        delay_for(max_idle).await;
+
+        assert_pending!(dispatch.poll());
+        assert!(ready_rx.borrow().is_pending());
+        drop(tx);
     }
 
-    #[test]
-    fn not_idle_when_unavailable() {
-        run(|| {
-            let max_idle = Duration::from_millis(100);
+    #[tokio::test]
+    async fn idle_reset_by_request() {
+        let max_idle = Duration::from_millis(100);
 
-            let (tx, rx) = mpsc::channel(1);
-            let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
-            let (inner, mut handle) = mock::pair::<(), ()>();
-            let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
-            handle.allow(0);
+        let (mut tx, rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
+        let (inner, mut handle) = mock::pair::<(), ()>();
+        let mut dispatch = task::spawn(run(inner, rx, ready_tx, || idle(max_idle)));
+        handle.allow(1);
 
-            // Service ready without requests. Idle counter starts ticking.
-            assert!(dispatch.poll().unwrap().is_not_ready());
-            assert!(ready_rx.get_ref().as_ref().unwrap().is_not_ready());
-            Delay::new(Instant::now() + max_idle).map(move |()| {
-                assert!(dispatch.poll().unwrap().is_not_ready(),);
-                assert!(ready_rx.get_ref().as_ref().unwrap().is_not_ready());
-                drop((tx, handle));
-            })
+        // Service ready without requests. Idle counter starts ticking.
+        assert_pending!(dispatch.poll());
+        assert!(ready_rx.borrow().is_ready());
+        delay_for(max_idle).await;
+
+        // Send a request after the deadline has fired but before the
+        // dispatch future is polled. Ensure that the request is admitted, resetting idleness.
+        tx.try_send({
+            let (tx, _rx) = oneshot::channel();
+            super::InFlight { request: (), tx }
         })
-    }
+        .ok()
+        .expect("request not sent");
 
-    #[test]
-    fn idle_reset_by_request() {
-        run(|| {
-            let max_idle = Duration::from_millis(100);
+        assert_pending!(dispatch.poll());
+        assert!(
+            ready_rx.borrow().is_ready(),
+            "Did not advertise readiness to consumers"
+        );
 
-            let (mut tx, rx) = mpsc::channel(1);
-            let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
-            let (inner, mut handle) = mock::pair::<(), ()>();
-            let mut dispatch = super::Dispatch::new(inner, rx, ready_tx, Some(max_idle));
-            handle.allow(1);
+        handle.allow(1);
+        assert_pending!(dispatch.poll());
+        assert!(
+            ready_rx.borrow().is_ready(),
+            "Did not advertise readiness to consumers"
+        );
 
-            // Service ready without requests. Idle counter starts ticking.
-            assert!(dispatch.poll().unwrap().is_not_ready());
-            assert!(ready_rx.get_ref().as_ref().unwrap().is_ready());
-            Delay::new(Instant::now() + max_idle).and_then(move |()| {
-                // Send a request after the deadline has fired but before the
-                // dispatch future is polled. Ensure that the request is admitted, resetting idleness.
-                tx.try_send({
-                    let (tx, _rx) = oneshot::channel();
-                    super::InFlight { request: (), tx }
-                })
-                .ok()
-                .expect("request not sent");
+        delay_for(max_idle).await;
 
-                println!("Polling while request is pending");
-                assert!(dispatch.poll().unwrap().is_not_ready());
-                assert!(
-                    ready_rx.get_ref().as_ref().unwrap().is_ready(),
-                    "Did not remain ready after initialization"
-                );
-
-                handle.allow(1);
-                println!("Polling to detect inner serviec is ready");
-                assert!(dispatch.poll().unwrap().is_not_ready());
-                assert!(
-                    ready_rx.get_ref().as_ref().unwrap().is_ready(),
-                    "Did not advertise readiness to consumers"
-                );
-                assert!(dispatch.current_idle.is_some(), "Idle timeout not reset");
-
-                Delay::new(Instant::now() + max_idle).map(move |()| {
-                    assert!(dispatch.poll().unwrap().is_ready(),);
-                    assert!(
-                        ready_rx.get_ref().is_err(),
-                        "Did not advertise an error to consumers."
-                    );
-                    drop((tx, handle));
-                })
-            })
-        })
-    }
-
-    fn run<F, R>(f: F)
-    where
-        F: FnOnce() -> R + 'static,
-        R: future::IntoFuture<Item = ()> + 'static,
-    {
-        tokio::runtime::current_thread::run(future::lazy(f).map_err(|_| panic!("Failed")));
+        assert_ready!(dispatch.poll());
+        assert!(
+            matches!(*ready_rx.borrow(), Poll::Ready(Err(_))),
+            "Did not advertise an error to consumers."
+        );
+        drop(ready_rx);
+        drop((tx, handle));
     }
 }

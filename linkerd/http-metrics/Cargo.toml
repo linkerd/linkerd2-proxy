@@ -6,12 +6,12 @@ edition = "2018"
 publish = false
 
 [dependencies]
-bytes = "0.4"
-futures = "0.1"
+bytes = "0.5"
+futures = "0.3"
 h2 = "0.1"
-http = "0.1"
-http-body = "0.1"
-hyper = "0.12.3"
+http = "0.2"
+http-body = "0.3"
+hyper = "0.13.0"
 indexmap = "1.0"
 linkerd2-error = { path  = "../error" }
 linkerd2-http-classify = { path  = "../http-classify" }
@@ -19,6 +19,11 @@ linkerd2-metrics = { path  = "../metrics" }
 linkerd2-stack = { path  = "../stack" }
 tokio = "0.1"
 tokio-timer = "0.2"   # for tokio_timer::clock
-tower = "0.1"
-tower-util = "0.1"
 tracing = "0.1.9"
+pin-project = "0.4"
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false

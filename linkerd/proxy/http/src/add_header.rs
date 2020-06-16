@@ -1,5 +1,9 @@
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
 use http::header::{AsHeaderName, HeaderValue};
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{fmt, marker::PhantomData};
 use tracing::trace;
 
@@ -25,8 +29,10 @@ pub struct MakeAddHeader<H, T, M, R> {
     _req_or_res: PhantomData<fn(R)>,
 }
 
+#[pin_project]
 pub struct MakeFuture<F, H, R> {
     header: Option<(H, HeaderValue)>,
+    #[pin]
     inner: F,
     _req_or_res: PhantomData<fn(R)>,
 }
@@ -83,8 +89,8 @@ where
     type Error = M::Error;
     type Future = MakeFuture<M::Future, H, R>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, t: T) -> Self::Future {
@@ -107,14 +113,14 @@ where
 
 impl<F, H, R> Future for MakeFuture<F, H, R>
 where
-    F: Future,
+    F: TryFuture,
 {
-    type Item = tower::util::Either<AddHeader<H, F::Item, R>, F::Item>;
-    type Error = F::Error;
+    type Output = Result<tower::util::Either<AddHeader<H, F::Ok, R>, F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
-        let svc = if let Some((header, value)) = self.header.take() {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
+        let svc = if let Some((header, value)) = this.header.take() {
             tower::util::Either::A(AddHeader {
                 header,
                 value,
@@ -124,14 +130,14 @@ where
         } else {
             tower::util::Either::B(inner)
         };
-        Ok(svc.into())
+        Poll::Ready(Ok(svc))
     }
 }
 
 pub mod request {
-    use futures::Poll;
     use http;
     use http::header::{AsHeaderName, IntoHeaderName};
+    use std::task::{Context, Poll};
 
     pub fn layer<H, T>(header: H, get_header: super::GetHeader<T>) -> super::Layer<H, T, ReqHeader>
     where
@@ -153,8 +159,8 @@ pub mod request {
         type Error = S::Error;
         type Future = S::Future;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
         }
 
         fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
@@ -166,9 +172,13 @@ pub mod request {
 }
 
 pub mod response {
-    use futures::{try_ready, Future, Poll};
+    use futures::{ready, TryFuture};
     use http;
     use http::header::{AsHeaderName, HeaderValue, IntoHeaderName};
+    use pin_project::pin_project;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
 
     pub fn layer<H, T>(header: H, get_header: super::GetHeader<T>) -> super::Layer<H, T, ResHeader>
     where
@@ -181,7 +191,9 @@ pub mod response {
     #[derive(Clone, Debug)]
     pub enum ResHeader {}
 
+    #[pin_project]
     pub struct ResponseFuture<F, H> {
+        #[pin]
         inner: F,
         header: H,
         value: HeaderValue,
@@ -196,8 +208,8 @@ pub mod response {
         type Error = S::Error;
         type Future = ResponseFuture<S::Future, H>;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
         }
 
         fn call(&mut self, req: Req) -> Self::Future {
@@ -214,16 +226,16 @@ pub mod response {
     impl<F, H, B> Future for ResponseFuture<F, H>
     where
         H: IntoHeaderName + Clone,
-        F: Future<Item = http::Response<B>>,
+        F: TryFuture<Ok = http::Response<B>>,
     {
-        type Item = F::Item;
-        type Error = F::Error;
+        type Output = Result<F::Ok, F::Error>;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            let mut res = try_ready!(self.inner.poll());
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let this = self.project();
+            let mut res = ready!(this.inner.try_poll(cx))?;
             res.headers_mut()
-                .insert(self.header.clone(), self.value.clone());
-            Ok(res.into())
+                .insert(this.header.clone(), this.value.clone());
+            Poll::Ready(Ok(res))
         }
     }
 }

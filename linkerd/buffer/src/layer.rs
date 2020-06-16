@@ -1,5 +1,4 @@
 use crate::Buffer;
-use futures::Future;
 use linkerd2_error::Error;
 use std::time::Duration;
 use tracing_futures::Instrument;
@@ -39,7 +38,7 @@ impl<Req, S> tower::layer::Layer<S> for SpawnBufferLayer<Req>
 where
     Req: Send + 'static,
     S: tower::Service<Req> + Send + 'static,
-    S::Error: Into<Error>,
+    S::Error: Into<Error> + Send + 'static,
     S::Response: Send + 'static,
     S::Future: Send + 'static,
 {
@@ -47,7 +46,7 @@ where
 
     fn layer(&self, inner: S) -> Self::Service {
         let (buffer, dispatch) = crate::new(inner, self.capacity, self.idle_timeout);
-        tokio::spawn(dispatch.in_current_span().map_err(|n| match n {}));
+        tokio::spawn(dispatch.in_current_span());
         buffer
     }
 }

@@ -1,10 +1,11 @@
 #![cfg(test)]
-
+#![type_length_limit = "3659323"]
 // These are basically integration tests for the `connection` submodule, but
 // they cannot be "real" integration tests because `connection` isn't a public
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
 
+use futures::FutureExt;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
 use linkerd2_proxy_core::listen::{Accept, Bind as _Bind, Listen as CoreListen};
@@ -14,11 +15,16 @@ use linkerd2_proxy_transport::tls::{
     client::Connection as ClientConnection,
     Conditional,
 };
-use linkerd2_proxy_transport::{connect, Bind, Listen};
+use linkerd2_proxy_transport::{connect, Bind};
+use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
-use tokio::{self, io, prelude::*};
-use tower::{layer::Layer, ServiceExt};
-use tower_util::service_fn;
+use tokio::{
+    self,
+    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+};
+use tower::layer::Layer;
+use tower::util::{service_fn, ServiceExt};
+use tracing_futures::Instrument;
 
 #[test]
 fn plaintext() {
@@ -105,11 +111,11 @@ fn run_test<C, CF, CR, S, SF, SR>(
 where
     // Client
     C: FnOnce(ClientConnection) -> CF + Clone + Send + 'static,
-    CF: Future<Item = CR, Error = io::Error> + Send + 'static,
+    CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
     S: Fn(ServerConnection) -> SF + Clone + Send + 'static,
-    SF: Future<Item = SR, Error = io::Error> + Send + 'static,
+    SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
     {
@@ -138,30 +144,43 @@ where
         // tests to run at once, which wouldn't work if they all were bound on
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-        let listen = Bind::new(addr, None).bind().expect("must bind");
+        let mut listen = Bind::new(addr, None).bind().expect("must bind");
         let listen_addr = listen.listen_addr();
-
-        let sender = service_fn(move |(meta, conn): ServerConnection| {
-            let sender = sender.clone();
-            let peer_identity = Some(meta.peer_identity.clone());
-
-            let server = Box::new(server((meta, conn)).then(move |result| {
-                sender
-                    .send(Transported {
-                        peer_identity,
-                        result,
-                    })
-                    .expect("send result");
-
-                future::ok::<(), Never>(())
-            }));
-
-            Box::new(future::ok::<_, Never>(server))
-        });
-
-        let accept = AcceptTls::new(server_tls, sender);
-        let server = Server::Init { listen, accept };
-
+        let mut accept = AcceptTls::new(
+            server_tls,
+            service_fn(move |(meta, conn): ServerConnection| {
+                let server = server.clone();
+                let sender = sender.clone();
+                let peer_identity = Some(meta.peer_identity.clone());
+                let future = server((meta, conn)).instrument(tracing::info_span!("test_svc"));
+                futures::future::ok::<_, Never>(async move {
+                    let result = future.await;
+                    sender
+                        .send(Transported {
+                            peer_identity,
+                            result,
+                        })
+                        .expect("send result");
+                    Ok::<(), Never>(())
+                })
+            }),
+        );
+        let server = async move {
+            let conn = futures::future::poll_fn(|cx| listen.poll_accept(cx))
+                .await
+                .expect("listen failed");
+            tracing::debug!("incoming connection");
+            let accept = accept.ready_and().await.expect("accept failed");
+            tracing::debug!("accept ready");
+            accept
+                .accept(conn)
+                .await
+                .expect("connection failed")
+                .await
+                .expect("connection future failed");
+            tracing::debug!("done");
+        }
+        .instrument(tracing::info_span!("run_server", %listen_addr));
         (server, listen_addr, receiver)
     };
 
@@ -174,34 +193,38 @@ where
         let sender_clone = sender.clone();
 
         let peer_identity = Some(client_target_name.clone());
-        let client = tls::ConnectLayer::new(client_tls)
-            .layer(connect::Connect::new(None))
-            .oneshot(Target(server_addr, client_target_name))
-            .map_err(move |e| {
-                sender_clone
-                    .send(Transported {
-                        peer_identity: None,
-                        result: Err(e),
-                    })
-                    .expect("send result");
-                ()
-            })
-            .and_then(move |conn| {
-                client(conn).then(move |result| {
+        let client = async move {
+            let conn = tls::ConnectLayer::new(client_tls)
+                .layer(connect::Connect::new(None))
+                .oneshot(Target(server_addr, client_target_name))
+                .await;
+            match conn {
+                Err(e) => {
+                    sender_clone
+                        .send(Transported {
+                            peer_identity: None,
+                            result: Err(e),
+                        })
+                        .expect("send result");
+                }
+                Ok(conn) => {
+                    let result = client(conn).instrument(tracing::info_span!("client")).await;
                     sender
                         .send(Transported {
                             peer_identity,
                             result,
                         })
                         .expect("send result");
-                    Ok(())
-                })
-            });
+                }
+            };
+        };
 
         (client, receiver)
     };
 
-    tokio::run(server.join(client).map(|_| ()));
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(futures::future::join(server, client).map(|_| ()));
 
     let client_result = client_result.try_recv().expect("client complete");
 
@@ -215,96 +238,60 @@ where
 
 /// Writes `to_write` and shuts down the write side, then reads until EOF,
 /// returning the bytes read.
-fn write_then_read(
-    conn: impl AsyncRead + AsyncWrite,
+async fn write_then_read(
+    conn: impl AsyncRead + AsyncWrite + Unpin,
     to_write: &'static [u8],
-) -> impl Future<Item = Vec<u8>, Error = io::Error> {
-    write_and_shutdown(conn, to_write)
-        .and_then(|conn| io::read_to_end(conn, Vec::new()))
-        .map(|(_conn, r)| r)
+) -> Result<Vec<u8>, io::Error> {
+    let conn = write_and_shutdown(conn, to_write).await;
+    if let Err(ref write_err) = conn {
+        tracing::error!(%write_err);
+    }
+    let mut conn = conn?;
+    let mut vec = Vec::new();
+    tracing::debug!("read_to_end");
+    let read = conn.read_to_end(&mut vec).await;
+    tracing::debug!(?read, ?vec);
+    read?;
+    Ok(vec)
 }
 
 /// Reads until EOF then writes `to_write` and shuts down the write side,
 /// returning the bytes read.
-fn read_then_write(
-    conn: impl AsyncRead + AsyncWrite,
+async fn read_then_write(
+    mut conn: impl AsyncRead + AsyncWrite + Unpin,
     read_prefix_len: usize,
     to_write: &'static [u8],
-) -> impl Future<Item = Vec<u8>, Error = io::Error> {
-    io::read_exact(conn, vec![0; read_prefix_len])
-        .and_then(move |(conn, r)| write_and_shutdown(conn, to_write).map(|_conn| r))
+) -> Result<Vec<u8>, io::Error> {
+    let mut vec = vec![0; read_prefix_len];
+    tracing::debug!("read_exact");
+    let read = conn.read_exact(&mut vec[..]).await;
+    tracing::debug!(?read, ?vec);
+    read?;
+    write_and_shutdown(conn, to_write).await?;
+    Ok(vec)
 }
 
 /// writes `to_write` to `conn` and then shuts down the write side of `conn`.
-fn write_and_shutdown<T: AsyncRead + AsyncWrite>(
-    conn: T,
+async fn write_and_shutdown<T: AsyncRead + AsyncWrite + Unpin>(
+    mut conn: T,
     to_write: &'static [u8],
-) -> impl Future<Item = T, Error = io::Error> {
-    io::write_all(conn, to_write).and_then(|(mut conn, _)| {
-        conn.shutdown()?;
-        Ok(conn)
-    })
+) -> Result<T, io::Error> {
+    conn.write_all(to_write).await?;
+    tracing::debug!("shutting down...");
+    conn.shutdown().await?;
+    tracing::debug!("shutdown done");
+    Ok(conn)
 }
 
 const PING: &[u8] = b"ping";
 const PONG: &[u8] = b"pong";
 const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 
-enum Server<A: Accept<ServerConnection>>
-where
-    AcceptTls<A, CrtKey>: Accept<<Listen as CoreListen>::Connection>,
-{
-    Init {
-        listen: Listen,
-        accept: AcceptTls<A, CrtKey>,
-    },
-    Accepting(<AcceptTls<A, CrtKey> as Accept<<Listen as CoreListen>::Connection>>::Future),
-    Serving(<AcceptTls<A, CrtKey> as Accept<<Listen as CoreListen>::Connection>>::ConnectionFuture),
-}
-
 #[derive(Clone)]
 struct Target(SocketAddr, Conditional<Name>);
 
 #[derive(Clone)]
 struct ClientTls(CrtKey);
-
-impl<A: Accept<ServerConnection> + Clone> Future for Server<A> {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            *self = match self {
-                Server::Init {
-                    ref mut listen,
-                    ref mut accept,
-                } => {
-                    match Accept::poll_ready(accept) {
-                        Ok(Async::Ready(())) => {}
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Err(_) => panic!("accept failed"),
-                    }
-                    let conn = match listen.poll_accept() {
-                        Ok(Async::Ready(conn)) => conn,
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Err(_) => panic!("listener failed"),
-                    };
-                    Server::Accepting(accept.accept(conn))
-                }
-                Server::Accepting(ref mut fut) => match fut.poll() {
-                    Ok(Async::Ready(conn_future)) => Server::Serving(conn_future),
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(_) => panic!("accepting failed"),
-                },
-
-                Server::Serving(ref mut fut) => match fut.poll() {
-                    Ok(ready) => return Ok(ready),
-                    Err(_) => panic!("connection failed"),
-                },
-            }
-        }
-    }
-}
 
 impl connect::ConnectAddr for Target {
     fn connect_addr(&self) -> SocketAddr {

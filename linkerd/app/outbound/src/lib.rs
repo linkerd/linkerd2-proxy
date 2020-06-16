@@ -30,15 +30,17 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::IpAddr;
+use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::info_span;
 
-#[allow(dead_code)] // TODO #2597
-mod add_remote_ip_on_rsp;
-#[allow(dead_code)] // TODO #2597
-mod add_server_id_on_rsp;
+// #[allow(dead_code)] // TODO #2597
+// mod add_remote_ip_on_rsp;
+// #[allow(dead_code)] // TODO #2597
+// mod add_server_id_on_rsp;
 pub mod endpoint;
 mod orig_proto_upgrade;
 mod prevent_loop;
@@ -66,13 +68,14 @@ impl Config {
         TcpEndpoint,
         Error = Error,
         Future = impl future::Future + Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     > + tower::Service<
         Target<HttpEndpoint>,
         Error = Error,
         Future = impl future::Future + Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-    > + Clone
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    > + Unpin
+           + Clone
            + Send {
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).
@@ -93,8 +96,9 @@ impl Config {
         dns::Name,
         Response = (dns::Name, IpAddr),
         Error = Error,
-        Future = impl Send,
-    > + Clone
+        Future = impl Unpin + Send,
+    > + Unpin
+           + Clone
            + Send {
         // Caches DNS refinements from relative names to canonical names.
         //
@@ -135,28 +139,37 @@ impl Config {
     ) -> impl tower::Service<
         Target<HttpEndpoint>,
         Error = Error,
-        Future = impl Send,
+        Future = impl Unpin + Send,
         Response = impl tower::Service<
             http::Request<B>,
             Response = http::Response<http::boxed::Payload>,
             Error = Error,
             Future = impl Send,
         > + Send,
-    > + Clone
+    > + Unpin
+           + Clone
            + Send
     where
-        B: http::Payload + std::fmt::Debug + Default + Send + 'static,
-        C: tower::Service<Target<HttpEndpoint>, Error = Error> + Clone + Send + Sync + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-        C::Future: Send,
+        B: http::HttpBody + std::fmt::Debug + Default + Send + 'static,
+        B::Data: Send + 'static,
+        B::Error: Into<Error>,
+        C: tower::Service<Target<HttpEndpoint>, Error = Error>
+            + Unpin
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        C::Future: Unpin + Send,
         R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
+            + Unpin
             + Clone
             + Send
             + 'static,
-        R::Future: Send,
-        R::Resolution: Send,
-        P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
-        P::Future: Send,
+        R::Future: Unpin + Send,
+        R::Resolution: Unpin + Send,
+        P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
+        P::Future: Unpin + Send,
     {
         let Config {
             proxy:
@@ -282,8 +295,6 @@ impl Config {
                             .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
                     ),
             )
-            // Avoid caching if it would loop.
-            .push(admit::AdmitLayer::new(prevent_loop))
             .instrument(|endpoint: &Target<HttpEndpoint>| {
                 info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.inner.identity)
             })
@@ -409,18 +420,23 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> serve::Task
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
     where
-        R: tower::Service<dns::Name, Error = Error, Response = dns::Name> + Clone + Send + 'static,
-        R::Future: Send,
-        C: tower::Service<TcpEndpoint, Error = Error> + Clone + Send + Sync + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-        C::Future: Send,
+        R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
+        R::Future: Unpin + Send,
+        C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        C::Future: Unpin + Send,
         H: tower::Service<Target<HttpEndpoint>, Error = Error, Response = S>
+            + Unpin
             + Send
             + Clone
             + 'static,
-        H::Future: Send,
+        H::Future: Unpin + Send,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -468,21 +484,21 @@ impl Config {
             .push(metrics.clone().http_handle_time.layer());
 
         let http_server = svc::stack(http_router)
-            // Resolve the application-emitted destination via DNS to determine
-            // its canonical FQDN to use for routing.
-            .push(http::canonicalize::Layer::new(refine,
-                canonicalize_timeout,
-            ))
+            // Resolve the application-emitted destination via DNS to determine                                                                                                                      
+            // its canonical FQDN to use for routing.                                                                                                                                                
+            .push(http::canonicalize::Layer::new(refine, canonicalize_timeout))
             .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
             .push_make_ready()
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
+            .check_new_service::<tls::accept::Meta>()
             // Used by tap.
             .push_http_insert_target()
-            .push_on_response(svc::layers()
-                .push(http_admit_request)
-                .push(metrics.stack.layer(stack_labels("source")))
-                .box_http_request()
+            .push_on_response(
+                 svc::layers()
+                    .push(http_admit_request)
+                    .push(metrics.stack.layer(stack_labels("source")))
+                    .box_http_request()
             )
             .instrument(
                 |src: &tls::accept::Meta| {
@@ -517,7 +533,7 @@ impl Config {
             // detection. Ensures that connections that never emit data are dropped eventually.
             .push_timeout(detect_protocol_timeout);
 
-        serve::serve(listen, tcp_detect.into_inner(), drain)
+        Box::pin(serve::serve(listen, tcp_detect.into_inner(), drain))
     }
 }
 
@@ -581,7 +597,9 @@ impl From<Error> for DiscoveryError {
             return inner.clone();
         }
 
-        if orig.is::<DiscoveryRejected>() || orig.is::<profiles::InvalidProfileAddr>() {
+        if orig.is::<DiscoveryRejected>()
+        //  || orig.is::<profiles::InvalidProfileAddr>()
+        {
             return DiscoveryError::DiscoveryRejected;
         }
 

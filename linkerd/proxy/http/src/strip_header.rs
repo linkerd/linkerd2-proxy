@@ -44,10 +44,10 @@ where
 }
 
 pub mod request {
-    use futures::Poll;
     use http;
     use http::header::AsHeaderName;
     use linkerd2_stack::Proxy;
+    use std::task::{Context, Poll};
 
     pub fn layer<H>(header: H) -> super::Layer<H, ReqHeader>
     where
@@ -86,8 +86,8 @@ pub mod request {
         type Error = S::Error;
         type Future = S::Future;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
         }
 
         fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
@@ -98,9 +98,13 @@ pub mod request {
 }
 
 pub mod response {
-    use futures::{try_ready, Future, Poll};
+    use futures::{ready, Future, TryFuture};
     use http;
     use http::header::AsHeaderName;
+    use linkerd2_error::Error;
+    use pin_project::pin_project;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
 
     pub fn layer<H>(header: H) -> super::Layer<H, ResHeader>
     where
@@ -113,7 +117,9 @@ pub mod response {
     #[derive(Clone, Debug)]
     pub enum ResHeader {}
 
+    #[pin_project]
     pub struct ResponseFuture<F, H> {
+        #[pin]
         inner: F,
         header: H,
     }
@@ -122,13 +128,14 @@ pub mod response {
     where
         H: AsHeaderName + Clone,
         S: tower::Service<Req, Response = http::Response<B>>,
+        S::Error: Into<Error> + Send + Sync,
     {
         type Response = S::Response;
         type Error = S::Error;
         type Future = ResponseFuture<S::Future, H>;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.inner.poll_ready()
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
         }
 
         fn call(&mut self, req: Req) -> Self::Future {
@@ -141,16 +148,16 @@ pub mod response {
 
     impl<F, H, B> Future for ResponseFuture<F, H>
     where
-        F: Future<Item = http::Response<B>>,
+        F: TryFuture<Ok = http::Response<B>>,
         H: AsHeaderName + Clone,
     {
-        type Item = F::Item;
-        type Error = F::Error;
+        type Output = Result<F::Ok, F::Error>;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-            let mut res = try_ready!(self.inner.poll());
-            res.headers_mut().remove(self.header.clone());
-            Ok(res.into())
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let this = self.project();
+            let mut res = ready!(this.inner.try_poll(cx))?;
+            res.headers_mut().remove(this.header.clone());
+            Poll::Ready(Ok(res))
         }
     }
 }

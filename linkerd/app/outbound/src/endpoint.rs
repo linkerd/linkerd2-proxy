@@ -82,9 +82,9 @@ impl<T> http::canonicalize::Target for Target<T> {
     }
 }
 
-impl<'t, T> From<&'t Target<T>> for ::http::header::HeaderValue {
+impl<'t, T> From<&'t Target<T>> for http::header::HeaderValue {
     fn from(target: &'t Target<T>) -> Self {
-        ::http::header::HeaderValue::from_str(&target.addr.to_string())
+        http::header::HeaderValue::from_str(&target.addr.to_string())
             .expect("addr must be a valid header")
     }
 }

@@ -39,7 +39,7 @@ impl Settings {
 
         let is_missing_authority = req
             .uri()
-            .authority_part()
+            .authority()
             .map(|_| false)
             .or_else(|| {
                 req.headers()

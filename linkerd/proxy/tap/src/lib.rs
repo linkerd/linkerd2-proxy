@@ -1,5 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-
 use http;
 use indexmap::IndexMap;
 use linkerd2_conditional::Conditional;
@@ -70,7 +69,7 @@ pub trait Inspect {
 
     fn authority<B>(&self, req: &http::Request<B>) -> Option<String> {
         req.uri()
-            .authority_part()
+            .authority()
             .map(|a| a.as_str().to_owned())
             .or_else(|| {
                 req.headers()
@@ -92,10 +91,11 @@ pub trait Inspect {
 /// module.
 mod iface {
     use bytes::Buf;
-    use futures::{Future, Stream};
+    use futures::Stream;
     use http;
-    use hyper::body::Payload;
+    use hyper::body::HttpBody;
     use linkerd2_proxy_http::HasH2Reason;
+    use std::future::Future;
 
     /// Registers a stack to receive taps.
     pub trait Register {
@@ -107,12 +107,12 @@ mod iface {
 
     /// Advertises a Tap from a server to stacks.
     pub trait Subscribe<T: Tap> {
-        type Future: Future<Item = (), Error = NoCapacity>;
+        type Future: Future<Output = Result<(), NoCapacity>>;
 
         /// Returns a `Future` that succeeds when the tap has been registered.
         ///
         /// If the tap cannot be registered, a `NoCapacity` error is returned.
-        fn subscribe(&mut self, tap: T) -> Self::Future;
+        fn subscribe(&self, tap: T) -> Self::Future;
     }
 
     pub trait Tap: Clone {
@@ -127,7 +127,7 @@ mod iface {
         ///
         /// If the tap cannot be initialized, for instance because the tap has
         /// completed or been canceled, then `None` is returned.
-        fn tap<B: Payload, I: super::Inspect>(
+        fn tap<B: HttpBody, I: super::Inspect>(
             &mut self,
             req: &http::Request<B>,
             inspect: &I,
@@ -146,7 +146,7 @@ mod iface {
         type TapPayload: TapPayload;
 
         /// Record a response and obtain a handle to tap its body.
-        fn tap<B: Payload>(self, rsp: &http::Response<B>) -> Self::TapPayload;
+        fn tap<B: HttpBody>(self, rsp: &http::Response<B>) -> Self::TapPayload;
 
         /// Record a service failure.
         fn fail<E: HasH2Reason>(self, error: &E);

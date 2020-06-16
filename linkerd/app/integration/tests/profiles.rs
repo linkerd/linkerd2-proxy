@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![type_length_limit = "1586225"]
 
 use linkerd2_app_integration::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -159,7 +160,7 @@ fn retry_uses_budget() {
         budget: Some(controller::retry_budget(Duration::from_secs(1), 0.1, 1)),
         with_client: |client: client::Client| {
             assert_eq!(client.get("/0.5"), "retried");
-            let res = client.request(&mut client.request_builder("/0.5"));
+            let res = client.request(client.request_builder("/0.5"));
             assert_eq!(res.status(), 533);
         },
         with_metrics: |metrics: client::Client| {
@@ -182,7 +183,7 @@ fn does_not_retry_if_request_does_not_match() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
         with_client: |client: client::Client| {
-            let res = client.request(&mut client.request_builder("/0.5"));
+            let res = client.request(client.request_builder("/0.5"));
             assert_eq!(res.status(), 533);
         }
     }
@@ -201,7 +202,7 @@ fn does_not_retry_if_earlier_response_class_is_success() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
         with_client: |client: client::Client| {
-            let res = client.request(&mut client.request_builder("/0.5"));
+            let res = client.request(client.request_builder("/0.5"));
             assert_eq!(res.status(), 533);
         }
     }
@@ -239,7 +240,7 @@ fn does_not_retry_if_missing_retry_budget() {
         ],
         budget: None,
         with_client: |client: client::Client| {
-            let res = client.request(&mut client.request_builder("/0.5"));
+            let res = client.request(client.request_builder("/0.5"));
             assert_eq!(res.status(), 533);
         }
     }
@@ -256,7 +257,7 @@ fn ignores_invalid_retry_budget_ttl() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(1000), 0.1, 1)),
         with_client: |client: client::Client| {
-            let res = client.request(&mut client.request_builder("/0.5"));
+            let res = client.request(client.request_builder("/0.5"));
             assert_eq!(res.status(), 533);
         }
     }
@@ -273,7 +274,7 @@ fn ignores_invalid_retry_budget_ratio() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 10_000.0, 1)),
         with_client: |client: client::Client| {
-            let res = client.request(&mut client.request_builder("/0.5"));
+            let res = client.request(client.request_builder("/0.5"));
             assert_eq!(res.status(), 533);
         }
     }
@@ -290,7 +291,7 @@ fn ignores_invalid_retry_budget_negative_ratio() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), -1.0, 1)),
         with_client: |client: client::Client| {
-            let res = client.request(&mut client.request_builder("/0.5"));
+            let res = client.request(client.request_builder("/0.5"));
             assert_eq!(res.status(), 533);
         }
     }
@@ -327,7 +328,7 @@ fn timeout() {
         ],
         budget: None,
         with_client: |client: client::Client| {
-            let res = client.request(&mut client.request_builder("/1.0/sleep"));
+            let res = client.request(client.request_builder("/1.0/sleep"));
             assert_eq!(res.status(), 504);
         },
         with_metrics: |metrics: client::Client| {

@@ -4,7 +4,11 @@ use crate::proxy::http::{
 };
 use crate::svc::stack;
 use crate::{HttpEndpoint, Target};
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tower::util::Either;
 use tracing::trace;
 
@@ -16,8 +20,10 @@ pub struct OrigProtoUpgrade<M> {
     inner: M,
 }
 
+#[pin_project]
 pub struct UpgradeFuture<F> {
     can_upgrade: bool,
+    #[pin]
     inner: F,
     was_absolute: bool,
 }
@@ -71,8 +77,8 @@ where
     type Error = M::Error;
     type Future = UpgradeFuture<M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut endpoint: Target<HttpEndpoint>) -> Self::Future {
@@ -102,19 +108,19 @@ where
 
 impl<F> Future for UpgradeFuture<F>
 where
-    F: Future,
+    F: TryFuture,
 {
-    type Item = Either<orig_proto::Upgrade<F::Item>, F::Item>;
-    type Error = F::Error;
+    type Output = Result<Either<orig_proto::Upgrade<F::Ok>, F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
 
-        if self.can_upgrade {
-            let upgrade = orig_proto::Upgrade::new(inner, self.was_absolute);
-            Ok(Either::A(upgrade).into())
+        if *this.can_upgrade {
+            let upgrade = orig_proto::Upgrade::new(inner, *this.was_absolute);
+            Poll::Ready(Ok(Either::A(upgrade)))
         } else {
-            Ok(Either::B(inner).into())
+            Poll::Ready(Ok(Either::B(inner)))
         }
     }
 }

@@ -6,11 +6,6 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
 indexmap = "1.0"
 linkerd2-metrics = { path  = "../../metrics" }
-tokio = "0.1"
-tokio-timer = "0.2"   # for tokio_timer::clock
-tower = "0.1"
-tower-util = "0.1"
-tracing = "0.1.9"
+tower = { version = "0.3", default-features = false }

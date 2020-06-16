@@ -1,8 +1,12 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
 use linkerd2_error::Error;
 use linkerd2_stack::NewService;
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tower::util::{Oneshot, ServiceExt};
 use tracing::trace;
 
@@ -82,50 +86,67 @@ where
     type Error = Error;
     type Future = ResponseFuture<U, M::Future, S>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.make.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.make.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, request: U) -> Self::Future {
         let key = self.recognize.recognize(&request);
         trace!(?key, ?request, "Routing");
-        ResponseFuture::Make(self.make.call(key), Some(request))
+        ResponseFuture {
+            state: State::Make(self.make.call(key), Some(request)),
+        }
     }
 }
 
-pub enum ResponseFuture<Req, M, S>
+#[pin_project]
+pub struct ResponseFuture<Req, M, S>
 where
-    M: Future<Item = S>,
+    M: TryFuture<Ok = S>,
     M::Error: Into<Error>,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
 {
-    Make(M, Option<Req>),
-    Respond(Oneshot<S, Req>),
+    #[pin]
+    state: State<Req, M, S>,
+}
+
+#[pin_project]
+enum State<Req, M, S>
+where
+    M: TryFuture<Ok = S>,
+    M::Error: Into<Error>,
+    S: tower::Service<Req>,
+    S::Error: Into<Error>,
+{
+    Make(#[pin] M, Option<Req>),
+    Respond(#[pin] Oneshot<S, Req>),
 }
 
 impl<Req, M, S> Future for ResponseFuture<Req, M, S>
 where
-    M: Future<Item = S>,
+    M: TryFuture<Ok = S>,
     M::Error: Into<Error>,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
 {
-    type Item = S::Response;
-    type Error = Error;
+    type Output = Result<S::Response, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
         loop {
-            *self = match self {
-                ResponseFuture::Make(ref mut fut, ref mut req) => {
+            #[project]
+            match this.state.as_mut().project() {
+                State::Make(fut, req) => {
                     trace!("Making");
-                    let service = try_ready!(fut.poll().map_err(Into::into));
+                    let service = ready!(fut.try_poll(cx)).map_err(Into::into)?;
                     let req = req.take().expect("polled after ready");
-                    ResponseFuture::Respond(service.oneshot(req))
+                    this.state.set(State::Respond(service.oneshot(req)))
                 }
-                ResponseFuture::Respond(ref mut future) => {
+                State::Respond(future) => {
                     trace!("Responding");
-                    return future.poll().map_err(Into::into);
+                    return future.poll(cx).map_err(Into::into);
                 }
             }
         }

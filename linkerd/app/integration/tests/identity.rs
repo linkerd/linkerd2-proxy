@@ -102,12 +102,12 @@ macro_rules! generate_tls_reject_test {
             client::TlsConfig::new(client_config, id),
         );
 
-        assert!(client
-            .request_async(client.request_builder("/ready").method("GET"))
-            .wait()
-            .err()
-            .unwrap()
-            .is_connect());
+        assert!(futures::executor::block_on(
+            client.request_async(client.request_builder("/ready").method("GET"))
+        )
+        .err()
+        .unwrap()
+        .is_connect());
     };
 }
 
@@ -222,8 +222,8 @@ fn ready() {
     assert_eventually!(ready().status() == http::StatusCode::OK);
 }
 
-#[test]
-fn refresh() {
+#[tokio::test]
+async fn refresh() {
     let _ = trace_init();
     let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity::Identity {
@@ -259,10 +259,10 @@ fn refresh() {
     env.put(app::env::ENV_IDENTITY_MIN_REFRESH, "0ms".into());
     let _proxy = proxy::new().identity(id_svc).run_with_test_env(env);
 
-    let expiry = expiry_rx.wait().expect("wait for expiry");
+    let expiry = expiry_rx.await.expect("wait for expiry");
     let how_long = expiry.duration_since(SystemTime::now()).unwrap();
 
-    std::thread::sleep(how_long);
+    tokio::time::delay_for(how_long).await;
 
     assert_eventually!(refreshed.load(Ordering::SeqCst) == true);
 }

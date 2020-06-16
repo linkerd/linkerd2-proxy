@@ -1,6 +1,7 @@
 use super::endpoint::{Target, TcpEndpoint};
-use futures::{future, Poll};
+use futures::future;
 use linkerd2_app_core::{admit, proxy::http};
+use std::task::{Context, Poll};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -48,10 +49,10 @@ impl admit::Admit<TcpEndpoint> for PreventLoop {
 impl tower::Service<Target> for PreventLoop {
     type Response = PreventLoop;
     type Error = LoopPrevented;
-    type Future = future::FutureResult<Self::Response, Self::Error>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Err(LoopPrevented { port: self.port })
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Err(LoopPrevented { port: self.port }))
     }
 
     fn call(&mut self, _: Target) -> Self::Future {
@@ -62,10 +63,10 @@ impl tower::Service<Target> for PreventLoop {
 impl<B> tower::Service<http::Request<B>> for PreventLoop {
     type Response = http::Response<http::boxed::Payload>;
     type Error = LoopPrevented;
-    type Future = future::FutureResult<Self::Response, Self::Error>;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Err(LoopPrevented { port: self.port })
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Err(LoopPrevented { port: self.port }))
     }
 
     fn call(&mut self, _: http::Request<B>) -> Self::Future {

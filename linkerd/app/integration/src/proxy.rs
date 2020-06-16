@@ -1,4 +1,7 @@
 use super::*;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::Poll;
 
 pub fn new() -> Proxy {
     Proxy::new()
@@ -21,7 +24,7 @@ pub struct Proxy {
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
     outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
 
-    shutdown_signal: Option<Box<dyn Future<Item = (), Error = ()> + Send>>,
+    shutdown_signal: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
 pub struct Listening {
@@ -126,7 +129,7 @@ impl Proxy {
         // It doesn't matter what kind of future you give us,
         // we'll just wrap it up in a box and trigger when
         // it triggers. The results are discarded.
-        let fut = Box::new(sig.then(|_| Ok(())));
+        let fut = Box::pin(sig.map(|_| ()));
         self.shutdown_signal = Some(fut);
         self
     }
@@ -239,7 +242,12 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let (tx, mut rx) = shutdown_signal();
 
     if let Some(fut) = proxy.shutdown_signal {
-        rx = Box::new(rx.select(fut).then(|_| Ok(())));
+        rx = Box::pin(async move {
+            tokio::select! {
+                _ = rx => {},
+                _ = fut => {},
+            }
+        });
     }
 
     std::thread::Builder::new()
@@ -252,10 +260,10 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                 let _c = controller;
                 let _i = identity;
 
-                tokio::runtime::current_thread::Runtime::new()
+                tokio_compat::runtime::current_thread::Runtime::new()
                     .expect("proxy")
-                    .block_on(future::lazy(move || {
-                        let main = config.build(trace_handle).expect("config");
+                    .block_on_std(async move {
+                        let main = config.build(trace_handle).await.expect("config");
 
                         // slip the running tx into the shutdown future, since the first time
                         // the shutdown future is polled, that means all of the proxy is now
@@ -268,26 +276,26 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
-                        let on_shutdown = future::poll_fn(move || {
+                        let on_shutdown = futures::future::poll_fn::<(), _>(move |cx| {
                             if let Some((tx, addrs)) = running.take() {
                                 let _ = tx.send(addrs);
                             }
 
-                            try_ready!(rx.poll());
+                            futures::ready!((&mut rx).as_mut().poll(cx));
                             debug!("shutdown");
-                            Ok(().into())
+                            Poll::Ready(())
                         });
 
                         let drain = main.spawn();
-                        on_shutdown.and_then(move |()| drain.drain())
-                    }))
-                    .expect("proxy");
+                        on_shutdown.await;
+                        drain.drain().await;
+                    });
             })
         })
         .expect("spawn");
 
     let (tap_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
-        running_rx.wait().unwrap();
+        futures::executor::block_on(running_rx).unwrap();
 
     // printlns will show if the test fails...
     println!(

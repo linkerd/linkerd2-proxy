@@ -10,12 +10,14 @@ pub use linkerd2_lock as lock;
 pub use linkerd2_stack::{self as stack, layer, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::layer::Layer;
+pub use tower::make::MakeService;
+use tower::spawn_ready::SpawnReadyLayer;
 pub use tower::util::{Either, Oneshot};
-pub use tower::{service_fn as mk, MakeConnection, MakeService, Service, ServiceExt};
-use tower_spawn_ready::SpawnReadyLayer;
+pub use tower::{service_fn as mk, Service, ServiceExt};
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
@@ -46,6 +48,42 @@ impl<T> NewService<T> for IdentityProxy {
     type Service = ();
     fn new_service(&self, _: T) -> Self::Service {
         ()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WithTarget<S, T> {
+    inner: S,
+    target: T,
+}
+
+impl<S, T> Service<()> for WithTarget<S, T>
+where
+    S: Service<T>,
+    T: Clone,
+{
+    type Response = S::Response;
+    type Future = S::Future;
+    type Error = S::Error;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, _: ()) -> Self::Future {
+        self.inner.call(self.target.clone())
+    }
+}
+
+impl<S, T> NewService<()> for WithTarget<S, T>
+where
+    S: NewService<T>,
+    T: Clone,
+{
+    type Service = S::Service;
+
+    fn new_service(&self, _: ()) -> Self::Service {
+        self.inner.new_service(self.target.clone())
     }
 }
 
@@ -101,11 +139,6 @@ impl<L> Layers<L> {
         self.push(timeout::FailFastLayer::new(timeout))
     }
 
-    // Polls the inner service at least once per interval.
-    pub fn push_probe_ready(self, interval: Duration) -> Layers<Pair<L, timeout::ProbeReadyLayer>> {
-        self.push(timeout::ProbeReadyLayer::new(interval))
-    }
-
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
         self.push(stack::OnResponseLayer::new(layer))
     }
@@ -139,7 +172,7 @@ impl<L> Layers<L> {
 
     pub fn box_http_request<B>(self) -> Layers<Pair<L, http::boxed::request::Layer<B>>>
     where
-        B: hyper::body::Payload + 'static,
+        B: hyper::body::HttpBody + 'static,
     {
         self.push(http::boxed::request::Layer::new())
     }
@@ -213,7 +246,7 @@ impl<S> Stack<S> {
         self.push(stack::OnResponseLayer::new(layer))
     }
 
-    pub fn push_spawn_ready(self) -> Stack<tower_spawn_ready::MakeSpawnReady<S>> {
+    pub fn push_spawn_ready(self) -> Stack<tower::spawn_ready::MakeSpawnReady<S>> {
         self.push(SpawnReadyLayer::new())
     }
 
@@ -233,11 +266,6 @@ impl<S> Stack<S> {
         self.push(timeout::FailFastLayer::new(timeout))
     }
 
-    // Polls the inner service at least once per interval.
-    pub fn push_probe_ready(self, interval: Duration) -> Stack<timeout::ProbeReady<S>> {
-        self.push(timeout::ProbeReadyLayer::new(interval))
-    }
-
     pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
         self.push(stack::OneshotLayer::new())
     }
@@ -252,7 +280,7 @@ impl<S> Stack<S> {
 
     pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
     where
-        T: Eq + std::hash::Hash,
+        T: Eq + std::hash::Hash + Send + 'static,
         S: NewService<T> + Clone,
         L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
         L::Service: NewService<T, Service = U>,
@@ -284,24 +312,24 @@ impl<S> Stack<S> {
         self.push(stack::FallbackLayer::new(fallback).with_predicate(predicate))
     }
 
-    pub fn boxed<A>(self) -> Stack<boxed::BoxService<A, S::Response>>
-    where
-        A: 'static,
-        S: tower::Service<A> + Send + 'static,
-        S::Response: 'static,
-        S::Future: Send + 'static,
-        S::Error: Into<Error> + 'static,
-    {
-        self.push(boxed::Layer::new())
-    }
+    // pub fn boxed<A>(self) -> Stack<boxed::BoxService<A, S::Response>>
+    // where
+    //     A: 'static,
+    //     S: tower::Service<A> + Send + 'static,
+    //     S::Response: 'static,
+    //     S::Future: Send + 'static,
+    //     S::Error: Into<Error> + 'static,
+    // {
+    //     self.push(boxed::Layer::new())
+    // }
 
-    pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
-    where
-        B: hyper::body::Payload<Data = http::boxed::Data, Error = Error> + 'static,
-        S: tower::Service<http::Request<http::boxed::Payload>>,
-    {
-        self.push(http::boxed::request::Layer::new())
-    }
+    // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
+    // where
+    //     B: hyper::body::HttpBody<Data = http::boxed::Data, Error = Error> + 'static,
+    //     S: tower::Service<http::Request<http::boxed::Payload>>,
+    // {
+    //     self.push(http::boxed::request::Layer::new())
+    // }
 
     pub fn box_http_response(self) -> Stack<http::boxed::BoxResponse<S>> {
         self.push(http::boxed::response::Layer::new())
@@ -311,6 +339,14 @@ impl<S> Stack<S> {
     pub fn check_new_service<T>(self) -> Self
     where
         S: NewService<T>,
+    {
+        self
+    }
+
+    /// Validates that this stack can be cloned
+    pub fn check_clone(self) -> Self
+    where
+        S: Clone,
     {
         self
     }
@@ -327,6 +363,15 @@ impl<S> Stack<S> {
     pub fn check_service<T>(self) -> Self
     where
         S: Service<T>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets with `Unpin` futures.
+    pub fn check_service_unpin<T>(self) -> Self
+    where
+        S: Service<T>,
+        S::Future: Unpin,
     {
         self
     }
@@ -355,8 +400,28 @@ impl<S> Stack<S> {
         self
     }
 
+    pub fn check_new_send_and_static<M, T, Req>(self) -> Self
+    where
+        S: NewService<T, Service = M>,
+        M: Service<Req> + Send + 'static,
+        M::Response: Send + 'static,
+        M::Error: Into<Error> + Send + Sync,
+        M::Future: Send,
+    {
+        self
+    }
+
     pub fn into_inner(self) -> S {
         self.0
+    }
+
+    /// Transforms a `Service<T>` or `NewService<T>` into a `Service<()>` or
+    /// `NewService<()>` by calling it with a fixed instance of `T`.
+    pub fn with_fixed_target<T: Clone>(self, target: T) -> Stack<WithTarget<S, T>> {
+        Stack(WithTarget {
+            target,
+            inner: self.0,
+        })
     }
 }
 
@@ -379,8 +444,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> futures::Poll<(), Self::Error> {
-        self.0.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
     }
 
     fn call(&mut self, t: T) -> Self::Future {
@@ -391,17 +456,27 @@ where
 pub mod make_response {
     use super::Oneshot;
     use crate::Error;
-    use futures::{try_ready, Future, Poll};
-
+    use futures::TryFuture;
+    use pin_project::{pin_project, project};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
     #[derive(Copy, Clone, Debug)]
     pub struct Layer;
 
     #[derive(Clone, Debug)]
     pub struct MakeResponse<M>(M);
 
-    pub enum ResponseFuture<F, S: tower::Service<()>> {
-        Make(F),
-        Respond(Oneshot<S, ()>),
+    #[pin_project]
+    pub struct ResponseFuture<F, S: tower::Service<()>> {
+        #[pin]
+        state: State<F, S>,
+    }
+
+    #[pin_project]
+    enum State<F, S: tower::Service<()>> {
+        Make(#[pin] F),
+        Respond(#[pin] Oneshot<S, ()>),
     }
 
     impl<S> super::Layer<S> for Layer {
@@ -414,7 +489,7 @@ pub mod make_response {
 
     impl<T, M> tower::Service<T> for MakeResponse<M>
     where
-        M: tower::MakeService<T, ()>,
+        M: tower::make::MakeService<T, ()>,
         M::MakeError: Into<Error>,
         M::Error: Into<Error>,
     {
@@ -422,33 +497,37 @@ pub mod make_response {
         type Error = Error;
         type Future = ResponseFuture<M::Future, M::Service>;
 
-        fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-            self.0.poll_ready().map_err(Into::into)
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.0.poll_ready(cx).map_err(Into::into)
         }
 
         fn call(&mut self, req: T) -> Self::Future {
-            ResponseFuture::Make(self.0.make_service(req))
+            ResponseFuture {
+                state: State::Make(self.0.make_service(req)),
+            }
         }
     }
 
     impl<F, S> Future for ResponseFuture<F, S>
     where
-        F: Future<Item = S>,
+        F: TryFuture<Ok = S>,
         F::Error: Into<Error>,
         S: tower::Service<()>,
         S::Error: Into<Error>,
     {
-        type Item = S::Response;
-        type Error = Error;
+        type Output = Result<S::Response, Error>;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        #[project]
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let mut this = self.project();
             loop {
-                *self = match self {
-                    ResponseFuture::Make(ref mut fut) => {
-                        let svc = try_ready!(fut.poll().map_err(Into::into));
-                        ResponseFuture::Respond(Oneshot::new(svc, ()))
+                #[project]
+                match this.state.as_mut().project() {
+                    State::Make(fut) => {
+                        let svc = futures::ready!(fut.try_poll(cx)).map_err(Into::into)?;
+                        this.state.set(State::Respond(Oneshot::new(svc, ())))
                     }
-                    ResponseFuture::Respond(ref mut fut) => return fut.poll().map_err(Into::into),
+                    State::Respond(fut) => return fut.poll(cx).map_err(Into::into),
                 }
             }
         }

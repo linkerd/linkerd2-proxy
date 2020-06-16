@@ -1,9 +1,11 @@
 //! A middleware that may retry a request in a fallback service.
-
-use futures::{Future, Poll};
+use futures::TryFuture;
 use linkerd2_error::Error;
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tower::util::{Either, Oneshot, ServiceExt};
-
 /// A Layer that augments the underlying service with a fallback service.
 ///
 /// If the future returned by the primary service fails with an error matching a
@@ -21,13 +23,21 @@ pub struct Fallback<I, F, P = fn(&Error) -> bool> {
     predicate: P,
 }
 
-pub enum MakeFuture<A, B, P> {
+#[pin_project]
+pub struct MakeFuture<A, B, P> {
+    #[pin]
+    state: State<A, B, P>,
+}
+
+#[pin_project]
+enum State<A, B, P> {
     A {
+        #[pin]
         primary: A,
         fallback: Option<B>,
         predicate: P,
     },
-    B(B),
+    B(#[pin] B),
 }
 
 // === impl FallbackLayer ===
@@ -106,15 +116,17 @@ where
     type Error = Error;
     type Future = MakeFuture<A::Future, Oneshot<B, T>, P>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        MakeFuture::A {
-            primary: self.inner.call(target.clone()),
-            fallback: Some(self.fallback.clone().oneshot(target)),
-            predicate: self.predicate.clone(),
+        MakeFuture {
+            state: State::A {
+                primary: self.inner.call(target.clone()),
+                fallback: Some(self.fallback.clone().oneshot(target)),
+                predicate: self.predicate.clone(),
+            },
         }
     }
 }
@@ -123,34 +135,40 @@ where
 
 impl<A, B, P> Future for MakeFuture<A, B, P>
 where
-    A: Future,
+    A: TryFuture,
     A::Error: Into<Error>,
-    B: Future,
+    B: TryFuture,
     B::Error: Into<Error>,
     P: Fn(&Error) -> bool,
 {
-    type Item = Either<A::Item, B::Item>;
-    type Error = Error;
+    type Output = Result<Either<A::Ok, B::Ok>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
         loop {
-            *self = match self {
-                MakeFuture::A {
-                    ref mut primary,
-                    ref mut fallback,
-                    ref predicate,
-                } => match primary.poll() {
-                    Ok(ok) => return Ok(ok.map(Either::A)),
+            #[project]
+            match this.state.as_mut().project() {
+                State::A {
+                    primary,
+                    fallback,
+                    predicate,
+                } => match futures::ready!(primary.try_poll(cx)) {
+                    Ok(ok) => return Poll::Ready(Ok(Either::A(ok))),
                     Err(e) => {
                         let error = e.into();
                         if !(predicate)(&error) {
-                            return Err(error);
+                            return Poll::Ready(Err(error));
                         }
-                        MakeFuture::B(fallback.take().unwrap())
+                        let fallback = fallback.take().unwrap();
+                        this.state.set(State::B(fallback));
                     }
                 },
-                MakeFuture::B(ref mut b) => {
-                    return b.poll().map(|ok| ok.map(Either::B)).map_err(Into::into);
+                State::B(b) => {
+                    return b
+                        .try_poll(cx)
+                        .map(|ok| ok.map(Either::B))
+                        .map_err(Into::into);
                 }
             };
         }

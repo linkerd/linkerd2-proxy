@@ -1,16 +1,24 @@
 use crate::LabelError;
-use futures::{Future, Poll};
+use futures::TryFuture;
 use indexmap::IndexMap;
 use linkerd2_metrics::{Counter, FmtLabels};
+use pin_project::pin_project;
+use std::future::Future;
 use std::hash::Hash;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 
 /// A middlware that records errors.
+#[pin_project]
 pub struct RecordError<L, K: Hash + Eq, S> {
     label: L,
-    errors: Arc<Mutex<IndexMap<K, Counter>>>,
+    errors: Errors<K>,
+    #[pin]
     inner: S,
 }
+
+type Errors<K> = Arc<Mutex<IndexMap<K, Counter>>>;
 
 impl<L, K: Hash + Eq, S> RecordError<L, K, S> {
     pub(crate) fn new(label: L, errors: Arc<Mutex<IndexMap<K, Counter>>>, inner: S) -> Self {
@@ -23,12 +31,12 @@ impl<L, K: Hash + Eq, S> RecordError<L, K, S> {
 }
 
 impl<L, K: FmtLabels + Hash + Eq, S> RecordError<L, K, S> {
-    fn record<E>(&self, err: &E)
+    fn record<E>(errors: &Errors<K>, label: &L, err: &E)
     where
         L: LabelError<E, Labels = K> + Clone,
     {
-        let labels = self.label.label_error(&err);
-        if let Ok(mut errors) = self.errors.lock() {
+        let labels = label.label_error(&err);
+        if let Ok(mut errors) = errors.lock() {
             errors
                 .entry(labels)
                 .or_insert_with(|| Default::default())
@@ -46,13 +54,13 @@ where
     type Error = S::Error;
     type Future = RecordError<L, L::Labels, S::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        match self.inner.poll_ready() {
-            Ok(ready) => Ok(ready),
-            Err(err) => {
-                self.record(&err);
-                return Err(err);
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.inner.poll_ready(cx) {
+            Poll::Ready(Err(err)) => {
+                Self::record(&self.errors, &self.label, &err);
+                Poll::Ready(Err(err))
             }
+            poll => poll,
         }
     }
 
@@ -67,18 +75,18 @@ where
 
 impl<L, F> Future for RecordError<L, L::Labels, F>
 where
-    F: Future,
+    F: TryFuture,
     L: LabelError<F::Error> + Clone,
 {
-    type Item = F::Item;
-    type Error = F::Error;
+    type Output = Result<F::Ok, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.inner.poll() {
-            Ok(ready) => Ok(ready),
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        match futures::ready!(this.inner.try_poll(cx)) {
+            Ok(ready) => Poll::Ready(Ok(ready)),
             Err(err) => {
-                self.record(&err);
-                return Err(err);
+                Self::record(&*this.errors, &*this.label, &err);
+                Poll::Ready(Err(err))
             }
         }
     }

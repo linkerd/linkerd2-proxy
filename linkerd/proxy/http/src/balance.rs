@@ -1,12 +1,14 @@
 use crate::Error;
 use http;
-use hyper::body::Payload;
+use hyper::body::HttpBody;
 pub use hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
 use rand::{rngs::SmallRng, SeedableRng};
-use std::{marker::PhantomData, time::Duration};
-pub use tower_balance::p2c::Balance;
-use tower_discover::Discover;
-pub use tower_load::{Load, PeakEwmaDiscover};
+use std::{hash::Hash, marker::PhantomData, time::Duration};
+use tower::discover::Discover;
+pub use tower::{
+    balance::p2c::Balance,
+    load::{Load, PeakEwmaDiscover},
+};
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
 /// `M`-typed endpoint stacks.
@@ -42,9 +44,10 @@ impl<A, B> Clone for Layer<A, B> {
 
 impl<D, S, A, B> tower::layer::Layer<D> for Layer<A, B>
 where
-    A: Payload,
-    B: Payload,
+    A: HttpBody,
+    B: HttpBody,
     D: Discover<Service = S>,
+    D::Key: Hash,
     S: tower::Service<http::Request<A>, Response = http::Response<B>>,
     S::Error: Into<Error>,
     Balance<PeakEwmaDiscover<D, PendingUntilFirstData>, http::Request<A>>:

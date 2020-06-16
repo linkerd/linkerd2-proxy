@@ -2,8 +2,9 @@
 
 //! A middleware that fails requests by policy.
 
-use futures::{future, Future, Poll};
+use futures::{future, TryFutureExt};
 use linkerd2_error::Error;
+use std::task::{Context, Poll};
 
 pub struct AdmitLayer<A>(A);
 
@@ -46,17 +47,17 @@ where
     type Error = Error;
     type Future = future::Either<
         future::MapErr<S::Future, fn(S::Error) -> Error>,
-        future::FutureResult<Self::Response, Self::Error>,
+        future::Ready<Result<Self::Response, Self::Error>>,
     >;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, t: T) -> Self::Future {
         match self.admit.admit(&t) {
-            Ok(()) => future::Either::A(self.inner.call(t).map_err(Into::into)),
-            Err(e) => future::Either::B(future::err(e.into())),
+            Ok(()) => future::Either::Left(self.inner.call(t).map_err(Into::into)),
+            Err(e) => future::Either::Right(future::err(e.into())),
         }
     }
 }

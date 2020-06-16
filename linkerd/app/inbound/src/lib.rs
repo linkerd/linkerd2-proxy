@@ -32,16 +32,18 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
-#[allow(dead_code)] // TODO #2597
-mod set_client_id_on_req;
-#[allow(dead_code)] // TODO #2597
-mod set_remote_ip_on_req;
+// #[allow(dead_code)] // TODO #2597
+// mod set_client_id_on_req;
+// #[allow(dead_code)] // TODO #2597
+// mod set_remote_ip_on_req;
 
 use self::prevent_loop::PreventLoop;
 
@@ -62,20 +64,21 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> serve::Task
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
     where
-        L: tower::Service<Target, Response = S> + Send + Clone + 'static,
+        L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
         L::Error: Into<Error>,
-        L::Future: Send,
+        L::Future: Unpin + Send,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
-            > + Send
+            > + Unpin
+            + Send
             + 'static,
         S::Error: Into<Error>,
-        S::Future: Send,
-        P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
-        P::Future: Send,
+        S::Future: Unpin + Send,
+        P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
+        P::Future: Unpin + Send,
     {
         let tcp_connect = self.build_tcp_connect(&metrics);
         let prevent_loop = PreventLoop::from(listen.listen_addr().port());
@@ -106,14 +109,15 @@ impl Config {
     ) -> impl tower::Service<
         TcpEndpoint,
         Error = impl Into<Error>,
-        Future = impl future::Future + Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+        Future = impl future::Future + Unpin + Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     > + tower::Service<
         HttpEndpoint,
         Error = impl Into<Error>,
-        Future = impl future::Future + Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-    > + Clone
+        Future = impl future::Future + Unpin + Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    > + Unpin
+           + Clone
            + Send {
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).
@@ -136,34 +140,37 @@ impl Config {
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl tower::Service<
         Target,
-        Error = impl Into<Error>,
+        Error = Error,
         Future = impl Send,
         Response = impl tower::Service<
             http::Request<http::boxed::Payload>,
             Response = http::Response<http::boxed::Payload>,
-            Error = impl Into<Error>,
+            Error = Error,
             Future = impl Send,
-        > + Send,
-    > + Clone
+        > + Unpin
+                       + Send,
+    > + Unpin
+           + Clone
            + Send
     where
-        C: tower::Service<HttpEndpoint> + Clone + Send + Sync + 'static,
+        C: tower::Service<HttpEndpoint> + Unpin + Clone + Send + Sync + 'static,
         C::Error: Into<Error>,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-        C::Future: Send,
-        P: profiles::GetRoutes<Profile> + Clone + Send + 'static,
-        P::Future: Send,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        C::Future: Unpin + Send,
+        P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
+        P::Future: Unpin + Send,
         // The loopback router processes requests sent to the inbound port.
-        L: tower::Service<Target, Response = S> + Send + Clone + 'static,
+        L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
         L::Error: Into<Error>,
-        L::Future: Send,
+        L::Future: Unpin + Send,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
-            > + Send
+            > + Unpin
+            + Send
             + 'static,
         S::Error: Into<Error>,
-        S::Future: Send,
+        S::Future: Unpin + Send,
     {
         let Config {
             proxy:
@@ -300,21 +307,20 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> serve::Task
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
     where
-        C: tower::Service<TcpEndpoint> + Clone + Send + Sync + 'static,
+        C: tower::Service<TcpEndpoint> + Unpin + Clone + Send + Sync + 'static,
         C::Error: Into<Error>,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
-        C::Future: Send,
-        H: tower::Service<Target, Response = S> + Send + Clone + 'static,
-        H::Error: Into<Error>,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        C::Future: Unpin + Send,
+        H: tower::Service<Target, Response = S, Error = Error> + Unpin + Send + Clone + 'static,
         H::Future: Send,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
+                Error = Error,
             > + Send
             + 'static,
-        S::Error: Into<Error>,
         S::Future: Send,
     {
         let Config {
@@ -379,9 +385,9 @@ impl Config {
             // target, and dispatches the request.
             .instrument_from_target()
             .push(router::Layer::new(RequestTarget::from))
-            .check_new_service::<tls::accept::Meta>()
             // Used by tap.
             .push_http_insert_target()
+            .check_new_service::<tls::accept::Meta>()
             .push_on_response(
                 svc::layers()
                     .push(http_strip_headers)
@@ -390,6 +396,7 @@ impl Config {
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request(),
             )
+            .check_new_service::<tls::accept::Meta>()
             .instrument(|src: &tls::accept::Meta| {
                 info_span!(
                     "source",
@@ -422,7 +429,7 @@ impl Config {
             .push_timeout(detect_protocol_timeout);
 
         info!(listen.addr = %listen.listen_addr(), "Serving");
-        serve::serve(listen, tcp_detect.into_inner(), drain)
+        Box::pin(serve::serve(listen, tcp_detect.into_inner(), drain))
     }
 }
 

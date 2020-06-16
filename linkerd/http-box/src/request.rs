@@ -1,7 +1,8 @@
 //! A middleware that boxes HTTP request bodies.
 
 use crate::Payload;
-use futures::Poll;
+use linkerd2_error::Error;
+use std::task::{Context, Poll};
 
 #[derive(Debug)]
 pub struct Layer<B>(std::marker::PhantomData<fn(B)>);
@@ -11,7 +12,7 @@ pub struct BoxRequest<S, B>(S, std::marker::PhantomData<fn(B)>);
 
 impl<B> Layer<B>
 where
-    B: hyper::body::Payload + 'static,
+    B: http_body::Body + 'static,
 {
     pub fn new() -> Self {
         Layer(std::marker::PhantomData)
@@ -26,7 +27,9 @@ impl<B> Clone for Layer<B> {
 
 impl<S, B> tower::layer::Layer<S> for Layer<B>
 where
-    B: hyper::body::Payload + 'static,
+    B: http_body::Body + 'static,
+    B::Data: Send + 'static,
+    B::Error: Into<Error>,
     S: tower::Service<http::Request<Payload>>,
     BoxRequest<S, B>: tower::Service<http::Request<B>>,
 {
@@ -45,15 +48,17 @@ impl<S: Clone, B> Clone for BoxRequest<S, B> {
 
 impl<S, B> tower::Service<http::Request<B>> for BoxRequest<S, B>
 where
-    B: hyper::body::Payload + 'static,
+    B: http_body::Body + Send + 'static,
+    B::Data: Send + 'static,
+    B::Error: Into<Error>,
     S: tower::Service<http::Request<Payload>>,
 {
     type Response = S::Response;
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {

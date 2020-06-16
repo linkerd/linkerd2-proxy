@@ -1,10 +1,14 @@
 //! A middleware that limits the amount of time the service may be not ready
 //! before requests are failed.
 
-use super::timer::Delay;
-use futures::{Async, Future, Poll};
+use futures::TryFuture;
 use linkerd2_error::Error;
-use std::time::{Duration, Instant};
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::Duration;
+use tokio::time::{self, Delay};
 use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug)]
@@ -28,8 +32,9 @@ enum State {
     FailFast,
 }
 
+#[pin_project]
 pub enum ResponseFuture<F> {
-    Inner(F),
+    Inner(#[pin] F),
     FailFast,
 }
 
@@ -64,23 +69,21 @@ where
     type Error = Error;
     type Future = ResponseFuture<S::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        match self.inner.poll_ready() {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.inner.poll_ready(cx) {
             // If the inner service is not ready, go into failfast after `max_unavailable`.
-            Ok(Async::NotReady) => loop {
+            Poll::Pending => loop {
                 self.state = match self.state {
                     // The inner service just transitioned to NotReady, so initiate a new timeout.
-                    State::Open => {
-                        State::Waiting(Delay::new(Instant::now() + self.max_unavailable))
-                    }
+                    State::Open => State::Waiting(time::delay_for(self.max_unavailable)),
 
                     // A timeout has been set, so wait for it to complete.
                     State::Waiting(ref mut fut) => {
-                        let poll = fut.poll();
-                        debug_assert!(poll.is_ok(), "timer must not fail");
-                        if let Ok(Async::NotReady) = poll {
+                        tokio::pin!(fut);
+                        let poll = fut.poll(cx);
+                        if poll.is_pending() {
                             trace!("Pending");
-                            return Ok(Async::NotReady);
+                            return Poll::Pending;
                         }
                         State::FailFast
                     }
@@ -88,7 +91,7 @@ where
                     // Admit requests and fail them immediately.
                     State::FailFast => {
                         debug!("Failing");
-                        return Ok(Async::Ready(()));
+                        return Poll::Ready(Ok(()));
                     }
                 };
             },
@@ -118,16 +121,17 @@ where
 
 impl<F> Future for ResponseFuture<F>
 where
-    F: Future,
+    F: TryFuture,
     F::Error: Into<Error>,
 {
-    type Item = F::Item;
-    type Error = Error;
+    type Output = Result<F::Ok, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self {
-            ResponseFuture::Inner(ref mut f) => f.poll().map_err(Into::into),
-            ResponseFuture::FailFast => Err(FailFastError(()).into()),
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        match self.project() {
+            ResponseFuture::Inner(f) => f.try_poll(cx).map_err(Into::into),
+            ResponseFuture::FailFast => Poll::Ready(Err(FailFastError(()).into())),
         }
     }
 }
@@ -145,55 +149,38 @@ impl std::error::Error for FailFastError {}
 #[cfg(test)]
 mod test {
     use super::FailFastLayer;
-    use futures::{future, Future};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    use tokio_test::{assert_pending, assert_ready, assert_ready_ok};
     use tower::layer::Layer;
-    use tower::Service;
-    use tower_test::mock;
+    use tower_test::mock::{self, Spawn};
 
-    fn run<F, R>(f: F)
-    where
-        F: FnOnce() -> R + 'static,
-        R: future::IntoFuture<Item = ()> + 'static,
-    {
-        tokio::runtime::current_thread::run(future::lazy(f).map_err(|_| panic!("Failed")));
-    }
-
-    #[test]
-    fn fails_fast() {
+    #[tokio::test]
+    async fn fails_fast() {
         let max_unavailable = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
-        let mut service = FailFastLayer::new(max_unavailable).layer(service);
+        let mut service = Spawn::new(FailFastLayer::new(max_unavailable).layer(service));
 
-        run(move || {
-            // The inner starts unavailable.
-            handle.allow(0);
-            assert!(service.poll_ready().unwrap().is_not_ready());
+        // The inner starts unavailable.
+        handle.allow(0);
+        assert_pending!(service.poll_ready());
 
-            // Then we wait for the idle timeout, at which point the service
-            // should start failing fast.
-            tokio_timer::Delay::new(Instant::now() + max_unavailable + Duration::from_millis(1))
-                .map_err(|_| ())
-                .and_then(move |_| {
-                    assert!(service.poll_ready().unwrap().is_ready());
-                    service.call(()).then(move |ret| {
-                        let err = ret.err().expect("should failfast");
-                        assert!(err.is::<super::FailFastError>());
+        // Then we wait for the idle timeout, at which point the service
+        // should start failing fast.
+        tokio::time::delay_for(max_unavailable + Duration::from_millis(1)).await;
+        assert_ready_ok!(service.poll_ready());
 
-                        // Then the inner service becomes available.
-                        handle.allow(1);
-                        assert!(service.poll_ready().unwrap().is_ready());
-                        let fut = service.call(());
+        let err = service.call(()).await.err().expect("should failfast");
+        assert!(err.is::<super::FailFastError>());
 
-                        let ((), rsp) = handle.next_request().expect("must get a request");
-                        rsp.send_response(());
+        // Then the inner service becomes available.
+        handle.allow(1);
+        assert_ready_ok!(service.poll_ready());
+        let fut = service.call(());
 
-                        fut.then(|ret| {
-                            assert!(ret.is_ok());
-                            Ok(())
-                        })
-                    })
-                })
-        });
+        let ((), rsp) = handle.next_request().await.expect("must get a request");
+        rsp.send_response(());
+
+        let ret = fut.await;
+        assert!(ret.is_ok());
     }
 }

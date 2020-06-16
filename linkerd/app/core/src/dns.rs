@@ -1,4 +1,3 @@
-use crate::Error;
 pub use linkerd2_dns::*;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -18,10 +17,10 @@ pub struct Dns {
 // === impl Config ===
 
 impl Config {
-    pub fn build(self) -> Result<Dns, Error> {
+    pub fn build(self) -> Dns {
         let (resolver, task) =
             Resolver::from_system_config_with(&self).expect("system DNS config must be valid");
-        Ok(Dns { resolver, task })
+        Dns { resolver, task }
     }
 }
 

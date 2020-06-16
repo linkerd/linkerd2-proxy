@@ -6,9 +6,15 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 linkerd2-error = { path = "../../error" }
 linkerd2-stack = { path = ".." }
-tower = "0.1"
 tracing = "0.1"
-tracing-futures = "0.1"
+tracing-futures = { version = "0.2", features = ["std-future"] }
+pin-project = "0.4"
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false

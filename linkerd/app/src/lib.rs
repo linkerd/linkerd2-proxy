@@ -1,7 +1,7 @@
 //! Configures and executes the proxy
 
 #![recursion_limit = "256"]
-#![deny(warnings, rust_2018_idioms)]
+//#![deny(warnings, rust_2018_idioms)]
 
 pub mod admin;
 pub mod dst;
@@ -12,19 +12,20 @@ pub mod oc_collector;
 pub mod tap;
 
 use self::metrics::Metrics;
-use futures::{future, Async, Future};
+use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
     proxy::core::listen::{Bind, Listen},
     svc::{self, NewService},
-    Error, Never,
+    Error,
 };
 use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
@@ -56,14 +57,14 @@ pub struct Config {
 
 pub struct App {
     admin: admin::Admin,
-    dns: dns::Task,
     drain: drain::Signal,
+    dns: dns::Task,
     dst: ControlAddr,
     identity: identity::Identity,
     inbound_addr: SocketAddr,
     oc_collector: oc_collector::OcCollector,
     outbound_addr: SocketAddr,
-    start_proxy: Box<dyn Future<Item = (), Error = Never> + Send + 'static>,
+    start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
 }
 
@@ -76,7 +77,7 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub fn build(self, log_level: trace::LevelHandle) -> Result<App, Error> {
+    pub async fn build(self, log_level: trace::LevelHandle) -> Result<App, Error> {
         let Config {
             admin,
             dns,
@@ -91,7 +92,7 @@ impl Config {
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
-        let dns = info_span!("dns").in_scope(|| dns.build())?;
+        let dns = dns.build();
 
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
@@ -99,9 +100,8 @@ impl Config {
         let (drain_tx, drain_rx) = drain::channel();
 
         let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
-
         let dst = {
-            use linkerd2_app_core::{classify, control, proxy::grpc, reconnect, transport::tls};
+            use linkerd2_app_core::{classify, control, reconnect, transport::tls};
 
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
@@ -123,11 +123,7 @@ impl Config {
                     .push(metrics.into_layer::<classify::Response>())
                     .push(control::add_origin::Layer::new())
                     .into_new_service()
-                    .push_on_response(
-                        svc::layers()
-                            .push(grpc::req_body_as_payload::layer())
-                            .push_spawn_buffer(dst.control.buffer_capacity),
-                    )
+                    .push_on_response(svc::layers().push_spawn_buffer(dst.control.buffer_capacity))
                     .new_service(dst.control.addr.clone());
                 dst.build(svc)
             })
@@ -161,7 +157,7 @@ impl Config {
         let tap_layer = tap.layer();
         let oc_span_sink = oc_collector.span_sink();
 
-        let start_proxy = Box::new(future::lazy(move || {
+        let start_proxy = Box::pin(async move {
             let outbound_connect =
                 outbound.build_tcp_connect(local_identity.clone(), &outbound_metrics);
 
@@ -210,7 +206,7 @@ impl Config {
                             .push_on_response(svc::layers().box_http_request())
                             .into_inner(),
                         dst.profiles,
-                        tap_layer.clone(),
+                        tap_layer,
                         inbound_metrics,
                         oc_span_sink,
                         drain_rx,
@@ -218,15 +214,13 @@ impl Config {
                     .map_err(|e| panic!("inbound failed: {}", e))
                     .instrument(info_span!("inbound")),
             );
-
-            Ok::<(), Never>(())
-        }));
+        });
 
         Ok(App {
             admin,
-            dns: dns.task,
             dst: dst_addr,
             drain: drain_tx,
+            dns: dns.task,
             identity,
             inbound_addr,
             oc_collector,
@@ -285,8 +279,8 @@ impl App {
     pub fn spawn(self) -> drain::Signal {
         let App {
             admin,
-            dns,
             drain,
+            dns,
             identity,
             oc_collector,
             start_proxy,
@@ -300,83 +294,75 @@ impl App {
         // the task. This causes the daemon reactor to stop.
         let (admin_shutdown_tx, admin_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
         debug!("spawning daemon thread");
-        tokio::spawn(future::poll_fn(|| Ok(Async::NotReady)).map(|()| drop(admin_shutdown_tx)));
+        tokio::spawn(future::pending().map(|()| drop(admin_shutdown_tx)));
         std::thread::Builder::new()
             .name("admin".into())
             .spawn(move || {
-                tokio::runtime::current_thread::Runtime::new()
-                    .expect("admin runtime")
-                    .block_on(
-                        future::lazy(move || {
-                            debug!("running admin thread");
-                            tokio::spawn(dns);
+                let mut rt = tokio::runtime::Builder::new()
+                    .basic_scheduler()
+                    .enable_all()
+                    .build()
+                    .expect("building admin runtime must succeed");
+                rt.block_on(
+                    async move {
+                        debug!("running admin thread");
 
-                            // Start the admin server to serve the readiness endpoint.
+                        // Start the admin server to serve the readiness endpoint.
+                        tokio::spawn(
+                            admin
+                                .serve
+                                .map_err(|e| panic!("admin server died: {}", e))
+                                .instrument(info_span!("admin", listen.addr = %admin.listen_addr)),
+                        );
+
+                        // Kick off the identity so that the process can become ready.
+                        if let identity::Identity::Enabled { local, task, .. } = identity {
+                            tokio::spawn(task.instrument(info_span!("identity")));
+
+                            let latch = admin.latch;
                             tokio::spawn(
-                                admin
-                                    .serve
-                                    .map_err(|e| panic!("admin server died: {}", e))
-                                    .instrument(
-                                        info_span!("admin", listen.addr = %admin.listen_addr),
-                                    ),
-                            );
-
-                            // Kick off the identity so that the process can become ready.
-                            if let identity::Identity::Enabled { local, task, .. } = identity {
-                                tokio::spawn(
-                                    task.map_err(|e| {
-                                        panic!("identity task failed: {}", e);
+                                local
+                                    .await_crt()
+                                    .map_ok(move |id| {
+                                        latch.release();
+                                        info!("Certified identity: {}", id.name().as_ref());
+                                    })
+                                    .map_err(|_| {
+                                        // The daemon task was lost?!
+                                        panic!("Failed to certify identity!");
                                     })
                                     .instrument(info_span!("identity")),
-                                );
+                            );
+                        } else {
+                            admin.latch.release()
+                        }
 
-                                let latch = admin.latch;
-                                tokio::spawn(
-                                    local
-                                        .await_crt()
-                                        .map(move |id| {
-                                            latch.release();
-                                            info!("Certified identity: {}", id.name().as_ref());
-                                        })
-                                        .map_err(|_| {
-                                            // The daemon task was lost?!
-                                            panic!("Failed to certify identity!");
-                                        })
-                                        .instrument(info_span!("identity")),
-                                );
-                            } else {
-                                admin.latch.release()
-                            }
+                        // Spawn the DNS resolver background task.
+                        tokio::spawn(dns.instrument(info_span!("dns")));
 
-                            if let tap::Tap::Enabled { daemon, serve, .. } = tap {
-                                tokio::spawn(
-                                    daemon
-                                        .map_err(|never| match never {})
-                                        .instrument(info_span!("tap")),
-                                );
-                                tokio::spawn(
-                                    serve
-                                        .map_err(|error| error!(%error, "server died"))
-                                        .instrument(info_span!("tap")),
-                                );
-                            }
+                        if let tap::Tap::Enabled { daemon, serve, .. } = tap {
+                            tokio::spawn(daemon.instrument(info_span!("tap")));
+                            tokio::spawn(
+                                serve
+                                    .map_err(|error| error!(%error, "server died"))
+                                    .instrument(info_span!("tap")),
+                            );
+                        }
 
-                            if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
-                                tokio::spawn(
-                                    task.map_err(|error| error!(%error, "client died"))
-                                        .instrument(info_span!("opencensus")),
-                                );
-                            }
+                        if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
+                            tokio::spawn(task.instrument(info_span!("opencensus")));
+                        }
 
-                            admin_shutdown_rx.map_err(|_| ())
-                        })
-                        .instrument(info_span!("daemon")),
-                    )
-                    .ok()
+                        // we don't care if the admin shutdown channel is
+                        // dropped or actually triggered.
+                        let _ = admin_shutdown_rx.await;
+                    }
+                    .instrument(info_span!("daemon")),
+                )
             })
             .expect("admin");
 
-        tokio::spawn(start_proxy.map_err(|n| match n {}));
+        tokio::spawn(start_proxy);
 
         drain
     }

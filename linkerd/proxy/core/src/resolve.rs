@@ -1,15 +1,17 @@
-use futures::{Future, Poll};
 use linkerd2_error::Error;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Resolves `T`-typed names/addresses as a `Resolution`.
 pub trait Resolve<T> {
     type Endpoint;
     type Error: Into<Error>;
     type Resolution: Resolution<Endpoint = Self::Endpoint>;
-    type Future: Future<Item = Self::Resolution, Error = Self::Error>;
+    type Future: Future<Output = Result<Self::Resolution, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error>;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
     fn resolve(&mut self, target: T) -> Self::Future;
 
@@ -26,7 +28,20 @@ pub trait Resolution {
     type Endpoint;
     type Error: Into<Error>;
 
-    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error>;
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>>;
+
+    fn poll_unpin(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>>
+    where
+        Self: Unpin,
+    {
+        Pin::new(self).poll(cx)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -54,8 +69,8 @@ where
     type Future = S::Future;
 
     #[inline]
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        tower::Service::poll_ready(self)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        tower::Service::poll_ready(self, cx)
     }
 
     #[inline]
@@ -76,8 +91,8 @@ where
     type Future = R::Future;
 
     #[inline]
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.0.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
     }
 
     #[inline]

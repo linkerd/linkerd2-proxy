@@ -1,13 +1,13 @@
 use crate::{dns, identity::LocalIdentity};
-use futures::{future, Future};
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
-    control, proxy, reconnect,
-    svc::{self, NewService},
+    control, reconnect, svc,
     transport::tls,
     Error,
 };
 use linkerd2_opencensus::{metrics, proto, SpanExporter};
+use std::future::Future;
+use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};
 use tokio::sync::mpsc;
 use tracing::debug;
@@ -22,7 +22,7 @@ pub enum Config {
     },
 }
 
-pub type Task = Box<dyn Future<Item = (), Error = Error> + Send + 'static>;
+pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 pub type SpanSink = mpsc::Sender<proto::trace::v1::Span>;
 
@@ -66,10 +66,9 @@ impl Config {
                         let backoff = control.connect.backoff;
                         move |_| Ok(backoff.stream())
                     }))
-                    .push_on_response(proxy::grpc::req_body_as_payload::layer())
                     .push(control::add_origin::Layer::new())
                     .into_new_service()
-                    .new_service(addr.clone());
+                    .with_fixed_target(addr.clone());
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
 
@@ -90,10 +89,10 @@ impl Config {
                     };
 
                     let addr = addr.clone();
-                    Box::new(future::lazy(move || {
+                    Box::pin(async move {
                         debug!(peer.addr = ?addr, "running");
-                        SpanExporter::new(svc, node, spans_rx, metrics)
-                    }))
+                        SpanExporter::new(svc, node, spans_rx, metrics).await
+                    })
                 };
 
                 Ok(OcCollector::Enabled {

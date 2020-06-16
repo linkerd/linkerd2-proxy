@@ -10,7 +10,7 @@ use tracing::{debug, trace};
 pub fn normalize_our_view_of_uri<B>(req: &mut http::Request<B>) {
     trace!(uri = %req.uri());
     debug_assert!(
-        req.uri().scheme_part().is_none(),
+        req.uri().scheme().is_none(),
         "normalize_uri shouldn't be called with absolute URIs: {:?}",
         req.uri()
     );
@@ -139,20 +139,19 @@ pub fn is_absolute_form(uri: &Uri) -> bool {
     // it's required in absolute-form, and `http::Uri` doesn't
     // allow URIs with the other parts missing when the scheme is set.
     debug_assert!(
-        uri.scheme_part().is_none()
-            || (uri.authority_part().is_some() && uri.path_and_query().is_some()),
+        uri.scheme().is_none() || (uri.authority().is_some() && uri.path_and_query().is_some()),
         "is_absolute_form http::Uri invariants: {:?}",
         uri
     );
 
-    uri.scheme_part().is_some()
+    uri.scheme().is_some()
 }
 
 /// Returns if the request target is in `origin-form`.
 ///
 /// This is `origin-form`: `example.com`
 fn is_origin_form(uri: &Uri) -> bool {
-    uri.scheme_part().is_none() && uri.path_and_query().is_none()
+    uri.scheme().is_none() && uri.path_and_query().is_none()
 }
 
 /// Returns if the received request is definitely bad.

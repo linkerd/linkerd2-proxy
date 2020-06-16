@@ -6,9 +6,12 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
-http = "0.1"
-hyper = "0.12"
+futures = "0.3"
+http = "0.2"
+hyper = "0.13"
+pin-project = "0.4"
+tower = { version = "0.3", default-features = false, features = ["load"]}
+tokio = { version = "0.2", features = ["macros"]}
 
-tower-load = { git = "https://github.com/tower-rs/tower" }
-tower-service = "0.2"
+[dev-dependencies]
+tokio-test = "0.2"

@@ -1,6 +1,6 @@
 use crate::Metrics;
-use futures::{Async, Poll};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Instant;
 
 #[derive(Clone, Debug)]
@@ -31,30 +31,30 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        match self.inner.poll_ready() {
-            Ok(Async::NotReady) => {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.inner.poll_ready(cx) {
+            Poll::Pending => {
                 self.metrics.not_ready_total.incr();
                 if self.blocked_since.is_none() {
                     self.blocked_since = Some(Instant::now());
                 }
-                Ok(Async::NotReady)
+                Poll::Pending
             }
-            Ok(Async::Ready(())) => {
+            Poll::Ready(Ok(())) => {
                 self.metrics.ready_total.incr();
                 if let Some(t0) = self.blocked_since.take() {
                     let not_ready = Instant::now() - t0;
                     self.metrics.poll_millis.add(not_ready.as_millis() as u64);
                 }
-                Ok(Async::Ready(()))
+                Poll::Ready(Ok(()))
             }
-            Err(e) => {
+            Poll::Ready(Err(e)) => {
                 self.metrics.error_total.incr();
                 if let Some(t0) = self.blocked_since.take() {
                     let not_ready = Instant::now() - t0;
                     self.metrics.poll_millis.add(not_ready.as_millis() as u64);
                 }
-                Err(e)
+                Poll::Ready(Err(e))
             }
         }
     }

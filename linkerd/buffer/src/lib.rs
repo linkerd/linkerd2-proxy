@@ -1,5 +1,6 @@
-use futures::Async;
+#![recursion_limit = "256"]
 use linkerd2_error::Error;
+use std::task::Poll;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 
@@ -8,7 +9,7 @@ pub mod error;
 mod layer;
 mod service;
 
-pub use self::{dispatch::Dispatch, layer::SpawnBufferLayer, service::Buffer};
+pub use self::{layer::SpawnBufferLayer, service::Buffer};
 
 struct InFlight<Req, F> {
     request: Req,
@@ -19,106 +20,61 @@ pub(crate) fn new<Req, S>(
     inner: S,
     capacity: usize,
     idle_timeout: Option<Duration>,
-) -> (Buffer<Req, S::Future>, Dispatch<S, Req, S::Future>)
+) -> (
+    Buffer<Req, S::Future>,
+    impl std::future::Future<Output = ()> + Send + 'static,
+)
 where
     Req: Send + 'static,
     S: tower::Service<Req> + Send + 'static,
-    S::Error: Into<Error>,
+    S::Error: Into<Error> + Send + 'static,
     S::Response: Send + 'static,
     S::Future: Send + 'static,
 {
+    use futures::future;
+
     let (tx, rx) = mpsc::channel(capacity);
-    let (ready_tx, ready_rx) = watch::channel(Ok(Async::NotReady));
-    let dispatch = Dispatch::new(inner, rx, ready_tx, idle_timeout);
+    let (ready_tx, ready_rx) = watch::channel(Poll::Pending);
+    let idle = move || match idle_timeout {
+        Some(t) => future::Either::Left(dispatch::idle(t)),
+        None => future::Either::Right(future::pending()),
+    };
+    let dispatch = dispatch::run(inner, rx, ready_tx, idle);
     (Buffer::new(tx, ready_rx), dispatch)
 }
 
 #[cfg(test)]
 mod test {
-    use futures::{future, Async, Future, Poll};
-    use std::sync::Arc;
-    use tower::util::ServiceExt;
-    use tower::Service;
+    use std::task::Poll;
+    use tokio_test::{assert_pending, assert_ready, assert_ready_ok, task};
     use tower_test::mock;
 
     #[test]
     fn propagates_readiness() {
-        run(|| {
-            let (service, mut handle) = mock::pair::<(), ()>();
-            let (mut service, mut dispatch) = super::new(service, 1, None);
-            handle.allow(0);
+        let (service, mut handle) = mock::pair::<(), ()>();
+        let (service, dispatch) = super::new(service, 1, None);
+        handle.allow(0);
+        let mut service = mock::Spawn::new(service);
+        let mut dispatch = task::spawn(dispatch);
 
-            assert!(dispatch.poll().expect("never fails").is_not_ready());
-            assert!(service.poll_ready().expect("must not fail").is_not_ready());
-            handle.allow(1);
+        assert_pending!(dispatch.poll());
+        assert_pending!(service.poll_ready());
+        handle.allow(1);
 
-            assert!(dispatch.poll().expect("never fails").is_not_ready());
-            assert!(service.poll_ready().expect("must not fail").is_ready());
-            // Consume the allowed call.
-            drop(service.call(()));
+        assert_pending!(dispatch.poll());
+        assert_ready_ok!(service.poll_ready());
 
-            handle.send_error(Bad);
-            assert!(dispatch.poll().expect("never fails").is_ready());
-            assert!(service
-                .poll_ready()
-                .expect_err("must fail")
-                .source()
-                .unwrap()
-                .is::<Bad>());
+        // Consume the allowed call.
+        drop(service.call(()));
 
-            Ok::<(), ()>(())
-        })
-    }
+        handle.send_error(Bad);
+        assert_pending!(dispatch.poll());
+        assert!(
+            matches!(service.poll_ready(), Poll::Ready(Err(e)) if e.source().unwrap().is::<Bad>())
+        );
 
-    #[test]
-    fn repolls_ready_on_notification() {
-        struct ReadyNotify {
-            notified: bool,
-            _handle: Arc<()>,
-        }
-        impl tower::Service<()> for ReadyNotify {
-            type Response = ();
-            type Error = Bad;
-            type Future = future::FutureResult<(), Bad>;
-
-            fn poll_ready(&mut self) -> Poll<(), Bad> {
-                println!("Polling");
-                if self.notified {
-                    return Err(Bad);
-                }
-
-                println!("Notifying");
-                futures::task::current().notify();
-                self.notified = true;
-                Ok(Async::Ready(()))
-            }
-
-            fn call(&mut self, _: ()) -> Self::Future {
-                unimplemented!("not called");
-            }
-        }
-
-        run(|| {
-            let _handle = Arc::new(());
-            let handle = Arc::downgrade(&_handle);
-            let (service, dispatch) = super::new(
-                ReadyNotify {
-                    _handle,
-                    notified: false,
-                },
-                1,
-                None,
-            );
-            tokio::spawn(dispatch.map_err(|_| ()));
-            service.ready().then(move |ret| {
-                assert!(ret.is_err());
-                assert!(
-                    handle.upgrade().is_none(),
-                    "inner service must be dropped on error"
-                );
-                Ok::<(), ()>(())
-            })
-        })
+        drop(service);
+        assert_ready!(dispatch.poll());
     }
 
     #[derive(Debug)]
@@ -128,13 +84,5 @@ mod test {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "bad")
         }
-    }
-
-    fn run<F, R>(f: F)
-    where
-        F: FnOnce() -> R + 'static,
-        R: future::IntoFuture<Item = ()> + 'static,
-    {
-        tokio::runtime::current_thread::run(future::lazy(f).map_err(|_| panic!("Failed")));
     }
 }

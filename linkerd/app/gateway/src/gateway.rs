@@ -1,6 +1,9 @@
-use futures::{future, Future, Poll};
+use futures::{future, ready, TryFutureExt};
 use linkerd2_app_core::proxy::{http, identity};
 use linkerd2_app_core::{dns, errors::HttpError, Error, NameAddr};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Gateway<O> {
@@ -36,19 +39,22 @@ impl<O> Gateway<O> {
 
 impl<B, O> tower::Service<http::Request<B>> for Gateway<O>
 where
-    B: http::Payload + 'static,
+    B: http::HttpBody + 'static,
     O: tower::Service<http::Request<B>, Response = http::Response<http::boxed::Payload>>,
     O::Error: Into<Error> + 'static,
     O::Future: Send + 'static,
 {
     type Response = O::Response;
     type Error = Error;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
-            Self::Outbound { outbound, .. } => outbound.poll_ready().map_err(Into::into),
-            _ => Ok(().into()),
+            Self::Outbound { outbound, .. } => {
+                Poll::Ready(ready!(outbound.poll_ready(cx)).map_err(Into::into))
+            }
+            _ => Poll::Ready(Ok(())),
         }
     }
 
@@ -70,7 +76,7 @@ where
                     if let Some(by) = fwd_by(forwarded) {
                         tracing::info!(%forwarded);
                         if by == local_identity.as_ref() {
-                            return Box::new(future::err(HttpError::gateway_loop().into()));
+                            return Box::pin(future::err(HttpError::gateway_loop().into()));
                         }
                     }
                 }
@@ -84,13 +90,13 @@ where
                     headers = ?request.headers(),
                     "Passing request to outbound"
                 );
-                Box::new(outbound.call(request).map_err(Into::into))
+                Box::pin(outbound.call(request).map_err(Into::into))
             }
-            Self::NoAuthority => Box::new(future::err(HttpError::not_found("no authority").into())),
-            Self::NoIdentity => Box::new(future::err(
+            Self::NoAuthority => Box::pin(future::err(HttpError::not_found("no authority").into())),
+            Self::NoIdentity => Box::pin(future::err(
                 HttpError::identity_required("no identity").into(),
             )),
-            Self::BadDomain(..) => Box::new(future::err(HttpError::not_found("bad domain").into())),
+            Self::BadDomain(..) => Box::pin(future::err(HttpError::not_found("bad domain").into())),
         }
     }
 }

@@ -1,4 +1,4 @@
-use futures::Poll;
+use std::task::{Context, Poll};
 
 #[derive(Copy, Clone, Debug)]
 pub struct OneshotLayer(());
@@ -32,8 +32,8 @@ where
     type Error = S::Error;
     type Future = tower::util::Oneshot<S, Req>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(().into())
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Req) -> Self::Future {

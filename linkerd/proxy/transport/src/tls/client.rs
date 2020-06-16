@@ -1,10 +1,14 @@
 use crate::io::BoxedIo;
-use futures::{try_ready, Future, Poll};
+use futures::TryFuture;
 use linkerd2_conditional::Conditional;
 use linkerd2_identity as identity;
+use pin_project::{pin_project, project};
 pub use rustls::ClientConfig as Config;
+use std::future::Future;
 use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use tokio::net::TcpStream;
 use tracing::{debug, trace};
 
@@ -24,12 +28,19 @@ pub struct Connect<L, C> {
 pub type Connection = BoxedIo;
 
 /// A socket that is in the process of connecting.
-pub enum ConnectFuture<L, F: Future> {
+#[pin_project]
+pub struct ConnectFuture<L, F: TryFuture> {
+    #[pin]
+    state: ConnectState<L, F>,
+}
+#[pin_project]
+enum ConnectState<L, F: TryFuture> {
     Init {
+        #[pin]
         future: F,
         tls: super::Conditional<(identity::Name, L)>,
     },
-    Handshake(tokio_rustls::Connect<F::Item>),
+    Handshake(#[pin] tokio_rustls::Connect<F::Ok>),
 }
 
 // === impl ConnectLayer ===
@@ -58,7 +69,7 @@ impl<L, C, T> tower::Service<T> for Connect<L, C>
 where
     T: super::HasPeerIdentity,
     L: HasConfig + Clone,
-    C: tower::MakeConnection<T, Connection = TcpStream>,
+    C: tower::Service<T, Response = TcpStream>,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,
     C::Error: From<io::Error>,
@@ -67,8 +78,8 @@ where
     type Error = C::Error;
     type Future = ConnectFuture<L, C::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -78,9 +89,11 @@ where
             .local
             .clone()
             .and_then(|l| peer_identity.map(|n| (n, l)));
-        ConnectFuture::Init {
-            future: self.inner.make_connection(target),
-            tls,
+        ConnectFuture {
+            state: ConnectState::Init {
+                future: self.inner.call(target),
+                tls,
+            },
         }
     }
 }
@@ -90,36 +103,38 @@ where
 impl<L, F> Future for ConnectFuture<L, F>
 where
     L: HasConfig,
-    F: Future<Item = TcpStream>,
+    F: TryFuture<Ok = TcpStream>,
     F::Error: From<io::Error>,
 {
-    type Item = Connection;
-    type Error = F::Error;
+    type Output = Result<Connection, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
         loop {
-            *self = match self {
-                ConnectFuture::Init { future, tls } => {
-                    let io = try_ready!(future.poll());
+            #[project]
+            match this.state.as_mut().project() {
+                ConnectState::Init { future, tls } => {
+                    let io = futures::ready!(future.try_poll(cx))?;
 
                     match tls {
                         Conditional::Some((peer_identity, local_tls)) => {
                             trace!(peer.id = %peer_identity, "initiating TLS");
-                            ConnectFuture::Handshake(
+                            let handshake =
                                 tokio_rustls::TlsConnector::from(local_tls.tls_client_config())
-                                    .connect(peer_identity.as_dns_name_ref(), io),
-                            )
+                                    .connect(peer_identity.as_dns_name_ref(), io);
+                            this.state.set(ConnectState::Handshake(handshake));
                         }
                         Conditional::None(reason) => {
                             trace!(%reason, "skipping TLS");
-                            return Ok(Connection::new(io).into());
+                            return Poll::Ready(Ok(Connection::new(io)));
                         }
                     }
                 }
-                ConnectFuture::Handshake(ref mut fut) => {
-                    let io = try_ready!(fut.poll());
+                ConnectState::Handshake(fut) => {
+                    let io = futures::ready!(fut.poll(cx))?;
                     trace!("established TLS");
-                    return Ok(Connection::new(io).into());
+                    return Poll::Ready(Ok(Connection::new(io)));
                 }
             };
         }

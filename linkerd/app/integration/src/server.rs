@@ -1,13 +1,20 @@
 use super::*;
-use futures::future::Either;
+use futures::TryFuture;
+use http::Response;
+use linkerd2_app_core::proxy::http::trace;
 use rustls::ServerConfig;
 use std::collections::HashMap;
+use std::future::Future;
 use std::io;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::thread;
 use tokio::net::TcpStream;
+use tokio::sync::oneshot;
 use tokio_rustls::TlsAcceptor;
+use tracing_futures::Instrument;
 
 pub fn new() -> Server {
     http2()
@@ -104,7 +111,10 @@ impl Server {
     where
         F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + 'static,
     {
-        self.route_async(path, move |req| Ok::<_, BoxError>(cb(req)))
+        self.route_async(path, move |req| {
+            let res = cb(req);
+            async move { Ok::<_, BoxError>(res) }
+        })
     }
 
     /// Call a closure when the request matches, returning a Future of
@@ -112,20 +122,26 @@ impl Server {
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
         F: Fn(Request<ReqBody>) -> U + Send + 'static,
-        U: IntoFuture<Item = Response<Bytes>> + Send + 'static,
-        U::Future: Send + 'static,
-        U::Error: Into<BoxError>,
+        U: TryFuture<Ok = Response<Bytes>> + Send + Sync + 'static,
+        U::Error: Into<BoxError> + Send + 'static,
     {
         let func = move |req| {
-            Box::new(cb(req).into_future().map_err(Into::into))
-                as Box<dyn Future<Item = Response<Bytes>, Error = BoxError> + Send>
+            Box::pin(cb(req).map_err(Into::into))
+                as Pin<
+                    Box<
+                        dyn Future<Output = Result<Response<Bytes>, BoxError>>
+                            + Send
+                            + Sync
+                            + 'static,
+                    >,
+                >
         };
         self.routes.insert(path.into(), Route(Box::new(func)));
         self
     }
 
     pub fn route_with_latency(self, path: &str, resp: &str, latency: Duration) -> Self {
-        let resp = Bytes::from(resp);
+        let resp = Bytes::from(resp.to_string());
         self.route_fn(path, move |_| {
             thread::sleep(latency);
             http::Response::builder()
@@ -137,16 +153,19 @@ impl Server {
 
     pub fn delay_listen<F>(self, f: F) -> Listening
     where
-        F: Future<Item = (), Error = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
     {
-        self.run_inner(Some(Box::new(f.then(|_| Ok(())))))
+        self.run_inner(Some(Box::pin(f)))
     }
 
     pub fn run(self) -> Listening {
         self.run_inner(None)
     }
 
-    fn run_inner(self, delay: Option<Box<dyn Future<Item = (), Error = ()> + Send>>) -> Listening {
+    fn run_inner(
+        self,
+        delay: Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
+    ) -> Listening {
         let (tx, rx) = shutdown_signal();
         let (listening_tx, listening_rx) = oneshot::channel();
         let mut listening_tx = Some(listening_tx);
@@ -161,70 +180,80 @@ impl Server {
         let addr = listener.local_addr().expect("Tcp::local_addr");
 
         let tls_config = self.tls.clone();
-
         ::std::thread::Builder::new()
             .name(tname)
             .spawn(move || {
-                if let Some(delay) = delay {
-                    let _ = listening_tx.take().unwrap().send(());
-                    delay.wait().expect("support server delay wait");
-                }
-                let listener = listener.listen(1024).expect("Tcp::listen");
-
-                let mut runtime = runtime::current_thread::Runtime::new()
-                    .expect("initialize support server runtime");
-
+                let (subscriber, _) = trace_init();
+                let _subscriber = subscriber.set_default();
+                tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
-                let mut http = hyper::server::conn::Http::new();
+                let mut http =
+                    hyper::server::conn::Http::new().with_executor(trace::Executor::new());
                 match self.version {
                     Run::Http1 => http.http1_only(true),
                     Run::Http2 => http.http2_only(true),
                 };
+                let serve = async move {
+                    if let Some(delay) = delay {
+                        let _ = listening_tx.take().unwrap().send(());
+                        delay.await;
+                    }
+                    let listener = listener.listen(1024).expect("Tcp::listen");
+                    let mut listener = TcpListener::from_std(listener).expect("from_std");
 
-                let bind =
-                    TcpListener::from_std(listener, &reactor::Handle::default()).expect("from_std");
-
-                if let Some(listening_tx) = listening_tx {
-                    let _ = listening_tx.send(());
-                }
-
-                let serve = bind
-                    .incoming()
-                    .and_then(move |s| accept_connection(s, tls_config.clone()))
-                    .for_each(move |sock| {
-                        let http_clone = http.clone();
-                        let srv_conn_count = Arc::clone(&srv_conn_count);
-                        let fut = new_svc
-                            .call(())
-                            .inspect(move |_| {
+                    if let Some(listening_tx) = listening_tx {
+                        let _ = listening_tx.send(());
+                    }
+                    tracing::info!("listening!");
+                    loop {
+                        let (sock, addr) = listener.accept().await?;
+                        let span = tracing::debug_span!("conn", %addr);
+                        let sock = accept_connection(sock, tls_config.clone())
+                            .instrument(span.clone())
+                            .await?;
+                        let http = http.clone();
+                        let srv_conn_count = srv_conn_count.clone();
+                        let svc = new_svc.call(());
+                        tokio::task::spawn_local(
+                            async move {
+                                tracing::trace!("serving...");
+                                let svc = svc.await;
+                                tracing::trace!("service acquired");
                                 srv_conn_count.fetch_add(1, Ordering::Release);
-                            })
-                            .map_err(|e| println!("support/server new_service error: {}", e))
-                            .and_then(move |svc| {
-                                http_clone
+                                let svc = svc.map_err(|e| {
+                                    println!("support/server new_service error: {}", e)
+                                })?;
+                                let result = http
                                     .serve_connection(sock, svc)
-                                    .map_err(|e| println!("support/server error: {}", e))
-                            })
-                            .map(|_| ());
-                        current_thread::TaskExecutor::current()
-                            .execute(fut)
-                            .map_err(|e| {
-                                println!("server execute error: {:?}", e);
-                                io::Error::from(io::ErrorKind::Other)
-                            })
-                    });
+                                    .await
+                                    .map_err(|e| println!("support/server error: {}", e));
+                                tracing::trace!(?result, "serve done");
+                                result
+                            }
+                            .instrument(span.clone()),
+                        );
+                    }
+                };
 
-                runtime.spawn(
-                    serve
-                        .map(|_| ())
-                        .map_err(|e| println!("server error: {}", e)),
-                );
-
-                runtime.block_on(rx).expect("block on");
+                let mut rt = tokio::runtime::Builder::new()
+                    .basic_scheduler()
+                    .enable_all()
+                    .build()
+                    .expect("initialize support server runtime");
+                tokio::task::LocalSet::new().block_on(
+                    &mut rt,
+                    async move {
+                        tokio::select! {
+                            res = serve => res,
+                            _ = rx => { Ok::<(), io::Error>(())},
+                        }
+                    }
+                    .instrument(tracing::info_span!("test_server", ?version, %addr)),
+                )
             })
             .unwrap();
 
-        listening_rx.wait().expect("listening_rx");
+        futures::executor::block_on(listening_rx).expect("listening_rx");
 
         // printlns will show if the test fails...
         println!("{:?} server running; addr={}", version, addr,);
@@ -245,16 +274,24 @@ enum Run {
 
 struct Route(
     Box<
-        dyn Fn(Request<ReqBody>) -> Box<dyn Future<Item = Response<Bytes>, Error = BoxError> + Send>
-            + Send,
+        dyn Fn(
+                Request<ReqBody>,
+            ) -> Pin<
+                Box<
+                    dyn Future<Output = Result<http::Response<Bytes>, BoxError>>
+                        + Send
+                        + Sync
+                        + 'static,
+                >,
+            > + Send,
     >,
 );
 
 impl Route {
     fn string(body: &str) -> Route {
-        let body = Bytes::from(body);
+        let body = Bytes::from(body.to_string());
         Route(Box::new(move |_| {
-            Box::new(future::ok(
+            Box::pin(future::ok(
                 http::Response::builder()
                     .status(200)
                     .body(body.clone())
@@ -264,13 +301,13 @@ impl Route {
     }
 }
 
-impl ::std::fmt::Debug for Route {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+impl std::fmt::Debug for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Route")
     }
 }
 
-type ReqBody = Box<dyn Stream<Item = Bytes, Error = ()> + Send>;
+type ReqBody = Pin<Box<dyn Stream<Item = Bytes> + Send + Sync>>;
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
@@ -280,34 +317,42 @@ impl Svc {
     fn route(
         &mut self,
         req: Request<ReqBody>,
-    ) -> impl Future<Item = Response<Bytes>, Error = BoxError> {
+    ) -> Pin<Box<dyn Future<Output = Result<Response<Bytes>, BoxError>> + Send + Sync + 'static>>
+    {
         match self.0.get(req.uri().path()) {
-            Some(Route(ref func)) => func(req),
+            Some(Route(ref func)) => {
+                tracing::trace!(path = %req.uri().path(), "found route for path");
+                func(req)
+            }
             None => {
                 println!("server 404: {:?}", req.uri().path());
                 let res = http::Response::builder()
                     .status(404)
                     .body(Default::default())
                     .unwrap();
-                Box::new(future::ok(res))
+                Box::pin(async move { Ok(res) })
             }
         }
     }
 }
 
-impl hyper::service::Service for Svc {
-    type ReqBody = hyper::Body;
-    type ResBody = hyper::Body;
+impl tower::Service<Request<hyper::Body>> for Svc {
+    type Response = Response<hyper::Body>;
     type Error = BoxError;
-    type Future = Box<dyn Future<Item = hyper::Response<hyper::Body>, Error = Self::Error> + Send>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Response<hyper::Body>, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-        let req = req.map(|body| {
-            Box::new(body.map(|chunk| chunk.into_bytes()).map_err(|err| {
-                panic!("body error: {}", err);
-            })) as ReqBody
-        });
-        Box::new(self.route(req).map(|res| res.map(|s| hyper::Body::from(s))))
+        let req =
+            req.map(|body| Box::pin(body.map(|chunk| chunk.expect("body error!"))) as ReqBody);
+        Box::pin(
+            self.route(req)
+                .map_ok(|res| res.map(|s| hyper::Body::from(s))),
+        )
     }
 }
 
@@ -317,10 +362,10 @@ struct NewSvc(Arc<HashMap<String, Route>>);
 impl Service<()> for NewSvc {
     type Response = Svc;
     type Error = ::std::io::Error;
-    type Future = future::FutureResult<Svc, Self::Error>;
+    type Future = future::Ready<Result<Svc, Self::Error>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(Async::Ready(()))
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, _: ()) -> Self::Future {
@@ -328,17 +373,27 @@ impl Service<()> for NewSvc {
     }
 }
 
-fn accept_connection(
+async fn accept_connection(
     io: TcpStream,
     tls: Option<Arc<ServerConfig>>,
-) -> impl Future<Item = RunningIo, Error = std::io::Error> {
-    match tls {
-        Some(cfg) => Either::B(
-            TlsAcceptor::from(cfg)
-                .accept(io)
-                .map(|io| RunningIo(Box::new(io), None)),
-        ),
+) -> Result<RunningIo, io::Error> {
+    tracing::debug!(tls = tls.is_some(), "accepting connection");
+    let res = match tls {
+        Some(cfg) => {
+            let io = TlsAcceptor::from(cfg).accept(io).await?;
+            Ok(RunningIo {
+                io: Box::pin(io),
+                abs_form: false,
+                _running: None,
+            })
+        }
 
-        None => Either::A(future::ok(RunningIo(Box::new(io), None))),
-    }
+        None => Ok(RunningIo {
+            io: Box::pin(io),
+            abs_form: false,
+            _running: None,
+        }),
+    };
+    tracing::trace!("connection accepted");
+    res
 }

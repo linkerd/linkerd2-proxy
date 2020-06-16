@@ -1,11 +1,14 @@
 use super::*;
-use futures::sync::{mpsc, oneshot};
+use futures::TryFutureExt;
 use std::collections::VecDeque;
 use std::io;
 use std::net::TcpListener as StdTcpListener;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::{mpsc, oneshot};
 
 type TcpSender = mpsc::UnboundedSender<oneshot::Sender<TcpConnSender>>;
 type TcpConnSender = mpsc::UnboundedSender<(
@@ -32,13 +35,20 @@ pub struct TcpClient {
 type Handler = Box<dyn CallBox + Send>;
 
 trait CallBox: 'static {
-    fn call_box(self: Box<Self>, sock: TcpStream) -> Box<dyn Future<Item = (), Error = ()>>;
+    fn call_box(
+        self: Box<Self>,
+        sock: TcpStream,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 }
 
-impl<F: FnOnce(TcpStream) -> Box<dyn Future<Item = (), Error = ()>> + Send + 'static> CallBox
-    for F
+impl<F> CallBox for F
+where
+    F: FnOnce(TcpStream) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + 'static,
 {
-    fn call_box(self: Box<Self>, sock: TcpStream) -> Box<dyn Future<Item = (), Error = ()>> {
+    fn call_box(
+        self: Box<Self>,
+        sock: TcpStream,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         (*self)(sock)
     }
 }
@@ -55,11 +65,8 @@ pub struct TcpConn {
 impl TcpClient {
     pub fn connect(&self) -> TcpConn {
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send(tx);
-        let tx = rx
-            .map_err(|_| panic!("tcp connect dropped"))
-            .wait()
-            .unwrap();
+        let _ = self.tx.send(tx);
+        let tx = futures::executor::block_on(rx).unwrap();
         println!("tcp client (addr={}): connected", self.addr);
         TcpConn {
             addr: self.addr,
@@ -74,27 +81,30 @@ impl TcpServer {
         F: FnOnce(Vec<u8>) -> U + Send + 'static,
         U: Into<Vec<u8>>,
     {
-        self.accept_fut(move |sock| {
-            tokio_io::io::read(sock, vec![0; 1024])
-                .and_then(move |(sock, mut vec, n)| {
+        self.accept_fut(move |mut sock| {
+            Box::pin(
+                async move {
+                    let mut vec = vec![0; 1024];
+                    let n = sock.read(&mut vec).await?;
                     vec.truncate(n);
                     let write = cb(vec).into();
-                    tokio_io::io::write_all(sock, write)
-                })
-                .map(|_| ())
-                .map_err(|e| panic!("tcp server error: {}", e))
+                    sock.write_all(&write).await
+                }
+                .map(|r| match r {
+                    Err(e) => panic!("tcp server error: {}", e),
+                    _ => {}
+                }),
+            )
         })
     }
 
     pub fn accept_fut<F, U>(mut self, cb: F) -> Self
     where
         F: FnOnce(TcpStream) -> U + Send + 'static,
-        U: IntoFuture<Item = (), Error = ()> + 'static,
+        U: Future<Output = ()> + Send + 'static,
     {
         self.accepts.push_back(Box::new(
-            move |tcp| -> Box<dyn Future<Item = (), Error = ()>> {
-                Box::new(cb(tcp).into_future())
-            },
+            move |tcp| -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> { Box::pin(cb(tcp)) },
         ));
         self
     }
@@ -110,109 +120,97 @@ impl TcpConn {
             .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
     }
 
-    pub fn read_timeout(&self, timeout: Duration) -> Vec<u8> {
-        use linkerd2_test_util::BlockOnFor;
-        use tokio::runtime::current_thread;
-        current_thread::Runtime::new()
-            .unwrap()
-            .block_on_for(timeout, self.read_future())
+    #[tokio::main(basic_scheduler)]
+    pub async fn read_timeout(&self, timeout: Duration) -> Vec<u8> {
+        tokio::time::timeout(timeout, self.read_future())
+            .await
+            .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
             .unwrap_or_else(|e| panic!("TcpConn(addr={}) read() error: {:?}", self.addr, e))
     }
 
-    fn read_future(&self) -> impl Future<Item = Vec<u8>, Error = io::Error> {
+    async fn read_future(&self) -> Result<Vec<u8>, io::Error> {
         println!("tcp client (addr={}): read", self.addr);
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send((None, tx));
-        rx.map_err(|_| panic!("tcp read dropped"))
-            .and_then(|res| res.map(|opt| opt.unwrap()))
+        let _ = self.tx.send((None, tx));
+        let res = rx.await.expect("tcp read dropped");
+        res.map(|opt| opt.unwrap())
     }
 
     pub fn try_read(&self) -> io::Result<Vec<u8>> {
-        self.read_future().wait()
+        tokio::runtime::Builder::new()
+            .enable_all()
+            .basic_scheduler()
+            .build()
+            .unwrap()
+            .block_on(self.read_future())
     }
 
     pub fn write<T: Into<Vec<u8>>>(&self, buf: T) {
         println!("tcp client (addr={}): write", self.addr);
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.unbounded_send((Some(buf.into()), tx));
-        rx.map_err(|_| panic!("tcp write dropped"))
-            .map(|rsp| assert!(rsp.unwrap().is_none()))
-            .wait()
-            .unwrap()
+        let _ = self.tx.send((Some(buf.into()), tx));
+        futures::executor::block_on(rx.map_ok(|rsp| assert!(rsp.unwrap().is_none())))
+            .expect("tcp write dropped")
     }
 }
 
 fn run_client(addr: SocketAddr) -> TcpSender {
-    let (tx, rx) = mpsc::unbounded();
+    let (tx, rx) = mpsc::unbounded_channel::<
+        oneshot::Sender<
+            mpsc::UnboundedSender<(
+                Option<Vec<u8>>,
+                oneshot::Sender<Result<Option<Vec<u8>>, io::Error>>,
+            )>,
+        >,
+    >();
     let tname = format!("support tcp client (addr={})", addr);
     ::std::thread::Builder::new()
         .name(tname)
         .spawn(move || {
-            let mut core =
-                runtime::current_thread::Runtime::new().expect("support tcp client runtime");
-
-            let work = rx
-                .for_each(|cb: oneshot::Sender<_>| {
-                    let fut = TcpStream::connect(&addr)
-                        .map_err(|e| panic!("connect error: {}", e))
-                        .and_then(move |tcp| {
-                            let (tx, rx) = mpsc::unbounded();
-                            cb.send(tx).unwrap();
-                            rx.fold(
-                                tcp,
-                                |tcp,
-                                 (action, cb): (
-                                    Option<Vec<u8>>,
-                                    oneshot::Sender<io::Result<Option<Vec<u8>>>>,
-                                )| {
-                                    let f: Box<dyn Future<Item = TcpStream, Error = ()>> =
-                                        match action {
-                                            None => Box::new(
-                                                tokio_io::io::read(tcp, vec![0; 1024]).then(
-                                                    move |res| match res {
-                                                        Ok((tcp, mut vec, n)) => {
-                                                            vec.truncate(n);
-                                                            cb.send(Ok(Some(vec))).unwrap();
-                                                            Ok(tcp)
-                                                        }
-                                                        Err(e) => {
-                                                            cb.send(Err(e)).unwrap();
-                                                            Err(())
-                                                        }
-                                                    },
-                                                ),
-                                            ),
-                                            Some(vec) => {
-                                                Box::new(tokio_io::io::write_all(tcp, vec).then(
-                                                    move |res| match res {
-                                                        Ok((tcp, _)) => {
-                                                            cb.send(Ok(None)).unwrap();
-                                                            Ok(tcp)
-                                                        }
-                                                        Err(e) => {
-                                                            cb.send(Err(e)).unwrap();
-                                                            Err(())
-                                                        }
-                                                    },
-                                                ))
-                                            }
-                                        };
-                                    f
+            let mut core = tokio_compat::runtime::current_thread::Runtime::new()
+                .expect("support tcp client runtime");
+            let mut rx = rx;
+            let work = async move {
+                while let Some(cb) = rx.recv().await {
+                    let tcp = TcpStream::connect(&addr).await.expect("tcp connect error");
+                    let (tx, rx) = mpsc::unbounded_channel::<(
+                        Option<Vec<u8>>,
+                        oneshot::Sender<Result<Option<Vec<u8>>, io::Error>>,
+                    )>();
+                    cb.send(tx).unwrap();
+                    tokio::spawn(async move {
+                        let mut rx = rx;
+                        let mut tcp = tcp;
+                        while let Some((action, cb)) = rx.recv().await {
+                            match action {
+                                None => {
+                                    let mut vec = vec![0; 1024];
+                                    match tcp.read(&mut vec).await {
+                                        Ok(n) => {
+                                            vec.truncate(n);
+                                            let _ = cb.send(Ok(Some(vec)));
+                                        }
+                                        Err(e) => {
+                                            cb.send(Err(e)).unwrap();
+                                            break;
+                                        }
+                                    }
+                                }
+                                Some(vec) => match tcp.write_all(&vec).await {
+                                    Ok(_) => {
+                                        let _ = cb.send(Ok(None));
+                                    }
+                                    Err(e) => {
+                                        cb.send(Err(e)).unwrap();
+                                        break;
+                                    }
                                 },
-                            )
-                            .map(|_| ())
-                            .map_err(|_| ())
-                        });
-
-                    current_thread::TaskExecutor::current()
-                        .execute(fut)
-                        .map_err(|e| {
-                            println!("tcp client execute error: {:?}", e);
-                        })
-                        .map(|_| ())
-                })
-                .map_err(|e| println!("client error: {:?}", e));
-            core.block_on(work).unwrap();
+                            }
+                        }
+                    });
+                }
+            };
+            core.block_on_std(work);
         })
         .unwrap();
 
@@ -232,40 +230,39 @@ fn run_server(tcp: TcpServer) -> server::Listening {
     ::std::thread::Builder::new()
         .name(tname)
         .spawn(move || {
-            let mut core =
-                runtime::current_thread::Runtime::new().expect("support tcp server Runtime::new");
-
-            let bind = TcpListener::from_std(std_listener, &reactor::Handle::default())
-                .expect("TcpListener::from_std");
+            let mut core = tokio::runtime::Builder::new()
+                .enable_all()
+                .basic_scheduler()
+                .build()
+                .unwrap();
 
             let mut accepts = tcp.accepts;
 
-            let listen = bind
-                .incoming()
-                .for_each(move |sock| {
+            let listen = async move {
+                let mut listener =
+                    TcpListener::from_std(std_listener).expect("TcpListener::from_std");
+
+                loop {
+                    let (sock, _) = listener.accept().await.unwrap();
                     let cb = accepts.pop_front().expect("no more accepts");
                     srv_conn_count.fetch_add(1, Ordering::Release);
 
                     let fut = cb.call_box(sock);
-
-                    current_thread::TaskExecutor::current()
-                        .execute(fut)
-                        .map_err(|e| {
-                            println!("tcp execute error: {:?}", e);
-                            io::Error::from(io::ErrorKind::Other)
-                        })
-                        .map(|_| ())
-                })
-                .map_err(|e| panic!("tcp accept error: {}", e));
-
-            core.spawn(listen);
+                    tokio::task::spawn_local(fut);
+                }
+            };
 
             let _ = started_tx.send(());
-            core.block_on(rx).unwrap();
+            tokio::task::LocalSet::new().block_on(&mut core, async move {
+                tokio::select! {
+                    _ = rx => { },
+                    _ = listen => { },
+                }
+            });
         })
         .unwrap();
 
-    started_rx.wait().expect("support tcp server started");
+    futures::executor::block_on(started_rx).expect("support tcp server started");
 
     // printlns will show if the test fails...
     println!("tcp server (addr={}): running", addr);

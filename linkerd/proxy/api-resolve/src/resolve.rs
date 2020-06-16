@@ -2,20 +2,33 @@ use crate::api::destination as api;
 use crate::core::resolve::{self, Update};
 use crate::metadata::Metadata;
 use crate::pb;
-use futures::{future, try_ready, Future, Poll, Stream};
+use api::destination_client::DestinationClient;
+use futures::{ready, Stream};
+use http_body::Body as HttpBody;
+use pin_project::pin_project;
+use std::error::Error;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tonic::{
+    self as grpc,
+    body::{Body, BoxBody},
+    client::GrpcService,
+};
 use tower::Service;
-use tower_grpc::{self as grpc, generic::client::GrpcService, Body, BoxBody};
 use tracing::{debug, info, trace};
 
 #[derive(Clone)]
 pub struct Resolve<S> {
-    service: api::client::Destination<S>,
+    service: DestinationClient<S>,
     scheme: String,
     context_token: String,
 }
 
-pub struct Resolution<S: GrpcService<BoxBody>> {
-    inner: grpc::Streaming<api::Update, S::ResponseBody>,
+#[pin_project]
+pub struct Resolution {
+    #[pin]
+    inner: grpc::Streaming<api::Update>,
 }
 
 // === impl Resolver ===
@@ -23,13 +36,15 @@ pub struct Resolution<S: GrpcService<BoxBody>> {
 impl<S> Resolve<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
+    <S::ResponseBody as HttpBody>::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
 {
     pub fn new(svc: S) -> Self {
         Self {
-            service: api::client::Destination::new(svc),
+            service: DestinationClient::new(svc),
             scheme: "".into(),
             context_token: "".into(),
         }
@@ -54,52 +69,53 @@ impl<T, S> Service<T> for Resolve<S>
 where
     T: ToString,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
+    S::Error: Into<Box<dyn Error + Send + Sync>> + Send,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
+    <S::ResponseBody as HttpBody>::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
 {
-    type Response = Resolution<S>;
+    type Response = Resolution;
     type Error = grpc::Status;
-    type Future = future::Map<
-        grpc::client::server_streaming::ResponseFuture<api::Update, S::Future>,
-        fn(grpc::Response<grpc::Streaming<api::Update, S::ResponseBody>>) -> Resolution<S>,
-    >;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready()
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // The future returned by the Tonic generated `DestinationClient`'s `get` method will drive the service to readiness before calling it, so we can always return `Ready` here.
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {
         let path = target.to_string();
-        debug!(dst = %path, context=%self.context_token, "Resolving");
-        self.service
-            .get(grpc::Request::new(api::GetDestination {
-                path,
-                scheme: self.scheme.clone(),
-                context_token: self.context_token.clone(),
-            }))
-            .map(|rsp| {
-                trace!(metadata = ?rsp.metadata());
-                Resolution {
-                    inner: rsp.into_inner(),
-                }
+        debug!(dst = %path, context = %self.context_token, "Resolving");
+        let mut svc = self.service.clone();
+        let req = api::GetDestination {
+            path,
+            scheme: self.scheme.clone(),
+            context_token: self.context_token.clone(),
+        };
+        Box::pin(async move {
+            let rsp = svc.get(grpc::Request::new(req)).await?;
+            trace!(metadata = ?rsp.metadata());
+            Ok(Resolution {
+                inner: rsp.into_inner(),
             })
+        })
     }
 }
 
-// === impl ResolveFuture ===
-
-impl<S> resolve::Resolution for Resolution<S>
-where
-    S: GrpcService<BoxBody>,
-{
+impl resolve::Resolution for Resolution {
     type Endpoint = Metadata;
     type Error = grpc::Status;
 
-    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
+        let mut this = self.project();
         loop {
-            match try_ready!(self.inner.poll()) {
-                Some(api::Update { update }) => match update {
+            match ready!(this.inner.as_mut().poll_next(cx)) {
+                Some(update) => match update?.update {
                     Some(api::update::Update::Add(api::WeightedAddrSet {
                         addrs,
                         metric_labels,
@@ -110,7 +126,7 @@ where
                             .collect::<Vec<_>>();
                         if !addr_metas.is_empty() {
                             debug!(endpoints = %addr_metas.len(), "Add");
-                            return Ok(Update::Add(addr_metas).into());
+                            return Poll::Ready(Ok(Update::Add(addr_metas)));
                         }
                     }
 
@@ -121,7 +137,7 @@ where
                             .collect::<Vec<_>>();
                         if !sock_addrs.is_empty() {
                             debug!(endpoints = %sock_addrs.len(), "Remove");
-                            return Ok(Update::Remove(sock_addrs).into());
+                            return Poll::Ready(Ok(Update::Remove(sock_addrs)));
                         }
                     }
 
@@ -132,12 +148,14 @@ where
                         } else {
                             Update::DoesNotExist
                         };
-                        return Ok(update.into());
+                        return Poll::Ready(Ok(update.into()));
                     }
 
                     None => {} // continue
                 },
-                None => return Err(grpc::Status::new(grpc::Code::Ok, "end of stream")),
+                None => {
+                    return Poll::Ready(Err(grpc::Status::new(grpc::Code::Ok, "end of stream")))
+                }
             };
         }
     }

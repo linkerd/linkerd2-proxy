@@ -6,11 +6,19 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 linkerd2-dns-name = { path = "./name" }
 linkerd2-stack = { path = "../stack" }
-tower = "0.1"
-# FIXME update to a release when available (>0.11)
-trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", rev = "7c8a0739dad495bf5a4fddfe86b8bbe2aa52d060", default-features = false }
+tower = "0.3"
 tracing = "0.1"
-tracing-futures = "0.1"
+tracing-futures = "0.2"
+tokio = { version = "0.2", features = ["rt-core"] }
+pin-project = "0.4"
+
+[dependencies.trust-dns-resolver]
+version = "0.20"
+default-features = false
+features = ["system-config", "tokio-runtime"]
+# TODO(eliza): when 0.20 is published, depend on it from crates.io.
+git = "https://github.com/bluejekyll/trust-dns.git"
+rev = "97d3bf10ecb0711aebf523e930f5de873808eb33"

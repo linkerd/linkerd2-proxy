@@ -53,7 +53,7 @@ impl<'a> std::fmt::Display for IdleError {
             write!(
                 fmt,
                 "Service idled out after {}s",
-                secs as f64 + subsec_ms / 1000.0
+                secs as f64 + subsec_ms / 1000.0,
             )
         }
     }

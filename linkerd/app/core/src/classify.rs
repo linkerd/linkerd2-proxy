@@ -6,7 +6,7 @@ pub use linkerd2_http_classify::{CanClassify, Layer};
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_timeout::error::ResponseTimeout;
 use std::borrow::Cow;
-use tower_grpc::{self as grpc};
+use tonic as grpc;
 use tracing::trace;
 
 #[derive(Clone, Debug)]

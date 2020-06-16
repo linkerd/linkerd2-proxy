@@ -1,9 +1,12 @@
 //! Layer to map service errors into responses.
 
 #![deny(warnings, rust_2018_idioms)]
-
-use futures::{Async, Future, Poll};
+use futures::{ready, TryFuture};
 use linkerd2_error::Error;
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Creates an error responder for a request.
 pub trait NewRespond<Req, Rsp, E = Error> {
@@ -30,9 +33,11 @@ pub struct RespondService<N, S> {
     inner: S,
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub struct RespondFuture<R, F> {
     respond: R,
+    #[pin]
     inner: F,
 }
 
@@ -62,8 +67,8 @@ where
     type Error = S::Error;
     type Future = RespondFuture<N::Respond, S::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
@@ -75,17 +80,14 @@ where
 
 impl<R, F> Future for RespondFuture<R, F>
 where
-    F: Future,
-    R: Respond<F::Item, F::Error>,
+    F: TryFuture,
+    R: Respond<F::Ok, F::Error>,
 {
-    type Item = R::Response;
-    type Error = F::Error;
+    type Output = Result<R::Response, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.inner.poll() {
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Ok(Async::Ready(rsp)) => self.respond.respond(Ok(rsp)).map(Async::Ready),
-            Err(err) => self.respond.respond(Err(err)).map(Async::Ready),
-        }
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let rsp = ready!(this.inner.try_poll(cx));
+        Poll::Ready(this.respond.respond(rsp))
     }
 }

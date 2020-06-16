@@ -3,10 +3,12 @@
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
-use futures::{prelude::*, try_ready};
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
+use std::future::Future;
+use std::pin::Pin;
 use std::{fmt, net};
-use tracing::{info_span, trace};
+use tokio::sync::{mpsc, oneshot};
+use tracing::{info_span, trace, Span};
 use tracing_futures::Instrument;
 pub use trust_dns_resolver::config::ResolverOpts;
 pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
@@ -15,7 +17,7 @@ use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver};
 
 #[derive(Clone)]
 pub struct Resolver {
-    resolver: AsyncResolver,
+    tx: mpsc::UnboundedSender<ResolveRequest>,
 }
 
 pub trait ConfigureResolver {
@@ -26,11 +28,18 @@ pub trait ConfigureResolver {
 pub enum Error {
     NoAddressesFound,
     ResolutionFailed(ResolveError),
+    TaskLost,
 }
 
-pub struct IpAddrFuture(Box<dyn Future<Item = LookupIp, Error = ResolveError> + Send + 'static>);
+pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
-pub type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
+pub type IpAddrFuture = Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>>;
+
+struct ResolveRequest {
+    name: Name,
+    result_tx: oneshot::Sender<Result<LookupIp, ResolveError>>,
+    span: tracing::Span,
+}
 
 impl Resolver {
     /// Construct a new `Resolver` from environment variables and system
@@ -38,8 +47,7 @@ impl Resolver {
     ///
     /// # Returns
     ///
-    /// Either a tuple containing a new `Resolver` and the background task to
-    /// drive that resolver's futures, or an error if the system configuration
+    /// Either a new `Resolver` or an error if the system configuration
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
@@ -50,32 +58,72 @@ impl Resolver {
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Ok(Self::new(config, opts))
+        Self::new(config, opts)
     }
 
-    /// NOTE: It would be nice to be able to return a named type rather than
-    ///       `impl Future` for the background future; it would be called
-    ///       `Background` or `ResolverBackground` if that were possible.
-    pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> (Self, Task) {
+    pub fn new(
+        config: ResolverConfig,
+        mut opts: ResolverOpts,
+    ) -> Result<(Self, Task), ResolveError> {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
-        let (resolver, task) = AsyncResolver::new(config, opts);
-        let resolver = Resolver { resolver };
-        (resolver, Box::new(task))
+
+        // XXX(eliza): figure out an appropriate bound for the channel...
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let task = Box::pin(async move {
+            let resolver = match AsyncResolver::tokio(config, opts) {
+                Ok(resolver) => resolver,
+                Err(e) => unreachable!("constructing resolver should not fail: {}", e),
+            };
+            while let Some(ResolveRequest {
+                name,
+                result_tx,
+                span,
+            }) = rx.recv().await
+            {
+                let resolver = resolver.clone();
+                tokio::spawn(
+                    async move {
+                        let res = resolver.lookup_ip(name.as_ref()).await;
+                        if result_tx.send(res).is_err() {
+                            tracing::debug!("resolution canceled");
+                        }
+                    }
+                    .instrument(span),
+                );
+            }
+            tracing::debug!("all resolver handles dropped; terminating.");
+        });
+        Ok((Resolver { tx }, task))
     }
 
-    pub fn resolve_one_ip(&self, name: &Name) -> IpAddrFuture {
+    async fn lookup_ip(&self, name: Name, span: Span) -> Result<LookupIp, Error> {
+        let (result_tx, rx) = oneshot::channel();
+        self.tx.send(ResolveRequest {
+            name,
+            result_tx,
+            span,
+        })?;
+        let ips = rx.await??;
+        Ok(ips)
+    }
+
+    pub fn resolve_one_ip(
+        &self,
+        name: &Name,
+    ) -> Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>> {
         let name = name.clone();
-        let f = self
-            .resolver
-            .lookup_ip(name.as_ref())
-            .instrument(info_span!("resolve_one_ip", %name));
-        IpAddrFuture(Box::new(f))
+        let resolver = self.clone();
+        Box::pin(async move {
+            let span = info_span!("resolve_one_ip", %name);
+            let ips = resolver.lookup_ip(name, span).await?;
+            ips.iter().next().ok_or_else(|| Error::NoAddressesFound)
+        })
     }
 
     /// Creates a refining service.
     pub fn into_make_refine(self) -> MakeRefine {
-        MakeRefine(self.resolver)
+        MakeRefine(self)
     }
 }
 
@@ -89,16 +137,40 @@ impl fmt::Debug for Resolver {
     }
 }
 
-impl Future for IpAddrFuture {
-    type Item = net::IpAddr;
-    type Error = Error;
+impl<T> From<mpsc::error::SendError<T>> for Error {
+    fn from(_: mpsc::error::SendError<T>) -> Self {
+        Self::TaskLost
+    }
+}
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let ips = try_ready!(self.0.poll().map_err(Error::ResolutionFailed));
-        ips.iter()
-            .next()
-            .map(Async::Ready)
-            .ok_or_else(|| Error::NoAddressesFound)
+impl From<oneshot::error::RecvError> for Error {
+    fn from(_: oneshot::error::RecvError) -> Self {
+        Self::TaskLost
+    }
+}
+
+impl From<ResolveError> for Error {
+    fn from(e: ResolveError) -> Self {
+        Self::ResolutionFailed(e)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoAddressesFound => f.pad("no addresses found"),
+            Self::ResolutionFailed(e) => fmt::Display::fmt(e, f),
+            Self::TaskLost => f.pad("background task terminated unexpectedly"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ResolutionFailed(e) => Some(e),
+            _ => None,
+        }
     }
 }
 

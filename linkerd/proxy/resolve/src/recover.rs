@@ -1,10 +1,14 @@
 //! A middleware that recovers a resolution after some failures.
 
-use futures::{try_ready, Async, Future, Poll, Stream};
+use futures::{ready, stream::TryStreamExt, FutureExt};
 use indexmap::IndexMap;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_core::resolve::{self, Resolution as _, Update};
+use pin_project::{pin_project, project};
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
 pub struct Resolve<E, R> {
@@ -12,16 +16,19 @@ pub struct Resolve<E, R> {
     recover: E,
 }
 
+#[pin_project]
 pub struct ResolveFuture<T, E: Recover, R: resolve::Resolve<T>> {
     inner: Option<Inner<T, E, R>>,
 }
 
+#[pin_project]
 pub struct Resolution<T, E: Recover, R: resolve::Resolve<T>> {
     inner: Inner<T, E, R>,
     cache: IndexMap<SocketAddr, R::Endpoint>,
     reconcile: Option<Update<R::Endpoint>>,
 }
 
+#[pin_project]
 struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
     target: T,
     resolve: R,
@@ -29,11 +36,12 @@ struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
     state: State<R::Future, R::Resolution, E::Backoff>,
 }
 
-// #[derive(Debug)]
-// struct Cache<T> {
-//     active: IndexMap<SocketAddr, T>,
-// }
+#[derive(Debug)]
+struct Cache<T> {
+    active: IndexMap<SocketAddr, T>,
+}
 
+#[pin_project]
 enum State<F, R: resolve::Resolution, B> {
     Disconnected {
         backoff: Option<B>,
@@ -42,6 +50,7 @@ enum State<F, R: resolve::Resolution, B> {
         future: F,
         backoff: Option<B>,
     },
+
     // XXX This state shouldn't be necessary, but we need it to pass tests(!)
     // that don't properly mimic the go server's behavior. See
     // linkerd/linkerd2#3362.
@@ -49,14 +58,18 @@ enum State<F, R: resolve::Resolution, B> {
         resolution: Option<R>,
         backoff: Option<B>,
     },
+
     Connected {
+        #[pin]
         resolution: R,
         initial: Option<Update<R::Endpoint>>,
     },
+
     Recover {
         error: Option<Error>,
         backoff: Option<B>,
     },
+
     Backoff(Option<B>),
 }
 
@@ -72,16 +85,19 @@ impl<T, E, R> tower::Service<T> for Resolve<E, R>
 where
     T: Clone,
     R: resolve::Resolve<T> + Clone,
+    R::Resolution: Unpin,
+    R::Future: Unpin,
     R::Endpoint: Clone + PartialEq,
     E: Recover + Clone,
+    E::Backoff: Unpin,
 {
     type Response = Resolution<T, E, R>;
     type Error = Error;
     type Future = ResolveFuture<T, E, R>;
 
     #[inline]
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.resolve.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.resolve.poll_ready(cx).map_err(Into::into)
     }
 
     #[inline]
@@ -108,24 +124,26 @@ impl<T, E, R> Future for ResolveFuture<T, E, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,
+    R::Resolution: Unpin,
+    R::Future: Unpin,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
+    E::Backoff: Unpin,
 {
-    type Item = Resolution<T, E, R>;
-    type Error = Error;
+    type Output = Result<Resolution<T, E, R>, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
         // Wait until the resolution is connected.
-        try_ready!(self
+        ready!(this
             .inner
             .as_mut()
             .expect("polled after complete")
-            .poll_connected());
-
-        Ok(Async::Ready(Resolution {
-            inner: self.inner.take().expect("polled after complete"),
+            .poll_connected(cx))?;
+        let inner = this.inner.take().expect("polled after complete");
+        Poll::Ready(Ok(Resolution {
+            inner,
             cache: IndexMap::default(),
-            //cache: Cache::default(),
             reconcile: None,
         }))
     }
@@ -137,65 +155,77 @@ impl<T, E, R> resolve::Resolution for Resolution<T, E, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,
+    R::Future: Unpin,
+    R::Resolution: Unpin,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
+    E::Backoff: Unpin,
 {
     type Endpoint = R::Endpoint;
     type Error = Error;
 
-    fn poll(&mut self) -> Poll<Update<Self::Endpoint>, Self::Error> {
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
+        let mut this = self.project();
         loop {
             // If a reconciliation update is buffered (i.e. after
             // reconcile_after_reconnect), process it immediately.
-            if let Some(update) = self.reconcile.take() {
-                self.update_active(&update);
-                return Ok(update.into());
+            if let Some(update) = this.reconcile.take() {
+                this.update_active(&update);
+                return Poll::Ready(Ok(update));
             }
 
-            if let State::Connected {
-                ref mut resolution,
-                ref mut initial,
-            } = self.inner.state
-            {
-                // XXX Due to linkerd/linkerd2#3362, errors can't be discovered
-                // eagerly, so we must potentially read the first update to be
-                // sure it didn't fail. If that's the case, then reconcile the
-                // cache against the initial update.
-                if let Some(initial) = initial.take() {
-                    // The initial state afer a reconnect may be identitical to
-                    // the prior state, and so there may be no updates to
-                    // advertise.
-                    if let Some((update, reconcile)) = reconcile_after_connect(&self.cache, initial)
-                    {
-                        self.reconcile = reconcile;
-                        self.update_active(&update);
-                        return Ok(update.into());
+            match this.inner.state {
+                State::Connected {
+                    ref mut resolution,
+                    ref mut initial,
+                } => {
+                    // XXX Due to linkerd/linkerd2#3362, errors can't be discovered
+                    // eagerly, so we must potentially read the first update to be
+                    // sure it didn't fail. If that's the case, then reconcile the
+                    // cache against the initial update.
+                    if let Some(initial) = initial.take() {
+                        // The initial state afer a reconnect may be identitical to
+                        // the prior state, and so there may be no updates to
+                        // advertise.
+                        if let Some((update, reconcile)) =
+                            reconcile_after_connect(&this.cache, initial)
+                        {
+                            *this.reconcile = reconcile;
+                            this.update_active(&update);
+                            return Poll::Ready(Ok(update));
+                        }
                     }
-                }
 
-                // Process the resolution stream, updating the cache.
-                //
-                // Attempt recovery/backoff if the resolution fails.
-                match resolve::Resolution::poll(resolution) {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Ok(Async::Ready(update)) => {
-                        self.update_active(&update);
-                        return Ok(update.into());
-                    }
-                    Err(e) => {
-                        self.inner.state = State::Recover {
-                            error: Some(e.into()),
-                            backoff: None,
-                        };
+                    // Process the resolution stream, updating the cache.
+                    //
+                    // Attempt recovery/backoff if the resolution fails.
+                    match ready!(resolution.poll_unpin(cx)) {
+                        Ok(update) => {
+                            this.update_active(&update);
+                            return Poll::Ready(Ok(update));
+                        }
+                        Err(e) => {
+                            this.inner.state = State::Recover {
+                                error: Some(e.into()),
+                                backoff: None,
+                            }
+                        }
                     }
                 }
+                // XXX(eliza): note that this match was originally an `if let`,
+                // but that doesn't work with `#[project]` for some kinda reason
+                _ => {}
             }
 
-            try_ready!(self.inner.poll_connected());
+            ready!(this.inner.poll_connected(cx))?;
         }
     }
 }
 
+#[project]
 impl<T, E, R> Resolution<T, E, R>
 where
     T: Clone,
@@ -226,11 +256,14 @@ impl<T, E, R> Inner<T, E, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,
+    R::Resolution: Unpin,
+    R::Future: Unpin,
     R::Endpoint: Clone + PartialEq,
     E: Recover,
+    E::Backoff: Unpin,
 {
     /// Drives the state forward until its connected.
-    fn poll_connected(&mut self) -> Poll<(), Error> {
+    fn poll_connected(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         loop {
             self.state = match self.state {
                 // When disconnected, start connecting.
@@ -239,20 +272,17 @@ where
                 // backoff in case this connection attempt fails.
                 State::Disconnected { ref mut backoff } => {
                     tracing::trace!("connecting");
-                    try_ready!(self.resolve.poll_ready().map_err(Into::into));
+                    ready!(self.resolve.poll_ready(cx).map_err(Into::into))?;
                     let future = self.resolve.resolve(self.target.clone());
-                    State::Connecting {
-                        future,
-                        backoff: backoff.take(),
-                    }
+                    let backoff = backoff.take();
+                    State::Connecting { future, backoff }
                 }
 
                 State::Connecting {
                     ref mut future,
                     ref mut backoff,
-                } => match future.poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Ok(Async::Ready(resolution)) => {
+                } => match ready!(future.poll_unpin(cx)) {
+                    Ok(resolution) => {
                         tracing::trace!("pending");
                         State::Pending {
                             resolution: Some(resolution),
@@ -271,22 +301,21 @@ where
                 State::Pending {
                     ref mut resolution,
                     ref mut backoff,
-                } => match resolution.as_mut().unwrap().poll() {
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                } => match ready!(resolution.as_mut().expect("illegal state").poll_unpin(cx)) {
                     Err(e) => State::Recover {
                         error: Some(e.into()),
                         backoff: backoff.take(),
                     },
-                    Ok(Async::Ready(initial)) => {
+                    Ok(initial) => {
                         tracing::trace!("connected");
                         State::Connected {
-                            resolution: resolution.take().unwrap(),
+                            resolution: resolution.take().expect("illegal state"),
                             initial: Some(initial),
                         }
                     }
                 },
 
-                State::Connected { .. } => return Ok(Async::Ready(())),
+                State::Connected { .. } => return Poll::Ready(Ok(())),
 
                 // If any stage failed, try to recover. If the error is
                 // recoverable, start (or continue) backing off...
@@ -301,20 +330,19 @@ where
                 }
 
                 State::Backoff(ref mut backoff) => {
-                    // If the backoff fails, it's not recoverable.
-                    match backoff
+                    let unit = ready!(backoff
                         .as_mut()
                         .expect("illegal state")
-                        .poll()
-                        .map_err(Into::into)?
-                    {
-                        Async::NotReady => return Ok(Async::NotReady),
-                        Async::Ready(unit) => {
-                            tracing::trace!("disconnected");
-                            let backoff = if unit.is_some() { backoff.take() } else { None };
-                            State::Disconnected { backoff }
-                        }
-                    }
+                        .try_poll_next_unpin(cx));
+                    tracing::trace!("disconnected");
+                    let backoff = if let Some(unit) = unit {
+                        // If the backoff fails, it's not recoverable.
+                        unit.map_err(Into::into)?;
+                        backoff.take()
+                    } else {
+                        None
+                    };
+                    State::Disconnected { backoff }
                 }
             };
         }

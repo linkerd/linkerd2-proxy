@@ -1,7 +1,11 @@
 use super::h1;
-use futures::{try_ready, Future, Poll};
+use futures::{ready, TryFuture};
 use http::uri::Authority;
 use linkerd2_stack::{layer, NewService};
+use pin_project::pin_project;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tracing::trace;
 
 pub trait ShouldNormalizeUri {
@@ -13,7 +17,9 @@ pub struct MakeNormalizeUri<N> {
     inner: N,
 }
 
+#[pin_project]
 pub struct MakeFuture<F> {
+    #[pin]
     inner: F,
     authority: Option<Authority>,
 }
@@ -55,8 +61,8 @@ where
     type Error = M::Error;
     type Future = MakeFuture<M::Future>;
 
-    fn poll_ready(&mut self) -> Poll<(), M::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
@@ -70,17 +76,17 @@ where
 
 // === impl MakeFuture ===
 
-impl<F: Future> Future for MakeFuture<F> {
-    type Item = NormalizeUri<F::Item>;
-    type Error = F::Error;
+impl<F: TryFuture> Future for MakeFuture<F> {
+    type Output = Result<NormalizeUri<F::Ok>, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let inner = try_ready!(self.inner.poll());
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let inner = ready!(this.inner.try_poll(cx))?;
         let svc = NormalizeUri {
             inner,
-            authority: self.authority.take(),
+            authority: this.authority.take(),
         };
-        Ok(svc.into())
+        Poll::Ready(Ok(svc))
     }
 }
 
@@ -94,8 +100,8 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
-    fn poll_ready(&mut self) -> Poll<(), S::Error> {
-        self.inner.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
@@ -107,7 +113,7 @@ where
             // canonical but the request's authority is relative.
             let authority = request
                 .uri()
-                .authority_part()
+                .authority()
                 .cloned()
                 .or_else(|| h1::authority_from_host(&request))
                 .unwrap_or_else(|| default_authority.clone());

@@ -1,10 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
+#![type_length_limit = "1586225"]
 // The compiler cannot figure out that the `use linkerd2_app_integration::*`
 // import is actually used, and putting the allow attribute on that import in
 // particular appears to do nothing... T_T
 #![allow(unused_imports)]
-
-use bytes::IntoBuf;
 use linkerd2_app_integration::*;
 use std::io::Read;
 
@@ -761,7 +760,7 @@ mod transport {
         drop(client);
         assert_eventually_contains!(
             metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"ENOTCONN\"} 1"
+            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
         );
 
         // create a new client to force a new connection
@@ -777,7 +776,7 @@ mod transport {
         drop(client);
         assert_eventually_contains!(
             metrics.get("/metrics"),
-            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"ENOTCONN\"} 2"
+            "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 2"
         );
     }
 
@@ -827,7 +826,7 @@ mod transport {
         // drop the client to force the connection to close.
         drop(client);
         assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"ENOTCONN\"} 1"
+            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1"
         );
 
         // create a new client to force a new connection
@@ -842,7 +841,7 @@ mod transport {
         // drop the client to force the connection to close.
         drop(client);
         assert_eventually_contains!(metrics.get("/metrics"),
-            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"ENOTCONN\"} 2"
+            "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2"
         );
     }
 
@@ -1312,8 +1311,8 @@ mod transport {
 }
 
 // linkerd/linkerd2#613
-#[test]
-fn metrics_compression() {
+#[tokio::test]
+async fn metrics_compression() {
     let _ = trace_init();
 
     let Fixture {
@@ -1323,41 +1322,44 @@ fn metrics_compression() {
     } = Fixture::inbound();
 
     let do_scrape = |encoding: &str| {
-        let resp = metrics.request(
+        let req = metrics.request_async(
             metrics
                 .request_builder("/metrics")
                 .method("GET")
                 .header("Accept-Encoding", encoding),
         );
 
-        {
-            // create a new scope so we can release our borrow on `resp` before
-            // getting the body
-            let content_encoding = resp.headers().get("content-encoding").as_ref().map(|val| {
-                val.to_str()
-                    .expect("content-encoding value should be ascii")
-            });
-            assert_eq!(
-                content_encoding,
-                Some("gzip"),
-                "unexpected Content-Encoding {:?} (requested Accept-Encoding: {})",
-                content_encoding,
-                encoding
-            );
-        }
+        let encoding = encoding.to_owned();
+        async move {
+            let resp = req.await.expect("scrape");
 
-        let body = resp
-            .into_body()
-            .concat2()
-            .wait()
-            .expect("response body concat");
-        let mut decoder = flate2::read::GzDecoder::new(body.into_buf());
-        let mut scrape = String::new();
-        decoder.read_to_string(&mut scrape).expect(&format!(
-            "decode gzip (requested Accept-Encoding: {})",
-            encoding
-        ));
-        scrape
+            {
+                // create a new scope so we can release our borrow on `resp` before
+                // getting the body
+                let content_encoding = resp.headers().get("content-encoding").as_ref().map(|val| {
+                    val.to_str()
+                        .expect("content-encoding value should be ascii")
+                });
+                assert_eq!(
+                    content_encoding,
+                    Some("gzip"),
+                    "unexpected Content-Encoding {:?} (requested Accept-Encoding: {})",
+                    content_encoding,
+                    encoding.as_str()
+                );
+            }
+
+            let mut body = hyper::body::aggregate(resp.into_body())
+                .await
+                .expect("response body concat");
+            let mut decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(body.to_bytes()));
+            let mut scrape = String::new();
+            decoder.read_to_string(&mut scrape).expect(&format!(
+                "decode gzip (requested Accept-Encoding: {})",
+                encoding
+            ));
+            scrape
+        }
     };
 
     let encodings = &[
@@ -1368,18 +1370,18 @@ fn metrics_compression() {
     ];
 
     info!("client.get(/)");
-    assert_eq!(client.get("/"), "hello");
+    assert_eq!(client.get_async("/").await, "hello");
 
     for &encoding in encodings {
-        assert_eventually_contains!(do_scrape(encoding),
+        assert_eventually_contains!(do_scrape(encoding).await,
             "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 1");
     }
 
     info!("client.get(/)");
-    assert_eq!(client.get("/"), "hello");
+    assert_eq!(client.get_async("/").await, "hello");
 
     for &encoding in encodings {
-        assert_eventually_contains!(do_scrape(encoding),
+        assert_eventually_contains!(do_scrape(encoding).await,
             "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 2");
     }
 }

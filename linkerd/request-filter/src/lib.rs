@@ -3,9 +3,11 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{Future, Poll};
-
-pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
+use linkerd2_error::Error;
+use pin_project::{pin_project, project};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 pub trait RequestFilter<T> {
     type Error: Into<Error>;
@@ -19,9 +21,10 @@ pub struct Service<I, S> {
     service: S,
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub enum ResponseFuture<F> {
-    Future(F),
+    Future(#[pin] F),
     Rejected(Option<Error>),
 }
 
@@ -44,8 +47,8 @@ where
     type Future = ResponseFuture<S::Future>;
 
     #[inline]
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready().map_err(Into::into)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, request: T) -> Self::Future {
@@ -65,18 +68,19 @@ where
 
 // === impl ResponseFuture ===
 
-impl<F> Future for ResponseFuture<F>
+impl<F, T, E> Future for ResponseFuture<F>
 where
-    F: Future,
-    F::Error: Into<Error>,
+    F: Future<Output = Result<T, E>>,
+    E: Into<Error>,
 {
-    type Item = F::Item;
-    type Error = Error;
+    type Output = Result<T, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self {
-            ResponseFuture::Future(ref mut f) => f.poll().map_err(Into::into),
-            ResponseFuture::Rejected(ref mut e) => Err(e.take().unwrap()),
+    #[project]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[project]
+        match self.project() {
+            ResponseFuture::Future(f) => f.poll(cx).map(|r| r.map_err(Into::into)),
+            ResponseFuture::Rejected(e) => Poll::Ready(Err(e.take().unwrap())),
         }
     }
 }

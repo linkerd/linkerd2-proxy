@@ -9,14 +9,17 @@ A middleware that provides mutual exclusion.
 """
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
 linkerd2-error = { path = "../error" }
-tower = "0.1"
+tower = { version = "0.3", default-features = false }
 tracing = "0.1"
+tokio = { version = "0.2.19", features = ["sync", "macros", "rt-core"] }
 
 [dev-dependencies]
 rand = "0.7"
-tokio = "0.1"
-tracing-futures = "0.1"
+tracing-futures = { version = "0.1", features = ["std-future"] }
 tracing-log = "0.1"
-tracing-subscriber = "0.2.3"
+tracing-subscriber = "0.2.5"
+tower = { version = "0.3", default-features = false, features = ["util"] }
+tokio-test = "0.2"
+tower-test = "0.3"

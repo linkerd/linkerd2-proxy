@@ -1,12 +1,12 @@
 use super::classify;
 use super::dst::Route;
-use super::handle_time;
+// use super::handle_time;
 use super::http_metrics::retries::Handle;
 use super::transport::tls;
 use super::HttpRouteRetry;
 use crate::profiles;
 use futures::future;
-use hyper::body::Payload;
+use hyper::body::HttpBody;
 use linkerd2_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd2_retry::NewRetryLayer;
 use std::marker::PhantomData;
@@ -70,7 +70,7 @@ impl<C, A, B, E> linkerd2_retry::Policy<http::Request<A>, http::Response<B>, E> 
 where
     C: CloneRequest<http::Request<A>>,
 {
-    type Future = future::FutureResult<Self, ()>;
+    type Future = future::Ready<Self>;
 
     fn retry(
         &self,
@@ -97,7 +97,7 @@ where
             return None;
         }
 
-        Some(future::ok(self.clone()))
+        Some(future::ready(self.clone()))
     }
 
     fn clone_request(&self, req: &http::Request<A>) -> Option<http::Request<A>> {
@@ -116,7 +116,7 @@ impl<C> Clone for Retry<C> {
     }
 }
 
-impl<B: Default + Payload> CloneRequest<http::Request<B>> for () {
+impl<B: Default + HttpBody> CloneRequest<http::Request<B>> for () {
     fn clone_request(req: &http::Request<B>) -> Option<http::Request<B>> {
         if !req.body().is_end_stream() {
             return None;
@@ -132,10 +132,10 @@ impl<B: Default + Payload> CloneRequest<http::Request<B>> for () {
             clone.extensions_mut().insert(ext.clone());
         }
 
-        // Count retries toward the request's total handle time.
-        if let Some(ext) = req.extensions().get::<handle_time::Tracker>() {
-            clone.extensions_mut().insert(ext.clone());
-        }
+        // // Count retries toward the request's total handle time.
+        // if let Some(ext) = req.extensions().get::<handle_time::Tracker>() {
+        //     clone.extensions_mut().insert(ext.clone());
+        // }
 
         Some(clone)
     }

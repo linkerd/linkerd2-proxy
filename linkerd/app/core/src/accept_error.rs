@@ -1,6 +1,7 @@
-use futures::{future, Future, Poll};
+use futures::{future, FutureExt, TryFutureExt};
 use linkerd2_error::{Error, Never};
 use linkerd2_proxy_core::listen::Accept;
+use std::task::{Context, Poll};
 use tracing;
 
 pub struct AcceptError<A>(A);
@@ -24,37 +25,34 @@ where
     type Response = future::Either<
         future::OrElse<
             A::ConnectionFuture,
-            Result<(), Never>,
-            fn(A::ConnectionError) -> Result<(), Never>,
+            future::Ready<Result<(), Never>>,
+            fn(A::ConnectionError) -> future::Ready<Result<(), Never>>,
         >,
-        future::FutureResult<(), Never>,
+        future::Ready<Result<(), Never>>,
     >;
     type Error = Never;
-    type Future = future::Then<
+    type Future = future::Map<
         A::Future,
-        Result<Self::Response, Never>,
         fn(Result<A::ConnectionFuture, A::Error>) -> Result<Self::Response, Never>,
     >;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        Ok(self
-            .0
-            .poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(futures::ready!(self.0.poll_ready(cx))
             .map_err(Into::into)
-            .expect("poll_ready must never fail on accept"))
+            .expect("poll_ready must never fail on accept")))
     }
 
     fn call(&mut self, sock: T) -> Self::Future {
-        self.0.accept(sock).then(|f| match f {
-            Ok(connection_future) => Ok(future::Either::A(connection_future.or_else(|e| {
+        self.0.accept(sock).map(|f| match f {
+            Ok(connection_future) => Ok(future::Either::Left(connection_future.or_else(|e| {
                 let error: Error = e.into();
                 tracing::debug!(%error, "Connection failed");
-                Ok(())
+                future::ok(())
             }))),
             Err(e) => {
                 let error: Error = e.into();
                 tracing::debug!(%error, "Accept failed");
-                Ok(future::Either::B(future::ok(())))
+                Ok(future::Either::Right(future::ok(())))
             }
         })
     }
