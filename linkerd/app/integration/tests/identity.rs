@@ -31,7 +31,8 @@ async fn nonblocking_identity_detection() {
             assert_eq!(read, msg1.as_bytes());
             msg2
         })
-        .run();
+        .run()
+        .await;
 
     let proxy = proxy.inbound(srv).run_with_test_env(env);
     let client = client::tcp(proxy.inbound);

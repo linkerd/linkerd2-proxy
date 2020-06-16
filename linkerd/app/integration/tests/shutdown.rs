@@ -34,7 +34,8 @@ async fn h2_exercise_goaways_connections() {
         .route_fn("/", move |_req| {
             Response::builder().body(body.clone()).unwrap()
         })
-        .run();
+        .run()
+        .await;
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
     let client = client::http2(proxy.inbound, "shutdown.test.svc.cluster.local");
 
@@ -82,7 +83,8 @@ async fn http1_closes_idle_connections() {
             shdn.borrow_mut().take().expect("only 1 request").signal();
             Response::builder().body(body.clone()).unwrap()
         })
-        .run();
+        .run()
+        .await;
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
     let client = client::http1(proxy.inbound, "shutdown.test.svc.cluster.local");
 
@@ -115,7 +117,8 @@ async fn tcp_waits_for_proxies_to_close() {
                 Ok(_) => {}
             })
         })
-        .run();
+        .run()
+        .await;
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
 
     let client = client::tcp(proxy.inbound);
