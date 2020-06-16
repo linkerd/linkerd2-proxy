@@ -13,5 +13,7 @@ futures = "0.3"
 bytes = "0.5"
 tokio = { version = "0.2", features = ["io-util", "net", "macros"] }
 tokio-rustls = "0.13"
-tokio-test = "0.2"
 pin-project = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.2"

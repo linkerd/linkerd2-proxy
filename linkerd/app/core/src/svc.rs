@@ -3,7 +3,6 @@
 pub use crate::proxy::http;
 use crate::transport::Connect;
 use crate::{cache, Error};
-use linkerd2_box as boxed;
 pub use linkerd2_buffer as buffer;
 use linkerd2_concurrency_limit as concurrency_limit;
 pub use linkerd2_lock as lock;
@@ -162,14 +161,6 @@ impl<L> Layers<L> {
         self.push(stack::MapResponseLayer::new(map_response))
     }
 
-    pub fn boxed<A, B>(self) -> Layers<Pair<L, boxed::Layer<A, B>>>
-    where
-        A: 'static,
-        B: 'static,
-    {
-        self.push(boxed::Layer::new())
-    }
-
     pub fn box_http_request<B>(self) -> Layers<Pair<L, http::boxed::request::Layer<B>>>
     where
         B: hyper::body::HttpBody + 'static,
@@ -311,17 +302,6 @@ impl<S> Stack<S> {
     {
         self.push(stack::FallbackLayer::new(fallback).with_predicate(predicate))
     }
-
-    // pub fn boxed<A>(self) -> Stack<boxed::BoxService<A, S::Response>>
-    // where
-    //     A: 'static,
-    //     S: tower::Service<A> + Send + 'static,
-    //     S::Response: 'static,
-    //     S::Future: Send + 'static,
-    //     S::Error: Into<Error> + 'static,
-    // {
-    //     self.push(boxed::Layer::new())
-    // }
 
     // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
     // where

@@ -12,7 +12,6 @@ Utilities for composing Tower services.
 futures = "0.3"
 linkerd2-error = { path = "../error" }
 pin-project = "0.4"
-tokio = {version = "0.2", features = ["macros"]}
 
 [dependencies.tower]
 version = "0.3"

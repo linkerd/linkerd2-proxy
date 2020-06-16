@@ -872,7 +872,7 @@ dependencies = [
  "tonic",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
  "webpki",
 ]
 
@@ -889,7 +889,6 @@ dependencies = [
  "libc",
  "linkerd2-addr",
  "linkerd2-admit",
- "linkerd2-box",
  "linkerd2-buffer",
  "linkerd2-cache",
  "linkerd2-concurrency-limit",
@@ -939,12 +938,9 @@ dependencies = [
  "tokio-timer",
  "tonic",
  "tower 0.3.1",
- "tower-balance",
- "tower-load",
  "tower-request-modifier",
- "tower-spawn-ready",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
  "tracing-log",
  "tracing-subscriber",
 ]
@@ -971,7 +967,6 @@ name = "linkerd2-app-inbound"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.1.26",
  "futures 0.3.5",
  "http 0.2.1",
  "indexmap",
@@ -979,7 +974,6 @@ dependencies = [
  "quickcheck",
  "tokio 0.2.21",
  "tower 0.3.1",
- "tower-grpc",
  "tracing",
 ]
 
@@ -1019,7 +1013,7 @@ dependencies = [
  "tower 0.3.1",
  "tower-grpc",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
  "tracing-subscriber",
  "webpki",
 ]
@@ -1050,15 +1044,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-box"
-version = "0.1.0"
-dependencies = [
- "futures 0.1.26",
- "linkerd2-error",
- "tower 0.1.1",
-]
-
-[[package]]
 name = "linkerd2-buffer"
 version = "0.1.0"
 dependencies = [
@@ -1070,7 +1055,7 @@ dependencies = [
  "tower 0.3.1",
  "tower-test",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
 ]
 
 [[package]]
@@ -1084,7 +1069,6 @@ dependencies = [
  "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.2.4",
 ]
 
 [[package]]
@@ -1113,7 +1097,7 @@ dependencies = [
  "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
  "trust-dns-resolver",
 ]
 
@@ -1272,7 +1256,7 @@ dependencies = [
  "tower 0.3.1",
  "tower-test",
  "tracing",
- "tracing-futures 0.1.0",
+ "tracing-futures",
  "tracing-log",
  "tracing-subscriber",
 ]
@@ -1395,7 +1379,7 @@ dependencies = [
  "pin-project",
  "tokio 0.2.21",
  "tower 0.3.1",
- "tracing-futures 0.2.4",
+ "tracing-futures",
 ]
 
 [[package]]
@@ -1425,7 +1409,7 @@ dependencies = [
  "tower 0.3.1",
  "tower-test",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
 ]
 
 [[package]]
@@ -1455,7 +1439,7 @@ dependencies = [
  "tokio 0.2.21",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
  "try-lock",
 ]
 
@@ -1515,7 +1499,7 @@ dependencies = [
  "tonic",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
 ]
 
 [[package]]
@@ -1555,7 +1539,7 @@ dependencies = [
  "tokio-util",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
  "tracing-subscriber",
  "untrusted",
  "webpki",
@@ -1591,7 +1575,6 @@ dependencies = [
  "linkerd2-stack",
  "pin-project",
  "tower 0.3.1",
- "tower-util",
  "tracing",
 ]
 
@@ -1605,7 +1588,6 @@ dependencies = [
  "pin-project",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.1.0",
 ]
 
 [[package]]
@@ -1631,14 +1613,13 @@ dependencies = [
  "tonic",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
 ]
 
 [[package]]
 name = "linkerd2-signal"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
  "tokio 0.2.21",
  "tracing",
 ]
@@ -1650,7 +1631,6 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-error",
  "pin-project",
- "tokio 0.2.21",
  "tower 0.3.1",
 ]
 
@@ -1673,7 +1653,7 @@ dependencies = [
  "pin-project",
  "tower 0.3.1",
  "tracing",
- "tracing-futures 0.2.4",
+ "tracing-futures",
 ]
 
 [[package]]
@@ -1940,7 +1920,6 @@ name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
- "futures 0.3.5",
  "prost 0.6.1",
  "prost-types 0.6.1",
  "tonic",
@@ -3094,26 +3073,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tower-balance"
-version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower#7e55b7fa0b2db4ff36fd90f3700bd628c89951b6"
-dependencies = [
- "futures 0.1.26",
- "indexmap",
- "rand 0.7.2",
- "slab",
- "tokio-sync",
- "tokio-timer",
- "tower-discover",
- "tower-layer 0.1.0",
- "tower-load",
- "tower-ready-cache",
- "tower-service 0.2.0",
- "tower-util",
- "tracing",
-]
-
-[[package]]
 name = "tower-buffer"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3202,18 +3161,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tower-load"
-version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower#7e55b7fa0b2db4ff36fd90f3700bd628c89951b6"
-dependencies = [
- "futures 0.1.26",
- "log",
- "tokio-timer",
- "tower-discover",
- "tower-service 0.2.0",
-]
-
-[[package]]
 name = "tower-load-shed"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3232,19 +3179,6 @@ checksum = "ce50370d644a0364bf4877ffd4f76404156a248d104e2cc234cd391ea5cdc965"
 dependencies = [
  "tokio 0.2.21",
  "tower-service 0.3.0",
-]
-
-[[package]]
-name = "tower-ready-cache"
-version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower#7e55b7fa0b2db4ff36fd90f3700bd628c89951b6"
-dependencies = [
- "futures 0.1.26",
- "indexmap",
- "log",
- "tokio-sync",
- "tower-service 0.2.0",
- "tower-util",
 ]
 
 [[package]]
@@ -3282,19 +3216,6 @@ name = "tower-service"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e987b6bf443f4b5b3b6f38704195592cca41c5bb7aedd3c3693c7081f8289860"
-
-[[package]]
-name = "tower-spawn-ready"
-version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower#7e55b7fa0b2db4ff36fd90f3700bd628c89951b6"
-dependencies = [
- "futures 0.1.26",
- "tokio-executor",
- "tokio-sync",
- "tower-layer 0.1.0",
- "tower-service 0.2.0",
- "tower-util",
-]
 
 [[package]]
 name = "tower-test"
@@ -3364,18 +3285,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0aa83a9a47081cd522c09c81b31aec2c9273424976f922ad61c053b58350b715"
 dependencies = [
  "lazy_static",
-]
-
-[[package]]
-name = "tracing-futures"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d73cd4d483f6a9af4f9f6da37c1c162e1f99017ba708a3042e6e90e54d26e5c"
-dependencies = [
- "futures 0.1.26",
- "pin-project",
- "tokio 0.1.22",
- "tracing",
 ]
 
 [[package]]

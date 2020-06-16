@@ -11,12 +11,10 @@ Configures and runs the inbound proxy
 [dependencies]
 bytes = "0.5"
 http = "0.2"
-futures_01 = { package = "futures", version = "0.1" }
 futures = { version = "0.3" }
 indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
 tokio = { version = "0.2", features = ["sync"] }
-tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 tracing = "0.1.9"
 
 [dependencies.tower]
