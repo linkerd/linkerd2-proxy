@@ -46,4 +46,4 @@ tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-io = "0.1.6"
 tokio-current-thread = "0.1.4"
 tokio-rustls = "0.13"
-webpki = "=0.21.0"
+webpki = "0.21"
