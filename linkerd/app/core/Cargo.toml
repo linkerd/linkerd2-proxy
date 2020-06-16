@@ -76,7 +76,7 @@ pin-project = "0.4"
 version = "0.2.1"
 # we don't need `chrono` time formatting
 default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi"]
+features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi", "json"]
 
 [dependencies.tower]
 version = "0.3"

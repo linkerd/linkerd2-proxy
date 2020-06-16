@@ -7,20 +7,28 @@ use tracing_subscriber::{
     reload, EnvFilter, FmtSubscriber,
 };
 
-const ENV_LOG: &str = "LINKERD2_PROXY_LOG";
+const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
+const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
 
-type Subscriber = Formatter<format::DefaultFields, format::Format<format::Full, Uptime>>;
+const DEFAULT_LOG_LEVEL: &str = "warn,linkerd2_proxy=info";
+const DEFAULT_LOG_FORMAT: &str = "PLAIN";
+
+type JsonFormatter = Formatter<format::JsonFields, format::Format<format::Json, Uptime>>;
+type PlainFormatter = Formatter<format::DefaultFields, format::Format<format::Full, Uptime>>;
 
 #[derive(Clone)]
-pub struct LevelHandle {
-    inner: reload::Handle<EnvFilter, Subscriber>,
+pub enum LevelHandle {
+    Json(reload::Handle<EnvFilter, JsonFormatter>),
+    Plain(reload::Handle<EnvFilter, PlainFormatter>),
 }
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
 pub fn init() -> Result<LevelHandle, Error> {
-    let env = env::var(ENV_LOG).unwrap_or_default();
-    let (dispatch, handle) = with_filter(env);
+    let log_level = env::var(ENV_LOG_LEVEL).unwrap_or(DEFAULT_LOG_LEVEL.to_string());
+    let log_format = env::var(ENV_LOG_FORMAT).unwrap_or(DEFAULT_LOG_FORMAT.to_string());
+
+    let (dispatch, handle) = with_filter_and_format(log_level, log_format);
 
     // Set up log compatibility.
     init_log_compat()?;
@@ -33,25 +41,36 @@ pub fn init_log_compat() -> Result<(), Error> {
     tracing_log::LogTracer::init().map_err(Error::from)
 }
 
-pub fn with_filter(filter: impl AsRef<str>) -> (Dispatch, LevelHandle) {
+pub fn with_filter_and_format(
+    filter: impl AsRef<str>,
+    format: impl AsRef<str>,
+) -> (Dispatch, LevelHandle) {
     let filter = filter.as_ref();
 
     // Set up the subscriber
     let start_time = clock::now();
+
     let builder = FmtSubscriber::builder()
         .with_timer(Uptime { start_time })
-        .with_env_filter(filter)
-        .with_filter_reloading()
-        .with_ansi(cfg!(test));
-    let handle = LevelHandle {
-        inner: builder.reload_handle(),
-    };
-    let dispatch = Dispatch::new(builder.finish());
+        .with_env_filter(filter);
 
-    (dispatch, handle)
+    match format.as_ref().to_uppercase().as_ref() {
+        "JSON" => {
+            let builder = builder.json().with_filter_reloading();
+            let handle = LevelHandle::Json(builder.reload_handle());
+            let dispatch = Dispatch::new(builder.finish());
+            (dispatch, handle)
+        }
+        "PLAIN" | _ => {
+            let builder = builder.with_ansi(cfg!(test)).with_filter_reloading();
+            let handle = LevelHandle::Plain(builder.reload_handle());
+            let dispatch = Dispatch::new(builder.finish());
+            (dispatch, handle)
+        }
+    }
 }
 
-struct Uptime {
+pub struct Uptime {
     start_time: Instant,
 }
 
@@ -68,37 +87,58 @@ impl LevelHandle {
     /// This will do nothing, but is required for admin endpoint tests which
     /// do not exercise the `proxy-log-level` endpoint.
     pub fn dangling() -> Self {
-        let (_, handle) = with_filter("");
+        let (_, handle) = with_filter_and_format("", "");
         handle
     }
 
     pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
         let level = level.as_ref();
         let filter = level.parse::<EnvFilter>()?;
-        self.inner.reload(filter)?;
+        match self {
+            Self::Json(level) => level.reload(filter)?,
+            Self::Plain(level) => level.reload(filter)?,
+        }
         tracing::info!(%level, "set new log level");
         Ok(())
     }
 
     pub fn current(&self) -> Result<String, Error> {
-        self.inner
-            .with_current(|f| format!("{}", f))
-            .map_err(Into::into)
+        match self {
+            Self::Json(handle) => handle
+                .with_current(|f| format!("{}", f))
+                .map_err(Into::into),
+            Self::Plain(handle) => handle
+                .with_current(|f| format!("{}", f))
+                .map_err(Into::into),
+        }
     }
 }
 
 impl fmt::Debug for LevelHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.inner
-            .with_current(|c| {
-                f.debug_struct("LevelHandle")
-                    .field("current", &format_args!("{}", c))
-                    .finish()
-            })
-            .unwrap_or_else(|e| {
-                f.debug_struct("LevelHandle")
-                    .field("current", &format_args!("{}", e))
-                    .finish()
-            })
+        match self {
+            Self::Json(handle) => handle
+                .with_current(|c| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", c))
+                        .finish()
+                })
+                .unwrap_or_else(|e| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", e))
+                        .finish()
+                }),
+            Self::Plain(handle) => handle
+                .with_current(|c| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", c))
+                        .finish()
+                })
+                .unwrap_or_else(|e| {
+                    f.debug_struct("LevelHandle")
+                        .field("current", &format_args!("{}", e))
+                        .finish()
+                }),
+        }
     }
 }
