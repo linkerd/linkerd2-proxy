@@ -23,7 +23,7 @@ macro_rules! profile_test {
         }
     };
     (http: $http:ident, routes: [$($route:expr),+], budget: $budget:expr, with_client: $with_client:expr, with_metrics: $with_metrics:expr) => {
-        let _trace = trace_init();;
+        let _trace = trace_init();
 
         let counter = AtomicUsize::new(0);
         let counter2 = AtomicUsize::new(0);

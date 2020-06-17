@@ -9,7 +9,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_asks_controller_api() {
-            let _trace = trace_init();;
+            let _trace = trace_init();
             let srv = $make_server().route("/", "hello").route("/bye", "bye").run();
 
             let ctrl = controller::new();
@@ -25,7 +25,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_reconnects_if_controller_stream_ends() {
-            let _trace = trace_init();;
+            let _trace = trace_init();
 
             let srv = $make_server().route("/recon", "nect").run();
 
@@ -52,7 +52,7 @@ macro_rules! generate_tests {
 
         fn outbound_fails_fast(up: pb::destination::Update) {
             use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-            let _trace = trace_init();;
+            let _trace = trace_init();
 
             let did_not_fall_back = Arc::new(AtomicBool::new(true));
             let did_not_fall_back2 = did_not_fall_back.clone();
@@ -85,7 +85,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_falls_back_to_orig_dst_when_outside_search_path() {
-            let _trace = trace_init();;
+            let _trace = trace_init();
 
             let srv = $make_server().route("/", "hello from my great website").run();
 
@@ -103,7 +103,7 @@ macro_rules! generate_tests {
 
         #[test]
         fn outbound_falls_back_to_orig_dst_after_invalid_argument() {
-            let _trace = trace_init();;
+            let _trace = trace_init();
 
             let srv = $make_server().route("/", "hello").run();
 
@@ -270,7 +270,7 @@ macro_rules! generate_tests {
 
             #[test]
             fn outbound_should_strip() {
-                let _trace = trace_init();;
+                let _trace = trace_init();
                 let header = HeaderValue::from_static(IP_1);
 
                 let srv = $make_server().route_fn("/strip", |_req| {
@@ -290,7 +290,7 @@ macro_rules! generate_tests {
 
             #[test]
             fn inbound_should_strip() {
-                let _trace = trace_init();;
+                let _trace = trace_init();
                 let header = HeaderValue::from_static(IP_1);
 
                 let srv = $make_server().route_fn("/strip", move |req| {
@@ -310,7 +310,7 @@ macro_rules! generate_tests {
             #[test]
             #[ignore] // #2597
             fn outbound_should_set() {
-                let _trace = trace_init();;
+                let _trace = trace_init();
                 let header = HeaderValue::from_static(IP_2);
 
                 let srv = $make_server().route("/set", "hello").run();
@@ -328,7 +328,7 @@ macro_rules! generate_tests {
             #[test]
             #[ignore] // #2597
             fn inbound_should_set() {
-                let _trace = trace_init();;
+                let _trace = trace_init();
 
                 let header = HeaderValue::from_static(IP_2);
 
@@ -366,7 +366,7 @@ macro_rules! generate_tests {
 
             impl Fixture {
                 fn new() -> Fixture {
-                    let _trace = trace_init();;
+                    let _trace = trace_init();
 
                     let foo_reqs = Arc::new(AtomicUsize::new(0));
                     let foo_reqs2 = foo_reqs.clone();
