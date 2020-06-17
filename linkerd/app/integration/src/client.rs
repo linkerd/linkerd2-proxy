@@ -82,7 +82,6 @@ pub fn http2_tls<T: Into<String>>(addr: SocketAddr, auth: T, tls: TlsConfig) -> 
 pub fn tcp(addr: SocketAddr) -> tcp::TcpClient {
     tcp::client(addr)
 }
-
 pub struct Client {
     authority: String,
     /// This is a future that completes when the associated connection for

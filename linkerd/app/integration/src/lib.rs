@@ -201,17 +201,17 @@ impl AsyncWrite for RunningIo {
 }
 
 pub fn shutdown_signal() -> (Shutdown, ShutdownRx) {
-    let (_tx, rx) = oneshot::channel();
-    (Shutdown { _tx }, Box::pin(rx.map(|_| ())))
+    let (tx, rx) = oneshot::channel();
+    (Shutdown { tx }, Box::pin(rx.map(|_| ())))
 }
 
 pub struct Shutdown {
-    _tx: oneshot::Sender<()>,
+    tx: oneshot::Sender<()>,
 }
 
 impl Shutdown {
     pub fn signal(self) {
-        // a drop is enough
+        let _ = self.tx.send(());
     }
 }
 
@@ -241,9 +241,9 @@ pub fn thread_name() -> String {
         .to_owned()
 }
 
-#[test]
+#[tokio::test]
 #[should_panic]
-fn test_assert_eventually() {
+async fn test_assert_eventually() {
     assert_eventually!(false)
 }
 
