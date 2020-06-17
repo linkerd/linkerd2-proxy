@@ -329,7 +329,7 @@ where
     let (listening_tx, listening_rx) = futures_01::sync::oneshot::channel();
     let mut listening_tx = Some(listening_tx);
 
-    let (trace, _) = trace_init();
+    let (trace, _) = trace_subscriber();
     std::thread::Builder::new()
         .name(name.into())
         .spawn(move || {

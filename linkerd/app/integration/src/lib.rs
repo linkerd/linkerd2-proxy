@@ -44,7 +44,7 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy_http=off,\
                                    linkerd2_proxy_transport=off";
 
-pub fn trace_init() -> (Dispatch, app::core::trace::LevelHandle) {
+pub fn trace_subscriber() -> (Dispatch, app::core::trace::LevelHandle) {
     use std::env;
     let log_level = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
@@ -57,6 +57,11 @@ pub fn trace_init() -> (Dispatch, app::core::trace::LevelHandle) {
     // initialized by another test.
     let _ = app::core::trace::init_log_compat();
     app::core::trace::with_filter_and_format(&log_level, &log_format)
+}
+
+pub fn trace_init() -> tracing::dispatcher::DefaultGuard { 
+    let (d, _) = trace_subscriber();
+    tracing::dispatcher::set_default(&d)
 }
 
 /// Retry an assertion up to a specified number of times, waiting
