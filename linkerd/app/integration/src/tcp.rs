@@ -257,7 +257,7 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
 
     server::Listening {
         addr,
-        _shutdown: tx,
+        shutdown: Some(tx),
         conn_count,
         jh,
     }

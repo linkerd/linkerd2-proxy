@@ -47,7 +47,7 @@ pub struct Server {
 
 pub struct Listening {
     pub addr: SocketAddr,
-    pub(super) _shutdown: Shutdown,
+    pub(super) shutdown: Option<Shutdown>,
     pub(super) conn_count: Arc<AtomicUsize>,
     pub(super) jh: tokio::task::JoinHandle<Result<(), io::Error>>,
 }
@@ -57,7 +57,7 @@ pub fn mock_listening(a: SocketAddr) -> Listening {
     let conn_count = Arc::new(AtomicUsize::from(0));
     Listening {
         addr: a,
-        _shutdown: tx,
+        shutdown: Some(tx),
         conn_count,
         jh: tokio::spawn(async { Ok(()) }),
     }
@@ -69,8 +69,12 @@ impl Listening {
     }
 
     pub async fn join(self) {
-        let Listening { jh, _shutdown, .. } = self;
-        drop(_shutdown);
+        let Listening {
+            jh, mut shutdown, ..
+        } = self;
+        if let Some(shutdown) = shutdown.take() {
+            shutdown.signal();
+        }
         jh.await
             .expect("support server panicked")
             .expect("support server failed")
@@ -256,7 +260,7 @@ impl Server {
 
         Listening {
             addr,
-            _shutdown: tx,
+            shutdown: Some(tx),
             conn_count,
             jh,
         }
