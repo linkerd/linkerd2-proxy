@@ -7,7 +7,7 @@ use std::sync::mpsc;
 
 #[test]
 fn outbound_http1() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run();
     let ctrl = controller::new();
@@ -22,7 +22,7 @@ fn outbound_http1() {
 
 #[test]
 fn inbound_http1() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run();
     let ctrl = controller::new();
@@ -38,7 +38,7 @@ fn inbound_http1() {
 
 #[test]
 fn outbound_tcp() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
     let msg2 = "custom tcp bye";
@@ -61,7 +61,7 @@ fn outbound_tcp() {
 
 #[test]
 fn inbound_tcp() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
     let msg2 = "custom tcp bye";
@@ -85,7 +85,7 @@ fn inbound_tcp() {
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn loop_outbound_http1() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10751));
 
@@ -103,7 +103,7 @@ fn loop_outbound_http1() {
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn loop_inbound_http1() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10752));
 
@@ -121,7 +121,7 @@ fn loop_inbound_http1() {
 fn test_server_speaks_first(env: TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let msg1 = "custom tcp server starts";
     let msg2 = "custom tcp client second";
@@ -210,7 +210,7 @@ fn tcp_server_first_tls() {
 fn tcp_connections_close_if_client_closes() {
     use std::sync::mpsc;
 
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
     let msg2 = "custom tcp bye";
@@ -256,7 +256,7 @@ macro_rules! http1_tests {
     (proxy: $proxy:expr) => {
         #[test]
         fn inbound_http1() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::http1().route("/", "hello h1").run();
             let proxy = $proxy(srv);
@@ -267,7 +267,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_removes_connection_headers() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -305,7 +305,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http10_with_host() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let host = "transparency.test.svc.cluster.local";
             let srv = server::http1()
@@ -334,7 +334,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_absolute_uri_differs_from_host() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             // We shouldn't touch the URI or the Host, just pass directly as we got.
             let auth = "transparency.test.svc.cluster.local";
@@ -362,7 +362,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_upgrades() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             // To simplify things for this test, we just use the test TCP
             // client and server to do an HTTP upgrade.
@@ -438,7 +438,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn l5d_orig_proto_header_isnt_leaked() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -458,7 +458,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_upgrade_h2_stripped() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
             // and it succeeded, there would an h2 connection, but it would
@@ -497,7 +497,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_connect() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             // To simplify things for this test, we just use the test TCP
             // client and server to do an HTTP CONNECT.
@@ -572,7 +572,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http11_connect_bad_requests() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::tcp()
                 .accept(move |_sock| -> Vec<u8> {
@@ -632,7 +632,7 @@ macro_rules! http1_tests {
 
         #[tokio::test]
         async fn http1_request_with_body_content_length() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -656,7 +656,7 @@ macro_rules! http1_tests {
 
         #[tokio::test]
         async fn http1_request_with_body_chunked() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::http1()
                 .route_async("/", |req| async move {
@@ -701,7 +701,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_requests_without_body_doesnt_add_transfer_encoding() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -731,7 +731,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_content_length_zero_is_preserved() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", |req| {
@@ -767,7 +767,7 @@ macro_rules! http1_tests {
 
         #[test]
         fn http1_bodyless_responses() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let req_status_header = "x-test-status-requested";
 
@@ -829,7 +829,7 @@ macro_rules! http1_tests {
 
         #[tokio::test]
         async fn http1_head_responses() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             let srv = server::http1()
                 .route_fn("/", move |req| {
@@ -863,7 +863,7 @@ macro_rules! http1_tests {
 
         #[tokio::test]
         async fn http1_response_end_of_file() {
-            let _ = trace_init();
+            let _trace = trace_init();
 
             // test both http/1.0 and 1.1
             let srv = server::tcp()
@@ -980,7 +980,7 @@ mod proxy_to_proxy {
 fn http10_without_host() {
     // Without a host or authority, there's no way to route this test,
     // so its not part of the proxy_to_proxy set.
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let srv = server::http1()
         .route_fn("/", move |req| {
@@ -1012,7 +1012,7 @@ fn http10_without_host() {
 
 #[test]
 fn http1_one_connection_per_host() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let srv = server::http1()
         .route("/body", "hello hosts")
@@ -1058,7 +1058,7 @@ fn http1_one_connection_per_host() {
 
 #[test]
 fn http1_requests_without_host_have_unique_connections() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let srv = server::http1().route("/", "unique hosts").run();
     let proxy = proxy::new().inbound(srv).run();
@@ -1117,7 +1117,7 @@ fn http1_requests_without_host_have_unique_connections() {
 
 #[tokio::test]
 async fn retry_reconnect_errors() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     // Used to delay `listen` in the server, to force connection refused errors.
     let (tx, rx) = oneshot::channel::<()>();
@@ -1148,7 +1148,7 @@ async fn retry_reconnect_errors() {
 
 #[tokio::test]
 async fn http2_request_without_authority() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let srv = server::http2()
         .route_fn("/", |req| {
@@ -1186,7 +1186,7 @@ async fn http2_request_without_authority() {
 
 #[tokio::test]
 async fn http2_rst_stream_is_propagated() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let reason = h2::Reason::ENHANCE_YOUR_CALM;
 
@@ -1212,7 +1212,7 @@ async fn http2_rst_stream_is_propagated() {
 
 #[tokio::test]
 async fn http1_orig_proto_does_not_propagate_rst_stream() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     // Use a custom http2 server to "act" as an inbound proxy so we
     // can trigger a RST_STREAM.

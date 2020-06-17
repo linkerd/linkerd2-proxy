@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 #[test]
 fn tap_enabled_when_identity_enabled() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
@@ -21,7 +21,7 @@ fn tap_enabled_when_identity_enabled() {
 
 #[test]
 fn tap_disabled_when_identity_disabled() {
-    let _ = trace_init();
+    let _trace = trace_init();
     let proxy = proxy::new().disable_identity().run();
 
     assert!(proxy.tap.is_none())
@@ -29,7 +29,7 @@ fn tap_disabled_when_identity_disabled() {
 
 #[test]
 fn can_disable_tap() {
-    let _ = trace_init();
+    let _trace = trace_init();
     let mut env = TestEnv::new();
     env.put(app::env::ENV_TAP_DISABLED, "true".to_owned());
 
@@ -40,7 +40,7 @@ fn can_disable_tap() {
 
 #[tokio::test]
 async fn rejects_incorrect_identity_when_identity_is_expected() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
@@ -75,7 +75,7 @@ async fn rejects_incorrect_identity_when_identity_is_expected() {
 #[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 async fn inbound_http1() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     // Setup server proxy authority and identity
     let srv_proxy_authority = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
@@ -151,7 +151,7 @@ async fn inbound_http1() {
 
 #[tokio::test]
 async fn grpc_headers_end() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     // Setup server proxy authority and identity
     let srv_proxy_authority = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";

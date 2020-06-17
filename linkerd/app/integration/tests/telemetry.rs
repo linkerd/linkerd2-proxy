@@ -113,7 +113,7 @@ impl TcpFixture {
 
 #[test]
 fn metrics_endpoint_inbound_request_count() {
-    let _ = trace_init();
+    let _trace = trace_init();
     let Fixture {
         client,
         metrics,
@@ -133,7 +133,7 @@ fn metrics_endpoint_inbound_request_count() {
 
 #[test]
 fn metrics_endpoint_outbound_request_count() {
-    let _ = trace_init();
+    let _trace = trace_init();
     let Fixture {
         client,
         metrics,
@@ -218,7 +218,7 @@ mod response_classification {
 
     #[test]
     fn inbound_http() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let Fixture {
             client,
             metrics,
@@ -247,7 +247,7 @@ mod response_classification {
 
     #[test]
     fn outbound_http() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let Fixture {
             client,
             metrics,
@@ -287,7 +287,7 @@ mod response_classification {
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn metrics_endpoint_inbound_response_latency() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     info!("running test server");
     let srv = server::new()
@@ -366,7 +366,7 @@ fn metrics_endpoint_inbound_response_latency() {
 #[test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 fn metrics_endpoint_outbound_response_latency() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     info!("running test server");
     let srv = server::new()
@@ -469,7 +469,7 @@ mod outbound_dst_labels {
 
     #[test]
     fn multiple_addr_labels() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let (
             Fixture {
                 client,
@@ -500,7 +500,7 @@ mod outbound_dst_labels {
 
     #[test]
     fn multiple_addrset_labels() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let (
             Fixture {
                 client,
@@ -531,7 +531,7 @@ mod outbound_dst_labels {
 
     #[test]
     fn labeled_addr_and_addrset() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let (
             Fixture {
                 client,
@@ -567,7 +567,7 @@ mod outbound_dst_labels {
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_addr_labels() {
-        let _ = trace_init();
+        let _trace = trace_init();
         info!("running test server");
 
         let (
@@ -631,7 +631,7 @@ mod outbound_dst_labels {
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn controller_updates_set_labels() {
-        let _ = trace_init();
+        let _trace = trace_init();
         info!("running test server");
         let (
             Fixture {
@@ -689,7 +689,7 @@ mod outbound_dst_labels {
 #[test]
 fn metrics_have_no_double_commas() {
     // Test for regressions to linkerd/linkerd2#600.
-    let _ = trace_init();
+    let _trace = trace_init();
 
     info!("running test server");
     let inbound_srv = server::new().route("/hey", "hello").run();
@@ -743,7 +743,7 @@ mod transport {
 
     #[test]
     fn inbound_http_accept() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let Fixture {
             client,
             metrics,
@@ -782,7 +782,7 @@ mod transport {
 
     #[test]
     fn inbound_http_connect() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let Fixture {
             client,
             metrics,
@@ -810,7 +810,7 @@ mod transport {
 
     #[test]
     fn outbound_http_accept() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let Fixture {
             client,
             metrics,
@@ -847,7 +847,7 @@ mod transport {
 
     #[test]
     fn outbound_http_connect() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let Fixture {
             client,
             metrics,
@@ -871,7 +871,7 @@ mod transport {
 
     #[test]
     fn inbound_tcp_connect() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -889,7 +889,7 @@ mod transport {
     #[test]
     #[cfg(macos)]
     fn inbound_tcp_connect_err() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let srv = tcp::server()
             .accept_fut(move |sock| {
                 drop(sock);
@@ -919,7 +919,7 @@ mod transport {
     #[test]
     #[cfg(macos)]
     fn outbound_tcp_connect_err() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let srv = tcp::server()
             .accept_fut(move |sock| {
                 drop(sock);
@@ -946,7 +946,7 @@ mod transport {
 
     #[test]
     fn inbound_tcp_accept() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -989,7 +989,7 @@ mod transport {
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_duration() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1028,7 +1028,7 @@ mod transport {
 
     #[test]
     fn inbound_tcp_write_bytes_total() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1056,7 +1056,7 @@ mod transport {
 
     #[test]
     fn inbound_tcp_read_bytes_total() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1084,7 +1084,7 @@ mod transport {
 
     #[test]
     fn outbound_tcp_connect() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1101,7 +1101,7 @@ mod transport {
 
     #[test]
     fn outbound_tcp_accept() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1139,7 +1139,7 @@ mod transport {
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn outbound_tcp_duration() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1178,7 +1178,7 @@ mod transport {
 
     #[test]
     fn outbound_tcp_write_bytes_total() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1206,7 +1206,7 @@ mod transport {
 
     #[test]
     fn outbound_tcp_read_bytes_total() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1234,7 +1234,7 @@ mod transport {
 
     #[test]
     fn outbound_tcp_open_connections() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
@@ -1272,7 +1272,7 @@ mod transport {
 
     #[test]
     fn outbound_http_tcp_open_connections() {
-        let _ = trace_init();
+        let _trace = trace_init();
         let Fixture {
             client,
             metrics,
@@ -1313,7 +1313,7 @@ mod transport {
 // linkerd/linkerd2#613
 #[tokio::test]
 async fn metrics_compression() {
-    let _ = trace_init();
+    let _trace = trace_init();
 
     let Fixture {
         client,
