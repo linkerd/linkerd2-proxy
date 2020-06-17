@@ -210,8 +210,7 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Runni
     ::std::thread::Builder::new()
         .name(tname)
         .spawn(move || {
-            let (subscriber, _) = trace_subscriber();
-            let _subscriber = subscriber.set_default();
+            let _trace = trace_init();
             tracing::info!("support client running");
 
             let mut runtime = tokio::runtime::Builder::new()
