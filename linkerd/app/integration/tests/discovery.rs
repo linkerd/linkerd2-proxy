@@ -159,7 +159,7 @@ macro_rules! generate_tests {
 
             let initially_exists =
                 $make_client(proxy.outbound, "initially-exists.ns.svc.cluster.local");
-            assert_eq!(initially_exists.get("/"), "hello");
+            assert_eq!(initially_exists.get_async("/").await, "hello");
 
             drop(dst_tx0); // trigger reconnect
             dst_tx1.send(up);
@@ -620,7 +620,8 @@ mod http2 {
 
         // Simulate the first server falling over without discovery
         // knowing about it...
-        drop(srv1);
+        srv1.join().await;
+        tokio::task::yield_now().await;
 
         // Wait until the proxy has seen the `srv1` disconnect...
         assert_eventually_contains!(
