@@ -591,7 +591,7 @@ mod http2 {
     #[tokio::test]
     async fn outbound_balancer_waits_for_ready_endpoint() {
         // See https://github.com/linkerd/linkerd2/issues/2550
-        let _trace = trace_init();
+        let _t = trace_init();
 
         let srv1 = server::http2()
             .route("/", "hello")

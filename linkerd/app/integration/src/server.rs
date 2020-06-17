@@ -70,14 +70,18 @@ impl Listening {
 
     pub async fn join(self) {
         let Listening {
-            jh, mut shutdown, ..
+            jh,
+            mut shutdown,
+            addr,
+            ..
         } = self;
         if let Some(shutdown) = shutdown.take() {
             shutdown.signal();
         }
         jh.await
             .expect("support server panicked")
-            .expect("support server failed")
+            .expect("support server failed");
+        tracing::debug!("support server on {} terminated cleanly", addr);
     }
 }
 
@@ -247,7 +251,10 @@ impl Server {
 
                 tokio::select! {
                     res = serve => res.unwrap(),
-                    _ = rx => { Ok::<(), io::Error>(())},
+                    _ = rx => {
+                        tracing::trace!("shutdown triggered");
+                        Ok::<(), io::Error>(())
+                    },
                 }
             }
             .instrument(tracing::info_span!("test_server", ?version, %addr, test = %thread_name())),
