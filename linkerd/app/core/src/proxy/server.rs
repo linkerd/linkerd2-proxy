@@ -201,17 +201,14 @@ where
                             .with_upgrades();
 
                         tokio::select! {
-                            res = &mut conn => {
-                                res?
-                            }
+                            res = &mut conn => { res }
                             () = drain.into_future() => {
-                                Pin::new(&mut conn).graceful_shutdown()
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await
                             }
-                        };
-
-                        Ok(())
+                        }
                     };
-                    Ok(Box::pin(serve.instrument(info_span!("h1"))) as Self::Response)
+                    Ok(Box::pin(serve.map_err(Into::into).instrument(info_span!("h1"))) as Self::Response)
                 }
 
                 HttpVersion::H2 => {
@@ -223,17 +220,14 @@ where
                             .serve_connection(io, HyperServerSvc::new(http_svc));
 
                         tokio::select! {
-                            res = &mut conn => {
-                                res?
-                            }
+                            res = &mut conn => { res }
                             () = drain.into_future() => {
-                                Pin::new(&mut conn).graceful_shutdown()
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await
                             }
-                        };
-
-                        Ok(())
+                        }
                     };
-                    Ok(Box::pin(serve.instrument(info_span!("h2"))) as Self::Response)
+                    Ok(Box::pin(serve.map_err(Into::into).instrument(info_span!("h2"))) as Self::Response)
                 }
             }
         })
