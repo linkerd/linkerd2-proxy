@@ -59,7 +59,7 @@ pub fn trace_subscriber() -> (Dispatch, app::core::trace::LevelHandle) {
     app::core::trace::with_filter_and_format(&log_level, &log_format)
 }
 
-pub fn trace_init() -> tracing::dispatcher::DefaultGuard { 
+pub fn trace_init() -> tracing::dispatcher::DefaultGuard {
     let (d, _) = trace_subscriber();
     tracing::dispatcher::set_default(&d)
 }
