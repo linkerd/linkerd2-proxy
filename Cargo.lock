@@ -997,7 +997,7 @@ dependencies = [
  "linkerd2-app-core",
  "linkerd2-metrics",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "net2",
  "quickcheck",
  "regex 0.1.80",
@@ -1324,21 +1324,6 @@ dependencies = [
 name = "linkerd2-proxy-api"
 version = "0.1.12"
 source = "git+https://github.com/linkerd/linkerd2-proxy-api#c442280b7c1e8c5a83d53abe00287aca69129d7c"
-dependencies = [
- "h2 0.2.5",
- "http 0.2.1",
- "prost 0.6.1",
- "prost-types 0.6.1",
- "quickcheck",
- "rand 0.7.2",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "linkerd2-proxy-api"
-version = "0.1.12"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8#c2dba642c7301b5b562c75fd6e2bd0a12ec763e8"
 dependencies = [
  "h2 0.2.5",
  "http 0.2.1",
