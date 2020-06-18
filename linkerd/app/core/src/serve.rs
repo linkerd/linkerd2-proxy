@@ -1,5 +1,4 @@
 use super::accept_error::AcceptError;
-use futures::future::TryFutureExt;
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::listen::{Accept, Listen};
@@ -39,8 +38,15 @@ where
 
     // Drive connections from the listener into the accept stack until a drain
     // is signaled.
-    let serve = listen.serve(accept).map_ok(|n| match n {});
-    drain.and_drop(serve, || Ok(())).await
+    tokio::select! {
+        lis = listen.serve(accept) => {
+            // The listener may fail but it may not complete otherwise.
+            match lis? {}
+        }
+        _handle = drain.handle() => {
+            Ok(())
+        }
+    }
 }
 
 struct TraceAccept<A> {

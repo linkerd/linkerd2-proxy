@@ -59,6 +59,10 @@ pub struct Drained {
     drained_rx: mpsc::Receiver<Never>,
 }
 
+#[must_use = "Handle should be dropped explicitly to release the runtime"]
+#[derive(Clone, Debug)]
+pub struct Handle(mpsc::Sender<Never>);
+
 // ===== impl Signal =====
 
 impl Signal {
@@ -88,21 +92,17 @@ impl Watch {
         F: FnOnce(&mut A),
     {
         tokio::select! {
-            res = &mut future => return res,
-            _ = self.rx => {
+            res = &mut future => res,
+            _handle = self.handle() => {
                 on_drain(&mut future);
-                (&mut future).await
+                future.await
             }
         }
     }
 
-    pub async fn and_drop<A, F>(self, future: A, on_drain: F) -> A::Output
-    where
-        A: Future + Unpin,
-        F: FnOnce() -> A::Output,
-    {
-        self.watch(future, |_| {}).await;
-        on_drain()
+    pub async fn handle(self) -> Handle {
+        self.rx.await;
+        Handle(self.drained_tx)
     }
 
     /// Wrap a future to count it against the completion of the `Drained`
