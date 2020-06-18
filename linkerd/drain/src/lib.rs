@@ -59,6 +59,9 @@ pub struct Drained {
     drained_rx: mpsc::Receiver<Never>,
 }
 
+#[must_use = "The handle keeps the runtime running"]
+pub struct Handle(mpsc::Sender<Never>);
+
 // ===== impl Signal =====
 
 impl Signal {
@@ -78,8 +81,9 @@ impl Signal {
 // ===== impl Watch =====
 
 impl Watch {
-    pub async fn into_future(self) {
+    pub async fn into_future(self) -> Handle {
         self.rx.await;
+        Handle(self.drained_tx)
     }
 
     /// Wrap a future to count it against the completion of the `Drained`

@@ -202,13 +202,16 @@ where
 
                         tokio::select! {
                             res = &mut conn => { res }
-                            () = drain.into_future() => {
+                            _handle = drain.into_future() => {
                                 Pin::new(&mut conn).graceful_shutdown();
                                 conn.await
                             }
                         }
                     };
-                    Ok(Box::pin(serve.map_err(Into::into).instrument(info_span!("h1"))) as Self::Response)
+                    Ok(
+                        Box::pin(serve.map_err(Into::into).instrument(info_span!("h1")))
+                            as Self::Response,
+                    )
                 }
 
                 HttpVersion::H2 => {
@@ -221,13 +224,16 @@ where
 
                         tokio::select! {
                             res = &mut conn => { res }
-                            () = drain.into_future() => {
+                            _handle = drain.into_future() => {
                                 Pin::new(&mut conn).graceful_shutdown();
                                 conn.await
                             }
                         }
                     };
-                    Ok(Box::pin(serve.map_err(Into::into).instrument(info_span!("h2"))) as Self::Response)
+                    Ok(
+                        Box::pin(serve.map_err(Into::into).instrument(info_span!("h2")))
+                            as Self::Response,
+                    )
                 }
             }
         })

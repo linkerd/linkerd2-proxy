@@ -43,7 +43,7 @@ where
             // The server can error but it never completes on its own.
             match res? {}
         }
-        () = drain.into_future() => {
+        _handle = drain.into_future() => {
             Ok(())
         }
     }
