@@ -216,18 +216,22 @@ async fn ready() {
 
     let client = client::http1(proxy.metrics, "localhost");
 
-    let ready = || client.request(client.request_builder("/ready").method("GET"));
-
+    let ready = || async {
+        client
+            .request_async(client.request_builder("/ready").method("GET"))
+            .await
+            .unwrap()
+    };
     // The proxy's identity has not yet been verified, so it should not be
     // considered ready.
-    assert_ne!(ready().status(), http::StatusCode::OK);
+    assert_ne!(ready().await.status(), http::StatusCode::OK);
 
     // Make the mock identity service respond to the certify request.
     tx.send(certify_rsp)
         .expect("certify rx should not be dropped");
 
     // Now, the proxy should be ready.
-    assert_eventually!(ready().status() == http::StatusCode::OK);
+    assert_eventually!(ready().await.status() == http::StatusCode::OK);
 }
 
 #[tokio::test]
