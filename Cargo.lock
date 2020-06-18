@@ -219,9 +219,9 @@ dependencies = [
 
 [[package]]
 name = "codegen"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf02acd61125952ee148207cd411f9b73c9e218eab4b901375a82e1a443b6238"
+checksum = "34c59e8a9b988977ec3bd61ab380cf1167048817ecd3d6999fac03657f85a609"
 dependencies = [
  "indexmap",
 ]
@@ -352,9 +352,9 @@ dependencies = [
 
 [[package]]
 name = "fixedbitset"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85cb8fec437468d86dc7c83ca7cfc933341d561873275f22dd5eedefa63a6478"
+checksum = "86d4de0081402f5e88cdac65c8dcdcc73118c1a7a465e2a05f0da05843a8ea33"
 
 [[package]]
 name = "fixedbitset"
@@ -906,7 +906,7 @@ dependencies = [
  "linkerd2-lock",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "linkerd2-proxy-api-resolve",
  "linkerd2-proxy-core",
  "linkerd2-proxy-detect",
@@ -997,7 +997,7 @@ dependencies = [
  "linkerd2-app-core",
  "linkerd2-metrics",
  "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "net2",
  "quickcheck",
  "regex 0.1.80",
@@ -1323,24 +1323,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.12"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api#59d91c1d8787f907fbab2de5ca844c25e7aeb9f7"
-dependencies = [
- "bytes 0.4.11",
- "futures 0.1.26",
- "h2 0.1.26",
- "http 0.1.21",
- "prost 0.5.0",
- "prost-types 0.5.0",
- "quickcheck",
- "rand 0.7.2",
- "tower-grpc",
- "tower-grpc-build",
-]
-
-[[package]]
-name = "linkerd2-proxy-api"
-version = "0.1.12"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8#c2dba642c7301b5b562c75fd6e2bd0a12ec763e8"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api#c442280b7c1e8c5a83d53abe00287aca69129d7c"
 dependencies = [
  "h2 0.2.5",
  "http 0.2.1",
@@ -1361,7 +1344,7 @@ dependencies = [
  "http-body 0.3.1",
  "indexmap",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "linkerd2-proxy-core",
  "pin-project",
  "prost 0.6.1",
@@ -1451,7 +1434,7 @@ dependencies = [
  "http-body 0.3.1",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "linkerd2-proxy-transport",
  "pin-project",
  "tokio 0.2.21",
@@ -1486,7 +1469,7 @@ dependencies = [
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "linkerd2-proxy-core",
  "linkerd2-proxy-http",
  "linkerd2-proxy-transport",
@@ -1602,7 +1585,7 @@ dependencies = [
  "linkerd2-addr",
  "linkerd2-dns",
  "linkerd2-error",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?rev=c2dba642c7301b5b562c75fd6e2bd0a12ec763e8)",
+ "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
  "linkerd2-stack",
  "pin-project",
  "prost-types 0.6.1",
@@ -1966,11 +1949,11 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 
 [[package]]
 name = "petgraph"
-version = "0.4.11"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a7e5234c228fbfa874c86a77f685886127f82e0aef602ad1d48333fcac6ad61"
+checksum = "9c3659d1ee90221741f65dd128d9998311b0e40c5d3c23a62445938214abce4f"
 dependencies = [
- "fixedbitset 0.1.8",
+ "fixedbitset 0.1.9",
 ]
 
 [[package]]
@@ -2093,11 +2076,11 @@ dependencies = [
  "itertools",
  "log",
  "multimap 0.4.0",
- "petgraph 0.4.11",
+ "petgraph 0.4.13",
  "prost 0.5.0",
  "prost-types 0.5.0",
  "tempfile",
- "which 2.0.0",
+ "which 2.0.1",
 ]
 
 [[package]]
@@ -3597,9 +3580,9 @@ dependencies = [
 
 [[package]]
 name = "which"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49c4f580e93079b70ac522e7bdebbe1568c8afa7d8d05ee534ee737ca37d2f51"
+checksum = "b57acb10231b9493c8472b20cb57317d0679a49e0bdbee44b3b803a6473af164"
 dependencies = [
  "failure",
  "libc",
