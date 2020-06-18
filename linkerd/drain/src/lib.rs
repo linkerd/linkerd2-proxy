@@ -96,6 +96,10 @@ impl Watch {
         }
     }
 
+    pub async fn rx(self) {
+        self.rx.await;
+    }
+
     /// Wrap a future to count it against the completion of the `Drained`
     /// future that corresponds to this `Watch`.
     ///
