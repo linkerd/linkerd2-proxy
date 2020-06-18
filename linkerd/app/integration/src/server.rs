@@ -1,7 +1,7 @@
 use super::*;
 use futures::TryFuture;
 use http::Response;
-use linkerd2_app_core::proxy::http::trace;
+use linkerd2_app_core::{drain, proxy::http::trace};
 use rustls::ServerConfig;
 use std::collections::HashMap;
 use std::future::Future;
@@ -205,30 +205,30 @@ impl Server {
                     Run::Http1 => http.http1_only(true),
                     Run::Http2 => http.http2_only(true),
                 };
+                let (drain_signal, drain) = drain::channel();
+                let serve = tokio::spawn(
+                    cancelable(drain.clone(), async move {
+                        if let Some(delay) = delay {
+                            let _ = listening_tx.take().unwrap().send(());
+                            delay.await;
+                        }
+                        let listener = listener.listen(1024).expect("Tcp::listen");
+                        let mut listener = TcpListener::from_std(listener).expect("from_std");
 
-                let serve = tokio::spawn(async move {
-                    if let Some(delay) = delay {
-                        let _ = listening_tx.take().unwrap().send(());
-                        delay.await;
-                    }
-                    let listener = listener.listen(1024).expect("Tcp::listen");
-                    let mut listener = TcpListener::from_std(listener).expect("from_std");
-
-                    if let Some(listening_tx) = listening_tx {
-                        let _ = listening_tx.send(());
-                    }
-                    tracing::info!("listening!");
-                    loop {
-                        let (sock, addr) = listener.accept().await?;
-                        let span = tracing::debug_span!("conn", %addr);
-                        let sock = accept_connection(sock, tls_config.clone())
-                            .instrument(span.clone())
-                            .await?;
-                        let http = http.clone();
-                        let srv_conn_count = srv_conn_count.clone();
-                        let svc = new_svc.call(());
-                        tokio::spawn(
-                            async move {
+                        if let Some(listening_tx) = listening_tx {
+                            let _ = listening_tx.send(());
+                        }
+                        tracing::info!("listening!");
+                        loop {
+                            let (sock, addr) = listener.accept().await?;
+                            let span = tracing::debug_span!("conn", %addr);
+                            let sock = accept_connection(sock, tls_config.clone())
+                                .instrument(span.clone())
+                                .await?;
+                            let http = http.clone();
+                            let srv_conn_count = srv_conn_count.clone();
+                            let svc = new_svc.call(());
+                            let f = async move {
                                 tracing::trace!("serving...");
                                 let svc = svc.await;
                                 tracing::trace!("service acquired");
@@ -242,17 +242,19 @@ impl Server {
                                     .map_err(|e| println!("support/server error: {}", e));
                                 tracing::trace!(?result, "serve done");
                                 result
-                            }
-                            .instrument(span.clone()),
-                        );
-                    }
-                })
-                .in_current_span();
+                            };
+                            tokio::spawn(cancelable(drain.clone(), f).instrument(span.clone()));
+                        }
+                    })
+                    .in_current_span(),
+                );
 
                 tokio::select! {
                     res = serve => res.unwrap(),
                     _ = rx => {
                         tracing::trace!("shutdown triggered");
+                        drain_signal.drain().await;
+                        tracing::trace!("drained");
                         Ok::<(), io::Error>(())
                     },
                 }
@@ -405,4 +407,36 @@ async fn accept_connection(
     };
     tracing::trace!("connection accepted");
     res
+}
+
+fn cancelable<E: Send + 'static>(
+    drain: drain::Watch,
+    f: impl Future<Output = Result<(), E>> + Send + 'static,
+) -> impl Future<Output = Result<(), E>> + Send + 'static {
+    drain.watch(Cancelable::new(f), |f| f.cancel())
+}
+struct Cancelable<E>(Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>);
+
+impl<E> Cancelable<E> {
+    fn new(f: impl Future<Output = Result<(), E>> + Send + 'static) -> Self {
+        Self(Some(Box::pin(f)))
+    }
+
+    fn cancel(&mut self) {
+        self.0.take();
+        tracing::trace!("canceling...");
+    }
+}
+
+impl<E> Future for Cancelable<E> {
+    type Output = Result<(), E>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(ref mut f) = self.as_mut().0 {
+            return f.poll_unpin(cx);
+        }
+
+        tracing::debug!("canceled!");
+        Poll::Ready(Ok(()))
+    }
 }
