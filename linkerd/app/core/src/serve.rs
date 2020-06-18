@@ -39,7 +39,8 @@ where
 
     // Drive connections from the listener into the accept stack until a drain
     // is signaled.
-    drain.and_drop(listen.serve(accept).map_ok(|n| match n {}), || Ok(())).await
+    let serve = listen.serve(accept).map_ok(|n| match n {});
+    drain.and_drop(serve, || Ok(())).await
 }
 
 struct TraceAccept<A> {
