@@ -39,9 +39,9 @@ where
     // Drive connections from the listener into the accept stack until a drain
     // is signaled.
     tokio::select! {
-        lis = listen.serve(accept) => {
+        err = listen.serve(accept) => {
             // The listener may fail but it may not complete otherwise.
-            match lis? {}
+            match err? {}
         }
         _handle = drain.handle() => {
             Ok(())
