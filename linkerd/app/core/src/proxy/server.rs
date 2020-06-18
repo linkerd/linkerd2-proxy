@@ -192,48 +192,35 @@ where
         Box::pin(async move {
             match http_version {
                 HttpVersion::Http1 => {
-                    let serve = async move {
-                        // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let svc = upgrade::Service::new(http_svc, drain.clone());
-                        let mut conn = builder
-                            .http1_only(true)
-                            .serve_connection(io, HyperServerSvc::new(svc))
-                            .with_upgrades();
+                    // Enable support for HTTP upgrades (CONNECT and websockets).
+                    let svc = upgrade::Service::new(http_svc, drain.clone());
+                    let conn = builder
+                        .http1_only(true)
+                        .serve_connection(io, HyperServerSvc::new(svc))
+                        .with_upgrades();
 
-                        tokio::select! {
-                            res = &mut conn => { res }
-                            _handle = drain.into_future() => {
-                                Pin::new(&mut conn).graceful_shutdown();
-                                conn.await
-                            }
-                        }
-                    };
-                    Ok(
-                        Box::pin(serve.map_err(Into::into).instrument(info_span!("h1")))
-                            as Self::Response,
-                    )
+                    Ok(Box::pin(async move {
+                        drain
+                            .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                            .instrument(info_span!("h1"))
+                            .await?;
+                        Ok(())
+                    }) as Self::Response)
                 }
 
                 HttpVersion::H2 => {
-                    let serve = async move {
-                        let mut conn = builder
-                            .http2_only(true)
-                            .http2_initial_stream_window_size(initial_stream_window_size)
-                            .http2_initial_connection_window_size(initial_conn_window_size)
-                            .serve_connection(io, HyperServerSvc::new(http_svc));
-
-                        tokio::select! {
-                            res = &mut conn => { res }
-                            _handle = drain.into_future() => {
-                                Pin::new(&mut conn).graceful_shutdown();
-                                conn.await
-                            }
-                        }
-                    };
-                    Ok(
-                        Box::pin(serve.map_err(Into::into).instrument(info_span!("h2")))
-                            as Self::Response,
-                    )
+                    let conn = builder
+                        .http2_only(true)
+                        .http2_initial_stream_window_size(initial_stream_window_size)
+                        .http2_initial_connection_window_size(initial_conn_window_size)
+                        .serve_connection(io, HyperServerSvc::new(http_svc));
+                    Ok(Box::pin(async move {
+                        drain
+                            .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                            .instrument(info_span!("h2"))
+                            .await?;
+                        Ok(())
+                    }) as Self::Response)
                 }
             }
         })
