@@ -286,7 +286,7 @@ mod require_id_header {
             #[tokio::test]
             #[cfg_attr(not(feature = "flaky_tests"), ignore)]
             async fn orig_dst_client_connects_to_tls_server() {
-                let _trace = trace_init()
+                let _trace = trace_init();
 
                 let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
                 let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
@@ -348,7 +348,7 @@ mod require_id_header {
             #[tokio::test]
             #[cfg_attr(not(feature = "flaky_tests"), ignore)]
             async fn disco_client_connects_to_tls_server() {
-                let _trace = trace_init()
+                let _trace = trace_init();
 
                 let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
                 let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
@@ -423,7 +423,7 @@ mod require_id_header {
             #[tokio::test]
             #[cfg_attr(not(feature = "flaky_tests"), ignore)]
             async fn orig_dst_client_cannot_connect_to_plaintext_server() {
-                let _trace = trace_init()
+                let _trace = trace_init();
 
                 let proxy_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
                 let proxy_identity = identity::Identity::new("foo-ns1", proxy_name.to_string());
