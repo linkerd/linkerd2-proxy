@@ -88,6 +88,7 @@ macro_rules! assert_eventually {
             use std::{env, u64};
             use std::time::{Instant, Duration};
             use std::str::FromStr;
+            use tracing_futures::Instrument as _;
             // TODO: don't do this *every* time eventually is called (lazy_static?)
             let patience = env::var($crate::ENV_TEST_PATIENCE_MS).ok()
                 .map(|s| {
@@ -99,21 +100,32 @@ macro_rules! assert_eventually {
                     Duration::from_millis(millis)
                 })
                 .unwrap_or($crate::DEFAULT_TEST_PATIENCE);
-            let start_t = Instant::now();
-            for i in 0i32..($retries as i32 + 1i32) {
-                if $cond {
-                    break;
-                } else if i == $retries {
-                    panic!(
-                        "assertion failed after {} (retried {} times): {}",
-                        crate::HumanDuration(start_t.elapsed()),
-                        i,
-                        format_args!($($arg)+)
-                    )
-                } else {
-                    tokio::time::delay_for(patience).await;
+            async {
+                let start_t = Instant::now();
+                for i in 0i32..($retries as i32 + 1i32) {
+                    tracing::info!(retries_remaining = $retries - i);
+                    if $cond {
+                        break;
+                    } else if i == $retries {
+                        panic!(
+                            "assertion failed after {} (retried {} times): {}",
+                            crate::HumanDuration(start_t.elapsed()),
+                            i,
+                            format_args!($($arg)+)
+                        )
+                    } else {
+                        tracing::trace!("waiting...");
+                        tokio::time::delay_for(patience).await;
+                        std::thread::yield_now();
+                        tracing::trace!("done");
+                    }
                 }
-            }
+            }.instrument(tracing::trace_span!(
+                "assert_eventually",
+                patience  = %crate::HumanDuration(patience),
+                max_retries = $retries
+            ))
+            .await
         }
     };
     ($cond:expr, $($arg:tt)+) => {
