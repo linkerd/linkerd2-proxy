@@ -1,7 +1,7 @@
 use super::*;
 use futures::TryFuture;
 use http::Response;
-use linkerd2_app_core::{drain, proxy::http::trace};
+use linkerd2_app_core::proxy::http::trace;
 use rustls::ServerConfig;
 use std::collections::HashMap;
 use std::future::Future;
@@ -407,36 +407,4 @@ async fn accept_connection(
     };
     tracing::trace!("connection accepted");
     res
-}
-
-fn cancelable<E: Send + 'static>(
-    drain: drain::Watch,
-    f: impl Future<Output = Result<(), E>> + Send + 'static,
-) -> impl Future<Output = Result<(), E>> + Send + 'static {
-    drain.watch(Cancelable::new(f), |f| f.cancel())
-}
-struct Cancelable<E>(Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>);
-
-impl<E> Cancelable<E> {
-    fn new(f: impl Future<Output = Result<(), E>> + Send + 'static) -> Self {
-        Self(Some(Box::pin(f)))
-    }
-
-    fn cancel(&mut self) {
-        self.0.take();
-        tracing::trace!("canceling...");
-    }
-}
-
-impl<E> Future for Cancelable<E> {
-    type Output = Result<(), E>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(ref mut f) = self.as_mut().0 {
-            return f.poll_unpin(cx);
-        }
-
-        tracing::debug!("canceled!");
-        Poll::Ready(Ok(()))
-    }
 }

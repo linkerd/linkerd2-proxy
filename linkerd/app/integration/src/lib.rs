@@ -14,6 +14,7 @@ use futures_01::{Async, Future as Future01, Poll as Poll01, Stream as Stream01};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app as app;
+pub use linkerd2_app_core::drain;
 pub use std::collections::HashMap;
 use std::fmt;
 pub use std::future::Future;
@@ -340,5 +341,38 @@ impl<T: fmt::Debug, E: fmt::Debug> ResultWaitedExt for Result<T, Waited<E>> {
             }
             Err(Waited::TimedOut) => (),
         }
+    }
+}
+
+pub async fn cancelable<E: Send + 'static>(
+    drain: drain::Watch,
+    f: impl Future<Output = Result<(), E>> + Send + 'static,
+) -> Result<(), E> {
+    drain.watch(Cancelable::new(f), |f| f.cancel()).await
+}
+
+struct Cancelable<E>(Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>);
+
+impl<E> Cancelable<E> {
+    fn new(f: impl Future<Output = Result<(), E>> + Send + 'static) -> Self {
+        Self(Some(Box::pin(f)))
+    }
+
+    fn cancel(&mut self) {
+        self.0.take();
+        tracing::trace!("canceling...");
+    }
+}
+
+impl<E> Future for Cancelable<E> {
+    type Output = Result<(), E>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(ref mut f) = self.as_mut().0 {
+            return f.poll_unpin(cx);
+        }
+
+        tracing::debug!("canceled!");
+        Poll::Ready(Ok(()))
     }
 }
