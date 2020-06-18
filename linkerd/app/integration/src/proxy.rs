@@ -236,7 +236,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     }
 
     let config = app::env::parse_config(&env).unwrap();
-    let (trace, trace_handle) = super::trace_init();
+    let (trace, trace_handle) = super::trace_subscriber();
 
     let (running_tx, running_rx) = oneshot::channel();
     let (tx, mut rx) = shutdown_signal();
