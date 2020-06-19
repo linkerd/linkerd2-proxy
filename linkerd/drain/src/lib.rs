@@ -59,6 +59,10 @@ pub struct Drained {
     drained_rx: mpsc::Receiver<Never>,
 }
 
+#[must_use = "ReleaseShutdown should be dropped explicitly to release the runtime"]
+#[derive(Clone, Debug)]
+pub struct ReleaseShutdown(mpsc::Sender<Never>);
+
 // ===== impl Signal =====
 
 impl Signal {
@@ -78,6 +82,22 @@ impl Signal {
 // ===== impl Watch =====
 
 impl Watch {
+    /// Returns a `ReleaseShutdown` handle after the drain has been signaled. The
+    /// handle must be dropped when a shutdown action has been completed to
+    /// unblock graceful shutdown.
+    pub async fn signal(self) -> ReleaseShutdown {
+        self.rx.await;
+        ReleaseShutdown(self.drained_tx)
+    }
+
+    /// Return a `ReleaseShutdown` handle immediately, ignoring the release signal.
+    ///
+    /// This is intended to allow a task to block shutdown until it completes.
+    pub fn ignore_signal(self) -> ReleaseShutdown {
+        drop(self.rx);
+        ReleaseShutdown(self.drained_tx)
+    }
+
     /// Wrap a future and a callback that is triggered when drain is received.
     ///
     /// The callback receives a mutable reference to the original future, and
@@ -88,29 +108,19 @@ impl Watch {
         F: FnOnce(&mut A),
     {
         tokio::select! {
-            res = &mut future => return res,
-            _ = self.rx => {
+            res = &mut future => res,
+            shutdown = self.signal() => {
                 on_drain(&mut future);
-                (&mut future).await
+                shutdown.release_after(future).await
             }
         }
     }
+}
 
-    /// Wrap a future to count it against the completion of the `Drained`
-    /// future that corresponds to this `Watch`.
-    ///
-    /// Unlike `Watch::watch`, this method does not take a callback that is
-    /// triggered on drain; the wrapped future will simply be allowed to
-    /// complete. However, like `Watch::watch`, the `Drained` future returned
-    /// by calling `drain` on the corresponding `Signal` will not complete until
-    /// the wrapped future finishes.
-    pub async fn after<A>(self, future: A) -> A::Output
-    where
-        A: Future,
-    {
-        let res = future.await;
-        drop(self);
-        res
+impl ReleaseShutdown {
+    /// Releases shutdown after `future` completes.
+    pub async fn release_after<F: Future>(self, future: F) -> F::Output {
+        future.await
     }
 }
 

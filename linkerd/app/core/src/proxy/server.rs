@@ -177,7 +177,12 @@ where
                     .oneshot((proto.tls, io));
                 let fwd = async move {
                     let conn = accept.await.map_err(Into::into)?;
-                    Ok(Box::pin(drain.after(conn).map_err(Into::into)) as Self::Response)
+                    Ok(Box::pin(
+                        drain
+                            .ignore_signal()
+                            .release_after(conn)
+                            .map_err(Into::into),
+                    ) as Self::Response)
                 };
 
                 return Box::pin(fwd);
