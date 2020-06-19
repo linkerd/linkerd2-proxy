@@ -65,7 +65,7 @@ async fn rejects_incorrect_identity_when_identity_is_expected() {
     let mut events = tap.observe(tap::observe_request()).await.take(1);
 
     let client = client::http1(in_proxy.inbound, "localhost");
-    assert_eq!(client.get_async("/").await, "hello");
+    assert_eq!(client.get("/").await, "hello");
 
     assert!(events.next().await.expect("next1").is_err());
 }
@@ -118,7 +118,7 @@ async fn inbound_http1() {
     let client = client::http1(srv_proxy.metrics, "localhost");
     let ready = || async {
         client
-            .request_async(client.request_builder("/ready").method("GET"))
+            .request(client.request_builder("/ready").method("GET"))
             .await
             .unwrap()
     };
@@ -131,7 +131,7 @@ async fn inbound_http1() {
 
     // Send a request that will be observed via the tap client
     let client = client::http1(srv_proxy.inbound, "localhost");
-    assert_eq!(client.get_async("/").await, "hello");
+    assert_eq!(client.get("/").await, "hello");
 
     let mut events = events.take(3);
 
@@ -202,7 +202,7 @@ async fn grpc_headers_end() {
     let client = client::http2(srv_proxy.metrics, "localhost");
     let ready = || async {
         client
-            .request_async(client.request_builder("/ready").method("GET"))
+            .request(client.request_builder("/ready").method("GET"))
             .await
             .expect("ready")
     };
@@ -216,7 +216,7 @@ async fn grpc_headers_end() {
     // Send a request that will be observed via the tap client
     let client = client::http2(srv_proxy.inbound, "localhost");
     let res = client
-        .request_async(
+        .request(
             client
                 .request_builder("/")
                 .header("content-type", "application/grpc+nope"),

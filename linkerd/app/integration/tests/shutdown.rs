@@ -13,11 +13,11 @@ async fn h2_goaways_connections() {
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
     let client = client::http2(proxy.inbound, "shutdown.test.svc.cluster.local");
 
-    assert_eq!(client.get("/"), "hello");
+    assert_eq!(client.get("/").await, "hello");
 
     shdn.signal();
 
-    client.wait_for_closed();
+    client.wait_for_closed().await;
 }
 
 #[tokio::test]
@@ -41,7 +41,7 @@ async fn h2_exercise_goaways_connections() {
 
     let reqs = (0..NUM_REQUESTS)
         .into_iter()
-        .map(|_| client.request_async(client.request_builder("/").method("GET")))
+        .map(|_| client.request(client.request_builder("/").method("GET")))
         .collect::<Vec<_>>();
 
     // Wait to get all responses (but not bodies)
@@ -62,7 +62,7 @@ async fn h2_exercise_goaways_connections() {
     // See that the proxy gives us all the bodies.
     future::try_join_all(bodies).await.expect("bodies");
 
-    client.wait_for_closed();
+    client.wait_for_closed().await;
 }
 
 #[tokio::test]
@@ -92,10 +92,10 @@ async fn http1_closes_idle_connections() {
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
     let client = client::http1(proxy.inbound, "shutdown.test.svc.cluster.local");
 
-    let res_body = client.get_async("/").await;
+    let res_body = client.get("/").await;
     assert_eq!(res_body.len(), RESPONSE_SIZE);
 
-    client.wait_for_closed();
+    client.wait_for_closed().await;
 }
 
 #[tokio::test]

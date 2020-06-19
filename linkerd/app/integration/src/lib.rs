@@ -351,6 +351,11 @@ pub async fn cancelable<E: Send + 'static>(
     drain.watch(Cancelable::new(f), |f| f.cancel()).await
 }
 
+pub struct CancelableExec<E> {
+    exec: E,
+    drain: drain::Watch,
+}
+
 struct Cancelable<E>(Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>);
 
 impl<E> Cancelable<E> {
@@ -374,5 +379,21 @@ impl<E> Future for Cancelable<E> {
 
         tracing::debug!("canceled!");
         Poll::Ready(Ok(()))
+    }
+}
+
+impl<F, E> hyper::rt::Executor<F> for CancelableExec<E>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+    E: hyper::rt::Executor<Pin<Box<dyn Future<Output = Result<(), ()>> + Send + 'static>>>,
+{
+    #[inline]
+    fn execute(&self, f: F) {
+        self.exec
+            .execute(Box::pin(cancelable(self.drain.clone(), async move {
+                f.await;
+                Ok::<(), ()>(())
+            })))
     }
 }

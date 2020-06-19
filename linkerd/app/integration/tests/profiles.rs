@@ -117,8 +117,8 @@ macro_rules! profile_test {
 
         // Poll metrics until we recognize the profile is loaded...
         loop {
-            assert_eq!(client.get_async("/load-profile").await, "");
-            let m = metrics.get_async("/metrics").await;
+            assert_eq!(client.get("/load-profile").await, "");
+            let m = metrics.get("/metrics").await;
             if m.contains("rt_load_profile=\"test\"") {
                 break;
             }
@@ -143,7 +143,7 @@ async fn retry_if_profile_allows() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
         with_client: |client: client::Client| async move {
-            assert_eq!(client.get_async("/0.5").await, "retried");
+            assert_eq!(client.get("/0.5").await, "retried");
         }
     }
 }
@@ -159,13 +159,13 @@ async fn retry_uses_budget() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(1), 0.1, 1)),
         with_client: |client: client::Client| async move {
-            assert_eq!(client.get_async("/0.5").await, "retried");
-            let res = client.request_async(client.request_builder("/0.5")).await.unwrap();
+            assert_eq!(client.get("/0.5").await, "retried");
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         },
         with_metrics: |metrics: client::Client| async move {
             assert_eventually_contains!(
-                metrics.get_async("/metrics").await,
+                metrics.get("/metrics").await,
                 "route_retryable_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",skipped=\"no_budget\"} 1"
             );
         }
@@ -183,7 +183,7 @@ async fn does_not_retry_if_request_does_not_match() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
         with_client: |client: client::Client| async move {
-            let res = client.request_async(client.request_builder("/0.5")).await.unwrap();
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
@@ -202,7 +202,7 @@ async fn does_not_retry_if_earlier_response_class_is_success() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
         with_client: |client: client::Client| async move {
-            let res = client.request_async(client.request_builder("/0.5")).await.unwrap();
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
@@ -223,7 +223,7 @@ async fn does_not_retry_if_request_has_body() {
                 .method("POST")
                 .body("req has a body".into())
                 .unwrap();
-            let res = client.request_body_async(req).await;
+            let res = client.request_body(req).await;
             assert_eq!(res.status(), 533);
         }
     }
@@ -240,7 +240,7 @@ async fn does_not_retry_if_missing_retry_budget() {
         ],
         budget: None,
         with_client: |client: client::Client|async move {
-            let res = client.request_async(client.request_builder("/0.5")).await.unwrap();
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
@@ -257,7 +257,7 @@ async fn ignores_invalid_retry_budget_ttl() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(1000), 0.1, 1)),
         with_client: |client: client::Client| async move {
-            let res = client.request_async(client.request_builder("/0.5")).await.unwrap();
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
@@ -274,7 +274,7 @@ async fn ignores_invalid_retry_budget_ratio() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 10_000.0, 1)),
         with_client: |client: client::Client| async move {
-            let res = client.request_async(client.request_builder("/0.5")).await.unwrap();
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
@@ -291,7 +291,7 @@ async fn ignores_invalid_retry_budget_negative_ratio() {
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), -1.0, 1)),
         with_client: |client: client::Client| async move {
-            let res = client.request_async(client.request_builder("/0.5")).await.unwrap();
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
@@ -312,7 +312,7 @@ async fn http2_failures_dont_leak_connection_window() {
             // Before https://github.com/carllerche/h2/pull/334, this would
             // hang since the retried failure would have leaked the 100k window
             // capacity, preventing the successful response from being read.
-            assert_eq!(client.get_async("/0.5/100KB").await, "retried");
+            assert_eq!(client.get("/0.5/100KB").await, "retried");
         },
         with_metrics: |_m| async {}
     }
@@ -328,12 +328,12 @@ async fn timeout() {
         ],
         budget: None,
         with_client: |client: client::Client| async move {
-            let res = client.request_async(client.request_builder("/1.0/sleep")).await.unwrap();
+            let res = client.request(client.request_builder("/1.0/sleep")).await.unwrap();
             assert_eq!(res.status(), 504);
         },
         with_metrics: |metrics: client::Client| async move {
             assert_eventually_contains!(
-                metrics.get_async("/metrics").await,
+                metrics.get("/metrics").await,
                 "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",classification=\"failure\",error=\"timeout\"} 1"
             );
         }

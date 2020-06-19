@@ -17,7 +17,7 @@ async fn outbound_http1() {
     let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
     let client = client::http1(proxy.outbound, "transparency.test.svc.cluster.local");
 
-    assert_eq!(client.get_async("/").await, "hello h1");
+    assert_eq!(client.get("/").await, "hello h1");
 }
 
 #[tokio::test]
@@ -33,7 +33,7 @@ async fn inbound_http1() {
         .run();
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-    assert_eq!(client.get_async("/").await, "hello h1");
+    assert_eq!(client.get("/").await, "hello h1");
 }
 
 #[tokio::test]
@@ -99,7 +99,7 @@ async fn loop_outbound_http1() {
 
     let client = client::http1(listen_addr, "some.invalid.example.com");
     let rsp = client
-        .request_async(client.request_builder("/").method("GET"))
+        .request(client.request_builder("/").method("GET"))
         .await
         .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
@@ -120,7 +120,7 @@ async fn loop_inbound_http1() {
 
     let client = client::http1(listen_addr, listen_addr.to_string());
     let rsp = client
-        .request_async(client.request_builder("/").method("GET"))
+        .request(client.request_builder("/").method("GET"))
         .await
         .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::FORBIDDEN);
@@ -272,7 +272,7 @@ macro_rules! http1_tests {
             let proxy = $proxy(srv);
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            assert_eq!(client.get_async("/").await, "hello h1");
+            assert_eq!(client.get("/").await, "hello h1");
         }
 
         #[tokio::test]
@@ -296,7 +296,7 @@ macro_rules! http1_tests {
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let res = client
-                .request_async(
+                .request(
                     client
                         .request_builder("/")
                         .header("x-foo-bar", "baz")
@@ -337,7 +337,7 @@ macro_rules! http1_tests {
             let client = client::http1(proxy.inbound, host);
 
             let res = client
-                .request_async(
+                .request(
                     client
                         .request_builder("/")
                         .version(http::Version::HTTP_10)
@@ -369,7 +369,7 @@ macro_rules! http1_tests {
             let client = client::http1_absolute_uris(proxy.inbound, auth);
 
             let res = client
-                .request_async(
+                .request(
                     client
                         .request_builder("/")
                         .version(http::Version::HTTP_11)
@@ -475,10 +475,7 @@ macro_rules! http1_tests {
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
 
-            let res = client
-                .request_async(client.request_builder("/"))
-                .await
-                .unwrap();
+            let res = client.request(client.request_builder("/")).await.unwrap();
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
         }
@@ -511,7 +508,7 @@ macro_rules! http1_tests {
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let res = client
-                .request_async(
+                .request(
                     client
                         .request_builder("/")
                         .header("upgrade", "h2c")
@@ -683,7 +680,7 @@ macro_rules! http1_tests {
                 .body("hello".into())
                 .unwrap();
 
-            let resp = client.request_body_async(req).await;
+            let resp = client.request_body(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
         }
@@ -721,7 +718,7 @@ macro_rules! http1_tests {
                 .body("hello".into())
                 .unwrap();
 
-            let resp = client.request_body_async(req).await;
+            let resp = client.request_body(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["transfer-encoding"], "chunked");
@@ -760,7 +757,7 @@ macro_rules! http1_tests {
 
             for &method in methods {
                 let resp = client
-                    .request_async(client.request_builder("/").method(method))
+                    .request(client.request_builder("/").method(method))
                     .await
                     .unwrap();
 
@@ -794,7 +791,7 @@ macro_rules! http1_tests {
 
             for &method in methods {
                 let resp = client
-                    .request_async(
+                    .request(
                         client
                             .request_builder("/")
                             .method(method)
@@ -842,7 +839,7 @@ macro_rules! http1_tests {
             //a CONNECT request is not allowed to contain a body (but 4xx, 5xx can!).
 
             let resp = client
-                .request_async(client.request_builder("/").method("HEAD"))
+                .request(client.request_builder("/").method("HEAD"))
                 .await
                 .unwrap();
 
@@ -860,7 +857,7 @@ macro_rules! http1_tests {
 
             for &status in statuses {
                 let resp = client
-                    .request_async(
+                    .request(
                         client
                             .request_builder("/")
                             .header(req_status_header, status.as_str()),
@@ -895,7 +892,7 @@ macro_rules! http1_tests {
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let resp = client
-                .request_async(client.request_builder("/").method("HEAD"))
+                .request(client.request_builder("/").method("HEAD"))
                 .await
                 .expect("request");
 
@@ -953,7 +950,7 @@ macro_rules! http1_tests {
 
             for v in versions {
                 let resp = client
-                    .request_async(client.request_builder("/").method("GET"))
+                    .request(client.request_builder("/").method("GET"))
                     .await
                     .expect("response");
 
@@ -1085,7 +1082,7 @@ async fn http1_one_connection_per_host() {
         async move {
             for path in &["/no-body", "/body"][..] {
                 let res = c
-                    .request_async(
+                    .request(
                         c.request_builder(path)
                             .version(http::Version::HTTP_11)
                             .header("host", host),
@@ -1129,7 +1126,7 @@ async fn http1_requests_without_host_have_unique_connections() {
 
     // Make a request with no Host header and no authority in the request path.
     let res = client
-        .request_async(
+        .request(
             client
                 .request_builder("/")
                 .version(http::Version::HTTP_11)
@@ -1144,7 +1141,7 @@ async fn http1_requests_without_host_have_unique_connections() {
     // Another request with no Host. The proxy must open a new connection
     // for that request.
     let res = client
-        .request_async(
+        .request(
             client
                 .request_builder("/")
                 .version(http::Version::HTTP_11)
@@ -1159,7 +1156,7 @@ async fn http1_requests_without_host_have_unique_connections() {
     // Make a request with a host header. It must also receive its
     // own connection.
     let res = client
-        .request_async(
+        .request(
             client
                 .request_builder("/")
                 .version(http::Version::HTTP_11)
@@ -1174,7 +1171,7 @@ async fn http1_requests_without_host_have_unique_connections() {
     // Another request with no Host. The proxy must open a new connection
     // for that request.
     let res = client
-        .request_async(
+        .request(
             client
                 .request_builder("/")
                 .version(http::Version::HTTP_11)
@@ -1202,12 +1199,12 @@ async fn retry_reconnect_errors() {
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
     let metrics = client::http1(proxy.metrics, "localhost");
 
-    let fut = client.request_async(client.request_builder("/").version(http::Version::HTTP_2));
+    let fut = client.request(client.request_builder("/").version(http::Version::HTTP_2));
 
     // wait until metrics has seen our connection, this can be flaky depending on
     // all the other threads currently running...
     assert_eventually_contains!(
-        metrics.get_async("/metrics").await,
+        metrics.get("/metrics").await,
         "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
     );
 
@@ -1272,7 +1269,7 @@ async fn http2_rst_stream_is_propagated() {
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
 
     let err: hyper::Error = client
-        .request_async(client.request_builder("/"))
+        .request(client.request_builder("/"))
         .await
         .expect_err("client request should error");
 
@@ -1307,7 +1304,7 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
 
     let client = client::http1(addr, host);
     let res = client
-        .request_async(client.request_builder("/"))
+        .request(client.request_builder("/"))
         .await
         .expect("client request");
 

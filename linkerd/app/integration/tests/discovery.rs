@@ -19,8 +19,8 @@ macro_rules! generate_tests {
             let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-            assert_eq!(client.get_async("/").await, "hello");
-            assert_eq!(client.get_async("/bye").await, "bye");
+            assert_eq!(client.get("/").await, "hello");
+            assert_eq!(client.get("/bye").await, "bye");
         }
 
         #[tokio::test]
@@ -37,7 +37,7 @@ macro_rules! generate_tests {
             let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-            assert_eq!(client.get_async("/recon").await, "nect");
+            assert_eq!(client.get("/recon").await, "nect");
         }
 
         #[tokio::test]
@@ -73,7 +73,7 @@ macro_rules! generate_tests {
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-            let rsp = client.request_async(client.request_builder("/")).await.unwrap();
+            let rsp = client.request(client.request_builder("/")).await.unwrap();
 
             assert!(
                 did_not_fall_back.load(Ordering::Acquire),
@@ -98,7 +98,7 @@ macro_rules! generate_tests {
 
             let client = $make_client(proxy.outbound, "my-great-websute.net");
 
-            assert_eq!(client.get_async("/").await, "hello from my great website");
+            assert_eq!(client.get("/").await, "hello from my great website");
         }
 
         #[tokio::test]
@@ -123,7 +123,7 @@ macro_rules! generate_tests {
 
             let client = $make_client(proxy.outbound, NAME);
 
-            assert_eq!(client.get_async("/").await, "hello");
+            assert_eq!(client.get("/").await, "hello");
         }
 
         #[tokio::test]
@@ -159,7 +159,7 @@ macro_rules! generate_tests {
 
             let initially_exists =
                 $make_client(proxy.outbound, "initially-exists.ns.svc.cluster.local");
-            assert_eq!(initially_exists.get_async("/").await, "hello");
+            assert_eq!(initially_exists.get("/").await, "hello");
 
             drop(dst_tx0); // trigger reconnect
             dst_tx1.send(up);
@@ -167,7 +167,7 @@ macro_rules! generate_tests {
             // Wait for the reconnect to happen. TODO: Replace this flaky logic.
             tokio::time::delay_for(Duration::from_millis(1000)).await;
 
-            let rsp = initially_exists.request_async(initially_exists.request_builder("/")).await.unwrap();
+            let rsp = initially_exists.request(initially_exists.request_builder("/")).await.unwrap();
             assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
 
         }
@@ -193,7 +193,7 @@ macro_rules! generate_tests {
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
             let req = client.request_builder("/");
-            let rsp = client.request_async(req.method("GET")).await.unwrap();
+            let rsp = client.request(req.method("GET")).await.unwrap();
             // the request should time out
             assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
         }
@@ -219,8 +219,8 @@ macro_rules! generate_tests {
                 .run();
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-            assert_eq!(client.get_async("/").await, "hello");
-            assert_eq!(client.get_async("/bye").await, "bye");
+            assert_eq!(client.get("/").await, "hello");
+            assert_eq!(client.get("/bye").await, "bye");
         }
 
         #[tokio::test]
@@ -257,7 +257,7 @@ macro_rules! generate_tests {
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
-            assert_eq!(client.get_async("/").await, "hello");
+            assert_eq!(client.get("/").await, "hello");
         }
 
         mod remote_header {
@@ -282,7 +282,7 @@ macro_rules! generate_tests {
                 ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
                 let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
                 let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
-                let rsp = client.request_async(client.request_builder("/strip")).await.unwrap();
+                let rsp = client.request(client.request_builder("/strip")).await.unwrap();
 
                 assert_eq!(rsp.status(), 200);
                 assert_ne!(rsp.headers().get(REMOTE_IP_HEADER), Some(&header));
@@ -302,7 +302,7 @@ macro_rules! generate_tests {
                 ctrl.profile_tx_default("disco.test.svc.cluster.local");
                 let proxy = proxy::new().controller(ctrl.run()).inbound(srv).run();
                 let client = $make_client(proxy.inbound, "disco.test.svc.cluster.local");
-                let rsp = client.request_async(client.request_builder("/strip").header(REMOTE_IP_HEADER, IP_1)).await.unwrap();
+                let rsp = client.request(client.request_builder("/strip").header(REMOTE_IP_HEADER, IP_1)).await.unwrap();
 
                 assert_eq!(rsp.status(), 200);
             }
@@ -319,7 +319,7 @@ macro_rules! generate_tests {
                 ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
                 let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
                 let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
-                let rsp = client.request_async(client.request_builder("/set")).await.unwrap();
+                let rsp = client.request(client.request_builder("/set")).await.unwrap();
 
                 assert_eq!(rsp.status(), 200);
                 assert_eq!(rsp.headers().get(REMOTE_IP_HEADER), Some(&header));
@@ -339,7 +339,7 @@ macro_rules! generate_tests {
 
                 let proxy = proxy::new().inbound(srv).run();
                 let client = $make_client(proxy.inbound, "disco.test.svc.cluster.local");
-                let rsp = client.request_async(client.request_builder("/set")).await.unwrap();
+                let rsp = client.request(client.request_builder("/set")).await.unwrap();
 
                 assert_eq!(rsp.status(), 200);
             }
@@ -444,7 +444,7 @@ macro_rules! generate_tests {
             }
 
             async fn override_req(client: &client::Client) -> http::Response<hyper::Body> {
-                client.request_async(
+                client.request(
                     client.request_builder("/")
                         .header(OVERRIDE_HEADER, BAR)
                         .method("GET")
@@ -460,7 +460,7 @@ macro_rules! generate_tests {
                 let client = $make_client(proxy.outbound, FOO);
 
                 // Request 1 --- without override header.
-                assert_eq!(client.get_async("/").await, "hello from foo");
+                assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 1);
                 assert_eq!(fixture.bar_reqs(), 0);
 
@@ -475,7 +475,7 @@ macro_rules! generate_tests {
                 assert_eq!(fixture.bar_reqs(), 1);
 
                 // Request 3 --- without override header again.
-                assert_eq!(client.get_async("/").await, "hello from foo");
+                assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 1);
             }
@@ -490,13 +490,13 @@ macro_rules! generate_tests {
                 let metrics = client::http1(proxy.metrics, "localhost");
 
                 // Request 1 --- without override header.
-                client.get_async("/").await;
-                assert_eventually_contains!(metrics.get_async("/metrics").await, "rt_hello=\"foo\"");
+                client.get("/").await;
+                assert_eventually_contains!(metrics.get("/metrics").await, "rt_hello=\"foo\"");
 
                 // Request 2 --- with override header
                 let res = override_req(&client).await;
                 assert_eq!(res.status(), http::StatusCode::OK);
-                assert_eventually_contains!(metrics.get_async("/metrics").await, "rt_hello=\"bar\"");
+                assert_eventually_contains!(metrics.get("/metrics").await, "rt_hello=\"bar\"");
             }
 
             #[tokio::test]
@@ -509,7 +509,7 @@ macro_rules! generate_tests {
                 let client = $make_client(proxy.outbound, "foo.test.svc.cluster.local");
 
                 // Request 1 --- without override header.
-                assert_eq!(client.get_async("/").await, "hello from foo");
+                assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 1);
                 assert_eq!(fixture.bar_reqs(), 0);
 
@@ -524,7 +524,7 @@ macro_rules! generate_tests {
                 assert_eq!(fixture.bar_reqs(), 1);
 
                 // Request 3 --- without override header again.
-                assert_eq!(client.get_async("/").await, "hello from foo");
+                assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 1);
             }
@@ -540,8 +540,8 @@ macro_rules! generate_tests {
                 let metrics = client::http1(proxy.metrics, "localhost");
 
                 // Request 1 --- without override header.
-                client.get_async("/").await;
-                assert_eventually_contains!(metrics.get_async("/metrics").await, "rt_hello=\"foo\"");
+                client.get("/").await;
+                assert_eventually_contains!(metrics.get("/metrics").await, "rt_hello=\"foo\"");
 
                 // // Request 2 --- with override header
                 // let res = override_req(&client);
@@ -559,7 +559,7 @@ macro_rules! generate_tests {
                 let client = $make_client(proxy.inbound, "foo.test.svc.cluster.local");
 
                 // Request 1 --- without override header.
-                assert_eq!(client.get_async("/").await, "hello from foo");
+                assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 1);
                 assert_eq!(fixture.bar_reqs(), 0);
 
@@ -574,7 +574,7 @@ macro_rules! generate_tests {
                 assert_eq!(fixture.bar_reqs(), 0);
 
                 // Request 3 --- without override header again.
-                assert_eq!(client.get_async("/").await, "hello from foo");
+                assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 3);
                 assert_eq!(fixture.bar_reqs(), 0);
             }
@@ -616,7 +616,7 @@ mod http2 {
         let client = client::http2(proxy.outbound, host);
         let metrics = client::http1(proxy.metrics, "localhost");
 
-        assert_eq!(client.get_async("/").await, "hello");
+        assert_eq!(client.get("/").await, "hello");
 
         // Simulate the first server falling over without discovery
         // knowing about it...
@@ -625,7 +625,7 @@ mod http2 {
 
         // Wait until the proxy has seen the `srv1` disconnect...
         assert_eventually_contains!(
-            metrics.get_async("/metrics").await,
+            metrics.get("/metrics").await,
             "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1"
         );
 
@@ -633,7 +633,7 @@ mod http2 {
         // This request should be waiting at the balancer for a ready endpoint.
         //
         // The only one it knows about is dead, so it won't have progressed.
-        let fut = client.request_async(client.request_builder("/bye"));
+        let fut = client.request(client.request_builder("/bye"));
 
         // When we tell the balancer about a new endpoint, it should have added
         // it and then dispatched the request...
@@ -690,7 +690,7 @@ mod proxy_to_proxy {
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
         let res = client
-            .request_async(client.request_builder("/hint"))
+            .request(client.request_builder("/hint"))
             .await
             .unwrap();
         assert_eq!(res.status(), 200);
@@ -722,7 +722,7 @@ mod proxy_to_proxy {
         let client = client::http2(proxy.inbound, "disco.test.svc.cluster.local");
 
         let res = client
-            .request_async(
+            .request(
                 client
                     .request_builder("/h1")
                     .header("l5d-orig-proto", "HTTP/1.1"),
@@ -753,7 +753,7 @@ mod proxy_to_proxy {
         let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
 
         let res = client
-            .request_async(
+            .request(
                 client
                     .request_builder("/stripped")
                     .header("l5d-client-id", "sneaky.sneaky"),
@@ -784,7 +784,7 @@ mod proxy_to_proxy {
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
         let res = client
-            .request_async(
+            .request(
                 client
                     .request_builder("/stripped")
                     .header("l5d-client-id", "sneaky.sneaky"),
@@ -816,7 +816,7 @@ mod proxy_to_proxy {
         let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
 
         let res = client
-            .request_async(client.request_builder("/strip-me"))
+            .request(client.request_builder("/strip-me"))
             .await
             .unwrap();
         assert_eq!(res.status(), 200, "must be sucessful");
@@ -850,7 +850,7 @@ mod proxy_to_proxy {
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
         let res = client
-            .request_async(client.request_builder("/strip-me"))
+            .request(client.request_builder("/strip-me"))
             .await
             .unwrap();
         assert_eq!(res.status(), 200);
@@ -888,7 +888,7 @@ mod proxy_to_proxy {
             let client = $make_client(out_proxy.outbound, "disco.test.svc.cluster.local");
 
             let res = client
-                .request_async(client.request_builder("/hallo"))
+                .request(client.request_builder("/hallo"))
                 .await
                 .unwrap();
             assert_eq!(res.status(), 200);

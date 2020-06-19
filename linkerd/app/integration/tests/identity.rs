@@ -59,7 +59,7 @@ macro_rules! generate_tls_accept_test {
         let non_tls_client = $make_client_non_tls(proxy.metrics, "localhost");
         assert_eventually!(
             non_tls_client
-                .request_async(non_tls_client.request_builder("/ready").method("GET"))
+                .request(non_tls_client.request_builder("/ready").method("GET"))
                 .await
                 .unwrap()
                 .status()
@@ -74,7 +74,7 @@ macro_rules! generate_tls_accept_test {
         );
         assert_eventually!(
             tls_client
-                .request_async(tls_client.request_builder("/ready").method("GET"))
+                .request(tls_client.request_builder("/ready").method("GET"))
                 .await
                 .unwrap()
                 .status()
@@ -108,7 +108,7 @@ macro_rules! generate_tls_reject_test {
         );
 
         assert!(client
-            .request_async(client.request_builder("/ready").method("GET"))
+            .request(client.request_builder("/ready").method("GET"))
             .await
             .err()
             .unwrap()
@@ -172,7 +172,7 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
 
         assert_eventually!(
             client
-                .request_async(client.request_builder("/").method("GET"))
+                .request(client.request_builder("/").method("GET"))
                 .await
                 .unwrap()
                 .status()
@@ -218,7 +218,7 @@ async fn ready() {
 
     let ready = || async {
         client
-            .request_async(client.request_builder("/ready").method("GET"))
+            .request(client.request_builder("/ready").method("GET"))
             .await
             .unwrap()
     };
@@ -317,7 +317,7 @@ mod require_id_header {
                 // succeeds
                 assert_eq!(
                     client
-                        .request_async(
+                        .request(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", app_name)
@@ -336,7 +336,7 @@ mod require_id_header {
                 // 502
                 assert_eq!(
                     client
-                        .request_async(
+                        .request(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", "hey-its-me")
@@ -384,7 +384,7 @@ mod require_id_header {
                 // Assert a request to `srv` through discovery succeeds
                 assert_eq!(
                     client
-                        .request_async(client.request_builder("/").method("GET"))
+                        .request(client.request_builder("/").method("GET"))
                         .await
                         .unwrap()
                         .status(),
@@ -395,7 +395,7 @@ mod require_id_header {
                 // `l5d-require-id` fails
                 assert_eq!(
                     client
-                        .request_async(
+                        .request(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", "hey-its-me")
@@ -411,7 +411,7 @@ mod require_id_header {
                 // `l5d-require-id` succeeds
                 assert_eq!(
                     client
-                        .request_async(
+                        .request(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", app_name)
@@ -447,7 +447,7 @@ mod require_id_header {
                 // Assert a request to `srv` with `l5d-require-id` header fails
                 assert_eq!(
                     client
-                        .request_async(
+                        .request(
                             client
                                 .request_builder("/")
                                 .header("l5d-require-id", "hey-its-me")
@@ -463,7 +463,7 @@ mod require_id_header {
                 // succeeds
                 assert_eq!(
                     client
-                        .request_async(client.request_builder("/").method("GET"))
+                        .request(client.request_builder("/").method("GET"))
                         .await
                         .unwrap()
                         .status(),
