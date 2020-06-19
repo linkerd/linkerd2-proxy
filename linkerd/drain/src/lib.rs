@@ -101,9 +101,11 @@ impl Watch {
     {
         tokio::select! {
             res = &mut future => res,
-            _handle = self.handle() => {
+            handle = self.handle() => {
                 on_drain(&mut future);
-                future.await
+                let out = future.await;
+                drop(handle);
+                out
             }
         }
     }
