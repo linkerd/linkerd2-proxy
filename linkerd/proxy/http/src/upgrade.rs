@@ -153,7 +153,8 @@ impl Drop for Inner {
                 self.upgrade_drain_signal
                     .take()
                     .expect("only taken in drop")
-                    .after(both_upgrades)
+                    .ignore_signal()
+                    .release_after(both_upgrades)
                     .in_current_span(),
             );
         } else {

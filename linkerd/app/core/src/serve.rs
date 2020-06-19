@@ -43,8 +43,8 @@ where
             // The listener may fail but it may not complete otherwise.
             match err? {}
         }
-        // Stop processing new connections and drop the drain handle immediately.
-        _ = drain.handle() => { Ok(()) }
+        // Stop processing new connections and release the shutdown handle immediately.
+        _ = drain.signal() => { Ok(()) }
     }
 }
 

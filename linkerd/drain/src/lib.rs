@@ -59,9 +59,9 @@ pub struct Drained {
     drained_rx: mpsc::Receiver<Never>,
 }
 
-#[must_use = "Handle should be dropped explicitly to release the runtime"]
+#[must_use = "ReleaseShutdown should be dropped explicitly to release the runtime"]
 #[derive(Clone, Debug)]
-pub struct Handle(mpsc::Sender<Never>);
+pub struct ReleaseShutdown(mpsc::Sender<Never>);
 
 // ===== impl Signal =====
 
@@ -82,12 +82,20 @@ impl Signal {
 // ===== impl Watch =====
 
 impl Watch {
-    /// Returns a `Handle` after the drain has been initiated. The handle must be
-    /// dropped when a shutdown action has been completed to unblock graceful
-    /// shutdown.
-    pub async fn handle(self) -> Handle {
+    /// Returns a `ReleaseShutdown` handle after the drain has been signaled. The
+    /// handle must be dropped when a shutdown action has been completed to
+    /// unblock graceful shutdown.
+    pub async fn signal(self) -> ReleaseShutdown {
         self.rx.await;
-        Handle(self.drained_tx)
+        ReleaseShutdown(self.drained_tx)
+    }
+
+    /// Return a `ReleaseShutdown` handle immediately, ignoring the release signal.
+    ///
+    /// This is intended to allow a task to block shutdown until it completes.
+    pub fn ignore_signal(self) -> ReleaseShutdown {
+        drop(self.rx);
+        ReleaseShutdown(self.drained_tx)
     }
 
     /// Wrap a future and a callback that is triggered when drain is received.
@@ -101,30 +109,18 @@ impl Watch {
     {
         tokio::select! {
             res = &mut future => res,
-            handle = self.handle() => {
+            shutdown = self.signal() => {
                 on_drain(&mut future);
-                let out = future.await;
-                drop(handle);
-                out
+                shutdown.release_after(future).await
             }
         }
     }
+}
 
-    /// Wrap a future to count it against the completion of the `Drained`
-    /// future that corresponds to this `Watch`.
-    ///
-    /// Unlike `Watch::watch`, this method does not take a callback that is
-    /// triggered on drain; the wrapped future will simply be allowed to
-    /// complete. However, like `Watch::watch`, the `Drained` future returned
-    /// by calling `drain` on the corresponding `Signal` will not complete until
-    /// the wrapped future finishes.
-    pub async fn after<A>(self, future: A) -> A::Output
-    where
-        A: Future,
-    {
-        let res = future.await;
-        drop(self);
-        res
+impl ReleaseShutdown {
+    /// Releases shutdown after `future` completes.
+    pub async fn release_after<F: Future>(self, future: F) -> F::Output {
+        future.await
     }
 }
 
