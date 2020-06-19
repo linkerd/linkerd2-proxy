@@ -82,6 +82,14 @@ impl Signal {
 // ===== impl Watch =====
 
 impl Watch {
+    /// Returns a `Handle` after the drain has been initiated. The handle must be
+    /// dropped when a shutdown action has been completed to unblock graceful
+    /// shutdown.
+    pub async fn handle(self) -> Handle {
+        self.rx.await;
+        Handle(self.drained_tx)
+    }
+
     /// Wrap a future and a callback that is triggered when drain is received.
     ///
     /// The callback receives a mutable reference to the original future, and
@@ -98,11 +106,6 @@ impl Watch {
                 future.await
             }
         }
-    }
-
-    pub async fn handle(self) -> Handle {
-        self.rx.await;
-        Handle(self.drained_tx)
     }
 
     /// Wrap a future to count it against the completion of the `Drained`
