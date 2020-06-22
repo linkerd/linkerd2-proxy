@@ -1,23 +1,18 @@
 mod boxed;
 mod peek;
 mod prefixed;
-pub use self::{boxed::BoxedIo, peek::Peek, prefixed::PrefixedIo};
+pub use self::{
+    boxed::BoxedIo,
+    peek::{Peek, Peekable},
+    prefixed::PrefixedIo,
+};
 pub use std::io::{Error, Read, Result, Write};
 pub use tokio::io::{AsyncRead, AsyncWrite};
 
 pub type Poll<T> = std::task::Poll<Result<T>>;
 
-pub trait Peekable {
-    fn peek(self, capacity: usize) -> Peek<Self>
-    where
-        Self: Sized + internal::Io + Unpin,
-    {
-        Peek::with_capacity(capacity, self)
-    }
-}
-
 mod internal {
-    use super::{AsyncRead, AsyncWrite, Peekable, Poll};
+    use super::{AsyncRead, AsyncWrite, Poll};
     use bytes::{Buf, BufMut};
     use std::pin::Pin;
     use std::task::Context;
@@ -44,8 +39,6 @@ mod internal {
             buf: &mut dyn Buf,
         ) -> Poll<usize>;
     }
-
-    impl<T: Io> Peekable for T {}
 
     impl Io for tokio::net::TcpStream {
         fn poll_write_buf_erased(

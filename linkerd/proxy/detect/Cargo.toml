@@ -9,6 +9,7 @@ Client stream detection
 """
 
 [dependencies]
+async-trait = "0.1"
 futures = "0.3"
 linkerd2-error = { path = "../../error" }
 linkerd2-io = { path = "../../io" }
