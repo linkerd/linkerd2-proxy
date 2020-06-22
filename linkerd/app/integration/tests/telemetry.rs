@@ -888,33 +888,34 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::inbound().await;
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         assert_eventually_contains!(metrics.get("/metrics").await,
             "tcp_open_total{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1");
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(macos)]
-    fn inbound_tcp_connect_err() {
+    async fn inbound_tcp_connect_err() {
         let _trace = trace_init();
         let srv = tcp::server()
             .accept_fut(move |sock| {
                 drop(sock);
                 future::ok(())
             })
-            .run();
+            .run()
+            .await;
         let proxy = proxy::new().inbound(srv).run();
 
         let client = client::tcp(proxy.inbound);
         let metrics = client::http1(proxy.metrics, "localhost");
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), &[]);
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, &[]);
         // Connection to the server should be a failure with the EXFULL error
         // code.
         assert_eventually_contains!(metrics.get("/metrics").await,
@@ -941,10 +942,10 @@ mod transport {
         let client = client::tcp(proxy.outbound);
         let metrics = client::http1(proxy.metrics, "localhost");
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), &[]);
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, &[]);
         // Connection to the server should be a failure with the EXFULL error
         // code.
         assert_eventually_contains!(metrics.get("/metrics").await,
@@ -963,10 +964,10 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::inbound().await;
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
 
         assert_eventually_contains!(
             metrics.get("/metrics").await,
@@ -979,10 +980,10 @@ mod transport {
             "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
         );
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
 
         assert_eventually_contains!(
             metrics.get("/metrics").await,
@@ -1006,10 +1007,10 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::inbound().await;
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         drop(tcp_client);
         // TODO: make assertions about buckets
         let out = metrics.get("/metrics").await;
@@ -1018,10 +1019,10 @@ mod transport {
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1");
@@ -1053,10 +1054,10 @@ mod transport {
             TcpFixture::HELLO_MSG.len()
         );
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         drop(tcp_client);
 
         let out = metrics.get("/metrics").await;
@@ -1081,10 +1082,10 @@ mod transport {
             TcpFixture::BYE_MSG.len()
         );
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         drop(tcp_client);
 
         let out = metrics.get("/metrics").await;
@@ -1101,10 +1102,10 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::outbound().await;
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         assert_eventually_contains!(metrics.get("/metrics").await,
             "tcp_open_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\"} 1");
     }
@@ -1118,10 +1119,10 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::outbound().await;
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
 
         assert_eventually_contains!(
             metrics.get("/metrics").await,
@@ -1132,10 +1133,10 @@ mod transport {
         assert_eventually_contains!(metrics.get("/metrics").await,
             "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
 
         assert_eventually_contains!(
             metrics.get("/metrics").await,
@@ -1156,10 +1157,10 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::outbound().await;
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         drop(tcp_client);
         // TODO: make assertions about buckets
         let out = metrics.get("/metrics").await;
@@ -1168,10 +1169,10 @@ mod transport {
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"\"} 1");
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
@@ -1203,10 +1204,10 @@ mod transport {
             TcpFixture::HELLO_MSG.len()
         );
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         drop(tcp_client);
 
         let out = metrics.get("/metrics").await;
@@ -1231,10 +1232,10 @@ mod transport {
             TcpFixture::BYE_MSG.len()
         );
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         drop(tcp_client);
 
         let out = metrics.get("/metrics").await;
@@ -1251,10 +1252,10 @@ mod transport {
             proxy: _proxy,
         } = TcpFixture::outbound().await;
 
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         assert_eventually_contains!(
             metrics.get("/metrics").await,
             "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
@@ -1264,10 +1265,10 @@ mod transport {
             metrics.get("/metrics").await,
             "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
         );
-        let tcp_client = client.connect();
+        let tcp_client = client.connect().await;
 
-        tcp_client.write(TcpFixture::HELLO_MSG);
-        assert_eq!(tcp_client.read(), TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         assert_eventually_contains!(
             metrics.get("/metrics").await,
             "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"

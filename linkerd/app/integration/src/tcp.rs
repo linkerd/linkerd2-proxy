@@ -1,5 +1,4 @@
 use super::*;
-use futures::TryFutureExt;
 use std::collections::VecDeque;
 use std::io;
 use std::net::TcpListener as StdTcpListener;
@@ -12,15 +11,13 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing_futures::Instrument;
 
-type TcpSender = mpsc::UnboundedSender<oneshot::Sender<TcpConnSender>>;
 type TcpConnSender = mpsc::UnboundedSender<(
     Option<Vec<u8>>,
     oneshot::Sender<io::Result<Option<Vec<u8>>>>,
 )>;
 
 pub fn client(addr: SocketAddr) -> TcpClient {
-    let tx = run_client(addr);
-    TcpClient { addr, tx,` }
+    TcpClient { addr }
 }
 
 pub fn server() -> TcpServer {
@@ -31,7 +28,6 @@ pub fn server() -> TcpServer {
 
 pub struct TcpClient {
     addr: SocketAddr,
-    tx: TcpSender,
 }
 
 type Handler = Box<dyn CallBox + Send>;
@@ -62,17 +58,60 @@ pub struct TcpServer {
 pub struct TcpConn {
     addr: SocketAddr,
     tx: TcpConnSender,
+    task: JoinHandle<()>,
 }
 
 impl TcpClient {
     pub async fn connect(&self) -> TcpConn {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(tx);
-        let tx = rx.await.unwrap();
-        tracing::info!("tcp client (addr={}): connected", self.addr);
+        let tcp = TcpStream::connect(&self.addr)
+            .await
+            .expect("tcp connect error");
+        let (tx, rx) = mpsc::unbounded_channel::<(
+            Option<Vec<u8>>,
+            oneshot::Sender<Result<Option<Vec<u8>>, io::Error>>,
+        )>();
+        let span = tracing::info_span!("tcp_client", addr = %self.addr);
+        tracing::info!(parent: &span, "connected");
+        let task = tokio::spawn(
+            async move {
+                let mut rx = rx;
+                let mut tcp = tcp;
+                while let Some((action, cb)) = rx.recv().await {
+                    match action {
+                        None => {
+                            let mut vec = vec![0; 1024];
+                            match tcp.read(&mut vec).await {
+                                Ok(n) => {
+                                    vec.truncate(n);
+                                    tracing::trace!(read = n, data = ?vec);
+                                    let _ = cb.send(Ok(Some(vec)));
+                                }
+                                Err(e) => {
+                                    tracing::trace!(read_error = %e);
+                                    cb.send(Err(e)).unwrap();
+                                    break;
+                                }
+                            }
+                        }
+                        Some(vec) => match tcp.write_all(&vec).await {
+                            Ok(_) => {
+                                let _ = cb.send(Ok(None));
+                            }
+                            Err(e) => {
+                                tracing::trace!(write_error = %e);
+                                cb.send(Err(e)).unwrap();
+                                break;
+                            }
+                        },
+                    }
+                }
+            }
+            .instrument(span),
+        );
         TcpConn {
             addr: self.addr,
             tx,
+            task,
         }
     }
 }
@@ -137,7 +176,7 @@ impl TcpConn {
             let res = rx.await.expect("tcp read dropped");
             res.map(|opt| opt.unwrap())
         }
-        .instrument(tracing::info_span!("tcp_client", addr = %self.addr))
+        .instrument(tracing::info_span!("TcpConn::try_read", addr = %self.addr))
         .await
     }
 
@@ -151,62 +190,15 @@ impl TcpConn {
                 .map(|rsp| assert!(rsp.unwrap().is_none()))
                 .expect("tcp write dropped")
         }
-        .instrument(tracing::info_span!("tcp_client", addr = %self.addr))
+        .instrument(tracing::info_span!("TcpConn::write", addr = %self.addr))
+        .await
     }
-}
 
-async fn run_client(addr: SocketAddr) -> TcpClient {
-    let (tx, mut rx) = mpsc::unbounded_channel::<
-        oneshot::Sender<
-            mpsc::UnboundedSender<(
-                Option<Vec<u8>>,
-                oneshot::Sender<Result<Option<Vec<u8>>, io::Error>>,
-            )>,
-        >,
-    >();
-    let work = async move {
-        while let Some(cb) = rx.recv().await {
-            let tcp = TcpStream::connect(&addr).await.expect("tcp connect error");
-            let (tx, rx) = mpsc::unbounded_channel::<(
-                Option<Vec<u8>>,
-                oneshot::Sender<Result<Option<Vec<u8>>, io::Error>>,
-            )>();
-            cb.send(tx).unwrap();
-            tokio::spawn(async move {
-                let mut rx = rx;
-                let mut tcp = tcp;
-                while let Some((action, cb)) = rx.recv().await {
-                    match action {
-                        None => {
-                            let mut vec = vec![0; 1024];
-                            match tcp.read(&mut vec).await {
-                                Ok(n) => {
-                                    vec.truncate(n);
-                                    let _ = cb.send(Ok(Some(vec)));
-                                }
-                                Err(e) => {
-                                    cb.send(Err(e)).unwrap();
-                                    break;
-                                }
-                            }
-                        }
-                        Some(vec) => match tcp.write_all(&vec).await {
-                            Ok(_) => {
-                                let _ = cb.send(Ok(None));
-                            }
-                            Err(e) => {
-                                cb.send(Err(e)).unwrap();
-                                break;
-                            }
-                        },
-                    }
-                }
-            });
-        }
-    };
-
-    println!("tcp client (addr={}) thread running", addr);
-    tx
+    pub async fn shutdown(self) {
+        let Self { tx, task, .. } = self;
+        drop(tx);
+        task.await.unwrap()
+    }
 }
 
 async fn run_server(tcp: TcpServer) -> server::Listening {

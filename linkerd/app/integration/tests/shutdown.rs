@@ -127,8 +127,9 @@ async fn tcp_waits_for_proxies_to_close() {
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    tcp_client.write(msg1);
-    assert_eq!(tcp_client.read(), msg2.as_bytes());
+    tcp_client.write(msg1).await;
+    assert_eq!(tcp_client.read().await, msg2.as_bytes());
+    tcp_client.shutdown().await;
 }

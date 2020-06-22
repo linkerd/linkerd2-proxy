@@ -54,10 +54,10 @@ async fn outbound_tcp() {
 
     let client = client::tcp(proxy.outbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    tcp_client.write(msg1);
-    assert_eq!(tcp_client.read(), msg2.as_bytes());
+    tcp_client.write(msg1).await;
+    assert_eq!(tcp_client.read().await, msg2.as_bytes());
 }
 
 #[tokio::test]
@@ -78,10 +78,10 @@ async fn inbound_tcp() {
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    tcp_client.write(msg1);
-    assert_eq!(tcp_client.read(), msg2.as_bytes());
+    tcp_client.write(msg1).await;
+    assert_eq!(tcp_client.read().await, msg2.as_bytes());
 }
 
 #[tokio::test]
@@ -160,10 +160,10 @@ async fn test_server_speaks_first(env: TestEnv) {
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT)), msg1);
-    tcp_client.write(msg2);
+    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), msg1);
+    tcp_client.write(msg2).await;
     rx.recv_timeout(TIMEOUT).unwrap();
 }
 
@@ -250,9 +250,9 @@ async fn tcp_connections_close_if_client_closes() {
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
-    tcp_client.write(msg1);
-    assert_eq!(s(&tcp_client.read()[..]), msg2);
+    let tcp_client = client.connect().await;
+    tcp_client.write(msg1).await;
+    assert_eq!(s(&tcp_client.read().await[..]), msg2);
 
     drop(tcp_client);
 
@@ -439,11 +439,11 @@ macro_rules! http1_tests {
 
             let client = client::tcp(proxy.inbound);
 
-            let tcp_client = client.connect();
+            let tcp_client = client.connect().await;
 
-            tcp_client.write(upgrade_req);
+            tcp_client.write(upgrade_req).await;
 
-            let resp = tcp_client.read();
+            let resp = tcp_client.read().await;
             let resp_str = s(&resp);
             assert!(
                 resp_str.starts_with("HTTP/1.1 101 Switching Protocols\r\n"),
@@ -453,9 +453,9 @@ macro_rules! http1_tests {
             assert_contains!(resp_str, upgrade_needle);
 
             // We've upgraded from HTTP to chatproto! Say hi!
-            tcp_client.write(chatproto_req);
+            tcp_client.write(chatproto_req).await;
             // Did anyone respond?
-            let chat_resp = tcp_client.read();
+            let chat_resp = tcp_client.read().await;
             assert_eq!(s(&chat_resp), chatproto_res);
         }
 
@@ -580,11 +580,11 @@ macro_rules! http1_tests {
 
             let client = client::tcp(proxy.inbound);
 
-            let tcp_client = client.connect();
+            let tcp_client = client.connect().await;
 
-            tcp_client.write(&connect_req[..]);
+            tcp_client.write(&connect_req[..]).await;
 
-            let resp = tcp_client.read();
+            let resp = tcp_client.read().await;
             let resp_str = s(&resp);
             assert!(
                 resp_str.starts_with("HTTP/1.1 200 OK\r\n"),
@@ -593,9 +593,9 @@ macro_rules! http1_tests {
             );
 
             // We've CONNECTed from HTTP to foo.bar! Say hi!
-            tcp_client.write(&tunneled_req[..]);
+            tcp_client.write(&tunneled_req[..]).await;
             // Did anyone respond?
-            let resp2 = tcp_client.read();
+            let resp2 = tcp_client.read().await;
             assert_eq!(s(&resp2), s(&tunneled_res[..]));
         }
 
@@ -618,12 +618,12 @@ macro_rules! http1_tests {
             let bad_uris = vec!["/origin-form", "/", "http://test/bar", "http://test", "*"];
 
             for bad_uri in bad_uris {
-                let tcp_client = client.connect();
+                let tcp_client = client.connect().await;
 
                 let req = format!("CONNECT {} HTTP/1.1\r\nHost: test\r\n\r\n", bad_uri);
-                tcp_client.write(req);
+                tcp_client.write(req).await;
 
-                let resp = tcp_client.read();
+                let resp = tcp_client.read().await;
                 let resp_str = s(&resp);
                 assert!(
                     resp_str.starts_with("HTTP/1.1 400 Bad Request\r\n"),
@@ -634,11 +634,13 @@ macro_rules! http1_tests {
             }
 
             // origin-form URIs must be CONNECT
-            let tcp_client = client.connect();
+            let tcp_client = client.connect().await;
 
-            tcp_client.write("GET test HTTP/1.1\r\nHost: test\r\n\r\n");
+            tcp_client
+                .write("GET test HTTP/1.1\r\nHost: test\r\n\r\n")
+                .await;
 
-            let resp = tcp_client.read();
+            let resp = tcp_client.read().await;
             let resp_str = s(&resp);
             assert!(
                 resp_str.starts_with("HTTP/1.1 400 Bad Request\r\n"),
@@ -647,11 +649,13 @@ macro_rules! http1_tests {
             );
 
             // check that HTTP/1.0 is not allowed for CONNECT
-            let tcp_client = client.connect();
+            let tcp_client = client.connect().await;
 
-            tcp_client.write("CONNECT test HTTP/1.0\r\nHost: test\r\n\r\n");
+            tcp_client
+                .write("CONNECT test HTTP/1.0\r\nHost: test\r\n\r\n")
+                .await;
 
-            let resp = tcp_client.read();
+            let resp = tcp_client.read().await;
             let resp_str = s(&resp);
             assert!(
                 resp_str.starts_with("HTTP/1.0 400 Bad Request\r\n"),
@@ -1047,17 +1051,19 @@ async fn http10_without_host() {
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    tcp_client.write(
-        "\
+    tcp_client
+        .write(
+            "\
          GET / HTTP/1.0\r\n\
          \r\n\
          ",
-    );
+        )
+        .await;
 
     let expected = "HTTP/1.0 200 OK\r\n";
-    assert_eq!(s(&tcp_client.read()[..expected.len()]), expected);
+    assert_eq!(s(&tcp_client.read().await[..expected.len()]), expected);
 }
 
 #[tokio::test]

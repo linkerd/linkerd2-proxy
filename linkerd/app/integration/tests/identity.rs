@@ -40,10 +40,14 @@ async fn nonblocking_identity_detection() {
     // Create an idle connection and then an active connection. Ensure that
     // protocol detection on the idle connection does not block communication on
     // the active connection.
-    let _idle = client.connect();
-    let active = client.connect();
-    active.write(msg1);
-    assert_eq!(active.read_timeout(Duration::from_secs(2)), msg2.as_bytes());
+    let _idle = client.connect().await;
+    let active = client.connect().await;
+    active.write(msg1).await;
+    assert_eq!(
+        active.read_timeout(Duration::from_secs(2)).await,
+        msg2.as_bytes()
+    );
+    active.shutdown().await; // ensure the client task joins without panicking.
 }
 
 macro_rules! generate_tls_accept_test {
