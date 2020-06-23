@@ -345,8 +345,11 @@ impl App {
                         // Spawn the DNS resolver background task.
                         tokio::spawn(dns.instrument(info_span!("dns")));
 
-                        if let tap::Tap::Enabled { daemon, serve, .. } = tap {
-                            tokio::spawn(daemon.instrument(info_span!("tap")));
+                        if let tap::Tap::Enabled {
+                            registry, serve, ..
+                        } = tap
+                        {
+                            tokio::spawn(registry.clean().instrument(info_span!("tap")));
                             tokio::spawn(
                                 serve
                                     .map_err(|error| error!(%error, "server died"))

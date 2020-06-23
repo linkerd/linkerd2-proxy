@@ -1,5 +1,5 @@
 use super::match_::Match;
-use crate::{iface, Inspect};
+use crate::{iface, Inspect, Registry};
 use bytes::Buf;
 use futures::ready;
 use hyper::body::HttpBody;
@@ -20,9 +20,9 @@ use tonic::{self as grpc, Response};
 use tracing::{debug, trace, warn};
 
 #[derive(Clone, Debug)]
-pub struct Server<T> {
-    subscribe: T,
+pub struct Server {
     base_id: Arc<AtomicUsize>,
+    registry: Registry,
 }
 
 #[pin_project]
@@ -94,10 +94,10 @@ enum ExtractKind {
 
 // === impl Server ===
 
-impl<T: iface::Subscribe<Tap>> Server<T> {
-    pub(in crate) fn new(subscribe: T) -> Self {
+impl Server {
+    pub(in crate) fn new(registry: Registry) -> Self {
         let base_id = Arc::new(0.into());
-        Self { base_id, subscribe }
+        Self { base_id, registry }
     }
 
     fn invalid_arg(message: String) -> grpc::Status {
@@ -106,11 +106,7 @@ impl<T: iface::Subscribe<Tap>> Server<T> {
 }
 
 #[tonic::async_trait]
-impl<T> api::tap_server::Tap for Server<T>
-where
-    T: iface::Subscribe<Tap> + Clone + Send + Sync + 'static,
-    T::Future: Send,
-{
+impl api::tap_server::Tap for Server {
     type ObserveStream = ResponseStream;
 
     #[tracing::instrument(skip(self), level = "debug")]
@@ -178,10 +174,8 @@ where
             shared: Arc::downgrade(&shared),
         };
 
-        // Ensure that tap registers successfully.
-        self.subscribe.subscribe(tap).await.map_err(|_| {
-            grpc::Status::new(grpc::Code::ResourceExhausted, "Too many active taps")
-        })?;
+        // Register the tap with the server's tap registry
+        self.registry.register(tap);
 
         let rsp = ResponseStream {
             shared: Some(shared),
