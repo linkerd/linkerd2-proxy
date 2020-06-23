@@ -253,7 +253,7 @@ async fn tcp_connections_close_if_client_closes() {
     tcp_client.write(msg1).await;
     assert_eq!(s(&tcp_client.read().await[..]), msg2);
 
-    drop(tcp_client);
+    tcp_client.shutdown().await;
 
     // rx will be fulfilled when our tcp accept_fut sees
     // a socket disconnect, which is what we are testing for.

@@ -974,7 +974,7 @@ mod transport {
             "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
         );
 
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         assert_eventually_contains!(
             metrics.get("/metrics").await,
             "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 1"
@@ -989,7 +989,7 @@ mod transport {
             metrics.get("/metrics").await,
             "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 2"
         );
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         assert_eventually_contains!(
             metrics.get("/metrics").await,
             "tcp_close_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 2"
@@ -1011,7 +1011,7 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         // TODO: make assertions about buckets
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out,
@@ -1029,7 +1029,7 @@ mod transport {
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
 
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"inbound\",peer=\"src\",tls=\"disabled\",errno=\"\"} 2");
@@ -1058,7 +1058,7 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        drop(tcp_client);
+        tcp_client.shutdown().await;
 
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out, &src_expected);
@@ -1086,7 +1086,7 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        drop(tcp_client);
+        tcp_client.shutdown().await;
 
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out, &src_expected);
@@ -1129,7 +1129,7 @@ mod transport {
             "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
         );
 
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         assert_eventually_contains!(metrics.get("/metrics").await,
             "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
 
@@ -1142,7 +1142,7 @@ mod transport {
             metrics.get("/metrics").await,
             "tcp_open_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 2"
         );
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         assert_eventually_contains!(metrics.get("/metrics").await,
             "tcp_close_total{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2");
     }
@@ -1161,7 +1161,7 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         // TODO: make assertions about buckets
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out,
@@ -1179,7 +1179,7 @@ mod transport {
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"\"} 1");
 
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2");
@@ -1208,7 +1208,7 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        drop(tcp_client);
+        tcp_client.shutdown().await;
 
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out, &src_expected);
@@ -1236,7 +1236,7 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        drop(tcp_client);
+        tcp_client.shutdown().await;
 
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out, &src_expected);
@@ -1260,7 +1260,7 @@ mod transport {
             metrics.get("/metrics").await,
             "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
         );
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         assert_eventually_contains!(
             metrics.get("/metrics").await,
             "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
@@ -1274,7 +1274,7 @@ mod transport {
             "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
         );
 
-        drop(tcp_client);
+        tcp_client.shutdown().await;
         assert_eventually_contains!(
             metrics.get("/metrics").await,
             "tcp_open_connections{direction=\"outbound\",peer=\"src\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
