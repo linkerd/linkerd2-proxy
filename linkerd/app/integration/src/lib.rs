@@ -364,8 +364,9 @@ impl<E> Cancelable<E> {
     }
 
     fn cancel(&mut self) {
-        self.0.take();
         tracing::trace!("canceling...");
+        self.0.take();
+        tracing::trace!("canceled");
     }
 }
 

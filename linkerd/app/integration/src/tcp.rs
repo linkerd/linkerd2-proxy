@@ -202,45 +202,32 @@ impl TcpConn {
 }
 
 async fn run_server(tcp: TcpServer) -> server::Listening {
-    let (tx, rx) = shutdown_signal();
+    let (drain_tx, drain) = drain::channel();
     let (started_tx, started_rx) = oneshot::channel();
     let conn_count = Arc::new(AtomicUsize::from(0));
     let srv_conn_count = Arc::clone(&conn_count);
     let any_port = SocketAddr::from(([127, 0, 0, 1], 0));
     let std_listener = StdTcpListener::bind(&any_port).expect("bind");
     let addr = std_listener.local_addr().expect("local_addr");
-    let jh = tokio::spawn(
+    let task = tokio::spawn(cancelable(drain.clone(),
         async move {
             let mut accepts = tcp.accepts;
-            let (drain_tx, drain) = drain::channel();
-            let listen = async move {
-                let mut listener =
-                    TcpListener::from_std(std_listener).expect("TcpListener::from_std");
-
-                loop {
-                    let (sock, _) = listener.accept().await.unwrap();
-                    let cb = accepts.pop_front().expect("no more accepts");
-                    srv_conn_count.fetch_add(1, Ordering::Release);
-
-                    let fut = cb.call_box(sock);
-                    tokio::spawn(cancelable(drain.clone(), async move {
-                        fut.await;
-                        Ok::<(), ()>(())
-                    }));
-                }
-            };
+            let mut listener =
+                TcpListener::from_std(std_listener).expect("TcpListener::from_std");
 
             let _ = started_tx.send(());
-            tokio::select! {
-                _ = rx => {
-                    tracing::trace!("shutting down...");
-                    drain_tx.drain().await;
-                    tracing::trace!("shut down");
-                },
-                _ = listen => { },
-            }
-            Ok(())
-        }
+            loop {
+                let (sock, _) = listener.accept().await.unwrap();
+                let cb = accepts.pop_front().expect("no more accepts");
+                srv_conn_count.fetch_add(1, Ordering::Release);
+
+                let fut = cb.call_box(sock);
+                tokio::spawn(cancelable(drain.clone(), async move {
+                    fut.await;
+                    Ok::<(), ()>(())
+                }));
+            };
+        })
         .instrument(tracing::info_span!("tcp_server", %addr)),
     );
 
@@ -251,8 +238,8 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
 
     server::Listening {
         addr,
-        shutdown: Some(tx),
+        drain: drain_tx,
         conn_count,
-        jh,
+        task: Some(task),
     }
 }

@@ -132,4 +132,5 @@ async fn tcp_waits_for_proxies_to_close() {
     tcp_client.write(msg1).await;
     assert_eq!(tcp_client.read().await, msg2.as_bytes());
     tcp_client.shutdown().await;
+    proxy.join_servers().await; // propagate panics from assertions in the server
 }

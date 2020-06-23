@@ -19,6 +19,8 @@ async fn outbound_http1() {
     let client = client::http1(proxy.outbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/").await, "hello h1");
+    // ensure panics from the server are propagated
+    proxy.join_servers().await; 
 }
 
 #[tokio::test]
@@ -35,6 +37,8 @@ async fn inbound_http1() {
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/").await, "hello h1");
+    // ensure panics from the server are propagated
+    proxy.join_servers().await; 
 }
 
 #[tokio::test]
@@ -59,6 +63,8 @@ async fn outbound_tcp() {
 
     tcp_client.write(msg1).await;
     assert_eq!(tcp_client.read().await, msg2.as_bytes());
+    // ensure panics from the server are propagated
+    proxy.join_servers().await; 
 }
 
 #[tokio::test]
@@ -83,6 +89,8 @@ async fn inbound_tcp() {
 
     tcp_client.write(msg1).await;
     assert_eq!(tcp_client.read().await, msg2.as_bytes());
+    // ensure panics from the server are propagated
+    proxy.join_servers().await; 
 }
 
 #[tokio::test]
@@ -166,6 +174,8 @@ async fn test_server_speaks_first(env: TestEnv) {
     assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), msg1);
     tcp_client.write(msg2).await;
     timeout(TIMEOUT, rx.recv()).await.unwrap();
+    // ensure panics from the server are propagated
+    proxy.join_servers().await; 
 }
 
 #[tokio::test]
@@ -217,6 +227,7 @@ async fn tcp_server_first_tls() {
 }
 
 #[tokio::test]
+#[allow(warnings)]
 async fn tcp_connections_close_if_client_closes() {
     let _trace = trace_init();
 
@@ -235,6 +246,7 @@ async fn tcp_connections_close_if_client_closes() {
                 sock.write_all(msg2.as_bytes()).await?;
                 let n = sock.read(&mut [0; 16]).await?;
                 assert_eq!(n, 0);
+                panic!("lol");
                 tx.send(()).await.unwrap();
                 Ok(())
             }
@@ -259,6 +271,9 @@ async fn tcp_connections_close_if_client_closes() {
     // a socket disconnect, which is what we are testing for.
     // the timeout here is just to prevent this test from hanging
    timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await; 
 }
 
 macro_rules! http1_tests {
@@ -272,6 +287,9 @@ macro_rules! http1_tests {
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             assert_eq!(client.get("/").await, "hello h1");
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -314,6 +332,9 @@ macro_rules! http1_tests {
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert!(!res.headers().contains_key("x-server-quux"));
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -347,6 +368,9 @@ macro_rules! http1_tests {
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_10);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -379,6 +403,9 @@ macro_rules! http1_tests {
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_11);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -456,6 +483,9 @@ macro_rules! http1_tests {
             // Did anyone respond?
             let chat_resp = tcp_client.read().await;
             assert_eq!(s(&chat_resp), chatproto_res);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -477,6 +507,9 @@ macro_rules! http1_tests {
             let res = client.request(client.request_builder("/")).await.unwrap();
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -520,6 +553,9 @@ macro_rules! http1_tests {
             // If the assertion is trigger in the above test route, the proxy will
             // just send back a 500.
             assert_eq!(res.status(), http::StatusCode::OK);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -596,6 +632,9 @@ macro_rules! http1_tests {
             // Did anyone respond?
             let resp2 = tcp_client.read().await;
             assert_eq!(s(&resp2), s(&tunneled_res[..]));
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -661,6 +700,9 @@ macro_rules! http1_tests {
                 "HTTP/1.0 CONNECT should get 400 response: {:?}",
                 resp_str
             );
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -686,6 +728,9 @@ macro_rules! http1_tests {
             let resp = client.request_body(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -732,6 +777,9 @@ macro_rules! http1_tests {
                 .expect("rsp is utf8")
                 .to_owned();
             assert_eq!(body, "world");
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -766,6 +814,9 @@ macro_rules! http1_tests {
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
             }
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -875,6 +926,9 @@ macro_rules! http1_tests {
                     status
                 );
             }
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -910,6 +964,9 @@ macro_rules! http1_tests {
                 .to_owned();
 
             assert_eq!(body, "");
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
 
         #[tokio::test]
@@ -978,7 +1035,11 @@ macro_rules! http1_tests {
 
                 assert_eq!(body, "body till eof", "HTTP/{} body", v);
             }
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await; 
         }
+
     };
 }
 
@@ -999,9 +1060,18 @@ mod proxy_to_proxy {
         // Held to prevent closing, to reduce controller request noise during
         // tests
         _dst: controller::DstSender,
-        _in: proxy::Listening,
-        _out: proxy::Listening,
+        in_proxy: proxy::Listening,
+        out_proxy: proxy::Listening,
         inbound: SocketAddr,
+    }
+
+    impl ProxyToProxy {
+        async fn join_servers(self) {
+            tokio::join! {
+                self.in_proxy.join_servers(),
+                self.out_proxy.join_servers(),
+            };
+        }
     }
 
     http1_tests! { proxy: |srv| {
@@ -1021,8 +1091,8 @@ mod proxy_to_proxy {
         let addr = outbound.outbound;
         ProxyToProxy {
             _dst: dst,
-            _in: inbound,
-            _out: outbound,
+            in_proxy: inbound,
+            out_proxy: outbound,
             inbound: addr,
         }
     } }
@@ -1063,6 +1133,8 @@ async fn http10_without_host() {
 
     let expected = "HTTP/1.0 200 OK\r\n";
     assert_eq!(s(&tcp_client.read().await[..expected.len()]), expected);
+    
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -1116,6 +1188,8 @@ async fn http1_one_connection_per_host() {
     // Make a request with a different Host header. This request must use a new
     // connection.
     run_request("quuuux.com", 3).await;
+
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -1187,6 +1261,8 @@ async fn http1_requests_without_host_have_unique_connections() {
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 4);
+
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -1258,6 +1334,8 @@ async fn http2_request_without_authority() {
     let res = client.send_request(req).await.expect("client error");
 
     assert_eq!(res.status(), http::StatusCode::OK);
+
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -1314,4 +1392,6 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
         .expect("client request");
 
     assert_eq!(res.status(), http::StatusCode::BAD_GATEWAY);
+
+    proxy.join_servers().await;
 }

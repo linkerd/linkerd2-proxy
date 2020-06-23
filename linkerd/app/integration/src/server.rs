@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
 use tracing_futures::Instrument;
 
@@ -47,19 +48,19 @@ pub struct Server {
 
 pub struct Listening {
     pub addr: SocketAddr,
-    pub(super) shutdown: Option<Shutdown>,
+    pub(super) drain: drain::Signal,
     pub(super) conn_count: Arc<AtomicUsize>,
-    pub(super) jh: tokio::task::JoinHandle<Result<(), io::Error>>,
+    pub(super) task: Option<JoinHandle<Result<(), io::Error>>>,
 }
 
 pub fn mock_listening(a: SocketAddr) -> Listening {
-    let (tx, _rx) = shutdown_signal();
+    let (tx, _rx) = drain::channel();
     let conn_count = Arc::new(AtomicUsize::from(0));
     Listening {
         addr: a,
-        shutdown: Some(tx),
+        drain: tx,
         conn_count,
-        jh: tokio::spawn(async { Ok(()) }),
+        task: Some(tokio::spawn(async { Ok(()) })),
     }
 }
 
@@ -68,20 +69,32 @@ impl Listening {
         self.conn_count.load(Ordering::Acquire)
     }
 
-    pub async fn join(self) {
-        let Listening {
-            jh,
-            mut shutdown,
-            addr,
-            ..
-        } = self;
-        if let Some(shutdown) = shutdown.take() {
-            shutdown.signal();
+    /// Wait for the server task to join, and propagate panics.
+    pub async fn join(mut self) {
+        tracing::info!(addr = %self.addr, "trying to shut down support server...");
+        tracing::debug!("draining...");
+        self.drain.drain().await;
+        tracing::debug!("drained!");
+
+        if let Some(task) = self.task.take() {
+            tracing::debug!("waiting for task to complete...");
+            match task.await {
+                Ok(res) => res.expect("support server failed"),
+                // If the task panicked, propagate the panic so that the test can
+                // fail nicely.
+                Err(err) if err.is_panic() => {
+                    tracing::error!("support server on {} panicked!", self.addr);
+                    std::panic::resume_unwind(err.into_panic());
+                },
+                // If the task was already canceled, it was probably shut down
+                // explicitly, that's fine.
+                Err(_) => tracing::debug!("support server task already canceled"),
+            }
+    
+            tracing::debug!("support server on {} terminated cleanly", self.addr);
+        } else {
+            tracing::debug!("support server task already joined");
         }
-        jh.await
-            .expect("support server panicked")
-            .expect("support server failed");
-        tracing::debug!("support server on {} terminated cleanly", addr);
     }
 }
 
@@ -182,7 +195,6 @@ impl Server {
         self,
         delay: Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
     ) -> Listening {
-        let (tx, rx) = shutdown_signal();
         let (listening_tx, listening_rx) = oneshot::channel();
         let mut listening_tx = Some(listening_tx);
         let conn_count = Arc::new(AtomicUsize::from(0));
@@ -194,9 +206,10 @@ impl Server {
         listener.bind(addr).expect("Tcp::bind");
         let addr = listener.local_addr().expect("Tcp::local_addr");
 
+        let (drain_signal, drain) = drain::channel();
         let tls_config = self.tls.clone();
-        let jh = tokio::spawn(
-            async move {
+        let task = tokio::spawn(
+            cancelable(drain.clone(), async move {
                 tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
                 let mut http =
@@ -205,62 +218,46 @@ impl Server {
                     Run::Http1 => http.http1_only(true),
                     Run::Http2 => http.http2_only(true),
                 };
-                let (drain_signal, drain) = drain::channel();
-                let serve = tokio::spawn(
-                    cancelable(drain.clone(), async move {
-                        if let Some(delay) = delay {
-                            let _ = listening_tx.take().unwrap().send(());
-                            delay.await;
-                        }
-                        let listener = listener.listen(1024).expect("Tcp::listen");
-                        let mut listener = TcpListener::from_std(listener).expect("from_std");
+                if let Some(delay) = delay {
+                    let _ = listening_tx.take().unwrap().send(());
+                    delay.await;
+                }
+                let listener = listener.listen(1024).expect("Tcp::listen");
+                let mut listener = TcpListener::from_std(listener).expect("from_std");
 
-                        if let Some(listening_tx) = listening_tx {
-                            let _ = listening_tx.send(());
-                        }
-                        tracing::info!("listening!");
-                        loop {
-                            let (sock, addr) = listener.accept().await?;
-                            let span = tracing::debug_span!("conn", %addr);
-                            let sock = accept_connection(sock, tls_config.clone())
-                                .instrument(span.clone())
-                                .await?;
-                            let http = http.clone();
-                            let srv_conn_count = srv_conn_count.clone();
-                            let svc = new_svc.call(());
-                            let f = async move {
-                                tracing::trace!("serving...");
-                                let svc = svc.await;
-                                tracing::trace!("service acquired");
-                                srv_conn_count.fetch_add(1, Ordering::Release);
-                                let svc = svc.map_err(|e| {
-                                    println!("support/server new_service error: {}", e)
-                                })?;
-                                let result = http
-                                    .serve_connection(sock, svc)
-                                    .await
-                                    .map_err(|e| println!("support/server error: {}", e));
-                                tracing::trace!(?result, "serve done");
-                                result
-                            };
-                            tokio::spawn(cancelable(drain.clone(), f).instrument(span.clone()));
-                        }
-                    })
-                    .in_current_span(),
-                );
-
-                tokio::select! {
-                    res = serve => res.unwrap(),
-                    _ = rx => {
-                        tracing::trace!("shutdown triggered");
-                        drain_signal.drain().await;
-                        tracing::trace!("drained");
-                        Ok::<(), io::Error>(())
-                    },
+                if let Some(listening_tx) = listening_tx {
+                    let _ = listening_tx.send(());
+                }
+                tracing::info!("listening!");
+                loop {
+                    let (sock, addr) = listener.accept().await?;
+                    let span = tracing::debug_span!("conn", %addr);
+                    let sock = accept_connection(sock, tls_config.clone())
+                        .instrument(span.clone())
+                        .await?;
+                    let http = http.clone();
+                    let srv_conn_count = srv_conn_count.clone();
+                    let svc = new_svc.call(());
+                    let f = async move {
+                        tracing::trace!("serving...");
+                        let svc = svc.await;
+                        tracing::trace!("service acquired");
+                        srv_conn_count.fetch_add(1, Ordering::Release);
+                        let svc = svc.map_err(|e| {
+                            println!("support/server new_service error: {}", e)
+                        })?;
+                        let result = http
+                            .serve_connection(sock, svc)
+                            .await
+                            .map_err(|e| println!("support/server error: {}", e));
+                        tracing::trace!(?result, "serve done");
+                        result
+                    };
+                    tokio::spawn(cancelable(drain.clone(), f).instrument(span.clone()));
                 }
             }
             .instrument(tracing::info_span!("test_server", ?version, %addr, test = %thread_name())),
-        );
+        ));
 
         listening_rx.await.expect("listening_rx");
 
@@ -269,9 +266,9 @@ impl Server {
 
         Listening {
             addr,
-            shutdown: Some(tx),
+            drain: drain_signal,
             conn_count,
-            jh,
+            task: Some(task),
         }
     }
 }

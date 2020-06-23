@@ -21,6 +21,9 @@ macro_rules! generate_tests {
 
             assert_eq!(client.get("/").await, "hello");
             assert_eq!(client.get("/bye").await, "bye");
+
+            // Ensure panics are propagated.
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -81,6 +84,9 @@ macro_rules! generate_tests {
             );
             // We should have gotten an HTTP response, not an error.
             assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+
+            // Ensure panics are propagated.
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -99,6 +105,9 @@ macro_rules! generate_tests {
             let client = $make_client(proxy.outbound, "my-great-websute.net");
 
             assert_eq!(client.get("/").await, "hello from my great website");
+
+            // Ensure panics are propagated.
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -124,6 +133,9 @@ macro_rules! generate_tests {
             let client = $make_client(proxy.outbound, NAME);
 
             assert_eq!(client.get("/").await, "hello");
+
+            // Ensure panics are propagated.
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -170,6 +182,8 @@ macro_rules! generate_tests {
             let rsp = initially_exists.request(initially_exists.request_builder("/")).await.unwrap();
             assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
 
+            // Ensure panics are propagated.
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -196,10 +210,14 @@ macro_rules! generate_tests {
             let rsp = client.request(req.method("GET")).await.unwrap();
             // the request should time out
             assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+
+            // Ensure panics are propagated.
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
         async fn outbound_asks_controller_without_orig_dst() {
+            let _trace = trace_init();
             let _ = TestEnv::new();
 
             let srv = $make_server()
@@ -221,6 +239,9 @@ macro_rules! generate_tests {
 
             assert_eq!(client.get("/").await, "hello");
             assert_eq!(client.get("/bye").await, "bye");
+
+            // Ensure panics are propagated.
+            srv.join().await;
         }
 
         #[tokio::test]
@@ -258,6 +279,9 @@ macro_rules! generate_tests {
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
             assert_eq!(client.get("/").await, "hello");
+
+            // Ensure panics are propagated.
+            srv.join().await;
         }
 
         mod remote_header {
@@ -305,6 +329,9 @@ macro_rules! generate_tests {
                 let rsp = client.request(client.request_builder("/strip").header(REMOTE_IP_HEADER, IP_1)).await.unwrap();
 
                 assert_eq!(rsp.status(), 200);
+
+                // Ensure panics are propagated.
+                proxy.join_servers().await;
             }
 
             #[tokio::test]
@@ -342,6 +369,9 @@ macro_rules! generate_tests {
                 let rsp = client.request(client.request_builder("/set")).await.unwrap();
 
                 assert_eq!(rsp.status(), 200);
+
+                // Ensure panics are propagated.
+                proxy.join_servers().await;
             }
         }
 
@@ -358,7 +388,7 @@ macro_rules! generate_tests {
                 foo_reqs: Arc<AtomicUsize>,
                 bar_reqs: Arc<AtomicUsize>,
                 foo: Option<server::Listening>,
-                _bar: server::Listening,
+                bar: server::Listening,
                 ctrl: Option<controller::Controller>,
                 _foo_dst: (controller::ProfileSender, controller::DstSender),
                 _bar_dst: (controller::ProfileSender, controller::DstSender),
@@ -418,7 +448,7 @@ macro_rules! generate_tests {
                     Fixture {
                         foo_reqs, bar_reqs,
                         foo: Some(foo),
-                        _bar: bar,
+                        bar,
                         ctrl: Some(ctrl),
                         _foo_dst: (foo_profile, foo_eps),
                         _bar_dst: (bar_profile, bar_eps),
@@ -478,6 +508,11 @@ macro_rules! generate_tests {
                 assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 1);
+
+                // Ensure panics are propagated.
+                tokio::join!{
+                    fixture.foo().join(), fixture.bar.join()
+                };
             }
 
             #[tokio::test]
@@ -497,6 +532,11 @@ macro_rules! generate_tests {
                 let res = override_req(&client).await;
                 assert_eq!(res.status(), http::StatusCode::OK);
                 assert_eventually_contains!(metrics.get("/metrics").await, "rt_hello=\"bar\"");
+
+                // Ensure panics are propagated.                
+                tokio::join!{
+                    fixture.foo().join(), fixture.bar.join()
+                };
             }
 
             #[tokio::test]
@@ -527,6 +567,12 @@ macro_rules! generate_tests {
                 assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 2);
                 assert_eq!(fixture.bar_reqs(), 1);
+
+                // Ensure panics are propagated.
+                tokio::join! {
+                    proxy.join_servers(),
+                    fixture.bar.join()
+                };
             }
 
             #[tokio::test]
@@ -547,6 +593,9 @@ macro_rules! generate_tests {
                 // let res = override_req(&client);
                 // assert_eq!(res.status(), http::StatusCode::OK);
                 // assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"bar\"");
+
+                // Ensure panics are propagated.
+                proxy.join_servers().await;
             }
 
             #[tokio::test]
@@ -577,6 +626,12 @@ macro_rules! generate_tests {
                 assert_eq!(client.get("/").await, "hello from foo");
                 assert_eq!(fixture.foo_reqs(), 3);
                 assert_eq!(fixture.bar_reqs(), 0);
+
+                // Ensure panics are propagated.
+                tokio::join! {
+                    proxy.join_servers(),
+                    fixture.bar.join()
+                };
             }
 
         }
@@ -695,6 +750,10 @@ mod proxy_to_proxy {
             .unwrap();
         assert_eq!(res.status(), 200);
         assert_eq!(res.version(), http::Version::HTTP_11);
+
+        // Ensure panics are propagated.
+        proxy.join_servers().await;
+        srv.join().await;
     }
 
     #[tokio::test]
@@ -731,6 +790,9 @@ mod proxy_to_proxy {
             .unwrap();
         assert_eq!(res.status(), 200);
         assert_eq!(res.version(), http::Version::HTTP_2);
+
+        // Ensure panics are propagated.
+        proxy.join_servers().await;
     }
 
     #[tokio::test]
@@ -761,6 +823,9 @@ mod proxy_to_proxy {
             .await
             .unwrap();
         assert_eq!(res.status(), 200, "not successful");
+
+        // Ensure panics are propagated.
+        proxy.join_servers().await;
     }
 
     #[tokio::test]
@@ -792,6 +857,9 @@ mod proxy_to_proxy {
             .await
             .unwrap();
         assert_eq!(res.status(), 200);
+
+        // Ensure panics are propagated.
+        proxy.join_servers().await;
     }
 
     #[tokio::test]
@@ -893,6 +961,8 @@ mod proxy_to_proxy {
                 .unwrap();
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers()["l5d-server-id"], id);
+
+            tokio::join! { in_proxy.join_servers(), out_proxy.join_servers() };
         };
     }
 
