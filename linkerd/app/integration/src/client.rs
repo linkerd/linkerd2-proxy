@@ -2,7 +2,7 @@ use super::*;
 use linkerd2_app_core::proxy::http::trace;
 use rustls::ClientConfig;
 use std::io;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -86,7 +86,7 @@ pub struct Client {
     authority: String,
     /// This is a future that completes when the associated connection for
     /// this Client has been dropped.
-    running: JoinHandle<()>,
+    running: Running,
     tx: Sender,
     version: http::Version,
     tls: Option<TlsConfig>,
@@ -98,7 +98,7 @@ impl Client {
             Run::Http1 { .. } => http::Version::HTTP_11,
             Run::Http2 => http::Version::HTTP_2,
         };
-        let (tx, running) = run(addr, r, tls.clone());
+        let (tx, _, running) = run(addr, r, tls.clone());
         Client {
             authority,
             running,
@@ -170,7 +170,7 @@ impl Client {
     }
 
     pub async fn wait_for_closed(self) {
-        self.running.await.unwrap()
+        self.running.await
     }
 }
 
@@ -180,7 +180,11 @@ enum Run {
     Http2,
 }
 
-fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, JoinHandle<()>) {
+fn run(
+    addr: SocketAddr,
+    version: Run,
+    tls: Option<TlsConfig>,
+) -> (Sender, JoinHandle<()>, Running) {
     let (tx, rx) =
         mpsc::unbounded_channel::<(Request, oneshot::Sender<Result<Response, ClientError>>)>();
 
@@ -190,9 +194,12 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, JoinH
     } else {
         false
     };
+
+    let (running_tx, running) = running();
     let conn = Conn {
         addr,
         absolute_uris,
+        running: Arc::new(Mutex::new(Some(running_tx))),
         tls,
     };
 
@@ -228,7 +235,7 @@ fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, JoinH
         tracing::trace!("client shutdown completed");
     };
     let task = tokio::spawn(work.instrument(span));
-    (tx, task)
+    (tx, task, running)
 }
 
 #[derive(Clone)]
@@ -236,6 +243,7 @@ struct Conn {
     addr: SocketAddr,
     absolute_uris: bool,
     tls: Option<TlsConfig>,
+    running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 }
 
 impl tower::Service<hyper::Uri> for Conn {
@@ -252,6 +260,12 @@ impl tower::Service<hyper::Uri> for Conn {
         let tls = self.tls.clone();
         let conn = TcpStream::connect(self.addr.clone());
         let abs_form = self.absolute_uris;
+        let running = self
+            .running
+            .lock()
+            .unwrap()
+            .take()
+            .expect("test client cannot connect twice");
         Box::pin(async move {
             let io = conn.await?;
 
@@ -270,7 +284,7 @@ impl tower::Service<hyper::Uri> for Conn {
             Ok(RunningIo {
                 io,
                 abs_form,
-                _running: None,
+                _running: Some(running),
             })
         })
     }
