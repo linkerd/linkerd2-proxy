@@ -17,7 +17,7 @@ indexmap = "1.0"
 linkerd2-addr = { path  = "../addr" }
 linkerd2-dns = { path  = "../dns" }
 linkerd2-error = { path  = "../error" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.13" }
 linkerd2-stack = { path  = "../stack" }
 rand = { version = "0.7", features = ["small_rng"] }
 regex = "1.0.0"
@@ -38,6 +38,6 @@ features = [
 ]
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.13", features = ["arbitrary"] }
 prost-types = "0.6.0"
 quickcheck = { version = "0.9", default-features = false }

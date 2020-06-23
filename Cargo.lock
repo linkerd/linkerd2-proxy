@@ -858,7 +858,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
+ "linkerd2-proxy-api 0.1.13",
  "net2",
  "quickcheck",
  "regex 1.0.0",
@@ -907,7 +907,7 @@ dependencies = [
  "linkerd2-lock",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
+ "linkerd2-proxy-api 0.1.13",
  "linkerd2-proxy-api-resolve",
  "linkerd2-proxy-core",
  "linkerd2-proxy-detect",
@@ -997,8 +997,8 @@ dependencies = [
  "linkerd2-app",
  "linkerd2-app-core",
  "linkerd2-metrics",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.12)",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
+ "linkerd2-proxy-api 0.1.12",
+ "linkerd2-proxy-api 0.1.13",
  "net2",
  "quickcheck",
  "regex 0.1.80",
@@ -1323,8 +1323,8 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.12"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api#c442280b7c1e8c5a83d53abe00287aca69129d7c"
+version = "0.1.13"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.13#f9a95345ef44c3d6f22559442e35f07e0af477e2"
 dependencies = [
  "h2 0.2.5",
  "http 0.2.1",
@@ -1345,7 +1345,7 @@ dependencies = [
  "http-body 0.3.1",
  "indexmap",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
+ "linkerd2-proxy-api 0.1.13",
  "linkerd2-proxy-core",
  "pin-project",
  "prost 0.6.1",
@@ -1435,7 +1435,7 @@ dependencies = [
  "http-body 0.3.1",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
+ "linkerd2-proxy-api 0.1.13",
  "linkerd2-proxy-transport",
  "pin-project",
  "tokio 0.2.21",
@@ -1470,7 +1470,7 @@ dependencies = [
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
+ "linkerd2-proxy-api 0.1.13",
  "linkerd2-proxy-core",
  "linkerd2-proxy-http",
  "linkerd2-proxy-transport",
@@ -1586,7 +1586,7 @@ dependencies = [
  "linkerd2-addr",
  "linkerd2-dns",
  "linkerd2-error",
- "linkerd2-proxy-api 0.1.12 (git+https://github.com/linkerd/linkerd2-proxy-api)",
+ "linkerd2-proxy-api 0.1.13",
  "linkerd2-stack",
  "pin-project",
  "prost-types 0.6.1",

@@ -42,7 +42,7 @@ linkerd2-lock = { path = "../../lock" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.13" }
 linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd2-proxy-detect = { path = "../../proxy/detect" }
 linkerd2-proxy-discover = { path = "../../proxy/discover" }
@@ -96,7 +96,7 @@ libc = "0.2"
 procinfo = "0.4.2"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.13", features = ["arbitrary"] }
 prost-types = "0.5.0"
 quickcheck = { version = "0.9", default-features = false }
 tokio = { version = "0.2", features = ["time"] }
