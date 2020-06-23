@@ -3,7 +3,8 @@
 
 use linkerd2_app_integration::*;
 use std::error::Error as _;
-use std::sync::mpsc;
+use tokio::sync::mpsc;
+use tokio::time::timeout;
 
 #[tokio::test]
 async fn outbound_http1() {
@@ -134,7 +135,7 @@ async fn test_server_speaks_first(env: TestEnv) {
     let msg1 = "custom tcp server starts";
     let msg2 = "custom tcp client second";
 
-    let (tx, rx) = mpsc::channel();
+    let (mut tx, mut rx) = mpsc::channel(1);
     let srv = server::tcp()
         .accept_fut(move |mut sock| {
             async move {
@@ -142,7 +143,7 @@ async fn test_server_speaks_first(env: TestEnv) {
                 let mut vec = vec![0; 512];
                 let n = sock.read(&mut vec).await?;
                 assert_eq!(s(&vec[..n]), msg2);
-                tx.send(()).unwrap();
+                tx.send(()).await.unwrap();
                 Ok(())
             }
             .map(|res: std::io::Result<()>| match res {
@@ -164,7 +165,7 @@ async fn test_server_speaks_first(env: TestEnv) {
 
     assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), msg1);
     tcp_client.write(msg2).await;
-    rx.recv_timeout(TIMEOUT).unwrap();
+    timeout(TIMEOUT, rx.recv()).await.unwrap();
 }
 
 #[tokio::test]
@@ -217,14 +218,12 @@ async fn tcp_server_first_tls() {
 
 #[tokio::test]
 async fn tcp_connections_close_if_client_closes() {
-    use std::sync::mpsc;
-
     let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
     let msg2 = "custom tcp bye";
 
-    let (tx, rx) = mpsc::channel();
+    let (mut tx, mut rx) = mpsc::channel(1);
 
     let srv = server::tcp()
         .accept_fut(move |mut sock| {
@@ -236,7 +235,7 @@ async fn tcp_connections_close_if_client_closes() {
                 sock.write_all(msg2.as_bytes()).await?;
                 let n = sock.read(&mut [0; 16]).await?;
                 assert_eq!(n, 0);
-                tx.send(()).unwrap();
+                tx.send(()).await.unwrap();
                 Ok(())
             }
             .map(|res: std::io::Result<()>| match res {
@@ -259,7 +258,7 @@ async fn tcp_connections_close_if_client_closes() {
     // rx will be fulfilled when our tcp accept_fut sees
     // a socket disconnect, which is what we are testing for.
     // the timeout here is just to prevent this test from hanging
-    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+   timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
 }
 
 macro_rules! http1_tests {
