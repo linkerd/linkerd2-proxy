@@ -163,14 +163,19 @@ impl Config {
 
             let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
 
-            let outbound_http = outbound.build_http_router(
+            let outbound_http_endpoint = outbound.build_http_endpoint(
                 outbound_addr.port(),
                 outbound_connect.clone(),
-                dst.resolve,
-                dst.profiles.clone(),
                 tap_layer.clone(),
                 outbound_metrics.clone(),
                 oc_span_sink.clone(),
+            );
+
+            let outbound_http = outbound.build_http_router(
+                outbound_http_endpoint,
+                dst.resolve,
+                dst.profiles.clone(),
+                outbound_metrics.clone(),
             );
 
             tokio::spawn(
