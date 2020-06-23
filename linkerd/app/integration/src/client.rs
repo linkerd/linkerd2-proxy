@@ -88,6 +88,7 @@ pub struct Client {
     /// this Client has been dropped.
     running: Running,
     tx: Sender,
+    task: JoinHandle<()>,
     version: http::Version,
     tls: Option<TlsConfig>,
 }
@@ -98,10 +99,11 @@ impl Client {
             Run::Http1 { .. } => http::Version::HTTP_11,
             Run::Http2 => http::Version::HTTP_2,
         };
-        let (tx, _, running) = run(addr, r, tls.clone());
+        let (tx, task, running) = run(addr, r, tls.clone());
         Client {
             authority,
             running,
+            task,
             tx,
             version: v,
             tls: tls,
@@ -172,6 +174,14 @@ impl Client {
     pub async fn wait_for_closed(self) {
         self.running.await
     }
+ 
+    pub async fn shutdown(self) {
+        let Self { tx, task, running, ..} = self;
+        // signal the client task to shut down now.
+        drop(tx);
+        task.await.unwrap();
+        running.await;
+    }
 }
 
 #[derive(Debug)]
@@ -217,19 +227,26 @@ fn run(
         tracing::trace!("client task started");
         let mut rx = rx;
         let (drain_tx, drain) = drain::channel();
-        while let Some((req, cb)) = rx.recv().await {
-            let req = req.map(hyper::Body::from);
-            tracing::trace!(?req);
-            let req = client.request(req);
-            tokio::spawn(
-                cancelable(drain.clone(), async move {
-                    let result = req.await;
-                    let _ = cb.send(result);
-                    Ok::<(), ()>(())
-                })
-                .in_current_span(),
-            );
-        }
+        // Scope so that the original `Watch` side of the `drain` channel which
+        // is cloned into spawned tasks is dropped when the client loop ends.
+        // Otherwise, the `drain().await` would never finish, since one `Watch`
+        // instance would remain un-dropped.
+        async move {
+            while let Some((req, cb)) = rx.recv().await {
+                let req = req.map(hyper::Body::from);
+                tracing::trace!(?req);
+                let req = client.request(req);
+                tokio::spawn(
+                    cancelable(drain.clone(), async move {
+                        let result = req.await;
+                        let _ = cb.send(result);
+                        Ok::<(), ()>(())
+                    })
+                    .in_current_span(),
+                );
+            }
+        }.await;
+
         tracing::trace!("client task shutting down");
         drain_tx.drain().await;
         tracing::trace!("client shutdown completed");
