@@ -127,12 +127,10 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<B, C, R, P>(
+    pub fn build_http_endpoint<B, C>(
         &self,
         prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
-        resolve: R,
-        profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
@@ -150,9 +148,8 @@ impl Config {
            + Clone
            + Send
     where
-        B: http::HttpBody + std::fmt::Debug + Default + Send + 'static,
+        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        B::Error: Into<Error>,
         C: tower::Service<Target<HttpEndpoint>, Error = Error>
             + Unpin
             + Clone
@@ -161,6 +158,93 @@ impl Config {
             + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
+    {
+        // Registers the stack with Tap, Metrics, and OpenCensus tracing
+        // export.
+        let observability = svc::layers()
+            .push(tap_layer.clone())
+            .push(metrics.http_endpoint.into_layer::<classify::Response>())
+            .push_on_response(TraceContextLayer::new(
+                span_sink
+                    .clone()
+                    .map(|sink| SpanConverter::client(sink, trace_labels())),
+            ));
+
+        // Checks the headers to validate that a client-specified required
+        // identity matches the configured identity.
+        let identity_headers = svc::layers()
+            .push_on_response(
+                svc::layers()
+                    .push(http::strip_header::response::layer(L5D_REMOTE_IP))
+                    .push(http::strip_header::response::layer(L5D_SERVER_ID))
+                    .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
+            )
+            .push(MakeRequireIdentityLayer::new());
+
+        svc::stack(tcp_connect)
+            // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
+            // is typically used (i.e. when communicating with other proxies); though
+            // HTTP/1.x fallback is supported as needed.
+            .push(http::MakeClientLayer::new(self.proxy.connect.h2_settings))
+            // Re-establishes a connection when the client fails.
+            .push(reconnect::layer({
+                let backoff = self.proxy.connect.backoff.clone();
+                move |_| Ok(backoff.stream())
+            }))
+            .push(admit::AdmitLayer::new(prevent_loop.into()))
+            .push(observability.clone())
+            .push(identity_headers.clone())
+            .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
+            // Ensures that the request's URI is in the proper form.
+            .push(http::normalize_uri::layer())
+            // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
+            //
+            // This sets headers so that the inbound proxy can downgrade the request
+            // properly.
+            .push(OrigProtoUpgradeLayer::new())
+            .push_on_response(svc::layers().box_http_response())
+            .check_service::<Target<HttpEndpoint>>()
+            .instrument(|endpoint: &Target<HttpEndpoint>| {
+                info_span!("endpoint", peer.addr = %endpoint.inner.addr)
+        })
+    }
+
+    pub fn build_http_router<B, E, S, R, P>(
+        &self,
+        http_endpoint: E,
+        resolve: R,
+        profiles_client: P,
+        metrics: ProxyMetrics,
+    ) -> impl tower::Service<
+        Target<HttpEndpoint>,
+        Error = Error,
+        Future = impl Unpin + Send,
+        Response = impl tower::Service<
+            http::Request<B>,
+            Response = http::Response<http::boxed::Payload>,
+            Error = Error,
+            Future = impl Send,
+        > + Send,
+    > + Unpin
+           + Clone
+           + Send
+    where
+        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
+        B::Data: Send + 'static,
+        E: tower::Service<Target<HttpEndpoint>, Error = Error, Response = S>
+            + Unpin
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        E::Future: Unpin + Send,
+        S: tower::Service<
+                http::Request<http::boxed::Payload>,
+                Response = http::Response<http::boxed::Payload>,
+                Error = Error,
+            > + Send
+            + 'static,
+        S::Future: Send,
         R: Resolve<Concrete<http::Settings>, Endpoint = proxy::api_resolve::Metadata>
             + Unpin
             + Clone
@@ -171,69 +255,12 @@ impl Config {
         P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
     {
-        let Config {
-            proxy:
-                ProxyConfig {
-                    connect,
-                    buffer_capacity,
-                    cache_max_idle_age,
-                    dispatch_timeout,
-                    ..
-                },
+        let ProxyConfig {
+            buffer_capacity,
+            cache_max_idle_age,
+            dispatch_timeout,
             ..
-        } = self.clone();
-
-        let prevent_loop = prevent_loop.into();
-
-        let http_endpoint = {
-            // Registers the stack with Tap, Metrics, and OpenCensus tracing
-            // export.
-            let observability = svc::layers()
-                .push(tap_layer.clone())
-                .push(metrics.http_endpoint.into_layer::<classify::Response>())
-                .push_on_response(TraceContextLayer::new(
-                    span_sink
-                        .clone()
-                        .map(|sink| SpanConverter::client(sink, trace_labels())),
-                ));
-
-            // Checks the headers to validate that a client-specified required
-            // identity matches the configured identity.
-            let identity_headers = svc::layers()
-                .push_on_response(
-                    svc::layers()
-                        .push(http::strip_header::response::layer(L5D_REMOTE_IP))
-                        .push(http::strip_header::response::layer(L5D_SERVER_ID))
-                        .push(http::strip_header::request::layer(L5D_REQUIRE_ID)),
-                )
-                .push(MakeRequireIdentityLayer::new());
-
-            svc::stack(tcp_connect.clone())
-                // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
-                // is typically used (i.e. when communicating with other proxies); though
-                // HTTP/1.x fallback is supported as needed.
-                .push(http::MakeClientLayer::new(connect.h2_settings))
-                // Re-establishes a connection when the client fails.
-                .push(reconnect::layer({
-                    let backoff = connect.backoff.clone();
-                    move |_| Ok(backoff.stream())
-                }))
-                .push(admit::AdmitLayer::new(prevent_loop))
-                .push(observability.clone())
-                .push(identity_headers.clone())
-                .push(http::override_authority::Layer::new(vec![HOST.as_str(), CANONICAL_DST_HEADER]))
-                // Ensures that the request's URI is in the proper form.
-                .push(http::normalize_uri::layer())
-                // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
-                //
-                // This sets headers so that the inbound proxy can downgrade the request
-                // properly.
-                .push(OrigProtoUpgradeLayer::new())
-                .check_service::<Target<HttpEndpoint>>()
-                .instrument(|endpoint: &Target<HttpEndpoint>| {
-                    info_span!("endpoint", peer.addr = %endpoint.inner.addr)
-                })
-        };
+        } = self.proxy.clone();
 
         // Resolves each target via the control plane on a background task, buffering results.
         //
@@ -247,8 +274,7 @@ impl Config {
         };
 
         // Builds a balancer for each concrete destination.
-        let http_balancer = http_endpoint
-            .clone()
+        let http_balancer = svc::stack(http_endpoint.clone())
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
@@ -279,7 +305,7 @@ impl Config {
         //
         // This is effectively the same as the endpoint stack; but the client layer captures the
         // requst body type (via PhantomData), so the stack cannot be shared directly.
-        let http_forward_cache = http_endpoint
+        let http_forward_cache = svc::stack(http_endpoint)
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .into_new_service()
             .cache(
