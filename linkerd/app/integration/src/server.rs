@@ -85,12 +85,12 @@ impl Listening {
                 Err(err) if err.is_panic() => {
                     tracing::error!("support server on {} panicked!", self.addr);
                     std::panic::resume_unwind(err.into_panic());
-                },
+                }
                 // If the task was already canceled, it was probably shut down
                 // explicitly, that's fine.
                 Err(_) => tracing::debug!("support server task already canceled"),
             }
-    
+
             tracing::debug!("support server on {} terminated cleanly", self.addr);
         } else {
             tracing::debug!("support server task already joined");
@@ -208,8 +208,9 @@ impl Server {
 
         let (drain_signal, drain) = drain::channel();
         let tls_config = self.tls.clone();
-        let task = tokio::spawn(
-            cancelable(drain.clone(), async move {
+        let task = tokio::spawn(cancelable(
+            drain.clone(),
+            async move {
                 tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
                 let mut http =
@@ -243,9 +244,8 @@ impl Server {
                         let svc = svc.await;
                         tracing::trace!("service acquired");
                         srv_conn_count.fetch_add(1, Ordering::Release);
-                        let svc = svc.map_err(|e| {
-                            println!("support/server new_service error: {}", e)
-                        })?;
+                        let svc =
+                            svc.map_err(|e| println!("support/server new_service error: {}", e))?;
                         let result = http
                             .serve_connection(sock, svc)
                             .await

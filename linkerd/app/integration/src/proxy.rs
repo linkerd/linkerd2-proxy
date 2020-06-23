@@ -151,9 +151,14 @@ impl Proxy {
     }
 }
 
-impl Listening  {
+impl Listening {
     pub async fn join_servers(self) {
-        let Self { inbound_server, outbound_server, thread , ..} = self;
+        let Self {
+            inbound_server,
+            outbound_server,
+            thread,
+            ..
+        } = self;
         drop(thread);
         if let Some(srv) = outbound_server {
             srv.join().instrument(tracing::info_span!("outbound")).await;
@@ -268,7 +273,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         });
     }
 
-   let thread = thread::Builder::new()
+    let thread = thread::Builder::new()
         .name(format!("{}:proxy", thread_name()))
         .spawn(move || {
             tracing::dispatcher::with_default(&trace, || {

@@ -533,7 +533,7 @@ macro_rules! generate_tests {
                 assert_eq!(res.status(), http::StatusCode::OK);
                 assert_eventually_contains!(metrics.get("/metrics").await, "rt_hello=\"bar\"");
 
-                // Ensure panics are propagated.                
+                // Ensure panics are propagated.
                 tokio::join!{
                     fixture.foo().join(), fixture.bar.join()
                 };

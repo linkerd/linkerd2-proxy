@@ -174,9 +174,11 @@ impl Client {
     pub async fn wait_for_closed(self) {
         self.running.await
     }
- 
+
     pub async fn shutdown(self) {
-        let Self { tx, task, running, ..} = self;
+        let Self {
+            tx, task, running, ..
+        } = self;
         // signal the client task to shut down now.
         drop(tx);
         task.await.unwrap();
@@ -245,7 +247,8 @@ fn run(
                     .in_current_span(),
                 );
             }
-        }.await;
+        }
+        .await;
 
         tracing::trace!("client task shutting down");
         drain_tx.drain().await;

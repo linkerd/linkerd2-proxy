@@ -20,7 +20,7 @@ async fn outbound_http1() {
 
     assert_eq!(client.get("/").await, "hello h1");
     // ensure panics from the server are propagated
-    proxy.join_servers().await; 
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -38,7 +38,7 @@ async fn inbound_http1() {
 
     assert_eq!(client.get("/").await, "hello h1");
     // ensure panics from the server are propagated
-    proxy.join_servers().await; 
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -64,7 +64,7 @@ async fn outbound_tcp() {
     tcp_client.write(msg1).await;
     assert_eq!(tcp_client.read().await, msg2.as_bytes());
     // ensure panics from the server are propagated
-    proxy.join_servers().await; 
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -90,7 +90,7 @@ async fn inbound_tcp() {
     tcp_client.write(msg1).await;
     assert_eq!(tcp_client.read().await, msg2.as_bytes());
     // ensure panics from the server are propagated
-    proxy.join_servers().await; 
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -175,7 +175,7 @@ async fn test_server_speaks_first(env: TestEnv) {
     tcp_client.write(msg2).await;
     timeout(TIMEOUT, rx.recv()).await.unwrap();
     // ensure panics from the server are propagated
-    proxy.join_servers().await; 
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -270,10 +270,10 @@ async fn tcp_connections_close_if_client_closes() {
     // rx will be fulfilled when our tcp accept_fut sees
     // a socket disconnect, which is what we are testing for.
     // the timeout here is just to prevent this test from hanging
-   timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
+    timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
 
     // ensure panics from the server are propagated
-    proxy.join_servers().await; 
+    proxy.join_servers().await;
 }
 
 macro_rules! http1_tests {
@@ -289,7 +289,7 @@ macro_rules! http1_tests {
             assert_eq!(client.get("/").await, "hello h1");
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -334,7 +334,7 @@ macro_rules! http1_tests {
             assert!(!res.headers().contains_key("x-server-quux"));
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -370,7 +370,7 @@ macro_rules! http1_tests {
             assert_eq!(res.version(), http::Version::HTTP_10);
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -405,7 +405,7 @@ macro_rules! http1_tests {
             assert_eq!(res.version(), http::Version::HTTP_11);
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -485,7 +485,7 @@ macro_rules! http1_tests {
             assert_eq!(s(&chat_resp), chatproto_res);
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -509,7 +509,7 @@ macro_rules! http1_tests {
             assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -555,7 +555,7 @@ macro_rules! http1_tests {
             assert_eq!(res.status(), http::StatusCode::OK);
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -634,7 +634,7 @@ macro_rules! http1_tests {
             assert_eq!(s(&resp2), s(&tunneled_res[..]));
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -702,7 +702,7 @@ macro_rules! http1_tests {
             );
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -730,7 +730,7 @@ macro_rules! http1_tests {
             assert_eq!(resp.status(), StatusCode::OK);
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -779,7 +779,7 @@ macro_rules! http1_tests {
             assert_eq!(body, "world");
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -816,7 +816,7 @@ macro_rules! http1_tests {
             }
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -928,7 +928,7 @@ macro_rules! http1_tests {
             }
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -966,7 +966,7 @@ macro_rules! http1_tests {
             assert_eq!(body, "");
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -1037,9 +1037,8 @@ macro_rules! http1_tests {
             }
 
             // ensure panics from the server are propagated
-            proxy.join_servers().await; 
+            proxy.join_servers().await;
         }
-
     };
 }
 
@@ -1133,7 +1132,7 @@ async fn http10_without_host() {
 
     let expected = "HTTP/1.0 200 OK\r\n";
     assert_eq!(s(&tcp_client.read().await[..expected.len()]), expected);
-    
+
     proxy.join_servers().await;
 }
 

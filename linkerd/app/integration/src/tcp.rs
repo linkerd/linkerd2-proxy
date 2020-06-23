@@ -209,11 +209,10 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
     let any_port = SocketAddr::from(([127, 0, 0, 1], 0));
     let std_listener = StdTcpListener::bind(&any_port).expect("bind");
     let addr = std_listener.local_addr().expect("local_addr");
-    let task = tokio::spawn(cancelable(drain.clone(),
-        async move {
+    let task = tokio::spawn(
+        cancelable(drain.clone(), async move {
             let mut accepts = tcp.accepts;
-            let mut listener =
-                TcpListener::from_std(std_listener).expect("TcpListener::from_std");
+            let mut listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
 
             let _ = started_tx.send(());
             loop {
@@ -226,7 +225,7 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
                     fut.await;
                     Ok::<(), ()>(())
                 }));
-            };
+            }
         })
         .instrument(tracing::info_span!("tcp_server", %addr)),
     );
