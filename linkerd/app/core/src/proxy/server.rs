@@ -64,6 +64,8 @@ impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
         io: BoxedIo,
     ) -> Result<(Self::Target, BoxedIo), Self::Error> {
         let port = tls.addrs.target_addr().port();
+
+        // Skip detection if the port is in the configured set.
         if self.skip_ports.contains(&port) {
             let proto = Protocol { tls, http: None };
             return Ok::<_, Self::Error>((proto, io));
