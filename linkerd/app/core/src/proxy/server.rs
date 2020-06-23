@@ -1,18 +1,22 @@
+use crate::proxy::http::{
+    glue::{Body, HyperServerSvc},
+    h2::Settings as H2Settings,
+    trace, upgrade, Version as HttpVersion,
+};
+use crate::transport::{
+    self,
+    io::{self, BoxedIo, Peekable},
+    labels::Key as TransportKey,
+    metrics::TransportLabels,
+    tls,
+};
 use crate::{
     drain,
-    proxy::{
-        core::Accept,
-        detect,
-        http::{
-            glue::{Body, HyperServerSvc},
-            h2::Settings as H2Settings,
-            trace, upgrade, Version as HttpVersion,
-        },
-    },
+    proxy::{core::Accept, detect},
     svc::{NewService, Service, ServiceExt},
-    transport::{self, io::BoxedIo, labels::Key as TransportKey, metrics::TransportLabels, tls},
     Error,
 };
+use async_trait::async_trait;
 use futures::TryFutureExt;
 use http;
 use hyper;
@@ -34,35 +38,45 @@ pub type Connection = (Protocol, BoxedIo);
 
 #[derive(Clone, Debug)]
 pub struct ProtocolDetect {
+    capacity: usize,
     skip_ports: Arc<IndexSet<u16>>,
 }
 
 impl ProtocolDetect {
+    const PEEK_CAPACITY: usize = 8192;
+
     pub fn new(skip_ports: Arc<IndexSet<u16>>) -> Self {
-        ProtocolDetect { skip_ports }
+        ProtocolDetect {
+            skip_ports,
+            capacity: Self::PEEK_CAPACITY,
+        }
     }
 }
 
+#[async_trait]
 impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
     type Target = Protocol;
+    type Error = io::Error;
 
-    fn detect_before_peek(
+    async fn detect(
         &self,
         tls: tls::accept::Meta,
-    ) -> Result<Self::Target, tls::accept::Meta> {
+        io: BoxedIo,
+    ) -> Result<(Self::Target, BoxedIo), Self::Error> {
         let port = tls.addrs.target_addr().port();
+
+        // Skip detection if the port is in the configured set.
         if self.skip_ports.contains(&port) {
-            return Ok(Protocol { tls, http: None });
+            let proto = Protocol { tls, http: None };
+            return Ok::<_, Self::Error>((proto, io));
         }
 
-        Err(tls)
-    }
-
-    fn detect_peeked_prefix(&self, tls: tls::accept::Meta, prefix: &[u8]) -> Self::Target {
-        Protocol {
-            tls,
-            http: HttpVersion::from_prefix(prefix),
-        }
+        // Otherwise, attempt to peek the client connection to determine the protocol.
+        // Currently, we only check for an HTTP prefix.
+        let peek = io.peek(self.capacity).await?;
+        let http = HttpVersion::from_prefix(peek.prefix().as_ref());
+        let proto = Protocol { tls, http };
+        Ok((proto, BoxedIo::new(peek)))
     }
 }
 

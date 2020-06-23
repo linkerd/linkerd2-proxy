@@ -880,6 +880,7 @@ dependencies = [
 name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bytes 0.5.4",
  "futures 0.3.5",
  "http 0.2.1",
@@ -1369,11 +1370,11 @@ dependencies = [
 name = "linkerd2-proxy-detect"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "futures 0.3.5",
  "linkerd2-error",
  "linkerd2-io",
  "linkerd2-proxy-core",
- "pin-project",
  "tokio 0.2.21",
  "tower 0.3.1",
 ]

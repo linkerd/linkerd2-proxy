@@ -9,12 +9,12 @@ Client stream detection
 """
 
 [dependencies]
+async-trait = "0.1"
 futures = "0.3"
 linkerd2-error = { path = "../../error" }
 linkerd2-io = { path = "../../io" }
 linkerd2-proxy-core = { path = "../core" }
 tokio = "0.2"
-pin-project = "0.4"
 
 [dependencies.tower]
 version = "0.3"
