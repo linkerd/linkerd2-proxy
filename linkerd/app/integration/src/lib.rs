@@ -348,53 +348,11 @@ pub async fn cancelable<E: Send + 'static>(
     drain: drain::Watch,
     f: impl Future<Output = Result<(), E>> + Send + 'static,
 ) -> Result<(), E> {
-    drain.watch(Cancelable::new(f), |f| f.cancel()).await
-}
-
-pub struct CancelableExec<E> {
-    exec: E,
-    drain: drain::Watch,
-}
-
-struct Cancelable<E>(Option<Pin<Box<dyn Future<Output = Result<(), E>> + Send>>>);
-
-impl<E> Cancelable<E> {
-    fn new(f: impl Future<Output = Result<(), E>> + Send + 'static) -> Self {
-        Self(Some(Box::pin(f)))
-    }
-
-    fn cancel(&mut self) {
-        tracing::trace!("canceling...");
-        self.0.take();
-        tracing::trace!("canceled");
-    }
-}
-
-impl<E> Future for Cancelable<E> {
-    type Output = Result<(), E>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(ref mut f) = self.as_mut().0 {
-            return f.poll_unpin(cx);
+    tokio::select! {
+        res = f => res,
+        _ = drain.signal() => { 
+            tracing::debug!("canceled!");
+            Ok(())
         }
-
-        tracing::debug!("canceled!");
-        Poll::Ready(Ok(()))
-    }
-}
-
-impl<F, E> hyper::rt::Executor<F> for CancelableExec<E>
-where
-    F: Future + Send + 'static,
-    F::Output: Send + 'static,
-    E: hyper::rt::Executor<Pin<Box<dyn Future<Output = Result<(), ()>> + Send + 'static>>>,
-{
-    #[inline]
-    fn execute(&self, f: F) {
-        self.exec
-            .execute(Box::pin(cancelable(self.drain.clone(), async move {
-                f.await;
-                Ok::<(), ()>(())
-            })))
     }
 }
