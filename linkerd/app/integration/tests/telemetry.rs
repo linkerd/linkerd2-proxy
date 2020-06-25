@@ -1,5 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![type_length_limit = "2427419"]
 // The compiler cannot figure out that the `use linkerd2_app_integration::*`
 // import is actually used, and putting the allow attribute on that import in
 // particular appears to do nothing... T_T
