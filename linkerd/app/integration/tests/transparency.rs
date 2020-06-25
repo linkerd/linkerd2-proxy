@@ -15,7 +15,11 @@ async fn outbound_http1() {
     ctrl.profile_tx_default("transparency.test.svc.cluster.local");
     ctrl.destination_tx("transparency.test.svc.cluster.local")
         .send_addr(srv.addr);
-    let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .outbound(srv)
+        .run()
+        .await;
     let client = client::http1(proxy.outbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/").await, "hello h1");
@@ -31,9 +35,10 @@ async fn inbound_http1() {
     let ctrl = controller::new();
     ctrl.profile_tx_default("transparency.test.svc.cluster.local");
     let proxy = proxy::new()
-        .controller(ctrl.run())
+        .controller(ctrl.run().await)
         .inbound_fuzz_addr(srv)
-        .run();
+        .run()
+        .await;
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
     assert_eq!(client.get("/").await, "hello h1");
@@ -55,7 +60,7 @@ async fn outbound_tcp() {
         })
         .run()
         .await;
-    let proxy = proxy::new().outbound(srv).run();
+    let proxy = proxy::new().outbound(srv).run().await;
 
     let client = client::tcp(proxy.outbound);
 
@@ -81,7 +86,7 @@ async fn inbound_tcp() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
 
     let client = client::tcp(proxy.inbound);
 
@@ -165,7 +170,8 @@ async fn test_server_speaks_first(env: TestEnv) {
     let proxy = proxy::new()
         .disable_inbound_ports_protocol_detection(vec![srv.addr.port()])
         .inbound(srv)
-        .run_with_test_env(env);
+        .run_with_test_env(env)
+        .await;
 
     let client = client::tcp(proxy.inbound);
 
@@ -257,7 +263,7 @@ async fn tcp_connections_close_if_client_closes() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound(srv).run();
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::tcp(proxy.inbound);
 
@@ -283,7 +289,7 @@ macro_rules! http1_tests {
             let _trace = trace_init();
 
             let srv = server::http1().route("/", "hello h1").run().await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             assert_eq!(client.get("/").await, "hello h1");
@@ -309,7 +315,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let res = client
@@ -353,7 +359,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, host);
 
             let res = client
@@ -388,7 +394,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1_absolute_uris(proxy.inbound, auth);
 
             let res = client
@@ -461,7 +467,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
 
             let client = client::tcp(proxy.inbound);
 
@@ -499,7 +505,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
 
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
@@ -535,7 +541,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -611,7 +617,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
 
             let client = client::tcp(proxy.inbound);
 
@@ -647,7 +653,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
 
             // A TCP client is used since the HTTP client would stop these requests
             // from ever touching the network.
@@ -716,7 +722,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let req = client
@@ -756,7 +762,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let req = client
@@ -801,7 +807,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
@@ -838,7 +844,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
@@ -882,7 +888,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             // https://tools.ietf.org/html/rfc7230#section-3.3.3
@@ -945,7 +951,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let resp = client
@@ -991,7 +997,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = $proxy(srv);
+            let proxy = $proxy(srv).await;
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -1045,10 +1051,10 @@ macro_rules! http1_tests {
 mod one_proxy {
     use linkerd2_app_integration::*;
 
-    http1_tests! { proxy: |srv| {
+    http1_tests! { proxy: |srv| async move {
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
-        proxy::new().inbound(srv).controller(ctrl.run()).run()
+        proxy::new().inbound(srv).controller(ctrl.run().await).run().await
     }}
 }
 
@@ -1073,10 +1079,10 @@ mod proxy_to_proxy {
         }
     }
 
-    http1_tests! { proxy: |srv| {
+    http1_tests! { proxy: |srv| async move {
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
-        let inbound = proxy::new().controller(ctrl.run()).inbound(srv).run();
+        let inbound = proxy::new().controller(ctrl.run().await).inbound(srv).run().await;
 
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
@@ -1084,8 +1090,8 @@ mod proxy_to_proxy {
         dst.send_h2_hinted(inbound.inbound);
 
         let outbound = proxy::new()
-            .controller(ctrl.run())
-            .run();
+            .controller(ctrl.run().await)
+            .run().await;
 
         let addr = outbound.outbound;
         ProxyToProxy {
@@ -1115,7 +1121,7 @@ async fn http10_without_host() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound(srv).run();
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::tcp(proxy.inbound);
 
@@ -1145,7 +1151,7 @@ async fn http1_one_connection_per_host() {
         .route("/no-body", "")
         .run()
         .await;
-    let proxy = proxy::new().inbound(srv).run();
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
@@ -1196,7 +1202,7 @@ async fn http1_requests_without_host_have_unique_connections() {
     let _trace = trace_init();
 
     let srv = server::http1().route("/", "unique hosts").run().await;
-    let proxy = proxy::new().inbound(srv).run();
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
@@ -1275,7 +1281,7 @@ async fn retry_reconnect_errors() {
         .route("/", "hello retry")
         .delay_listen(rx.map(|_| ()))
         .await;
-    let proxy = proxy::new().inbound(srv).run();
+    let proxy = proxy::new().inbound(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
     let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -1307,7 +1313,7 @@ async fn http2_request_without_authority() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
 
     // Make a single HTTP/2 request without an :authority header.
     //
@@ -1347,7 +1353,7 @@ async fn http2_rst_stream_is_propagated() {
         .route_async("/", move |_req| async move { Err(h2::Error::from(reason)) })
         .run()
         .await;
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
 
     let err: hyper::Error = client
@@ -1381,7 +1387,7 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
     let host = "transparency.test.svc.cluster.local";
     let dst = ctrl.destination_tx(host);
     dst.send_h2_hinted(srv.addr);
-    let proxy = proxy::new().controller(ctrl.run()).run();
+    let proxy = proxy::new().controller(ctrl.run().await).run().await;
     let addr = proxy.outbound;
 
     let client = client::http1(addr, host);
