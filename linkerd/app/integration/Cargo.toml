@@ -44,7 +44,7 @@ tokio_01 = { package = "tokio", version = "0.1"}
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-rustls = "0.13"
 tokio-compat = "0.1"
-tower = "0.3"
+tower = { version = "0.3", default-features = false} 
 tower_01 = { package = "tower", version = "0.1" }
 tower-grpc = { version = "0.1", default-features = false, features = ["protobuf"] }
 tonic = { version = "0.2", default-features = false }

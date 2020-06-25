@@ -10,7 +10,6 @@ pub use self::test_env::TestEnv;
 pub use bytes::{Buf, BufMut, Bytes};
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 
-use futures_01::{Async, Future as Future01, Poll as Poll01, Stream as Stream01};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app as app;
@@ -28,7 +27,6 @@ pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 pub use tokio::stream::{Stream, StreamExt};
 pub use tokio::sync::oneshot;
-use tokio_compat::runtime::{self};
 pub use tower::Service;
 pub use tower_grpc as grpc;
 pub use tracing::*;
