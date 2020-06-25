@@ -2,7 +2,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "256"]
-#![type_length_limit = "2427419"]
+#![type_length_limit = "5554984"]
 
 mod test_env;
 
@@ -27,8 +27,8 @@ pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 pub use tokio::stream::{Stream, StreamExt};
 pub use tokio::sync::oneshot;
+pub use tonic as grpc;
 pub use tower::Service;
-pub use tower_grpc as grpc;
 pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
