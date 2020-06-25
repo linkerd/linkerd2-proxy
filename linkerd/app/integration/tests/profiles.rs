@@ -105,12 +105,11 @@ macro_rules! profile_test {
         ];
         profile_tx.send(controller::profile(routes, $budget, vec![]));
 
-        let ctrl = ctrl.run().await;
+        let ctrl = ctrl.run();
         let proxy = proxy::new()
             .controller(ctrl)
             .outbound(srv)
-            .run()
-            .await;
+            .run();
 
         let client = client::$http(proxy.outbound, host);
 

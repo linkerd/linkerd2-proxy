@@ -1,7 +1,7 @@
 use super::*;
 use futures::stream;
 use http_body::Body;
-use linkerd2_proxy_api::tap as pb;
+use linkerd2_proxy_api_tonic::tap as pb;
 
 pub fn client(addr: SocketAddr) -> Client {
     let api = pb::tap_client::TapClient::new(SyncSvc(client::http2(addr, "localhost")));

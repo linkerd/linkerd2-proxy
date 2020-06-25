@@ -79,7 +79,7 @@ async fn add_a_dst_override() {
     ctrl.destination_tx(&leaf_svc.authority())
         .send_addr(leaf_svc.svc.addr);
 
-    let proxy = proxy::new().controller(ctrl.run().await).run().await;
+    let proxy = proxy::new().controller(ctrl.run()).run();
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -130,7 +130,7 @@ async fn add_multiple_dst_overrides() {
     let profile_tx = ctrl.profile_tx(&apex_svc.authority());
     profile_tx.send(pb::DestinationProfile::default());
 
-    let proxy = proxy::new().controller(ctrl.run().await).run().await;
+    let proxy = proxy::new().controller(ctrl.run()).run();
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
@@ -191,7 +191,7 @@ async fn set_a_dst_override_weight_to_zero() {
         ],
     ));
 
-    let proxy = proxy::new().controller(ctrl.run().await).run().await;
+    let proxy = proxy::new().controller(ctrl.run()).run();
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
@@ -257,7 +257,7 @@ async fn set_all_dst_override_weights_to_zero() {
         ],
     ));
 
-    let proxy = proxy::new().controller(ctrl.run().await).run().await;
+    let proxy = proxy::new().controller(ctrl.run()).run();
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
@@ -315,7 +315,7 @@ async fn remove_a_dst_override() {
         vec![controller::dst_override(leaf_svc.authority(), 10000)],
     ));
 
-    let proxy = proxy::new().controller(ctrl.run().await).run().await;
+    let proxy = proxy::new().controller(ctrl.run()).run();
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");

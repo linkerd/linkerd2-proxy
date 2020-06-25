@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use linkerd2_proxy_api::identity as pb;
+use linkerd2_proxy_api_tonic::identity as pb;
 use tonic as grpc;
 
 pub struct Identity {

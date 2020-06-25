@@ -23,7 +23,7 @@ bytes = "0.5"
 futures_01 = {package = "futures", version = "0.1"}
 futures = { version = "0.3", features = ["compat"] }
 h2 = "0.2"
-http = "0.2"
+http = "0.2""
 http-body = "0.3"
 http-body_01 = { package = "http-body", version = "0.1"}
 http-01 = { package = "http", version = "0.1"}

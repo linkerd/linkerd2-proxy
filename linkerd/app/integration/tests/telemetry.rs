@@ -22,22 +22,18 @@ struct TcpFixture {
 impl Fixture {
     async fn inbound() -> Self {
         info!("running test server");
-        Fixture::inbound_with_server(server::new().route("/", "hello").run().await).await
+        Fixture::inbound_with_server(server::new().route("/", "hello").run().await)
     }
 
     async fn outbound() -> Self {
         info!("running test server");
-        Fixture::outbound_with_server(server::new().route("/", "hello").run().await).await
+        Fixture::outbound_with_server(server::new().route("/", "hello").run().await)
     }
 
-    async fn inbound_with_server(srv: server::Listening) -> Self {
+    fn inbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
         ctrl.profile_tx_default("tele.test.svc.cluster.local");
-        let proxy = proxy::new()
-            .controller(ctrl.run().await)
-            .inbound(srv)
-            .run()
-            .await;
+        let proxy = proxy::new().controller(ctrl.run()).inbound(srv).run();
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
@@ -48,16 +44,12 @@ impl Fixture {
         }
     }
 
-    async fn outbound_with_server(srv: server::Listening) -> Self {
+    fn outbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
         ctrl.profile_tx_default("tele.test.svc.cluster.local");
         ctrl.destination_tx("tele.test.svc.cluster.local")
             .send_addr(srv.addr);
-        let proxy = proxy::new()
-            .controller(ctrl.run().await)
-            .outbound(srv)
-            .run()
-            .await;
+        let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
@@ -90,10 +82,9 @@ impl TcpFixture {
     async fn inbound() -> Self {
         let ctrl = controller::new();
         let proxy = proxy::new()
-            .controller(ctrl.run().await)
+            .controller(ctrl.run())
             .inbound(TcpFixture::server().await)
-            .run()
-            .await;
+            .run();
 
         let client = client::tcp(proxy.inbound);
         let metrics = client::http1(proxy.metrics, "localhost");
@@ -107,10 +98,9 @@ impl TcpFixture {
     async fn outbound() -> Self {
         let ctrl = controller::new();
         let proxy = proxy::new()
-            .controller(ctrl.run().await)
+            .controller(ctrl.run())
             .outbound(TcpFixture::server().await)
-            .run()
-            .await;
+            .run();
 
         let client = client::tcp(proxy.outbound);
         let metrics = client::http1(proxy.metrics, "localhost");
@@ -235,7 +225,7 @@ mod response_classification {
             client,
             metrics,
             proxy: _proxy,
-        } = Fixture::inbound_with_server(make_test_server().await).await;
+        } = Fixture::inbound_with_server(make_test_server().await);
 
         for (i, status) in STATUSES.iter().enumerate() {
             let request = client
@@ -267,7 +257,7 @@ mod response_classification {
             client,
             metrics,
             proxy: _proxy,
-        } = Fixture::outbound_with_server(make_test_server().await).await;
+        } = Fixture::outbound_with_server(make_test_server().await);
 
         for (i, status) in STATUSES.iter().enumerate() {
             let request = client
@@ -318,7 +308,7 @@ async fn metrics_endpoint_inbound_response_latency() {
         client,
         metrics,
         proxy: _proxy,
-    } = Fixture::inbound_with_server(srv).await;
+    } = Fixture::inbound_with_server(srv);
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey").await, "hello");
@@ -398,7 +388,7 @@ async fn metrics_endpoint_outbound_response_latency() {
         client,
         metrics,
         proxy: _proxy,
-    } = Fixture::outbound_with_server(srv).await;
+    } = Fixture::outbound_with_server(srv);
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey").await, "hello");
@@ -473,11 +463,7 @@ mod outbound_dst_labels {
         let ctrl = controller::new();
         let dst_tx = ctrl.destination_tx(dest);
 
-        let proxy = proxy::new()
-            .controller(ctrl.run().await)
-            .outbound(srv)
-            .run()
-            .await;
+        let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.outbound, dest);
@@ -724,11 +710,10 @@ async fn metrics_have_no_double_commas() {
     ctrl.destination_tx("tele.test.svc.cluster.local")
         .send_addr(outbound_srv.addr);
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(ctrl.run())
         .inbound(inbound_srv)
         .outbound(outbound_srv)
-        .run()
-        .await;
+        .run();
     let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
     let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -922,7 +907,7 @@ mod transport {
             })
             .run()
             .await;
-        let proxy = proxy::new().inbound(srv).run().await;
+        let proxy = proxy::new().inbound(srv).run();
 
         let client = client::tcp(proxy.inbound);
         let metrics = client::http1(proxy.metrics, "localhost");
@@ -951,9 +936,8 @@ mod transport {
                 drop(sock);
                 future::ok(())
             })
-            .run()
-            .await;
-        let proxy = proxy::new().outbound(srv).run().await;
+            .run();
+        let proxy = proxy::new().outbound(srv).run();
 
         let client = client::tcp(proxy.outbound);
         let metrics = client::http1(proxy.metrics, "localhost");

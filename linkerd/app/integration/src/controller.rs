@@ -1,8 +1,8 @@
 use super::*;
 
 use linkerd2_app_core::proxy::http::trace;
-use linkerd2_proxy_api::destination as pb;
-use linkerd2_proxy_api::net;
+use linkerd2_proxy_api_tonic::destination as pb;
+use linkerd2_proxy_api_tonic::net;
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::ops::{Bound, RangeBounds};
