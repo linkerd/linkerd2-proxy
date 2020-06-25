@@ -141,16 +141,16 @@ impl Proxy {
         self
     }
 
-    pub async fn run(self) -> Listening {
-        self.run_with_test_env(TestEnv::new()).await
+    pub fn run(self) -> Listening {
+        self.run_with_test_env(TestEnv::new())
     }
 
-    pub async fn run_with_test_env(self, env: TestEnv) -> Listening {
-        run(self, env, true).await
+    pub fn run_with_test_env(self, env: TestEnv) -> Listening {
+        run(self, env, true)
     }
 
-    pub async fn run_with_test_env_and_keep_ports(self, env: TestEnv) -> Listening {
-        run(self, env, false).await
+    pub fn run_with_test_env_and_keep_ports(self, env: TestEnv) -> Listening {
+        run(self, env, false)
     }
 }
 
@@ -195,14 +195,14 @@ impl Listening {
     }
 }
 
-async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
+fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     use app::env::Strings;
 
     let controller = if let Some(controller) = proxy.controller {
         controller
     } else {
         // bummer that the whole function needs to be async just for this...
-        controller::new().run().await
+        controller::new().run()
     };
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
