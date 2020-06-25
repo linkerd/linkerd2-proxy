@@ -5,7 +5,8 @@ use std::env;
 use std::io::Read;
 use std::net::{TcpListener, ToSocketAddrs};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let srv_addr = match env::var_os("PROFILING_SUPPORT_SERVER") {
         Some(srv_addr) => srv_addr,
         None => {
@@ -40,10 +41,11 @@ fn main() {
     );
     env.put(app::env::ENV_ADMIN_LISTEN_ADDR, "0.0.0.0:4191".to_owned());
     let _proxy = proxy::new()
-        .controller(ctrl.run())
+        .controller(ctrl.run().await)
         .outbound(srv)
         .inbound(srv2)
-        .run_with_test_env_and_keep_ports(env);
+        .run_with_test_env_and_keep_ports(env)
+        .await;
     let listener = TcpListener::bind("127.0.0.1:7777").expect("could not bind");
     let (mut stream, _) = listener.accept().expect("did not accept");
     let mut buf = [0];
