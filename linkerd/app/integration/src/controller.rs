@@ -115,7 +115,7 @@ impl Controller {
         self.expect_dst_calls.lock().unwrap().push_back(Dst::Done);
     }
 
-    pub fn delay_listen<F>(self, f: F) -> Listening
+    pub async fn delay_listen<F>(self, f: F) -> Listening
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -124,6 +124,7 @@ impl Controller {
             "support destination service",
             Some(Box::pin(f)),
         )
+        .await
     }
 
     pub fn profile_tx_default(&self, dest: &str) -> ProfileSender {
@@ -150,12 +151,13 @@ impl Controller {
         ProfileSender(tx)
     }
 
-    pub fn run(self) -> Listening {
+    pub async fn run(self) -> Listening {
         run(
             pb::destination_server::DestinationServer::new(self),
             "support destination service",
             None,
         )
+        .await
     }
 }
 
@@ -317,7 +319,7 @@ impl Listening {
     }
 }
 
-pub(in crate) fn run<T, B>(
+pub(in crate) async fn run<T, B>(
     svc: T,
     name: &'static str,
     delay: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
@@ -336,13 +338,21 @@ where
     listener.bind(addr).expect("Tcp::bind");
     let addr = listener.local_addr().expect("Tcp::local_addr");
     let listener = listener.listen(1024).expect("listen");
+
+    let (listening_tx, listening_rx) = tokio::sync::oneshot::channel();
     let (drain_signal, drain) = drain::channel();
     let task = tokio::spawn(
         cancelable(drain.clone(), async move {
             let mut listener = tokio::net::TcpListener::from_std(listener)?;
+            let mut listening_tx = Some(listening_tx);
 
             if let Some(delay) = delay {
+                let _ = listening_tx.take().unwrap().send(());
                 delay.await;
+            }
+
+            if let Some(listening_tx) = listening_tx {
+                let _ = listening_tx.send(());
             }
 
             let mut http = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
@@ -363,6 +373,7 @@ where
         .instrument(tracing::info_span!("controller", %name, %addr)),
     );
 
+    listening_rx.await.expect("listening_rx");
     println!("{} listening; addr={:?}", name, addr);
 
     Listening {

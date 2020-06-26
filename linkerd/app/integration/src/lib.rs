@@ -2,7 +2,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "256"]
-#![type_length_limit = "5554984"]
+#![type_length_limit = "16289823"]
 
 mod test_env;
 
