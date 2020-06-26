@@ -253,7 +253,7 @@ macro_rules! generate_tests {
                 .run().await;
 
             // Used to delay `listen` in the server, to force connection refused errors.
-            let (tx, rx) = oneshot::channel();
+            let (tx, rx) = oneshot::channel::<()>();
 
             let ctrl = controller::new();
             ctrl.profile_tx_default("disco.test.svc.cluster.local");
@@ -263,7 +263,7 @@ macro_rules! generate_tests {
             // but don't drop, to not trigger stream closing reconnects
 
             let proxy = proxy::new()
-                .controller(ctrl.delay_listen(rx.map_err(|_| ())))
+                .controller(ctrl.delay_listen(async move { let _ = rx.await; }))
                 // don't set srv as outbound(), so that SO_ORIGINAL_DST isn't
                 // used as a backup
                 .run_with_test_env(env);
