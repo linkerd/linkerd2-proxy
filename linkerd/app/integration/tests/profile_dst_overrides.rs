@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "2427419"]
+#![type_length_limit = "16289823"]
+#![recursion_limit = "256"]
 
 use linkerd2_app_integration::*;
 use linkerd2_proxy_api::destination as pb;
